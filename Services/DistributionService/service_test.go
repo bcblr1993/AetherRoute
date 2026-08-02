@@ -225,7 +225,7 @@ func TestExactJSONAndURLValidationRejectAmbiguity(t *testing.T) {
 }
 
 func TestSecretStateAndLockSymlinksFailClosed(t *testing.T) {
-	directory := t.TempDir()
+	directory := privateTempDir(t)
 	secret := filepath.Join(directory, "secret.raw")
 	if err := os.WriteFile(secret, bytes.Repeat([]byte{0x22}, 32), 0o600); err != nil {
 		t.Fatal(err)
@@ -330,11 +330,20 @@ func TestForwardedSourceRequiresExplicitTrustAndOneIP(t *testing.T) {
 
 func testStore(t *testing.T) *Store {
 	t.Helper()
-	store, err := NewStore(filepath.Join(t.TempDir(), "licenses.json"), testProductID, bytes.Repeat([]byte{0x45}, 32))
+	store, err := NewStore(filepath.Join(privateTempDir(t), "licenses.json"), testProductID, bytes.Repeat([]byte{0x45}, 32))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return store
+}
+
+func privateTempDir(t *testing.T) string {
+	t.Helper()
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return directory
 }
 
 func testUpdateEnvelope(t *testing.T, seed []byte, now time.Time) []byte {
