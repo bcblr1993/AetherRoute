@@ -75,7 +75,7 @@ jq -r '.strings | keys[]' "$CATALOG" | LC_ALL=C sort \
 jq -r '.strings | keys[]' "$TEMP_DIR/extracted/Localizable.xcstrings" \
   | awk 'length > 0' \
   | LC_ALL=C sort > "$TEMP_DIR/extracted.keys"
-comm -23 "$TEMP_DIR/extracted.keys" "$TEMP_DIR/catalog.keys" \
+LC_ALL=C comm -23 "$TEMP_DIR/extracted.keys" "$TEMP_DIR/catalog.keys" \
   > "$TEMP_DIR/missing.keys"
 if test -s "$TEMP_DIR/missing.keys"; then
   sed 's/^/Missing extracted key: /' "$TEMP_DIR/missing.keys" >&2
