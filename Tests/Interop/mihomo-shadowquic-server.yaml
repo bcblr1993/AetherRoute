@@ -1,0 +1,24 @@
+allow-lan: false
+bind-address: 127.0.0.1
+ipv6: false
+log-level: debug
+mode: rule
+
+listeners:
+  - name: aetherroute-shadowquic-interop
+    type: shadowquic
+    listen: 127.0.0.1
+    port: 59030
+    users:
+      - username: aetherroute-interop
+        password: shadowquic-password
+    jls-upstream:
+      addr: localhost:9
+    alpn:
+      - h3
+    zero-rtt: true
+    max-idle-time: 3000
+    max-datagram-frame-size: 1400
+
+rules:
+  - MATCH,DIRECT

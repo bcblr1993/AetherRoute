@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "releaseStatus": "integration",
+  "commonRemainingReleaseGates": [
+    "signed-provider",
+    "sleep-wake",
+    "network-change",
+    "24h-soak"
+  ],
+  "protocols": [
+    {
+      "id": "http",
+      "requiredCoreFeatures": [],
+      "interopCases": ["HTTP CONNECT", "HTTPS CONNECT"],
+      "interopTests": [],
+      "runners": ["Tests/Interop/run-prebuilt-matrix.sh"],
+      "uncoveredCatalogClaims": []
+    },
+    {
+      "id": "socks5",
+      "requiredCoreFeatures": [],
+      "interopCases": ["SOCKS5"],
+      "interopTests": [],
+      "runners": ["Tests/Interop/run-prebuilt-matrix.sh"],
+      "uncoveredCatalogClaims": []
+    },
+    {
+      "id": "shadowsocks",
+      "requiredCoreFeatures": ["shadowsocks"],
+      "interopCases": [
+        "Shadowsocks",
+        "Shadowsocks 2022",
+        "Shadowsocks over ShadowTLS v3"
+      ],
+      "interopTests": [],
+      "runners": ["Tests/Interop/run-prebuilt-matrix.sh"],
+      "uncoveredCatalogClaims": []
+    },
+    {
+      "id": "vmess",
+      "requiredCoreFeatures": [],
+      "interopCases": [
+        "VMess",
+        "VMess over WebSocket",
+        "VMess over gRPC",
+        "VMess over HTTP/2"
+      ],
+      "interopTests": [],
+      "runners": ["Tests/Interop/run-prebuilt-matrix.sh"],
+      "uncoveredCatalogClaims": []
+    },
+    {
+      "id": "vless",
+      "requiredCoreFeatures": [],
+      "interopCases": [
+        "VLESS",
+        "VLESS over WebSocket",
+        "VLESS over gRPC",
+        "VLESS over HTTP/2"
+      ],
+      "interopTests": ["interoperates_vless_reality_with_xray"],
+      "runners": [
+        "Tests/Interop/run-prebuilt-matrix.sh",
+        "Tests/Interop/run-prebuilt-reality.sh"
+      ],
+      "uncoveredCatalogClaims": []
+    },
+    {
+      "id": "trojan",
+      "requiredCoreFeatures": [],
+      "interopCases": ["Trojan", "Trojan over gRPC", "Trojan over WebSocket"],
+      "interopTests": [],
+      "runners": ["Tests/Interop/run-prebuilt-matrix.sh"],
+      "uncoveredCatalogClaims": []
+    },
+    {
+      "id": "hysteria2",
+      "requiredCoreFeatures": [],
+      "interopCases": ["Hysteria2", "Hysteria2 Salamander"],
+      "interopTests": [],
+      "runners": ["Tests/Interop/run-prebuilt-matrix.sh"],
+      "uncoveredCatalogClaims": []
+    },
+    {
+      "id": "tuic",
+      "requiredCoreFeatures": ["aether-tuic"],
+      "interopCases": ["TUIC v5"],
+      "interopTests": [],
+      "runners": ["Tests/Interop/run-prebuilt-matrix.sh"],
+      "uncoveredCatalogClaims": []
+    },
+    {
+      "id": "anytls",
+      "requiredCoreFeatures": [],
+      "interopCases": ["AnyTLS"],
+      "interopTests": [],
+      "runners": ["Tests/Interop/run-prebuilt-matrix.sh"],
+      "uncoveredCatalogClaims": []
+    },
+    {
+      "id": "wireguard",
+      "requiredCoreFeatures": ["wireguard"],
+      "interopCases": [],
+      "interopTests": ["interoperates_wireguard_with_wireguard_go_netstack"],
+      "runners": ["Tests/Interop/run-prebuilt-wireguard.sh"],
+      "uncoveredCatalogClaims": []
+    },
+    {
+      "id": "ssh",
+      "requiredCoreFeatures": ["ssh"],
+      "interopCases": [],
+      "interopTests": ["interoperates_with_openssh"],
+      "runners": ["Tests/Interop/test-openssh.sh"],
+      "validatedBehavior": [
+        "encrypted inline Ed25519 OpenSSH private key",
+        "private-key passphrase",
+        "strict host-key verification",
+        "two loopback authentication cycles across an sshd restart"
+      ],
+      "uncoveredCatalogClaims": []
+    },
+    {
+      "id": "shadowquic",
+      "requiredCoreFeatures": ["shadowquic"],
+      "interopCases": [],
+      "interopTests": [
+        "interoperates_shadowquic_with_mihomo_and_recovers_after_restart"
+      ],
+      "runners": ["Tests/Interop/run-prebuilt-shadowquic.sh"],
+      "uncoveredCatalogClaims": []
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "scope": "AetherRoute native share-link and node-input surface",
+  "notes": [
+    "Fixtures use loopback documentation-only credentials and never contact public proxy nodes.",
+    "Every case is normalized independently and must start on both embedded cores with network access denied.",
+    "Real interoperability is tracked separately by ProtocolReleaseMatrix.json."
+  ],
+  "cases": [
+    {"id":"http-plain-anonymous","protocol":"http","variant":"HTTP CONNECT without authentication","source":"https://wiki.metacubex.one/en/config/proxies/http/"},
+    {"id":"http-plain-basic","protocol":"http","variant":"HTTP CONNECT with percent-encoded Basic credentials","source":"https://wiki.metacubex.one/en/config/proxies/http/"},
+    {"id":"http-tls-basic","protocol":"http","variant":"HTTPS CONNECT with Basic credentials","source":"https://wiki.metacubex.one/en/config/proxies/http/"},
+    {"id":"http-ipv6","protocol":"http","variant":"HTTP CONNECT to an IPv6 literal","source":"https://wiki.metacubex.one/en/config/proxies/http/"},
+
+    {"id":"socks5-anonymous","protocol":"socks5","variant":"SOCKS5 without authentication","source":"https://wiki.metacubex.one/en/config/proxies/socks5/"},
+    {"id":"socks5-userpass","protocol":"socks5","variant":"SOCKS5 username and password authentication","source":"https://wiki.metacubex.one/en/config/proxies/socks5/"},
+    {"id":"socks-alias-ipv6","protocol":"socks5","variant":"socks scheme alias with an IPv6 literal","source":"https://wiki.metacubex.one/en/config/proxies/socks5/"},
+
+    {"id":"ss-sip002-aes128gcm","protocol":"shadowsocks","variant":"SIP002 Base64URL userinfo with AES-128-GCM","source":"https://shadowsocks.org/doc/sip002.html"},
+    {"id":"ss-sip002-chacha20","protocol":"shadowsocks","variant":"SIP002 Base64URL userinfo with ChaCha20-IETF-Poly1305","source":"https://shadowsocks.org/doc/sip002.html"},
+    {"id":"ss-sip002-2022-plain","protocol":"shadowsocks","variant":"SIP002 plain percent-encoded AEAD-2022 userinfo","source":"https://shadowsocks.org/doc/sip002.html"},
+    {"id":"ss-legacy-whole-base64","protocol":"shadowsocks","variant":"Legacy whole-body Base64 URI","source":"https://shadowsocks.org/doc/configs.html"},
+    {"id":"ss-empty-query-provider","protocol":"shadowsocks","variant":"Provider URI with an empty trailing query marker","source":"https://shadowsocks.org/doc/sip002.html"},
+    {"id":"ss-ipv6","protocol":"shadowsocks","variant":"SIP002 IPv6 endpoint","source":"https://shadowsocks.org/doc/sip002.html"},
+
+    {"id":"vmess-tcp-aead","protocol":"vmess","variant":"VMess AEAD over raw TCP","source":"https://www.v2fly.org/config/protocols/vmess.html"},
+    {"id":"vmess-tcp-tls","protocol":"vmess","variant":"VMess AEAD over TCP and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vmess/"},
+    {"id":"vmess-ws-tls","protocol":"vmess","variant":"VMess over WebSocket and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vmess/"},
+    {"id":"vmess-grpc-tls","protocol":"vmess","variant":"VMess over gRPC and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vmess/"},
+    {"id":"vmess-h2-tls","protocol":"vmess","variant":"VMess over HTTP/2 and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vmess/"},
+    {"id":"vmess-cipher-aes128gcm","protocol":"vmess","variant":"VMess AES-128-GCM payload security","source":"https://www.v2fly.org/config/protocols/vmess.html"},
+    {"id":"vmess-cipher-chacha20","protocol":"vmess","variant":"VMess ChaCha20-Poly1305 payload security","source":"https://www.v2fly.org/config/protocols/vmess.html"},
+    {"id":"vmess-url-safe-unpadded","protocol":"vmess","variant":"URL-safe unpadded Base64 configuration","source":"https://github.com/XTLS/Xray-core/discussions/716"},
+
+    {"id":"vless-tcp-private","protocol":"vless","variant":"VLESS over raw TCP for a private endpoint","source":"https://xtls.github.io/en/config/outbounds/vless.html"},
+    {"id":"vless-tcp-tls","protocol":"vless","variant":"VLESS over TCP and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vless/"},
+    {"id":"vless-reality-vision","protocol":"vless","variant":"VLESS TCP with REALITY and XTLS Vision","source":"https://xtls.github.io/en/config/outbounds/vless.html"},
+    {"id":"vless-ws-tls","protocol":"vless","variant":"VLESS over WebSocket and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vless/"},
+    {"id":"vless-grpc-tls","protocol":"vless","variant":"VLESS over gRPC and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vless/"},
+    {"id":"vless-h2-tls","protocol":"vless","variant":"VLESS over HTTP/2 and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vless/"},
+    {"id":"vless-query-aliases","protocol":"vless","variant":"Common peer, publickey, shortid and fingerprint aliases","source":"https://github.com/XTLS/Xray-core/discussions/716"},
+    {"id":"vless-ipv6","protocol":"vless","variant":"VLESS IPv6 endpoint","source":"https://github.com/XTLS/Xray-core/discussions/716"},
+
+    {"id":"trojan-tcp-tls","protocol":"trojan","variant":"Trojan over raw TLS","source":"https://wiki.metacubex.one/en/config/proxies/trojan/"},
+    {"id":"trojan-ws-tls","protocol":"trojan","variant":"Trojan over WebSocket and TLS","source":"https://wiki.metacubex.one/en/config/proxies/trojan/"},
+    {"id":"trojan-grpc-tls","protocol":"trojan","variant":"Trojan over gRPC and TLS","source":"https://wiki.metacubex.one/en/config/proxies/trojan/"},
+    {"id":"trojan-percent-password","protocol":"trojan","variant":"Trojan percent-encoded password","source":"https://wiki.metacubex.one/en/config/proxies/trojan/"},
+
+    {"id":"hy2-standard","protocol":"hysteria2","variant":"Hysteria2 TLS authentication","source":"https://v2.hysteria.network/docs/developers/URI-Scheme/"},
+    {"id":"hy2-alias","protocol":"hysteria2","variant":"hy2 scheme alias","source":"https://v2.hysteria.network/docs/developers/URI-Scheme/"},
+    {"id":"hy2-salamander","protocol":"hysteria2","variant":"Hysteria2 with Salamander obfuscation","source":"https://v2.hysteria.network/docs/developers/URI-Scheme/"},
+    {"id":"hy2-bandwidth","protocol":"hysteria2","variant":"Hysteria2 upload and download bandwidth hints","source":"https://wiki.metacubex.one/en/config/proxies/hysteria2/"},
+
+    {"id":"tuic-native-bbr","protocol":"tuic","variant":"TUIC v5 native UDP relay with BBR","source":"https://github.com/EAimTY/tuic/blob/dev/SPEC.md"},
+    {"id":"tuic-quic-cubic","protocol":"tuic","variant":"TUIC v5 QUIC-stream UDP relay with Cubic","source":"https://github.com/EAimTY/tuic/blob/dev/SPEC.md"},
+    {"id":"tuic-newreno-aliases","protocol":"tuic","variant":"TUIC v5 underscore query aliases and New Reno","source":"https://wiki.metacubex.one/en/config/proxies/tuic/"},
+
+    {"id":"anytls-standard","protocol":"anytls","variant":"AnyTLS with SNI","source":"https://wiki.metacubex.one/en/config/proxies/anytls/"},
+    {"id":"anytls-insecure-alias","protocol":"anytls","variant":"AnyTLS peer and allowInsecure aliases","source":"https://wiki.metacubex.one/en/config/proxies/anytls/"},
+
+    {"id":"wireguard-ipv4","protocol":"wireguard","variant":"WireGuard IPv4 with AllowedIPs and MTU","source":"https://wiki.metacubex.one/en/config/proxies/wireguard/"},
+    {"id":"wireguard-dualstack-psk","protocol":"wireguard","variant":"WireGuard dual stack with pre-shared key","source":"https://www.wireguard.com/protocol/"},
+
+    {"id":"ssh-password","protocol":"ssh","variant":"SSH password authentication","source":"https://wiki.metacubex.one/en/config/proxies/ssh/"},
+    {"id":"ssh-percent-credentials","protocol":"ssh","variant":"SSH percent-encoded credentials and IPv6 endpoint","source":"https://wiki.metacubex.one/en/config/proxies/ssh/"},
+
+    {"id":"shadowquic-bbr","protocol":"shadowquic","variant":"ShadowQUIC with BBR","source":"https://github.com/Watfaq/clash-rs/blob/227255546187e509795b00c68d8cead738f1db7d/clash-lib/src/config/internal/proxy.rs"},
+    {"id":"shadowquic-cubic","protocol":"shadowquic","variant":"ShadowQUIC with Cubic and custom initial MTU","source":"https://github.com/Watfaq/clash-rs/blob/227255546187e509795b00c68d8cead738f1db7d/clash-lib/src/config/internal/proxy.rs"}
+  ]
+}

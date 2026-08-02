@@ -1,0 +1,128 @@
+{
+  "log": {"level": "warn", "timestamp": true},
+  "inbounds": [
+    {
+      "type": "socks", "tag": "socks-in",
+      "listen": "127.0.0.1", "listen_port": 59000,
+      "users": [{"username": "interop", "password": "proxy-password"}]
+    },
+    {
+      "type": "http", "tag": "http-in",
+      "listen": "127.0.0.1", "listen_port": 59001,
+      "users": [{"username": "interop", "password": "proxy-password"}]
+    },
+    {
+      "type": "shadowsocks", "tag": "ss-in",
+      "listen": "127.0.0.1", "listen_port": 59002,
+      "method": "aes-128-gcm", "password": "shadow-password"
+    },
+    {
+      "type": "vmess", "tag": "vmess-in",
+      "listen": "127.0.0.1", "listen_port": 59003,
+      "users": [{"name": "interop", "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811", "alterId": 0}]
+    },
+    {
+      "type": "vless", "tag": "vless-in",
+      "listen": "127.0.0.1", "listen_port": 59004,
+      "users": [{"name": "interop", "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811", "flow": ""}]
+    },
+    {
+      "type": "trojan", "tag": "trojan-in",
+      "listen": "127.0.0.1", "listen_port": 59005,
+      "users": [{"name": "interop", "password": "trojan-password"}],
+      "tls": {"enabled": true, "certificate_path": "__CERT__", "key_path": "__KEY__"}
+    },
+    {
+      "type": "anytls", "tag": "anytls-in",
+      "listen": "127.0.0.1", "listen_port": 59006,
+      "users": [{"name": "interop", "password": "anytls-password"}],
+      "tls": {"enabled": true, "certificate_path": "__CERT__", "key_path": "__KEY__"}
+    },
+    {
+      "type": "hysteria2", "tag": "hy2-in",
+      "listen": "127.0.0.1", "listen_port": 59007,
+      "users": [{"name": "interop", "password": "hy2-password"}],
+      "tls": {"enabled": true, "certificate_path": "__CERT__", "key_path": "__KEY__"}
+    },
+    {
+      "type": "tuic", "tag": "tuic-in",
+      "listen": "127.0.0.1", "listen_port": 59008,
+      "users": [{"name": "interop", "uuid": "42424242-4242-4242-4242-424242424242", "password": "clean-room-password"}],
+      "congestion_control": "bbr", "zero_rtt_handshake": false,
+      "tls": {"enabled": true, "alpn": ["h3"], "certificate_path": "__CERT__", "key_path": "__KEY__"}
+    },
+    {
+      "type": "vmess", "tag": "vmess-ws-in",
+      "listen": "127.0.0.1", "listen_port": 59009,
+      "users": [{"name": "interop", "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811", "alterId": 0}],
+      "transport": {"type": "ws", "path": "/vmess-ws"}
+    },
+    {
+      "type": "vmess", "tag": "vmess-grpc-in",
+      "listen": "127.0.0.1", "listen_port": 59010,
+      "users": [{"name": "interop", "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811", "alterId": 0}],
+      "transport": {"type": "grpc", "service_name": "vmess-grpc"}
+    },
+    {
+      "type": "vmess", "tag": "vmess-h2-in",
+      "listen": "127.0.0.1", "listen_port": 59011,
+      "users": [{"name": "interop", "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811", "alterId": 0}],
+      "tls": {"enabled": true, "certificate_path": "__CERT__", "key_path": "__KEY__"},
+      "transport": {"type": "http", "host": ["localhost"], "path": "/vmess-h2"}
+    },
+    {
+      "type": "vless", "tag": "vless-ws-in",
+      "listen": "127.0.0.1", "listen_port": 59012,
+      "users": [{"name": "interop", "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811", "flow": ""}],
+      "transport": {"type": "ws", "path": "/vless-ws"}
+    },
+    {
+      "type": "vless", "tag": "vless-grpc-in",
+      "listen": "127.0.0.1", "listen_port": 59013,
+      "users": [{"name": "interop", "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811", "flow": ""}],
+      "transport": {"type": "grpc", "service_name": "vless-grpc"}
+    },
+    {
+      "type": "trojan", "tag": "trojan-grpc-in",
+      "listen": "127.0.0.1", "listen_port": 59014,
+      "users": [{"name": "interop", "password": "trojan-password"}],
+      "tls": {"enabled": true, "certificate_path": "__CERT__", "key_path": "__KEY__"},
+      "transport": {"type": "grpc", "service_name": "trojan-grpc"}
+    },
+    {
+      "type": "http", "tag": "https-in",
+      "listen": "127.0.0.1", "listen_port": 59015,
+      "users": [{"username": "interop", "password": "proxy-password"}],
+      "tls": {"enabled": true, "certificate_path": "__CERT__", "key_path": "__KEY__"}
+    },
+    {
+      "type": "shadowsocks", "tag": "ss-2022-in",
+      "listen": "127.0.0.1", "listen_port": 59016,
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "type": "hysteria2", "tag": "hy2-obfs-in",
+      "listen": "127.0.0.1", "listen_port": 59017,
+      "users": [{"name": "interop", "password": "hy2-password"}],
+      "obfs": {"type": "salamander", "password": "salamander-password"},
+      "tls": {"enabled": true, "certificate_path": "__CERT__", "key_path": "__KEY__"}
+    },
+    {
+      "type": "vless", "tag": "vless-h2-in",
+      "listen": "127.0.0.1", "listen_port": 59018,
+      "users": [{"name": "interop", "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811", "flow": ""}],
+      "tls": {"enabled": true, "certificate_path": "__CERT__", "key_path": "__KEY__"},
+      "transport": {"type": "http", "host": ["localhost"], "path": "/vless-h2"}
+    },
+    {
+      "type": "trojan", "tag": "trojan-ws-in",
+      "listen": "127.0.0.1", "listen_port": 59019,
+      "users": [{"name": "interop", "password": "trojan-password"}],
+      "tls": {"enabled": true, "certificate_path": "__CERT__", "key_path": "__KEY__"},
+      "transport": {"type": "ws", "path": "/trojan-ws"}
+    }
+  ],
+  "outbounds": [{"type": "direct", "tag": "direct"}],
+  "route": {"final": "direct"}
+}

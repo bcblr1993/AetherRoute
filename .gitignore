@@ -1,0 +1,32 @@
+.DS_Store
+.build/
+.derivedData*/
+DerivedData/
+*.xcresult/
+*.xcuserstate
+xcuserdata/
+.tools/
+AetherRoute.xcodeproj/
+build/
+Core/Artifacts/
+outputs/
+work/
+
+# Local configuration, signing material, and distributable artifacts.
+.env
+.env.*
+!.env.example
+*.cer
+*.dmg
+*.mobileprovision
+*.p12
+*.pkg
+*.provisionprofile
+AetherRouteSigning.xcconfig
+Config/Signing.json
+
+# Owner-operated distribution secrets and mutable state never belong in Git.
+Services/DistributionService/private/
+Services/DistributionService/runtime/
+Services/DistributionService/*.raw
+Services/DistributionService/licenses*.json

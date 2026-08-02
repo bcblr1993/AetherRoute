@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 2,
+  "teamID": "TEAMID1234",
+  "applicationIdentifierPrefix": "TEAMID1234",
+  "appGroup": "group.com.yourcompany.aetherroute",
+  "keychainAccessGroup": "TEAMID1234.com.yourcompany.aetherroute.shared",
+  "developerIDIdentitySHA1": "0000000000000000000000000000000000000000",
+  "profiles": [
+    {
+      "role": "transparent-proxy",
+      "bundleID": "com.yourcompany.aetherroute.transparent-proxy",
+      "path": "/absolute/path/to/transparent-proxy.provisionprofile",
+      "networkExtensions": ["app-proxy-provider"]
+    },
+    {
+      "role": "direct-host",
+      "bundleID": "com.yourcompany.aetherroute",
+      "path": "/absolute/path/to/developer-id-host.provisionprofile",
+      "networkExtensions": [
+        "app-proxy-provider",
+        "packet-tunnel-provider"
+      ]
+    },
+    {
+      "role": "packet-tunnel",
+      "bundleID": "com.yourcompany.aetherroute.tunnel",
+      "path": "/absolute/path/to/developer-id-packet-tunnel.provisionprofile",
+      "networkExtensions": ["packet-tunnel-provider"]
+    }
+  ]
+}

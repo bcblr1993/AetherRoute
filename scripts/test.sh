@@ -1,0 +1,145 @@
+#!/bin/sh
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+TEST_TEMP=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-test.XXXXXX")
+DERIVED_DATA_PATH=${AETHERROUTE_DERIVED_DATA_PATH:-"$TEST_TEMP/DerivedData"}
+cleanup() {
+  find "$TEST_TEMP" -depth -delete 2>/dev/null || true
+}
+trap cleanup EXIT HUP INT TERM
+
+"$ROOT/scripts/bootstrap.sh"
+"$ROOT/scripts/test_signing_overrides.sh"
+"$ROOT/scripts/test_temporary_cleanup_guards.sh"
+"$ROOT/scripts/test_signed_network_extension_guards.sh"
+"$ROOT/scripts/test_signed_network_extension_evidence.sh"
+"$ROOT/scripts/test_postinstall_evidence.sh"
+"$ROOT/scripts/test_promotion_pipeline.sh"
+"$ROOT/scripts/test_ui_isolation_guards.sh"
+"$ROOT/scripts/test_release_pipeline.sh"
+"$ROOT/scripts/test_release_soak_evidence.sh"
+"$ROOT/scripts/test_remote_arm64_guards.sh"
+"$ROOT/scripts/test_soak_result_verifier.sh"
+"$ROOT/scripts/test_soak_trend_verifier.sh"
+"$ROOT/scripts/test_update_envelope.sh"
+"$ROOT/scripts/test_distribution_staging.sh"
+"$ROOT/scripts/test_distribution_service.sh"
+"$ROOT/scripts/test_dmg_upgrade_rollback.sh"
+"$ROOT/scripts/verify_independent_distribution_boundary.sh"
+"$ROOT/scripts/test_large_import_performance.sh"
+"$ROOT/scripts/test_udp_integrity.sh"
+"$ROOT/scripts/test_tcp_performance.sh"
+"$ROOT/scripts/verify_app_icon.sh"
+"$ROOT/scripts/verify_localizations.sh"
+"$ROOT/scripts/verify_protocol_matrix.sh"
+"$ROOT/scripts/test_protocol_interop_runner.sh"
+"$ROOT/scripts/verify_transparent_proxy_metadata.sh" source
+"$ROOT/scripts/verify_product_metadata.sh" source
+"$ROOT/scripts/verify_licenses.sh" source
+
+plutil -lint \
+  "$ROOT/Config/AetherRoute.entitlements" \
+  "$ROOT/Config/AetherRoutePacketTunnel.entitlements" \
+  "$ROOT/Config/AetherRouteTransparentProxy.entitlements"
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.security.app-sandbox' \
+  "$ROOT/Config/AetherRoute.entitlements")" = true
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.security.files.user-selected.read-write' \
+  "$ROOT/Config/AetherRoute.entitlements")" = true
+if /usr/libexec/PlistBuddy -c \
+  'Print :com.apple.security.files.user-selected.read-only' \
+  "$ROOT/Config/AetherRoute.entitlements" >/dev/null 2>&1; then
+  echo "Host must use one explicit read-write user-selected file entitlement" >&2
+  exit 1
+fi
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.security.app-sandbox' \
+  "$ROOT/Config/AetherRoutePacketTunnel.entitlements")" = true
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.developer.networking.networkextension:0' \
+  "$ROOT/Config/AetherRoute.entitlements")" = app-proxy-provider
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.developer.networking.networkextension:1' \
+  "$ROOT/Config/AetherRoute.entitlements")" = packet-tunnel-provider
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.developer.networking.networkextension:0' \
+  "$ROOT/Config/AetherRoutePacketTunnel.entitlements")" = packet-tunnel-provider
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.developer.networking.networkextension:0' \
+  "$ROOT/Config/AetherRouteTransparentProxy.entitlements")" = app-proxy-provider
+for ENTITLEMENTS in \
+  "$ROOT/Config/AetherRoute.entitlements" \
+  "$ROOT/Config/AetherRoutePacketTunnel.entitlements" \
+  "$ROOT/Config/AetherRouteTransparentProxy.entitlements"
+do
+  test "$(/usr/libexec/PlistBuddy -c \
+    'Print :keychain-access-groups:0' "$ENTITLEMENTS")" = \
+    '$(AppIdentifierPrefix)$(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)'
+done
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.security.application-groups:0' \
+  "$ROOT/Config/AetherRouteTransparentProxy.entitlements")" = \
+  '$(AETHERROUTE_APP_GROUP)'
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.security.network.client' \
+  "$ROOT/Config/AetherRouteTransparentProxy.entitlements")" = true
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.security.network.server' \
+  "$ROOT/Config/AetherRoutePacketTunnel.entitlements")" = true
+for ENTITLEMENTS in \
+  "$ROOT/Config/AetherRoute.entitlements" \
+  "$ROOT/Config/AetherRouteTransparentProxy.entitlements"
+do
+  if /usr/libexec/PlistBuddy -c \
+    'Print :com.apple.security.network.server' \
+    "$ENTITLEMENTS" >/dev/null 2>&1; then
+    echo "Only the packet tunnel may request network.server" >&2
+    exit 1
+  fi
+done
+
+xcodebuild \
+  -project "$ROOT/AetherRoute.xcodeproj" \
+  -scheme AetherRoute \
+  -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath "$DERIVED_DATA_PATH" \
+  CODE_SIGNING_ALLOWED=YES \
+  CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGN_ENTITLEMENTS= \
+  CODE_SIGN_IDENTITY=- \
+  AD_HOC_CODE_SIGNING_ALLOWED=YES \
+  SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+  build-for-testing
+
+"$ROOT/scripts/verify_transparent_proxy_metadata.sh" built \
+  "$DERIVED_DATA_PATH/Build/Products/Debug"
+"$ROOT/scripts/verify_product_metadata.sh" built \
+  "$DERIVED_DATA_PATH/Build/Products/Debug"
+"$ROOT/scripts/verify_licenses.sh" built \
+  "$DERIVED_DATA_PATH/Build/Products/Debug"
+if strings \
+  "$DERIVED_DATA_PATH/Build/Products/Debug/AetherRoute.app/Contents/MacOS/AetherRoute" \
+  | grep -F 'AETHERROUTE_PERFORMANCE_MEASUREMENT' >/dev/null; then
+  echo "Performance measurement fixture escaped into the standard app build" >&2
+  exit 1
+fi
+
+# Xcode 26 occasionally fails to instantiate a valid, ad-hoc-signed macOS
+# test bundle through test-without-building. Run the produced bundle directly;
+# this keeps the local and remote gate deterministic while still building the
+# complete independent app and both embedded Network Extensions above.
+for TEST_BUNDLE in \
+  "$DERIVED_DATA_PATH/Build/Products/Debug/AetherRouteTests.xctest" \
+  "$DERIVED_DATA_PATH/Build/Products/Debug/AetherRouteTransparentProxySupportTests.xctest" \
+  "$DERIVED_DATA_PATH/Build/Products/Debug/AetherRouteFlowCoreBridgeTests.xctest"
+do
+  codesign --verify --deep --strict "$TEST_BUNDLE"
+  xcrun xctest "$TEST_BUNDLE"
+done
+"$ROOT/scripts/core_smoke.sh"
+"$ROOT/scripts/core_smoke_direct.sh"
+"$ROOT/scripts/test_local_proxy.sh"
+"$ROOT/scripts/test_manual_nodes.sh"
+"$ROOT/scripts/test_protocol_input_compatibility.sh"

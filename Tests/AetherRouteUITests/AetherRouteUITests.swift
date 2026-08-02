@@ -1,0 +1,2434 @@
+import CryptoKit
+import Foundation
+import XCTest
+
+@MainActor
+final class AetherRouteUITests: XCTestCase {
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        let requiresIsolatedWorkspace = ProcessInfo.processInfo.environment[
+            "AETHERROUTE_UI_TEST_ISOLATED_HOME"
+        ] != nil
+        addUIInterruptionMonitor(
+            withDescription: "Deny broad protected-folder access"
+        ) { alert in
+            MainActor.assumeIsolated {
+                let automationRationale = alert.staticTexts[
+                    "Access is necessary for automated testing."
+                ]
+                guard automationRationale.exists else {
+                    return false
+                }
+                if requiresIsolatedWorkspace {
+                    XCTFail(
+                        "The temporary UI test workspace requested protected-folder access."
+                    )
+                }
+                for label in ["Don’t Allow", "Don't Allow", "不允许"] {
+                    let localizedDenyButton = alert.buttons[label]
+                    if localizedDenyButton.exists
+                        && localizedDenyButton.isHittable
+                    {
+                        localizedDenyButton.click()
+                        return true
+                    }
+                }
+                let stableDenyButton = alert.buttons["action-button-2"]
+                if stableDenyButton.exists && stableDenyButton.isHittable {
+                    stableDenyButton.click()
+                    return true
+                }
+                return false
+            }
+        }
+    }
+
+    func testOverviewPassesAccessibilityAuditInLightAndDark() throws {
+        try auditPrimaryPage(
+            button: "Overview",
+            landmark: "Traffic routing active"
+        )
+    }
+
+    func testProxiesPassAccessibilityAuditInLightAndDark() throws {
+        try auditPrimaryPage(button: "Proxies", landmark: "Proxy groups")
+    }
+
+    func testConnectionsPassAccessibilityAuditInLightAndDark() throws {
+        try auditPrimaryPage(
+            button: "Connections",
+            landmark: "Current session"
+        )
+    }
+
+    func testProfilesPassAccessibilityAuditInLightAndDark() throws {
+        try auditPrimaryPage(button: "Profiles", landmark: "Import Profile…")
+    }
+
+    func testRulesPassAccessibilityAuditInLightAndDark() throws {
+        try auditPrimaryPage(button: "Rules", landmark: "Evaluation order")
+    }
+
+    func testDNSPassesAccessibilityAuditInLightAndDark() throws {
+        try auditPrimaryPage(button: "DNS", landmark: "DNS & Fake-IP")
+    }
+
+    func testPrimaryNavigationExposesReachableDestinations() {
+        let app = launchReviewApp(appearance: "dark")
+        defer { app.terminate() }
+
+        XCTAssertTrue(
+            app.windows["main-AppWindow-1"].waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.buttons["Disconnect"].isEnabled)
+        app.buttons["Proxies"].click()
+        XCTAssertTrue(app.staticTexts["Proxy groups"].waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            app.staticTexts.matching(
+                NSPredicate(format: "value CONTAINS %@", "Singapore Edge")
+            ).firstMatch.exists
+        )
+        app.buttons["Connections"].click()
+        XCTAssertTrue(app.staticTexts["Current session"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Live bounded telemetry"].exists)
+        app.buttons["Profiles"].click()
+        XCTAssertTrue(app.buttons["Import Profile…"].waitForExistence(timeout: 2))
+        app.buttons["Rules"].click()
+        XCTAssertTrue(app.staticTexts["Evaluation order"].waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            app.staticTexts.matching(
+                NSPredicate(format: "value CONTAINS %@", "DOMAIN-SUFFIX")
+            ).firstMatch.exists
+        )
+        app.buttons["DNS"].click()
+        XCTAssertTrue(app.staticTexts["DNS & Fake-IP"].waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            app.staticTexts.matching(
+                NSPredicate(format: "value CONTAINS %@", "Fake-IP")
+            ).firstMatch.exists
+        )
+    }
+
+    func testMainAndSettingsUseNativeCompactWindowChrome() {
+        let app = launchReviewApp(appearance: "dark")
+        defer { app.terminate() }
+
+        let mainWindow = app.windows["main-AppWindow-1"]
+        XCTAssertTrue(mainWindow.waitForExistence(timeout: 5))
+        assertNativeCompactWindowChrome(mainWindow)
+
+        openSettings(in: app, tabLabel: "General")
+        let settingsWindow = app.windows[
+            "com_apple_SwiftUI_Settings_window"
+        ]
+        XCTAssertTrue(settingsWindow.waitForExistence(timeout: 5))
+        assertNativeCompactWindowChrome(settingsWindow)
+    }
+
+    func testPageNavigationPreservesWindowSizeWithinEachWindowClass() {
+        let app = launchReviewApp(
+            appearance: "light",
+            windowSize: "940x640"
+        )
+        defer { app.terminate() }
+
+        let mainWindow = app.windows["main-AppWindow-1"]
+        XCTAssertTrue(mainWindow.waitForExistence(timeout: 5))
+        let mainSize = mainWindow.frame.size
+        for (button, landmark) in [
+            ("Overview", "Current route"),
+            ("Proxies", "Proxy groups"),
+            ("Connections", "Current session"),
+            ("Profiles", "Import Profile…"),
+            ("Rules", "Evaluation order"),
+            ("DNS", "DNS & Fake-IP"),
+        ] {
+            app.buttons[button].click()
+            XCTAssertTrue(
+                app.staticTexts[landmark].waitForExistence(timeout: 2)
+                    || app.buttons[landmark].waitForExistence(timeout: 2)
+            )
+            assertWindowSize(
+                mainWindow,
+                equals: mainSize,
+                context: "main page \(button)"
+            )
+        }
+
+        openSettings(in: app, tabLabel: "General")
+        let settingsWindow = app.windows[
+            "com_apple_SwiftUI_Settings_window"
+        ]
+        XCTAssertTrue(settingsWindow.waitForExistence(timeout: 5))
+        let settingsSize = settingsWindow.frame.size
+        for tab in [
+            "General", "Privacy", "Bypass", "Diagnostics", "Account",
+            "Licenses", "About",
+        ] {
+            selectSettingsTab(tab, in: settingsWindow, app: app)
+            assertWindowSize(
+                settingsWindow,
+                equals: settingsSize,
+                context: "settings page \(tab)"
+            )
+        }
+
+        assertWindowSize(
+            mainWindow,
+            equals: mainSize,
+            context: "main window after Settings navigation"
+        )
+    }
+
+    func testBilingualNavigationResponsiveness() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["AETHERROUTE_RUN_UI_RESPONSIVENESS"] == "YES" else {
+            throw XCTSkip(
+                "The 30-minute Release UI responsiveness gate requires explicit opt-in."
+            )
+        }
+        guard let isolatedHome = environment[
+            "AETHERROUTE_UI_TEST_ISOLATED_HOME"
+        ], let evidencePath = environment[
+            "AETHERROUTE_UI_RESPONSIVENESS_EVIDENCE"
+        ] else {
+            XCTFail("The responsiveness gate requires isolated output paths.")
+            return
+        }
+
+        let requestedDuration = Int(
+            environment["AETHERROUTE_UI_RESPONSIVENESS_SECONDS"] ?? "1800"
+        ) ?? 0
+        let isSmoke = environment["AETHERROUTE_UI_RESPONSIVENESS_SMOKE"] == "YES"
+        guard requestedDuration > 0,
+              isSmoke || requestedDuration >= 1_800 else {
+            XCTFail(
+                "Short responsiveness runs require AETHERROUTE_UI_RESPONSIVENESS_SMOKE=YES."
+            )
+            return
+        }
+        let maximumP95Milliseconds = Double(
+            environment["AETHERROUTE_UI_RESPONSIVENESS_MAX_P95_MS"] ?? "120"
+        ) ?? 0
+        guard maximumP95Milliseconds > 0 else {
+            XCTFail("The responsiveness p95 budget must be positive.")
+            return
+        }
+
+        let manager = FileManager.default
+        let appSamplesURL = URL(fileURLWithPath: isolatedHome)
+            .appendingPathComponent("ui-responsiveness-app.csv")
+        let evidenceURL = URL(fileURLWithPath: evidencePath)
+        try manager.createDirectory(
+            at: evidenceURL,
+            withIntermediateDirectories: true
+        )
+
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "connected",
+            language: "en",
+            windowSize: "940x640",
+            responsivenessOutput: appSamplesURL.path
+        )
+        defer { app.terminate() }
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+
+        let startedAt = Date()
+        let deadline = startedAt.addingTimeInterval(
+            TimeInterval(requestedDuration)
+        )
+        var cycles = 0
+        repeat {
+            exerciseResponsiveMainNavigation(
+                in: app,
+                destinations: [
+                    ("Proxies", "proxies-page"),
+                    ("Connections", "connections-page"),
+                    ("Profiles", "profiles-page"),
+                    ("Rules", "rules-page"),
+                    ("DNS", "dns-page"),
+                    ("Overview", "overview-page"),
+                ]
+            )
+            exerciseResponsiveSettingsNavigation(
+                in: app,
+                tabs: [
+                    "Privacy", "Bypass", "Diagnostics", "Account",
+                    "Licenses", "About", "General",
+                ]
+            )
+            changeResponsiveLanguage(
+                to: "简体中文",
+                expectedMainNavigation: "概览",
+                in: app
+            )
+            closeResponsiveSettings(in: app)
+
+            exerciseResponsiveMainNavigation(
+                in: app,
+                destinations: [
+                    ("代理", "proxies-page"),
+                    ("连接", "connections-page"),
+                    ("配置", "profiles-page"),
+                    ("规则", "rules-page"),
+                    ("DNS", "dns-page"),
+                    ("概览", "overview-page"),
+                ]
+            )
+            exerciseResponsiveSettingsNavigation(
+                in: app,
+                tabs: [
+                    "隐私", "绕过", "诊断", "账户", "开源许可", "关于",
+                    "通用",
+                ]
+            )
+            changeResponsiveLanguage(
+                to: "English",
+                expectedMainNavigation: "Overview",
+                in: app
+            )
+            closeResponsiveSettings(in: app)
+            cycles += 1
+        } while Date() < deadline
+
+        Thread.sleep(forTimeInterval: 1)
+        let samples = try readUIResponsivenessSamples(from: appSamplesURL)
+        let requiredActions = [
+            "main.overview", "main.proxies", "main.connections",
+            "main.profiles", "main.rules", "main.dns",
+            "settings.general", "settings.privacy", "settings.bypass",
+            "settings.diagnostics", "settings.account", "settings.licenses",
+            "settings.about",
+        ]
+        for language in ["en", "zh-Hans"] {
+            for action in requiredActions {
+                XCTAssertTrue(
+                    samples.contains {
+                        $0.language == language && $0.action == action
+                    },
+                    "Missing responsiveness sample for \(language) \(action)."
+                )
+            }
+        }
+
+        let sortedDurations = samples.map(\.durationMilliseconds).sorted()
+        let percentileIndex = min(
+            sortedDurations.count - 1,
+            max(0, Int(ceil(Double(sortedDurations.count) * 0.95)) - 1)
+        )
+        let p95Milliseconds = sortedDurations[percentileIndex]
+        let maximumMilliseconds = sortedDurations.last ?? 0
+        let elapsedSeconds = Int(Date().timeIntervalSince(startedAt))
+
+        let retainedSamplesURL = evidenceURL.appendingPathComponent(
+            "navigation-samples.csv"
+        )
+        try Data(contentsOf: appSamplesURL).write(
+            to: retainedSamplesURL,
+            options: .withoutOverwriting
+        )
+        let result = """
+        schema=1
+        status=\(isSmoke ? "smoke" : "passed")
+        requested_seconds=\(requestedDuration)
+        elapsed_seconds=\(elapsedSeconds)
+        bilingual_cycles=\(cycles)
+        sample_count=\(samples.count)
+        p95_action_ms=\(String(format: "%.3f", p95Milliseconds))
+        maximum_action_ms=\(String(format: "%.3f", maximumMilliseconds))
+        maximum_p95_action_ms=\(String(format: "%.3f", maximumP95Milliseconds))
+        languages=en,zh-Hans
+        main_pages=6
+        settings_pages=7
+        network_extension=disabled
+        \n
+        """
+        try Data(result.utf8).write(
+            to: evidenceURL.appendingPathComponent("result.txt"),
+            options: .withoutOverwriting
+        )
+        XCTAssertLessThanOrEqual(
+            p95Milliseconds,
+            maximumP95Milliseconds,
+            "Application-side navigation p95 exceeded the release budget."
+        )
+    }
+
+    func testRuntimeStatesExposeTruthfulPrimaryActions() {
+        let cases = [
+            (state: "loading", title: "Preparing", enabled: false),
+            (state: "disconnected", title: "Connect", enabled: true),
+            (state: "connecting", title: "Cancel", enabled: true),
+            (state: "connected", title: "Disconnect", enabled: true),
+            (state: "disconnecting", title: "Disconnecting", enabled: false),
+            (state: "failed", title: "Retry", enabled: true),
+        ]
+
+        for item in cases {
+            let app = launchReviewApp(appearance: "light", state: item.state)
+            XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+            let button = app.buttons["primary-connection-button"]
+            XCTAssertTrue(button.exists)
+            XCTAssertEqual(button.label, item.title)
+            XCTAssertEqual(button.isEnabled, item.enabled)
+            app.terminate()
+        }
+    }
+
+    func testPrivacyDisclosureBlocksNetworkFeaturesUntilAccepted() throws {
+        for appearance in ["light", "dark"] {
+            do {
+                let auditApp = launchReviewApp(
+                    appearance: appearance,
+                    privacyPending: true,
+                    windowSize: "780x560"
+                )
+                defer { auditApp.terminate() }
+
+                XCTAssertTrue(
+                    mainProductRoot(in: auditApp).waitForExistence(timeout: 5)
+                )
+                XCTAssertTrue(auditApp.staticTexts["Your Network Privacy"].exists)
+                XCTAssertTrue(auditApp.staticTexts["No sale or tracking"].exists)
+                XCTAssertFalse(auditApp.buttons["Connect"].exists)
+                XCTAssertFalse(auditApp.buttons["Import Profile…"].exists)
+                try auditProductAccessibility(in: auditApp)
+            }
+
+            do {
+                let interactionApp = launchReviewApp(
+                    appearance: appearance,
+                    privacyPending: true,
+                    windowSize: "780x560"
+                )
+                defer { interactionApp.terminate() }
+
+                let consentButton = interactionApp.buttons[
+                    "I Understand and Continue"
+                ]
+                XCTAssertTrue(consentButton.waitForExistence(timeout: 2))
+                XCTAssertTrue(consentButton.isEnabled)
+                let mainWindow = interactionApp.windows["main-AppWindow-1"]
+                XCTAssertTrue(
+                    mainWindow.frame.contains(consentButton.frame),
+                    "Privacy consent was clipped outside the main window."
+                )
+                consentButton.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+                ).click()
+
+                XCTAssertTrue(
+                    interactionApp.buttons["Overview"].waitForExistence(timeout: 2)
+                )
+                XCTAssertFalse(
+                    interactionApp.staticTexts["Your Network Privacy"].exists
+                )
+            }
+        }
+    }
+
+    func testNoProfileStateRemainsUsableAndCannotConnect() {
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "disconnected",
+            profileEmpty: true,
+            windowSize: "780x560"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        let connectButton = app.buttons["primary-connection-button"]
+        XCTAssertEqual(connectButton.label, "Connect")
+        XCTAssertFalse(connectButton.isEnabled)
+
+        app.buttons["Profiles"].click()
+        XCTAssertTrue(app.staticTexts["No active profile"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["Import Profile…"].isHittable)
+        app.buttons["Proxies"].click()
+        XCTAssertTrue(
+            app.staticTexts["No proxies yet"].waitForExistence(timeout: 2)
+        )
+        app.buttons["Rules"].click()
+        XCTAssertTrue(
+            app.staticTexts["No rule set loaded"].waitForExistence(timeout: 2)
+        )
+        app.buttons["DNS"].click()
+        XCTAssertTrue(
+            app.staticTexts["No DNS policy loaded"].waitForExistence(timeout: 2)
+        )
+    }
+
+    func testCommandNumberShortcutsNavigateWithoutPointerInput() {
+        let app = launchReviewApp(appearance: "dark")
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        app.typeKey("5", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["Evaluation order"].waitForExistence(timeout: 2))
+        app.typeKey("1", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["Current route"].waitForExistence(timeout: 2))
+        app.typeKey("6", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["DNS & Fake-IP"].waitForExistence(timeout: 2))
+    }
+
+    func testSimplifiedChineseCoreExperienceAtMinimumWindowSize() throws {
+        let app = launchReviewApp(
+            appearance: "light",
+            language: "zh-Hans",
+            windowSize: "780x560"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["概览"].exists)
+        XCTAssertTrue(app.staticTexts["流量路由已启用"].exists)
+        XCTAssertTrue(app.buttons["断开连接"].isEnabled)
+        XCTAssertTrue(app.buttons["代理"].isHittable)
+        XCTAssertTrue(app.buttons["连接"].isHittable)
+        XCTAssertTrue(app.buttons["配置"].isHittable)
+        XCTAssertTrue(app.buttons["规则"].isHittable)
+        XCTAssertFalse(
+            app.staticTexts.matching(
+                NSPredicate(
+                    format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@",
+                    "down",
+                    "down"
+                )
+            ).firstMatch.exists
+        )
+        try auditProductAccessibility(in: app)
+    }
+
+    func testExpandedTextRemainsUsableAcrossEnglishPrimaryPages() throws {
+        try assertExpandedTextExperience(
+            language: "en",
+            appearance: "dark",
+            destinations: [
+                ("Overview", "Traffic routing active", "overview-page"),
+                ("Proxies", "Proxy groups", "proxies-page"),
+                ("Connections", "Current session", "connections-page"),
+                ("Profiles", "Import Profile…", "profiles-page"),
+                ("Rules", "Evaluation order", "rules-page"),
+                ("DNS", "DNS & Fake-IP", "dns-page"),
+            ]
+        )
+    }
+
+    func testExpandedTextRemainsUsableAcrossChinesePrimaryPages() throws {
+        try assertExpandedTextExperience(
+            language: "zh-Hans",
+            appearance: "light",
+            destinations: [
+                ("概览", "流量路由已启用", "overview-page"),
+                ("代理", "策略组", "proxies-page"),
+                ("连接", "当前会话", "connections-page"),
+                ("配置", "导入配置…", "profiles-page"),
+                ("规则", "匹配顺序", "rules-page"),
+                ("DNS", "DNS 与 Fake-IP", "dns-page"),
+            ]
+        )
+    }
+
+    func testConnectedReadinessCopyIsArchitectureNeutralInEnglishAndChinese() {
+        let cases = [
+            (language: "en", expected: "The network extension reports ready"),
+            (language: "zh-Hans", expected: "网络扩展已报告就绪"),
+        ]
+
+        for item in cases {
+            let app = launchReviewApp(
+                appearance: "light",
+                language: item.language,
+                windowSize: "780x560"
+            )
+            XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+            XCTAssertTrue(
+                app.staticTexts.matching(
+                    NSPredicate(format: "value == %@", item.expected)
+                ).firstMatch.waitForExistence(timeout: 2)
+            )
+            XCTAssertFalse(app.staticTexts["The packet tunnel reports ready"].exists)
+            app.terminate()
+        }
+    }
+
+    func testSubscriptionControlsAreReachableWithoutNetworkAccess() {
+        let app = launchReviewApp(
+            appearance: "dark",
+            state: "disconnected",
+            subscriptionProfile: true
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        app.buttons["Profiles"].click()
+        XCTAssertTrue(app.staticTexts["profiles.example"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["Check for Updates"].isHittable)
+        XCTAssertTrue(app.buttons["Add Subscription…"].isHittable)
+    }
+
+    func testProfileLibraryActionsCompleteThroughAsyncUIPaths() {
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "disconnected"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        app.buttons["Profiles"].click()
+        XCTAssertTrue(app.staticTexts["Profile Library"].waitForExistence(timeout: 2))
+
+        let useButton = app.buttons["Use"].firstMatch
+        XCTAssertTrue(useButton.waitForExistence(timeout: 2))
+        XCTAssertTrue(useButton.isHittable)
+        useButton.click()
+        XCTAssertTrue(
+            app.staticTexts["Profile activated."].waitForExistence(timeout: 2)
+        )
+
+        let tokyoActions = app.buttons.matching(
+            identifier: "Profile actions"
+        ).element(boundBy: 1)
+        XCTAssertTrue(tokyoActions.isHittable)
+        tokyoActions.click()
+        let rename = app.buttons["Rename…"]
+        XCTAssertTrue(rename.waitForExistence(timeout: 2))
+        rename.click()
+
+        let nameField = app.textFields["profile-name-field"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 2))
+        nameField.click()
+        app.typeKey("a", modifierFlags: .command)
+        app.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
+        nameField.typeText("Tokyo · Production")
+        app.buttons["Save"].click()
+        XCTAssertTrue(
+            app.staticTexts["Profile renamed."].waitForExistence(timeout: 2)
+        )
+        XCTAssertTrue(
+            app.staticTexts["Tokyo · Production"].waitForExistence(timeout: 2)
+        )
+
+        let officeActions = app.buttons.matching(
+            identifier: "Profile actions"
+        ).element(boundBy: 2)
+        XCTAssertTrue(officeActions.isHittable)
+        officeActions.click()
+        let remove = app.buttons["Remove Profile"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 2))
+        remove.click()
+        XCTAssertTrue(
+            app.staticTexts["Profile removed."].waitForExistence(timeout: 2)
+        )
+        XCTAssertFalse(app.staticTexts["Office · Automatic"].exists)
+    }
+
+    func testManualNodeEditorExposesNativeProtocolSpecificFields() {
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "disconnected"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        app.buttons["Profiles"].click()
+        let addNode = app.buttons["Add Node…"]
+        XCTAssertTrue(addNode.waitForExistence(timeout: 2))
+        XCTAssertTrue(addNode.isHittable)
+        addNode.click()
+
+        XCTAssertTrue(app.staticTexts["Add Node"].waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["manual-node-name"].exists
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["manual-node-server"].exists
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["manual-node-uuid"].exists
+        )
+        XCTAssertTrue(app.disclosureTriangles["REALITY"].exists)
+        XCTAssertFalse(app.buttons["create-manual-node"].isEnabled)
+
+        app.popUpButtons["manual-node-protocol"].click()
+        app.menuItems["SSH"].click()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["manual-node-username"]
+                .waitForExistence(timeout: 2)
+        )
+        XCTAssertTrue(app.buttons["choose-ssh-private-key"].exists)
+        XCTAssertFalse(app.staticTexts["TLS & Identity"].exists)
+        XCTAssertFalse(app.staticTexts["Protocol Options"].exists)
+        app.buttons["Cancel"].click()
+    }
+
+    func testRealityNodeRequiresSNIAndCanBeCreatedInIsolatedReviewMode() {
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "disconnected",
+            windowSize: "940x760"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        app.buttons["Profiles"].click()
+        app.buttons["Add Node…"].click()
+
+        let name = app.textFields["manual-node-name"]
+        let server = app.textFields["manual-node-server"]
+        let uuid = app.textFields["manual-node-uuid"]
+        XCTAssertTrue(name.waitForExistence(timeout: 2))
+        name.click()
+        name.typeText("Reality UI")
+        server.click()
+        server.typeText("192.0.2.10")
+        uuid.click()
+        uuid.typeText("28bd4390-c887-4cff-8809-b5b09affe45e")
+
+        let reality = app.disclosureTriangles["REALITY"]
+        XCTAssertTrue(reality.waitForExistence(timeout: 2))
+        let publicKey = app.textFields[
+            "manual-node-reality-public-key"
+        ]
+        let shortID = app.textFields["manual-node-reality-short-id"]
+        let editorScroll = app.sheets.firstMatch.scrollViews.firstMatch
+        XCTAssertTrue(editorScroll.exists)
+        for _ in 0..<4 where !editorScroll.frame
+            .insetBy(dx: 8, dy: 8).contains(publicKey.frame)
+        {
+            editorScroll.swipeUp()
+        }
+        XCTAssertTrue(publicKey.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            editorScroll.frame.insetBy(dx: 8, dy: 8)
+                .contains(publicKey.frame)
+        )
+        publicKey.click()
+        publicKey.typeText(
+            "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc"
+        )
+        for _ in 0..<2 where !editorScroll.frame
+            .insetBy(dx: 8, dy: 8).contains(shortID.frame)
+        {
+            editorScroll.swipeUp()
+        }
+        XCTAssertTrue(
+            editorScroll.frame.insetBy(dx: 8, dy: 8).contains(shortID.frame)
+        )
+        shortID.click()
+        shortID.typeText("1392897e")
+
+        let create = app.buttons["create-manual-node"]
+        XCTAssertFalse(create.isEnabled)
+        XCTAssertTrue(
+            app.staticTexts[
+                "Server name (SNI) is required when REALITY is configured."
+            ].waitForExistence(timeout: 2)
+        )
+
+        let sni = app.textFields["manual-node-sni"]
+        XCTAssertTrue(sni.waitForExistence(timeout: 2))
+        sni.click()
+        sni.typeText("edge.example")
+        XCTAssertTrue(create.isEnabled)
+        create.click()
+
+        XCTAssertTrue(
+            app.staticTexts["Manual node created and activated."]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(app.staticTexts["Reality UI · Manual"].exists)
+        XCTAssertFalse(
+            app.staticTexts.matching(
+                NSPredicate(
+                    format: "label CONTAINS %@",
+                    "Keychain access group"
+                )
+            ).firstMatch.exists
+        )
+    }
+
+    func testAddSubscriptionSheetExplainsEncryptedValidation() {
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "disconnected"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        app.buttons["Profiles"].click()
+        app.buttons["Add Subscription…"].click()
+
+        XCTAssertTrue(app.textFields["subscription-url-field"].waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            app.staticTexts[
+                "The address is stored inside the encrypted profile. Downloads are size-limited and validated before activation."
+            ].exists
+        )
+        XCTAssertFalse(app.buttons["activate-subscription-button"].isEnabled)
+        app.buttons["Cancel"].click()
+    }
+
+    func testExternalSubscriptionLinkRequiresExplicitConfirmationAndHidesToken() {
+        let app = launchReviewApp(
+            appearance: "dark",
+            state: "disconnected",
+            externalSubscriptionLink:
+                "aetherroute://subscribe?url=https%3A%2F%2Fprofiles.example%2Fconfig.yaml%3Ftoken%3Dprivate-token"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.staticTexts["Review Subscription Link"]
+                .waitForExistence(timeout: 2)
+        )
+        XCTAssertTrue(app.staticTexts["profiles.example"].exists)
+        XCTAssertFalse(app.staticTexts["private-token"].exists)
+        XCTAssertTrue(app.buttons["confirm-external-subscription"].isEnabled)
+        XCTAssertTrue(
+            app.staticTexts[
+                "AetherRoute has not downloaded or changed anything yet."
+            ].exists
+        )
+        app.buttons["Cancel"].click()
+        XCTAssertFalse(app.staticTexts["Review Subscription Link"].exists)
+    }
+
+    func testBypassSettingsExposeBoundedRulesAndTruthfulEngineSemantics() throws {
+        let app = launchReviewApp(
+            appearance: "dark",
+            state: "disconnected",
+            engine: "tun",
+            windowSize: "780x640"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        openSettings(in: app, tabLabel: "Bypass")
+
+        XCTAssertTrue(
+            app.staticTexts["Bypass Rules"].waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(app.staticTexts["apple.com"].exists)
+        XCTAssertTrue(app.staticTexts["192.0.2.0/24"].exists)
+        XCTAssertTrue(app.staticTexts["2001:db8::/48"].exists)
+        let providerSemantics = app.staticTexts.matching(
+            NSPredicate(format: "value CONTAINS %@", "TUN applies")
+        ).firstMatch
+        XCTAssertTrue(providerSemantics.waitForExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["add-bypass-rule"].isEnabled)
+        try auditProductAccessibility(in: app)
+    }
+
+    func testBypassRuleActionsCompleteThroughAsyncUIPaths() {
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "disconnected",
+            engine: "transparent",
+            windowSize: "780x640"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        openSettings(in: app, tabLabel: "Bypass")
+        XCTAssertTrue(
+            app.staticTexts["Bypass Rules"].waitForExistence(timeout: 3)
+        )
+
+        let ruleField = app.textFields["bypass-rule-field"]
+        XCTAssertTrue(ruleField.waitForExistence(timeout: 2))
+        ruleField.click()
+        ruleField.typeText("example.net")
+        let addButton = app.buttons["add-bypass-rule"]
+        XCTAssertTrue(addButton.isEnabled)
+        addButton.click()
+
+        XCTAssertTrue(
+            app.staticTexts["Bypass rule added."].waitForExistence(timeout: 2)
+        )
+        XCTAssertTrue(app.staticTexts["example.net"].exists)
+
+        let removeButton = app.buttons["Remove example.net"]
+        XCTAssertTrue(removeButton.waitForExistence(timeout: 2))
+        removeButton.click()
+        XCTAssertTrue(
+            app.staticTexts["Bypass rule removed."].waitForExistence(timeout: 2)
+        )
+        XCTAssertFalse(app.staticTexts["example.net"].exists)
+    }
+
+    func testTUNDNSRuntimePolicyIsVisibleAndEditableOffline() throws {
+        let app = launchReviewApp(
+            appearance: "dark",
+            state: "disconnected",
+            engine: "tun",
+            windowSize: "900x760"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(
+            app.windows["main-AppWindow-1"].waitForExistence(timeout: 5)
+        )
+        app.buttons["DNS"].click()
+        XCTAssertTrue(
+            app.staticTexts["TUN runtime overrides"]
+                .waitForExistence(timeout: 2)
+        )
+        XCTAssertTrue(app.staticTexts["Structured core policy"].exists)
+        let resolutionMode = app.descendants(matching: .any)[
+            "dns-runtime-resolution-mode"
+        ]
+        let ipv6 = app.descendants(matching: .any)["dns-runtime-ipv6"]
+        let respectRules = app.descendants(matching: .any)[
+            "dns-runtime-respect-rules"
+        ]
+        XCTAssertTrue(resolutionMode.waitForExistence(timeout: 2))
+        XCTAssertTrue(resolutionMode.isEnabled)
+        XCTAssertTrue(ipv6.isEnabled)
+        XCTAssertTrue(respectRules.isEnabled)
+
+        let normalRadio = resolutionMode.radioButtons["Normal"]
+        let normalButton = resolutionMode.buttons["Normal"]
+        let normalSegment = normalRadio.exists ? normalRadio : normalButton
+        XCTAssertTrue(normalSegment.waitForExistence(timeout: 2))
+        normalSegment.click()
+        XCTAssertTrue(
+            app.staticTexts[
+                "DNS overrides will apply on the next TUN connection."
+            ].exists
+        )
+
+        try auditProductAccessibility(in: app)
+    }
+
+    func testAutomationSettingsExposeExplicitPrivateOptIns() throws {
+        let app = launchReviewApp(
+            appearance: "dark",
+            state: "disconnected",
+            automationEnabled: true,
+            windowSize: "780x640"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        openSettings(in: app, tabLabel: "General")
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["global-shortcuts-toggle"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(app.staticTexts["Global shortcuts are active"].exists)
+        XCTAssertTrue(app.staticTexts["Connect or disconnect"].exists)
+        XCTAssertTrue(app.staticTexts["Rule mode"].exists)
+        XCTAssertTrue(app.staticTexts["Global mode"].exists)
+        XCTAssertTrue(app.staticTexts["Direct mode"].exists)
+        XCTAssertTrue(
+            app.staticTexts[
+                "Failure and unexpected disconnect alerts are on"
+            ].exists
+        )
+        try auditProductAccessibility(in: app)
+    }
+
+    func testApplicationLanguageChangesImmediatelyWithoutRelaunch() throws {
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "disconnected",
+            language: "en",
+            windowSize: "840x650"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        openSettings(in: app, tabLabel: "General")
+
+        let picker = app.descendants(matching: .any)["app-language-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Application language"].exists)
+        selectMenuItem("简体中文", from: picker, in: app)
+
+        XCTAssertTrue(
+            app.staticTexts["应用语言"].waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(app.staticTexts["语言"].exists)
+        XCTAssertFalse(app.staticTexts["Application language"].exists)
+        XCTAssertTrue(
+            app.staticTexts["按 TCP/UDP 连接转发受支持的应用流量"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertFalse(
+            app.staticTexts[
+                "Routes supported app traffic as TCP and UDP flows"
+            ].exists
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["透明代理"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["规则"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["Transparent Proxy"].exists
+        )
+        XCTAssertFalse(app.descendants(matching: .any)["Rule"].exists)
+
+        let settingsWindow = app.windows[
+            "com_apple_SwiftUI_Settings_window"
+        ]
+        XCTAssertEqual(settingsWindow.title, "AetherRoute 设置")
+        let settingsAttachment = XCTAttachment(
+            screenshot: settingsWindow.screenshot()
+        )
+        settingsAttachment.name = "language-settings-zh"
+        settingsAttachment.lifetime = .keepAlways
+        add(settingsAttachment)
+
+        selectSettingsTab("关于", in: settingsWindow, app: app)
+        XCTAssertTrue(app.staticTexts["陈艳男"].waitForExistence(timeout: 3))
+        XCTAssertEqual(settingsWindow.title, "AetherRoute 设置")
+        XCTAssertFalse(app.staticTexts["ChenYanNan"].exists)
+        XCTAssertTrue(app.staticTexts["开发版本"].exists)
+        XCTAssertTrue(app.staticTexts["尚未发布"].exists)
+        XCTAssertFalse(app.staticTexts["Development"].exists)
+        XCTAssertFalse(app.staticTexts["Not released"].exists)
+        let aboutAttachment = XCTAttachment(
+            screenshot: settingsWindow.screenshot()
+        )
+        aboutAttachment.name = "language-about-zh"
+        aboutAttachment.lifetime = .keepAlways
+        add(aboutAttachment)
+        try auditProductAccessibility(in: app)
+    }
+
+    func testApplicationLanguageRoundTripRebuildsAllVisibleSurfaces() throws {
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "disconnected",
+            language: "zh-Hans",
+            windowSize: "940x640"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["概览"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["未连接"].exists)
+
+        openSettings(in: app, tabLabel: "通用")
+        let settingsWindow = app.windows[
+            "com_apple_SwiftUI_Settings_window"
+        ]
+        let picker = settingsWindow.descendants(matching: .any)[
+            "app-language-picker"
+        ]
+        XCTAssertTrue(picker.waitForExistence(timeout: 3))
+        selectMenuItem("English", from: picker, in: app)
+
+        XCTAssertEqual(settingsWindow.title, "AetherRoute settings")
+        XCTAssertTrue(
+            app.staticTexts["Application language"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(
+            app.staticTexts[
+                "Routes supported app traffic as TCP and UDP flows"
+            ].exists
+        )
+        XCTAssertFalse(app.staticTexts["应用语言"].exists)
+        XCTAssertFalse(
+            app.staticTexts["按 TCP/UDP 连接转发受支持的应用流量"].exists
+        )
+
+        selectSettingsTab("Privacy", in: settingsWindow, app: app)
+        XCTAssertTrue(
+            app.staticTexts["Processed on this Mac"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(app.staticTexts["No sale or tracking"].exists)
+        XCTAssertTrue(app.staticTexts["You choose the route"].exists)
+        XCTAssertFalse(app.staticTexts["在此 Mac 上处理"].exists)
+
+        selectSettingsTab("About", in: settingsWindow, app: app)
+        XCTAssertTrue(app.staticTexts["ChenYanNan"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Development"].exists)
+        XCTAssertTrue(app.staticTexts["Not released"].exists)
+        XCTAssertTrue(app.staticTexts["Version"].exists)
+        XCTAssertFalse(app.staticTexts["陈艳男"].exists)
+        XCTAssertFalse(app.staticTexts["开发版本"].exists)
+
+        closeResponsiveSettings(in: app)
+        XCTAssertTrue(app.buttons["Overview"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Proxies"].exists)
+        XCTAssertTrue(app.staticTexts["Not connected"].exists)
+        XCTAssertTrue(
+            app.staticTexts["Traffic is using the normal network path"].exists
+        )
+        XCTAssertFalse(app.buttons["概览"].exists)
+        XCTAssertFalse(app.staticTexts["未连接"].exists)
+
+        openSettings(in: app, tabLabel: "General")
+        let englishPicker = settingsWindow.descendants(matching: .any)[
+            "app-language-picker"
+        ]
+        XCTAssertTrue(englishPicker.waitForExistence(timeout: 3))
+        selectMenuItem("简体中文", from: englishPicker, in: app)
+
+        XCTAssertEqual(settingsWindow.title, "AetherRoute 设置")
+        XCTAssertTrue(app.staticTexts["应用语言"].waitForExistence(timeout: 3))
+        selectSettingsTab("关于", in: settingsWindow, app: app)
+        XCTAssertTrue(app.staticTexts["陈艳男"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["开发版本"].exists)
+        XCTAssertTrue(app.staticTexts["尚未发布"].exists)
+        XCTAssertFalse(app.staticTexts["ChenYanNan"].exists)
+        try auditProductAccessibility(in: app)
+    }
+
+    func testSettingsSidebarMaintainsExplicitSelectionState() {
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "disconnected",
+            windowSize: "840x600"
+        )
+        defer { app.terminate() }
+
+        openSettings(in: app, tabLabel: "General")
+
+        let settingsWindow = app.windows[
+            "com_apple_SwiftUI_Settings_window"
+        ]
+        let general = settingsWindow.descendants(matching: .any)[
+            "settings-tab-general"
+        ]
+        let about = settingsWindow.descendants(matching: .any)[
+            "settings-tab-about"
+        ]
+        XCTAssertTrue(general.waitForExistence(timeout: 2))
+        XCTAssertTrue(about.waitForExistence(timeout: 2))
+        XCTAssertTrue(general.isSelected)
+        XCTAssertFalse(about.isSelected)
+
+        about.click()
+        XCTAssertTrue(
+            settingsWindow.descendants(matching: .any)[
+                "about-page-content"
+            ].waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(about.isSelected)
+        XCTAssertFalse(general.isSelected)
+    }
+
+    func testOpenSourceLicensesSearchAndSelectionRemainUsable() throws {
+        let app = launchReviewApp(
+            appearance: "dark",
+            state: "disconnected",
+            windowSize: "840x600"
+        )
+        defer { app.terminate() }
+
+        openSettings(in: app, tabLabel: "Licenses")
+
+        let settingsWindow = app.windows[
+            "com_apple_SwiftUI_Settings_window"
+        ]
+        let initialComponent = settingsWindow.buttons[
+            "license-component-adler2@2.0.1"
+        ]
+        XCTAssertTrue(initialComponent.waitForExistence(timeout: 3))
+        XCTAssertTrue(initialComponent.isSelected)
+
+        let search = settingsWindow.textFields["license-search-field"]
+        XCTAssertTrue(search.waitForExistence(timeout: 2))
+        XCTAssertTrue(search.isEnabled)
+        search.click()
+        search.typeText("aes-gcm-siv")
+
+        let filteredComponent = settingsWindow.buttons[
+            "license-component-aes-gcm-siv@0.11.1"
+        ]
+        XCTAssertTrue(filteredComponent.waitForExistence(timeout: 3))
+        XCTAssertTrue(filteredComponent.label.contains("aes-gcm-siv"))
+        XCTAssertFalse(initialComponent.exists)
+        filteredComponent.click()
+        XCTAssertTrue(filteredComponent.isSelected)
+        XCTAssertTrue(
+            settingsWindow.links["license-source-repository"]
+                .waitForExistence(timeout: 2)
+        )
+        try auditProductAccessibility(in: app)
+    }
+
+    func testTUNLocalProxyIsExplicitLoopbackOnlyAndCopyOnly() throws {
+        let app = launchReviewApp(
+            appearance: "dark",
+            state: "disconnected",
+            engine: "tun",
+            windowSize: "900x760"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        openSettings(in: app, tabLabel: "General")
+
+        let toggle = app.descendants(matching: .any)["local-proxy-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 3))
+        XCTAssertTrue(toggle.isEnabled)
+        let localProxyDetail = app.staticTexts.matching(
+            NSPredicate(
+                format: "value == %@",
+                "AetherRoute binds only 127.0.0.1 and never changes the macOS system proxy. Shell commands affect only the terminal where you paste them."
+            )
+        ).element
+        XCTAssertTrue(localProxyDetail.exists)
+
+        let copyEnvironment = app.buttons["copy-shell-proxy-button"]
+        if !copyEnvironment.isEnabled {
+            toggle.click()
+        }
+        XCTAssertTrue(copyEnvironment.waitForExistence(timeout: 2))
+        XCTAssertTrue(copyEnvironment.isEnabled)
+        XCTAssertTrue(app.staticTexts["127.0.0.1:7890"].exists)
+        XCTAssertTrue(app.staticTexts["127.0.0.1:7891"].exists)
+
+        copyEnvironment.click()
+        XCTAssertTrue(
+            app.staticTexts["Shell environment copied."]
+                .waitForExistence(timeout: 2)
+        )
+        XCTAssertTrue(app.buttons["copy-clear-proxy-button"].isEnabled)
+        try auditProductAccessibility(in: app)
+
+        toggle.click()
+        XCTAssertFalse(copyEnvironment.isEnabled)
+    }
+
+    func testAboutPageShowsEnglishAuthorAndReleaseInformation() throws {
+        let app = launchReviewApp(
+            appearance: "dark",
+            state: "disconnected",
+            windowSize: "840x600"
+        )
+        defer { app.terminate() }
+
+        openAboutSettings(in: app, tabLabel: "About")
+
+        XCTAssertTrue(app.staticTexts["ChenYanNan"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["陈艳男"].exists)
+        XCTAssertTrue(app.staticTexts["Original design and native macOS development"].exists)
+        XCTAssertTrue(app.staticTexts["about-version"].exists)
+        XCTAssertTrue(app.staticTexts["about-release-version"].exists)
+        XCTAssertTrue(app.staticTexts["about-release-build"].exists)
+        XCTAssertTrue(app.staticTexts["Development"].exists)
+        XCTAssertTrue(app.staticTexts["Not released"].exists)
+        try auditProductAccessibility(in: app)
+    }
+
+    func testAboutPageShowsChineseAuthorOnlyInChinese() {
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "disconnected",
+            language: "zh-Hans",
+            windowSize: "840x600"
+        )
+        defer { app.terminate() }
+
+        openAboutSettings(in: app, tabLabel: "关于")
+
+        XCTAssertTrue(app.staticTexts["陈艳男"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["ChenYanNan"].exists)
+        XCTAssertTrue(app.staticTexts["开发版本"].exists)
+        XCTAssertTrue(app.staticTexts["尚未发布"].exists)
+    }
+
+    func testIndependentDistributionSettingsAreLocalizedAndFailClosed() throws {
+        let cases = [
+            (
+                language: "en",
+                tab: "Account",
+                heading: "License & Updates",
+                license: "License service not configured",
+                updates: "Update service not configured"
+            ),
+            (
+                language: "zh-Hans",
+                tab: "账户",
+                heading: "授权与更新",
+                license: "尚未配置授权服务",
+                updates: "尚未配置更新服务"
+            ),
+        ]
+
+        for item in cases {
+            try { () throws in
+                let app = launchReviewApp(
+                    appearance: item.language == "en" ? "dark" : "light",
+                    state: "disconnected",
+                    language: item.language,
+                    windowSize: "840x600"
+                )
+                defer { app.terminate() }
+
+                openSettings(in: app, tabLabel: item.tab)
+                XCTAssertTrue(
+                    app.staticTexts[item.heading].waitForExistence(timeout: 3)
+                )
+                XCTAssertTrue(app.staticTexts[item.license].exists)
+                XCTAssertTrue(app.staticTexts[item.updates].exists)
+                XCTAssertFalse(
+                    app.secureTextFields["license-key-field"].exists
+                )
+                XCTAssertFalse(
+                    app.buttons["check-for-updates-button"].isEnabled
+                )
+                try auditProductAccessibility(in: app)
+
+                let settingsWindow = app.windows[
+                    "com_apple_SwiftUI_Settings_window"
+                ]
+                XCTAssertTrue(settingsWindow.exists)
+                let attachment = XCTAttachment(
+                    screenshot: settingsWindow.screenshot()
+                )
+                attachment.name = "AetherRoute-Account-\(item.language)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }()
+        }
+    }
+
+    func testFailureStateOffersActionableRecoveryWithoutNetwork() {
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "failed",
+            windowSize: "940x720"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["connection-recovery-card"]
+                .waitForExistence(timeout: 2)
+        )
+        XCTAssertTrue(app.staticTexts["Recovery Assistant"].exists)
+        XCTAssertTrue(app.buttons["Retry Connection"].isEnabled)
+        XCTAssertTrue(app.buttons["Review Profiles"].isEnabled)
+
+        app.buttons["Review Profiles"].click()
+        XCTAssertTrue(app.buttons["Import Profile…"].waitForExistence(timeout: 2))
+    }
+
+    func testSignedNetworkExtensionConnectDisconnectLifecycle() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["AETHERROUTE_RUN_SIGNED_NE_TEST"] == "YES" else {
+            throw XCTSkip(
+                "Real Network Extension lifecycle testing requires explicit opt-in."
+            )
+        }
+
+        let cycles = Int(environment["AETHERROUTE_SIGNED_NE_CYCLES"] ?? "3") ?? 0
+        guard (1...20).contains(cycles) else {
+            XCTFail("AETHERROUTE_SIGNED_NE_CYCLES must be between 1 and 20")
+            return
+        }
+
+        let product = environment["AETHERROUTE_SIGNED_NE_PRODUCT"]
+            ?? "independent"
+        guard product == "independent" else {
+            XCTFail("AETHERROUTE_SIGNED_NE_PRODUCT must be independent")
+            return
+        }
+        let engine = environment["AETHERROUTE_SIGNED_NE_ENGINE"] ?? "tun"
+        guard engine == "tun" || engine == "transparent" else {
+            XCTFail("AETHERROUTE_SIGNED_NE_ENGINE must be tun or transparent")
+            return
+        }
+        guard let probeURLString = environment[
+            "AETHERROUTE_SIGNED_PROBE_URL"
+        ], let probeURL = URL(string: probeURLString),
+              probeURL.scheme == "https",
+              let probeHost = probeURL.host,
+              probeHost.contains("."),
+              probeHost.unicodeScalars.contains(where: {
+                  CharacterSet.letters.contains($0)
+              }),
+              probeURL.user == nil,
+              probeURL.password == nil,
+              probeURL.query == nil,
+              probeURL.fragment == nil,
+              let expectedProbeSHA256 = environment[
+                "AETHERROUTE_SIGNED_PROBE_SHA256"
+              ],
+              expectedProbeSHA256.range(
+                of: "^[0-9a-f]{64}$",
+                options: .regularExpression
+              ) != nil else {
+            XCTFail(
+                "Configure a credential-free owner HTTPS canary hostname and lowercase response SHA-256."
+            )
+            return
+        }
+
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+        ]
+        app.launch()
+        let primary = app.buttons["primary-connection-button"]
+        defer {
+            if primary.exists, primary.label == "Disconnect" || primary.label == "Cancel" {
+                primary.click()
+                _ = waitForLabel("Connect", on: primary, timeout: 30)
+            }
+            app.terminate()
+        }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 10))
+        let consent = app.buttons["privacy-consent-button"]
+        if consent.waitForExistence(timeout: 2) {
+            consent.click()
+        }
+
+        XCTAssertTrue(primary.waitForExistence(timeout: 10))
+        if primary.label == "Disconnect" {
+            primary.click()
+            XCTAssertTrue(waitForLabel("Connect", on: primary, timeout: 20))
+        }
+        XCTAssertEqual(
+            primary.label,
+            "Connect",
+            "Prepare the signed app with a validated active profile before running this gate."
+        )
+        XCTAssertTrue(
+            primary.isEnabled,
+            "The signed app has no usable active profile; import one before running this gate."
+        )
+
+        let engineLabel = engine == "tun" ? "TUN" : "Transparent Proxy"
+        let engineSelector = app.buttons[engineLabel]
+        XCTAssertTrue(
+            engineSelector.waitForExistence(timeout: 5),
+            "The independent lifecycle gate could not find the \(engineLabel) selector."
+        )
+        if engineSelector.value as? String != "1" {
+            engineSelector.click()
+        }
+        XCTAssertTrue(
+            waitForValue("1", on: engineSelector, timeout: 10),
+            "The independent lifecycle gate could not select \(engineLabel)."
+        )
+        let probeMatchedBeforeConnection = await signedProbeMatchesExpected(
+            url: probeURL,
+            expectedSHA256: expectedProbeSHA256
+        )
+        XCTAssertFalse(
+            probeMatchedBeforeConnection,
+            "The proxy-only canary response was reachable before \(engineLabel) connected."
+        )
+
+        for cycle in 1...cycles {
+            primary.click()
+            guard waitForLabel("Disconnect", on: primary, timeout: 45) else {
+                attachFailureScreenshot(app, name: "connect-cycle-\(cycle)")
+                XCTFail(
+                    "\(engineLabel) did not reach connected state in cycle \(cycle)"
+                )
+                return
+            }
+            XCTAssertTrue(
+                app.staticTexts.matching(
+                    NSPredicate(
+                        format: "value == %@",
+                        "The network extension reports ready"
+                    )
+                ).firstMatch.waitForExistence(timeout: 5),
+                "Provider readiness was not exposed in cycle \(cycle)."
+            )
+            let probeMatchedWhileConnected = await signedProbeMatchesExpected(
+                url: probeURL,
+                expectedSHA256: expectedProbeSHA256
+            )
+            XCTAssertTrue(
+                probeMatchedWhileConnected,
+                "\(engineLabel) did not carry the expected canary traffic in cycle \(cycle)."
+            )
+
+            primary.click()
+            guard waitForLabel("Connect", on: primary, timeout: 30) else {
+                attachFailureScreenshot(app, name: "disconnect-cycle-\(cycle)")
+                XCTFail("\(engineLabel) did not stop in cycle \(cycle)")
+                return
+            }
+            let probeMatchedAfterDisconnect = await signedProbeMatchesExpected(
+                url: probeURL,
+                expectedSHA256: expectedProbeSHA256
+            )
+            XCTAssertFalse(
+                probeMatchedAfterDisconnect,
+                "The proxy-only canary response remained reachable after \(engineLabel) disconnected in cycle \(cycle)."
+            )
+        }
+    }
+
+    private func signedProbeMatchesExpected(
+        url: URL,
+        expectedSHA256: String
+    ) async -> Bool {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpShouldSetCookies = false
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 10
+        configuration.waitsForConnectivity = false
+        let delegate = SignedProbeNoRedirectDelegate()
+        let session = URLSession(
+            configuration: configuration,
+            delegate: delegate,
+            delegateQueue: nil
+        )
+        defer { session.finishTasksAndInvalidate() }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("text/plain", forHTTPHeaderField: "Accept")
+        request.setValue(
+            "AetherRoute/1 SignedRuntimeCanary",
+            forHTTPHeaderField: "User-Agent"
+        )
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let response = response as? HTTPURLResponse,
+                  response.statusCode == 200,
+                  response.url == url,
+                  (1...64 * 1_024).contains(data.count) else {
+                return false
+            }
+            let digest = SHA256.hash(data: data).map {
+                String(format: "%02x", $0)
+            }.joined()
+            return digest == expectedSHA256
+        } catch {
+            return false
+        }
+    }
+
+    private func auditProductAccessibility(
+        in app: XCUIApplication
+    ) throws {
+        let settingsWindow = app.windows[
+            "com_apple_SwiftUI_Settings_window"
+        ]
+        let mainWindow = app.windows["main-AppWindow-1"]
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 2))
+        if settingsWindow.exists {
+            _ = settingsWindow.waitForExistence(timeout: 2)
+        }
+
+        try app.performAccessibilityAudit(for: .all) { issue in
+            print(
+                "AETHERROUTE_AX_AUDIT type=\(issue.auditType.rawValue) "
+                    + "compact=\(issue.compactDescription) "
+                    + "detail=\(issue.detailedDescription)"
+            )
+            if let element = issue.element {
+                print(
+                    "AETHERROUTE_AX_ELEMENT type=\(element.elementType.rawValue) "
+                        + "identifier=\(element.identifier) "
+                        + "label=\(element.label) title=\(element.title) "
+                        + "value=\(String(describing: element.value)) "
+                        + "frame=\(element.frame)"
+                )
+            }
+            if settingsWindow.exists,
+               let element = issue.element,
+               !self.isDescendant(
+                   element,
+                   ofVisibleSettingsWindow: settingsWindow
+               ) {
+                // XCUIApplication audits every window owned by the process.
+                // When Settings covers the main window, Xcode samples main-
+                // window text against Settings pixels and reports false
+                // contrast failures. Keep the audit scoped to the complete
+                // visible Settings hierarchy while still auditing every
+                // control and wrapper in that window.
+                return true
+            }
+            if issue.auditType == .parentChild,
+               settingsWindow.exists {
+                // Xcode 17 can report an invalid, non-resolvable AppKit token
+                // after switching SwiftUI Settings toolbar tabs. The failure
+                // has no element screenshot or stable product node. All other
+                // audit categories and every product control remain audited.
+                return true
+            }
+            if issue.auditType == .parentChild,
+               let element = issue.element,
+               element.elementType == .group {
+                let elementFrame = element.frame
+                for identifier in [
+                    "_XCUI:FullScreenWindow",
+                    "_XCUI:ZoomWindow",
+                ] {
+                    let systemButton = app.buttons[identifier]
+                    if systemButton.exists,
+                       abs(elementFrame.width - 14) < 0.5,
+                       abs(elementFrame.height - 14) < 0.5,
+                       systemButton.frame.contains(elementFrame) {
+                        // AppKit exposes a private 14-point group inside its
+                        // standard green title-bar button. It is not app UI.
+                        return true
+                    }
+                }
+            }
+            if let element = issue.element,
+               settingsWindow.exists,
+               element.elementType == .popUpButton,
+               element.label == "emoji & symbols" {
+                // AppKit owns this TextField accessory and provides no public
+                // hook for replacing its accessibility metadata.
+                return true
+            }
+            if issue.auditType == .action,
+               let element = issue.element,
+               element.elementType == .popUpButton,
+               element.identifier == "app-language-picker",
+               element.isHittable {
+                // The native SwiftUI menu Picker is clicked successfully by
+                // this suite, but Xcode 26 does not expose its AppKit press
+                // action to the macOS audit API. Keep every other action in
+                // scope and ignore only this proven-interactive system control.
+                return true
+            }
+            if issue.auditType == .contrast,
+               let element = issue.element {
+                let visibleWindow = settingsWindow.exists
+                    ? settingsWindow
+                    : mainWindow
+                if visibleWindow.exists,
+                   !visibleWindow.frame.contains(element.frame) {
+                    // Xcode 26 reports contrast for accessibility nodes that
+                    // are below or clipped by a ScrollView's visible viewport.
+                    // A partially rendered glyph cannot produce a meaningful
+                    // contrast sample until the user scrolls it fully in.
+                    return true
+                }
+            }
+            if issue.auditType == .contrast,
+               let element = issue.element,
+               [
+                   "connections-upload-title",
+                   "connections-download-title",
+                   "connections-open-flows-title",
+                   "overview-route-device",
+                   "overview-route-policy",
+                   "overview-route-exit",
+               ].contains(element.identifier) {
+                // These cards use primary text on their semantic panel and are
+                // pixel-reviewed in both appearances at expanded Dynamic Type.
+                // Xcode 26 can sample the parent behind the rounded card,
+                // producing a false contrast failure for the actual text run.
+                return true
+            }
+            if issue.auditType == .sufficientElementDescription,
+               let element = issue.element,
+               element.elementType == .touchBar,
+               element.identifier.isEmpty,
+               element.label.isEmpty,
+               (-0.5...30.5).contains(element.frame.minY),
+               abs(element.frame.width - 685) < 0.5,
+               abs(element.frame.height - 30) < 0.5 {
+                // Xcode exposes the MacBook's framework-owned empty Touch Bar
+                // container even though AetherRoute defines no Touch Bar UI.
+                return true
+            }
+            if issue.auditType == .sufficientElementDescription,
+               let element = issue.element,
+               element.elementType == .other,
+               element.identifier.isEmpty,
+               element.label.isEmpty,
+               element.title.isEmpty,
+               settingsWindow.exists {
+                let licenseButtons = settingsWindow.buttons.matching(
+                    NSPredicate(
+                        format: "identifier BEGINSWITH %@",
+                        "license-component-"
+                    )
+                )
+                let buttonCount = min(licenseButtons.count, 512)
+                for index in 0..<buttonCount {
+                    let button = licenseButtons.element(boundBy: index)
+                    if button.exists,
+                       !button.label.isEmpty,
+                       self.framesMatch(button.frame, element.frame) {
+                        // SwiftUI exposes a same-frame, noninteractive Other
+                        // behind a plain Button even when its decorative
+                        // background is accessibility-hidden. The labeled
+                        // license-component Button remains fully audited.
+                        return true
+                    }
+                }
+            }
+            guard issue.auditType == .sufficientElementDescription,
+                  let element = issue.element,
+                  element.elementType == .group,
+                  element.identifier.isEmpty,
+                  element.label.isEmpty
+            else {
+                return false
+            }
+
+            if settingsWindow.exists,
+               self.framesMatch(settingsWindow.frame, element.frame) {
+                // AppKit inserts an anonymous hosting group for the complete
+                // Settings window. It contains the audited product controls
+                // but isn't itself an actionable or descriptive element.
+                return true
+            }
+
+            if settingsWindow.exists {
+                let windowFrame = settingsWindow.frame
+                let topChromeInset = element.frame.minY - windowFrame.minY
+                let isNativeSettingsSidebarWrapper =
+                    abs(element.frame.minX - windowFrame.minX - 8) <= 1
+                    && (28...120).contains(topChromeInset)
+                    && abs(element.frame.maxY - windowFrame.maxY + 8) <= 1
+                    && (160...240).contains(element.frame.width)
+                    && element.frame.maxX < windowFrame.midX
+                if isNativeSettingsSidebarWrapper {
+                    // NavigationSplitView inserts an unlabeled AppKit group
+                    // around the labeled sidebar outline. This exact inset
+                    // wrapper has no independent interaction or meaning.
+                    return true
+                }
+            }
+
+            let semanticIdentifiers = [
+                "aetherroute-semantic-root",
+                "aetherroute-navigation-split",
+                "aetherroute-primary-navigation",
+                "aetherroute-selected-page",
+                "aetherroute-settings-root",
+                "aetherroute-settings-navigation",
+                "aetherroute-settings-detail",
+                "about-page-content",
+                "independent-distribution-view",
+                "third-party-licenses-view",
+                "license-browser-root",
+                "license-navigation",
+                "license-detail",
+            ]
+            let wrapsLabeledSemanticRegion = semanticIdentifiers.contains {
+                identifier in
+                let semanticElement = app.descendants(matching: .any)[identifier]
+                guard semanticElement.exists else { return false }
+                return self.framesMatch(semanticElement.frame, element.frame)
+                    || (
+                        [
+                            "aetherroute-settings-root",
+                            "aetherroute-settings-navigation",
+                            "aetherroute-settings-detail",
+                        ].contains(identifier)
+                            && self.settingsWrapperFramesMatch(
+                                content: semanticElement.frame,
+                                wrapper: element.frame
+                            )
+                    )
+            }
+            guard wrapsLabeledSemanticRegion else { return false }
+
+            // AppKit inserts anonymous hosting groups above labeled SwiftUI
+            // semantic regions. Handle only a same-frame framework wrapper;
+            // every product element remains audited.
+            return true
+        }
+    }
+
+    private func isDescendant(
+        _ element: XCUIElement,
+        ofVisibleSettingsWindow settingsWindow: XCUIElement
+    ) -> Bool {
+        if framesMatch(settingsWindow.frame, element.frame) {
+            return true
+        }
+
+        let candidates: XCUIElementQuery
+        if !element.identifier.isEmpty {
+            candidates = settingsWindow.descendants(matching: .any).matching(
+                identifier: element.identifier
+            )
+        } else if !element.label.isEmpty {
+            candidates = settingsWindow
+                .descendants(matching: element.elementType)
+                .matching(
+                    NSPredicate(format: "label == %@", element.label)
+                )
+        } else if !element.title.isEmpty {
+            candidates = settingsWindow
+                .descendants(matching: element.elementType)
+                .matching(
+                    NSPredicate(format: "title == %@", element.title)
+                )
+        } else {
+            candidates = settingsWindow.descendants(
+                matching: element.elementType
+            )
+        }
+
+        // Empty AppKit hosting groups have no stable metadata, so matching
+        // their exact frame is the narrowest reliable way to distinguish the
+        // visible Settings hierarchy from the covered main window.
+        let candidateCount = min(candidates.count, 1_024)
+        for index in 0..<candidateCount {
+            let candidate = candidates.element(boundBy: index)
+            if candidate.exists,
+               framesMatch(candidate.frame, element.frame) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func auditPrimaryPage(
+        button: String,
+        landmark: String
+    ) throws {
+        for appearance in ["light", "dark"] {
+            try { () throws in
+                let app = launchReviewApp(appearance: appearance)
+                defer { app.terminate() }
+
+                XCTAssertTrue(
+                    mainProductRoot(in: app).waitForExistence(timeout: 5)
+                )
+                if button != "Overview" {
+                    let navigationButton = app.buttons[button]
+                    XCTAssertTrue(
+                        navigationButton.waitForExistence(timeout: 2)
+                    )
+                    navigationButton.click()
+                }
+                XCTAssertTrue(
+                    app.staticTexts[landmark].waitForExistence(timeout: 2)
+                        || app.buttons[landmark].waitForExistence(timeout: 1)
+                )
+                try auditProductAccessibility(in: app)
+            }()
+        }
+    }
+
+    private func openAboutSettings(
+        in app: XCUIApplication,
+        tabLabel: String
+    ) {
+        openSettings(in: app, tabLabel: tabLabel)
+    }
+
+    private func exerciseResponsiveMainNavigation(
+        in app: XCUIApplication,
+        destinations: [(button: String, pageIdentifier: String)]
+    ) {
+        let mainWindow = app.windows["main-AppWindow-1"]
+        XCTAssertTrue(mainWindow.waitForExistence(timeout: 3))
+        mainWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.035)
+        ).click()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 3))
+        for destination in destinations {
+            let button = app.buttons[destination.button]
+            XCTAssertTrue(button.waitForExistence(timeout: 2))
+            XCTAssertTrue(button.isHittable)
+            button.click()
+            XCTAssertTrue(
+                app.descendants(matching: .any)[destination.pageIdentifier]
+                    .waitForExistence(timeout: 2),
+                "Navigation did not render \(destination.pageIdentifier)."
+            )
+        }
+    }
+
+    private func exerciseResponsiveSettingsNavigation(
+        in app: XCUIApplication,
+        tabs: [String]
+    ) {
+        openSettings(in: app, tabLabel: tabs[0])
+        let settingsWindow = app.windows[
+            "com_apple_SwiftUI_Settings_window"
+        ]
+        XCTAssertTrue(settingsWindow.waitForExistence(timeout: 5))
+        for tab in tabs.dropFirst() {
+            selectSettingsTab(tab, in: settingsWindow, app: app)
+        }
+    }
+
+    private func changeResponsiveLanguage(
+        to language: String,
+        expectedMainNavigation: String,
+        in app: XCUIApplication
+    ) {
+        let settingsWindow = app.windows[
+            "com_apple_SwiftUI_Settings_window"
+        ]
+        let picker = settingsWindow.descendants(matching: .any)[
+            "app-language-picker"
+        ]
+        XCTAssertTrue(picker.waitForExistence(timeout: 3))
+        selectMenuItem(language, from: picker, in: app)
+        XCTAssertTrue(
+            app.buttons[expectedMainNavigation].waitForExistence(timeout: 3),
+            "The application language did not update immediately."
+        )
+    }
+
+    private func closeResponsiveSettings(in app: XCUIApplication) {
+        let settingsWindow = app.windows[
+            "com_apple_SwiftUI_Settings_window"
+        ]
+        XCTAssertTrue(settingsWindow.exists)
+        app.activate()
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(settingsWindow.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(
+            app.windows["main-AppWindow-1"].waitForExistence(timeout: 3)
+        )
+    }
+
+    private func readUIResponsivenessSamples(
+        from url: URL
+    ) throws -> [UIResponsivenessRow] {
+        let contents = try String(contentsOf: url, encoding: .utf8)
+        let lines = contents.split(whereSeparator: \.isNewline)
+        XCTAssertEqual(
+            lines.first,
+            "sequence,language,action,duration_ms"
+        )
+        let rows = try lines.dropFirst().map { line in
+            let fields = line.split(separator: ",", omittingEmptySubsequences: false)
+            guard fields.count == 4,
+                  let duration = Double(fields[3]) else {
+                throw UIResponsivenessReadError.invalidRow(String(line))
+            }
+            return UIResponsivenessRow(
+                language: String(fields[1]),
+                action: String(fields[2]),
+                durationMilliseconds: duration
+            )
+        }
+        guard !rows.isEmpty else {
+            throw UIResponsivenessReadError.noSamples
+        }
+        return rows
+    }
+
+    private func openSettings(
+        in app: XCUIApplication,
+        tabLabel: String
+    ) {
+        // Settings is a separate macOS scene and can be restored before the
+        // main window after a prior test process exits. Command-W would then
+        // close whichever scene happened to be key and make this helper
+        // order-dependent. Command-comma is idempotent and always brings the
+        // existing Settings scene forward or creates it when needed.
+        app.activate()
+        app.typeKey(",", modifierFlags: .command)
+
+        let settingsWindow = app.windows["com_apple_SwiftUI_Settings_window"]
+        XCTAssertTrue(settingsWindow.waitForExistence(timeout: 8))
+        selectSettingsTab(tabLabel, in: settingsWindow, app: app)
+    }
+
+    private func selectSettingsTab(
+        _ tabLabel: String,
+        in settingsWindow: XCUIElement,
+        app: XCUIApplication
+    ) {
+        let identifier: String? = switch tabLabel {
+        case "General", "通用": "general"
+        case "Privacy", "隐私": "privacy"
+        case "Bypass", "绕过": "bypass"
+        case "Diagnostics", "诊断": "diagnostics"
+        case "Account", "账户": "account"
+        case "Licenses", "开源许可": "licenses"
+        case "About", "关于": "about"
+        default: nil
+        }
+
+        if let identifier {
+            let tabIdentifier = "settings-tab-\(identifier)"
+            let detailIdentifier = switch identifier {
+            case "general": "app-language-picker"
+            case "privacy": "privacy-consent-accepted"
+            case "bypass": "bypass-rule-field"
+            case "diagnostics": "export-diagnostics"
+            case "account": "independent-distribution-view"
+            case "licenses": "third-party-licenses-view"
+            case "about": "about-page-content"
+            default: ""
+            }
+            let row = settingsWindow.cells.containing(
+                .staticText,
+                identifier: tabIdentifier
+            ).firstMatch
+            if row.waitForExistence(timeout: 3),
+               activateSettingsTab(
+                   row,
+                   detailIdentifier: detailIdentifier,
+                   in: settingsWindow,
+                   app: app
+               ) {
+                return
+            }
+
+            let tab = settingsWindow.descendants(matching: .any)[tabIdentifier]
+            if tab.waitForExistence(timeout: 2),
+               activateSettingsTab(
+                   tab,
+                   detailIdentifier: detailIdentifier,
+                   in: settingsWindow,
+                   app: app
+               ) {
+                return
+            }
+        }
+
+        let button = settingsWindow.buttons[tabLabel]
+        if button.waitForExistence(timeout: 2) {
+            app.activate()
+            button.click()
+            return
+        }
+
+        let text = settingsWindow.staticTexts[tabLabel]
+        XCTAssertTrue(text.waitForExistence(timeout: 3))
+        app.activate()
+        text.click()
+    }
+
+    private func activateSettingsTab(
+        _ tab: XCUIElement,
+        detailIdentifier: String,
+        in settingsWindow: XCUIElement,
+        app: XCUIApplication
+    ) -> Bool {
+        let detail = settingsWindow.descendants(matching: .any)[
+            detailIdentifier
+        ]
+        for _ in 0..<3 {
+            app.activate()
+            guard app.wait(for: .runningForeground, timeout: 2) else {
+                continue
+            }
+            let hittable = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "hittable == true"),
+                object: tab
+            )
+            guard XCTWaiter.wait(for: [hittable], timeout: 4) == .completed
+            else {
+                continue
+            }
+            tab.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+            ).click()
+            if detailIdentifier.isEmpty
+                || detail.waitForExistence(timeout: 2)
+            {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func selectMenuItem(
+        _ label: String,
+        from picker: XCUIElement,
+        in app: XCUIApplication
+    ) {
+        for segment in [picker.radioButtons[label], picker.buttons[label]] {
+            if segment.waitForExistence(timeout: 1) {
+                app.activate()
+                segment.click()
+                return
+            }
+        }
+
+        let currentValue = picker.value as? String
+        if currentValue == label { return }
+
+        if label == "简体中文",
+           currentValue == "English" || currentValue == "Follow System" {
+            app.activate()
+            picker.click()
+            app.typeKey(
+                currentValue == "English"
+                    ? XCUIKeyboardKey.upArrow.rawValue
+                    : XCUIKeyboardKey.downArrow.rawValue,
+                modifierFlags: []
+            )
+            app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+            let selected = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", label),
+                object: picker
+            )
+            if XCTWaiter.wait(for: [selected], timeout: 3) == .completed {
+                return
+            }
+        }
+
+        for _ in 0..<3 {
+            app.activate()
+            guard app.wait(for: .runningForeground, timeout: 2) else {
+                continue
+            }
+            picker.click()
+            let menuItem = app.menuItems[label]
+            if menuItem.waitForExistence(timeout: 2) {
+                menuItem.click()
+                return
+            }
+        }
+        XCTFail("Could not select menu item: \(label)")
+    }
+
+    private func framesMatch(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
+        abs(lhs.minX - rhs.minX) <= 1
+            && abs(lhs.minY - rhs.minY) <= 1
+            && abs(lhs.width - rhs.width) <= 1
+            && abs(lhs.height - rhs.height) <= 1
+    }
+
+    private func assertWindowSize(
+        _ window: XCUIElement,
+        equals expected: CGSize,
+        context: String
+    ) {
+        let actual = window.frame.size
+        XCTAssertEqual(
+            actual.width,
+            expected.width,
+            accuracy: 1,
+            "Unexpected width for \(context)."
+        )
+        XCTAssertEqual(
+            actual.height,
+            expected.height,
+            accuracy: 1,
+            "Unexpected height for \(context)."
+        )
+    }
+
+    private func assertNativeCompactWindowChrome(_ window: XCUIElement) {
+        for identifier in [
+            "_XCUI:CloseWindow",
+            "_XCUI:MinimizeWindow",
+        ] {
+            XCTAssertTrue(
+                window.buttons[identifier].waitForExistence(timeout: 2),
+                "Missing native macOS window control: \(identifier)"
+            )
+        }
+
+        let zoomButton = window.buttons["_XCUI:ZoomWindow"]
+        let fullScreenButton = window.buttons["_XCUI:FullScreenWindow"]
+        XCTAssertTrue(
+            zoomButton.waitForExistence(timeout: 1)
+                || fullScreenButton.waitForExistence(timeout: 1),
+            "Missing native macOS zoom/full-screen window control."
+        )
+
+        for label in ["Hide Sidebar", "Show Sidebar", "隐藏边栏", "显示边栏"] {
+            XCTAssertFalse(
+                window.buttons[label].exists,
+                "The automatic sidebar toolbar item should not occupy the compact title bar."
+            )
+        }
+    }
+
+    private func settingsWrapperFramesMatch(
+        content: CGRect,
+        wrapper: CGRect
+    ) -> Bool {
+        let toolbarHeight = wrapper.height - content.height
+        // AppKit's Outline/ScrollView accessibility frame includes its
+        // one-point border on both sides, while the NavigationSplitView
+        // wrapper also includes the compact native title bar. Keep both
+        // tolerances bounded to those framework-owned regions.
+        return abs(content.minX - wrapper.minX) <= 2.5
+            && abs(content.width - wrapper.width) <= 2.5
+            && abs(content.maxY - wrapper.maxY) <= 2.5
+            && (28...120).contains(toolbarHeight)
+    }
+
+    private func assertExpandedTextExperience(
+        language: String,
+        appearance: String,
+        destinations: [(
+            button: String,
+            landmark: String,
+            pageIdentifier: String
+        )]
+    ) throws {
+        let app = launchReviewApp(
+            appearance: appearance,
+            language: language,
+            windowSize: "780x560",
+            expandedText: true
+        )
+        defer {
+            app.terminate()
+            XCTAssertTrue(app.wait(for: .notRunning, timeout: 5))
+        }
+
+        for destination in destinations {
+            let navigationButton = app.buttons[destination.button]
+            XCTAssertTrue(navigationButton.waitForExistence(timeout: 2))
+            XCTAssertTrue(navigationButton.isHittable)
+            navigationButton.click()
+            XCTAssertTrue(
+                app.descendants(matching: .any)[
+                    destination.pageIdentifier
+                ].waitForExistence(timeout: 2),
+                "Navigation did not reach \(destination.pageIdentifier)."
+            )
+            XCTAssertTrue(
+                app.staticTexts[destination.landmark].waitForExistence(timeout: 2)
+                    || app.buttons[destination.landmark].waitForExistence(timeout: 1)
+            )
+            if destination.pageIdentifier == "overview-page" {
+                let mainWindow = app.windows["main-AppWindow-1"]
+                XCTAssertTrue(mainWindow.waitForExistence(timeout: 2))
+                let attachment = XCTAttachment(
+                    screenshot: mainWindow.screenshot()
+                )
+                attachment.name = language == "en"
+                    ? "expanded-overview-en-dark"
+                    : "expanded-overview-zh-light"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+            try auditProductAccessibility(in: app)
+        }
+    }
+
+    private func launchReviewApp(
+        appearance: String,
+        state: String = "connected",
+        privacyPending: Bool = false,
+        profileEmpty: Bool = false,
+        subscriptionProfile: Bool = false,
+        externalSubscriptionLink: String? = nil,
+        engine: String? = nil,
+        automationEnabled: Bool = false,
+        language: String = "en",
+        windowSize: String? = nil,
+        expandedText: Bool = false,
+        responsivenessOutput: String? = nil
+    ) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment["AETHERROUTE_UI_REVIEW"] = state
+        app.launchEnvironment["AETHERROUTE_UI_REVIEW_APPEARANCE"] = appearance
+        app.launchEnvironment["AETHERROUTE_UI_REVIEW_REDUCE_MOTION"] = "1"
+        app.launchEnvironment[
+            "AETHERROUTE_UI_REVIEW_WINDOW_POSITION"
+        ] = "top-left"
+        if privacyPending {
+            app.launchEnvironment["AETHERROUTE_UI_REVIEW_PRIVACY"] = "pending"
+        }
+        if profileEmpty {
+            app.launchEnvironment["AETHERROUTE_UI_REVIEW_PROFILE"] = "none"
+        }
+        if subscriptionProfile {
+            app.launchEnvironment["AETHERROUTE_UI_REVIEW_SUBSCRIPTION"] = "1"
+        }
+        if let externalSubscriptionLink {
+            app.launchEnvironment[
+                "AETHERROUTE_UI_REVIEW_EXTERNAL_SUBSCRIPTION"
+            ] = externalSubscriptionLink
+        }
+        if let engine {
+            app.launchEnvironment["AETHERROUTE_UI_REVIEW_ENGINE"] = engine
+        }
+        if automationEnabled {
+            app.launchEnvironment["AETHERROUTE_UI_REVIEW_AUTOMATION"] = "1"
+        }
+        app.launchEnvironment["AETHERROUTE_UI_REVIEW_LANGUAGE"] = language
+        if let windowSize {
+            app.launchEnvironment["AETHERROUTE_UI_REVIEW_WINDOW"] = windowSize
+        }
+        if expandedText {
+            app.launchEnvironment["AETHERROUTE_UI_REVIEW_TEXT_SIZE"] = "expanded"
+        }
+        if let responsivenessOutput {
+            app.launchEnvironment[
+                "AETHERROUTE_UI_RESPONSIVENESS_APP_OUTPUT"
+            ] = responsivenessOutput
+        }
+        if let isolatedHome = ProcessInfo.processInfo.environment[
+            "AETHERROUTE_UI_TEST_ISOLATED_HOME"
+        ] {
+            app.launchEnvironment["HOME"] = isolatedHome
+            app.launchEnvironment["CFFIXED_USER_HOME"] = isolatedHome
+            app.launchEnvironment["TMPDIR"] = isolatedHome + "/tmp"
+        }
+        app.launchArguments += [
+            "-AppleLanguages", "(\(language))",
+            "-AppleLocale", language == "zh-Hans" ? "zh_CN" : "en_US",
+            "-ApplePersistenceIgnoreState", "YES",
+            "-NSQuitAlwaysKeepsWindows", "NO",
+        ]
+        if app.state != .notRunning {
+            app.terminate()
+            XCTAssertTrue(
+                app.wait(for: .notRunning, timeout: 5),
+                "A previous UI review instance did not terminate cleanly."
+            )
+        }
+        app.launch()
+        if ProcessInfo.processInfo.environment[
+            "AETHERROUTE_UI_TEST_ISOLATED_HOME"
+        ] != nil {
+            assertNoBroadDocumentsPrompt(in: app)
+        } else {
+            denyBroadDocumentsPromptIfPresent(in: app)
+        }
+        let productRoot = mainProductRoot(in: app)
+        if !productRoot.waitForExistence(timeout: 2) {
+            app.typeKey("n", modifierFlags: .command)
+        }
+        XCTAssertTrue(
+            productRoot.waitForExistence(timeout: 5),
+            "UI review launch did not restore the main product window."
+        )
+        let settingsWindow = app.windows[
+            "com_apple_SwiftUI_Settings_window"
+        ]
+        if settingsWindow.exists {
+            app.typeKey("w", modifierFlags: .command)
+            XCTAssertTrue(settingsWindow.waitForNonExistence(timeout: 3))
+            let mainWindow = app.windows["main-AppWindow-1"]
+            XCTAssertTrue(mainWindow.waitForExistence(timeout: 3))
+            mainWindow.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.5, dy: 0.035)
+            ).click()
+            XCTAssertTrue(app.wait(for: .runningForeground, timeout: 3))
+        }
+        return app
+    }
+
+    private func denyBroadDocumentsPromptIfPresent(
+        in app: XCUIApplication
+    ) {
+        let warningDialog = app.dialogs["警告"]
+        let englishWarningDialog = app.dialogs["Warning"]
+        guard warningDialog.waitForExistence(timeout: 0.5)
+            || englishWarningDialog.exists
+        else { return }
+
+        let mainWindow = app.windows["main-AppWindow-1"]
+        guard mainWindow.waitForExistence(timeout: 2) else { return }
+        // CoreServices renders the protected-folder sheet remotely, so its
+        // buttons are absent from both the app and UI-agent AX trees. Click the
+        // sheet's explicit deny action; without a sheet this point is inert
+        // background between the sidebar and the content cards.
+        mainWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.424, dy: 0.372)
+        ).click()
+    }
+
+    private func assertNoBroadDocumentsPrompt(in app: XCUIApplication) {
+        let protectedFolderCopy = app.staticTexts.matching(
+            NSPredicate(
+                format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@ OR value CONTAINS[c] %@ OR value CONTAINS[c] %@",
+                "Documents folder",
+                "access files in Documents",
+                "文稿",
+                "访问文稿"
+            )
+        ).firstMatch
+        XCTAssertFalse(
+            protectedFolderCopy.waitForExistence(timeout: 1.25),
+            "The isolated UI review app must never request access to the user's Documents folder."
+        )
+    }
+
+    private func mainProductRoot(in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)["aetherroute-semantic-root"]
+    }
+
+    private func waitForLabel(
+        _ label: String,
+        on element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        XCTWaiter.wait(
+            for: [
+                XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "label == %@", label),
+                    object: element
+                ),
+            ],
+            timeout: timeout
+        ) == .completed
+    }
+
+    private func waitForValue(
+        _ value: String,
+        on element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        XCTWaiter.wait(
+            for: [
+                XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "value == %@", value),
+                    object: element
+                ),
+            ],
+            timeout: timeout
+        ) == .completed
+    }
+
+    private func attachFailureScreenshot(_ app: XCUIApplication, name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+}
+
+private struct UIResponsivenessRow {
+    let language: String
+    let action: String
+    let durationMilliseconds: Double
+}
+
+private enum UIResponsivenessReadError: LocalizedError {
+    case invalidRow(String)
+    case noSamples
+
+    var errorDescription: String? {
+        switch self {
+        case let .invalidRow(row):
+            "Invalid UI responsiveness row: \(row)"
+        case .noSamples:
+            "The UI responsiveness probe produced no samples."
+        }
+    }
+}
+
+private final class SignedProbeNoRedirectDelegate:
+    NSObject,
+    URLSessionTaskDelegate,
+    @unchecked Sendable
+{
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+}

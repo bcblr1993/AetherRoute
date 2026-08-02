@@ -1,0 +1,437 @@
+name: AetherRoute
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "15.0"
+settings:
+  base:
+    ARCHS: arm64
+    EXCLUDED_ARCHS: x86_64
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    CLANG_ENABLE_MODULES: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    CODE_SIGN_STYLE: Automatic
+    AETHERROUTE_DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: $(AETHERROUTE_DEVELOPMENT_TEAM)
+    AETHERROUTE_BUNDLE_ID: com.aetherroute.desktop
+    AETHERROUTE_TUNNEL_BUNDLE_ID: $(AETHERROUTE_BUNDLE_ID).tunnel
+    AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID: $(AETHERROUTE_BUNDLE_ID).transparent-proxy
+    AETHERROUTE_APP_GROUP: group.$(AETHERROUTE_BUNDLE_ID)
+    AETHERROUTE_KEYCHAIN_GROUP_SUFFIX: $(AETHERROUTE_BUNDLE_ID).shared
+    AETHERROUTE_PROFILE_ARCHIVE_TYPE: $(AETHERROUTE_BUNDLE_ID).profile-archive
+    AETHERROUTE_SUBSCRIPTION_URL_NAME: $(AETHERROUTE_BUNDLE_ID).subscription
+    AETHERROUTE_RELEASE_CHANNEL: development
+    AETHERROUTE_RELEASE_TIMESTAMP: ""
+    AETHERROUTE_DISTRIBUTION_PRODUCT_ID: $(AETHERROUTE_BUNDLE_ID)
+    AETHERROUTE_LICENSE_SERVICE_URL: ""
+    AETHERROUTE_UPDATE_MANIFEST_URL: ""
+    AETHERROUTE_DISTRIBUTION_PUBLIC_KEY: ""
+    AETHERROUTE_HOST_PROFILE_SPECIFIER: ""
+    AETHERROUTE_TRANSPARENT_PROXY_PROFILE_SPECIFIER: ""
+    AETHERROUTE_PACKET_TUNNEL_PROFILE_SPECIFIER: ""
+    INFOPLIST_KEY_AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)
+    INFOPLIST_KEY_AetherRouteKeychainAccessGroupSuffix: $(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+    INFOPLIST_KEY_AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
+    INFOPLIST_KEY_AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
+    INFOPLIST_KEY_AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+  configs:
+    Release:
+      ENABLE_HARDENED_RUNTIME: YES
+targets:
+  AetherRouteFlowABI:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: Sources/AetherRouteFlowABI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AETHERROUTE_BUNDLE_ID).flow-abi
+        PRODUCT_MODULE_NAME: AetherRouteFlowABI
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/Sources/AetherRouteFlowABI/include
+          - $(SRCROOT)/Core/Headers
+        MODULEMAP_FILE: $(SRCROOT)/Sources/AetherRouteFlowABI/include/module.modulemap
+        PUBLIC_HEADERS_FOLDER_PATH: include
+
+  AetherRouteKit:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/AetherRouteKit
+      - path: Config/Kit/PrivacyInfo.xcprivacy
+        buildPhase: resources
+    info:
+      path: Config/Kit/AetherRouteKit-Info.plist
+      properties:
+        AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)
+        AetherRouteKeychainAccessGroupSuffix: $(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
+        AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
+        AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AETHERROUTE_BUNDLE_ID).kit
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+
+  AetherRouteTransparentProxySupport:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/AetherRouteTransparentProxySupport
+    dependencies:
+      - target: AetherRouteKit
+      - sdk: Network.framework
+      - sdk: NetworkExtension.framework
+      - sdk: Security.framework
+      - sdk: libbsm.tbd
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AETHERROUTE_BUNDLE_ID).transparent-proxy-support
+        PRODUCT_MODULE_NAME: AetherRouteTransparentProxySupport
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+
+  AetherRouteFlowCoreBridge:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/AetherRouteFlowCoreBridge
+    dependencies:
+      - target: AetherRouteFlowABI
+        link: true
+      - target: AetherRouteKit
+      - target: AetherRouteTransparentProxySupport
+      - sdk: Security.framework
+      - sdk: SystemConfiguration.framework
+      - sdk: CoreFoundation.framework
+      - sdk: CoreServices.framework
+      - sdk: libresolv.tbd
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AETHERROUTE_BUNDLE_ID).flow-core-bridge
+        PRODUCT_MODULE_NAME: AetherRouteFlowCoreBridge
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        HEADER_SEARCH_PATHS: $(SRCROOT)/Core/Headers
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -Wl,-force_load,$(SRCROOT)/Core/Artifacts/macos-arm64/libclashrs.a
+
+  AetherRoutePacketTunnel:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Sources/AetherRoutePacketTunnel
+      - path: Config/PacketTunnel/PrivacyInfo.xcprivacy
+        buildPhase: resources
+    info:
+      path: Config/PacketTunnel-Info.plist
+      properties:
+        CFBundleDisplayName: AetherRoute Tunnel
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)
+        AetherRouteKeychainAccessGroup: $(AppIdentifierPrefix)$(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteKeychainAccessGroupSuffix: $(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
+        AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
+        AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
+    entitlements:
+      path: Config/AetherRoutePacketTunnel.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - $(AETHERROUTE_APP_GROUP)
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
+    dependencies:
+      - target: AetherRouteKit
+      - framework: Core/Artifacts/macos-arm64/libclashrs-direct.a
+      - sdk: NetworkExtension.framework
+      - sdk: Security.framework
+      - sdk: SystemConfiguration.framework
+      - sdk: CoreFoundation.framework
+      - sdk: CoreServices.framework
+      - sdk: libresolv.tbd
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
+        SKIP_INSTALL: YES
+        HEADER_SEARCH_PATHS: $(SRCROOT)/Core/Headers
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/Core/Artifacts/macos-arm64
+        SWIFT_OBJC_BRIDGING_HEADER: Config/AetherRoutePacketTunnel-Bridging-Header.h
+        PROVISIONING_PROFILE_SPECIFIER: $(AETHERROUTE_PACKET_TUNNEL_PROFILE_SPECIFIER)
+
+  AetherRouteTransparentProxy:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Sources/AetherRouteTransparentProxy
+      - path: Config/TransparentProxy/PrivacyInfo.xcprivacy
+        buildPhase: resources
+    info:
+      path: Config/TransparentProxy-Info.plist
+      properties:
+        CFBundleDisplayName: AetherRoute Transparent Proxy
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)
+        AetherRouteKeychainAccessGroup: $(AppIdentifierPrefix)$(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteKeychainAccessGroupSuffix: $(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
+        AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
+        AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.app-proxy
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).TransparentProxyProvider
+    entitlements:
+      path: Config/AetherRouteTransparentProxy.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - app-proxy-provider
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - $(AETHERROUTE_APP_GROUP)
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        com.apple.security.network.client: true
+    dependencies:
+      - target: AetherRouteKit
+        embed: true
+      - target: AetherRouteTransparentProxySupport
+        embed: true
+      - target: AetherRouteFlowCoreBridge
+        embed: true
+      - sdk: NetworkExtension.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
+        SKIP_INSTALL: YES
+        HEADER_SEARCH_PATHS: $(SRCROOT)/Core/Headers
+        PROVISIONING_PROFILE_SPECIFIER: $(AETHERROUTE_TRANSPARENT_PROXY_PROFILE_SPECIFIER)
+
+  AetherRoute:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/AetherRouteApp
+      - path: Config/App/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      - path: Config/App/en.lproj/AetherRouteSourceLanguage.strings
+        buildPhase: resources
+      - path: Config/Licenses/ThirdPartyLicenses.json
+        buildPhase: resources
+    info:
+      path: Config/App-Info.plist
+      properties:
+        CFBundleDisplayName: AetherRoute
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.utilities
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSLocalNetworkUsageDescription: AetherRoute accesses the local network only when you route traffic to a proxy, DNS server, or destination on your local network.
+        NSHumanReadableCopyright: Created by 陈艳男 (ChenYanNan)
+        NSHighResolutionCapable: true
+        AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)
+        AetherRouteAuthorName: 陈艳男
+        AetherRouteAuthorRomanizedName: ChenYanNan
+        AetherRouteReleaseChannel: $(AETHERROUTE_RELEASE_CHANNEL)
+        AetherRouteReleaseTimestamp: $(AETHERROUTE_RELEASE_TIMESTAMP)
+        AetherRouteDistributionProductIdentifier: $(AETHERROUTE_DISTRIBUTION_PRODUCT_ID)
+        AetherRouteLicenseServiceURL: $(AETHERROUTE_LICENSE_SERVICE_URL)
+        AetherRouteUpdateManifestURL: $(AETHERROUTE_UPDATE_MANIFEST_URL)
+        AetherRouteDistributionSigningPublicKey: $(AETHERROUTE_DISTRIBUTION_PUBLIC_KEY)
+        AetherRouteKeychainAccessGroup: $(AppIdentifierPrefix)$(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteKeychainAccessGroupSuffix: $(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
+        AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
+        AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
+            UTTypeDescription: AetherRoute Portable Profile Archive
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - aetherroute
+              public.mime-type: application/vnd.aetherroute.profile-archive
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: AetherRoute Portable Profile Archive
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
+        CFBundleURLTypes:
+          - CFBundleURLName: $(AETHERROUTE_SUBSCRIPTION_URL_NAME)
+            CFBundleTypeRole: Viewer
+            CFBundleURLSchemes:
+              - aetherroute
+    entitlements:
+      path: Config/AetherRoute.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - app-proxy-provider
+          - packet-tunnel-provider
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - $(AETHERROUTE_APP_GROUP)
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.network.client: true
+    dependencies:
+      - target: AetherRouteKit
+      - target: AetherRouteTransparentProxy
+        embed: true
+      - target: AetherRoutePacketTunnel
+        embed: true
+      - sdk: NetworkExtension.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AETHERROUTE_BUNDLE_ID)
+        PRODUCT_NAME: AetherRoute
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) AETHERROUTE_INDEPENDENT
+        PROVISIONING_PROFILE_SPECIFIER: $(AETHERROUTE_HOST_PROFILE_SPECIFIER)
+
+  AetherRouteTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/AetherRouteKitTests
+    info:
+      path: Config/Tests/AetherRouteTests-Info.plist
+      properties:
+        AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)
+        AetherRouteKeychainAccessGroupSuffix: $(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
+        AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
+        AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
+    dependencies:
+      - target: AetherRouteKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AETHERROUTE_BUNDLE_ID).tests
+        GENERATE_INFOPLIST_FILE: NO
+
+  AetherRouteTransparentProxySupportTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/AetherRouteTransparentProxyTests
+    info:
+      path: Config/Tests/AetherRouteTransparentProxySupportTests-Info.plist
+      properties:
+        AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)
+        AetherRouteKeychainAccessGroupSuffix: $(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
+        AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
+        AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
+    dependencies:
+      - target: AetherRouteTransparentProxySupport
+      - target: AetherRouteKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AETHERROUTE_BUNDLE_ID).transparent-proxy-support-tests
+        GENERATE_INFOPLIST_FILE: NO
+
+  AetherRouteFlowCoreBridgeTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/AetherRouteFlowCoreBridgeTests
+    info:
+      path: Config/Tests/AetherRouteFlowCoreBridgeTests-Info.plist
+      properties:
+        AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)
+        AetherRouteKeychainAccessGroupSuffix: $(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
+        AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
+        AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
+    dependencies:
+      - target: AetherRouteFlowCoreBridge
+      - target: AetherRouteFlowABI
+      - target: AetherRouteTransparentProxySupport
+      - target: AetherRouteKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AETHERROUTE_BUNDLE_ID).flow-core-bridge-tests
+        GENERATE_INFOPLIST_FILE: NO
+        HEADER_SEARCH_PATHS: $(SRCROOT)/Core/Headers
+
+  AetherRouteUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: Tests/AetherRouteUITests
+    preBuildScripts:
+      - path: scripts/guard_ui_test_temp_location.sh
+        name: Require temporary UI test storage
+        basedOnDependencyAnalysis: false
+    dependencies:
+      - target: AetherRoute
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AETHERROUTE_BUNDLE_ID).ui-tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  AetherRoute:
+    build:
+      targets:
+        AetherRoute: all
+        AetherRoutePacketTunnel: all
+        AetherRouteTransparentProxy: all
+        AetherRouteTransparentProxySupport: all
+        AetherRouteFlowCoreBridge: all
+        AetherRouteFlowABI: all
+        AetherRouteKit: all
+        AetherRouteTests: [test]
+        AetherRouteTransparentProxySupportTests: [test]
+        AetherRouteFlowCoreBridgeTests: [test]
+        AetherRouteUITests: [test]
+    test:
+      preActions:
+        - name: Require temporary UI test storage
+          settingsTarget: AetherRouteUITests
+          script: '"$SRCROOT/scripts/guard_ui_test_temp_location.sh"'
+      targets:
+        - AetherRouteTests
+        - AetherRouteTransparentProxySupportTests
+        - AetherRouteFlowCoreBridgeTests
+        - AetherRouteUITests
+
+  AetherRouteUIReview:
+    build:
+      targets:
+        AetherRoute: all
+        AetherRouteUITests: [test]
+    test:
+      preActions:
+        - name: Require temporary UI test storage
+          settingsTarget: AetherRouteUITests
+          script: '"$SRCROOT/scripts/guard_ui_test_temp_location.sh"'
+      targets:
+        - AetherRouteUITests

@@ -1,0 +1,12 @@
+Port __PORT__
+ListenAddress 127.0.0.1
+HostKey __WORK_DIR__/host_key
+PidFile __WORK_DIR__/sshd.pid
+AuthorizedKeysFile __WORK_DIR__/authorized_keys
+AllowUsers __USER__
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+UsePAM no
+StrictModes no
+LogLevel DEBUG3

@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "coreRepository": "https://github.com/bcblr1993/aetherroute-core.git",
+  "coreCommit": "c655adf2050d4502e7412cc1c21d186d528cafd4",
+  "sourceFiles": {
+    "interopTestsSHA256": "a5e134e73920f318a4eba5e6be7533decea764bc433e53aebf3bcd885582af3c",
+    "proxyManagerSHA256": "8837fed3ffdebf6c77cedc9b10bd6763bebc1c842e1516a913e750802d899980",
+    "coreManifestSHA256": "afb72be83c518c5676fb03824050a2d5dcbcdb85ee2b9562f4438b2219dae91e",
+    "ffiManifestSHA256": "22a87e13336aa0bc7e4d6a6b503b0f9ff883cb35b0d5fc6bb5a59d819e714fe4",
+    "ffiSourceSHA256": "9bbdc611dad3468d12c6c7feb319af35736dc0055490d581cd8a52c024a3ca0f",
+    "flowFFISourceSHA256": "106d8ca1521fc583aa315884a3c4622cd06ff2bc172c8ee1d688f3628dcaa6bd"
+  },
+  "artifacts": {
+    "flowCoreSHA256": "3b35d4b775736a5ddce85fdf2d29597f84432f6675f9f6c38d006ab95a7492f3",
+    "packetFlowCoreSHA256": "7639fa60faa77eedf0e6c4708eed8c6ea121213fbb742f3e1b77db71fa16f3f0",
+    "headerSHA256": "5e158ae79080e02b2a01235dc2f94b005290bf0aed03d8072101122ae052e7a5",
+    "interopTestBinarySHA256": "b964b5724d0f553037600c45415ed0f78fc448da2f216fa234f259b3ec0895fa"
+  },
+  "interopCases": [
+    "AnyTLS",
+    "HTTP CONNECT",
+    "HTTPS CONNECT",
+    "Hysteria2",
+    "Hysteria2 Salamander",
+    "SOCKS5",
+    "Shadowsocks",
+    "Shadowsocks 2022",
+    "Shadowsocks over ShadowTLS v3",
+    "TUIC v5",
+    "Trojan",
+    "Trojan over WebSocket",
+    "Trojan over gRPC",
+    "VLESS",
+    "VLESS over HTTP/2",
+    "VLESS over WebSocket",
+    "VLESS over gRPC",
+    "VMess",
+    "VMess over HTTP/2",
+    "VMess over WebSocket",
+    "VMess over gRPC"
+  ],
+  "interopTests": [
+    "interoperates_shadowquic_with_mihomo_and_recovers_after_restart",
+    "interoperates_vless_reality_with_xray",
+    "interoperates_wireguard_with_wireguard_go_netstack",
+    "interoperates_with_openssh"
+  ],
+  "coreFeatures": [
+    "aether-tuic",
+    "shadowquic",
+    "shadowsocks",
+    "ssh",
+    "wireguard"
+  ],
+  "ffiFeatures": [
+    "aether-tuic",
+    "shadowquic",
+    "shadowsocks",
+    "ssh",
+    "wireguard"
+  ]
+}

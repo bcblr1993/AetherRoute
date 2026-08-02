@@ -1,0 +1,6 @@
+/*
+ English is the source language in Localizable.xcstrings. This marker keeps an
+ explicit en.lproj bundle available so an in-app English selection cannot fall
+ back to the host Mac's preferred Chinese localization.
+*/
+"AetherRouteSourceLanguage" = "English";
