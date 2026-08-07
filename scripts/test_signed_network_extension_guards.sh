@@ -16,8 +16,8 @@ for required in \
   'probe_url_retained=no' \
   'System proxy/DNS/default-route/interface state was not restored' \
   'signed Network Extension gate always uses disposable DerivedData' \
-  'AetherRoutePacketTunnel.appex' \
-  'AetherRouteTransparentProxy.appex' \
+  '$EXPECTED_PACKET_BUNDLE.systemextension' \
+  '$EXPECTED_TRANSPARENT_BUNDLE.systemextension' \
   'packet-tunnel-provider' \
   'app-proxy-provider' \
   'signed host must not carry network.server' \

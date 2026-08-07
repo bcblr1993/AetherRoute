@@ -29,9 +29,21 @@ start a tunnel:
 For a real build, copy `Config/Signing.example.json` outside source control and
 provide the final Team ID, application identifiers, App Group, Keychain group,
 Developer ID Application certificate SHA-1, and three explicit Developer ID
-profiles: host, Transparent Proxy, and Packet Tunnel. Never place certificates,
-private keys, passwords, notary credentials, or the completed JSON in the
-repository.
+profiles: host, Transparent Proxy system extension, and Packet Tunnel system
+extension. The host profile must authorize System Extension installation. Both
+the host and provider profiles must grant the Developer ID forms
+`app-proxy-provider-systemextension` and/or
+`packet-tunnel-provider-systemextension` that match their role. Never place
+certificates, private keys, passwords, notary credentials, or the completed
+JSON in the repository.
+
+Because this product uses the registered `group.` App Group form, assign the
+same App Group to all three explicit App IDs before generating the profiles.
+Every profile must contain that exact
+`com.apple.security.application-groups` value. A profile that signs or
+notarizes successfully but omits the App Group is rejected by the production
+preflight because the host and both providers would not have a validated
+shared container at runtime.
 
 ```sh
 ./scripts/signing_preflight.sh /absolute/path/to/Signing.json
@@ -46,6 +58,16 @@ Network Extension grants, profile expiration, identity availability, and exact
 agreement with the generated Xcode target settings. The generated override is
 mode 600 and contains no certificate fingerprint, profile path, password, or
 notary credential.
+
+Development builds intentionally use the standard Network Extension values.
+Release builds switch to dedicated Developer ID entitlement files with the
+`-systemextension` suffix. Both providers are packaged under
+`Contents/Library/SystemExtensions`; direct distribution must not revert them
+to App Extensions under `Contents/PlugIns`. Xcode 26 and earlier cannot export
+this combination correctly through Organizer, so `scripts/release.sh` performs
+the validated manual Developer ID archive and signing path. Xcode 27 or later
+may remove that tooling limitation, but the entitlement and packaging checks
+remain release gates.
 
 ## Signed Network Extension lifecycle gate
 
@@ -86,6 +108,31 @@ available after provider readiness, and unavailable again after disconnect.
 The URL must have no query, fragment, user information, whitespace, localhost,
 or literal loopback address. The test uses an ephemeral no-cookie, no-cache,
 no-redirect session and never records the body or URL in the repository.
+
+## Notarized cross-machine test candidate
+
+Use the dedicated test-candidate builder when a signed, notarized DMG is needed
+for manual installation on another Apple-silicon Mac before production gates
+are complete:
+
+```sh
+./scripts/build_notarized_test_candidate.sh \
+  /absolute/path/to/Signing.json \
+  notary-keychain-profile \
+  0.1.0 \
+  2026080703 \
+  /absolute/new/test-candidate-output
+```
+
+The builder uses disposable DerivedData, requires the three Developer ID
+profiles, verifies the host and both embedded Network Extensions, enforces
+arm64-only Mach-O files, creates and signs a DMG, waits for Apple notarization,
+staples the ticket, and runs Gatekeeper checks against both the DMG and mounted
+app. It also compares system proxy, DNS, default routes, and interfaces before
+and after the build. It never installs or launches the app and never activates
+a Network Extension. Output is explicitly marked
+`notarized-test-candidate`; it is not valid production or update-manifest
+evidence and does not bypass the gates below.
 
 ## Notarized release
 

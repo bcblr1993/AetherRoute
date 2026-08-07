@@ -82,6 +82,36 @@ XCUITest source asserts primary runtime actions, disabled/enabled states,
 navigation selection, Settings selection, local-proxy controls, privacy
 consent, licensing/update failure states, and Licenses search/filter/selection.
 Its final execution plus keyboard focus/hover/pressed review, live VoiceOver,
-and signed Network Extension states remain release requirements. They cannot
-be promoted as passed until Developer Tools Security is enabled on the UI-test
-Mac and the exact frozen release source is rerun.
+and signed Network Extension states remain release requirements. Developer
+Tools Security is enabled on the current UI-test Mac, but the complete suite
+still requires an exclusive foreground session and an exact frozen-source run
+before it can be promoted as passed.
+
+## User-journey failure and recovery matrix
+
+The release candidate must be tested from the user's starting point, not only
+from a preconfigured happy path. A passing parser, enabled toggle, or attractive
+screenshot is not sufficient evidence that the user can recover.
+
+| Journey | Expected user outcome | Automated evidence | Remaining release evidence |
+| --- | --- | --- | --- |
+| First launch | Read the privacy disclosure, decline without side effects, or accept and reach a truthful disconnected state | Privacy consent storage and UI gate tests | Frozen-candidate keyboard and VoiceOver pass |
+| First Network Extension approval | Understand why macOS asks, open the closest Settings page, distinguish Extensions from Open at Login, copy the steps, return, and recheck without relaunching | Dedicated English/Chinese approval-state UI test; application-active recheck; approval card remains visible until macOS returns a result | Installed Developer ID candidate on a clean Mac, including approve, deny, retry, and reboot-required outcomes |
+| Empty profile | Connection remains disabled and the next action opens Profiles | Empty-state and recovery UI tests | Installed-candidate smoke |
+| Manual node | Protocol-specific fields validate before save; secrets are never echoed in errors | UI editor coverage plus all 12 typed-protocol validation/compilation tests | One installed handshake per supported catalog protocol |
+| Subscription import | Confirm external links without exposing tokens; keep valid nodes when some entries are malformed; never replace the active profile when every entry is invalid | External-link, subscription client, normalization, partial-invalid, all-invalid, redirect, size, and encryption tests | Authorized HTTPS fetch and installed connection on a clean Mac |
+| Existing local proxy | AetherRoute uses only explicit loopback ports, rejects duplicates/out-of-range values, and never edits the macOS system proxy | Local-proxy settings and random-high-port loopback black-box tests | Signed Packet Tunnel runtime while the user's other proxy remains active |
+| Connection failure | Explain the failure near the initiating control and provide Retry or Profiles without displaying a false connected state | Failed-state recovery UI and provider watchdog tests | Signed invalid-profile, provider-timeout, and service-restart drills |
+| Permission or signature failure | Show the actual approval, signature, missing-extension, or reboot action instead of a generic “Unavailable” loop | Approval state and error mapping build coverage | Clean-machine signed matrix on each supported macOS release |
+| Network loss, sleep, and wake | State becomes truthful within ten seconds; reconnect stays cancellable and the UI remains responsive | Bounded state machines and path-event unit tests | Signed Wi-Fi/path-change and sleep/wake matrix |
+| Language, appearance, and window changes | English/Chinese, light/dark, minimum window, expanded text, Reduce Motion, and Increased Contrast remain usable without window jumps | Page-size, localization, expanded-text, selection, and accessibility UI tests | Exact frozen-source run with exclusive foreground plus manual hover/pressed/VoiceOver review |
+| Quit, restart, upgrade, and rollback | Preserve encrypted profiles and never leave an orphan test or provider process | Temporary-root upgrade/rollback and profile-store tests | Installed signed upgrade/rollback on a clean Mac |
+
+On 2026-08-07, the current isolated non-UI user-journey regression completed
+303 tests with zero failures or skips. The targeted approval journey reached
+both localized cards and every action; its English accessibility audit
+completed. The Chinese foreground run was interrupted by another application
+taking focus and is not recorded as a product pass or failure. The UI runner
+now builds and verifies its temporary app before launch, then terminates,
+unregisters, and deletes only its exact temporary products. A final full UI run
+still requires an exclusive foreground session.

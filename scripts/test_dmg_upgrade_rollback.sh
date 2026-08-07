@@ -46,10 +46,15 @@ verify_app() {
   app=$1
   version=$2
   build=$3
+  app_info="$app/Contents/Info.plist"
+  tunnel_bundle=$(/usr/libexec/PlistBuddy -c \
+    'Print :AetherRouteTunnelBundleIdentifier' "$app_info")
+  transparent_bundle=$(/usr/libexec/PlistBuddy -c \
+    'Print :AetherRouteTransparentProxyBundleIdentifier' "$app_info")
   for bundle in \
     "$app" \
-    "$app/Contents/PlugIns/AetherRouteTransparentProxy.appex" \
-    "$app/Contents/PlugIns/AetherRoutePacketTunnel.appex"
+    "$app/Contents/Library/SystemExtensions/$transparent_bundle.systemextension" \
+    "$app/Contents/Library/SystemExtensions/$tunnel_bundle.systemextension"
   do
     info="$bundle/Contents/Info.plist"
     test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info")" = \

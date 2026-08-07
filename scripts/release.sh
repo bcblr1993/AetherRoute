@@ -237,8 +237,13 @@ if ! xcodebuild \
 fi
 
 app="$archive/Products/Applications/AetherRoute.app"
-packet="$app/Contents/PlugIns/AetherRoutePacketTunnel.appex"
-transparent="$app/Contents/PlugIns/AetherRouteTransparentProxy.appex"
+packet_bundle=$(jq -r '.profiles[] | select(.role == "packet-tunnel") | .bundleID' \
+  "$SIGNING_CONFIG")
+transparent_bundle=$(jq -r \
+  '.profiles[] | select(.role == "transparent-proxy") | .bundleID' \
+  "$SIGNING_CONFIG")
+packet="$app/Contents/Library/SystemExtensions/$packet_bundle.systemextension"
+transparent="$app/Contents/Library/SystemExtensions/$transparent_bundle.systemextension"
 for bundle in "$app" "$packet" "$transparent"; do
   test -d "$bundle"
   codesign --verify --deep --strict --verbose=2 "$bundle"

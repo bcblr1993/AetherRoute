@@ -129,8 +129,8 @@ xcodebuild \
   build-for-testing
 
 APP="$DERIVED_DATA/Build/Products/Debug/$APP_NAME"
-PACKET_EXTENSION="$APP/Contents/PlugIns/AetherRoutePacketTunnel.appex"
-TRANSPARENT_EXTENSION="$APP/Contents/PlugIns/AetherRouteTransparentProxy.appex"
+PACKET_EXTENSION="$APP/Contents/Library/SystemExtensions/$EXPECTED_PACKET_BUNDLE.systemextension"
+TRANSPARENT_EXTENSION="$APP/Contents/Library/SystemExtensions/$EXPECTED_TRANSPARENT_BUNDLE.systemextension"
 if [ ! -d "$APP" ] \
   || [ ! -d "$PACKET_EXTENSION" ] \
   || [ ! -d "$TRANSPARENT_EXTENSION" ]; then

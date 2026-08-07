@@ -16,6 +16,7 @@ trap cleanup EXIT HUP INT TERM
 "$ROOT/scripts/test_signed_network_extension_evidence.sh"
 "$ROOT/scripts/test_postinstall_evidence.sh"
 "$ROOT/scripts/test_promotion_pipeline.sh"
+"$ROOT/scripts/test_notarized_test_candidate_pipeline.sh"
 "$ROOT/scripts/test_ui_isolation_guards.sh"
 "$ROOT/scripts/test_release_pipeline.sh"
 "$ROOT/scripts/test_release_soak_evidence.sh"
@@ -24,6 +25,7 @@ trap cleanup EXIT HUP INT TERM
 "$ROOT/scripts/test_soak_trend_verifier.sh"
 "$ROOT/scripts/test_update_envelope.sh"
 "$ROOT/scripts/test_distribution_staging.sh"
+"$ROOT/scripts/test_distribution_web.sh"
 "$ROOT/scripts/test_distribution_service.sh"
 "$ROOT/scripts/test_dmg_upgrade_rollback.sh"
 "$ROOT/scripts/verify_independent_distribution_boundary.sh"
@@ -41,7 +43,10 @@ trap cleanup EXIT HUP INT TERM
 plutil -lint \
   "$ROOT/Config/AetherRoute.entitlements" \
   "$ROOT/Config/AetherRoutePacketTunnel.entitlements" \
-  "$ROOT/Config/AetherRouteTransparentProxy.entitlements"
+  "$ROOT/Config/AetherRouteTransparentProxy.entitlements" \
+  "$ROOT/Config/AetherRoute.DeveloperID.entitlements" \
+  "$ROOT/Config/AetherRoutePacketTunnel.DeveloperID.entitlements" \
+  "$ROOT/Config/AetherRouteTransparentProxy.DeveloperID.entitlements"
 test "$(/usr/libexec/PlistBuddy -c \
   'Print :com.apple.security.app-sandbox' \
   "$ROOT/Config/AetherRoute.entitlements")" = true
@@ -69,10 +74,32 @@ test "$(/usr/libexec/PlistBuddy -c \
 test "$(/usr/libexec/PlistBuddy -c \
   'Print :com.apple.developer.networking.networkextension:0' \
   "$ROOT/Config/AetherRouteTransparentProxy.entitlements")" = app-proxy-provider
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.developer.networking.networkextension:0' \
+  "$ROOT/Config/AetherRoute.DeveloperID.entitlements")" = \
+  app-proxy-provider-systemextension
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.developer.networking.networkextension:1' \
+  "$ROOT/Config/AetherRoute.DeveloperID.entitlements")" = \
+  packet-tunnel-provider-systemextension
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.developer.networking.networkextension:0' \
+  "$ROOT/Config/AetherRoutePacketTunnel.DeveloperID.entitlements")" = \
+  packet-tunnel-provider-systemextension
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.developer.networking.networkextension:0' \
+  "$ROOT/Config/AetherRouteTransparentProxy.DeveloperID.entitlements")" = \
+  app-proxy-provider-systemextension
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.developer.system-extension.install' \
+  "$ROOT/Config/AetherRoute.DeveloperID.entitlements")" = true
 for ENTITLEMENTS in \
   "$ROOT/Config/AetherRoute.entitlements" \
   "$ROOT/Config/AetherRoutePacketTunnel.entitlements" \
-  "$ROOT/Config/AetherRouteTransparentProxy.entitlements"
+  "$ROOT/Config/AetherRouteTransparentProxy.entitlements" \
+  "$ROOT/Config/AetherRoute.DeveloperID.entitlements" \
+  "$ROOT/Config/AetherRoutePacketTunnel.DeveloperID.entitlements" \
+  "$ROOT/Config/AetherRouteTransparentProxy.DeveloperID.entitlements"
 do
   test "$(/usr/libexec/PlistBuddy -c \
     'Print :keychain-access-groups:0' "$ENTITLEMENTS")" = \
@@ -88,9 +115,14 @@ test "$(/usr/libexec/PlistBuddy -c \
 test "$(/usr/libexec/PlistBuddy -c \
   'Print :com.apple.security.network.server' \
   "$ROOT/Config/AetherRoutePacketTunnel.entitlements")" = true
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.security.network.server' \
+  "$ROOT/Config/AetherRoutePacketTunnel.DeveloperID.entitlements")" = true
 for ENTITLEMENTS in \
   "$ROOT/Config/AetherRoute.entitlements" \
-  "$ROOT/Config/AetherRouteTransparentProxy.entitlements"
+  "$ROOT/Config/AetherRouteTransparentProxy.entitlements" \
+  "$ROOT/Config/AetherRoute.DeveloperID.entitlements" \
+  "$ROOT/Config/AetherRouteTransparentProxy.DeveloperID.entitlements"
 do
   if /usr/libexec/PlistBuddy -c \
     'Print :com.apple.security.network.server' \

@@ -2,6 +2,7 @@
 set -eu
 
 REPOSITORY_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+SIGNING_HOME=$HOME
 TEMP_BASE=$(CDPATH= cd -- "${TMPDIR:-/tmp}" && pwd -P)
 case "$TEMP_BASE/" in
   "$HOME/Documents/"*|*/Documents/*)
@@ -17,6 +18,20 @@ if ! printf '%s\n' "$DEVELOPER_TOOLS_STATUS" \
   echo "macOS Automation Mode is unavailable; no UI runner was started." >&2
   echo "Enable Developer Tools Security once, then rerun:" >&2
   echo "  sudo /usr/sbin/DevToolsSecurity -enable" >&2
+  exit 77
+fi
+UI_SIGNING_IDENTITY=${AETHERROUTE_UI_TEST_SIGNING_IDENTITY:-}
+if [ -z "$UI_SIGNING_IDENTITY" ]; then
+  UI_SIGNING_IDENTITY=$(
+    security find-identity -v -p codesigning 2>/dev/null \
+      | awk '/"Apple Development:/ { print $2; exit }'
+  )
+fi
+if ! printf '%s\n' "$UI_SIGNING_IDENTITY" \
+  | grep -Eq '^[[:xdigit:]]{40}$'; then
+  echo "A trusted Apple Development identity is required for macOS UI tests." >&2
+  echo "An ad-hoc UI test runner can be rejected by Gatekeeper as damaged." >&2
+  echo "Create an Apple Development certificate in Xcode, then rerun." >&2
   exit 77
 fi
 LOCK_DIRECTORY="$TEMP_BASE/aetherroute-ui-tests.lock"
@@ -49,10 +64,27 @@ case "$CONFIGURATION" in
 esac
 
 cleanup() {
-  pkill -f "$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRouteUITests-Runner.app" \
-    2>/dev/null || true
-  pkill -f "$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRoute.app" \
-    2>/dev/null || true
+  RUNNER_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRouteUITests-Runner.app"
+  PRODUCT_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRoute.app"
+  # Stop the complete test session first. Otherwise xcodebuild may deliver a
+  # queued launch request after the generated runner has already been removed,
+  # which macOS misleadingly reports as a damaged application.
+  pkill -TERM -f "$DERIVED_DATA" 2>/dev/null || true
+  attempts=0
+  while [ "$attempts" -lt 25 ]; do
+    if ! pgrep -f "$DERIVED_DATA" >/dev/null 2>&1; then
+      break
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.2
+  done
+  pkill -KILL -f "$DERIVED_DATA" 2>/dev/null || true
+  for application in "$RUNNER_APP" "$PRODUCT_APP"; do
+    if [ -d "$application" ]; then
+      /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
+        -u "$application" >/dev/null 2>&1 || true
+    fi
+  done
   find "$TEST_ROOT" -depth -delete 2>/dev/null || true
   rmdir "$LOCK_DIRECTORY" 2>/dev/null || true
 }
@@ -152,18 +184,61 @@ mkdir -p "$ISOLATED_HOME/tmp" "$RUN_DIRECTORY"
 copy_test_workspace
 "$ROOT/scripts/bootstrap.sh"
 
-set -- xcodebuild test \
+set -- xcodebuild build-for-testing \
+  -project "$ROOT/AetherRoute.xcodeproj" \
+  -scheme AetherRouteUIReview \
+  -configuration "$CONFIGURATION" \
+  -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath "$DERIVED_DATA" \
+  CODE_SIGN_STYLE=Manual \
+  CODE_SIGNING_ALLOWED=YES \
+  CODE_SIGNING_REQUIRED=YES \
+  CODE_SIGN_ENTITLEMENTS= \
+  "CODE_SIGN_IDENTITY=$UI_SIGNING_IDENTITY" \
+  AD_HOC_CODE_SIGNING_ALLOWED=NO \
+  SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
+
+if [ "${AETHERROUTE_RUN_UI_RESPONSIVENESS:-NO}" = YES ]; then
+  set -- "$@" \
+    'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) AETHERROUTE_UI_RESPONSIVENESS'
+fi
+
+cd "$RUN_DIRECTORY"
+build_status=0
+HOME="$SIGNING_HOME" \
+CFFIXED_USER_HOME="$ISOLATED_HOME" \
+TMPDIR="$ISOLATED_HOME/tmp" \
+AETHERROUTE_UI_TEST_ISOLATED_HOME="$ISOLATED_HOME" \
+  "$@" \
+  >"$TEST_ROOT/xcodebuild.log" 2>&1 || build_status=$?
+if [ "$build_status" -ne 0 ]; then
+  tail -160 "$TEST_ROOT/xcodebuild.log" >&2
+  exit 1
+fi
+
+RUNNER_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRouteUITests-Runner.app"
+PRODUCT_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRoute.app"
+codesign --verify --deep --strict "$RUNNER_APP"
+codesign --verify --deep --strict "$PRODUCT_APP"
+for application in "$RUNNER_APP" "$PRODUCT_APP"; do
+  if xattr -p com.apple.quarantine "$application" >/dev/null 2>&1; then
+    xattr -dr com.apple.quarantine "$application"
+  fi
+done
+
+set -- xcodebuild test-without-building \
   -project "$ROOT/AetherRoute.xcodeproj" \
   -scheme AetherRouteUIReview \
   -configuration "$CONFIGURATION" \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$DERIVED_DATA" \
   -resultBundlePath "$RESULT_BUNDLE" \
+  CODE_SIGN_STYLE=Manual \
   CODE_SIGNING_ALLOWED=YES \
-  CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGNING_REQUIRED=YES \
   CODE_SIGN_ENTITLEMENTS= \
-  CODE_SIGN_IDENTITY=- \
-  AD_HOC_CODE_SIGNING_ALLOWED=YES \
+  "CODE_SIGN_IDENTITY=$UI_SIGNING_IDENTITY" \
+  AD_HOC_CODE_SIGNING_ALLOWED=NO \
   SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
 
 if [ "${AETHERROUTE_RUN_UI_RESPONSIVENESS:-NO}" = YES ]; then
@@ -175,7 +250,6 @@ if [ -n "$ONLY_TEST" ]; then
   set -- "$@" "-only-testing:$ONLY_TEST"
 fi
 
-cd "$RUN_DIRECTORY"
 test_status=0
 HOME="$ISOLATED_HOME" \
 CFFIXED_USER_HOME="$ISOLATED_HOME" \
@@ -187,10 +261,8 @@ if [ "$test_status" -ne 0 ] &&
    grep -Fq 'Timed out while enabling automation mode.' \
      "$TEST_ROOT/xcodebuild.log"; then
   echo "XCTest automation service timed out; retrying once in the same isolated workspace." >&2
-  pkill -f "$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRouteUITests-Runner.app" \
-    2>/dev/null || true
-  pkill -f "$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRoute.app" \
-    2>/dev/null || true
+  pkill -TERM -f "$RUNNER_APP" 2>/dev/null || true
+  pkill -TERM -f "$PRODUCT_APP" 2>/dev/null || true
   find "$RESULT_BUNDLE" -depth -delete 2>/dev/null || true
   : >"$TEST_ROOT/xcodebuild.log"
   test_status=0

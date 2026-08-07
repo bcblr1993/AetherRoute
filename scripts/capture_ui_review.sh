@@ -88,6 +88,7 @@ fi
 
 "$ROOT/scripts/bootstrap.sh"
 if ! xcodebuild \
+  -jobs 1 \
   -project "$ROOT/AetherRoute.xcodeproj" \
   -scheme AetherRouteUIReview \
   -configuration Debug \
@@ -185,7 +186,29 @@ capture() {
   fi
 
   sleep 1
-  screencapture -x -l "$window_id" "$png"
+  capture_attempts=0
+  while [ "$capture_attempts" -lt 20 ]; do
+    # SwiftUI can replace the Settings scene's backing NSWindow while its
+    # toolbar and sidebar settle. Refresh the CGWindow identifier so a
+    # transient scene replacement cannot leave a partial visual review.
+    if [ "$settings_tab" = "-" ]; then
+      window_id=$("$TEMP/ui_review_window_id" "$CURRENT_PID" 2>/dev/null || true)
+    else
+      window_id=$("$TEMP/ui_review_window_id" --settings "$CURRENT_PID" 2>/dev/null || true)
+    fi
+    if [ -n "$window_id" ] && \
+       screencapture -x -l "$window_id" "$png" 2>/dev/null && \
+       test -s "$png"; then
+      break
+    fi
+    find "$png" -delete 2>/dev/null || true
+    if ! kill -0 "$CURRENT_PID" 2>/dev/null; then
+      echo "AetherRoute exited before capturing $name" >&2
+      exit 1
+    fi
+    capture_attempts=$((capture_attempts + 1))
+    sleep 0.1
+  done
   test -s "$png"
   bytes=$(stat -f '%z' "$png")
   if [ "$bytes" -lt 40000 ]; then

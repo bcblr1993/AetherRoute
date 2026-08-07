@@ -84,6 +84,8 @@ verify_source() {
   test "$(plist_value "$INFO" NSHumanReadableCopyright)" = \
     'Created by 陈艳男 (ChenYanNan)' || \
     fail "author attribution is incorrect"
+  test -n "$(plist_value "$INFO" NSSystemExtensionUsageDescription)" || \
+    fail "host System Extension usage description is empty"
   test "$(plist_value "$ENTITLEMENTS" \
     com.apple.developer.networking.networkextension:0)" = \
     app-proxy-provider || fail "host app-proxy entitlement is missing"
@@ -162,18 +164,26 @@ verify_source() {
 
 verify_built() {
   app="$PRODUCTS_DIR/AetherRoute.app"
-  packet="$app/Contents/PlugIns/AetherRoutePacketTunnel.appex"
-  transparent="$app/Contents/PlugIns/AetherRouteTransparentProxy.appex"
+  app_info="$app/Contents/Info.plist"
+  packet_bundle_id=$(plist_value "$app_info" AetherRouteTunnelBundleIdentifier)
+  transparent_bundle_id=$(plist_value "$app_info" \
+    AetherRouteTransparentProxyBundleIdentifier)
+  packet="$app/Contents/Library/SystemExtensions/$packet_bundle_id.systemextension"
+  transparent="$app/Contents/Library/SystemExtensions/$transparent_bundle_id.systemextension"
   packet_info="$packet/Contents/Info.plist"
   transparent_info="$transparent/Contents/Info.plist"
-  app_info="$app/Contents/Info.plist"
   kit_info="$app/Contents/Frameworks/AetherRouteKit.framework/Resources/Info.plist"
-  packet_binary="$packet/Contents/MacOS/AetherRoutePacketTunnel"
-  packet_debug_binary="$packet/Contents/MacOS/AetherRoutePacketTunnel.debug.dylib"
+  packet_executable=$(plist_value "$packet_info" CFBundleExecutable)
+  packet_binary="$packet/Contents/MacOS/$packet_executable"
+  packet_debug_binary="$packet/Contents/MacOS/$packet_executable.debug.dylib"
 
   test -d "$app" || fail "AetherRoute app is missing at $app"
   test -d "$packet" || fail "Packet Tunnel extension is not embedded"
   test -d "$transparent" || fail "Transparent Proxy extension is not embedded"
+  test "$(plist_value "$packet_info" CFBundlePackageType)" = SYSX || \
+    fail "Packet Tunnel is not packaged as a system extension"
+  test "$(plist_value "$transparent_info" CFBundlePackageType)" = SYSX || \
+    fail "Transparent Proxy is not packaged as a system extension"
   verify_release_metadata "$app_info"
   verify_distribution_metadata "$app_info"
   test "$(plist_value "$app_info" CFBundleDisplayName)" = \
@@ -185,6 +195,8 @@ verify_built() {
   test "$(plist_value "$app_info" NSHumanReadableCopyright)" = \
     'Created by 陈艳男 (ChenYanNan)' || \
     fail "built Direct author attribution is incorrect"
+  test -n "$(plist_value "$app_info" NSSystemExtensionUsageDescription)" || \
+    fail "built host System Extension usage description is empty"
   app_bundle_id=$(plist_value "$app_info" CFBundleIdentifier)
   packet_bundle_id=$(plist_value "$packet_info" CFBundleIdentifier)
   transparent_bundle_id=$(plist_value "$transparent_info" CFBundleIdentifier)
@@ -211,12 +223,14 @@ verify_built() {
       "$(plist_value "$app_info" "$identity_key")" || \
       fail "AetherRouteKit runtime identity $identity_key differs from Direct"
   done
-  test "$(plist_value "$packet_info" NSExtension:NSExtensionPointIdentifier)" = \
-    com.apple.networkextension.packet-tunnel || \
-    fail "Packet Tunnel extension point is incorrect"
-  test "$(plist_value "$transparent_info" NSExtension:NSExtensionPointIdentifier)" = \
-    com.apple.networkextension.app-proxy || \
-    fail "Transparent Proxy extension point is incorrect"
+  test "$(plist_value "$packet_info" \
+    NetworkExtension:NEProviderClasses:com.apple.networkextension.packet-tunnel)" = \
+    AetherRoutePacketTunnel.PacketTunnelProvider || \
+    fail "Packet Tunnel system-extension provider class is incorrect"
+  test "$(plist_value "$transparent_info" \
+    NetworkExtension:NEProviderClasses:com.apple.networkextension.app-proxy)" = \
+    AetherRouteTransparentProxy.TransparentProxyProvider || \
+    fail "Transparent Proxy system-extension provider class is incorrect"
   test "$(lipo -archs "$packet_binary")" = arm64 || \
     fail "Packet Tunnel launcher must contain arm64 only"
 

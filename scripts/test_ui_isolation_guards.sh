@@ -27,6 +27,8 @@ grep -Fq 'No UI runner was started' "$REMOTE_UI_WORKER"
 grep -Fq 'copy_test_workspace' "$UI_TEST_SCRIPT"
 grep -Fq 'UI tests refuse a temporary root inside Documents' "$UI_TEST_SCRIPT"
 grep -Fq 'HOME="$ISOLATED_HOME"' "$UI_TEST_SCRIPT"
+grep -Fq 'SIGNING_HOME=$HOME' "$UI_TEST_SCRIPT"
+grep -Fq 'HOME="$SIGNING_HOME"' "$UI_TEST_SCRIPT"
 grep -Fq 'CFFIXED_USER_HOME="$ISOLATED_HOME"' "$UI_TEST_SCRIPT"
 grep -Fq 'TMPDIR="$ISOLATED_HOME/tmp"' "$UI_TEST_SCRIPT"
 grep -Fq 'AETHERROUTE_UI_TEST_ISOLATED_HOME' "$UI_TEST_SCRIPT"
@@ -35,6 +37,15 @@ grep -Fq 'no UI runner was started.' "$UI_TEST_SCRIPT"
 grep -Fq 'Timed out while enabling automation mode.' "$UI_TEST_SCRIPT"
 grep -Fq 'no Documents access is required' "$UI_TEST_SCRIPT"
 grep -Fq 'sudo /usr/sbin/DevToolsSecurity -enable' "$UI_TEST_SCRIPT"
+grep -Fq 'security find-identity -v -p codesigning' "$UI_TEST_SCRIPT"
+grep -Fq 'A trusted Apple Development identity is required' "$UI_TEST_SCRIPT"
+grep -Fq 'CODE_SIGN_STYLE=Manual' "$UI_TEST_SCRIPT"
+grep -Fq 'CODE_SIGNING_REQUIRED=YES' "$UI_TEST_SCRIPT"
+grep -Fq 'AD_HOC_CODE_SIGNING_ALLOWED=NO' "$UI_TEST_SCRIPT"
+if grep -Fq 'CODE_SIGN_IDENTITY=-' "$UI_TEST_SCRIPT"; then
+  echo "UI test runner must not use an ad-hoc signature" >&2
+  exit 1
+fi
 grep -Fq '/usr/sbin/DevToolsSecurity -status' \
   "$ROOT/scripts/test_disconnected_idle_performance.sh"
 if grep -Fq '/var/db/com.apple.dt.automationmode/automation-enabled' \
@@ -43,6 +54,10 @@ if grep -Fq '/var/db/com.apple.dt.automationmode/automation-enabled' \
   exit 1
 fi
 grep -Fq 'find "$TEST_ROOT" -depth -delete' "$UI_TEST_SCRIPT"
+grep -Fq 'pkill -TERM -f "$DERIVED_DATA"' "$UI_TEST_SCRIPT"
+grep -Fq 'pkill -KILL -f "$DERIVED_DATA"' "$UI_TEST_SCRIPT"
+grep -Fq 'lsregister \' "$UI_TEST_SCRIPT"
+grep -Fq 'codesign --verify --deep --strict "$RUNNER_APP"' "$UI_TEST_SCRIPT"
 grep -Fq 'copy_review_workspace' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'DERIVED_DATA_PATH="$TEMP/DerivedData"' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'find "$TEMP" -depth -delete' "$UI_CAPTURE_SCRIPT"

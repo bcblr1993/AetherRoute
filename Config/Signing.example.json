@@ -10,22 +10,22 @@
       "role": "transparent-proxy",
       "bundleID": "com.yourcompany.aetherroute.transparent-proxy",
       "path": "/absolute/path/to/transparent-proxy.provisionprofile",
-      "networkExtensions": ["app-proxy-provider"]
+      "networkExtensions": ["app-proxy-provider-systemextension"]
     },
     {
       "role": "direct-host",
       "bundleID": "com.yourcompany.aetherroute",
       "path": "/absolute/path/to/developer-id-host.provisionprofile",
       "networkExtensions": [
-        "app-proxy-provider",
-        "packet-tunnel-provider"
+        "app-proxy-provider-systemextension",
+        "packet-tunnel-provider-systemextension"
       ]
     },
     {
       "role": "packet-tunnel",
       "bundleID": "com.yourcompany.aetherroute.tunnel",
       "path": "/absolute/path/to/developer-id-packet-tunnel.provisionprofile",
-      "networkExtensions": ["packet-tunnel-provider"]
+      "networkExtensions": ["packet-tunnel-provider-systemextension"]
     }
   ]
 }

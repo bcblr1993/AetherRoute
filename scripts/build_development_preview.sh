@@ -99,6 +99,12 @@ codesign --force --sign - --options runtime \
   "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 
+app_info="$app/Contents/Info.plist"
+tunnel_bundle=$(/usr/libexec/PlistBuddy -c \
+  'Print :AetherRouteTunnelBundleIdentifier' "$app_info")
+transparent_bundle=$(/usr/libexec/PlistBuddy -c \
+  'Print :AetherRouteTransparentProxyBundleIdentifier' "$app_info")
+
 mach_o_manifest="$TASK_TEMP/mach-o-files.txt"
 find "$app" -type f -exec file {} \; \
   | awk -F ': ' '$2 ~ /^Mach-O/ {print $1}' >"$mach_o_manifest"
@@ -113,8 +119,8 @@ done <"$mach_o_manifest"
 
 for bundle in \
   "$app" \
-  "$app/Contents/PlugIns/AetherRoutePacketTunnel.appex" \
-  "$app/Contents/PlugIns/AetherRouteTransparentProxy.appex"
+  "$app/Contents/Library/SystemExtensions/$tunnel_bundle.systemextension" \
+  "$app/Contents/Library/SystemExtensions/$transparent_bundle.systemextension"
 do
   test -d "$bundle"
   codesign --verify --strict --verbose=2 "$bundle"
