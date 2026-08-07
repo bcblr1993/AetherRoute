@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"syscall"
@@ -30,9 +31,15 @@ func main() {
 
 func run(arguments []string) error {
 	if len(arguments) == 0 {
-		return errors.New("expected signer, serve, issue, set-state, or list")
+		return errors.New("expected keygen, generate-pepper, sign-update, signer, serve, issue, set-state, or list")
 	}
 	switch arguments[0] {
+	case "keygen":
+		return runKeygen(arguments[1:])
+	case "generate-pepper":
+		return runGeneratePepper(arguments[1:])
+	case "sign-update":
+		return runSignUpdate(arguments[1:])
 	case "signer":
 		return runSigner(arguments[1:])
 	case "serve":
@@ -53,6 +60,7 @@ func runSigner(arguments []string) error {
 	productID := flags.String("product-id", "", "stable product identifier")
 	seedPath := flags.String("seed", "", "absolute raw Ed25519 seed path")
 	socketPath := flags.String("socket", "", "absolute signer socket path")
+	socketGroup := flags.String("socket-group", "", "optional group allowed to access the signer socket")
 	if err := flags.Parse(arguments); err != nil || flags.NArg() != 0 {
 		return errors.New("invalid signer arguments")
 	}
@@ -64,6 +72,19 @@ func runSigner(arguments []string) error {
 	zero(seed)
 	if err != nil {
 		return err
+	}
+	if *socketGroup != "" {
+		group, lookupErr := user.LookupGroup(*socketGroup)
+		if lookupErr != nil {
+			return errors.New("signer socket group does not exist")
+		}
+		groupID, parseErr := strconv.Atoi(group.Gid)
+		if parseErr != nil || groupID < 0 {
+			return errors.New("signer socket group has an invalid ID")
+		}
+		if err := server.SetSocketGroup(groupID); err != nil {
+			return err
+		}
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

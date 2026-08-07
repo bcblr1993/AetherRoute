@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -206,6 +207,44 @@ func TestUnixSignerKeepsPrivateKeyOutOfWebService(t *testing.T) {
 	}
 	if _, err := os.Lstat(socketPath); !os.IsNotExist(err) {
 		t.Fatal("signer socket was not removed after shutdown")
+	}
+}
+
+func TestUnixSignerCanGrantOnlyItsConfiguredGroup(t *testing.T) {
+	seed := bytes.Repeat([]byte{0x73}, ed25519.SeedSize)
+	socketDirectory, err := os.MkdirTemp("/tmp", "ar-signer-group-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(socketDirectory) })
+	socketPath := filepath.Join(socketDirectory, "signer.sock")
+	server, err := NewSignerServer(socketPath, testProductID, seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.SetSocketGroup(os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(ctx) }()
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		info, statErr := os.Stat(socketPath)
+		if statErr == nil {
+			stat, ok := info.Sys().(*syscall.Stat_t)
+			if !ok || info.Mode().Perm() != 0o660 || int(stat.Gid) != os.Getgid() {
+				t.Fatalf("group socket mode=%o stat=%+v", info.Mode().Perm(), stat)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("group signer socket did not become ready")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 

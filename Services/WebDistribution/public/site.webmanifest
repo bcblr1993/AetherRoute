@@ -1,0 +1,12 @@
+{
+  "name": "AetherRoute",
+  "short_name": "AetherRoute",
+  "description": "Native private routing for Apple-silicon Macs.",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#f5f7fb",
+  "theme_color": "#0874f8",
+  "icons": [
+    {"src": "/assets/aetherroute-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}
+  ]
+}

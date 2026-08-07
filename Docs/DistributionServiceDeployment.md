@@ -2,7 +2,7 @@
 
 `Services/DistributionService` is AetherRoute's deployable reference service
 for independent licensing and signed updates. It uses only the Go standard
-library, builds as a static Linux arm64 binary, and implements the exact
+library, builds as a static Linux arm64 or amd64 binary, and implements the exact
 version 1 contract consumed by the native Swift client.
 
 This service is not embedded in the app or DMG. It belongs on infrastructure
@@ -14,7 +14,9 @@ Run two processes under separate Unix accounts:
 
 1. `aetherroute-distribution signer` owns the mode-400 or mode-600 raw 32-byte
    Ed25519 seed. It accepts only canonical entitlement payloads for the exact
-   configured product over a mode-600 Unix socket.
+   configured product over a mode-600 Unix socket. When the Web process runs
+   as a separate account, `-socket-group` changes only that socket to mode 660
+   for one dedicated shared group; it never broadens access to the seed.
 2. `aetherroute-distribution serve` owns the license store pepper, public key,
    signed update envelope, and license state. It has no signing private key and
    listens only on an explicit loopback IP.
@@ -51,8 +53,9 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
   ./cmd/aetherroute-distribution
 ```
 
-The repository gate runs Go vet and race tests, creates a stripped static
-Linux arm64 executable, starts the signer and Web processes on a private Unix
+The repository gate runs Go vet and race tests, creates stripped static Linux
+arm64 and amd64 executables, generates keys and an update envelope through the
+production CLI, starts the signer and Web processes on a private Unix
 socket and random IPv4 loopback port, verifies file/listener permissions, and
 runs the actual Swift `IndependentDistributionClient` through activation,
 refresh, signed-update validation, deactivation, and fail-closed refresh. It
@@ -82,6 +85,24 @@ drills. Losing the seed prevents signing new receipts; losing the pepper makes
 existing activation keys unresolvable; losing state removes license/device
 history. Public-key rotation requires a signed app release carrying the new
 public key.
+
+Use the production CLI rather than shell redirection or ad-hoc random-file
+commands. Each output path must be absolute, its parent must already be mode
+700, and the final component must not exist. The commands use exclusive,
+no-follow creation and never print secret bytes:
+
+```sh
+aetherroute-distribution keygen \
+  -seed /absolute/signer/ed25519-seed.raw \
+  -public-key /absolute/signer/ed25519-public.raw
+
+aetherroute-distribution generate-pepper \
+  -output /absolute/service/license-pepper.raw
+```
+
+Copy the raw public key to the Web account with an owner-controlled install
+step. Do not give the Web account traverse or read access to the signer seed
+directory.
 
 ## Administrative operations
 
@@ -127,7 +148,8 @@ outside this repository until the owner selects those external systems.
 aetherroute-distribution signer \
   -product-id PRODUCT_ID \
   -seed /absolute/signer/ed25519-seed.raw \
-  -socket /absolute/private-runtime/receipt-signer.sock
+  -socket /absolute/private-runtime/receipt-signer.sock \
+  -socket-group aetherroute-service
 
 aetherroute-distribution serve \
   -product-id PRODUCT_ID \
@@ -146,6 +168,24 @@ and health monitoring performed through the loopback listener. Deploy the
 signed update envelope atomically only after the exact notarized and stapled
 DMG is available at its final HTTPS URL and its SHA-256 matches the signed
 manifest.
+
+Generate that envelope directly from the final DMG. The command streams the
+artifact into SHA-256, validates every manifest field, creates a canonical
+Ed25519 envelope, verifies its own signature, and refuses to replace an
+existing output:
+
+```sh
+aetherroute-distribution sign-update \
+  -product-id PRODUCT_ID \
+  -seed /absolute/signer/ed25519-seed.raw \
+  -dmg /absolute/releases/AetherRoute-1.0.0-arm64.dmg \
+  -version 1.0.0 -build 100 \
+  -published-at 2026-08-07T00:00:00Z \
+  -minimum-system 15.0 \
+  -download-url https://downloads.example/releases/1.0.0/AetherRoute-1.0.0-arm64.dmg \
+  -release-notes-url https://example/releases/1.0.0/ \
+  -output /absolute/private/current.update.json
+```
 
 ## Remaining production evidence
 

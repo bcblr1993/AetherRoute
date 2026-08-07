@@ -2,6 +2,10 @@
 
 Created and maintained by **陈艳男 (ChenYanNan)**.
 
+[Official website](https://aetherroute.baizhiedu.xin/) ·
+[Releases and changelog](https://aetherroute.baizhiedu.xin/releases/) ·
+[Support](https://aetherroute.baizhiedu.xin/support/)
+
 > [!IMPORTANT]
 > AetherRoute is pre-release software. The current source and unsigned UI
 > previews are for development and validation; no build is a production
@@ -9,8 +13,8 @@ Created and maintained by **陈艳男 (ChenYanNan)**.
 > notarization, stapling, installed dual-engine tests, and the release gates
 > documented in [`Docs/ReleaseGates.md`](Docs/ReleaseGates.md).
 
-AetherRoute is the working codename for a new Apple-silicon-only macOS proxy
-client. Its app, menu-bar interface, configuration and security layers, and
+AetherRoute is a native Apple-silicon-only macOS proxy client. Its app,
+menu-bar interface, configuration and security layers, and
 Network Extension providers are written in Swift 6 with SwiftUI, AppKit, and
 Apple's public APIs. It is a clean, native implementation of the user
 experience expected from ClashX.
@@ -106,7 +110,7 @@ privileged helper, separately shipped daemon, or downloaded executable code.
   full token mapping, copied borrowed buffers, and flow/engine destroy barriers;
   the AetherRoute host embeds this provider while signed lifecycle gates remain
   pending
-- 282 native Swift unit tests, warnings-as-errors arm64 builds, deterministic
+- 303 native Swift unit tests, warnings-as-errors arm64 builds, deterministic
   combined license notices, and isolated cross-machine gates
 
 ## Build
@@ -124,7 +128,7 @@ git submodule update --init --recursive
 ./scripts/test.sh
 ./scripts/test_sanitizers.sh
 # Rebuild and test the exact staged snapshot on a different M-series Mac.
-# fast = normal 282-test/product gate; full = fast plus TSan and ASan+UBSan.
+# fast = normal 303-test/product gate; full = fast plus TSan and ASan+UBSan.
 AETHERROUTE_ALLOW_REMOTE_GATE=YES \
   ./scripts/test_remote_arm64.sh user@lan-mac fast
 ./scripts/test_core_lifecycle.sh

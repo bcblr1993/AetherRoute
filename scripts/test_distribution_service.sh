@@ -39,6 +39,12 @@ fi
     -o "$TEMP_DIR/aetherroute-distribution-linux-arm64" \
     ./cmd/aetherroute-distribution)
 file "$TEMP_DIR/aetherroute-distribution-linux-arm64" | grep -F 'ARM aarch64' >/dev/null
+(cd "$SERVICE_ROOT" && \
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -buildvcs=false -trimpath -ldflags='-s -w' \
+    -o "$TEMP_DIR/aetherroute-distribution-linux-amd64" \
+    ./cmd/aetherroute-distribution)
+file "$TEMP_DIR/aetherroute-distribution-linux-amd64" | grep -F 'x86-64' >/dev/null
 (cd "$SERVICE_ROOT" && go build -buildvcs=false -trimpath \
   -o "$TEMP_DIR/aetherroute-distribution" ./cmd/aetherroute-distribution)
 
@@ -47,20 +53,23 @@ PUBLIC_KEY="$TEMP_DIR/public-key.raw"
 PEPPER="$TEMP_DIR/pepper.raw"
 STATE="$TEMP_DIR/licenses.json"
 SOCKET="$TEMP_DIR/signer.sock"
-UPDATE_PAYLOAD="$TEMP_DIR/update-payload.json"
 UPDATE_ENVELOPE="$TEMP_DIR/update-envelope.json"
-dd if=/dev/urandom of="$SEED" bs=32 count=1 2>/dev/null
-dd if=/dev/urandom of="$PEPPER" bs=32 count=1 2>/dev/null
-chmod 600 "$SEED" "$PEPPER"
-xcrun swift "$ROOT/scripts/distribution_envelope_tool.swift" \
-  public-key "$SEED" "$PUBLIC_KEY"
+"$TEMP_DIR/aetherroute-distribution" keygen \
+  -seed "$SEED" -public-key "$PUBLIC_KEY"
+"$TEMP_DIR/aetherroute-distribution" generate-pepper -output "$PEPPER"
+test "$(stat -f '%Lp' "$SEED")" = 600
+test "$(stat -f '%Lp' "$PUBLIC_KEY")" = 600
+test "$(stat -f '%Lp' "$PEPPER")" = 600
 PUBLISHED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-jq -cn \
-  --arg publishedAt "$PUBLISHED_AT" \
-  '{schemaVersion:1, productID:"com.aetherroute.desktop", version:"1.0.1", build:101, publishedAt:$publishedAt, minimumSystemVersion:"15.0", architecture:"arm64", downloadURL:"https://downloads.example.com/AetherRoute-1.0.1-arm64.dmg", sha256:("a" * 64), releaseNotesURL:null}' \
-  >"$UPDATE_PAYLOAD"
-xcrun swift "$ROOT/scripts/distribution_envelope_tool.swift" \
-  sign "$SEED" "$UPDATE_PAYLOAD" "$UPDATE_ENVELOPE"
+"$TEMP_DIR/aetherroute-distribution" sign-update \
+  -product-id com.aetherroute.desktop \
+  -seed "$SEED" \
+  -dmg "$TEMP_DIR/aetherroute-distribution-linux-arm64" \
+  -version 1.0.1 -build 101 -published-at "$PUBLISHED_AT" \
+  -minimum-system 15.0 \
+  -download-url https://downloads.example.com/AetherRoute-1.0.1-arm64.dmg \
+  -output "$UPDATE_ENVELOPE"
+test "$(stat -f '%Lp' "$UPDATE_ENVELOPE")" = 600
 
 ISSUED=$(
   "$TEMP_DIR/aetherroute-distribution" issue \
@@ -148,4 +157,4 @@ test ! -s "$TEMP_DIR/server.log" || {
   exit 1
 }
 printf '%s\n' \
-  'Production distribution service passed Go race tests, Linux arm64 build, isolated signer, and Swift client interop.'
+  'Production distribution service passed Go race tests, Linux arm64/amd64 builds, secure artifact generation, isolated signer, and Swift client interop.'

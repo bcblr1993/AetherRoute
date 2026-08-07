@@ -1,0 +1,68 @@
+version: "3.8"
+
+networks:
+  proxy:
+    external: true
+
+services:
+  web:
+    image: ${AETHERROUTE_WEB_IMAGE:?set AETHERROUTE_WEB_IMAGE to an immutable image digest}
+    user: "101:101"
+    read_only: true
+    init: true
+    networks:
+      - proxy
+    environment:
+      NGINX_ENTRYPOINT_QUIET_LOGS: "1"
+    volumes:
+      - ${AETHERROUTE_WEB_RELEASE_ROOT:?set AETHERROUTE_WEB_RELEASE_ROOT to an immutable release directory}/site:/srv/site:ro
+      - ${AETHERROUTE_WEB_RELEASE_ROOT:?set AETHERROUTE_WEB_RELEASE_ROOT to an immutable release directory}/downloads:/srv/downloads:ro
+      - ${AETHERROUTE_WEB_RELEASE_ROOT:?set AETHERROUTE_WEB_RELEASE_ROOT to an immutable release directory}/updates:/srv/updates:ro
+      - ${AETHERROUTE_WEB_RELEASE_ROOT:?set AETHERROUTE_WEB_RELEASE_ROOT to an immutable release directory}/nginx.conf:/etc/nginx/nginx.conf:ro
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 16777216
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "--header=Host: aetherroute.baizhiedu.xin", "http://127.0.0.1:8080/healthz"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 1
+      update_config:
+        order: start-first
+        parallelism: 1
+        delay: 5s
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        order: stop-first
+        parallelism: 1
+      restart_policy:
+        condition: on-failure
+        delay: 3s
+        max_attempts: 5
+        window: 60s
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+        reservations:
+          memory: 12M
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.services.aetherroute-web.loadbalancer.server.port=8080"
+        - "traefik.http.routers.aetherroute-site.entrypoints=web,websecure"
+        - "traefik.http.routers.aetherroute-site.rule=Host(`aetherroute.baizhiedu.xin`)"
+        - "traefik.http.routers.aetherroute-site.service=aetherroute-web"
+        - "traefik.http.routers.aetherroute-downloads.entrypoints=web,websecure"
+        - "traefik.http.routers.aetherroute-downloads.rule=Host(`downloads.baizhiedu.xin`)"
+        - "traefik.http.routers.aetherroute-downloads.service=aetherroute-web"
+        - "traefik.http.routers.aetherroute-updates.entrypoints=web,websecure"
+        - "traefik.http.routers.aetherroute-updates.rule=Host(`updates.baizhiedu.xin`)"
+        - "traefik.http.routers.aetherroute-updates.service=aetherroute-web"
