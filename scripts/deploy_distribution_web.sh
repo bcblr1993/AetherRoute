@@ -31,34 +31,16 @@ case "$MODE" in
     CANDIDATE_DIRECTORY=${3:-}
     RELEASE_ID=${4:-}
     case "$CANDIDATE_DIRECTORY" in /*) ;; *) usage; exit 64 ;; esac
-    test -d "$CANDIDATE_DIRECTORY" || {
-      echo "preview directory does not exist" >&2
-      exit 1
-    }
-    DMG="$CANDIDATE_DIRECTORY/AetherRoute-0.1.0-build-2026080703-arm64-Notarized-Test.dmg"
-    SUMS="$CANDIDATE_DIRECTORY/SHA256SUMS"
-    test -f "$DMG" && test -f "$SUMS" || {
-      echo "preview directory does not contain the expected notarized package" >&2
-      exit 1
-    }
-    (cd "$CANDIDATE_DIRECTORY" && shasum -a 256 -c SHA256SUMS)
-    actual_sha=$(shasum -a 256 "$DMG" | awk '{print $1}')
-    test "$actual_sha" = 4a18a47dfbd0886008753b9bbbbe9e4a36c5b1f7dc9f62951df59bea69299c20 || {
-      echo "preview DMG checksum differs from the published release page" >&2
-      exit 1
-    }
-    artifact_name=$(basename "$DMG")
-    channel=prerelease
-    expected_update_status=404
-    mkdir -p "$temporary/payload/site" \
-      "$temporary/payload/downloads/prerelease" "$temporary/payload/updates"
-    cp -R "$WEB/public/." "$temporary/payload/site/"
-    cp "$WEB/nginx.conf" "$temporary/payload/nginx.conf"
-    cp "$DMG" "$temporary/payload/downloads/prerelease/"
-    cp "$SUMS" "$temporary/payload/downloads/prerelease/SHA256SUMS"
-    cp "$CANDIDATE_DIRECTORY/README.txt" \
-      "$temporary/payload/downloads/prerelease/README.txt"
-    cp "$WEB/docker-stack.yml" "$temporary/docker-stack.yml"
+    prepared="$temporary/prepared"
+    "$ROOT/scripts/prepare_distribution_web_preview_payload.sh" \
+      "$CANDIDATE_DIRECTORY" "$WEB/public" "$prepared"
+    actual_sha=$(jq -r '.sha256' "$prepared/metadata.json")
+    artifact_name=$(jq -r '.artifactName' "$prepared/metadata.json")
+    channel=$(jq -r '.channel' "$prepared/metadata.json")
+    expected_update_status=$(jq -r '.updateHTTPStatus' \
+      "$prepared/metadata.json")
+    mv "$prepared/payload" "$temporary/payload"
+    mv "$prepared/docker-stack.yml" "$temporary/docker-stack.yml"
     ;;
   stable)
     DMG=${3:-}
@@ -185,8 +167,13 @@ ssh -o BatchMode=yes "$HOST" "
   printf '%s\n' \"\$previous\" >'$remote_release/PREVIOUS'
 "
 
+verify_audit_directory=
+if [ "$MODE" = preview ]; then
+  verify_audit_directory=$CANDIDATE_DIRECTORY
+fi
 if ! "$ROOT/scripts/verify_distribution_web.sh" \
-  "$actual_sha" "$artifact_name" "$channel" "$expected_update_status"; then
+  "$actual_sha" "$artifact_name" "$channel" "$expected_update_status" \
+  "$verify_audit_directory"; then
   ssh -o BatchMode=yes "$HOST" "
     set -eu
     previous=\$(cat '$remote_release/PREVIOUS')

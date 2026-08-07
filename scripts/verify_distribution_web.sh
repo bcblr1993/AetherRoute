@@ -5,10 +5,11 @@ EXPECTED_SHA=${1:-}
 ARTIFACT_NAME=${2:-}
 CHANNEL=${3:-}
 EXPECTED_UPDATE_STATUS=${4:-any}
+PREVIEW_AUDIT_DIRECTORY=${5:-}
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
 usage() {
-  echo "usage: $0 expected-sha256 artifact-filename prerelease-or-releases/version [200|404|any]" >&2
+  echo "usage: $0 expected-sha256 artifact-filename prerelease-or-releases/version [200|404|any] [absolute-preview-audit-directory]" >&2
 }
 
 test -n "$EXPECTED_SHA" && test -n "$ARTIFACT_NAME" && test -n "$CHANNEL" || {
@@ -28,6 +29,18 @@ printf '%s\n' "$CHANNEL" | grep -Eq '^(prerelease|releases/[0-9]+\.[0-9]+(\.[0-9
   echo "invalid distribution channel" >&2
   exit 64
 }
+if [ -n "$PREVIEW_AUDIT_DIRECTORY" ]; then
+  case "$PREVIEW_AUDIT_DIRECTORY" in /*) ;; *) usage; exit 64 ;; esac
+  test "$CHANNEL" = prerelease || {
+    echo "an audit directory is valid only for the prerelease channel" >&2
+    exit 64
+  }
+  test -d "$PREVIEW_AUDIT_DIRECTORY" && \
+    test ! -L "$PREVIEW_AUDIT_DIRECTORY" || {
+    echo "preview audit directory is missing or a symlink" >&2
+    exit 64
+  }
+fi
 
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy || true
 site=https://aetherroute.baizhiedu.xin
@@ -134,5 +147,29 @@ test "$actual_sha" = "$EXPECTED_SHA" || {
   echo "public DMG checksum mismatch" >&2
   exit 1
 }
+
+if [ -n "$PREVIEW_AUDIT_DIRECTORY" ]; then
+  audit="$temporary/preview-audit"
+  mkdir "$audit"
+  cp "$temporary/artifact.dmg" "$audit/$ARTIFACT_NAME"
+  for name in \
+    AetherRoute-0.1.0-build-2026080703-arm64-Notarized-Test.json \
+    source-manifest.txt README.txt SHA256SUMS
+  do
+    local_file="$PREVIEW_AUDIT_DIRECTORY/$name"
+    test -f "$local_file" && test ! -L "$local_file" || {
+      echo "preview audit source is incomplete or contains a symlink: $name" >&2
+      exit 1
+    }
+    curl --noproxy '*' --silent --show-error --fail \
+      --output "$audit/$name" "$downloads/$CHANNEL/$name"
+    test "$(shasum -a 256 "$audit/$name" | awk '{print $1}')" = \
+      "$(shasum -a 256 "$local_file" | awk '{print $1}')" || {
+      echo "public preview audit file differs from the release candidate: $name" >&2
+      exit 1
+    }
+  done
+  (cd "$audit" && shasum -a 256 -c SHA256SUMS)
+fi
 
 echo "Public web distribution verified: sha256=$actual_sha update_http=$update_code"

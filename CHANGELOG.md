@@ -16,6 +16,11 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ### Fixed
 
+- Preview deployment now validates and publishes the notarized DMG, candidate
+  manifest, source manifest, README, and checksum file as one audited set, so
+  `SHA256SUMS` cannot reference downloads that were omitted from the site. The
+  post-deploy verifier also downloads and compares the complete public set
+  before the release pointer can be activated.
 - Isolated UI cleanup probes no longer register empty test-only `.app`
   fixtures with LaunchServices. Real signed UI products keep their exact paths
   during a compact bounded quiet period, preventing misleading

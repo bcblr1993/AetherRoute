@@ -16,7 +16,12 @@ symlink is updated only after the replacement task is healthy. A failed Swarm
 update rolls its complete service specification back automatically.
 
 The deploy command has explicit `preview` and `stable` channels. A preview is
-never copied into `/releases/<version>` and never creates the update endpoint:
+never copied into `/releases/<version>` and never creates the update endpoint.
+Its DMG, candidate manifest, source manifest, README, and `SHA256SUMS` are
+validated and published together; the checksum file is never allowed to name
+an omitted download. Public verification downloads the complete audit set,
+compares it with the local candidate, and rolls back if any file is absent or
+different:
 
 ```sh
 ./scripts/deploy_distribution_web.sh \

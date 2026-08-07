@@ -105,10 +105,26 @@ rg -F 'Deployed and publicly verified AetherRoute web release:' \
   "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
 rg -F 'preview)' "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
 rg -F 'stable)' "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
+rg -F 'prepare_distribution_web_preview_payload.sh' \
+  "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
+preview_preparer="$ROOT/scripts/prepare_distribution_web_preview_payload.sh"
+sh -n "$preview_preparer"
+rg -F 'preview candidate must contain exactly five audited files' \
+  "$preview_preparer" >/dev/null
+rg -F '.releaseStatus == "notarized-test-candidate"' \
+  "$preview_preparer" >/dev/null
+rg -F 'for file in "$DMG" "$MANIFEST" "$SOURCE_MANIFEST" "$README" "$SUMS"' \
+  "$preview_preparer" >/dev/null
 rg -F 'rollback_completed:1:' "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
 rg -F 'completed:1:' "$ROOT/scripts/rollback_distribution_web.sh" >/dev/null
 rg -F 'Swarm dropped the required read-only-container tmpfs mount' "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
 rg -F 'Public web distribution verified:' "$ROOT/scripts/verify_distribution_web.sh" >/dev/null
+rg -F 'public preview audit file differs from the release candidate' \
+  "$ROOT/scripts/verify_distribution_web.sh" >/dev/null
+rg -F '(cd "$audit" && shasum -a 256 -c SHA256SUMS)' \
+  "$ROOT/scripts/verify_distribution_web.sh" >/dev/null
+rg -F 'verify_audit_directory=$CANDIDATE_DIRECTORY' \
+  "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
 rg -F 'PREVIOUS' "$ROOT/scripts/rollback_distribution_web.sh" >/dev/null
 rg -F 'access_log off;' "$WEB/nginx.conf" >/dev/null
 rg -F 'server_tokens off;' "$WEB/nginx.conf" >/dev/null
