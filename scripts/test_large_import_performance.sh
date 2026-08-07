@@ -16,7 +16,7 @@ fi
 "$ROOT/scripts/bootstrap.sh" >/dev/null
 xcodebuild -quiet \
   -project "$ROOT/AetherRoute.xcodeproj" \
-  -scheme AetherRoute \
+  -scheme AetherRouteUnitTests \
   -configuration Release \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$TEMP/DerivedData" \

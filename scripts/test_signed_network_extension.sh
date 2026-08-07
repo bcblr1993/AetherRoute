@@ -109,6 +109,10 @@ cleanup() {
     sleep 0.2
   done
   pkill -KILL -f "$DERIVED_DATA" 2>/dev/null || true
+  # LaunchServices accepts XCTest launch requests asynchronously. Keep the
+  # signed bundles in place briefly after the last matching process exits so a
+  # queued request cannot resolve to an app that cleanup has already removed.
+  sleep 2
   for application in "$RUNNER_APP" "$PRODUCT_APP"; do
     if [ -d "$application" ]; then
       /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \

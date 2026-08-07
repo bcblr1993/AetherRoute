@@ -381,6 +381,25 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
+  AetherRouteUnitTests:
+    build:
+      targets:
+        AetherRoute: all
+        AetherRoutePacketTunnel: all
+        AetherRouteTransparentProxy: all
+        AetherRouteTransparentProxySupport: all
+        AetherRouteFlowCoreBridge: all
+        AetherRouteFlowABI: all
+        AetherRouteKit: all
+        AetherRouteTests: [test]
+        AetherRouteTransparentProxySupportTests: [test]
+        AetherRouteFlowCoreBridgeTests: [test]
+    test:
+      targets:
+        - AetherRouteTests
+        - AetherRouteTransparentProxySupportTests
+        - AetherRouteFlowCoreBridgeTests
+
   AetherRoute:
     build:
       targets:

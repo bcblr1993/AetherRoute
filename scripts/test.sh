@@ -134,7 +134,7 @@ done
 
 xcodebuild \
   -project "$ROOT/AetherRoute.xcodeproj" \
-  -scheme AetherRoute \
+  -scheme AetherRouteUnitTests \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$DERIVED_DATA_PATH" \
   CODE_SIGNING_ALLOWED=YES \

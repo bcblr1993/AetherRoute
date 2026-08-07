@@ -9,6 +9,7 @@ SIGNING_HELPER="$ROOT/scripts/resolve_development_signing_identity.sh"
 REMOTE_UI_WORKER="$ROOT/scripts/remote_ui_worker.sh"
 UI_WINDOW_SELECTOR="$ROOT/scripts/ui_review_window_id.swift"
 UI_TEST_SOURCE="$ROOT/Tests/AetherRouteUITests/AetherRouteUITests.swift"
+UNIT_TEST_SCHEME="$ROOT/AetherRoute.xcodeproj/xcshareddata/xcschemes/AetherRouteUnitTests.xcscheme"
 
 for script in \
   "$UI_TEST_SCRIPT" "$UI_CAPTURE_SCRIPT" "$IDLE_PERFORMANCE_SCRIPT" \
@@ -80,6 +81,8 @@ fi
 grep -Fq 'find "$TEST_ROOT" -depth -delete' "$UI_TEST_SCRIPT"
 grep -Fq 'pkill -TERM -f "$DERIVED_DATA"' "$UI_TEST_SCRIPT"
 grep -Fq 'pkill -KILL -f "$DERIVED_DATA"' "$UI_TEST_SCRIPT"
+grep -Fq 'LaunchServices accepts XCTest launch requests asynchronously' \
+  "$UI_TEST_SCRIPT"
 grep -Fq 'lsregister \' "$UI_TEST_SCRIPT"
 grep -Fq 'codesign --verify --deep --strict "$application"' "$UI_TEST_SCRIPT"
 grep -Fq 'copy_review_workspace' "$UI_CAPTURE_SCRIPT"
@@ -91,8 +94,23 @@ grep -Fq 'codesign --verify --deep --strict --verbose=2 "$RUNNER_APP"' \
   "$SIGNED_NE_SCRIPT"
 grep -Fq 'Authority=Apple Development' "$SIGNED_NE_SCRIPT"
 grep -Fq 'pkill -TERM -f "$DERIVED_DATA"' "$SIGNED_NE_SCRIPT"
+grep -Fq 'LaunchServices accepts XCTest launch requests asynchronously' \
+  "$SIGNED_NE_SCRIPT"
 grep -Fq 'lsregister \' "$SIGNED_NE_SCRIPT"
 grep -Fq 'find "$AUDIT_DIR" -depth -delete' "$SIGNED_NE_SCRIPT"
+for non_ui_script in \
+  "$ROOT/scripts/test.sh" \
+  "$ROOT/scripts/test_large_import_performance.sh" \
+  "$ROOT/scripts/test_sanitizers.sh"
+do
+  grep -Fq -- '-scheme AetherRouteUnitTests' "$non_ui_script"
+done
+grep -Fq '"$ROOT/scripts/bootstrap.sh"' "$ROOT/scripts/test_sanitizers.sh"
+test -f "$UNIT_TEST_SCHEME"
+if grep -Fq 'AetherRouteUITests' "$UNIT_TEST_SCHEME"; then
+  echo "Non-UI test scheme must not contain AetherRouteUITests" >&2
+  exit 1
+fi
 GO_VULN_SCRIPT="$ROOT/scripts/test_go_vulnerabilities.sh"
 grep -Fq 'chmod -R u+w "$TEMP"' "$GO_VULN_SCRIPT"
 grep -Fq 'find "$TEMP" -depth -delete' "$GO_VULN_SCRIPT"

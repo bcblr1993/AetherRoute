@@ -9,6 +9,7 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 XCTEST_BINARY=$(xcrun --find xctest)
+"$ROOT/scripts/bootstrap.sh" >/dev/null
 
 run_gate() {
   gate_name=$1
@@ -17,7 +18,7 @@ run_gate() {
   printf 'Sanitizer gate %s: build started\n' "$gate_name"
   xcodebuild -quiet \
     -project "$ROOT/AetherRoute.xcodeproj" \
-    -scheme AetherRoute \
+    -scheme AetherRouteUnitTests \
     -destination 'platform=macOS,arch=arm64' \
     -derivedDataPath "$derived_data" \
     CODE_SIGNING_ALLOWED=YES \
