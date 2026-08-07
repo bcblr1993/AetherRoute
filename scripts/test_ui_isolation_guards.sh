@@ -91,7 +91,7 @@ grep -Fq 'pkill -KILL -f "$DERIVED_DATA"' "$UI_TEST_SCRIPT"
 grep -Fq 'LaunchServices accepts XCTest launch requests asynchronously' \
   "$UI_TEST_SCRIPT"
 grep -Fq 'xattr -dr com.apple.quarantine "$application"' "$UI_TEST_SCRIPT"
-grep -Fq 'AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=90' "$UI_TEST_SCRIPT"
+grep -Fq 'AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=600' "$UI_TEST_SCRIPT"
 grep -Fq 'deferred_ui_test_cleanup.sh' "$UI_TEST_SCRIPT"
 grep -Fq 'nohup ' "$UI_TEST_SCRIPT"
 grep -Fq 'CLEANUP_STARTED=0' "$UI_TEST_SCRIPT"
@@ -109,7 +109,7 @@ grep -Fq 'pkill -TERM -f "$DERIVED_DATA"' "$SIGNED_NE_SCRIPT"
 grep -Fq 'LaunchServices accepts XCTest launch requests asynchronously' \
   "$SIGNED_NE_SCRIPT"
 grep -Fq 'xattr -dr com.apple.quarantine "$application"' "$SIGNED_NE_SCRIPT"
-grep -Fq 'AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=90' "$SIGNED_NE_SCRIPT"
+grep -Fq 'AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=600' "$SIGNED_NE_SCRIPT"
 grep -Fq 'deferred_ui_test_cleanup.sh' "$SIGNED_NE_SCRIPT"
 grep -Fq 'nohup ' "$SIGNED_NE_SCRIPT"
 grep -Fq 'CLEANUP_STARTED=0' "$SIGNED_NE_SCRIPT"
@@ -119,16 +119,32 @@ grep -Fq 'Refusing deferred cleanup outside an AetherRoute UI test root' \
   "$DEFERRED_CLEANUP_SCRIPT"
 grep -Fq 'GRACE_SECONDS * 4' "$DEFERRED_CLEANUP_SCRIPT"
 grep -Fq 'find "$TEST_ROOT" -depth -delete' "$DEFERRED_CLEANUP_SCRIPT"
+grep -Fq 'prune_children_except "$TEST_ROOT" "$DERIVED_DATA"' \
+  "$DEFERRED_CLEANUP_SCRIPT"
+grep -Fq 'prune_children_except "$DERIVED_DATA" "$BUILD_DIRECTORY"' \
+  "$DEFERRED_CLEANUP_SCRIPT"
+grep -Fq 'prune_children_except "$BUILD_DIRECTORY" "$PRODUCTS_DIRECTORY"' \
+  "$DEFERRED_CLEANUP_SCRIPT"
 grep -Fq 'AETHERROUTE_UI_DERIVED_DATA_NEEDLE' "$DEFERRED_CLEANUP_SCRIPT"
 grep -Fq 'index($0, needle)' "$DEFERRED_CLEANUP_SCRIPT"
 grep -Fq "trap '' HUP" "$DEFERRED_CLEANUP_SCRIPT"
+grep -Fq 'UI cleanup probe mode is restricted to its disposable guard root' \
+  "$DEFERRED_CLEANUP_SCRIPT"
+grep -Fq 'if [ "$PROBE_ONLY" = NO ]; then' "$DEFERRED_CLEANUP_SCRIPT"
+if grep -Fq 'AETHERROUTE_UI_CLEANUP_PROBE_ONLY' "$UI_TEST_SCRIPT" \
+  || grep -Fq 'AETHERROUTE_UI_CLEANUP_PROBE_ONLY' "$SIGNED_NE_SCRIPT"; then
+  echo "Production UI tests must not bypass LaunchServices cleanup" >&2
+  exit 1
+fi
 
 probe_root="$WORK/aetherroute-ui-tests.cleanup-probe"
 probe_derived="$probe_root/DerivedData"
 probe_runner="$probe_derived/Build/Products/Debug/AetherRouteUITests-Runner.app"
 probe_product="$probe_derived/Build/Products/Debug/AetherRoute.app"
 mkdir -p "$probe_runner" "$probe_product"
-TMPDIR="$WORK" AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=0 \
+TMPDIR="$WORK" \
+  AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=0 \
+  AETHERROUTE_UI_CLEANUP_PROBE_ONLY=YES \
   "$DEFERRED_CLEANUP_SCRIPT" \
     "$probe_root" "$probe_derived" "$probe_runner" "$probe_product"
 if [ -e "$probe_root" ]; then
@@ -141,10 +157,23 @@ timed_derived="$timed_root/DerivedData"
 timed_runner="$timed_derived/Build/Products/Debug/AetherRouteUITests-Runner.app"
 timed_product="$timed_derived/Build/Products/Debug/AetherRoute.app"
 mkdir -p "$timed_runner" "$timed_product"
+mkdir -p \
+  "$timed_root/Workspace" \
+  "$timed_derived/Logs" \
+  "$timed_derived/Build/Intermediates.noindex"
+printf 'remove immediately\n' >"$timed_root/xcodebuild.log"
+printf 'remove immediately\n' >"$timed_root/Workspace/source.swift"
+printf 'remove immediately\n' >"$timed_derived/Logs/session.log"
+printf 'remove immediately\n' \
+  >"$timed_derived/Build/Intermediates.noindex/object.o"
+printf 'retain until quiet\n' >"$timed_runner/runner-marker"
+printf 'retain until quiet\n' >"$timed_product/product-marker"
 sh -c 'trap "exit 0" TERM INT; while :; do sleep 1; done' \
   "$timed_derived/late-launch" &
 late_launch_pid=$!
-TMPDIR="$WORK/" AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=2 \
+TMPDIR="$WORK/" \
+  AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=2 \
+  AETHERROUTE_UI_CLEANUP_PROBE_ONLY=YES \
   "$DEFERRED_CLEANUP_SCRIPT" \
     "$timed_root" "$timed_derived" "$timed_runner" "$timed_product" &
 timed_pid=$!
@@ -154,6 +183,28 @@ if [ ! -d "$timed_root" ]; then
   wait "$timed_pid" || true
   exit 1
 fi
+for removed in \
+  "$timed_root/xcodebuild.log" \
+  "$timed_root/Workspace" \
+  "$timed_derived/Logs" \
+  "$timed_derived/Build/Intermediates.noindex"
+do
+  if [ -e "$removed" ]; then
+    echo "Deferred UI cleanup retained unnecessary build data: $removed" >&2
+    wait "$timed_pid" || true
+    exit 1
+  fi
+done
+for retained in \
+  "$timed_runner/runner-marker" \
+  "$timed_product/product-marker"
+do
+  if [ ! -f "$retained" ]; then
+    echo "Deferred UI cleanup removed a required signed product early" >&2
+    wait "$timed_pid" || true
+    exit 1
+  fi
+done
 wait "$timed_pid"
 if kill -0 "$late_launch_pid" 2>/dev/null; then
   kill -TERM "$late_launch_pid" 2>/dev/null || true
@@ -169,7 +220,9 @@ fi
 
 invalid_root="$WORK/not-an-aetherroute-ui-root"
 mkdir -p "$invalid_root"
-if TMPDIR="$WORK" AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=0 \
+if TMPDIR="$WORK" \
+  AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=0 \
+  AETHERROUTE_UI_CLEANUP_PROBE_ONLY=YES \
   "$DEFERRED_CLEANUP_SCRIPT" \
     "$invalid_root" "$invalid_root/DerivedData" \
     "$invalid_root/DerivedData/Build/Products/Debug/AetherRouteUITests-Runner.app" \

@@ -79,6 +79,15 @@ if rg -n --glob '!README.md' \
   exit 1
 fi
 
+support="$PUBLIC/support/index.html"
+rg -F '通用 → 登录项与扩展' "$support" >/dev/null
+rg -F '不要操作上方的“登录时打开”列表' "$support" >/dev/null
+rg -F '点右侧信息按钮 ⓘ，打开 AetherRoute' "$support" >/dev/null
+rg -F '已批准，重新检查' "$support" >/dev/null
+rg -F '不需要降低系统安全性' "$support" >/dev/null
+rg -F 'does not require disabling SIP' "$support" >/dev/null
+rg -F 'https://support.apple.com/guide/mac-help/mtusr003/mac' "$support" >/dev/null
+
 rg -F 'user: "101:101"' "$WEB/docker-stack.yml" >/dev/null
 rg -F 'read_only: true' "$WEB/docker-stack.yml" >/dev/null
 rg -F 'type: tmpfs' "$WEB/docker-stack.yml" >/dev/null

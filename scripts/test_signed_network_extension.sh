@@ -130,7 +130,7 @@ cleanup() {
       -f /Applications/AetherRoute.app >/dev/null 2>&1 || true
   fi
   if [ -d "$RUNNER_APP" ] && [ -d "$PRODUCT_APP" ]; then
-    AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=90 \
+    AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=600 \
       nohup "$ROOT/scripts/deferred_ui_test_cleanup.sh" \
         "$AUDIT_DIR" "$DERIVED_DATA" "$RUNNER_APP" "$PRODUCT_APP" \
         </dev/null >/dev/null 2>&1 &

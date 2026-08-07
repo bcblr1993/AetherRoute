@@ -90,7 +90,7 @@ cleanup() {
   fi
   rmdir "$LOCK_DIRECTORY" 2>/dev/null || true
   if [ -d "$RUNNER_APP" ] && [ -d "$PRODUCT_APP" ]; then
-    AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=90 \
+    AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=600 \
       nohup "$REPOSITORY_ROOT/scripts/deferred_ui_test_cleanup.sh" \
         "$TEST_ROOT" "$DERIVED_DATA" "$RUNNER_APP" "$PRODUCT_APP" \
         </dev/null >/dev/null 2>&1 &
@@ -300,4 +300,4 @@ if [ "$test_status" -ne 0 ]; then
   exit 1
 fi
 tail -16 "$TEST_ROOT/xcodebuild.log"
-printf 'UI tests passed; temporary runner retained briefly, then deleted automatically.\n'
+printf 'UI tests passed; compact temporary products are retained for a bounded quiet period, then deleted automatically.\n'

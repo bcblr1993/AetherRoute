@@ -10,6 +10,17 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 - Production signing, notarization, installed Network Extension validation,
   and the final 24-hour stability gate remain release-blocking.
+- The support site now gives the exact macOS 15 Network Extension approval
+  path and explicitly states that Reduced Security and disabling SIP are not
+  required.
+
+### Fixed
+
+- Isolated UI cleanup probes no longer register empty test-only `.app`
+  fixtures with LaunchServices. Real signed UI products keep their exact paths
+  during a compact bounded quiet period, preventing misleading
+  `AetherRouteUITests-Runner.app` damaged-application alerts without retaining
+  full DerivedData.
 
 ## [0.1.0-alpha.1] - 2026-08-03
 
