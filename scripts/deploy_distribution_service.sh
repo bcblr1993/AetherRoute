@@ -104,7 +104,7 @@ COPYFILE_DISABLE=1 tar --no-xattrs -C "$payload" -czf "$temporary/payload.tgz" .
 remote_incoming="$REMOTE_ROOT/.incoming-$RELEASE_ID"
 remote_release="$REMOTE_ROOT/releases/$RELEASE_ID"
 cleanup_failed_candidate() {
-  ssh -o BatchMode=yes "$HOST" "
+  ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$HOST" "
     set -eu
     previous=none
     if [ -f '$remote_release/PREVIOUS' ]; then
@@ -156,16 +156,17 @@ cleanup_failed_candidate() {
     done
   "
 }
-ssh -o BatchMode=yes "$HOST" "
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$HOST" "
   set -eu
   test ! -e '$remote_incoming'
   test ! -e '$remote_release'
   mkdir -p '$REMOTE_ROOT/releases' '$remote_incoming'
   chmod 700 '$remote_incoming'
 "
-scp -q "$temporary/payload.tgz" "$HOST:$remote_incoming/payload.tgz"
+scp -q -o BatchMode=yes -o StrictHostKeyChecking=yes \
+  "$temporary/payload.tgz" "$HOST:$remote_incoming/payload.tgz"
 install_code=0
-ssh -o BatchMode=yes "$HOST" "
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$HOST" "
   set -eu
   tar -xzf '$remote_incoming/payload.tgz' -C '$remote_incoming'
   rm '$remote_incoming/payload.tgz'
@@ -191,7 +192,7 @@ rollback_candidate() {
   cleanup_failed_candidate
 }
 
-ssh -o BatchMode=yes "$HOST" "
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$HOST" "
   set -eu
   sudo -n install -m 600 -o chenyn -g chenyn \
     /etc/aetherroute-license/web/signing-public.raw \
@@ -213,8 +214,12 @@ ssh -o BatchMode=yes "$HOST" "
   chmod 600 '$remote_release/verification-license.json'
 "
 
-scp -q "$HOST:$remote_release/public-key-for-verification.raw" "$temporary/public-key.raw"
-scp -q "$HOST:$remote_release/verification-license.json" "$temporary/verification-license.json"
+scp -q -o BatchMode=yes -o StrictHostKeyChecking=yes \
+  "$HOST:$remote_release/public-key-for-verification.raw" \
+  "$temporary/public-key.raw"
+scp -q -o BatchMode=yes -o StrictHostKeyChecking=yes \
+  "$HOST:$remote_release/verification-license.json" \
+  "$temporary/verification-license.json"
 jq -er '.activationKey' "$temporary/verification-license.json" >"$temporary/activation-key.txt"
 chmod 600 "$temporary/activation-key.txt"
 license_id=$(jq -er '.license.licenseID' "$temporary/verification-license.json")
@@ -224,7 +229,7 @@ revoke_verification_license() {
   if [ "$verification_license_revoked" -eq 1 ]; then
     return 0
   fi
-  ssh -o BatchMode=yes "$HOST" "
+  ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$HOST" "
     set -eu
     image=\$(jq -r .image '$remote_release/metadata.json')
     docker run --rm --network none --read-only --cap-drop ALL \
@@ -254,7 +259,7 @@ if ! "$ROOT/scripts/verify_distribution_service_https.sh" \
 fi
 
 revoke_verification_license
-ssh -o BatchMode=yes "$HOST" "
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$HOST" "
   set -eu
   previous=\$(cat '$remote_release/PREVIOUS')
   if [ \"\$previous\" = none ]; then

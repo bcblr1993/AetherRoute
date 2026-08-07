@@ -47,6 +47,16 @@ grep -Fq 'expected_image_id' "$DEPLOY/activate-release.sh"
 grep -Fq 'expected_source_manifest_sha' "$DEPLOY/activate-release.sh"
 grep -Fq 'sourceManifestSHA256' "$DEPLOY/install-release.sh"
 grep -Fq 'source-manifest.sha256' "$ROOT/scripts/deploy_distribution_service.sh"
+test "$(grep -Fc 'ssh -o BatchMode=yes -o StrictHostKeyChecking=yes' \
+  "$ROOT/scripts/deploy_distribution_service.sh")" -eq 6
+test "$(grep -Fc 'scp -q -o BatchMode=yes -o StrictHostKeyChecking=yes' \
+  "$ROOT/scripts/deploy_distribution_service.sh")" -eq 3
+test "$(grep -Fc 'ssh -o BatchMode=yes -o StrictHostKeyChecking=yes' \
+  "$ROLLBACK_SCRIPT")" -eq 6
+test "$(grep -Fc 'scp -q -o BatchMode=yes -o StrictHostKeyChecking=yes' \
+  "$ROLLBACK_SCRIPT")" -eq 3
+grep -Fq 'ssh -o BatchMode=yes -o StrictHostKeyChecking=yes' \
+  "$OPERATIONS_TEST"
 grep -Fq 'license-staging.baizhiedu.xin' "$DEPLOY/docker-stack.yml"
 grep -Fq 'traefik.docker.network=proxy' "$DEPLOY/docker-stack.yml"
 grep -Fq 'traefik.swarm.network=proxy' "$DEPLOY/docker-stack.yml"

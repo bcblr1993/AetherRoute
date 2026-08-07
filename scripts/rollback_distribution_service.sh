@@ -27,7 +27,7 @@ cleanup_started=0
 
 restore_previous() {
   [ -n "$previous" ] || return 0
-  ssh -o BatchMode=yes -o LogLevel=ERROR "$HOST" "
+  ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o LogLevel=ERROR "$HOST" "
     set -eu
     case '$previous' in releases/*) ;; *) exit 1 ;; esac
     previous_root='$REMOTE_ROOT/$previous'
@@ -38,7 +38,7 @@ restore_previous() {
 
 revoke_verification_license() {
   [ -n "$license_id" ] || return 0
-  ssh -o BatchMode=yes -o LogLevel=ERROR "$HOST" "
+  ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o LogLevel=ERROR "$HOST" "
     set -eu
     target_root='$REMOTE_ROOT/releases/$TARGET_RELEASE'
     image=\$(jq -er .image \"\$target_root/metadata.json\")
@@ -68,7 +68,7 @@ cleanup() {
   if [ "$target_deployed" -eq 1 ] && [ "$committed" -eq 0 ]; then
     restore_previous
   fi
-  ssh -o BatchMode=yes -o LogLevel=ERROR "$HOST" "
+  ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o LogLevel=ERROR "$HOST" "
     if [ -d '$remote_verification' ]; then
       find '$remote_verification' -depth -delete
     fi
@@ -81,7 +81,7 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-previous=$(ssh -o BatchMode=yes -o LogLevel=ERROR "$HOST" "
+previous=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o LogLevel=ERROR "$HOST" "
   set -eu
   current=\$(readlink '$REMOTE_ROOT/current')
   case \"\$current\" in releases/*) ;; *) exit 1 ;; esac
@@ -113,16 +113,19 @@ previous=$(ssh -o BatchMode=yes -o LogLevel=ERROR "$HOST" "
 ")
 case "$previous" in releases/*) ;; *) exit 1 ;; esac
 
-scp -q "$HOST:$remote_verification/metadata.json" "$temporary/metadata.json"
-scp -q "$HOST:$remote_verification/public-key.raw" "$temporary/public-key.raw"
-scp -q "$HOST:$remote_verification/license.json" "$temporary/license.json"
+scp -q -o BatchMode=yes -o StrictHostKeyChecking=yes \
+  "$HOST:$remote_verification/metadata.json" "$temporary/metadata.json"
+scp -q -o BatchMode=yes -o StrictHostKeyChecking=yes \
+  "$HOST:$remote_verification/public-key.raw" "$temporary/public-key.raw"
+scp -q -o BatchMode=yes -o StrictHostKeyChecking=yes \
+  "$HOST:$remote_verification/license.json" "$temporary/license.json"
 jq -er .activationKey "$temporary/license.json" >"$temporary/activation-key.txt"
 chmod 600 "$temporary/activation-key.txt"
 license_id=$(jq -er .license.licenseID "$temporary/license.json")
 expected_build=$(jq -er .build "$temporary/metadata.json")
 expected_download_url=$(jq -er .downloadURL "$temporary/metadata.json")
 
-ssh -o BatchMode=yes -o LogLevel=ERROR "$HOST" "
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o LogLevel=ERROR "$HOST" "
   set -eu
   target_root='$REMOTE_ROOT/releases/$TARGET_RELEASE'
   \"\$target_root/activate-release.sh\" \"\$target_root\" >/dev/null
@@ -134,7 +137,7 @@ target_deployed=1
   "$expected_build" "$expected_download_url"
 
 revoke_verification_license
-ssh -o BatchMode=yes -o LogLevel=ERROR "$HOST" "
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o LogLevel=ERROR "$HOST" "
   set -eu
   test \"\$(readlink '$REMOTE_ROOT/current')\" = '$previous'
   ln -sfn 'releases/$TARGET_RELEASE' '$REMOTE_ROOT/current.next'

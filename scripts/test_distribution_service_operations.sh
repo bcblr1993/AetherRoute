@@ -14,7 +14,7 @@ case "$BASE_URL" in
   *) usage; exit 64 ;;
 esac
 
-ssh -o BatchMode=yes -o LogLevel=ERROR "$HOST" \
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o LogLevel=ERROR "$HOST" \
   'bash -s' -- "$BASE_URL" <<'REMOTE'
 set -eu
 umask 077

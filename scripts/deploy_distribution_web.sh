@@ -82,15 +82,17 @@ COPYFILE_DISABLE=1 tar --no-xattrs \
 remote_incoming="$REMOTE_ROOT/.incoming-$RELEASE_ID"
 remote_release="$REMOTE_ROOT/releases/$RELEASE_ID"
 
-ssh -o BatchMode=yes "$HOST" "
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$HOST" "
   set -eu
   test ! -e '$remote_incoming'
   test ! -e '$remote_release'
   mkdir -p '$REMOTE_ROOT/releases' '$remote_incoming'
 "
-scp -q "$temporary/payload.tgz" "$temporary/docker-stack.yml" "$HOST:$remote_incoming/"
+scp -q -o BatchMode=yes -o StrictHostKeyChecking=yes \
+  "$temporary/payload.tgz" "$temporary/docker-stack.yml" \
+  "$HOST:$remote_incoming/"
 
-ssh -o BatchMode=yes "$HOST" "
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$HOST" "
   set -eu
   tar -xzf '$remote_incoming/payload.tgz' -C '$remote_incoming'
   rm '$remote_incoming/payload.tgz'
@@ -174,7 +176,7 @@ fi
 if ! "$ROOT/scripts/verify_distribution_web.sh" \
   "$actual_sha" "$artifact_name" "$channel" "$expected_update_status" \
   "$verify_audit_directory"; then
-  ssh -o BatchMode=yes "$HOST" "
+  ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$HOST" "
     set -eu
     previous=\$(cat '$remote_release/PREVIOUS')
     if [ \"\$previous\" = none ]; then
@@ -205,7 +207,7 @@ if ! "$ROOT/scripts/verify_distribution_web.sh" \
   exit 1
 fi
 
-ssh -o BatchMode=yes "$HOST" "
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$HOST" "
   set -eu
   previous=\$(cat '$remote_release/PREVIOUS')
   if [ \"\$previous\" = none ]; then

@@ -9,7 +9,7 @@ test -n "$HOST" || {
   exit 64
 }
 
-ssh -o BatchMode=yes "$HOST" "
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$HOST" "
   set -eu
   current=\$(readlink '$REMOTE_ROOT/current')
   case \"\$current\" in releases/*) ;; *) echo 'invalid current release pointer' >&2; exit 1 ;; esac

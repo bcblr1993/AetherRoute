@@ -16,6 +16,9 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ### Fixed
 
+- Website and owner-service deployment, verification, operations, and rollback
+  SSH/SCP calls now require a pre-existing matching host key and cannot fall
+  back to first-contact trust.
 - Production soak evidence now binds the complete source manifest and exact Git
   commit, and is rejected when the source or commit changes during the run or
   before stable release verification.

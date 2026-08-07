@@ -107,6 +107,12 @@ rg -F 'preview)' "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
 rg -F 'stable)' "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
 rg -F 'prepare_distribution_web_preview_payload.sh' \
   "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
+test "$(rg -c 'ssh -o BatchMode=yes -o StrictHostKeyChecking=yes' \
+  "$ROOT/scripts/deploy_distribution_web.sh")" -eq 4
+rg -F 'scp -q -o BatchMode=yes -o StrictHostKeyChecking=yes' \
+  "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
+rg -F 'ssh -o BatchMode=yes -o StrictHostKeyChecking=yes' \
+  "$ROOT/scripts/rollback_distribution_web.sh" >/dev/null
 preview_preparer="$ROOT/scripts/prepare_distribution_web_preview_payload.sh"
 sh -n "$preview_preparer"
 rg -F 'preview candidate must contain exactly five audited files' \
