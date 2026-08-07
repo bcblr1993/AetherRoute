@@ -161,7 +161,9 @@ over real HTTP transport. The deployable Go service in
 `Services/DistributionService` additionally passes race detection, static
 Linux arm64 compilation, separate Unix-socket signer operation, private
 state/activation-digest checks, and black-box interoperability with the real
-Swift client. Production readiness still requires the same drill
+Swift client. Its production Go toolchain is pinned to an exact security patch
+release, and the repository gate rejects reachable findings from the official
+Go vulnerability database. Production readiness still requires the same drill
 against an externally hosted HTTPS staging deployment and verification against
 the exact notarized DMG SHA-256. The isolated
 `scripts/test_dmg_upgrade_rollback.sh` gate separately builds two unsigned

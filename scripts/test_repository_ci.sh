@@ -27,6 +27,7 @@ find "$ROOT/Config" -type f \( -name '*.plist' -o -name '*.xcprivacy' \) \
 xcodebuild -project "$ROOT/AetherRoute.xcodeproj" -list >/dev/null
 "$ROOT/scripts/verify_localizations.sh"
 "$ROOT/scripts/verify_app_icon.sh"
+"$ROOT/scripts/test_go_vulnerabilities.sh"
 
 (
   cd "$ROOT/Services/DistributionService"

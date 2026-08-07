@@ -94,6 +94,31 @@ DERIVED_DATA="$AUDIT_DIR/DerivedData"
 EVIDENCE_CREATED=0
 EVIDENCE_COMPLETE=0
 cleanup() {
+  RUNNER_APP="$DERIVED_DATA/Build/Products/Debug/AetherRouteUITests-Runner.app"
+  PRODUCT_APP="$DERIVED_DATA/Build/Products/Debug/AetherRoute.app"
+  # Stop queued XCTest launches before removing their bundle. Otherwise
+  # LaunchServices may try to open the now-deleted runner and present a
+  # misleading "damaged" alert after the test has already finished.
+  pkill -TERM -f "$DERIVED_DATA" 2>/dev/null || true
+  attempts=0
+  while [ "$attempts" -lt 25 ]; do
+    if ! pgrep -f "$DERIVED_DATA" >/dev/null 2>&1; then
+      break
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.2
+  done
+  pkill -KILL -f "$DERIVED_DATA" 2>/dev/null || true
+  for application in "$RUNNER_APP" "$PRODUCT_APP"; do
+    if [ -d "$application" ]; then
+      /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
+        -u "$application" >/dev/null 2>&1 || true
+    fi
+  done
+  if [ -d /Applications/AetherRoute.app ]; then
+    /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
+      -f /Applications/AetherRoute.app >/dev/null 2>&1 || true
+  fi
   find "$AUDIT_DIR" -depth -delete 2>/dev/null || true
   if [ "$EVIDENCE_CREATED" -eq 1 ] && [ "$EVIDENCE_COMPLETE" -eq 0 ]; then
     find "$EVIDENCE_DIRECTORY" -depth -delete 2>/dev/null || true
@@ -129,13 +154,24 @@ xcodebuild \
   build-for-testing
 
 APP="$DERIVED_DATA/Build/Products/Debug/$APP_NAME"
+RUNNER_APP="$DERIVED_DATA/Build/Products/Debug/AetherRouteUITests-Runner.app"
 PACKET_EXTENSION="$APP/Contents/Library/SystemExtensions/$EXPECTED_PACKET_BUNDLE.systemextension"
 TRANSPARENT_EXTENSION="$APP/Contents/Library/SystemExtensions/$EXPECTED_TRANSPARENT_BUNDLE.systemextension"
-if [ ! -d "$APP" ] \
+if [ ! -d "$RUNNER_APP" ] \
+  || [ ! -d "$APP" ] \
   || [ ! -d "$PACKET_EXTENSION" ] \
   || [ ! -d "$TRANSPARENT_EXTENSION" ]; then
-  echo "signed build is missing its host or one of the expected extensions" >&2
+  echo "signed build is missing its UI runner, host, or one of the expected extensions" >&2
   exit 1
+fi
+codesign --verify --deep --strict --verbose=2 "$RUNNER_APP"
+if ! codesign -dv --verbose=4 "$RUNNER_APP" 2>&1 \
+  | grep -F "Authority=Apple Development" >/dev/null; then
+  echo "signed lifecycle UI runner is not Apple Development signed" >&2
+  exit 1
+fi
+if xattr -p com.apple.quarantine "$RUNNER_APP" >/dev/null 2>&1; then
+  xattr -dr com.apple.quarantine "$RUNNER_APP"
 fi
 ACTUAL_HOST_BUNDLE=$(/usr/libexec/PlistBuddy -c \
   'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")

@@ -43,7 +43,13 @@ receipts, device identifiers, or entitlement payloads.
 
 ## Build and isolated verification
 
+The module keeps Go 1.24 language compatibility while pinning the production
+compiler to the exact security-patched toolchain declared by the `toolchain`
+line in `go.mod`. CI fails if it uses a different patch release or if the
+official Go vulnerability database reports a reachable vulnerability.
+
 ```sh
+./scripts/test_go_vulnerabilities.sh
 ./scripts/test_distribution_service.sh
 
 cd Services/DistributionService

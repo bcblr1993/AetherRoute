@@ -119,6 +119,15 @@ func TestArtifactCommandsRejectUnsafePathsAndMetadata(t *testing.T) {
 	if err := os.Mkdir(publicDirectory, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// The production test runner deliberately uses umask 077. Force and verify
+	// the unsafe fixture so this test cannot accidentally exercise a private
+	// mode-700 directory instead.
+	if err := os.Chmod(publicDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(publicDirectory); err != nil || info.Mode().Perm() != 0o755 {
+		t.Fatalf("unsafe parent fixture permissions = %v, %v", info, err)
+	}
 	if err := runGeneratePepper([]string{"-output", filepath.Join(publicDirectory, "pepper.raw")}); err == nil {
 		t.Fatal("non-private parent directory was accepted")
 	}
