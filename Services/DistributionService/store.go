@@ -288,6 +288,28 @@ func canonicalPrivatePath(path string) (string, error) {
 	return filepath.Join(resolvedDirectory, filepath.Base(path)), nil
 }
 
+// canonicalSignerSocketPath permits one narrowly shared deployment shape in
+// addition to a fully private directory. Mode 0710 lets the configured socket
+// group traverse to a known socket name without listing, creating, replacing,
+// or deleting directory entries. Group write and every permission for other
+// users remain forbidden. The socket itself is still created mode 600 or 660.
+func canonicalSignerSocketPath(path string) (string, error) {
+	directory := filepath.Dir(filepath.Clean(path))
+	resolvedDirectory, err := filepath.EvalSymlinks(directory)
+	if err != nil {
+		return "", errors.New("signer socket parent directory must already exist")
+	}
+	info, err := os.Stat(resolvedDirectory)
+	if err != nil || !info.IsDir() {
+		return "", errors.New("signer socket parent must be a directory")
+	}
+	mode := info.Mode().Perm()
+	if mode != 0o700 && mode != 0o710 {
+		return "", errors.New("signer socket parent directory must be mode 700 or 710")
+	}
+	return filepath.Join(resolvedDirectory, filepath.Base(path)), nil
+}
+
 func validateState(state PersistentState, productID string) error {
 	if state.SchemaVersion != SchemaVersion || state.ProductID != productID ||
 		state.Licenses == nil || state.LicenseIndex == nil || len(state.Licenses) > 100000 {

@@ -248,6 +248,75 @@ func TestUnixSignerCanGrantOnlyItsConfiguredGroup(t *testing.T) {
 	}
 }
 
+func TestUnixSignerAcceptsExecuteOnlySharedGroupDirectory(t *testing.T) {
+	seed := bytes.Repeat([]byte{0x74}, ed25519.SeedSize)
+	socketDirectory, err := os.MkdirTemp("/tmp", "ar-signer-shared-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(socketDirectory) })
+	if err := os.Chmod(socketDirectory, 0o710); err != nil {
+		t.Fatal(err)
+	}
+	socketPath := filepath.Join(socketDirectory, "signer.sock")
+	server, err := NewSignerServer(socketPath, testProductID, seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.SetSocketGroup(os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(ctx) }()
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		if info, statErr := os.Stat(socketPath); statErr == nil {
+			if info.Mode().Perm() != 0o660 {
+				t.Fatalf("shared socket permissions = %o", info.Mode().Perm())
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("shared signer socket did not become ready")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	client, err := NewSocketSigner(socketPath, testProductID, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	entitlement := Entitlement{
+		SchemaVersion: 1, ProductID: testProductID,
+		LicenseID: strings.Repeat("b", 32), DeviceID: "44444444-4444-4444-8444-444444444444",
+		State: StateActive, IssuedAt: now,
+	}
+	if _, err := client.SignEntitlement(context.Background(), entitlement); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSignerSocketParentRejectsWritableGroupAndOtherUsers(t *testing.T) {
+	seed := bytes.Repeat([]byte{0x75}, ed25519.SeedSize)
+	for _, mode := range []os.FileMode{0o770, 0o701, 0o750} {
+		directory := privateTempDir(t)
+		if err := os.Chmod(directory, mode); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(directory, "signer.sock")
+		if _, err := NewSignerServer(path, testProductID, seed); err == nil {
+			t.Fatalf("signer accepted unsafe parent mode %o", mode)
+		}
+		if _, err := NewSocketSigner(path, testProductID, time.Second); err == nil {
+			t.Fatalf("client accepted unsafe parent mode %o", mode)
+		}
+	}
+}
+
 func TestExactJSONAndURLValidationRejectAmbiguity(t *testing.T) {
 	var request LicenseRequest
 	if decodeExactJSON([]byte(`{} {}`), &request) == nil {

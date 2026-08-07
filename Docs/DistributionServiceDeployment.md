@@ -77,14 +77,18 @@ shell history, CI logs, or a DMG:
 - independent random 32-byte license-store pepper, readable only by the Web
   account;
 - private state directory and `licenses.json`, owned by the Web account;
-- private Unix-socket directory shared only where required by the two service
-  accounts.
+- private Unix-socket directory owned by the signer, group-owned by the one
+  shared service group, and mode 710. The Web account receives only that group
+  and can traverse to the known socket name without listing or modifying the
+  directory.
 
-The state and socket parent directories must already exist with mode 700. The
-service canonicalizes their paths, rejects final-component symlinks for secret,
-state, and lock files, and bounds state-file reads. Keep the signer socket path
-short (for example under `/run/aetherroute`) because Unix-domain socket path
-limits are much smaller than normal filesystem path limits.
+The state parent directory must already exist with mode 700. A same-account
+signer socket parent may also be 700; a split-account deployment uses exactly
+710, never group-write or any access for other users. The service canonicalizes
+paths, rejects final-component symlinks for secret, state, and lock files, and
+bounds state-file reads. Keep the signer socket path short (for example under
+`/run/aetherroute`) because Unix-domain socket path limits are much smaller than
+normal filesystem path limits.
 
 Back up the seed, pepper, and state separately with encryption and restore
 drills. Losing the seed prevents signing new receipts; losing the pepper makes
@@ -193,12 +197,39 @@ aetherroute-distribution sign-update \
   -output /absolute/private/current.update.json
 ```
 
+## Owner staging operations
+
+The checked deployment assets run signer and Web under separate numeric users,
+drop all capabilities, use read-only container roots, apply `NoNewPrivs`, and
+wait for the exact immutable image tag to become healthy before verification.
+Each immutable release also retains a bounded SHA-256 source manifest and binds
+its digest into `metadata.json`; activation rejects either an image-ID or source
+manifest mismatch.
+The public verifier uses the native Swift client rather than a synthetic JSON
+decoder. The operational and rollback gates are explicit because they scale the
+staging signer and switch immutable staging releases:
+
+```sh
+./scripts/test_distribution_service_operations.sh OWNER@HOST
+./scripts/rollback_distribution_service.sh OWNER@HOST TARGET_STAGING_RELEASE
+```
+
+The operations gate requires signer-unavailable activation to fail with 503,
+restores the signer before continuing, exercises activation and deactivation,
+checks exact 405/404 boundaries, mutates and restores only a private state
+clone, performs a bounded 200-request read test at concurrency 8, and rejects
+client request metadata in the current Web task log. The rollback gate deploys
+the exact recorded target image ID, repeats the native signed lifecycle, and
+changes the `current` pointer only after public verification. Failure restores
+the previous exact release before removing private verification material.
+
 ## Remaining production evidence
 
-Local black-box verification is not public-service proof. Before release, run
-the same native-client drill against the final owner HTTPS staging host, verify
-TLS and no-redirect behavior, exercise backup/restore and signer-unavailable
-failure paths, load-test the chosen deployment topology, and bind the final
-payment/customer system to issuance and revocation. The signing seed and
-license pepper must never be sent to the app-signing machine unless the owner
-has explicitly designed that trust boundary.
+The owner HTTPS staging, signer-unavailable, isolated state restore, bounded
+read load, and immutable rollback paths have been exercised. Before charging
+customers, bind the selected payment/customer system to a narrow issuance and
+revocation worker and complete an encrypted off-host backup and restore drill
+for the signer seed, license pepper, and state together. Repeat the native
+public verifier with the exact final notarized DMG and stable update envelope.
+The signing seed and license pepper must never be sent to the app-signing
+machine unless the owner has explicitly designed that trust boundary.

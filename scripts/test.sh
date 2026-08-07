@@ -27,6 +27,7 @@ trap cleanup EXIT HUP INT TERM
 "$ROOT/scripts/test_distribution_staging.sh"
 "$ROOT/scripts/test_distribution_web.sh"
 "$ROOT/scripts/test_distribution_service.sh"
+"$ROOT/scripts/test_distribution_deployment.sh"
 "$ROOT/scripts/test_dmg_upgrade_rollback.sh"
 "$ROOT/scripts/verify_independent_distribution_boundary.sh"
 "$ROOT/scripts/test_large_import_performance.sh"

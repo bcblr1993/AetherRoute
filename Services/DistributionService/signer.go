@@ -58,7 +58,7 @@ func NewSocketSigner(path, productID string, timeout time.Duration) (*SocketSign
 	if err := ValidateProductID(productID); err != nil {
 		return nil, err
 	}
-	canonicalPath, err := canonicalPrivatePath(path)
+	canonicalPath, err := canonicalSignerSocketPath(path)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func NewSignerServer(path, productID string, seed []byte) (*SignerServer, error)
 	if err := ValidateProductID(productID); err != nil {
 		return nil, err
 	}
-	canonicalPath, err := canonicalPrivatePath(path)
+	canonicalPath, err := canonicalSignerSocketPath(path)
 	if err != nil {
 		return nil, err
 	}
