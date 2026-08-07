@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
   "coreRepository": "https://github.com/bcblr1993/aetherroute-core.git",
-  "coreCommit": "9b6c3f97377dece821b6b484a5eb956c7ef08152",
+  "coreCommit": "4b03bf8ec00c4554ae2a4bcb0e2b80d925780b2b",
   "sourceFiles": {
     "interopTestsSHA256": "a5e134e73920f318a4eba5e6be7533decea764bc433e53aebf3bcd885582af3c",
     "proxyManagerSHA256": "8837fed3ffdebf6c77cedc9b10bd6763bebc1c842e1516a913e750802d899980",
-    "coreManifestSHA256": "d0ae68292ec1af6cf7dc17df8bbae02b5ecc1e23bf96da54d0c422609f7e1492",
-    "ffiManifestSHA256": "22a87e13336aa0bc7e4d6a6b503b0f9ff883cb35b0d5fc6bb5a59d819e714fe4",
+    "coreManifestSHA256": "67bbcec779baa0ad09934c3079369d600a45f11bf6422e1a426acd98e431d1eb",
+    "ffiManifestSHA256": "bc9d8c055167a4997be4476dc9e39a9c10538c0754902904f2a539083e698dd7",
     "ffiSourceSHA256": "9bbdc611dad3468d12c6c7feb319af35736dc0055490d581cd8a52c024a3ca0f",
     "flowFFISourceSHA256": "106d8ca1521fc583aa315884a3c4622cd06ff2bc172c8ee1d688f3628dcaa6bd"
   },
   "artifacts": {
-    "flowCoreSHA256": "af8e845baf46429d0e63107cdf82b3323d59a8eb180a15f599931861b330afc7",
-    "packetFlowCoreSHA256": "42426b24d7b782d92f1074d75baa55b512c11e701a704dfcc5813b106eb0aab8",
+    "flowCoreSHA256": "1c7f0ad22ee6302c71ff6a07f6405bf22140e71a1c558ebd13cbf2175d1ab4bc",
+    "packetFlowCoreSHA256": "ae5c7d6e18417f3aefe2c3ffe80819b184c0cd53064f39ddaebaef344681ac4b",
     "headerSHA256": "5e158ae79080e02b2a01235dc2f94b005290bf0aed03d8072101122ae052e7a5",
     "interopTestBinarySHA256": "3bc93f9fa83b408b979cbe86ddeabe39b6417ee7094db8a66464e27d7a57a7d1"
   },
