@@ -93,7 +93,12 @@ AUDIT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-signed-ne.XXXXXX")
 DERIVED_DATA="$AUDIT_DIR/DerivedData"
 EVIDENCE_CREATED=0
 EVIDENCE_COMPLETE=0
+CLEANUP_STARTED=0
 cleanup() {
+  if [ "$CLEANUP_STARTED" -eq 1 ]; then
+    return
+  fi
+  CLEANUP_STARTED=1
   RUNNER_APP="$DERIVED_DATA/Build/Products/Debug/AetherRouteUITests-Runner.app"
   PRODUCT_APP="$DERIVED_DATA/Build/Products/Debug/AetherRoute.app"
   # Stop queued XCTest launches before removing their bundle. Otherwise
@@ -110,10 +115,9 @@ cleanup() {
   done
   pkill -KILL -f "$DERIVED_DATA" 2>/dev/null || true
   # LaunchServices accepts XCTest launch requests asynchronously. Unregister
-  # the bundles first, then keep the still-valid signed apps in place until the
-  # launch queue has remained quiet for ten continuous seconds. A fixed short
-  # delay can race a late launch request and macOS then misleadingly reports
-  # the already-deleted Runner as a damaged downloaded application.
+  # the bundles now, but leave the still-valid signed apps at their exact paths
+  # for a bounded quiet period so a late launch request cannot resolve to a
+  # runner that cleanup has already deleted.
   for application in "$RUNNER_APP" "$PRODUCT_APP"; do
     if [ -d "$application" ]; then
       xattr -dr com.apple.quarantine "$application" 2>/dev/null || true
@@ -121,24 +125,18 @@ cleanup() {
         -u "$application" >/dev/null 2>&1 || true
     fi
   done
-  quiet_ticks=0
-  total_ticks=0
-  while [ "$quiet_ticks" -lt 40 ] && [ "$total_ticks" -lt 120 ]; do
-    if pgrep -f "$DERIVED_DATA" >/dev/null 2>&1; then
-      pkill -TERM -f "$DERIVED_DATA" 2>/dev/null || true
-      quiet_ticks=0
-    else
-      quiet_ticks=$((quiet_ticks + 1))
-    fi
-    total_ticks=$((total_ticks + 1))
-    sleep 0.25
-  done
-  pkill -KILL -f "$DERIVED_DATA" 2>/dev/null || true
   if [ -d /Applications/AetherRoute.app ]; then
     /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
       -f /Applications/AetherRoute.app >/dev/null 2>&1 || true
   fi
-  find "$AUDIT_DIR" -depth -delete 2>/dev/null || true
+  if [ -d "$RUNNER_APP" ] && [ -d "$PRODUCT_APP" ]; then
+    AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=90 \
+      nohup "$ROOT/scripts/deferred_ui_test_cleanup.sh" \
+        "$AUDIT_DIR" "$DERIVED_DATA" "$RUNNER_APP" "$PRODUCT_APP" \
+        </dev/null >/dev/null 2>&1 &
+  else
+    find "$AUDIT_DIR" -depth -delete 2>/dev/null || true
+  fi
   if [ "$EVIDENCE_CREATED" -eq 1 ] && [ "$EVIDENCE_COMPLETE" -eq 0 ]; then
     find "$EVIDENCE_DIRECTORY" -depth -delete 2>/dev/null || true
   fi

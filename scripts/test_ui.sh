@@ -44,6 +44,7 @@ RUN_DIRECTORY="$TEST_ROOT/Run"
 ONLY_TEST=${AETHERROUTE_UI_TEST_ONLY:-}
 SCREENSHOT_OUTPUT=${AETHERROUTE_UI_TEST_SCREENSHOT_OUTPUT:-}
 CONFIGURATION=${AETHERROUTE_UI_TEST_CONFIGURATION:-Debug}
+CLEANUP_STARTED=0
 case "$CONFIGURATION" in
   Debug|Release) ;;
   *)
@@ -53,6 +54,10 @@ case "$CONFIGURATION" in
 esac
 
 cleanup() {
+  if [ "$CLEANUP_STARTED" -eq 1 ]; then
+    return
+  fi
+  CLEANUP_STARTED=1
   RUNNER_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRouteUITests-Runner.app"
   PRODUCT_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRoute.app"
   # Stop the complete test session first. Otherwise xcodebuild may deliver a
@@ -69,10 +74,9 @@ cleanup() {
   done
   pkill -KILL -f "$DERIVED_DATA" 2>/dev/null || true
   # LaunchServices accepts XCTest launch requests asynchronously. Unregister
-  # the bundles first, then keep the still-valid signed apps in place until the
-  # launch queue has remained quiet for ten continuous seconds. A fixed short
-  # delay can race a late launch request and macOS then misleadingly reports
-  # the already-deleted Runner as a damaged downloaded application.
+  # the bundles now, but leave the still-valid signed apps at their exact paths
+  # for a bounded quiet period so a late launch request cannot resolve to a
+  # runner that cleanup has already deleted.
   for application in "$RUNNER_APP" "$PRODUCT_APP"; do
     if [ -d "$application" ]; then
       xattr -dr com.apple.quarantine "$application" 2>/dev/null || true
@@ -80,25 +84,19 @@ cleanup() {
         -u "$application" >/dev/null 2>&1 || true
     fi
   done
-  quiet_ticks=0
-  total_ticks=0
-  while [ "$quiet_ticks" -lt 40 ] && [ "$total_ticks" -lt 120 ]; do
-    if pgrep -f "$DERIVED_DATA" >/dev/null 2>&1; then
-      pkill -TERM -f "$DERIVED_DATA" 2>/dev/null || true
-      quiet_ticks=0
-    else
-      quiet_ticks=$((quiet_ticks + 1))
-    fi
-    total_ticks=$((total_ticks + 1))
-    sleep 0.25
-  done
-  pkill -KILL -f "$DERIVED_DATA" 2>/dev/null || true
   if [ -d /Applications/AetherRoute.app ]; then
     /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
       -f /Applications/AetherRoute.app >/dev/null 2>&1 || true
   fi
-  find "$TEST_ROOT" -depth -delete 2>/dev/null || true
   rmdir "$LOCK_DIRECTORY" 2>/dev/null || true
+  if [ -d "$RUNNER_APP" ] && [ -d "$PRODUCT_APP" ]; then
+    AETHERROUTE_UI_CLEANUP_GRACE_SECONDS=90 \
+      nohup "$REPOSITORY_ROOT/scripts/deferred_ui_test_cleanup.sh" \
+        "$TEST_ROOT" "$DERIVED_DATA" "$RUNNER_APP" "$PRODUCT_APP" \
+        </dev/null >/dev/null 2>&1 &
+  else
+    find "$TEST_ROOT" -depth -delete 2>/dev/null || true
+  fi
 }
 cleanup_and_exit() {
   exit_code=$1
@@ -302,4 +300,4 @@ if [ "$test_status" -ne 0 ]; then
   exit 1
 fi
 tail -16 "$TEST_ROOT/xcodebuild.log"
-printf 'UI tests passed; temporary result bundle deleted on exit.\n'
+printf 'UI tests passed; temporary runner retained briefly, then deleted automatically.\n'

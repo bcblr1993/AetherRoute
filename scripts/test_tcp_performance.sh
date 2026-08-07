@@ -100,6 +100,43 @@ packet_added=$(metric "$OUTPUT/packet.log" added_p95_ms)
 flow_rss=$(awk '/maximum resident set size/ {print $1}' "$OUTPUT/flow.log" | tail -1)
 packet_rss=$(awk '/maximum resident set size/ {print $1}' "$OUTPUT/packet.log" | tail -1)
 
+require_at_least() {
+  key=$1
+  actual=$2
+  minimum=$3
+  awk -v actual="$actual" -v minimum="$minimum" '
+    BEGIN {
+      exit !(actual ~ /^[0-9]+([.][0-9]+)?$/ && actual + 0 >= minimum + 0)
+    }
+  ' || {
+    echo "TCP performance $key below $minimum: $actual" >&2
+    return 1
+  }
+}
+require_at_most() {
+  key=$1
+  actual=$2
+  maximum=$3
+  awk -v actual="$actual" -v maximum="$maximum" '
+    BEGIN {
+      exit !(actual ~ /^[0-9]+([.][0-9]+)?$/ && actual + 0 <= maximum + 0)
+    }
+  ' || {
+    echo "TCP performance $key above $maximum: $actual" >&2
+    return 1
+  }
+}
+
+# A failed measurement must never leave a result that says "passed". Keep the
+# raw logs for a caller-provided evidence directory, but create result.txt and
+# its checksum only after every release threshold is satisfied.
+require_at_least flow_engine_mibps "$flow_engine" 1024
+require_at_least packet_engine_mibps "$packet_engine" 1024
+require_at_most flow_added_p95_ms "$flow_added" 5
+require_at_most packet_added_p95_ms "$packet_added" 5
+require_at_most flow_max_rss_bytes "$flow_rss" 134217728
+require_at_most packet_max_rss_bytes "$packet_rss" 268435456
+
 {
   printf 'schema=1\n'
   printf 'completed_utc=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
