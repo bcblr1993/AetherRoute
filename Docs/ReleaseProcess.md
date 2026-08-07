@@ -14,7 +14,10 @@ as `v0.1.0-alpha.1`; beta builds use `v0.1.0-beta.1`; production releases use
 3. Verify the embedded-core submodule commit and all license notices.
 4. Run repository CI, the complete native regression, sanitizers, UI matrix,
    accessibility checks, isolated protocol interoperability, and the exact
-   current 24-hour soak verification.
+   current 24-hour soak verification. The soak producer records the full Git
+   commit and complete source-manifest digest, rejects a source or commit change
+   during execution, and the release verifier requires both to match the frozen
+   release tree.
 5. Freeze the source commit. Any source change invalidates runtime, soak, UI,
    and candidate evidence tied to the previous commit.
 

@@ -49,6 +49,18 @@ test "$(field "$metadata" diagnostic_report_scan)" = exact-process-basename \
   || fail "release evidence did not scan exact core diagnostic reports"
 test "$(field "$metadata" orphan_process_scan)" = exact-binary-path \
   || fail "release evidence did not scan exact core process paths"
+git_commit=$(field "$metadata" git_commit)
+printf '%s\n' "$git_commit" | grep -Eq '^[0-9a-f]{40}$' \
+  || fail "git_commit must be a full lowercase Git commit"
+test "$git_commit" = "$(git -C "$ROOT" rev-parse HEAD)" \
+  || fail "git_commit does not match the current release commit"
+source_manifest_sha256=$(field "$metadata" source_manifest_sha256)
+printf '%s\n' "$source_manifest_sha256" | grep -Eq '^[0-9a-f]{64}$' \
+  || fail "source_manifest_sha256 must be lowercase SHA-256"
+current_source_manifest_sha256=$("$ROOT/scripts/source_manifest.sh" \
+  | awk '$1 == "MANIFEST_SHA256" {print $2}')
+test "$source_manifest_sha256" = "$current_source_manifest_sha256" \
+  || fail "source manifest does not match the current release tree"
 test "$(field "$result" new_diagnostic_reports)" -eq 0 \
   || fail "release evidence contains a core crash, hang, or spin report"
 test "$(field "$result" orphan_processes)" -eq 0 \
@@ -118,4 +130,4 @@ verify_source_hash flow_artifact_sha256 \
 verify_source_hash packet_artifact_sha256 \
   "$ROOT/Core/Artifacts/macos-arm64/libclashrs-direct.a"
 
-echo "Release soak evidence verified: exact current cores and harnesses, 24-hour duration, at least 800 complete rounds, bounded RSS slope and FD growth."
+echo "Release soak evidence verified: exact source commit, complete source manifest, current cores and harnesses, 24-hour duration, at least 800 complete rounds, bounded RSS slope and FD growth."

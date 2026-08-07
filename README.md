@@ -141,8 +141,9 @@ AETHERROUTE_ALLOW_ISOLATED_SOAK=YES \
 ./scripts/verify_isolated_soak_result.sh /absolute/completed/soak-output
 # Require a verified 24-hour result and <=1 MiB/hour post-warm-up RSS slope.
 ./scripts/verify_isolated_soak_trends.sh /absolute/completed/soak-output
-# Final release additionally requires schema 2, production budgets, and exact
-# current runner, harness, FlowOnly-core, and PacketFlow-core hashes.
+# Final release additionally requires schema 2, production budgets, the exact
+# Git commit and complete source manifest, plus current runner, harness and core
+# hashes.
 ./scripts/verify_release_soak_evidence.sh /absolute/completed/soak-output
 ./scripts/test_release_pipeline.sh
 # Final disconnected-idle CPU/RSS gate. It fails closed until Developer Tools

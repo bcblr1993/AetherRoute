@@ -2,10 +2,26 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+PRODUCER="$ROOT/scripts/test_isolated_soak.sh"
+for requirement in \
+  'SOURCE_MANIFEST_BEFORE="$TEMP/source-before.txt"' \
+  'printf '\''git_commit=%s\n'\'' "$GIT_COMMIT"' \
+  'printf '\''source_manifest_sha256=%s\n'\'' "$SOURCE_MANIFEST_SHA256"' \
+  'cmp -s "$SOURCE_MANIFEST_BEFORE" "$SOURCE_MANIFEST_AFTER"' \
+  'Git commit changed during the isolated soak'
+do
+  grep -F "$requirement" "$PRODUCER" >/dev/null || {
+    echo "isolated soak producer is missing source-freeze gate: $requirement" >&2
+    exit 1
+  }
+done
 TEMP=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-release-soak.XXXXXX")
 trap 'find "$TEMP" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 EVIDENCE="$TEMP/release evidence"
 mkdir "$EVIDENCE"
+CURRENT_SOURCE_MANIFEST_SHA256=$("$ROOT/scripts/source_manifest.sh" \
+  | awk '$1 == "MANIFEST_SHA256" {print $2}')
+CURRENT_GIT_COMMIT=$(git -C "$ROOT" rev-parse HEAD)
 
 hash_of() {
   shasum -a 256 "$1" | awk '{print $1}'
@@ -31,6 +47,8 @@ write_metadata() {
     'fd_growth_budget=4' \
     'machine=arm64' \
     'os=26.5' \
+    "git_commit=$CURRENT_GIT_COMMIT" \
+    "source_manifest_sha256=$CURRENT_SOURCE_MANIFEST_SHA256" \
     "runner_sha256=$(hash_of "$ROOT/scripts/test_isolated_soak.sh")" \
     "flow_harness_sha256=$(hash_of "$ROOT/Tests/CoreSmoke/flow_core_smoke.c")" \
     "packet_harness_sha256=$(hash_of "$ROOT/Tests/CoreSmoke/packet_tunnel_core_smoke.c")" \
@@ -83,6 +101,31 @@ current_packet_hash=$(hash_of \
 write_metadata "$current_packet_hash"
 write_hashes
 "$ROOT/scripts/verify_release_soak_evidence.sh" "$EVIDENCE" >/dev/null
+cp "$EVIDENCE/metadata.txt" "$TEMP/valid-metadata.txt"
+
+sed -i '' \
+  's/^source_manifest_sha256=.*/source_manifest_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/' \
+  "$EVIDENCE/metadata.txt"
+write_hashes
+if "$ROOT/scripts/verify_release_soak_evidence.sh" "$EVIDENCE" \
+  >/dev/null 2>&1; then
+  echo "release soak verifier accepted a stale source manifest" >&2
+  exit 1
+fi
+
+cp "$TEMP/valid-metadata.txt" "$EVIDENCE/metadata.txt"
+sed -i '' \
+  's/^git_commit=.*/git_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/' \
+  "$EVIDENCE/metadata.txt"
+write_hashes
+if "$ROOT/scripts/verify_release_soak_evidence.sh" "$EVIDENCE" \
+  >/dev/null 2>&1; then
+  echo "release soak verifier accepted a stale Git commit" >&2
+  exit 1
+fi
+
+cp "$TEMP/valid-metadata.txt" "$EVIDENCE/metadata.txt"
+write_hashes
 
 cp "$EVIDENCE/rounds.tsv" "$TEMP/valid-rounds.tsv"
 cp "$EVIDENCE/result.txt" "$TEMP/valid-result.txt"

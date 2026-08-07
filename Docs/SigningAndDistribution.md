@@ -171,10 +171,12 @@ base64 raw 32-byte Ed25519 public key in
 `AETHERROUTE_DISTRIBUTION_PUBLIC_KEY`. It must also provide an absolute
 `AETHERROUTE_SOAK_EVIDENCE_DIRECTORY` containing a verified schema-2 run of at
 least 24 hours. The release gate requires the exact current runner, both
-harnesses, and both embedded core hashes, 1,000 PacketFlow cycles per round,
-at least 800 complete paired rounds, UTC boundary agreement, the production
-RSS/FD limits, at most 1 MiB/hour post-warm-up RSS growth, no new exact-core
-crash/hang/spin report, and no orphan process at either harness path.
+harnesses, both embedded core hashes, full Git commit, and complete source
+manifest. The producer also rejects a source or commit change during the run.
+It requires 1,000 PacketFlow cycles per round, at least 800 complete paired
+rounds, UTC boundary agreement, the production RSS/FD limits, at most 1 MiB/hour
+post-warm-up RSS growth, no new exact-core crash/hang/spin report, and no orphan
+process at either harness path.
 It must also provide `AETHERROUTE_SIGNED_NE_EVIDENCE_DIRECTORY` from the exact
 current source tree. That evidence must cover at least three TUN and three
 Transparent Proxy connect/readiness/canary/disconnect cycles under an Apple

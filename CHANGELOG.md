@@ -16,6 +16,9 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ### Fixed
 
+- Production soak evidence now binds the complete source manifest and exact Git
+  commit, and is rejected when the source or commit changes during the run or
+  before stable release verification.
 - Preview deployment now validates and publishes the notarized DMG, candidate
   manifest, source manifest, README, and checksum file as one audited set, so
   `SHA256SUMS` cannot reference downloads that were omitted from the site. The
