@@ -83,6 +83,9 @@ grep -Fq 'pkill -TERM -f "$DERIVED_DATA"' "$UI_TEST_SCRIPT"
 grep -Fq 'pkill -KILL -f "$DERIVED_DATA"' "$UI_TEST_SCRIPT"
 grep -Fq 'LaunchServices accepts XCTest launch requests asynchronously' \
   "$UI_TEST_SCRIPT"
+grep -Fq 'quiet_ticks=0' "$UI_TEST_SCRIPT"
+grep -Fq 'while [ "$quiet_ticks" -lt 40 ]' "$UI_TEST_SCRIPT"
+grep -Fq 'xattr -dr com.apple.quarantine "$application"' "$UI_TEST_SCRIPT"
 grep -Fq 'lsregister \' "$UI_TEST_SCRIPT"
 grep -Fq 'codesign --verify --deep --strict "$application"' "$UI_TEST_SCRIPT"
 grep -Fq 'copy_review_workspace' "$UI_CAPTURE_SCRIPT"
@@ -96,6 +99,8 @@ grep -Fq 'Authority=Apple Development' "$SIGNED_NE_SCRIPT"
 grep -Fq 'pkill -TERM -f "$DERIVED_DATA"' "$SIGNED_NE_SCRIPT"
 grep -Fq 'LaunchServices accepts XCTest launch requests asynchronously' \
   "$SIGNED_NE_SCRIPT"
+grep -Fq 'while [ "$quiet_ticks" -lt 40 ]' "$SIGNED_NE_SCRIPT"
+grep -Fq 'xattr -dr com.apple.quarantine "$application"' "$SIGNED_NE_SCRIPT"
 grep -Fq 'lsregister \' "$SIGNED_NE_SCRIPT"
 grep -Fq 'find "$AUDIT_DIR" -depth -delete' "$SIGNED_NE_SCRIPT"
 for non_ui_script in \

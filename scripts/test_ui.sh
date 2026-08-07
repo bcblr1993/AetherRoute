@@ -68,16 +68,31 @@ cleanup() {
     sleep 0.2
   done
   pkill -KILL -f "$DERIVED_DATA" 2>/dev/null || true
-  # LaunchServices accepts XCTest launch requests asynchronously. Keep the
-  # signed bundles in place briefly after the last matching process exits so a
-  # queued request cannot resolve to an app that cleanup has already removed.
-  sleep 2
+  # LaunchServices accepts XCTest launch requests asynchronously. Unregister
+  # the bundles first, then keep the still-valid signed apps in place until the
+  # launch queue has remained quiet for ten continuous seconds. A fixed short
+  # delay can race a late launch request and macOS then misleadingly reports
+  # the already-deleted Runner as a damaged downloaded application.
   for application in "$RUNNER_APP" "$PRODUCT_APP"; do
     if [ -d "$application" ]; then
+      xattr -dr com.apple.quarantine "$application" 2>/dev/null || true
       /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
         -u "$application" >/dev/null 2>&1 || true
     fi
   done
+  quiet_ticks=0
+  total_ticks=0
+  while [ "$quiet_ticks" -lt 40 ] && [ "$total_ticks" -lt 120 ]; do
+    if pgrep -f "$DERIVED_DATA" >/dev/null 2>&1; then
+      pkill -TERM -f "$DERIVED_DATA" 2>/dev/null || true
+      quiet_ticks=0
+    else
+      quiet_ticks=$((quiet_ticks + 1))
+    fi
+    total_ticks=$((total_ticks + 1))
+    sleep 0.25
+  done
+  pkill -KILL -f "$DERIVED_DATA" 2>/dev/null || true
   if [ -d /Applications/AetherRoute.app ]; then
     /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
       -f /Applications/AetherRoute.app >/dev/null 2>&1 || true
