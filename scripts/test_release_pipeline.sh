@@ -109,6 +109,28 @@ grep -F 'scripts/test_tcp_performance.sh' "$ROOT/scripts/test.sh" >/dev/null || 
   echo "release validation is missing the TCP performance gate" >&2
   exit 1
 }
+for tcp_gate_requirement in \
+  'minimum_direct_mibps=2048' \
+  'minimum_engine_mibps=1024' \
+  'TCP performance measurement environment is unsuitable' \
+  'only after every release threshold is satisfied'
+do
+  grep -F "$tcp_gate_requirement" \
+    "$ROOT/scripts/test_tcp_performance.sh" >/dev/null || {
+    echo "TCP performance producer is missing gate: $tcp_gate_requirement" >&2
+    exit 1
+  }
+done
+grep -F 'require_equal minimum_direct_mibps 2048' \
+  "$ROOT/scripts/verify_tcp_performance_result.sh" >/dev/null || {
+  echo "TCP performance verifier does not bind the clean-host baseline" >&2
+  exit 1
+}
+grep -F 'require_equal schema 2' \
+  "$ROOT/scripts/verify_tcp_performance_result.sh" >/dev/null || {
+  echo "TCP performance verifier does not bind the environment-aware schema" >&2
+  exit 1
+}
 grep -F 'ENABLE_DEBUG_DYLIB=NO' \
   "$ROOT/scripts/test_sanitizers.sh" >/dev/null || {
   echo "sanitizer validation must disable the duplicate debug-dylib executor" >&2
