@@ -37,7 +37,7 @@ struct AboutAetherRouteView: View {
             .accessibilityLabel("About AetherRoute")
             .accessibilityIdentifier("about-page-content")
         }
-        .background(AetherVisual.pageBackground)
+        .background(AetherContentCanvas())
         .accessibilityIdentifier("about-page")
     }
 

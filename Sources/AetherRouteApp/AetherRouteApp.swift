@@ -18,9 +18,6 @@ struct WindowChromeSynchronizer: NSViewRepresentable {
 }
 
 final class WindowChromeView: NSView {
-    private static let automaticSidebarToggleIdentifier =
-        "com.apple.SwiftUI.navigationSplitView.toggleSidebar"
-
     private var expectedTitle = ""
     private var showsWindowTitle = true
     private weak var observedWindow: NSWindow?
@@ -46,12 +43,6 @@ final class WindowChromeView: NSView {
             selector: #selector(windowDidUpdate(_:)),
             name: NSWindow.didUpdateNotification,
             object: window
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(toolbarWillAddItem(_:)),
-            name: NSToolbar.willAddItemNotification,
-            object: window?.toolbar
         )
         applyWindowChrome()
         Task { @MainActor [weak self] in
@@ -85,17 +76,6 @@ final class WindowChromeView: NSView {
         applyWindowChrome()
     }
 
-    @objc
-    private func toolbarWillAddItem(_ notification: Notification) {
-        guard let item = notification.userInfo?["item"] as? NSToolbarItem,
-              item.itemIdentifier.rawValue ==
-              Self.automaticSidebarToggleIdentifier else { return }
-        Task { @MainActor [weak self] in
-            await Task.yield()
-            self?.applyWindowChrome()
-        }
-    }
-
     private func applyWindowChrome() {
         guard let window = observedWindow ?? window else { return }
         if window.title != expectedTitle {
@@ -104,14 +84,10 @@ final class WindowChromeView: NSView {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = showsWindowTitle ? .visible : .hidden
 
-        guard let toolbar = window.toolbar else { return }
-        toolbar.isVisible = false
-        while let index = toolbar.items.firstIndex(where: {
-            $0.itemIdentifier.rawValue ==
-                Self.automaticSidebarToggleIdentifier
-        }) {
-            toolbar.removeItem(at: index)
-        }
+        // Keep SwiftUI's unified toolbar intact. On macOS 26 it provides the
+        // native Liquid Glass navigation layer, including the sidebar toggle,
+        // correct window-corner geometry, focus states, and accessibility.
+        window.toolbar?.isVisible = true
     }
 
     private func stopObservingWindow() {
@@ -194,7 +170,7 @@ struct AetherRouteApp: App {
                 .environmentObject(language)
                 .environment(\.locale, language.locale)
         }
-        .windowToolbarStyle(.unifiedCompact(showsTitle: true))
+        .windowToolbarStyle(.unified(showsTitle: true))
     }
 
     private var mainWindow: some Scene {
@@ -207,7 +183,7 @@ struct AetherRouteApp: App {
         }
         .defaultSize(width: 940, height: 640)
         .windowResizability(.contentMinSize)
-        .windowToolbarStyle(.unifiedCompact(showsTitle: false))
+        .windowToolbarStyle(.unified(showsTitle: false))
     }
 
     private var menuBarIcon: String {
@@ -380,7 +356,7 @@ private struct MenuBarContent: View {
                     Label("Review Network Privacy", systemImage: "lock.shield")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherPrimaryActionStyle()
                 .controlSize(.large)
                 .accessibilityIdentifier("menu-privacy-review-button")
             }
@@ -473,68 +449,6 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-private struct SettingsTabButton: View {
-    @Environment(\.controlActiveState) private var controlActiveState
-
-    let tab: SettingsTab
-    let isSelected: Bool
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: tab.symbol)
-                    .frame(width: 18)
-                Text(tab.title)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .font(.body)
-            .foregroundStyle(foregroundColor)
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(backgroundColor)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .accessibilityLabel(tab.title)
-        .accessibilityIdentifier("settings-tab-\(tab.rawValue)")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private var foregroundColor: Color {
-        Color(
-            nsColor: isSelected && selectionIsEmphasized
-                ? .alternateSelectedControlTextColor
-                : .labelColor
-        )
-    }
-
-    private var backgroundColor: Color {
-        if isSelected {
-            return Color(
-                nsColor: selectionIsEmphasized
-                    ? .selectedContentBackgroundColor
-                    : .unemphasizedSelectedContentBackgroundColor
-            )
-        }
-        if isHovered {
-            return Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
-        }
-        return .clear
-    }
-
-    private var selectionIsEmphasized: Bool {
-        controlActiveState == .key
-    }
-}
-
 private struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var tunnel: TunnelManager
@@ -558,26 +472,28 @@ private struct SettingsView: View {
 
     var body: some View {
         NavigationSplitView {
-            ScrollView {
-                VStack(spacing: 4) {
-                    ForEach(SettingsTab.allCases) { tab in
-                        SettingsTabButton(
-                            tab: tab,
-                            isSelected: selectedTab == tab
-                        ) {
-                            UIResponsivenessProbe.begin(
-                                "settings.\(tab.rawValue)"
-                            )
-                            selectedTab = tab
-                        }
-                    }
+            List(selection: $selectedTab) {
+                ForEach(SettingsTab.allCases) { tab in
+                    Label(tab.title, systemImage: tab.symbol)
+                        .tag(tab)
+                        .accessibilityLabel(tab.title)
+                        .accessibilityAddTraits(
+                            selectedTab == tab ? .isSelected : []
+                        )
+                        .accessibilityIdentifier(
+                            "settings-tab-\(tab.rawValue)"
+                        )
+                }
             }
-            .padding(8)
-        }
+            .listStyle(.sidebar)
+            .tint(.accentColor)
+            .onChange(of: selectedTab) { _, tab in
+                guard let tab else { return }
+                UIResponsivenessProbe.begin("settings.\(tab.rawValue)")
+            }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("settings-sidebar-list")
             .navigationSplitViewColumnWidth(min: 176, ideal: 190, max: 216)
-            .background(settingsSidebarBackground)
             .accessibilityLabel("Settings navigation")
             .accessibilityIdentifier("aetherroute-settings-navigation")
         } detail: {
@@ -595,13 +511,12 @@ private struct SettingsView: View {
                 }
         }
         .navigationSplitViewStyle(.balanced)
-        .toolbar(removing: .sidebarToggle)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("AetherRoute settings")
         .accessibilityIdentifier("aetherroute-settings-root")
         .frame(width: 960, height: 640)
         .id(language.preference)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(AetherContentCanvas())
         .overlay(alignment: .topLeading) {
             WindowChromeSynchronizer(
                 title: AppLocalization.string("AetherRoute settings"),
@@ -650,10 +565,6 @@ private struct SettingsView: View {
 #else
         nil
 #endif
-    }
-
-    private var settingsSidebarBackground: Color {
-        Color(nsColor: .windowBackgroundColor)
     }
 
     private var generalSettings: some View {
@@ -729,7 +640,7 @@ private struct SettingsView: View {
         .contentMargins(.horizontal, 20, for: .scrollContent)
         .contentMargins(.vertical, 16, for: .scrollContent)
         .contentMargins(.trailing, 10, for: .scrollIndicators)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(AetherContentCanvas())
     }
 
     private var languageSettings: some View {
@@ -807,9 +718,9 @@ private struct SettingsView: View {
                         in: LocalProxySettings.permittedPorts
                     )
                     .labelsHidden()
+                    .disabled(!canEditLocalProxyPorts)
                 }
             }
-            .disabled(!canEditLocalProxyPorts)
 
             LabeledContent("SOCKS5 proxy") {
                 HStack(spacing: 10) {
@@ -827,9 +738,9 @@ private struct SettingsView: View {
                         in: LocalProxySettings.permittedPorts
                     )
                     .labelsHidden()
+                    .disabled(!canEditLocalProxyPorts)
                 }
             }
-            .disabled(!canEditLocalProxyPorts)
 
             HStack {
                 Button("Copy Shell Environment", systemImage: "terminal") {

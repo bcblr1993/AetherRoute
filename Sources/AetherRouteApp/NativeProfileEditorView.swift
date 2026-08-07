@@ -32,7 +32,7 @@ struct NativeProfileEditorSheet: View {
             idealHeight: 600,
             maxHeight: 760
         )
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(AetherContentCanvas())
         .sheet(isPresented: $isAddingNode) {
             ManualNodeEditorSheet(save: append)
                 .environmentObject(tunnel)
@@ -188,7 +188,7 @@ struct NativeProfileEditorSheet: View {
                         isWorking: isSaving
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherPrimaryActionStyle()
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     validationMessage != nil

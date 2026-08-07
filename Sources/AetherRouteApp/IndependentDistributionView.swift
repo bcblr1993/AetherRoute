@@ -4,6 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct IndependentDistributionView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var distribution:
         IndependentDistributionController
     @State private var licenseKey = ""
@@ -41,8 +42,9 @@ struct IndependentDistributionView: View {
                 Text("License & Updates")
                     .font(.title2.weight(.semibold))
                 Text("AetherRoute verifies signed license receipts and update manifests without storing your activation key.")
-                    .foregroundStyle(.primary.opacity(0.82))
+                    .foregroundStyle(highContrastLabel)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("distribution-header-detail")
             }
         }
     }
@@ -61,7 +63,7 @@ struct IndependentDistributionView: View {
                         .font(.subheadline.weight(.medium))
                     Text(licenseDetail)
                         .font(.caption)
-                        .foregroundStyle(.primary.opacity(0.82))
+                        .foregroundStyle(highContrastLabel)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
@@ -105,7 +107,7 @@ struct IndependentDistributionView: View {
                             isWorking: distribution.isActivating
                         )
                     }
-                    .buttonStyle(.borderedProminent)
+                    .aetherPrimaryActionStyle()
                     .disabled(
                         distribution.isActivating
                             || licenseKey.trimmingCharacters(
@@ -128,7 +130,7 @@ struct IndependentDistributionView: View {
                         .font(.subheadline.weight(.medium))
                     Text(updateDetail)
                         .font(.caption)
-                        .foregroundStyle(.primary.opacity(0.82))
+                        .foregroundStyle(highContrastLabel)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
@@ -141,7 +143,7 @@ struct IndependentDistributionView: View {
                             isWorking: distribution.isDownloadingUpdate
                         )
                     }
-                    .buttonStyle(.borderedProminent)
+                    .aetherPrimaryActionStyle()
                     .disabled(distribution.isDownloadingUpdate)
                     .accessibilityIdentifier("download-update-button")
                 } else {
@@ -402,5 +404,9 @@ struct IndependentDistributionView: View {
         case .revoked: AppLocalization.string("revoked")
         case .deviceLimit: AppLocalization.string("device limit reached")
         }
+    }
+
+    private var highContrastLabel: Color {
+        colorScheme == .dark ? .white : .black
     }
 }

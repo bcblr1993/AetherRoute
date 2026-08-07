@@ -12,8 +12,8 @@ public struct LocalProxySettings: Codable, Equatable, Sendable {
     public init(
         version: Int = Self.currentVersion,
         isEnabled: Bool = false,
-        httpPort: Int = 7_890,
-        socksPort: Int = 7_891
+        httpPort: Int = 17_890,
+        socksPort: Int = 17_891
     ) {
         self.version = version
         self.isEnabled = isEnabled

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct PrivacyDisclosureView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var tunnel: TunnelManager
     let isOnboarding: Bool
 
@@ -18,17 +19,14 @@ struct PrivacyDisclosureView: View {
             .padding(.top, isOnboarding ? 42 : AetherVisual.pageTopPadding)
             .padding(.bottom, AetherVisual.pageBottomPadding)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(AetherContentCanvas())
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if usesPinnedConsent {
                 consentStatus
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 12)
-                    .background(Color(nsColor: .windowBackgroundColor))
-                    .overlay(alignment: .top) {
-                        Divider()
-                    }
+                    .background(.bar)
             }
         }
     }
@@ -60,9 +58,12 @@ struct PrivacyDisclosureView: View {
                 Text("Your Network Privacy")
                     .font(isOnboarding ? .largeTitle.weight(.semibold) : .title2.weight(.semibold))
                 Text(disclosureSubtitle)
-                .foregroundStyle(.primary)
+                .foregroundStyle(
+                    colorScheme == .dark ? Color.white : Color.black
+                )
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("privacy-disclosure-subtitle")
             }
         }
     }
@@ -136,7 +137,7 @@ struct PrivacyDisclosureView: View {
                         .frame(minWidth: 230)
                         .padding(.vertical, 3)
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherPrimaryActionStyle()
                 .tint(.teal)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)

@@ -114,7 +114,7 @@ struct ContentView: View {
                     .task { await tunnel.runSubscriptionUpdateLoop() }
             } else {
                 ZStack {
-                    Color(nsColor: .windowBackgroundColor)
+                    AetherContentCanvas()
                     PrivacyDisclosureView(isOnboarding: true)
                         .environmentObject(tunnel)
                 }
@@ -139,6 +139,14 @@ struct ContentView: View {
         .animation(effectiveReduceMotion ? nil : .snappy(duration: 0.28), value: selectedSection)
         .onOpenURL { url in
             tunnel.handleExternalURL(url)
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSApplication.didBecomeActiveNotification
+            )
+        ) { _ in
+            guard tunnel.systemExtensionApprovalRequired else { return }
+            Task { await tunnel.recheckSystemExtensionApproval() }
         }
         .sheet(
             item: Binding(
@@ -224,7 +232,6 @@ struct ContentView: View {
                 .accessibilityIdentifier("aetherroute-selected-page")
         }
         .navigationSplitViewStyle(.balanced)
-        .toolbar(removing: .sidebarToggle)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Primary navigation and content")
         .accessibilityIdentifier("aetherroute-navigation-split")
@@ -306,6 +313,7 @@ struct ContentView: View {
                     Text("Private routing")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.primary)
+                        .accessibilityIdentifier("sidebar-brand-subtitle")
                 }
                 Spacer()
             }
@@ -406,7 +414,6 @@ struct ContentView: View {
             .scrollContentBackground(.hidden)
             .tint(.accentColor)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var activeProfileStatus: String {
@@ -483,7 +490,7 @@ private struct ConnectionToolbarButton: View {
                 .font(.body.weight(.semibold))
                 .frame(minWidth: 116)
         }
-        .buttonStyle(.borderedProminent)
+        .aetherPrimaryActionStyle()
         .controlSize(.large)
         .tint(actionTint)
         .disabled(!tunnel.canPerformPrimaryAction)
@@ -541,7 +548,9 @@ private struct OverviewView: View {
     private var overviewDetails: some View {
         VStack(spacing: 16) {
             RouteSummary()
-            if let recoveryPlan = tunnel.recoveryPlan {
+            if tunnel.systemExtensionApprovalRequired {
+                SystemExtensionApprovalCard()
+            } else if let recoveryPlan = tunnel.recoveryPlan {
                 ConnectionRecoveryCard(
                     plan: recoveryPlan,
                     openProfiles: openProfiles
@@ -575,6 +584,178 @@ private struct OverviewView: View {
             .flatMap(\.results)
             .compactMap(\.delayMilliseconds)
         return values.min().map(String.init) ?? "--"
+    }
+}
+
+private struct SystemExtensionApprovalCard: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var copiedSteps = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 13) {
+                Image(systemName: "network.badge.shield.half.filled")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(AetherVisual.blue)
+                    .frame(width: 42, height: 42)
+                    .background(
+                        AetherVisual.blue.opacity(0.11),
+                        in: RoundedRectangle(cornerRadius: 12)
+                    )
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Approve Network Extension")
+                        .font(.headline)
+                    Text("macOS requires your approval because Transparent Proxy and TUN can route network traffic. AetherRoute cannot approve this security permission for you.")
+                        .font(.subheadline)
+                        .foregroundStyle(
+                            colorScheme == .dark ? Color.white : Color.black
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+
+            VStack(alignment: .leading, spacing: 9) {
+                approvalStep(
+                    number: 1,
+                    text: AppLocalization.string(
+                        "Open System Settings. This button takes you to Login Items & Extensions."
+                    )
+                )
+                approvalStep(
+                    number: 2,
+                    text: AppLocalization.string(
+                        "Scroll to the bottom Extensions section. Do not use the Open at Login list."
+                    )
+                )
+                approvalStep(
+                    number: 3,
+                    text: AppLocalization.string(
+                        "Next to Network Extensions, click the info button, turn on AetherRoute, then click Done."
+                    )
+                )
+            }
+            .padding(14)
+            .background(
+                Color.primary.opacity(0.035),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) { approvalActions }
+                VStack(alignment: .leading, spacing: 10) { approvalActions }
+            }
+        }
+        .padding(18)
+        .background(
+            AetherVisual.panelFill(for: colorScheme),
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(AetherVisual.blue.opacity(0.20), lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("system-extension-approval-card")
+    }
+
+    @ViewBuilder
+    private var approvalActions: some View {
+        Button {
+            SystemSettingsNavigator.openNetworkExtensions()
+        } label: {
+            Label("Open System Settings", systemImage: "gearshape")
+        }
+        .controlSize(.large)
+        .aetherPrimaryActionStyle()
+        .accessibilityIdentifier("open-network-extension-settings")
+
+        Button {
+            copyApprovalSteps()
+        } label: {
+            Label(
+                copiedSteps
+                    ? AppLocalization.string("Steps Copied")
+                    : AppLocalization.string("Copy Steps"),
+                systemImage: copiedSteps ? "checkmark" : "doc.on.doc"
+            )
+        }
+        .controlSize(.large)
+        .aetherSecondaryActionStyle()
+        .accessibilityIdentifier("copy-network-extension-steps")
+
+        Button {
+            Task { await tunnel.recheckSystemExtensionApproval() }
+        } label: {
+            Label("Approved — Check Again", systemImage: "arrow.clockwise")
+        }
+        .controlSize(.large)
+        .aetherSecondaryActionStyle()
+        .accessibilityIdentifier("recheck-network-extension-approval")
+    }
+
+    private func approvalStep(number: Int, text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(verbatim: "\(number).")
+                .font(.body.monospacedDigit().weight(.semibold))
+                .foregroundStyle(
+                    colorScheme == .dark ? Color.white : Color.black
+                )
+                .frame(width: 24, alignment: .trailing)
+            Text(text)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func copyApprovalSteps() {
+        let steps = [
+            AppLocalization.string(
+                "Open System Settings. This button takes you to Login Items & Extensions."
+            ),
+            AppLocalization.string(
+                "Scroll to the bottom Extensions section. Do not use the Open at Login list."
+            ),
+            AppLocalization.string(
+                "Next to Network Extensions, click the info button, turn on AetherRoute, then click Done."
+            ),
+        ]
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(
+            steps.enumerated().map { "\($0.offset + 1). \($0.element)" }
+                .joined(separator: "\n"),
+            forType: .string
+        )
+        copiedSteps = true
+    }
+}
+
+private enum SystemSettingsNavigator {
+    static func openNetworkExtensions() {
+#if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
+        if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] != nil {
+            return
+        }
+#endif
+        let destinations = [
+            "x-apple.systempreferences:com.apple.LoginItems-Settings.extension",
+            "x-apple.systempreferences:com.apple.preference.general?LoginItems",
+        ]
+        for destination in destinations {
+            guard let url = URL(string: destination) else { continue }
+            if NSWorkspace.shared.open(url) { return }
+        }
+
+        let settingsURL = URL(
+            fileURLWithPath: "/System/Applications/System Settings.app"
+        )
+        NSWorkspace.shared.openApplication(
+            at: settingsURL,
+            configuration: .init()
+        )
     }
 }
 
@@ -657,9 +838,9 @@ private struct ConnectionRecoveryCard: View {
         .accessibilityIdentifier("recovery-\(action.rawValue)")
 
         if prominent {
-            button.buttonStyle(.borderedProminent)
+            button.aetherPrimaryActionStyle()
         } else {
-            button.buttonStyle(.bordered)
+            button.aetherSecondaryActionStyle()
         }
     }
 
@@ -1053,7 +1234,7 @@ private struct ExternalSubscriptionConfirmationSheet: View {
                             || tunnel.isRefreshingSubscription
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherPrimaryActionStyle()
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     !tunnel.canModifyProfiles
@@ -1525,7 +1706,7 @@ private struct RoutingResourcesCard: View {
                             isWorking: tunnel.isUpdatingRoutingResources
                         )
                     }
-                    .buttonStyle(.borderedProminent)
+                    .aetherPrimaryActionStyle()
                     .disabled(
                         !tunnel.canModifyProfiles
                             || tunnel.isUpdatingRoutingResources
@@ -1795,7 +1976,7 @@ private struct ProfileRenameSheet: View {
                         isWorking: isSaving
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherPrimaryActionStyle()
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1945,7 +2126,7 @@ private struct SubscriptionEditorSheet: View {
                         isWorking: tunnel.isRefreshingSubscription
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherPrimaryActionStyle()
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

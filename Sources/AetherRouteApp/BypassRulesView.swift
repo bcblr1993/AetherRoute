@@ -3,6 +3,7 @@ import Foundation
 import SwiftUI
 
 struct BypassRulesView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var newRule = ""
     @State private var isAddingRule = false
@@ -81,7 +82,7 @@ struct BypassRulesView: View {
                         isWorking: isAddingRule
                     )
                 }
-                    .buttonStyle(.borderedProminent)
+                    .aetherPrimaryActionStyle()
                     .disabled(
                         newRule.trimmingCharacters(
                             in: .whitespacesAndNewlines
@@ -123,7 +124,9 @@ struct BypassRulesView: View {
                 systemImage: "info.circle"
             )
             .font(.callout)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(
+                colorScheme == .dark ? Color.white : Color.black
+            )
             .padding(15)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
@@ -145,7 +148,9 @@ struct BypassRulesView: View {
             systemImage: "checkmark.shield"
         )
         .font(.callout)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(
+            colorScheme == .dark ? Color.white : Color.black
+        )
         .padding(15)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(

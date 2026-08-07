@@ -98,7 +98,7 @@ struct SupportDiagnosticsView: View {
                             isWorking: isCreatingReport
                         )
                     }
-                    .buttonStyle(.borderedProminent)
+                    .aetherPrimaryActionStyle()
                     .disabled(isCreatingReport)
                     .accessibilityIdentifier("export-diagnostics")
                 }

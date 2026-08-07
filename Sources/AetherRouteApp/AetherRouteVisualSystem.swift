@@ -10,7 +10,9 @@ enum AetherVisual {
     static let pageTopPadding: CGFloat = 20
     static let pageBottomPadding: CGFloat = 28
     static let sectionSpacing: CGFloat = 16
-    static let panelRadius: CGFloat = 15
+    static let panelRadius: CGFloat = 16
+    static let heroRadius: CGFloat = 24
+    static let controlRadius: CGFloat = 12
     static let contentMaxWidth: CGFloat = 960
     static let formMaxWidth: CGFloat = 720
 
@@ -336,19 +338,41 @@ private struct AetherPanelModifier: ViewModifier {
 
 private struct AetherHeroPanelModifier: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content
-            .background(
-                AetherVisual.panelFill(for: colorScheme),
-                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+        if #available(macOS 26.0, *), !reduceTransparency {
+            content
+                .glassEffect(
+                    .regular.tint(AetherVisual.blue.opacity(0.045)),
+                    in: RoundedRectangle(
+                        cornerRadius: AetherVisual.heroRadius,
+                        style: .continuous
+                    )
+                )
+        } else {
+            content
+                .background(
+                    reduceTransparency
+                        ? AnyShapeStyle(AetherVisual.panelFill(for: colorScheme))
+                        : AnyShapeStyle(.regularMaterial),
+                    in: RoundedRectangle(
+                        cornerRadius: AetherVisual.heroRadius,
+                        style: .continuous
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(
+                        cornerRadius: AetherVisual.heroRadius,
+                        style: .continuous
+                    )
                     .stroke(
                         LinearGradient(
                             colors: [
-                                AetherVisual.blue.opacity(colorScheme == .dark ? 0.15 : 0.10),
+                                AetherVisual.blue.opacity(
+                                    colorScheme == .dark ? 0.15 : 0.10
+                                ),
                                 AetherVisual.panelBorder(for: colorScheme),
                             ],
                             startPoint: .topLeading,
@@ -356,12 +380,71 @@ private struct AetherHeroPanelModifier: ViewModifier {
                         ),
                         lineWidth: 0.6
                     )
-            }
-            .shadow(
-                color: colorScheme == .light ? Color.black.opacity(0.035) : .clear,
-                radius: 10,
-                y: 3
+                }
+                .shadow(
+                    color: colorScheme == .light
+                        ? Color.black.opacity(0.04)
+                        : .clear,
+                    radius: 12,
+                    y: 4
+                )
+        }
+    }
+}
+
+private struct AetherGlassSurfaceModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    let radius: CGFloat
+    let tint: Color?
+    let interactive: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *), !reduceTransparency {
+            content.glassEffect(
+                .regular.tint(tint).interactive(interactive),
+                in: RoundedRectangle(cornerRadius: radius, style: .continuous)
             )
+        } else {
+            content
+                .background(
+                    reduceTransparency
+                        ? AnyShapeStyle(AetherVisual.panelFill(for: colorScheme))
+                        : AnyShapeStyle(.regularMaterial),
+                    in: RoundedRectangle(cornerRadius: radius, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .stroke(
+                            AetherVisual.panelBorder(for: colorScheme),
+                            lineWidth: 0.5
+                        )
+                }
+        }
+    }
+}
+
+private struct AetherPrimaryActionStyleModifier: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.buttonStyle(.glassProminent)
+        } else {
+            content.buttonStyle(.borderedProminent)
+        }
+    }
+}
+
+private struct AetherSecondaryActionStyleModifier: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.buttonStyle(.glass)
+        } else {
+            content.buttonStyle(.bordered)
+        }
     }
 }
 
@@ -376,14 +459,29 @@ struct AetherContentCanvas: View {
             Color(nsColor: .windowBackgroundColor)
 
             if !reduceTransparency {
-                LinearGradient(
-                    colors: [
-                        AetherVisual.blue.opacity(colorScheme == .dark ? 0.018 : 0.008),
-                        Color.clear,
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .center
-                )
+                ZStack {
+                    LinearGradient(
+                        colors: [
+                            AetherVisual.blue.opacity(
+                                colorScheme == .dark ? 0.035 : 0.018
+                            ),
+                            Color.clear,
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .center
+                    )
+                    RadialGradient(
+                        colors: [
+                            AetherVisual.cyan.opacity(
+                                colorScheme == .dark ? 0.022 : 0.012
+                            ),
+                            Color.clear,
+                        ],
+                        center: .bottomTrailing,
+                        startRadius: 0,
+                        endRadius: 520
+                    )
+                }
             }
         }
         .ignoresSafeArea()
@@ -435,5 +533,30 @@ extension View {
 
     func aetherHeroPanel() -> some View {
         modifier(AetherHeroPanelModifier())
+    }
+
+    /// Applies Liquid Glass only to floating controls and top-level functional
+    /// surfaces. Content cards intentionally continue to use `aetherPanel` so
+    /// navigation remains visually distinct from data and settings content.
+    func aetherGlassSurface(
+        radius: CGFloat = AetherVisual.controlRadius,
+        tint: Color? = nil,
+        interactive: Bool = false
+    ) -> some View {
+        modifier(
+            AetherGlassSurfaceModifier(
+                radius: radius,
+                tint: tint,
+                interactive: interactive
+            )
+        )
+    }
+
+    func aetherPrimaryActionStyle() -> some View {
+        modifier(AetherPrimaryActionStyleModifier())
+    }
+
+    func aetherSecondaryActionStyle() -> some View {
+        modifier(AetherSecondaryActionStyleModifier())
     }
 }

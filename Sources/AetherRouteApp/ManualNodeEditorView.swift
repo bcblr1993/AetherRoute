@@ -68,7 +68,7 @@ struct ManualNodeEditorSheet: View {
             idealHeight: 720,
             maxHeight: 820
         )
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(AetherContentCanvas())
         .onChange(of: node.protocolID) { _, protocolID in
             applyDefaults(for: protocolID)
         }
@@ -397,7 +397,7 @@ struct ManualNodeEditorSheet: View {
                         isWorking: isSaving
                     )
                 }
-                    .buttonStyle(.borderedProminent)
+                    .aetherPrimaryActionStyle()
                     .keyboardShortcut(.defaultAction)
                     .disabled(
                         !isCreateEnabled

@@ -136,7 +136,7 @@ struct ProfileArchivePasswordSheet: View {
                         isWorking: isWorking
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherPrimaryActionStyle()
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canSubmit || isWorking)
             }

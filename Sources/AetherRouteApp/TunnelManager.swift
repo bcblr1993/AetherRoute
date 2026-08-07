@@ -216,6 +216,7 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var sessionRoutingMode: RoutingMode?
     @Published private(set) var sessionNetworkEngineMode: NetworkEngineMode?
     @Published private(set) var networkEngineMode: NetworkEngineMode
+    @Published private(set) var systemExtensionApprovalRequired = false
     @Published private(set) var proxySelections: [String: ProxySelectionState] = [:]
     @Published private(set) var proxySelectionMessages: [String: String] = [:]
     @Published private(set) var proxySelectionRequests: Set<String> = []
@@ -238,6 +239,7 @@ final class TunnelManager: ObservableObject {
     private let localProxySettingsStore: LocalProxySettingsStore
     private let userDefaults: UserDefaults
     private let subscriptionClient: ProfileSubscriptionClient
+    private let systemExtensionActivator: any SystemExtensionActivating
     private let routingResourceStoreFactory:
         @Sendable () throws -> RoutingResourceStore
     private let diagnosticEvents = DiagnosticEventBuffer()
@@ -263,6 +265,8 @@ final class TunnelManager: ObservableObject {
             RoutingModePreferenceStore(),
         userDefaults: UserDefaults = .standard,
         subscriptionClient: ProfileSubscriptionClient = .live(),
+        systemExtensionActivator: any SystemExtensionActivating =
+            SystemExtensionActivationCoordinator(),
         routingResourceStoreFactory:
             @escaping @Sendable () throws -> RoutingResourceStore = {
                 try RoutingResourceStore.applicationGroup()
@@ -272,6 +276,7 @@ final class TunnelManager: ObservableObject {
         self.routingModePreferenceStore = routingModePreferenceStore
         self.userDefaults = userDefaults
         self.subscriptionClient = subscriptionClient
+        self.systemExtensionActivator = systemExtensionActivator
         self.routingResourceStoreFactory = routingResourceStoreFactory
         localProxySettingsStore = LocalProxySettingsStore(defaults: userDefaults)
         localProxySettings = localProxySettingsStore.load()
@@ -399,6 +404,10 @@ final class TunnelManager: ObservableObject {
             if reviewState == "failed" || reviewState == "error" {
                 failureContext = .provider
             }
+            if reviewState == "extension-approval" {
+                systemExtensionApprovalRequired = true
+                failureContext = .configuration
+            }
             state = switch reviewState {
             case "loading": .loading
             case "connecting": .connecting
@@ -407,6 +416,12 @@ final class TunnelManager: ObservableObject {
             case "failed", "error":
                 .failed(
                     AppLocalization.string("The secure connection could not start. Review the profile and try again.")
+                )
+            case "extension-approval":
+                .failed(
+                    AppLocalization.string(
+                        "Approve the AetherRoute network extension to continue."
+                    )
                 )
             default: .disconnected
             }
@@ -476,6 +491,19 @@ final class TunnelManager: ObservableObject {
                 hasLoadedBypassPolicy = true
             }
             installProfileProjection(startup.profileProjection)
+            try await systemExtensionActivator.activate(
+                identifier: networkEngineMode.providerBundleIdentifier
+            ) { [weak self] in
+                guard let self else { return }
+                failureContext = .configuration
+                systemExtensionApprovalRequired = true
+                state = .failed(
+                    AppLocalization.string(
+                        "Approve the AetherRoute network extension to continue."
+                    )
+                )
+            }
+            systemExtensionApprovalRequired = false
             installManager(try await loadOrCreateManager())
             observeConfigurationChanges()
             updateState()
@@ -483,8 +511,18 @@ final class TunnelManager: ObservableObject {
                 await refreshSubscriptionIfDue()
             }
         } catch {
+            systemExtensionApprovalRequired = false
             recordFailure(error, context: .configuration)
         }
+    }
+
+    /// Re-runs preparation after the user returns from System Settings. When
+    /// the original activation request is still pending, `prepare()` safely
+    /// coalesces this call through `isPreparing`; macOS will complete that
+    /// request as soon as approval is granted.
+    func recheckSystemExtensionApproval() async {
+        guard systemExtensionApprovalRequired else { return }
+        await prepare()
     }
 
     private func rejectDevelopmentPreviewStart() -> Bool {

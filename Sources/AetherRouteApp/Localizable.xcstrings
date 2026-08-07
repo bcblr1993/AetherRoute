@@ -491,6 +491,16 @@
         }
       }
     },
+    "Approve AetherRoute in System Settings > General > Login Items & Extensions, then return here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在“系统设置”>“通用”>“登录项与扩展”中批准 AetherRoute，然后返回此处。"
+          }
+        }
+      }
+    },
     "Application language": {
       "localizations": {
         "zh-Hans": {
@@ -4301,6 +4311,86 @@
         }
       }
     },
+    "Another network extension request is already pending. Wait a moment, then try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有另一个网络扩展请求正在等待处理。请稍候再试。"
+          }
+        }
+      }
+    },
+    "Move AetherRoute to the Applications folder, reopen it, and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请将 AetherRoute 移到“应用程序”文件夹，重新打开后再试。"
+          }
+        }
+      }
+    },
+    "Network extension installation was canceled. Retry when you are ready.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络扩展安装已取消。准备好后请重试。"
+          }
+        }
+      }
+    },
+    "This AetherRoute package is incomplete. Download a fresh official copy and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 AetherRoute 安装包不完整。请重新下载官方版本后再试。"
+          }
+        }
+      }
+    },
+    "This build does not have the required Network Extension permission. Install the signed official release.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此构建缺少所需的网络扩展权限。请安装已签名的官方版本。"
+          }
+        }
+      }
+    },
+    "This copy of AetherRoute is damaged or incorrectly signed. Download a fresh official copy and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 AetherRoute 副本已损坏或签名不正确。请重新下载官方版本后再试。"
+          }
+        }
+      }
+    },
+    "macOS or your organization blocked this network extension. Review Network Extensions in System Settings or contact your administrator.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 或您的组织阻止了此网络扩展。请在系统设置中检查“网络扩展”，或联系管理员。"
+          }
+        }
+      }
+    },
+    "The network extension could not be installed. Retry once, then open Diagnostics if the problem continues.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法安装网络扩展。请先重试一次；若问题仍存在，请打开“诊断”。"
+          }
+        }
+      }
+    },
     "The network extension cannot report connected until the audited protocol bridge has started and passed readiness checks.": {
       "localizations": {
         "zh-Hans": {
@@ -4321,12 +4411,32 @@
         }
       }
     },
+    "The network extension installation is already in progress.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络扩展正在安装中。"
+          }
+        }
+      }
+    },
     "The network extension reports ready": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "网络扩展已报告就绪"
+          }
+        }
+      }
+    },
+    "The network extension returned an unknown installation result.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络扩展返回了未知的安装结果。"
           }
         }
       }
@@ -4347,6 +4457,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "网络扩展在报告就绪前停止。请先重试一次，再检查当前配置。"
+          }
+        }
+      }
+    },
+    "The network extension was installed and will be available after this Mac restarts.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络扩展已安装，将在这台 Mac 重新启动后可用。"
           }
         }
       }
@@ -6617,6 +6737,106 @@
           "stringUnit": {
             "state": "translated",
             "value": "导入…"
+          }
+        }
+      }
+    },
+    "Approve Network Extension": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "批准网络扩展"
+          }
+        }
+      }
+    },
+    "Approve the AetherRoute network extension to continue.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请批准 AetherRoute 网络扩展以继续。"
+          }
+        }
+      }
+    },
+    "Approved — Check Again": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已批准，重新检查"
+          }
+        }
+      }
+    },
+    "Copy Steps": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制步骤"
+          }
+        }
+      }
+    },
+    "macOS requires your approval because Transparent Proxy and TUN can route network traffic. AetherRoute cannot approve this security permission for you.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "透明代理和 TUN 可以路由网络流量，因此 macOS 要求您亲自批准。AetherRoute 无法代替您授予这项系统安全权限。"
+          }
+        }
+      }
+    },
+    "Next to Network Extensions, click the info button, turn on AetherRoute, then click Done.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找到“网络扩展”，点右侧信息按钮 ⓘ，打开 AetherRoute，然后点“完成”。"
+          }
+        }
+      }
+    },
+    "Open System Settings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开系统设置"
+          }
+        }
+      }
+    },
+    "Open System Settings. This button takes you to Login Items & Extensions.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击“打开系统设置”，应用会带您前往“登录项与扩展”。"
+          }
+        }
+      }
+    },
+    "Scroll to the bottom Extensions section. Do not use the Open at Login list.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续滚动到页面底部的“扩展”区域；不要操作上方的“登录时打开”列表。"
+          }
+        }
+      }
+    },
+    "Steps Copied": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "步骤已复制"
           }
         }
       }

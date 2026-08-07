@@ -5,6 +5,8 @@ final class LocalProxySettingsTests: XCTestCase {
     func testDefaultsAreDisabledAndValid() throws {
         let settings = LocalProxySettings()
         XCTAssertFalse(settings.isEnabled)
+        XCTAssertEqual(settings.httpPort, 17_890)
+        XCTAssertEqual(settings.socksPort, 17_891)
         XCTAssertEqual(try settings.validated(), settings)
         XCTAssertThrowsError(try settings.shellEnvironmentCommand()) { error in
             XCTAssertEqual(error as? LocalProxySettingsError, .disabled)

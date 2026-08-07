@@ -86,6 +86,8 @@
 	<string>Created by 陈艳男 (ChenYanNan)</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>AetherRoute accesses the local network only when you route traffic to a proxy, DNS server, or destination on your local network.</string>
+	<key>NSSystemExtensionUsageDescription</key>
+	<string>AetherRoute installs signed network extensions to provide transparent proxy and TUN routing.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
