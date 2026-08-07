@@ -3,6 +3,7 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 SERVICE_ROOT="$ROOT/Services/DistributionService"
+WIREGUARD_SERVER_ROOT="$ROOT/Tests/Interop/WireGuardGoServer"
 EXPECTED_TOOLCHAIN=$(
   awk '$1 == "toolchain" { print $2; exit }' "$SERVICE_ROOT/go.mod"
 )
@@ -11,11 +12,18 @@ if ! printf '%s\n' "$EXPECTED_TOOLCHAIN" | grep -Eq '^go[0-9]+\.[0-9]+\.[0-9]+$'
   exit 1
 fi
 
-ACTUAL_TOOLCHAIN=$(cd "$SERVICE_ROOT" && go env GOVERSION)
-if [ "$ACTUAL_TOOLCHAIN" != "$EXPECTED_TOOLCHAIN" ]; then
-  echo "Distribution service requires $EXPECTED_TOOLCHAIN; found $ACTUAL_TOOLCHAIN" >&2
-  exit 1
-fi
+for module in "$SERVICE_ROOT" "$WIREGUARD_SERVER_ROOT"; do
+  module_toolchain=$(awk '$1 == "toolchain" { print $2; exit }' "$module/go.mod")
+  if [ "$module_toolchain" != "$EXPECTED_TOOLCHAIN" ]; then
+    echo "$module must pin $EXPECTED_TOOLCHAIN; found $module_toolchain" >&2
+    exit 1
+  fi
+  actual_toolchain=$(cd "$module" && go env GOVERSION)
+  if [ "$actual_toolchain" != "$EXPECTED_TOOLCHAIN" ]; then
+    echo "$module requires $EXPECTED_TOOLCHAIN; found $actual_toolchain" >&2
+    exit 1
+  fi
+done
 
 TEMP=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-govulncheck.XXXXXX")
 cleanup() {
@@ -32,7 +40,10 @@ mkdir -p "$TEMP/bin" "$TEMP/cache"
   cd "$SERVICE_ROOT"
   GOBIN="$TEMP/bin" GOCACHE="$TEMP/cache" \
     go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
-  "$TEMP/bin/govulncheck" -db https://vuln.go.dev ./...
 )
+for module in "$SERVICE_ROOT" "$WIREGUARD_SERVER_ROOT"; do
+  (cd "$module" && "$TEMP/bin/govulncheck" -db https://vuln.go.dev ./...)
+done
 
-printf 'Distribution service passed govulncheck with %s.\n' "$ACTUAL_TOOLCHAIN"
+printf 'Production service and WireGuard test server passed govulncheck with %s.\n' \
+  "$EXPECTED_TOOLCHAIN"

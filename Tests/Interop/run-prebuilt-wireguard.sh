@@ -22,9 +22,10 @@ cleanup() {
     kill "$SERVER_PID"
     wait "$SERVER_PID" 2>/dev/null || true
   fi
-  rm -rf -- "$WORK_DIR"
+  chmod -R u+w "$WORK_DIR" 2>/dev/null || true
+  find "$WORK_DIR" -depth -delete 2>/dev/null || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT HUP INT TERM
 
 positive_integer() {
   name=$1
