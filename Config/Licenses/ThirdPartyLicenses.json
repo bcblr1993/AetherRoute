@@ -508,7 +508,7 @@
       "license": "MIT OR Apache-2.0",
       "name": "crossbeam-epoch",
       "repository": "https://github.com/crossbeam-rs/crossbeam",
-      "version": "0.9.18"
+      "version": "0.9.20"
     },
     {
       "license": "MIT OR Apache-2.0",
@@ -533,12 +533,6 @@
       "name": "crypto-common",
       "repository": "https://github.com/RustCrypto/traits",
       "version": "0.2.2"
-    },
-    {
-      "license": "Apache-2.0 OR MIT",
-      "name": "crypto-primes",
-      "repository": "https://github.com/entropyxyz/crypto-primes",
-      "version": "0.7.0"
     },
     {
       "license": "MIT OR Apache-2.0",
@@ -1213,12 +1207,6 @@
       "version": "0.2.186"
     },
     {
-      "license": "MIT",
-      "name": "libm",
-      "repository": "https://github.com/rust-lang/compiler-builtins",
-      "version": "0.2.16"
-    },
-    {
       "license": "Unicode-3.0",
       "name": "litemap",
       "repository": "https://github.com/unicode-org/icu4x",
@@ -1520,12 +1508,6 @@
     },
     {
       "license": "Apache-2.0 OR MIT",
-      "name": "pkcs1",
-      "repository": "https://github.com/RustCrypto/formats",
-      "version": "0.8.0-rc.4"
-    },
-    {
-      "license": "Apache-2.0 OR MIT",
       "name": "pkcs5",
       "repository": "https://github.com/RustCrypto/formats",
       "version": "0.8.0"
@@ -1648,7 +1630,7 @@
       "license": "MIT OR Apache-2.0",
       "name": "quinn-proto",
       "repository": "https://github.com/quinn-rs/quinn",
-      "version": "0.11.14"
+      "version": "0.11.16"
     },
     {
       "license": "MIT OR Apache-2.0",
@@ -1712,6 +1694,12 @@
     },
     {
       "license": "MIT OR Apache-2.0",
+      "name": "rand_pcg",
+      "repository": "https://github.com/rust-random/rngs",
+      "version": "0.10.2"
+    },
+    {
+      "license": "MIT OR Apache-2.0",
       "name": "rcgen",
       "repository": "https://github.com/rustls/rcgen",
       "version": "0.14.8"
@@ -1751,12 +1739,6 @@
       "name": "ring",
       "repository": "https://github.com/briansmith/ring",
       "version": "0.17.14"
-    },
-    {
-      "license": "MIT OR Apache-2.0",
-      "name": "rsa",
-      "repository": "https://github.com/RustCrypto/RSA",
-      "version": "0.10.0-rc.18"
     },
     {
       "license": "Apache-2.0",
@@ -2630,8 +2612,8 @@
     }
   ],
   "coreArtifacts": {
-    "packetTunnel": "7639fa60faa77eedf0e6c4708eed8c6ea121213fbb742f3e1b77db71fa16f3f0",
-    "transparentProxy": "3b35d4b775736a5ddce85fdf2d29597f84432f6675f9f6c38d006ab95a7492f3"
+    "packetTunnel": "42426b24d7b782d92f1074d75baa55b512c11e701a704dfcc5813b106eb0aab8",
+    "transparentProxy": "af8e845baf46429d0e63107cdf82b3323d59a8eb180a15f599931861b330afc7"
   },
   "licenses": [
     {
@@ -2748,10 +2730,9 @@
     },
     {
       "components": [
-        "crypto-primes@0.7.0",
         "quinn-jls@0.3.6",
         "quinn-proto-jls@0.3.6",
-        "quinn-proto@0.11.14",
+        "quinn-proto@0.11.16",
         "quinn-udp-jls@0.3.6",
         "quinn-udp@0.5.14",
         "quinn@0.11.9"
@@ -2906,7 +2887,6 @@
     {
       "components": [
         "async-recursion@1.1.1",
-        "rsa@0.10.0-rc.18",
         "sealed@0.6.0"
       ],
       "id": "Apache-2.0",
@@ -2930,7 +2910,7 @@
         "core-foundation@0.9.4",
         "critical-section@1.2.0",
         "crossbeam-channel@0.5.15",
-        "crossbeam-epoch@0.9.18",
+        "crossbeam-epoch@0.9.20",
         "crossbeam-utils@0.8.21",
         "displaydoc@0.2.5",
         "either@1.15.0",
@@ -3094,7 +3074,6 @@
         "pbkdf2@0.13.0",
         "pem-rfc7468@0.7.0",
         "pem-rfc7468@1.0.0",
-        "pkcs1@0.8.0-rc.4",
         "pkcs5@0.8.0",
         "pkcs8@0.11.0",
         "poly1305@0.8.0",
@@ -3142,7 +3121,8 @@
       "components": [
         "rand_core@0.10.1",
         "rand_core@0.6.4",
-        "rand_core@0.9.5"
+        "rand_core@0.9.5",
+        "rand_pcg@0.10.2"
       ],
       "id": "Apache-2.0",
       "name": "Apache License 2.0",
@@ -3688,7 +3668,6 @@
       "components": [
         "brutal-core@0.1.0",
         "dhcproto-macros@0.2.0",
-        "libm@0.2.16",
         "shadowquic-macros@0.3.11",
         "tonic-prost@0.14.6",
         "watfaq-dns@0.10.8"

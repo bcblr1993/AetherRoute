@@ -37,7 +37,13 @@
     } catch (_) {
       // Language switching remains functional when storage is unavailable.
     }
-    const localizedTitle = titles[window.location.pathname]?.[value];
+    let localizedTitle = titles[window.location.pathname]?.[value];
+    if (!localizedTitle) {
+      const release = window.location.pathname.match(
+        /^\/releases\/([0-9]+\.[0-9]+(?:\.[0-9]+)?)\/$/
+      );
+      if (release) localizedTitle = `AetherRoute ${release[1]}`;
+    }
     if (localizedTitle) document.title = localizedTitle;
     document.querySelectorAll("[data-localized-image]").forEach((image) => {
       const source = image.getAttribute(`data-src-${value}`);

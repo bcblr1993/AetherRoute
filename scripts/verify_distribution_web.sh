@@ -4,9 +4,11 @@ set -eu
 EXPECTED_SHA=${1:-}
 ARTIFACT_NAME=${2:-}
 CHANNEL=${3:-}
+EXPECTED_UPDATE_STATUS=${4:-any}
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
 usage() {
-  echo "usage: $0 expected-sha256 artifact-filename prerelease-or-releases/version" >&2
+  echo "usage: $0 expected-sha256 artifact-filename prerelease-or-releases/version [200|404|any]" >&2
 }
 
 test -n "$EXPECTED_SHA" && test -n "$ARTIFACT_NAME" && test -n "$CHANNEL" || {
@@ -17,10 +19,11 @@ printf '%s\n' "$EXPECTED_SHA" | grep -Eq '^[0-9a-f]{64}$' || {
   echo "expected SHA-256 must be lowercase hexadecimal" >&2
   exit 64
 }
-printf '%s\n' "$ARTIFACT_NAME" | grep -Eq '^AetherRoute-[0-9A-Za-z._-]+-arm64-[0-9A-Za-z._-]+\.dmg$' || {
+printf '%s\n' "$ARTIFACT_NAME" | grep -Eq '^AetherRoute-[0-9A-Za-z._-]+-arm64(-[0-9A-Za-z._-]+)?\.dmg$' || {
   echo "invalid AetherRoute artifact filename" >&2
   exit 64
 }
+case "$EXPECTED_UPDATE_STATUS" in 200|404|any) ;; *) usage; exit 64 ;; esac
 printf '%s\n' "$CHANNEL" | grep -Eq '^(prerelease|releases/[0-9]+\.[0-9]+(\.[0-9]+)?)$' || {
   echo "invalid distribution channel" >&2
   exit 64
@@ -69,6 +72,51 @@ case "$update_code" in
     exit 1
     ;;
 esac
+if [ "$EXPECTED_UPDATE_STATUS" != any ] && \
+   [ "$update_code" != "$EXPECTED_UPDATE_STATUS" ]; then
+  echo "update endpoint returned $update_code, expected $EXPECTED_UPDATE_STATUS" >&2
+  exit 1
+fi
+
+if [ "$update_code" = 200 ] && [ "$EXPECTED_UPDATE_STATUS" = 200 ]; then
+  public_key_base64=${AETHERROUTE_DISTRIBUTION_PUBLIC_KEY:-}
+  test -n "$public_key_base64" || {
+    echo "stable public verification requires AETHERROUTE_DISTRIBUTION_PUBLIC_KEY" >&2
+    exit 64
+  }
+  printf '%s' "$public_key_base64" | base64 -D \
+    >"$temporary/public-key.raw" 2>/dev/null || {
+    echo "stable update public key is not valid base64" >&2
+    exit 64
+  }
+  test "$(stat -f '%z' "$temporary/public-key.raw")" -eq 32 || {
+    echo "stable update public key must contain 32 raw bytes" >&2
+    exit 64
+  }
+  xcrun swift "$ROOT/scripts/distribution_envelope_tool.swift" verify \
+    "$temporary/public-key.raw" "$temporary/update.json" \
+    "$temporary/update-payload.json" >/dev/null
+  version=${CHANNEL#releases/}
+  expected_download_url="$downloads/$CHANNEL/$ARTIFACT_NAME"
+  expected_notes_url="$site/releases/$version/"
+  jq -e \
+    --arg version "$version" \
+    --arg downloadURL "$expected_download_url" \
+    --arg sha256 "$EXPECTED_SHA" \
+    --arg releaseNotesURL "$expected_notes_url" '
+      .schemaVersion == 1 and
+      .productID == "com.aetherroute.desktop" and
+      .version == $version and
+      (.build | type == "number" and . > 0 and floor == .) and
+      .architecture == "arm64" and
+      .downloadURL == $downloadURL and
+      .sha256 == $sha256 and
+      .releaseNotesURL == $releaseNotesURL
+    ' "$temporary/update-payload.json" >/dev/null || {
+    echo "public signed update does not describe the public stable DMG" >&2
+    exit 1
+  }
+fi
 
 curl --noproxy '*' --silent --show-error --range 0-1023 \
   --output "$temporary/range.bin" --dump-header "$temporary/range.headers" \

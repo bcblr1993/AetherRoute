@@ -35,10 +35,16 @@ ssh -o BatchMode=yes "$HOST" "
   healthy=no
   attempt=0
   while [ \"\$attempt\" -lt 30 ]; do
-    status=\$(docker ps \
+    update_state=\$(docker service inspect aetherroute-web_web \
+      --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{else}}completed{{end}}')
+    statuses=\$(docker ps \
       --filter label=com.docker.swarm.service.name=aetherroute-web_web \
-      --format '{{.Status}}' | head -1)
-    case \"\$status\" in *\(healthy\)*) healthy=yes; break ;; esac
+      --format '{{.Status}}')
+    running_count=\$(printf '%s\n' \"\$statuses\" | sed '/^$/d' | wc -l | tr -d ' ')
+    case \"\$update_state:\$running_count:\$statuses\" in
+      completed:1:*\\(healthy\\)*) healthy=yes; break ;;
+      rollback_completed:1:*\\(healthy\\)*) healthy=yes; break ;;
+    esac
     attempt=\$((attempt + 1))
     sleep 2
   done

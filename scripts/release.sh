@@ -33,7 +33,7 @@ test -d "$OUTPUT_DIRECTORY" || {
   exit 1
 }
 
-for command in codesign file hdiutil jq lipo plutil security shasum spctl xcodebuild xcrun; do
+for command in codesign file git hdiutil jq lipo plutil security shasum spctl xcodebuild xcrun; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "release requires $command" >&2
     exit 1
@@ -93,6 +93,36 @@ distribution_product_id=${AETHERROUTE_DISTRIBUTION_PRODUCT_ID:-$(
   jq -r '.profiles[] | select(.role == "direct-host") | .bundleID' \
     "$SIGNING_CONFIG"
 )}
+printf '%s\n' "$distribution_product_id" \
+  | grep -Eq '^[A-Za-z0-9][A-Za-z0-9.-]{2,127}$' || {
+  echo "stable release requires a valid distribution product identifier" >&2
+  exit 64
+}
+update_signing_public_key_sha256=$(printf '%s' "$distribution_public_key" \
+  | base64 -D | shasum -a 256 | awk '{print $1}')
+
+git -C "$ROOT" diff --quiet -- || {
+  echo "stable release requires a clean source tree" >&2
+  exit 1
+}
+git -C "$ROOT" diff --cached --quiet -- || {
+  echo "stable release requires a clean source tree" >&2
+  exit 1
+}
+test -z "$(git -C "$ROOT" ls-files --others --exclude-standard)" || {
+  echo "stable release requires a clean source tree" >&2
+  exit 1
+}
+release_branch=$(git -C "$ROOT" symbolic-ref --quiet --short HEAD || true)
+test "$release_branch" = main || {
+  echo "stable release candidates must be created from main" >&2
+  exit 1
+}
+git_commit=$(git -C "$ROOT" rev-parse HEAD)
+printf '%s\n' "$git_commit" | grep -Eq '^[0-9a-f]{40}$' || {
+  echo "could not resolve the frozen release commit" >&2
+  exit 1
+}
 
 artifact_name="AetherRoute-$VERSION-arm64"
 final_dmg="$OUTPUT_DIRECTORY/$artifact_name.dmg"
@@ -142,6 +172,12 @@ trap cleanup EXIT HUP INT TERM
 source_manifest_before="$temporary/source-before.txt"
 source_manifest_after="$temporary/source-after.txt"
 "$ROOT/scripts/source_manifest.sh" >"$source_manifest_before"
+source_manifest_sha256=$(awk \
+  '$1 == "MANIFEST_SHA256" {print $2}' "$source_manifest_before")
+printf '%s\n' "$source_manifest_sha256" | grep -Eq '^[0-9a-f]{64}$' || {
+  echo "could not resolve the frozen source manifest" >&2
+  exit 1
+}
 AETHERROUTE_DERIVED_DATA_PATH="$temporary/ReleaseValidationDerivedData" \
   "$ROOT/scripts/test.sh"
 "$ROOT/scripts/test_sanitizers.sh"
@@ -237,6 +273,19 @@ if ! xcodebuild \
 fi
 
 app="$archive/Products/Applications/AetherRoute.app"
+actual_product_id=$(plutil -extract CFBundleIdentifier raw -o - \
+  "$app/Contents/Info.plist")
+test "$actual_product_id" = "$distribution_product_id" || {
+  echo "release product identifier differs from the signed host bundle" >&2
+  exit 1
+}
+minimum_system_version=$(plutil -extract LSMinimumSystemVersion raw -o - \
+  "$app/Contents/Info.plist")
+printf '%s\n' "$minimum_system_version" \
+  | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$' || {
+  echo "release app contains an invalid minimum system version" >&2
+  exit 1
+}
 packet_bundle=$(jq -r '.profiles[] | select(.role == "packet-tunnel") | .bundleID' \
   "$SIGNING_CONFIG")
 transparent_bundle=$(jq -r \
@@ -342,10 +391,15 @@ dmg_bytes=$(stat -f '%z' "$unsigned_dmg")
 jq -n \
   --arg product AetherRoute \
   --arg author '陈艳男 (ChenYanNan)' \
+  --arg productID "$distribution_product_id" \
   --arg version "$VERSION" \
-  --arg build "$BUILD_NUMBER" \
+  --argjson build "$BUILD_NUMBER" \
   --arg releasedAt "$release_timestamp" \
+  --arg minimumSystemVersion "$minimum_system_version" \
   --arg architecture arm64 \
+  --arg gitCommit "$git_commit" \
+  --arg sourceManifestSHA256 "$source_manifest_sha256" \
+  --arg updateSigningPublicKeySHA256 "$update_signing_public_key_sha256" \
   --arg sha256 "$dmg_sha256" \
   --arg notarySubmissionID "$submission_id" \
   --arg soakEvidenceSHA256 "$soak_evidence_sha256" \
@@ -356,8 +410,15 @@ jq -n \
   --argjson signedNECycles "$signed_ne_cycles" \
   '{schemaVersion: 1, releaseStatus: "notarized-candidate",
     product: $product, author: $author,
+    productID: $productID,
     version: $version, build: $build, releasedAt: $releasedAt,
-    architecture: $architecture, dmg: {sha256: $sha256, bytes: $bytes},
+    minimumSystemVersion: $minimumSystemVersion,
+    architecture: $architecture,
+    source: {gitCommit: $gitCommit,
+      manifestSHA256: $sourceManifestSHA256},
+    distribution: {
+      updateSigningPublicKeySHA256: $updateSigningPublicKeySHA256},
+    dmg: {sha256: $sha256, bytes: $bytes},
     notarization: {status: "Accepted", submissionID: $notarySubmissionID},
     stability: {schema: 2, evidenceSHA256: $soakEvidenceSHA256,
       durationSeconds: $soakDurationSeconds, rounds: $soakRounds},

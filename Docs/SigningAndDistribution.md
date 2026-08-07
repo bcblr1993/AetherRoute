@@ -199,7 +199,10 @@ result, staples and validates the ticket, runs Gatekeeper assessments against
 both the DMG and mounted app, and writes a versioned SHA-256 manifest. The
 manifest binds that DMG to the exact verified soak `SHA256SUMS`, schema, actual
 duration, and complete round count, plus the exact dual-engine signed-runtime
-evidence digest and cycle count.
+evidence digest and cycle count. It also records the signed host product ID,
+numeric build, minimum macOS version from the archived app, frozen Git commit,
+complete source-manifest SHA-256, and SHA-256 of the Ed25519 update
+verification key embedded in that app.
 
 The candidate manifest uses `releaseStatus: notarized-candidate` and a
 `.candidate.json` suffix. It must not be served as the stable update manifest.
@@ -220,11 +223,20 @@ After those tests create privacy-safe `metadata.txt`, `result.txt`, and
 ```
 
 Promotion rechecks the DMG hash, code signature, stapled ticket, Gatekeeper,
-and post-install evidence. The evidence requires both engines, IPv4/IPv6/DNS
+the frozen Git/source manifest, and post-install evidence. The evidence
+requires both engines, IPv4/IPv6/DNS
 leak and recovery matrices, connected CPU/RSS, throughput/latency, and UI
 responsiveness budgets. It writes a `.production.json` approval manifest that
 binds the candidate, exact DMG, and post-install evidence hashes. It does not
 upload files or mutate the owner's update service.
+
+After creating the signed update envelope, use the stable web deploy command
+documented in `Services/WebDistribution/README.md`. That command accepts all
+four release-chain inputs rather than a directory of loosely related files.
+It will not expose an update endpoint or label a release Stable unless the
+candidate, production approval, DMG, source, embedded public key, and decoded
+update payload all describe exactly the same product/version/build. The server
+pointer changes only after health and public download/signature verification.
 Both signed-runtime and post-install evidence verifiers use strict directory
 allowlists and reject extra logs, xcresult bundles, packet captures, URLs,
 endpoints, tokens, or password-like values.

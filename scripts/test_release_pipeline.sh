@@ -70,6 +70,13 @@ for required in \
   'signedNEEvidenceSHA256' \
   'signedNECycles' \
   'releaseStatus: "notarized-candidate"' \
+  'stable release requires a clean source tree' \
+  'stable release candidates must be created from main' \
+  'productID: $productID' \
+  'minimumSystemVersion: $minimumSystemVersion' \
+  'gitCommit: $gitCommit' \
+  'manifestSHA256: $sourceManifestSHA256' \
+  'updateSigningPublicKeySHA256' \
   'Production promotion remains blocked' \
   'xcrun notarytool submit' \
   'xcrun stapler staple' \

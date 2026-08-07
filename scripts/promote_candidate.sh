@@ -19,7 +19,7 @@ test -f "$CANDIDATE_MANIFEST" && test ! -L "$CANDIDATE_MANIFEST" \
   || { echo "candidate manifest is missing or a symlink" >&2; exit 1; }
 test -d "$OUTPUT_DIRECTORY" && test ! -L "$OUTPUT_DIRECTORY" \
   || { echo "output directory is missing or a symlink" >&2; exit 1; }
-for command in codesign jq shasum spctl xcrun; do
+for command in codesign git head jq shasum sort spctl xcrun; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "production promotion requires $command" >&2
     exit 1
@@ -30,7 +30,14 @@ jq -e '
   .schemaVersion == 1 and
   .releaseStatus == "notarized-candidate" and
   .product == "AetherRoute" and
+  (.productID | test("^[A-Za-z0-9][A-Za-z0-9.-]{2,127}$")) and
+  (.version | test("^[0-9]+\\.[0-9]+(\\.[0-9]+)?$")) and
+  (.build | type == "number" and . > 0 and floor == .) and
+  (.minimumSystemVersion | test("^[0-9]+\\.[0-9]+(\\.[0-9]+)?$")) and
   .architecture == "arm64" and
+  (.source.gitCommit | test("^[0-9a-f]{40}$")) and
+  (.source.manifestSHA256 | test("^[0-9a-f]{64}$")) and
+  (.distribution.updateSigningPublicKeySHA256 | test("^[0-9a-f]{64}$")) and
   (.dmg.sha256 | test("^[0-9a-f]{64}$")) and
   (.dmg.bytes | type == "number" and . > 0) and
   .notarization.status == "Accepted" and
@@ -39,6 +46,20 @@ jq -e '
   .signedRuntime.engines == ["tun", "transparent"]
 ' "$CANDIDATE_MANIFEST" >/dev/null || {
   echo "candidate manifest is incomplete or already promoted" >&2
+  exit 1
+}
+
+current_git_commit=$(git -C "$ROOT" rev-parse HEAD)
+test "$current_git_commit" = \
+  "$(jq -r '.source.gitCommit' "$CANDIDATE_MANIFEST")" || {
+  echo "candidate was not produced from the current Git commit" >&2
+  exit 1
+}
+current_source_manifest=$("$ROOT/scripts/source_manifest.sh" \
+  | awk '$1 == "MANIFEST_SHA256" {print $2}')
+test "$current_source_manifest" = \
+  "$(jq -r '.source.manifestSHA256' "$CANDIDATE_MANIFEST")" || {
+  echo "candidate was not produced from the current source manifest" >&2
   exit 1
 }
 
@@ -71,6 +92,13 @@ approved_at=${AETHERROUTE_PRODUCTION_APPROVED_AT:-$(date -u '+%Y-%m-%dT%H:%M:%SZ
 printf '%s\n' "$approved_at" \
   | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' \
   || { echo "AETHERROUTE_PRODUCTION_APPROVED_AT must be UTC RFC 3339" >&2; exit 64; }
+released_at=$(jq -r '.releasedAt' "$CANDIDATE_MANIFEST")
+first_timestamp=$(printf '%s\n%s\n' "$released_at" "$approved_at" \
+  | LC_ALL=C sort | head -1)
+test "$first_timestamp" = "$released_at" || {
+  echo "production approval cannot predate the notarized candidate" >&2
+  exit 1
+}
 postinstall_evidence_sha256=$(shasum -a 256 \
   "$POSTINSTALL_EVIDENCE/SHA256SUMS" | awk '{print $1}')
 

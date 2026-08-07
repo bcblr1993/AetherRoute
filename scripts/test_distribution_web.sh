@@ -17,10 +17,19 @@ test -x "$ROOT/scripts/rollback_distribution_web.sh" || {
   echo "web rollback script must be executable" >&2
   exit 1
 }
+test -x "$ROOT/scripts/prepare_distribution_web_payload.sh" || {
+  echo "stable web payload preparer must be executable" >&2
+  exit 1
+}
+test -x "$ROOT/scripts/test_distribution_web_payload.sh" || {
+  echo "stable web payload test must be executable" >&2
+  exit 1
+}
 
 for required in \
   "$WEB/nginx.conf" \
   "$WEB/docker-stack.yml" \
+  "$WEB/templates/stable-release.html" \
   "$PUBLIC/index.html" \
   "$PUBLIC/404.html" \
   "$PUBLIC/privacy/index.html" \
@@ -81,6 +90,14 @@ rg -F 'restore_previous' "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
 rg -F 'COPYFILE_DISABLE=1 tar --no-xattrs' "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
 rg -F 'AetherRoute web service did not become healthy' "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
 rg -F "docker service rollback" "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
+rg -F 'public verification failed; the new release was not activated' \
+  "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
+rg -F 'Deployed and publicly verified AetherRoute web release:' \
+  "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
+rg -F 'preview)' "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
+rg -F 'stable)' "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
+rg -F 'rollback_completed:1:' "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
+rg -F 'completed:1:' "$ROOT/scripts/rollback_distribution_web.sh" >/dev/null
 rg -F 'Swarm dropped the required read-only-container tmpfs mount' "$ROOT/scripts/deploy_distribution_web.sh" >/dev/null
 rg -F 'Public web distribution verified:' "$ROOT/scripts/verify_distribution_web.sh" >/dev/null
 rg -F 'PREVIOUS' "$ROOT/scripts/rollback_distribution_web.sh" >/dev/null
@@ -90,6 +107,12 @@ rg -F 'try_files /current.update.json =404;' "$WEB/nginx.conf" >/dev/null
 rg -F 'Cache-Control "no-store, max-age=0"' "$WEB/nginx.conf" >/dev/null
 rg -F 'Content-Security-Policy' "$WEB/nginx.conf" >/dev/null
 rg -F 'image/png "public, max-age=0, must-revalidate"' "$WEB/nginx.conf" >/dev/null
+rg -F 'production manifest does not preserve the exact candidate manifest' \
+  "$ROOT/scripts/prepare_distribution_web_payload.sh" >/dev/null
+rg -F 'signed update envelope does not describe the exact stable release' \
+  "$ROOT/scripts/prepare_distribution_web_payload.sh" >/dev/null
+rg -F 'stable artifact was not produced from the current source manifest' \
+  "$ROOT/scripts/prepare_distribution_web_payload.sh" >/dev/null
 
 find "$PUBLIC" -name '*.html' -type f -print0 | while IFS= read -r -d '' html; do
   rg -F '<meta name="viewport"' "$html" >/dev/null || {
@@ -134,3 +157,4 @@ test "$count" -eq 1 || {
 }
 
 echo "Web distribution static guards passed"
+"$ROOT/scripts/test_distribution_web_payload.sh"
