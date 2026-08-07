@@ -2,6 +2,9 @@
 set -eu
 
 REPOSITORY_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+SIGNING_IDENTITY=$(
+  "$REPOSITORY_ROOT/scripts/resolve_development_signing_identity.sh"
+)
 STAMP=$(date '+%Y%m%d-%H%M%S')
 OUTPUT=${1:-"outputs/aetherroute-ui-review-$STAMP"}
 CASE_FILTER=${AETHERROUTE_UI_REVIEW_CASE_FILTER:-}
@@ -35,6 +38,15 @@ cleanup() {
   if [ -n "$CURRENT_PID" ] && kill -0 "$CURRENT_PID" 2>/dev/null; then
     kill -TERM "$CURRENT_PID" 2>/dev/null || true
     wait "$CURRENT_PID" 2>/dev/null || true
+  fi
+  REVIEW_APP="$DERIVED_DATA_PATH/Build/Products/Debug/AetherRoute.app"
+  if [ -d "$REVIEW_APP" ]; then
+    /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
+      -u "$REVIEW_APP" >/dev/null 2>&1 || true
+  fi
+  if [ -d /Applications/AetherRoute.app ]; then
+    /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
+      -f /Applications/AetherRoute.app >/dev/null 2>&1 || true
   fi
   find "$TEMP" -depth -delete 2>/dev/null || true
   if [ "$OUTPUT_CREATED" -eq 1 ] && [ "$OUTPUT_COMPLETE" -eq 0 ]; then
@@ -94,11 +106,12 @@ if ! xcodebuild \
   -configuration Debug \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$DERIVED_DATA_PATH" \
+  CODE_SIGN_STYLE=Manual \
   CODE_SIGNING_ALLOWED=YES \
-  CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGNING_REQUIRED=YES \
   CODE_SIGN_ENTITLEMENTS= \
-  CODE_SIGN_IDENTITY=- \
-  AD_HOC_CODE_SIGNING_ALLOWED=YES \
+  "CODE_SIGN_IDENTITY=$SIGNING_IDENTITY" \
+  AD_HOC_CODE_SIGNING_ALLOWED=NO \
   SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
   build >"$OUTPUT/build.log" 2>&1; then
   tail -160 "$OUTPUT/build.log" >&2
@@ -109,6 +122,9 @@ APP="$DERIVED_DATA_PATH/Build/Products/Debug/AetherRoute.app"
 EXECUTABLE="$APP/Contents/MacOS/AetherRoute"
 test -x "$EXECUTABLE"
 file "$EXECUTABLE" | grep -q 'arm64'
+codesign --verify --deep --strict "$APP"
+codesign -dv --verbose=4 "$APP" 2>&1 \
+  | grep -Fq 'Authority=Apple Development:'
 
 capture() {
   name=$1

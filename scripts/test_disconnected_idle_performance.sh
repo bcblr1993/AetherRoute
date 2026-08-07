@@ -2,6 +2,9 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+SIGNING_IDENTITY=$(
+  "$ROOT/scripts/resolve_development_signing_identity.sh"
+)
 TEMP_BASE=$(CDPATH= cd -- "${TMPDIR:-/tmp}" && pwd -P)
 LOCK_DIRECTORY="$TEMP_BASE/aetherroute-ui-tests.lock"
 if ! mkdir "$LOCK_DIRECTORY" 2>/dev/null; then
@@ -28,9 +31,16 @@ cleanup() {
     kill -TERM "$CURRENT_PID" 2>/dev/null || true
     wait "$CURRENT_PID" 2>/dev/null || true
   fi
+  PERFORMANCE_APP="$TEMP/DerivedData/Build/Products/Release/AetherRoute.app"
+  if [ -d "$PERFORMANCE_APP" ]; then
+    /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
+      -u "$PERFORMANCE_APP" >/dev/null 2>&1 || true
+  fi
+  if [ -d /Applications/AetherRoute.app ]; then
+    /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
+      -f /Applications/AetherRoute.app >/dev/null 2>&1 || true
+  fi
   find "$TEMP" -depth -delete 2>/dev/null || true
-  find "$TEMP_BASE/com.example.aetherroute.idle-measurement.savedState" \
-    -depth -delete 2>/dev/null || true
   rmdir "$LOCK_DIRECTORY" 2>/dev/null || true
 }
 trap cleanup EXIT HUP INT TERM
@@ -111,13 +121,13 @@ xcodebuild \
   -configuration Release \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$TEMP/DerivedData" \
+  CODE_SIGN_STYLE=Manual \
   CODE_SIGNING_ALLOWED=YES \
-  CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGNING_REQUIRED=YES \
   CODE_SIGN_ENTITLEMENTS= \
-  CODE_SIGN_IDENTITY=- \
-  AD_HOC_CODE_SIGNING_ALLOWED=YES \
+  "CODE_SIGN_IDENTITY=$SIGNING_IDENTITY" \
+  AD_HOC_CODE_SIGNING_ALLOWED=NO \
   SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
-  AETHERROUTE_BUNDLE_ID=com.example.aetherroute.idle-measurement \
   'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) AETHERROUTE_INDEPENDENT AETHERROUTE_PERFORMANCE_MEASUREMENT' \
   build >"$OUTPUT/build.log" 2>&1 &
 BUILD_PID=$!
@@ -141,11 +151,9 @@ APP="$TEMP/DerivedData/Build/Products/Release/AetherRoute.app"
 EXECUTABLE="$APP/Contents/MacOS/AetherRoute"
 test -x "$EXECUTABLE"
 file "$EXECUTABLE" | grep -q 'arm64'
-# The measurement build deliberately strips production entitlements. Re-sign
-# the complete temporary bundle with one ad-hoc identity so hardened-runtime
-# library validation sees a consistent identity across embedded frameworks.
-codesign --force --deep --sign - "$APP" >>"$OUTPUT/build.log" 2>&1
 codesign --verify --deep --strict "$APP" >>"$OUTPUT/build.log" 2>&1
+codesign -dv --verbose=4 "$APP" 2>&1 \
+  | grep -Fq 'Authority=Apple Development:'
 APP_SHA256=$(shasum -a 256 "$EXECUTABLE" | awk '{print $1}')
 RUNNER_SHA256=$(shasum -a 256 "$ROOT/scripts/test_disconnected_idle_performance.sh" | awk '{print $1}')
 VERIFIER_SHA256=$(shasum -a 256 "$ROOT/scripts/verify_disconnected_idle_performance_result.sh" | awk '{print $1}')

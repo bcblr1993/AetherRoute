@@ -20,20 +20,9 @@ if ! printf '%s\n' "$DEVELOPER_TOOLS_STATUS" \
   echo "  sudo /usr/sbin/DevToolsSecurity -enable" >&2
   exit 77
 fi
-UI_SIGNING_IDENTITY=${AETHERROUTE_UI_TEST_SIGNING_IDENTITY:-}
-if [ -z "$UI_SIGNING_IDENTITY" ]; then
-  UI_SIGNING_IDENTITY=$(
-    security find-identity -v -p codesigning 2>/dev/null \
-      | awk '/"Apple Development:/ { print $2; exit }'
-  )
-fi
-if ! printf '%s\n' "$UI_SIGNING_IDENTITY" \
-  | grep -Eq '^[[:xdigit:]]{40}$'; then
-  echo "A trusted Apple Development identity is required for macOS UI tests." >&2
-  echo "An ad-hoc UI test runner can be rejected by Gatekeeper as damaged." >&2
-  echo "Create an Apple Development certificate in Xcode, then rerun." >&2
-  exit 77
-fi
+UI_SIGNING_IDENTITY=$(
+  "$REPOSITORY_ROOT/scripts/resolve_development_signing_identity.sh"
+)
 LOCK_DIRECTORY="$TEMP_BASE/aetherroute-ui-tests.lock"
 if ! mkdir "$LOCK_DIRECTORY" 2>/dev/null; then
   if [ "${AETHERROUTE_UI_TEST_WAIT_FOR_LOCK:-0}" != "1" ]; then
@@ -85,6 +74,10 @@ cleanup() {
         -u "$application" >/dev/null 2>&1 || true
     fi
   done
+  if [ -d /Applications/AetherRoute.app ]; then
+    /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
+      -f /Applications/AetherRoute.app >/dev/null 2>&1 || true
+  fi
   find "$TEST_ROOT" -depth -delete 2>/dev/null || true
   rmdir "$LOCK_DIRECTORY" 2>/dev/null || true
 }
@@ -218,9 +211,10 @@ fi
 
 RUNNER_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRouteUITests-Runner.app"
 PRODUCT_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRoute.app"
-codesign --verify --deep --strict "$RUNNER_APP"
-codesign --verify --deep --strict "$PRODUCT_APP"
 for application in "$RUNNER_APP" "$PRODUCT_APP"; do
+  codesign --verify --deep --strict "$application"
+  codesign -dv --verbose=4 "$application" 2>&1 \
+    | grep -Fq 'Authority=Apple Development:'
   if xattr -p com.apple.quarantine "$application" >/dev/null 2>&1; then
     xattr -dr com.apple.quarantine "$application"
   fi

@@ -4,12 +4,20 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 UI_TEST_SCRIPT="$ROOT/scripts/test_ui.sh"
 UI_CAPTURE_SCRIPT="$ROOT/scripts/capture_ui_review.sh"
+IDLE_PERFORMANCE_SCRIPT="$ROOT/scripts/test_disconnected_idle_performance.sh"
+SIGNING_HELPER="$ROOT/scripts/resolve_development_signing_identity.sh"
 REMOTE_UI_WORKER="$ROOT/scripts/remote_ui_worker.sh"
 UI_WINDOW_SELECTOR="$ROOT/scripts/ui_review_window_id.swift"
 UI_TEST_SOURCE="$ROOT/Tests/AetherRouteUITests/AetherRouteUITests.swift"
 
-for script in "$UI_TEST_SCRIPT" "$UI_CAPTURE_SCRIPT"; do
+for script in \
+  "$UI_TEST_SCRIPT" "$UI_CAPTURE_SCRIPT" "$IDLE_PERFORMANCE_SCRIPT" \
+  "$SIGNING_HELPER"
+do
   sh -n "$script"
+done
+
+for script in "$UI_TEST_SCRIPT" "$UI_CAPTURE_SCRIPT"; do
   grep -Fq 'aetherroute-ui-tests.lock' "$script"
   grep -Fq 'Workspace/AetherRoute' "$script"
 done
@@ -37,17 +45,33 @@ grep -Fq 'no UI runner was started.' "$UI_TEST_SCRIPT"
 grep -Fq 'Timed out while enabling automation mode.' "$UI_TEST_SCRIPT"
 grep -Fq 'no Documents access is required' "$UI_TEST_SCRIPT"
 grep -Fq 'sudo /usr/sbin/DevToolsSecurity -enable' "$UI_TEST_SCRIPT"
-grep -Fq 'security find-identity -v -p codesigning' "$UI_TEST_SCRIPT"
-grep -Fq 'A trusted Apple Development identity is required' "$UI_TEST_SCRIPT"
+grep -Fq 'security find-identity -v -p codesigning' "$SIGNING_HELPER"
+grep -Fq 'A trusted Apple Development identity is required' "$SIGNING_HELPER"
+for script in \
+  "$UI_TEST_SCRIPT" "$UI_CAPTURE_SCRIPT" "$IDLE_PERFORMANCE_SCRIPT"
+do
+  grep -Fq 'resolve_development_signing_identity.sh' "$script"
+  grep -Fq 'CODE_SIGN_STYLE=Manual' "$script"
+  grep -Fq 'CODE_SIGNING_REQUIRED=YES' "$script"
+  grep -Fq 'AD_HOC_CODE_SIGNING_ALLOWED=NO' "$script"
+  grep -Fq 'Authority=Apple Development:' "$script"
+  grep -Fq 'lsregister \' "$script"
+  grep -Fq -- '-f /Applications/AetherRoute.app' "$script"
+  if grep -Fq 'CODE_SIGN_IDENTITY=-' "$script"; then
+    echo "Visible UI runs must not use an ad-hoc signature: $script" >&2
+    exit 1
+  fi
+done
 grep -Fq 'CODE_SIGN_STYLE=Manual' "$UI_TEST_SCRIPT"
 grep -Fq 'CODE_SIGNING_REQUIRED=YES' "$UI_TEST_SCRIPT"
 grep -Fq 'AD_HOC_CODE_SIGNING_ALLOWED=NO' "$UI_TEST_SCRIPT"
-if grep -Fq 'CODE_SIGN_IDENTITY=-' "$UI_TEST_SCRIPT"; then
-  echo "UI test runner must not use an ad-hoc signature" >&2
-  exit 1
-fi
 grep -Fq '/usr/sbin/DevToolsSecurity -status' \
   "$ROOT/scripts/test_disconnected_idle_performance.sh"
+if grep -Fq 'AETHERROUTE_BUNDLE_ID=com.example.aetherroute.idle-measurement' \
+  "$IDLE_PERFORMANCE_SCRIPT"; then
+  echo "Idle performance must preserve the host-extension product relationship" >&2
+  exit 1
+fi
 if grep -Fq '/var/db/com.apple.dt.automationmode/automation-enabled' \
   "$ROOT/scripts/test_disconnected_idle_performance.sh"; then
   echo "Idle performance gate relies on a non-authoritative automation sentinel" >&2
@@ -57,7 +81,7 @@ grep -Fq 'find "$TEST_ROOT" -depth -delete' "$UI_TEST_SCRIPT"
 grep -Fq 'pkill -TERM -f "$DERIVED_DATA"' "$UI_TEST_SCRIPT"
 grep -Fq 'pkill -KILL -f "$DERIVED_DATA"' "$UI_TEST_SCRIPT"
 grep -Fq 'lsregister \' "$UI_TEST_SCRIPT"
-grep -Fq 'codesign --verify --deep --strict "$RUNNER_APP"' "$UI_TEST_SCRIPT"
+grep -Fq 'codesign --verify --deep --strict "$application"' "$UI_TEST_SCRIPT"
 grep -Fq 'copy_review_workspace' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'DERIVED_DATA_PATH="$TEMP/DerivedData"' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'find "$TEMP" -depth -delete' "$UI_CAPTURE_SCRIPT"
