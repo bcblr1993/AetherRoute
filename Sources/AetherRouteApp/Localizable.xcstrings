@@ -7157,6 +7157,12 @@
     "Connect before testing or switching nodes": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "连接后才能测速与切换节点" } } }
     },
+    "Connections appear here once you connect": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "连接后这里会显示每一条连接" } } }
+    },
+    "Each row shows the destination, the rule that matched, which outlet carried it, and how much it moved. Nothing is fabricated while the session is stopped.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "目标、命中的规则、走哪个出口、上下行流量。停止时不会生成虚假数据。" } } }
+    },
     "Latency results are local": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "延迟结果仅保存在本机" } } }
     },

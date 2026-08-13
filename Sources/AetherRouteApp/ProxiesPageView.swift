@@ -179,7 +179,7 @@ private struct ProxyGroupDisclosure: View {
             expandedContent
                 .padding(.horizontal, AetherVisual.s3)
                 .padding(.bottom, AetherVisual.s3)
-                .background(Color(nsColor: .underPageBackgroundColor).opacity(0.55))
+                .background(Color(nsColor: .windowBackgroundColor).opacity(0.55))
         } label: {
             collapsedSummary
         }

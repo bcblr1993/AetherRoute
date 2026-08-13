@@ -244,8 +244,10 @@ overview-en-light-disconnected|en|light|overview|940x640|disconnected|tun|accept
 overview-zh-light-connecting|zh-Hans|light|overview|940x640|connecting|tun|accepted|standard|-
 proxies-en-dark|en|dark|proxies|940x640|connected|tun|accepted|standard|-
 proxies-zh-light|zh-Hans|light|proxies|940x640|connected|transparent|accepted|standard|-
+proxies-disconnected-zh-light|zh-Hans|light|proxies|940x640|disconnected|transparent|accepted|standard|-
 connections-en-light|en|light|connections|940x640|connected|tun|accepted|standard|-
 connections-zh-dark|zh-Hans|dark|connections|940x640|connected|transparent|accepted|standard|-
+connections-disconnected-zh-light|zh-Hans|light|connections|940x640|disconnected|transparent|accepted|standard|-
 connections-en-dark-expanded|en|dark|connections|780x560|connected|tun|accepted|expanded|-
 connections-zh-light-expanded|zh-Hans|light|connections|780x560|connected|tun|accepted|expanded|-
 profiles-en-dark|en|dark|profiles|940x640|disconnected|tun|accepted|standard|-
