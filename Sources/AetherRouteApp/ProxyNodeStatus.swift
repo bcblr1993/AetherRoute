@@ -166,7 +166,16 @@ enum ConnectionOutlet: Equatable {
         } else if trimmed.isEmpty || token == "DIRECT" {
             self = .direct
         } else {
-            self = .proxied(trimmed)
+            // Telemetry may carry the complete selector chain. The table's
+            // fixed outlet column shows the leaf that actually carried the
+            // flow; the strategy group is routing context, not the outlet.
+            let leaf = trimmed
+                .components(separatedBy: "→")
+                .last?
+                .components(separatedBy: "->")
+                .last?
+                .trimmingCharacters(in: .whitespaces)
+            self = .proxied(leaf.flatMap { $0.isEmpty ? nil : $0 } ?? trimmed)
         }
     }
 
