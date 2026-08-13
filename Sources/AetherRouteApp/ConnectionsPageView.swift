@@ -1,0 +1,400 @@
+import AetherRouteKit
+import SwiftUI
+
+/// The connections page exists to show the flow list. State is compressed into
+/// a single session bar so the table gets the screen: previously five separate
+/// boxes all restated "not connected" while the one thing worth looking at had
+/// nowhere to go.
+struct ConnectionsView: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+    @State private var filter: ConnectionOutletFilter = .all
+    @State private var sort: ConnectionSort = .traffic
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SessionBar()
+                .environmentObject(tunnel)
+                .padding(.horizontal, AetherVisual.s4)
+                .padding(.top, AetherVisual.s3)
+
+            if tunnel.telemetry.connections.isEmpty {
+                emptyState
+            } else {
+                connectionList
+            }
+
+            HStack {
+                Text(footerText)
+                Spacer()
+                Text("Only connections visible on this Mac are counted, and nothing is reported anywhere.")
+            }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, AetherVisual.s4)
+                .frame(height: 24)
+                .overlay(alignment: .top) { Divider() }
+        }
+        .accessibilityIdentifier("connections-page")
+    }
+
+    /// The empty state explains what will appear here once connected, which
+    /// also answers why it is empty now.
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label(
+                tunnel.isConnected
+                    ? "No active connections"
+                    : "Connections appear here once you connect",
+                systemImage: "arrow.left.arrow.right"
+            )
+        } description: {
+            Text("Each row shows the destination, the rule that matched, which outlet carried it, and how much it moved. Nothing is fabricated while the session is stopped.")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(AetherVisual.s6)
+    }
+
+    private var connectionList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: AetherVisual.s2) {
+                Picker("Filter", selection: $filter) {
+                    ForEach(ConnectionOutletFilter.allCases) { option in
+                        Text(label(for: option)).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 330)
+
+                Spacer(minLength: AetherVisual.s2)
+
+                Picker("Sort", selection: $sort) {
+                    ForEach(ConnectionSort.allCases) { option in
+                        Text(option.localizedTitle).tag(option)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 112)
+
+                if tunnel.isConnected {
+                    Button("Disconnect all") {
+                        Task { await tunnel.setEnabled(false) }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                    .disabled(tunnel.isTransitioning)
+                    .accessibilityIdentifier("disconnect-all-connections")
+                }
+            }
+            .padding(.horizontal, AetherVisual.s4)
+            .padding(.vertical, AetherVisual.s2)
+
+            ConnectionTableHeader()
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(
+                        Array(visibleConnections.enumerated()),
+                        id: \.offset
+                    ) { index, connection in
+                        ConnectionRow(connection: connection)
+                        if index < visibleConnections.count - 1 {
+                            Divider()
+                                .padding(.leading, AetherVisual.pageHorizontalPadding)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var visibleConnections: [ConnectionTelemetry] {
+        tunnel.telemetry.connections
+            .filter {
+                ConnectionOutlet(proxyChain: $0.proxyChain).matches(filter)
+            }
+            .sorted { lhs, rhs in
+                switch sort {
+                case .traffic:
+                    return lhs.downloadTotal + lhs.uploadTotal
+                        > rhs.downloadTotal + rhs.uploadTotal
+                case .destination:
+                    return lhs.destination.localizedStandardCompare(rhs.destination)
+                        == .orderedAscending
+                }
+            }
+    }
+
+    private var footerText: String {
+        String.localizedStringWithFormat(
+            AppLocalization.string("Showing %lld of %lld connections"),
+            Int64(visibleConnections.count),
+            Int64(tunnel.telemetry.connections.count)
+        )
+    }
+
+    private enum ConnectionSort: String, CaseIterable, Identifiable {
+        case traffic
+        case destination
+
+        var id: Self { self }
+
+        var localizedTitle: String {
+            switch self {
+            case .traffic: AppLocalization.string("By traffic")
+            case .destination: AppLocalization.string("By destination")
+            }
+        }
+    }
+
+    private func label(for option: ConnectionOutletFilter) -> String {
+        let count = tunnel.telemetry.connections.filter {
+            ConnectionOutlet(proxyChain: $0.proxyChain).matches(option)
+        }.count
+        return "\(option.localizedTitle) \(count)"
+    }
+}
+
+/// One 44pt row that is the only place this page reports state. Rates read as
+/// an em dash when nothing is running: zero is a measurement, and claiming a
+/// measurement that was never taken is what made the old page feel wrong.
+private struct SessionBar: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+
+    var body: some View {
+        HStack(spacing: AetherVisual.s4) {
+            HStack(spacing: AetherVisual.s2) {
+                Image(systemName: stateSymbol)
+                    .font(.caption)
+                    .foregroundStyle(stateTint)
+                    .accessibilityHidden(true)
+                Text(tunnel.statusTitle)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+            }
+
+            if !tunnel.isConnected {
+                Text("Traffic is using the normal network path")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            if let duration {
+                Text(duration)
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Elapsed")
+            }
+
+            Divider().frame(height: 20)
+
+            rate(symbol: "arrow.down", value: downloadText)
+                .accessibilityIdentifier("connections-download-title")
+            rate(symbol: "arrow.up", value: uploadText)
+                .accessibilityIdentifier("connections-upload-title")
+
+            Spacer(minLength: AetherVisual.s3)
+
+            if let outlet {
+                Divider().frame(height: 20)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Outlet")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(outlet)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                }
+            }
+
+            if !tunnel.isConnected {
+                Button("Connect") {
+                    Task { await tunnel.setEnabled(true) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(tunnel.isTransitioning)
+            }
+        }
+        .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+        .frame(height: 44)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        }
+        .accessibilityIdentifier("connections-session-bar")
+    }
+
+    private func rate(symbol: String, value: String) -> some View {
+        HStack(spacing: AetherVisual.s1) {
+            Image(systemName: symbol)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(value)
+                .font(.body.monospacedDigit())
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var downloadText: String {
+        tunnel.isConnected
+            ? formattedRate(tunnel.telemetry.downloadBytesPerSecond)
+            : "—"
+    }
+
+    private var uploadText: String {
+        tunnel.isConnected
+            ? formattedRate(tunnel.telemetry.uploadBytesPerSecond)
+            : "—"
+    }
+
+    private var outlet: String? {
+        guard tunnel.isConnected else { return nil }
+        return tunnel.proxySelections.values.compactMap(\.selectedMember).first
+    }
+
+    private var duration: String? {
+        guard let since = tunnel.connectedSince, tunnel.isConnected else {
+            return nil
+        }
+        let elapsed = Int(Date.now.timeIntervalSince(since))
+        guard elapsed >= 0, elapsed <= 31 * 24 * 3_600 else { return nil }
+        return String(
+            format: "%02d:%02d:%02d",
+            elapsed / 3_600,
+            (elapsed % 3_600) / 60,
+            elapsed % 60
+        )
+    }
+
+    private var stateSymbol: String {
+        switch tunnel.state {
+        case .connected: "circle.fill"
+        case .connecting, .disconnecting, .loading: "circle.dotted"
+        case .failed: "exclamationmark.triangle.fill"
+        case .privacyConsentRequired: "hand.raised.fill"
+        case .disconnected: "circle"
+        }
+    }
+
+    private var stateTint: Color {
+        switch tunnel.state {
+        case .connected: .green
+        case .connecting, .disconnecting, .loading, .privacyConsentRequired: .orange
+        case .failed: .red
+        case .disconnected: .secondary
+        }
+    }
+}
+
+private struct ConnectionTableHeader: View {
+    var body: some View {
+        HStack(spacing: AetherVisual.s3) {
+            Text("Destination")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("Matched rule")
+                .frame(width: 150, alignment: .leading)
+            Text("Outlet")
+                .frame(width: 104, alignment: .leading)
+            Text("Traffic")
+                .frame(width: 88, alignment: .trailing)
+            Text("Duration")
+                .frame(width: 44, alignment: .trailing)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, AetherVisual.s4)
+        .frame(height: 24)
+    }
+}
+
+private struct ConnectionRow: View {
+    let connection: ConnectionTelemetry
+
+    var body: some View {
+        HStack(spacing: AetherVisual.s3) {
+            Circle()
+                .fill(outlet == .rejected ? Color.red : Color.green)
+                .frame(width: 7, height: 7)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                Text(verbatim: "\(connection.destination):\(connection.destinationPort)")
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(connection.transport == .tcp ? "TCP" : "UDP")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(ruleText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(width: 150, alignment: .leading)
+
+            Label(outlet.localizedTitle, systemImage: outletSymbol)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(outlet.tint)
+                .lineLimit(1)
+                .frame(width: 104, alignment: .leading)
+
+            VStack(alignment: .trailing, spacing: AetherVisual.s1) {
+                Text(verbatim: "↓ \(formattedBytes(connection.downloadTotal))")
+                Text(verbatim: "↑ \(formattedBytes(connection.uploadTotal))")
+            }
+            .font(.caption.monospacedDigit())
+            .frame(width: 88, alignment: .trailing)
+
+            Text(duration)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 44, alignment: .trailing)
+        }
+        .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+        .frame(height: 36)
+        .background(outlet == .rejected ? Color.red.opacity(0.04) : .clear)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var outlet: ConnectionOutlet {
+        ConnectionOutlet(proxyChain: connection.proxyChain)
+    }
+
+    private var outletSymbol: String {
+        switch outlet {
+        case .proxied: "arrow.triangle.branch"
+        case .direct: "arrow.forward"
+        case .rejected: "hand.raised.fill"
+        }
+    }
+
+    private var ruleText: String {
+        let payload = connection.rulePayload.trimmingCharacters(in: .whitespaces)
+        guard !payload.isEmpty else { return connection.rule }
+        return "\(connection.rule) \(payload)"
+    }
+
+    private var duration: String {
+        let started = Double(connection.startedAtUnixMilliseconds) / 1_000
+        let elapsed = Int(Date.now.timeIntervalSince1970 - started)
+        // A stale or malformed provider timestamp must not turn into a
+        // multi-thousand-hour duration in the table.
+        guard elapsed >= 0, elapsed <= 31 * 24 * 3_600 else { return "—" }
+        if elapsed >= 3_600 {
+            return String(format: "%dh%02dm", elapsed / 3_600, (elapsed % 3_600) / 60)
+        }
+        if elapsed >= 60 {
+            return String(format: "%dm%02ds", elapsed / 60, elapsed % 60)
+        }
+        return "\(elapsed)s"
+    }
+}

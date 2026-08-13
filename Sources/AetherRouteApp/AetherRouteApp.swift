@@ -444,9 +444,6 @@ private struct MenuTrafficMetric: View {
     }
 }
 
-private func formattedRate(_ bytes: UInt64) -> String {
-    "\(ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file))/s"
-}
 
 private enum SettingsTab: String, CaseIterable, Identifiable {
     case general

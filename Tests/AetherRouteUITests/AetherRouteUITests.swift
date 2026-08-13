@@ -58,7 +58,7 @@ final class AetherRouteUITests: XCTestCase {
     func testConnectionsPassAccessibilityAuditInLightAndDark() throws {
         try auditPrimaryPage(
             button: "Connections",
-            landmark: "Current session"
+            landmark: "Only connections visible on this Mac are counted, and nothing is reported anywhere."
         )
     }
 
@@ -90,7 +90,7 @@ final class AetherRouteUITests: XCTestCase {
             ).firstMatch.exists
         )
         app.buttons["Connections"].click()
-        XCTAssertTrue(app.staticTexts["Current session"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Only connections visible on this Mac are counted, and nothing is reported anywhere."].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Live bounded telemetry"].exists)
         app.buttons["Profiles"].click()
         XCTAssertTrue(app.buttons["Import Profile…"].waitForExistence(timeout: 2))
@@ -139,7 +139,7 @@ final class AetherRouteUITests: XCTestCase {
         for (button, landmark) in [
             ("Overview", "Current route"),
             ("Proxies", "Proxy groups"),
-            ("Connections", "Current session"),
+            ("Connections", "Only connections visible on this Mac are counted, and nothing is reported anywhere."),
             ("Profiles", "Import Profile…"),
             ("Rules", "Evaluation order"),
             ("DNS", "DNS & Fake-IP"),
@@ -509,7 +509,7 @@ final class AetherRouteUITests: XCTestCase {
             destinations: [
                 ("Overview", "Traffic routing active", "overview-page"),
                 ("Proxies", "Proxy groups", "proxies-page"),
-                ("Connections", "Current session", "connections-page"),
+                ("Connections", "Only connections visible on this Mac are counted, and nothing is reported anywhere.", "connections-page"),
                 ("Profiles", "Import Profile…", "profiles-page"),
                 ("Rules", "Evaluation order", "rules-page"),
                 ("DNS", "DNS & Fake-IP", "dns-page"),
@@ -1941,7 +1941,6 @@ final class AetherRouteUITests: XCTestCase {
                [
                    "connections-upload-title",
                    "connections-download-title",
-                   "connections-open-flows-title",
                    "overview-route-device",
                    "overview-route-policy",
                    "overview-route-exit",

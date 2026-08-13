@@ -2171,12 +2171,12 @@
         }
       }
     },
-    "Groups": {
+    "In groups": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "策略组"
+            "value": "在组中"
           }
         }
       }
@@ -6980,6 +6980,191 @@
           }
         }
       }
+    },
+    "%lld groups": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "%lld 组" }
+        }
+      }
+    },
+    "All": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "全部" }
+        }
+      }
+    },
+    "Available": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "可用" }
+        }
+      }
+    },
+    "By destination": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "按目标" }
+        }
+      }
+    },
+    "By latency": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "按延迟" }
+        }
+      }
+    },
+    "By name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "按名称" }
+        }
+      }
+    },
+    "By traffic": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "按流量" }
+        }
+      }
+    },
+    "Destination": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "目标" }
+        }
+      }
+    },
+    "Duration": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "时长" }
+        }
+      }
+    },
+    "Matched rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "命中规则" }
+        }
+      }
+    },
+    "Name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "名称" }
+        }
+      }
+    },
+    "Nodes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "代理节点" }
+        }
+      }
+    },
+    "Only connections visible on this Mac are counted, and nothing is reported anywhere.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "只统计本机可见的连接，不上报" }
+        }
+      }
+    },
+    "Outlet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "出口" }
+        }
+      }
+    },
+    "Proxied": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "代理" }
+        }
+      }
+    },
+    "Rejected": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "拒绝" }
+        }
+      }
+    },
+    "Search connections": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "搜索连接" }
+        }
+      }
+    },
+    "Search nodes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "搜索节点" }
+        }
+      }
+    },
+    "Showing %lld of %lld connections": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "显示 %1$lld / 共 %2$lld 条连接" }
+        }
+      }
+    },
+    "Timed out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "超时" }
+        }
+      }
+    },
+    "%lld total · %lld recognized · %lld pending core check · %lld unsupported": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "共 %1$lld 个 · %2$lld 个已识别 · %3$lld 个待核心检查 · %4$lld 个不支持" }
+        }
+      }
+    },
+    "Traffic": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "流量" }
+        }
+      }
+    },
+    "Untested": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "未测" }
+        }
+      }
+    },
+    "Core status": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "核心状态" } } }
+    },
+    "Disconnect all": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "全部断开" } } }
+    },
+    "Groups": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "策略组" } } }
+    },
+    "Test all": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "全部测速" } } }
+    },
+    "Connect before testing or switching nodes": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "连接后才能测速与切换节点" } } }
+    },
+    "Latency results are local": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "延迟结果仅保存在本机" } } }
+    },
+    "Showing %lld of %lld nodes": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "显示 %lld / 共 %lld 个节点" } } }
+    },
+    "The node list is ready — %lld in total.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "节点列表已就绪，共 %lld 个。" } } }
     },
     "upstreams": {
       "localizations": {
