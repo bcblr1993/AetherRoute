@@ -416,6 +416,7 @@ private struct ProxyGroupDisclosure: View {
             .width(14)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
+        .scrollIndicators(.hidden, axes: .horizontal)
         .environment(\.defaultMinListRowHeight, 28)
         .frame(height: min(CGFloat(memberRows.count * 28 + 34), 196))
     }
@@ -598,30 +599,54 @@ private struct ProxyNodeInventory: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                VStack(spacing: 0) {
-                    HStack(spacing: AetherVisual.s3) {
-                        Text("Name").frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Protocol").frame(width: 92, alignment: .leading)
-                        Text("In groups").frame(width: 148, alignment: .leading)
-                        Text("Core status").frame(width: 118, alignment: .leading)
+                Table(visibleProxies) {
+                    TableColumn("Name") { proxy in
+                        Text(proxy.name)
+                            .font(.subheadline)
+                            .strikethrough(!proxy.recognition.isSelectable)
+                            .lineLimit(1)
                     }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, AetherVisual.s3)
-                    .frame(height: 28)
-                    Divider()
-
-                    ForEach(Array(visibleProxies.enumerated()), id: \.element.id) { index, proxy in
-                            ProxyInventoryRow(
-                                proxy: proxy,
-                                membership: membership(of: proxy.name)
-                            )
-                            if index < visibleProxies.count - 1 {
-                                Divider()
-                            }
+                    TableColumn("Protocol") { proxy in
+                        Text(proxy.protocolName.uppercased())
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
                     }
+                    .width(92)
+                    TableColumn("In groups") { proxy in
+                        Text(membership(of: proxy.name))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .width(min: 120, ideal: 148, max: 170)
+                    TableColumn("Core status") { proxy in
+                        Label(
+                            proxy.recognition.localizedTitle,
+                            systemImage: proxy.recognition.symbol
+                        )
+                        .font(.caption)
+                        .foregroundStyle(proxy.recognition.tint)
+                        .labelStyle(.titleAndIcon)
+                    }
+                    .width(min: 104, ideal: 118, max: 132)
                 }
-                .featureCard()
+                .tableStyle(.inset(alternatesRowBackgrounds: false))
+                .scrollIndicators(.hidden, axes: .horizontal)
+                .environment(\.defaultMinListRowHeight, 36)
+                .frame(height: min(CGFloat(visibleProxies.count * 36 + 34), 320))
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: AetherVisual.panelRadius,
+                        style: .continuous
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(
+                        cornerRadius: AetherVisual.panelRadius,
+                        style: .continuous
+                    )
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                }
             }
         }
     }
@@ -659,43 +684,5 @@ private struct ProxyNodeInventory: View {
             return AppLocalization.string("In no group")
         }
         return owners.joined(separator: " · ")
-    }
-}
-
-private struct ProxyInventoryRow: View {
-    let proxy: ProxyConfigurationSummary
-    let membership: String
-
-    var body: some View {
-        HStack(spacing: AetherVisual.s3) {
-            Text(proxy.name)
-                .font(.subheadline)
-                .strikethrough(!proxy.recognition.isSelectable)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(proxy.protocolName.uppercased())
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-                .frame(width: 92, alignment: .leading)
-
-            Text(membership)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(width: 148, alignment: .leading)
-
-            Label(
-                proxy.recognition.localizedTitle,
-                systemImage: proxy.recognition.symbol
-            )
-            .font(.caption)
-            .foregroundStyle(proxy.recognition.tint)
-            .labelStyle(.titleAndIcon)
-            .frame(width: 118, alignment: .leading)
-        }
-        .padding(.horizontal, AetherVisual.s3)
-        .frame(height: 36)
-        .accessibilityElement(children: .combine)
     }
 }

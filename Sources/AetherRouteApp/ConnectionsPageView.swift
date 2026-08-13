@@ -111,6 +111,7 @@ struct ConnectionsView: View {
                 .width(44)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: false))
+            .scrollIndicators(.hidden, axes: .horizontal)
         }
     }
 
