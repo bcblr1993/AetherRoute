@@ -100,8 +100,16 @@ jq -e '
     (.path | startswith("/")) and
     (.networkExtensions | type == "array" and length > 0) and
     all(.networkExtensions[];
-      . == "app-proxy-provider" or . == "packet-tunnel-provider")
-  )
+      . == "app-proxy-provider-systemextension" or
+      . == "packet-tunnel-provider-systemextension")
+  ) and
+  ((.profiles[] | select(.role == "direct-host") | .networkExtensions | sort) ==
+    (["app-proxy-provider-systemextension",
+      "packet-tunnel-provider-systemextension"] | sort)) and
+  ((.profiles[] | select(.role == "transparent-proxy") | .networkExtensions) ==
+    ["app-proxy-provider-systemextension"]) and
+  ((.profiles[] | select(.role == "packet-tunnel") | .networkExtensions) ==
+    ["packet-tunnel-provider-systemextension"])
 ' "$CONFIG" >/dev/null || {
   echo "invalid signing configuration schema: $CONFIG" >&2
   exit 1
@@ -129,6 +137,9 @@ $ROOT/project.yml
 $ROOT/Config/AetherRoute.entitlements
 $ROOT/Config/AetherRoutePacketTunnel.entitlements
 $ROOT/Config/AetherRouteTransparentProxy.entitlements
+$ROOT/Config/AetherRoute.DeveloperID.entitlements
+$ROOT/Config/AetherRoutePacketTunnel.DeveloperID.entitlements
+$ROOT/Config/AetherRouteTransparentProxy.DeveloperID.entitlements
 $ROOT/Config/App-Info.plist
 $ROOT/Config/PacketTunnel-Info.plist
 $ROOT/Config/TransparentProxy-Info.plist
@@ -209,14 +220,34 @@ while IFS="	" read -r role bundle_id profile_path network_extensions; do
 
   actual_team=$(plutil -extract TeamIdentifier.0 raw -o - "$decoded" 2>/dev/null || true)
   actual_prefix=$(plutil -extract ApplicationIdentifierPrefix.0 raw -o - "$decoded" 2>/dev/null || true)
-  actual_app_id=$(plutil -extract Entitlements.application-identifier raw -o - "$decoded" 2>/dev/null || true)
-  actual_team_entitlement=$(plutil -extract Entitlements.com.apple.developer.team-identifier raw -o - "$decoded" 2>/dev/null || true)
+  actual_app_id=$(/usr/libexec/PlistBuddy \
+    -c 'Print :Entitlements:com.apple.application-identifier' \
+    "$decoded" 2>/dev/null || true)
+  actual_team_entitlement=$(/usr/libexec/PlistBuddy \
+    -c 'Print :Entitlements:com.apple.developer.team-identifier' \
+    "$decoded" 2>/dev/null || true)
   expiration=$(plutil -extract ExpirationDate raw -o - "$decoded" 2>/dev/null || true)
+  is_xcode_managed=$(plutil -extract IsXcodeManaged raw -o - \
+    "$decoded" 2>/dev/null || printf 'false')
+  provisions_all_devices=$(plutil -extract ProvisionsAllDevices raw -o - \
+    "$decoded" 2>/dev/null || printf 'false')
 
   [ "$actual_team" = "$team_id" ] || fail "$role profile TeamIdentifier mismatch"
   [ "$actual_prefix" = "$app_identifier_prefix" ] || fail "$role profile AppIdentifierPrefix mismatch"
   [ "$actual_team_entitlement" = "$team_id" ] || fail "$role profile team entitlement mismatch"
   [ "$actual_app_id" = "$app_identifier_prefix.$bundle_id" ] || fail "$role profile application-identifier mismatch"
+  [ "$is_xcode_managed" = false ] || \
+    fail "$role profile is Xcode-managed; release requires a manually generated Developer ID profile"
+  [ "$provisions_all_devices" = true ] || \
+    fail "$role profile is not a Developer ID all-device profile"
+
+  if [ "$role" = direct-host ]; then
+    system_extension_install=$(/usr/libexec/PlistBuddy -c \
+      'Print :Entitlements:com.apple.developer.system-extension.install' \
+      "$decoded" 2>/dev/null || printf 'false')
+    [ "$system_extension_install" = true ] || \
+      fail "direct-host profile does not authorize System Extension installation"
+  fi
 
   if [ -z "$expiration" ]; then
     fail "$role profile has no expiration date"
@@ -232,17 +263,28 @@ while IFS="	" read -r role bundle_id profile_path network_extensions; do
     fi
   fi
 
-  if ! plutil -extract Entitlements.com.apple.security.application-groups json -o - "$decoded" 2>/dev/null \
-    | jq -e --arg expected "$app_group" 'index($expected) != null' >/dev/null; then
-    fail "$role profile does not grant App Group $app_group"
+  app_groups_json=$(plutil -extract \
+    'Entitlements.com\.apple\.security\.application-groups' json -o - \
+    "$decoded" 2>/dev/null || printf '[]')
+  if [ "$(printf '%s' "$app_groups_json" | jq 'length')" -eq 0 ]; then
+    fail "$role profile does not grant required App Group $app_group"
+  elif ! printf '%s' "$app_groups_json" \
+    | jq -e --arg expected "$app_group" \
+      'index($expected) != null' >/dev/null; then
+    fail "$role profile has App Group grants but does not grant $app_group"
   fi
-  if ! plutil -extract Entitlements.keychain-access-groups json -o - "$decoded" 2>/dev/null \
-    | jq -e --arg expected "$keychain_group" 'index($expected) != null' >/dev/null; then
+  if ! plutil -extract 'Entitlements.keychain-access-groups' json -o - \
+    "$decoded" 2>/dev/null \
+    | jq -e --arg expected "$keychain_group" \
+      'index($expected) != null or index(($expected | split(".")[0]) + ".*") != null' \
+      >/dev/null; then
     fail "$role profile does not grant Keychain group $keychain_group"
   fi
 
   for network_extension in $(printf '%s\n' "$network_extensions" | tr ',' ' '); do
-    if ! plutil -extract Entitlements.com.apple.developer.networking.networkextension json -o - "$decoded" 2>/dev/null \
+    if ! plutil -extract \
+      'Entitlements.com\.apple\.developer\.networking\.networkextension' \
+      json -o - "$decoded" 2>/dev/null \
       | jq -e --arg expected "$network_extension" 'index($expected) != null' >/dev/null; then
       fail "$role profile does not grant Network Extension $network_extension"
     fi

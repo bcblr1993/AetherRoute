@@ -55,6 +55,7 @@ printf '%s\n' "$missing_signed_output" \
 }
 for required in \
   'Developer ID Application' \
+  'scripts/verify_developer_id_private_key_access.sh' \
   'OTHER_CODE_SIGN_FLAGS = --timestamp' \
   'AETHERROUTE_RELEASE_CHANNEL = stable' \
   'AETHERROUTE_LICENSE_SERVICE_URL' \
@@ -70,21 +71,38 @@ for required in \
   'signedNEEvidenceSHA256' \
   'signedNECycles' \
   'releaseStatus: "notarized-candidate"' \
+  'stable release requires a clean source tree' \
+  'stable release candidates must be created from main' \
+  'productID: $productID' \
+  'minimumSystemVersion: $minimumSystemVersion' \
+  'gitCommit: $gitCommit' \
+  'manifestSHA256: $sourceManifestSHA256' \
+  'updateSigningPublicKeySHA256' \
   'Production promotion remains blocked' \
   'xcrun notarytool submit' \
+  'AetherRoute-app-notarization.dmg' \
+  'app-notary-stage' \
+  'app-notary-result.json' \
+  'dmg-notary-result.json' \
+  'AETHERROUTE_NOTARY_KEYCHAIN' \
+  '--keychain "$notary_keychain"' \
   'xcrun stapler staple' \
+  'xcrun stapler validate "$app"' \
+  'syspolicy_check distribution "$app"' \
+  'appTicketStapled: true, dmgTicketStapled: true' \
   'spctl --assess --type open' \
   'hdiutil create' \
   'get-task-allow' \
   'release bundle contains non-arm64 Mach-O' \
   'release bundle architecture inventory is unexpectedly small' \
   'packet tunnel is missing its loopback listener entitlement' \
-  'network.server escaped the packet tunnel boundary' \
+  'transparent proxy is missing its UDP receive entitlement' \
+  'network.server escaped the Network Extension boundary' \
   'scripts/test.sh' \
   'scripts/test_sanitizers.sh' \
   'source tree changed during release validation'
 do
-  grep -F "$required" "$SCRIPT" >/dev/null || {
+  grep -F -- "$required" "$SCRIPT" >/dev/null || {
     echo "release pipeline is missing gate: $required" >&2
     exit 1
   }
@@ -100,6 +118,28 @@ grep -F 'scripts/test_udp_integrity.sh' "$ROOT/scripts/test.sh" >/dev/null || {
 }
 grep -F 'scripts/test_tcp_performance.sh' "$ROOT/scripts/test.sh" >/dev/null || {
   echo "release validation is missing the TCP performance gate" >&2
+  exit 1
+}
+for tcp_gate_requirement in \
+  'minimum_direct_mibps=2048' \
+  'minimum_engine_mibps=1024' \
+  'TCP performance measurement environment is unsuitable' \
+  'only after every release threshold is satisfied'
+do
+  grep -F "$tcp_gate_requirement" \
+    "$ROOT/scripts/test_tcp_performance.sh" >/dev/null || {
+    echo "TCP performance producer is missing gate: $tcp_gate_requirement" >&2
+    exit 1
+  }
+done
+grep -F 'require_equal minimum_direct_mibps 2048' \
+  "$ROOT/scripts/verify_tcp_performance_result.sh" >/dev/null || {
+  echo "TCP performance verifier does not bind the clean-host baseline" >&2
+  exit 1
+}
+grep -F 'require_equal schema 2' \
+  "$ROOT/scripts/verify_tcp_performance_result.sh" >/dev/null || {
+  echo "TCP performance verifier does not bind the environment-aware schema" >&2
   exit 1
 }
 grep -F 'ENABLE_DEBUG_DYLIB=NO' \

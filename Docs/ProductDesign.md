@@ -47,18 +47,22 @@ that state before shutdown begins.
   compares decoded pixels and renders all seven system appearances at 16, 32,
   and 1024 px so Finder, Dock, menu, About, and DMG artwork may not silently
   diverge even when PNG encoder bytes differ between macOS versions.
-- Cyan-to-indigo is identity, not decoration. It appears in the brand mark and
-  a small number of active-route accents. Navigation selection, the toolbar,
-  and focus keep the user's system accent and familiar platform behavior.
+- The blue brand gradient is identity, not decoration. It appears in the app
+  icon and in empty-state illustration only, never inside a control.
+  Navigation selection, the toolbar, and focus keep the user's system accent
+  and familiar platform behavior.
 
-- Accent: the system accent for selection and focus. Cyan-to-indigo is reserved
-  for AetherRoute identity; green is reserved for a verified active route.
-- Status colors are semantic: teal for active, orange for transition or
-  attention, red for failure, and secondary text for inactive state. Color is
-  always paired with text and/or a symbol.
-- Spacing follows a 4-point base rhythm. Primary gaps are 8, 12, 16, 20, 24,
-  and 28 points. Cards use continuous 16-18 point corners; compact controls use
-  9-10 points.
+- Accent: the system accent for selection and focus, applied by writing no
+  `.tint` at all. The brand gradient is reserved for AetherRoute identity and
+  never encodes state. Because the brand blue and the default accent blue are
+  close relatives, the brand mark is confined to the sidebar header and is kept
+  a step darker than the accent.
+- Status colors are semantic and limited to four: green for connected or
+  passing, orange for in-transition or needs-attention, red for failure, and
+  secondary for idle or unavailable. Color is always paired with text and/or a
+  symbol.
+- Spacing follows a 4-point base rhythm: 4, 8, 12, 16, 20, and 24 points.
+  Controls use 6-point corners, inset blocks 8, and every card 12.
 - Typography uses Dynamic Type-compatible system styles. Titles are not
   manually scaled; metadata never falls below `caption`.
 - Light, dark, Increased Contrast, and Reduce Transparency appearances must

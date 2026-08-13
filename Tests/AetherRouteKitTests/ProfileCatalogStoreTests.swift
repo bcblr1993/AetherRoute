@@ -371,6 +371,36 @@ final class ProfileCatalogStoreTests: XCTestCase {
         }
     }
 
+    func testRejectsOversizedEncryptedCatalogBeforeDecoding() throws {
+        try withStores { directory, _, catalogStore in
+            let url = directory.appendingPathComponent(
+                ProfileCatalogStore.encryptedFilename
+            )
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            XCTAssertTrue(FileManager.default.createFile(
+                atPath: url.path,
+                contents: nil
+            ))
+            let handle = try FileHandle(forWritingTo: url)
+            try handle.truncate(
+                atOffset: UInt64(ProfileCatalogStore.maximumEncryptedBytes + 1)
+            )
+            try handle.close()
+
+            XCTAssertThrowsError(try catalogStore.loadOrMigrate()) { error in
+                XCTAssertEqual(
+                    error as? ProfileCatalogStoreError,
+                    .encryptedCatalogTooLarge(
+                        ProfileCatalogStore.maximumEncryptedBytes + 1
+                    )
+                )
+            }
+        }
+    }
+
     func testCatalogCiphertextCannotBeOpenedAsActiveProfile() throws {
         try withStores { directory, _, catalogStore in
             _ = try catalogStore.addValidated(

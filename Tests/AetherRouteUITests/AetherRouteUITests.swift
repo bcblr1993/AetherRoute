@@ -1,4 +1,5 @@
 import CryptoKit
+import Dispatch
 import Foundation
 import XCTest
 
@@ -363,6 +364,7 @@ final class AetherRouteUITests: XCTestCase {
             (state: "connected", title: "Disconnect", enabled: true),
             (state: "disconnecting", title: "Disconnecting", enabled: false),
             (state: "failed", title: "Retry", enabled: true),
+            (state: "extension-approval", title: "Retry", enabled: false),
         ]
 
         for item in cases {
@@ -565,7 +567,11 @@ final class AetherRouteUITests: XCTestCase {
         app.buttons["Profiles"].click()
         XCTAssertTrue(app.staticTexts["profiles.example"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.buttons["Check for Updates"].isHittable)
-        XCTAssertTrue(app.buttons["Add Subscription…"].isHittable)
+        let moreMenu = app.descendants(matching: .any)["profiles-more-menu"]
+        XCTAssertTrue(moreMenu.isHittable)
+        moreMenu.click()
+        XCTAssertTrue(app.menuItems["Add Subscription…"].isHittable)
+        app.typeKey(.escape, modifierFlags: [])
     }
 
     func testProfileLibraryActionsCompleteThroughAsyncUIPaths() {
@@ -581,6 +587,10 @@ final class AetherRouteUITests: XCTestCase {
 
         let useButton = app.buttons["Use"].firstMatch
         XCTAssertTrue(useButton.waitForExistence(timeout: 2))
+        if !useButton.isHittable {
+            app.descendants(matching: .any)["profiles-page"]
+                .scroll(byDeltaX: 0, deltaY: -320)
+        }
         XCTAssertTrue(useButton.isHittable)
         useButton.click()
         XCTAssertTrue(
@@ -758,7 +768,10 @@ final class AetherRouteUITests: XCTestCase {
 
         XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
         app.buttons["Profiles"].click()
-        app.buttons["Add Subscription…"].click()
+        let moreMenu = app.descendants(matching: .any)["profiles-more-menu"]
+        XCTAssertTrue(moreMenu.waitForExistence(timeout: 2))
+        moreMenu.click()
+        app.menuItems["Add Subscription…"].click()
 
         XCTAssertTrue(app.textFields["subscription-url-field"].waitForExistence(timeout: 2))
         XCTAssertTrue(
@@ -950,7 +963,7 @@ final class AetherRouteUITests: XCTestCase {
         selectMenuItem("简体中文", from: picker, in: app)
 
         XCTAssertTrue(
-            app.staticTexts["应用语言"].waitForExistence(timeout: 3)
+            app.staticTexts["应用语言"].waitForExistence(timeout: 8)
         )
         XCTAssertTrue(app.staticTexts["语言"].exists)
         XCTAssertFalse(app.staticTexts["Application language"].exists)
@@ -1099,12 +1112,14 @@ final class AetherRouteUITests: XCTestCase {
         let settingsWindow = app.windows[
             "com_apple_SwiftUI_Settings_window"
         ]
-        let general = settingsWindow.descendants(matching: .any)[
-            "settings-tab-general"
-        ]
-        let about = settingsWindow.descendants(matching: .any)[
-            "settings-tab-about"
-        ]
+        let general = settingsWindow.cells.containing(
+            .staticText,
+            identifier: "settings-tab-general"
+        ).firstMatch
+        let about = settingsWindow.cells.containing(
+            .staticText,
+            identifier: "settings-tab-about"
+        ).firstMatch
         XCTAssertTrue(general.waitForExistence(timeout: 2))
         XCTAssertTrue(about.waitForExistence(timeout: 2))
         XCTAssertTrue(general.isSelected)
@@ -1370,18 +1385,43 @@ final class AetherRouteUITests: XCTestCase {
             return
         }
 
-        let app = XCUIApplication()
+        let dnsProbeScript: SignedDNSProbeScript
+        do {
+            dnsProbeScript = try validatedSignedDNSProbeScript(
+                environment: environment
+            )
+        } catch {
+            XCTFail(
+                "Configure the absolute, executable signed_ne_dns_probe.sh path and its lowercase SHA-256."
+            )
+            return
+        }
+
+        let app: XCUIApplication
+        if environment["AETHERROUTE_SIGNED_NE_USE_INSTALLED_APP"] == "YES",
+           let hostBundleID = environment[
+               "AETHERROUTE_SIGNED_NE_HOST_BUNDLE_ID"
+           ], !hostBundleID.isEmpty {
+            app = XCUIApplication(bundleIdentifier: hostBundleID)
+        } else {
+            app = XCUIApplication()
+        }
         app.launchArguments += [
             "-AppleLanguages", "(en)",
             "-AppleLocale", "en_US",
         ]
         app.launch()
         let primary = app.buttons["primary-connection-button"]
+        var temporaryBypassRules: [String] = []
         defer {
             if primary.exists, primary.label == "Disconnect" || primary.label == "Cancel" {
                 primary.click()
                 _ = waitForLabel("Connect", on: primary, timeout: 30)
             }
+            removeTemporarySignedBypassRules(
+                temporaryBypassRules,
+                in: app
+            )
             app.terminate()
         }
 
@@ -1406,19 +1446,48 @@ final class AetherRouteUITests: XCTestCase {
             "The signed app has no usable active profile; import one before running this gate."
         )
 
+        temporaryBypassRules = installTemporarySignedBypassRules(
+            environment["AETHERROUTE_SIGNED_NE_BYPASS_CIDRS"] ?? "",
+            in: app
+        )
+
         let engineLabel = engine == "tun" ? "TUN" : "Transparent Proxy"
-        let engineSelector = app.buttons[engineLabel]
+        let enginePicker = app.radioGroups["network-engine-picker"]
+        XCTAssertTrue(
+            enginePicker.waitForExistence(timeout: 5),
+            "The independent lifecycle gate could not find the network engine picker."
+        )
+        let engineSelector = enginePicker.radioButtons[engineLabel]
         XCTAssertTrue(
             engineSelector.waitForExistence(timeout: 5),
             "The independent lifecycle gate could not find the \(engineLabel) selector."
         )
-        if engineSelector.value as? String != "1" {
+        if !controlHasSelectedValue(engineSelector) {
             engineSelector.click()
         }
         XCTAssertTrue(
-            waitForValue("1", on: engineSelector, timeout: 10),
+            waitForSelected(engineSelector, timeout: 10),
             "The independent lifecycle gate could not select \(engineLabel)."
         )
+        let baselineDNSHash: String
+        do {
+            let baselineResult = try runSignedDNSProbe(
+                dnsProbeScript,
+                arguments: ["baseline"]
+            )
+            guard baselineResult.range(
+                of: "^baseline_dns_sha256=[0-9a-f]{64}$",
+                options: .regularExpression
+            ) != nil else {
+                throw SignedDNSProbeError.invalidOutput(mode: "baseline")
+            }
+            baselineDNSHash = String(
+                baselineResult.dropFirst("baseline_dns_sha256=".count)
+            )
+        } catch {
+            XCTFail("Signed DNS baseline gate failed: \(error.localizedDescription)")
+            return
+        }
         let probeMatchedBeforeConnection = await signedProbeMatchesExpected(
             url: probeURL,
             expectedSHA256: expectedProbeSHA256
@@ -1430,10 +1499,29 @@ final class AetherRouteUITests: XCTestCase {
 
         for cycle in 1...cycles {
             primary.click()
-            guard waitForLabel("Disconnect", on: primary, timeout: 45) else {
+            switch waitForConnectionStart(
+                on: primary,
+                in: app,
+                timeout: 45
+            ) {
+            case .connected:
+                break
+            case let .failed(detail):
                 attachFailureScreenshot(app, name: "connect-cycle-\(cycle)")
                 XCTFail(
-                    "\(engineLabel) did not reach connected state in cycle \(cycle)"
+                    "\(engineLabel) failed while connecting in cycle \(cycle): \(detail)"
+                )
+                return
+            case .returnedToIdle:
+                attachFailureScreenshot(app, name: "connect-cycle-\(cycle)")
+                XCTFail(
+                    "\(engineLabel) returned to Connect before reaching ready state in cycle \(cycle)."
+                )
+                return
+            case .timedOut:
+                attachFailureScreenshot(app, name: "connect-cycle-\(cycle)")
+                XCTFail(
+                    "\(engineLabel) did not reach connected state in cycle \(cycle) before the timeout."
                 )
                 return
             }
@@ -1446,6 +1534,28 @@ final class AetherRouteUITests: XCTestCase {
                 ).firstMatch.waitForExistence(timeout: 5),
                 "Provider readiness was not exposed in cycle \(cycle)."
             )
+            do {
+                let dnsMode = engine == "tun"
+                    ? "tun-connected"
+                    : "transparent-connected"
+                var dnsArguments = [dnsMode]
+                if engine == "transparent" {
+                    dnsArguments.append(baselineDNSHash)
+                }
+                let connectedDNSResult = try runSignedDNSProbe(
+                    dnsProbeScript,
+                    arguments: dnsArguments
+                )
+                guard connectedDNSResult == "dns_probe=\(dnsMode):passed" else {
+                    throw SignedDNSProbeError.invalidOutput(mode: dnsMode)
+                }
+            } catch {
+                attachFailureScreenshot(app, name: "dns-connected-cycle-\(cycle)")
+                XCTFail(
+                    "\(engineLabel) DNS gate failed while connected in cycle \(cycle): \(error.localizedDescription)"
+                )
+                return
+            }
             let probeMatchedWhileConnected = await signedProbeMatchesExpected(
                 url: probeURL,
                 expectedSHA256: expectedProbeSHA256
@@ -1461,6 +1571,27 @@ final class AetherRouteUITests: XCTestCase {
                 XCTFail("\(engineLabel) did not stop in cycle \(cycle)")
                 return
             }
+            do {
+                let disconnectedDNSResult = try runSignedDNSProbe(
+                    dnsProbeScript,
+                    arguments: ["disconnected", baselineDNSHash]
+                )
+                guard disconnectedDNSResult
+                    == "dns_probe=disconnected:passed" else {
+                    throw SignedDNSProbeError.invalidOutput(
+                        mode: "disconnected"
+                    )
+                }
+            } catch {
+                attachFailureScreenshot(
+                    app,
+                    name: "dns-disconnected-cycle-\(cycle)"
+                )
+                XCTFail(
+                    "\(engineLabel) DNS restoration gate failed in cycle \(cycle): \(error.localizedDescription)"
+                )
+                return
+            }
             let probeMatchedAfterDisconnect = await signedProbeMatchesExpected(
                 url: probeURL,
                 expectedSHA256: expectedProbeSHA256
@@ -1472,11 +1603,143 @@ final class AetherRouteUITests: XCTestCase {
         }
     }
 
+    private func validatedSignedDNSProbeScript(
+        environment: [String: String]
+    ) throws -> SignedDNSProbeScript {
+        let overrideKeys = [
+            "AETHERROUTE_SIGNED_DNS_PROBE_SCUTIL",
+            "AETHERROUTE_SIGNED_DNS_PROBE_ROUTE",
+            "AETHERROUTE_SIGNED_DNS_PROBE_IFCONFIG",
+            "AETHERROUTE_SIGNED_DNS_PROBE_DIG",
+            "AETHERROUTE_SIGNED_DNS_PROBE_UUIDGEN",
+            "AETHERROUTE_SIGNED_DNS_PROBE_SHASUM",
+            "AETHERROUTE_SIGNED_DNS_PROBE_AWK",
+            "AETHERROUTE_SIGNED_DNS_PROBE_SORT",
+            "AETHERROUTE_SIGNED_DNS_PROBE_GREP",
+            "AETHERROUTE_SIGNED_DNS_PROBE_TR",
+        ]
+        guard environment["AETHERROUTE_SIGNED_DNS_PROBE_TEST_MODE"] == nil,
+              overrideKeys.allSatisfy({ environment[$0] == nil }),
+              let scriptPath = environment[
+                "AETHERROUTE_SIGNED_DNS_PROBE_SCRIPT"
+              ], scriptPath.hasPrefix("/"),
+              let expectedSHA256 = environment[
+                "AETHERROUTE_SIGNED_DNS_PROBE_SHA256"
+              ], expectedSHA256.range(
+                of: "^[0-9a-f]{64}$",
+                options: .regularExpression
+              ) != nil else {
+            throw SignedDNSProbeError.invalidConfiguration
+        }
+
+        let scriptURL = URL(fileURLWithPath: scriptPath)
+            .standardizedFileURL
+        guard scriptURL.path == scriptPath,
+              scriptURL.lastPathComponent == "signed_ne_dns_probe.sh",
+              scriptURL.resolvingSymlinksInPath().standardizedFileURL.path
+                == scriptPath,
+              FileManager.default.isExecutableFile(atPath: scriptPath),
+              let attributes = try? FileManager.default.attributesOfItem(
+                atPath: scriptPath
+              ),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let permissions = attributes[.posixPermissions] as? NSNumber,
+              permissions.intValue & 0o022 == 0,
+              let fileSize = attributes[.size] as? NSNumber,
+              (1...128 * 1_024).contains(fileSize.intValue),
+              try signedDNSProbeSHA256(at: scriptURL) == expectedSHA256 else {
+            throw SignedDNSProbeError.invalidConfiguration
+        }
+        return SignedDNSProbeScript(
+            url: scriptURL,
+            expectedSHA256: expectedSHA256
+        )
+    }
+
+    private func signedDNSProbeSHA256(at url: URL) throws -> String {
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        return SHA256.hash(data: data).map {
+            String(format: "%02x", $0)
+        }.joined()
+    }
+
+    private func runSignedDNSProbe(
+        _ script: SignedDNSProbeScript,
+        arguments: [String]
+    ) throws -> String {
+        guard try signedDNSProbeSHA256(at: script.url)
+            == script.expectedSHA256 else {
+            throw SignedDNSProbeError.integrityChanged
+        }
+
+        let process = Process()
+        let outputPipe = Pipe()
+        let completion = DispatchSemaphore(value: 0)
+        process.executableURL = script.url
+        process.arguments = arguments
+        process.currentDirectoryURL = URL(fileURLWithPath: "/", isDirectory: true)
+        process.environment = [
+            "LANG": "C",
+            "LC_ALL": "C",
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        ]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = outputPipe
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { _ in completion.signal() }
+        do {
+            try process.run()
+        } catch {
+            throw SignedDNSProbeError.launchFailed
+        }
+
+        guard completion.wait(timeout: .now() + 20) == .success else {
+            process.terminate()
+            _ = completion.wait(timeout: .now() + 2)
+            outputPipe.fileHandleForReading.closeFile()
+            throw SignedDNSProbeError.timedOut
+        }
+        guard process.terminationReason == .exit,
+              process.terminationStatus == 0 else {
+            throw SignedDNSProbeError.failed(
+                mode: arguments.first ?? "unknown",
+                status: process.terminationStatus
+            )
+        }
+
+        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        guard outputData.count <= 256,
+              let rawOutput = String(data: outputData, encoding: .utf8),
+              rawOutput.hasSuffix("\n"),
+              rawOutput.dropLast().allSatisfy({ $0 != "\n" && $0 != "\r" })
+        else {
+            throw SignedDNSProbeError.invalidOutput(
+                mode: arguments.first ?? "unknown"
+            )
+        }
+        let output = String(rawOutput.dropLast())
+        guard !output.contains("ar-"),
+              output.range(
+                of: "example\\.com",
+                options: [.regularExpression, .caseInsensitive]
+              ) == nil else {
+            throw SignedDNSProbeError.invalidOutput(
+                mode: arguments.first ?? "unknown"
+            )
+        }
+        return output
+    }
+
     private func signedProbeMatchesExpected(
         url: URL,
         expectedSHA256: String
     ) async -> Bool {
         let configuration = URLSessionConfiguration.ephemeral
+        // This lifecycle probe must not inherit the Mac's existing HTTP/SOCKS
+        // proxy. Otherwise another client (for example Clash Verge) can make
+        // the proxy-only canary reachable before AetherRoute connects and the
+        // gate can no longer prove which Network Extension carried the flow.
+        configuration.connectionProxyDictionary = [:]
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.httpCookieAcceptPolicy = .never
@@ -1513,6 +1776,62 @@ final class AetherRouteUITests: XCTestCase {
         } catch {
             return false
         }
+    }
+
+    private func installTemporarySignedBypassRules(
+        _ commaSeparatedRules: String,
+        in app: XCUIApplication
+    ) -> [String] {
+        let requestedRules = commaSeparatedRules.split(separator: ",").map {
+            String($0)
+        }
+        guard !requestedRules.isEmpty else { return [] }
+
+        openSettings(in: app, tabLabel: "Bypass")
+        let settings = app.windows["com_apple_SwiftUI_Settings_window"]
+        let field = settings.textFields["bypass-rule-field"]
+        let add = settings.buttons["add-bypass-rule"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        var added: [String] = []
+        for rule in requestedRules {
+            if settings.staticTexts[rule].exists { continue }
+            field.click()
+            app.typeKey("a", modifierFlags: .command)
+            app.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
+            field.typeText(rule)
+            XCTAssertTrue(add.isEnabled, "Invalid temporary bypass rule: \(rule)")
+            add.click()
+            XCTAssertTrue(
+                settings.staticTexts[rule].waitForExistence(timeout: 3),
+                "Temporary bypass rule was not persisted: \(rule)"
+            )
+            added.append(rule)
+        }
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(
+            app.windows["main-AppWindow-1"].waitForExistence(timeout: 5)
+        )
+        return added
+    }
+
+    private func removeTemporarySignedBypassRules(
+        _ rules: [String],
+        in app: XCUIApplication
+    ) {
+        guard !rules.isEmpty, app.state != .notRunning else { return }
+        openSettings(in: app, tabLabel: "Bypass")
+        let settings = app.windows["com_apple_SwiftUI_Settings_window"]
+        for rule in rules.reversed() {
+            let remove = settings.buttons["Remove \(rule)"]
+            guard remove.waitForExistence(timeout: 2) else { continue }
+            remove.click()
+            let removed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == false"),
+                object: remove
+            )
+            _ = XCTWaiter.wait(for: [removed], timeout: 3)
+        }
+        app.typeKey("w", modifierFlags: .command)
     }
 
     private func auditProductAccessibility(
@@ -2017,9 +2336,10 @@ final class AetherRouteUITests: XCTestCase {
             detailIdentifier
         ]
         for _ in 0..<3 {
-            app.activate()
-            guard app.wait(for: .runningForeground, timeout: 2) else {
-                continue
+            if !tab.isHittable {
+                settingsWindow.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.5, dy: 0.04)
+                ).click()
             }
             let hittable = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "hittable == true"),
@@ -2189,7 +2509,7 @@ final class AetherRouteUITests: XCTestCase {
             XCTAssertTrue(
                 app.descendants(matching: .any)[
                     destination.pageIdentifier
-                ].waitForExistence(timeout: 2),
+                ].waitForExistence(timeout: 5),
                 "Navigation did not reach \(destination.pageIdentifier)."
             )
             XCTAssertTrue(
@@ -2373,6 +2693,119 @@ final class AetherRouteUITests: XCTestCase {
         ) == .completed
     }
 
+    private enum ConnectionStartOutcome {
+        case connected
+        case failed(String)
+        case returnedToIdle
+        case timedOut
+    }
+
+    private func waitForConnectionStart(
+        on primary: XCUIElement,
+        in app: XCUIApplication,
+        timeout: TimeInterval
+    ) -> ConnectionStartOutcome {
+        let startupBegan = XCTNSPredicateExpectation(
+            predicate: NSPredicate(
+                format: "label == %@ OR label == %@ OR label == %@",
+                "Cancel",
+                "Disconnect",
+                "Retry"
+            ),
+            object: primary
+        )
+        let beganResult = XCTWaiter.wait(
+            for: [startupBegan],
+            timeout: min(5, timeout)
+        )
+        guard beganResult == .completed else {
+            return primary.label == "Connect" ? .returnedToIdle : .timedOut
+        }
+
+        switch primary.label {
+        case "Disconnect":
+            return .connected
+        case "Retry":
+            return .failed(connectionFailureDetail(in: app))
+        case "Cancel":
+            break
+        default:
+            return .timedOut
+        }
+
+        let startupFinished = XCTNSPredicateExpectation(
+            predicate: NSPredicate(
+                format: "label == %@ OR label == %@ OR label == %@",
+                "Disconnect",
+                "Retry",
+                "Connect"
+            ),
+            object: primary
+        )
+        guard XCTWaiter.wait(
+            for: [startupFinished],
+            timeout: max(0, timeout - 5)
+        ) == .completed else {
+            return .timedOut
+        }
+        switch primary.label {
+        case "Disconnect":
+            return .connected
+        case "Retry":
+            return .failed(connectionFailureDetail(in: app))
+        case "Connect":
+            return .returnedToIdle
+        default:
+            return .timedOut
+        }
+    }
+
+    private func connectionFailureDetail(in app: XCUIApplication) -> String {
+        let failedStatuses = app.staticTexts.matching(
+            NSPredicate(format: "label == %@", "Unavailable")
+        )
+        guard failedStatuses.firstMatch.waitForExistence(timeout: 1) else {
+            return "No failure detail was exposed by the app."
+        }
+
+        // More than one overview metric can legitimately render
+        // "Unavailable". Address each resolved element by index so XCTest
+        // never turns the real provider failure into an ambiguous-match
+        // exception. The connection title is the one carrying statusDetail as
+        // its accessibility value, so prefer a non-label value.
+        let candidateCount = min(failedStatuses.count, 16)
+        var readableFallback: String?
+        for index in 0..<candidateCount {
+            let candidate = failedStatuses.element(boundBy: index)
+            guard candidate.exists else { continue }
+            if let value = candidate.value as? String,
+               let detail = readableFailureDetail(value),
+               detail != "Unavailable" {
+                return detail
+            }
+            if readableFallback == nil,
+               let label = readableFailureDetail(candidate.label),
+               label != "Unavailable" {
+                readableFallback = label
+            }
+        }
+        return readableFallback
+            ?? "The app reported an unavailable connection without readable detail."
+    }
+
+    private func readableFailureDetail(_ rawValue: String) -> String? {
+        let singleLine = rawValue.unicodeScalars.map { scalar in
+            CharacterSet.controlCharacters.contains(scalar)
+                || CharacterSet.whitespacesAndNewlines.contains(scalar)
+                ? " "
+                : String(scalar)
+        }.joined()
+        let compact = singleLine.split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        guard !compact.isEmpty else { return nil }
+        return String(compact.prefix(512))
+    }
+
     private func waitForValue(
         _ value: String,
         on element: XCUIElement,
@@ -2389,11 +2822,69 @@ final class AetherRouteUITests: XCTestCase {
         ) == .completed
     }
 
+    private func waitForSelected(
+        _ element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        XCTWaiter.wait(
+            for: [
+                XCTNSPredicateExpectation(
+                    predicate: NSPredicate(
+                        format: "value == 1 OR value == '1' OR selected == true"
+                    ),
+                    object: element
+                ),
+            ],
+            timeout: timeout
+        ) == .completed
+    }
+
+    private func controlHasSelectedValue(_ element: XCUIElement) -> Bool {
+        if let number = element.value as? NSNumber {
+            return number.boolValue
+        }
+        if let string = element.value as? String {
+            return string == "1" || string.caseInsensitiveCompare("true") == .orderedSame
+        }
+        return element.isSelected
+    }
+
     private func attachFailureScreenshot(_ app: XCUIApplication, name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+}
+
+private struct SignedDNSProbeScript {
+    let url: URL
+    let expectedSHA256: String
+}
+
+private enum SignedDNSProbeError: LocalizedError {
+    case invalidConfiguration
+    case integrityChanged
+    case launchFailed
+    case timedOut
+    case failed(mode: String, status: Int32)
+    case invalidOutput(mode: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidConfiguration:
+            "The signed DNS probe configuration is invalid."
+        case .integrityChanged:
+            "The signed DNS probe changed after validation."
+        case .launchFailed:
+            "The signed DNS probe could not be launched."
+        case .timedOut:
+            "The signed DNS probe exceeded its bounded runtime."
+        case let .failed(mode, status):
+            "The signed DNS probe mode \(mode) exited with status \(status)."
+        case let .invalidOutput(mode):
+            "The signed DNS probe mode \(mode) returned invalid evidence."
+        }
     }
 }
 

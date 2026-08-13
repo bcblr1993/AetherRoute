@@ -30,36 +30,26 @@ struct SupportDiagnosticsView: View {
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var isCreatingReport = false
+    @State private var debug = DebugLoggingController()
+    @State private var debugDocument: DiagnosticReportDocument?
+    @State private var isDebugExporterPresented = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .top, spacing: 16) {
-                    Image(systemName: "stethoscope")
-                        .font(.system(size: 25, weight: .medium))
-                        .foregroundStyle(.blue)
-                        .frame(width: 52, height: 52)
-                        .background(
-                            Color.blue.opacity(0.10),
-                            in: RoundedRectangle(
-                                cornerRadius: 14,
-                                style: .continuous
-                            )
-                        )
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Private diagnostics")
-                            .font(.title2.weight(.semibold))
-                        Text("Create a bounded support report only when you choose to save it. Nothing is uploaded automatically.")
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+            VStack(alignment: .leading, spacing: AetherVisual.s5) {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                    Text("Diagnostics")
+                        .font(.title2.weight(.semibold))
+                    Text("Create a bounded support report only when you choose to save it. Nothing is uploaded automatically.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 diagnosticSection(
                     title: "Included",
-                    symbol: "checkmark.shield",
-                    tint: .teal,
+                    symbol: "checkmark.circle.fill",
+                    tint: .green,
                     items: [
                         "App, build, macOS, and Apple silicon version",
                         "Connection, engine, and routing state",
@@ -71,8 +61,8 @@ struct SupportDiagnosticsView: View {
 
                 diagnosticSection(
                     title: "Always omitted",
-                    symbol: "eye.slash",
-                    tint: .orange,
+                    symbol: "minus.circle",
+                    tint: .secondary,
                     items: [
                         "Profile names, YAML, subscription URLs, and credentials",
                         "Source and destination addresses",
@@ -81,7 +71,7 @@ struct SupportDiagnosticsView: View {
                 )
 
                 HStack {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
                         Text("JSON · AR1")
                             .font(.subheadline.weight(.semibold))
                         Text("Maximum 64 KiB. Review the file before sharing it.")
@@ -102,11 +92,10 @@ struct SupportDiagnosticsView: View {
                     .disabled(isCreatingReport)
                     .accessibilityIdentifier("export-diagnostics")
                 }
-                .padding(18)
-                .background(
-                    Color.blue.opacity(0.06),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                )
+                .padding(AetherVisual.s4)
+                .aetherPanel()
+
+                debugLoggingSection
 
                 if let statusMessage {
                     Label(
@@ -116,7 +105,7 @@ struct SupportDiagnosticsView: View {
                             : "checkmark.circle.fill"
                     )
                     .font(.callout)
-                    .foregroundStyle(statusIsError ? .red : .teal)
+                    .foregroundStyle(statusIsError ? .red : .green)
                     .accessibilityIdentifier("diagnostics-status")
                 }
             }
@@ -126,6 +115,12 @@ struct SupportDiagnosticsView: View {
             .frame(maxWidth: AetherVisual.formMaxWidth)
             .frame(maxWidth: .infinity)
         }
+        .fileExporter(
+            isPresented: $isDebugExporterPresented,
+            document: debugDocument,
+            contentType: .plainText,
+            defaultFilename: debug.suggestedFileName()
+        ) { _ in debugDocument = nil }
         .fileExporter(
             isPresented: $isExporterPresented,
             document: document,
@@ -148,29 +143,133 @@ struct SupportDiagnosticsView: View {
         }
     }
 
+    /// Debug logging is deliberately separate from the bounded support report
+    /// above: it records destination endpoints and source application
+    /// identifiers, which the privacy-scoped report never discloses.
+    @ViewBuilder
+    private var debugLoggingSection: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                Text("Debug logging")
+                    .font(.headline)
+                Text("Records what the network extensions do while you reproduce a problem. Logs stay on this Mac, rotate automatically, and never exceed 16 MB per component.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Picker("Detail", selection: Binding(
+                get: { debug.level },
+                set: { debug.setLevel($0) }
+            )) {
+                Text("Off").tag(DiagnosticLogLevel.off)
+                Text("Errors and summaries").tag(DiagnosticLogLevel.standard)
+                Text("Every connection").tag(DiagnosticLogLevel.verbose)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("debug-log-level")
+
+            if debug.level == .verbose {
+                Label(
+                    "Every connection is recorded. Use this only while reproducing a problem, then switch back.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if debug.isDebugEnabled {
+                Toggle("Show live log", isOn: $debug.isTailing)
+                    .accessibilityIdentifier("debug-log-live")
+
+                if debug.isTailing {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: AetherVisual.s1) {
+                            ForEach(Array(debug.lines.enumerated()), id: \.offset) { entry in
+                                Text(entry.element)
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .textSelection(.enabled)
+                                    .frame(
+                                        maxWidth: .infinity,
+                                        alignment: .leading
+                                    )
+                            }
+                        }
+                        .padding(AetherVisual.s2)
+                    }
+                    .frame(height: 220)
+                    .background(.quaternary.opacity(0.35))
+                    .clipShape(RoundedRectangle(cornerRadius: AetherVisual.panelRadius))
+                    .accessibilityIdentifier("debug-log-output")
+                }
+
+                HStack(spacing: AetherVisual.s2) {
+                    Button("Export Debug Log…") {
+                        debugDocument = debug.makeDocument()
+                        isDebugExporterPresented = debugDocument != nil
+                    }
+                    .accessibilityIdentifier("debug-log-export")
+
+                    Button("Delete Recorded Logs", role: .destructive) {
+                        debug.deleteRecordedLogs()
+                    }
+                    .accessibilityIdentifier("debug-log-delete")
+
+                    Spacer()
+
+                    Text(Self.byteLabel(debug.recordedBytes))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let message = debug.statusMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(debug.statusIsError ? .red : .green)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(AetherVisual.s4)
+        .background(.quaternary.opacity(0.18))
+        .clipShape(RoundedRectangle(cornerRadius: AetherVisual.panelRadius))
+    }
+
+    private static func byteLabel(_ bytes: Int) -> String {
+        guard bytes > 0 else { return "" }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(bytes))
+    }
+
+    /// The group label sits outside the card as a quiet caption, and the colour
+    /// rides on each row's symbol instead. Whether an item is included is a
+    /// property of the item, not of the heading, and a coloured heading here
+    /// read as a status the page does not have.
     private func diagnosticSection(
         title: LocalizedStringKey,
         symbol: String,
         tint: Color,
         items: [LocalizedStringKey]
     ) -> some View {
-        VStack(alignment: .leading, spacing: 13) {
-            Label(title, systemImage: symbol)
-                .font(.headline)
-                .foregroundStyle(tint)
-            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                Label(item, systemImage: "circle.fill")
-                    .labelStyle(DiagnosticItemLabelStyle(tint: tint))
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, AetherVisual.s1)
+
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    Label(item, systemImage: symbol)
+                        .labelStyle(DiagnosticItemLabelStyle(tint: tint))
+                }
             }
-        }
-        .padding(18)
-        .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06))
+            // Fill before the panel is applied, so every card on the page shares
+            // one right edge instead of hugging its own longest line.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(AetherVisual.s4)
+            .aetherPanel()
         }
     }
 
@@ -207,13 +306,13 @@ private struct DiagnosticItemLabelStyle: LabelStyle {
     let tint: Color
 
     func makeBody(configuration: Configuration) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
             configuration.icon
-                .font(.system(size: 6))
                 .foregroundStyle(tint)
             configuration.title
-                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
+        .font(.subheadline)
     }
 }

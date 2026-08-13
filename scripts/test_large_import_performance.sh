@@ -16,10 +16,11 @@ fi
 "$ROOT/scripts/bootstrap.sh" >/dev/null
 xcodebuild -quiet \
   -project "$ROOT/AetherRoute.xcodeproj" \
-  -scheme AetherRoute \
+  -scheme AetherRouteUnitTests \
   -configuration Release \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$TEMP/DerivedData" \
+  AETHERROUTE_ALLOW_ISOLATED_RELEASE_TEST_BUILD=YES \
   CODE_SIGNING_ALLOWED=YES \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_ENTITLEMENTS= \
@@ -27,6 +28,7 @@ xcodebuild -quiet \
   AD_HOC_CODE_SIGNING_ALLOWED=YES \
   ENABLE_TESTABILITY=YES \
   SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+  'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) AETHERROUTE_DEVELOPMENT_PREVIEW' \
   build-for-testing
 
 bundle="$TEMP/DerivedData/Build/Products/Release/AetherRouteTests.xctest"

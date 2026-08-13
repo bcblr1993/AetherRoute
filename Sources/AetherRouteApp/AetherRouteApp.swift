@@ -182,7 +182,10 @@ struct AetherRouteApp: App {
                 .environmentObject(language)
                 .environment(\.locale, language.locale)
         } label: {
-            Label(menuBarTitle, systemImage: menuBarIcon)
+            // Icon only. The symbol is a template image, so state is carried by
+            // its shape rather than by colour or by an adjacent title.
+            Image(systemName: menuBarIcon)
+                .accessibilityLabel(menuBarAccessibilityLabel)
         }
         .menuBarExtraStyle(.window)
 
@@ -205,7 +208,10 @@ struct AetherRouteApp: App {
                 .environmentObject(language)
                 .environment(\.locale, language.locale)
         }
-        .defaultSize(width: 940, height: 640)
+        .defaultSize(
+            width: AetherVisual.windowWidth,
+            height: AetherVisual.windowHeight
+        )
         .windowResizability(.contentMinSize)
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
     }
@@ -214,9 +220,11 @@ struct AetherRouteApp: App {
         tunnel.isConnected ? "network.badge.shield.half.filled" : "network"
     }
 
-    private var menuBarTitle: String {
-        guard tunnel.isConnected else { return productDisplayName }
-        return "↓ \(compactRate(tunnel.telemetry.downloadBytesPerSecond))  ↑ \(compactRate(tunnel.telemetry.uploadBytesPerSecond))"
+    /// The menu bar shows no text, so connection state has to reach VoiceOver
+    /// through the accessibility label instead. It reuses the same status
+    /// wording as the window rather than inventing a second vocabulary.
+    private var menuBarAccessibilityLabel: String {
+        "\(productDisplayName) · \(tunnel.statusTitle)"
     }
 
     private var productDisplayName: String {
@@ -240,18 +248,18 @@ private struct MenuBarContent: View {
                 privacyRequiredContent
             }
         }
-        .frame(width: 330)
+        .frame(width: AetherVisual.popoverWidth)
     }
 
     private var readyContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(spacing: AetherVisual.s3) {
                 AetherRouteBrandTile(
                     size: 38,
                     isActive: tunnel.isConnected
                 )
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text(tunnel.statusTitle)
                         .font(.headline)
                     Text(tunnel.statusDetail)
@@ -261,12 +269,12 @@ private struct MenuBarContent: View {
                 }
                 Spacer()
             }
-            .padding(16)
+            .padding(AetherVisual.s4)
 
             Divider()
 
             if tunnel.isConnected {
-                HStack(spacing: 16) {
+                HStack(spacing: AetherVisual.s4) {
                     MenuTrafficMetric(
                         title: "Download",
                         value: formattedRate(
@@ -287,31 +295,44 @@ private struct MenuBarContent: View {
                         symbol: "point.3.connected.trianglepath.dotted"
                     )
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, AetherVisual.s4)
+                .padding(.vertical, AetherVisual.s3)
 
                 Divider()
             }
 
-            VStack(spacing: 12) {
+            VStack(spacing: AetherVisual.s3) {
 #if AETHERROUTE_INDEPENDENT
-                Picker("Network engine", selection: networkEngineBinding) {
-                    ForEach(NetworkEngineMode.allCases) { mode in
-                        Text(mode.localizedTitleKey).tag(mode)
+                HStack(spacing: AetherVisual.s2) {
+                    Text("Engine")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 58, alignment: .leading)
+                    Picker("Network engine", selection: networkEngineBinding) {
+                        ForEach(NetworkEngineMode.allCases) { mode in
+                            Text(mode.localizedTitleKey).tag(mode)
+                        }
                     }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .disabled(!tunnel.canChangeNetworkEngine)
                 }
-                .pickerStyle(.segmented)
-                .foregroundStyle(Color(nsColor: .labelColor))
-                .disabled(!tunnel.canChangeNetworkEngine)
 #endif
 
-                Picker("Routing", selection: $tunnel.routingMode) {
-                    ForEach(RoutingMode.allCases, id: \.self) { mode in
-                        Text(mode.localizedTitleKey).tag(mode)
+                HStack(spacing: AetherVisual.s2) {
+                    Text("Routing")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 58, alignment: .leading)
+                    Picker("Routing", selection: $tunnel.routingMode) {
+                        ForEach(RoutingMode.allCases, id: \.self) { mode in
+                            Text(mode.localizedTitleKey).tag(mode)
+                        }
                     }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .disabled(!tunnel.canChangeRoutingMode)
                 }
-                .pickerStyle(.segmented)
-                .disabled(!tunnel.canChangeRoutingMode)
 
                 Button {
                     Task { await tunnel.setEnabled(!tunnel.isEnabled) }
@@ -320,9 +341,10 @@ private struct MenuBarContent: View {
                         .frame(maxWidth: .infinity)
                 }
                 .controlSize(.large)
+                .buttonStyle(.borderedProminent)
                 .disabled(!tunnel.canPerformPrimaryAction)
             }
-            .padding(16)
+            .padding(AetherVisual.s4)
 
             Divider()
 
@@ -335,7 +357,7 @@ private struct MenuBarContent: View {
                 Button("Quit") { NSApplication.shared.terminate(nil) }
             }
             .buttonStyle(.borderless)
-            .padding(14)
+            .padding(AetherVisual.s3)
         }
     }
 
@@ -352,10 +374,10 @@ private struct MenuBarContent: View {
 
     private var privacyRequiredContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(spacing: AetherVisual.s3) {
                 AetherRouteBrandTile(size: 38)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text("Privacy review required")
                         .font(.headline)
                     Text("Connection controls are locked")
@@ -364,11 +386,11 @@ private struct MenuBarContent: View {
                 }
                 Spacer()
             }
-            .padding(16)
+            .padding(AetherVisual.s4)
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: AetherVisual.s3) {
                 Text("Review how profiles, network traffic, and DNS requests are handled before AetherRoute creates a network extension configuration.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -384,7 +406,7 @@ private struct MenuBarContent: View {
                 .controlSize(.large)
                 .accessibilityIdentifier("menu-privacy-review-button")
             }
-            .padding(16)
+            .padding(AetherVisual.s4)
 
             Divider()
 
@@ -393,7 +415,7 @@ private struct MenuBarContent: View {
                 Button("Quit") { NSApplication.shared.terminate(nil) }
             }
             .buttonStyle(.borderless)
-            .padding(14)
+            .padding(AetherVisual.s4)
         }
     }
 
@@ -409,7 +431,7 @@ private struct MenuTrafficMetric: View {
     let symbol: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: AetherVisual.s1) {
             Label(title, systemImage: symbol)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -420,17 +442,6 @@ private struct MenuTrafficMetric: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
-}
-
-private func compactRate(_ bytes: UInt64) -> String {
-    let value = Double(bytes)
-    if value >= 1_000_000 {
-        return String(format: "%.1fM", value / 1_000_000)
-    }
-    if value >= 1_000 {
-        return String(format: "%.0fK", value / 1_000)
-    }
-    return "\(bytes)B"
 }
 
 private func formattedRate(_ bytes: UInt64) -> String {
@@ -473,68 +484,6 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-private struct SettingsTabButton: View {
-    @Environment(\.controlActiveState) private var controlActiveState
-
-    let tab: SettingsTab
-    let isSelected: Bool
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: tab.symbol)
-                    .frame(width: 18)
-                Text(tab.title)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .font(.body)
-            .foregroundStyle(foregroundColor)
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(backgroundColor)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .accessibilityLabel(tab.title)
-        .accessibilityIdentifier("settings-tab-\(tab.rawValue)")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private var foregroundColor: Color {
-        Color(
-            nsColor: isSelected && selectionIsEmphasized
-                ? .alternateSelectedControlTextColor
-                : .labelColor
-        )
-    }
-
-    private var backgroundColor: Color {
-        if isSelected {
-            return Color(
-                nsColor: selectionIsEmphasized
-                    ? .selectedContentBackgroundColor
-                    : .unemphasizedSelectedContentBackgroundColor
-            )
-        }
-        if isHovered {
-            return Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
-        }
-        return .clear
-    }
-
-    private var selectionIsEmphasized: Bool {
-        controlActiveState == .key
-    }
-}
-
 private struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var tunnel: TunnelManager
@@ -558,22 +507,14 @@ private struct SettingsView: View {
 
     var body: some View {
         NavigationSplitView {
-            ScrollView {
-                VStack(spacing: 4) {
-                    ForEach(SettingsTab.allCases) { tab in
-                        SettingsTabButton(
-                            tab: tab,
-                            isSelected: selectedTab == tab
-                        ) {
-                            UIResponsivenessProbe.begin(
-                                "settings.\(tab.rawValue)"
-                            )
-                            selectedTab = tab
-                        }
-                    }
+            List(selection: $selectedTab) {
+                ForEach(SettingsTab.allCases) { tab in
+                    Label(tab.title, systemImage: tab.symbol)
+                        .tag(Optional(tab))
+                        .accessibilityIdentifier("settings-tab-\(tab.rawValue)")
+                }
             }
-            .padding(8)
-        }
+            .listStyle(.sidebar)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("settings-sidebar-list")
             .navigationSplitViewColumnWidth(min: 176, ideal: 190, max: 216)
@@ -600,6 +541,10 @@ private struct SettingsView: View {
         .accessibilityLabel("AetherRoute settings")
         .accessibilityIdentifier("aetherroute-settings-root")
         .frame(width: 960, height: 640)
+        .onChange(of: selectedTab) { _, tab in
+            guard let tab else { return }
+            UIResponsivenessProbe.begin("settings.\(tab.rawValue)")
+        }
         .id(language.preference)
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .topLeading) {
@@ -662,11 +607,9 @@ private struct SettingsView: View {
 
 #if AETHERROUTE_INDEPENDENT
             Section("Network engine") {
-                HStack(spacing: 12) {
+                HStack(spacing: AetherVisual.s3) {
                     Text("Traffic capture")
-                        .foregroundStyle(
-                            colorScheme == .dark ? Color.white : Color.black
-                        )
+                        .foregroundStyle(.primary)
 
                     Spacer(minLength: 12)
 
@@ -683,16 +626,14 @@ private struct SettingsView: View {
 
                 Text(tunnel.networkEngineMode.localizedDetail)
                     .font(.subheadline)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.secondary)
             }
 #endif
 
             Section("Routing") {
-                HStack(spacing: 12) {
+                HStack(spacing: AetherVisual.s3) {
                     Text("Default routing mode")
-                        .foregroundStyle(
-                            colorScheme == .dark ? Color.white : Color.black
-                        )
+                        .foregroundStyle(.primary)
 
                     Spacer(minLength: 12)
 
@@ -743,7 +684,6 @@ private struct SettingsView: View {
                     .tag(AppLanguagePreference.english)
             }
             .pickerStyle(.segmented)
-            .foregroundStyle(Color(nsColor: .labelColor))
             .accessibilityIdentifier("app-language-picker")
 
             Label(
@@ -751,7 +691,7 @@ private struct SettingsView: View {
                 systemImage: "globe"
             )
             .font(.subheadline)
-            .foregroundStyle(.primary)
+            .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -792,7 +732,7 @@ private struct SettingsView: View {
             .accessibilityIdentifier("local-proxy-toggle")
 
             LabeledContent("HTTP proxy") {
-                HStack(spacing: 10) {
+                HStack(spacing: AetherVisual.s3) {
                     Text(
                         verbatim:
                             "127.0.0.1:\(tunnel.localProxySettings.httpPort)"
@@ -812,7 +752,7 @@ private struct SettingsView: View {
             .disabled(!canEditLocalProxyPorts)
 
             LabeledContent("SOCKS5 proxy") {
-                HStack(spacing: 10) {
+                HStack(spacing: AetherVisual.s3) {
                     Text(
                         verbatim:
                             "127.0.0.1:\(tunnel.localProxySettings.socksPort)"
@@ -854,9 +794,7 @@ private struct SettingsView: View {
                     ?? tunnel.localProxySettingsMessage {
                     Text(message)
                         .font(.caption)
-                        .foregroundStyle(
-                            colorScheme == .dark ? Color.white : Color.black
-                        )
+                        .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .multilineTextAlignment(.trailing)
                         .accessibilityIdentifier("local-proxy-status")
@@ -865,7 +803,7 @@ private struct SettingsView: View {
 
             Label(localProxyDetail, systemImage: localProxyDetailSymbol)
                 .font(.subheadline)
-                .foregroundStyle(.primary)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
         }
@@ -1020,7 +958,7 @@ private struct SettingsView: View {
     private var shortcutStatusColor: Color {
         switch automation.shortcutState {
         case .disabled: .secondary
-        case .active: AetherVisual.success
+        case .active: Color.green
         case .conflict: .orange
         }
     }
@@ -1072,7 +1010,7 @@ private struct ShortcutAssignmentRow: View {
             Button {
                 isPresentingChoices = true
             } label: {
-                HStack(spacing: 7) {
+                HStack(spacing: AetherVisual.s2) {
                     Text(selection.displayTitle)
                         .monospaced()
                     Image(systemName: "chevron.down")
@@ -1095,11 +1033,11 @@ private struct ShortcutAssignmentRow: View {
     }
 
     private var shortcutChoices: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
             Text(title)
                 .font(.headline)
-                .padding(.horizontal, 10)
-                .padding(.top, 6)
+                .padding(.horizontal, AetherVisual.s3)
+                .padding(.top, AetherVisual.s2)
 
             Divider()
 
@@ -1114,17 +1052,17 @@ private struct ShortcutAssignmentRow: View {
                         Spacer()
                         if key == selection {
                             Image(systemName: "checkmark")
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(Color.accentColor)
                         }
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, AetherVisual.s3)
                 .frame(height: 28)
             }
         }
-        .padding(8)
+        .padding(AetherVisual.s2)
         .frame(width: 230)
     }
 }

@@ -2,10 +2,19 @@ import AetherRouteKit
 import Darwin
 import Foundation
 @preconcurrency import NetworkExtension
+import OSLog
+
+private enum PacketCoreRuntimeLog {
+    static let logger = Logger(
+        subsystem: "com.aetherroute.desktop",
+        category: "packet-core"
+    )
+}
 
 protocol CoreBridge: Sendable {
     func start(
         configuration: TunnelConfiguration,
+        snapshot: ProviderLaunchSnapshot,
         completion: @escaping @Sendable (Error?) -> Void
     ) throws
     func selectorSnapshot(group: String) throws -> ProxySelectionState
@@ -50,17 +59,31 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
 
     func start(
         configuration: TunnelConfiguration,
+        snapshot: ProviderLaunchSnapshot,
         completion: @escaping @Sendable (Error?) -> Void
     ) throws {
+        PacketCoreRuntimeLog.logger.info("stage=validateLaunchSnapshot begin")
+        try snapshot.validate()
+        PacketCoreRuntimeLog.logger.info("stage=validateLaunchSnapshot success")
+        PacketCoreRuntimeLog.logger.info("stage=resolveRuntimeStore begin")
         let store = try ActiveProfileStore.applicationGroup()
-        let profile = try store.loadValidated()
-        let dnsPolicy = try DNSRuntimePolicyStore.applicationGroup().load(
-            forProfileYAML: profile.yaml
+        PacketCoreRuntimeLog.logger.info("stage=resolveRuntimeStore success")
+        let profileYAML = snapshot.profileYAML
+        PacketCoreRuntimeLog.logger.info(
+            "stage=installLaunchResources begin count=\(snapshot.routingResources.count, privacy: .public)"
         )
-        let savedSelections = try ProxySelectionStore.applicationGroup()
-            .selections(forProfileYAML: profile.yaml)
+        let resourceStore = RoutingResourceStore(
+            applicationSupportDirectory: store.directoryURL
+        )
+        for (kind, data) in snapshot.routingResources {
+            _ = try resourceStore.installUserProvided(data: data, kind: kind)
+        }
+        _ = try resourceStore.prepareRuntimeResources(for: profileYAML)
+        PacketCoreRuntimeLog.logger.info("stage=installLaunchResources success")
+        let dnsPolicy = snapshot.dnsPolicy
+        let savedSelections = snapshot.proxySelections
         let manualGroups = Set(
-            ProfileConfigurationInspector.inspect(yaml: profile.yaml)
+            ProfileConfigurationInspector.inspect(yaml: profileYAML)
                 .proxyGroups
                 .filter { $0.strategy.caseInsensitiveCompare("select") == .orderedSame }
                 .map(\.name)
@@ -68,52 +91,81 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         let restorableSelections = savedSelections.filter {
             manualGroups.contains($0.key)
         }
+        PacketCoreRuntimeLog.logger.info(
+            "stage=loadSelections success saved=\(savedSelections.count, privacy: .public) restorable=\(restorableSelections.count, privacy: .public)"
+        )
         let runtimeDirectory = store.directoryURL.appendingPathComponent(
             "Runtime",
             isDirectory: true
         )
-        try FileManager.default.createDirectory(
-            at: runtimeDirectory,
-            withIntermediateDirectories: true
-        )
+        PacketCoreRuntimeLog.logger.info("stage=prepareRuntimeDirectory begin")
+        do {
+            try FileManager.default.createDirectory(
+                at: runtimeDirectory,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            PacketCoreRuntimeLog.logger.error(
+                "stage=prepareRuntimeDirectory failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            throw error
+        }
+        PacketCoreRuntimeLog.logger.info("stage=prepareRuntimeDirectory success")
 
         stateLock.withLock {
             state = State(running: true)
         }
 
         let retainedContext = Unmanaged.passRetained(self).toOpaque()
+        PacketCoreRuntimeLog.logger.info("stage=installPacketBridge begin")
         let installed = clash_install_packet_flow(
             aetherRoutePacketOutput,
             retainedContext
         )
         guard installed == 1 else {
+            PacketCoreRuntimeLog.logger.error(
+                "stage=installPacketBridge failed status=\(installed, privacy: .public)"
+            )
             Unmanaged<RustCoreBridge>.fromOpaque(retainedContext).release()
             stateLock.withLock { state.running = false }
             throw PacketTunnelError.bridgeInstallationFailed
         }
+        PacketCoreRuntimeLog.logger.info("stage=installPacketBridge success")
         stateLock.withLock {
             state.bridgeInstalled = true
             state.retainedContext = retainedContext
         }
 
         beginReadingPackets()
+        PacketCoreRuntimeLog.logger.info("stage=startEngine begin")
         startEngine(
-            profile: profile.yaml,
+            profile: profileYAML,
             runtimeDirectory: runtimeDirectory,
             mtu: configuration.mtu,
             routingMode: configuration.mode,
             dnsPolicy: dnsPolicy,
             localProxy: configuration.localProxy
         )
+        PacketCoreRuntimeLog.logger.info("stage=startEngine submitted")
+        PacketCoreRuntimeLog.logger.info(
+            "stage=readiness begin timeoutSeconds=\(TunnelStartupTimingPolicy.providerCoreReadinessTimeoutSeconds, privacy: .public)"
+        )
 
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
-            let deadline = ContinuousClock.now + .seconds(8)
+            let deadline = ContinuousClock.now
+                + TunnelStartupTimingPolicy.providerCoreReadinessTimeout
             while ContinuousClock.now < deadline {
                 if clash_packet_flow_ready() == 1 {
+                    PacketCoreRuntimeLog.logger.info("stage=readiness success")
                     do {
+                        PacketCoreRuntimeLog.logger.info("stage=restoreSelections begin")
                         try self.restoreSelections(restorableSelections)
+                        PacketCoreRuntimeLog.logger.info("stage=restoreSelections success")
                     } catch {
+                        PacketCoreRuntimeLog.logger.error(
+                            "stage=restoreSelections failed error=\(String(reflecting: error), privacy: .public)"
+                        )
                         if self.finishStartup() {
                             completion(error)
                         }
@@ -126,6 +178,9 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                     return
                 }
                 if let failure = self.currentFailure() {
+                    PacketCoreRuntimeLog.logger.error(
+                        "stage=readiness failed error=\(String(reflecting: failure), privacy: .public)"
+                    )
                     if self.finishStartup() {
                         completion(failure)
                     }
@@ -133,6 +188,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                     return
                 }
                 if !self.isRunning() {
+                    PacketCoreRuntimeLog.logger.info("stage=readiness cancelled")
                     if self.finishStartup() {
                         completion(PacketTunnelError.startupCancelled)
                     }
@@ -142,6 +198,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             }
 
             if self.finishStartup() {
+                PacketCoreRuntimeLog.logger.error("stage=readiness failed reason=timeout")
                 completion(PacketTunnelError.readinessTimedOut)
             }
             self.stop()
@@ -149,6 +206,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
     }
 
     func stop() {
+        PacketCoreRuntimeLog.logger.info("stage=stopCore requested")
         let retainedContext = stateLock.withLock {
             guard state.bridgeInstalled, !state.stopping else {
                 return Optional<UnsafeMutableRawPointer>.none
@@ -160,14 +218,22 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             state.retainedContext = nil
             return context
         }
-        guard let retainedContext else { return }
+        guard let retainedContext else {
+            PacketCoreRuntimeLog.logger.info("stage=stopCore skipped reason=inactive")
+            return
+        }
 
+        PacketCoreRuntimeLog.logger.info("stage=shutdownEngine begin")
         controlLock.withLock {
-            _ = clash_shutdown()
+            let status = clash_shutdown()
+            PacketCoreRuntimeLog.logger.info(
+                "stage=shutdownEngine status=\(status, privacy: .public)"
+            )
             clash_uninstall_packet_flow()
         }
         stateLock.withLock { state.stopping = false }
         Unmanaged<RustCoreBridge>.fromOpaque(retainedContext).release()
+        PacketCoreRuntimeLog.logger.info("stage=stopCore complete")
     }
 
     func selectorSnapshot(group: String) throws -> ProxySelectionState {
@@ -316,6 +382,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
 
         engineQueue.async { [weak self] in
             guard let self else { return }
+            PacketCoreRuntimeLog.logger.info("stage=engineWorker entered")
             var dnsPolicyABI = clash_packet_dns_policy_v1_t(
                 struct_size: UInt32(
                     MemoryLayout<clash_packet_dns_policy_v1_t>.size
@@ -360,17 +427,23 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                 }
             }
             guard let result else {
+                PacketCoreRuntimeLog.logger.error("stage=engineWorker failed reason=noResult")
                 self.recordFailure(PacketTunnelError.engineReturnedNoResult)
                 return
             }
             let message = String(cString: result)
             clash_free_string(result)
             if !self.isStopping() {
+                PacketCoreRuntimeLog.logger.error(
+                    "stage=engineWorker returned hasMessage=\(!message.isEmpty, privacy: .public)"
+                )
                 self.recordFailure(
                     message.isEmpty
                         ? PacketTunnelError.engineStoppedUnexpectedly
                         : PacketTunnelError.engineFailed(message)
                 )
+            } else {
+                PacketCoreRuntimeLog.logger.info("stage=engineWorker stopped")
             }
         }
     }
@@ -551,7 +624,7 @@ enum PacketTunnelError: LocalizedError {
         case .engineStoppedUnexpectedly:
             "The protocol engine stopped before the tunnel was closed."
         case .readinessTimedOut:
-            "The packet tunnel did not become ready within eight seconds."
+            "The packet tunnel protocol core did not become ready before its bounded startup deadline."
         case .startupCancelled:
             "Packet tunnel startup was cancelled."
         }

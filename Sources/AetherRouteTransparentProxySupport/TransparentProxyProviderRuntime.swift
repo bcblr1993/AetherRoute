@@ -1,6 +1,14 @@
 import AetherRouteKit
 import Foundation
 @preconcurrency import NetworkExtension
+import OSLog
+
+private enum TransparentLifecycleLog {
+    static let logger = Logger(
+        subsystem: "com.aetherroute.desktop",
+        category: "transparent-lifecycle"
+    )
+}
 
 /// The narrow engine surface owned by one transparent-proxy provider runtime.
 /// The production conformance lives in AetherRouteFlowCoreBridge; tests use an
@@ -159,13 +167,13 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
 
     public func identityDisposition(
         for flow: NEAppProxyFlow
-    ) -> TransparentProxySelfIdentityGuard.Evaluation.Disposition {
+    ) -> TransparentProxySelfIdentityGuard.Disposition {
         identityGuard.evaluate(flow: flow).disposition
     }
 
     func identityDisposition(
         auditToken: Data?
-    ) -> TransparentProxySelfIdentityGuard.Evaluation.Disposition {
+    ) -> TransparentProxySelfIdentityGuard.Disposition {
         identityGuard.evaluate(auditToken: auditToken).disposition
     }
 
@@ -215,6 +223,7 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
     }
 
     public func stop(completion: @escaping @Sendable () -> Void) {
+        TransparentLifecycleLog.logger.info("stage=flowRuntimeStop requested")
         let action = admissionLock.withLock { () -> RuntimeStopAction in
             if stopFinished {
                 return .completeNow
@@ -228,12 +237,18 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
 
         switch action {
         case .completeNow:
+            TransparentLifecycleLog.logger.info("stage=flowRuntimeStop alreadyComplete")
             completion()
         case .wait:
+            TransparentLifecycleLog.logger.info("stage=flowRuntimeStop coalesced")
             break
         case .start:
+            TransparentLifecycleLog.logger.info("stage=flowRuntimeDrain begin")
             registry.stopAll { [self] in
+                TransparentLifecycleLog.logger.info("stage=flowRuntimeDrain success")
+                TransparentLifecycleLog.logger.info("stage=flowEngineShutdown begin")
                 engine.shutdown { [self] in
+                    TransparentLifecycleLog.logger.info("stage=flowEngineShutdown success")
                     finishStop()
                 }
             }
@@ -307,6 +322,9 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
             defer { stopCompletions.removeAll(keepingCapacity: false) }
             return stopCompletions
         }
+        TransparentLifecycleLog.logger.info(
+            "stage=flowRuntimeStop complete callbacks=\(completions.count, privacy: .public)"
+        )
         completions.forEach { $0() }
     }
 
@@ -384,15 +402,20 @@ public final class TransparentProxyProviderLifecycleController:
     }
 
     public func start(
+        runtimeFactory startRuntimeFactory: RuntimeFactory? = nil,
         installNetworkSettings: @escaping SettingsInstaller,
         completion: @escaping StartCompletion
     ) {
+        TransparentLifecycleLog.logger.info("stage=lifecycleStart requested")
         let completion = ProviderStartCompletion(
             queue: callbackQueue,
             handler: completion
         )
         lifecycleQueue.async { [self] in
             guard phase == .idle else {
+                TransparentLifecycleLog.logger.error(
+                    "stage=lifecycleStart rejected reason=alreadyActive"
+                )
                 completion.call(.alreadyActive)
                 return
             }
@@ -400,22 +423,34 @@ public final class TransparentProxyProviderLifecycleController:
                 failClosedRegistry.resetForStart(),
                 flowHandlerGate.resetForStart()
             else {
+                TransparentLifecycleLog.logger.error(
+                    "stage=lifecycleStart rejected reason=gateReset"
+                )
                 completion.call(.alreadyActive)
                 return
             }
 
             let id = UUID()
             phase = .preparingRuntime
+            TransparentLifecycleLog.logger.info(
+                "stage=lifecyclePhase value=preparingRuntime"
+            )
             operationID = id
             pendingStart = completion
             pendingStartError = nil
             stopRequested = false
 
-            preparationQueue.async { [self, runtimeFactory] in
+            let selectedRuntimeFactory = startRuntimeFactory ?? runtimeFactory
+            preparationQueue.async { [self, selectedRuntimeFactory] in
+                TransparentLifecycleLog.logger.info("stage=runtimeFactory begin")
                 let result: Result<TransparentProxyFlowRuntime, Error>
                 do {
-                    result = .success(try runtimeFactory())
+                    result = .success(try selectedRuntimeFactory())
+                    TransparentLifecycleLog.logger.info("stage=runtimeFactory success")
                 } catch {
+                    TransparentLifecycleLog.logger.error(
+                        "stage=runtimeFactory failed error=\(String(reflecting: error), privacy: .public)"
+                    )
                     result = .failure(error)
                 }
                 lifecycleQueue.async { [self] in
@@ -430,6 +465,7 @@ public final class TransparentProxyProviderLifecycleController:
     }
 
     public func stop(completion: @escaping StopCompletion) {
+        TransparentLifecycleLog.logger.info("stage=lifecycleStop requested")
         let completion = ProviderStopCompletion(
             queue: callbackQueue,
             handler: completion
@@ -437,19 +473,27 @@ public final class TransparentProxyProviderLifecycleController:
         lifecycleQueue.async { [self] in
             switch phase {
             case .idle:
+                TransparentLifecycleLog.logger.info("stage=lifecycleStop phase=idle")
                 stopRequested = true
                 stopCompletions.append(completion)
                 phase = .stopping
+                TransparentLifecycleLog.logger.info("stage=lifecyclePhase value=stopping")
                 beginProviderDrain()
             case .preparingRuntime, .installingNetworkSettings:
+                TransparentLifecycleLog.logger.info(
+                    "stage=lifecycleStop phase=startInFlight"
+                )
                 stopRequested = true
                 stopCompletions.append(completion)
             case .running:
+                TransparentLifecycleLog.logger.info("stage=lifecycleStop phase=running")
                 stopRequested = true
                 stopCompletions.append(completion)
                 phase = .stopping
+                TransparentLifecycleLog.logger.info("stage=lifecyclePhase value=stopping")
                 beginProviderDrain()
             case .stopping:
+                TransparentLifecycleLog.logger.info("stage=lifecycleStop phase=stopping")
                 stopCompletions.append(completion)
             }
         }
@@ -485,13 +529,13 @@ public final class TransparentProxyProviderLifecycleController:
 
     public func identityDisposition(
         for flow: NEAppProxyFlow
-    ) -> TransparentProxySelfIdentityGuard.Evaluation.Disposition {
+    ) -> TransparentProxySelfIdentityGuard.Disposition {
         identityGuard.evaluate(flow: flow).disposition
     }
 
     func identityDisposition(
         auditToken: Data?
-    ) -> TransparentProxySelfIdentityGuard.Evaluation.Disposition {
+    ) -> TransparentProxySelfIdentityGuard.Disposition {
         identityGuard.evaluate(auditToken: auditToken).disposition
     }
 
@@ -586,25 +630,43 @@ public final class TransparentProxyProviderLifecycleController:
         result: Result<TransparentProxyFlowRuntime, Error>,
         installer: @escaping SettingsInstaller
     ) {
-        guard phase == .preparingRuntime, operationID == id else { return }
+        guard phase == .preparingRuntime, operationID == id else {
+            TransparentLifecycleLog.logger.info(
+                "stage=completePreparation ignored reason=stale"
+            )
+            return
+        }
         switch result {
-        case .failure:
+        case let .failure(error):
+            TransparentLifecycleLog.logger.error(
+                "stage=completePreparation failed error=\(String(reflecting: error), privacy: .public)"
+            )
             pendingStartError = stopRequested
                 ? .startCancelled
                 : .runtimePreparationFailed
             phase = .stopping
+            TransparentLifecycleLog.logger.info("stage=lifecyclePhase value=stopping")
             beginProviderDrain()
         case let .success(preparedRuntime):
+            TransparentLifecycleLog.logger.info("stage=completePreparation success")
             runtime = preparedRuntime
             if stopRequested {
+                TransparentLifecycleLog.logger.info(
+                    "stage=completePreparation cancelledByStop"
+                )
                 pendingStartError = .startCancelled
                 phase = .stopping
+                TransparentLifecycleLog.logger.info("stage=lifecyclePhase value=stopping")
                 beginProviderDrain()
                 return
             }
 
             phase = .installingNetworkSettings
+            TransparentLifecycleLog.logger.info(
+                "stage=lifecyclePhase value=installingNetworkSettings"
+            )
             callbackQueue.async { [self] in
+                TransparentLifecycleLog.logger.info("stage=settingsInstaller submitted")
                 let once = SettingsInstallationCompletion { [self] installed in
                     lifecycleQueue.async { [self] in
                         completeSettingsInstallation(
@@ -624,10 +686,20 @@ public final class TransparentProxyProviderLifecycleController:
         guard
             phase == .installingNetworkSettings,
             operationID == id
-        else { return }
+        else {
+            TransparentLifecycleLog.logger.info(
+                "stage=settingsInstallation ignored reason=stale"
+            )
+            return
+        }
+
+        TransparentLifecycleLog.logger.info(
+            "stage=settingsInstallation result=\(installed, privacy: .public)"
+        )
 
         if installed, !stopRequested {
             phase = .running
+            TransparentLifecycleLog.logger.info("stage=lifecyclePhase value=running")
             operationID = nil
             let completion = pendingStart
             pendingStart = nil
@@ -639,12 +711,15 @@ public final class TransparentProxyProviderLifecycleController:
             ? .startCancelled
             : .networkSettingsInstallationFailed
         phase = .stopping
+        TransparentLifecycleLog.logger.info("stage=lifecyclePhase value=stopping")
         beginProviderDrain()
     }
 
     private func beginProviderDrain() {
+        TransparentLifecycleLog.logger.info("stage=providerDrain begin")
         flowHandlerGate.stop { [self] in
             failClosedRegistry.stopAll { [self] in
+                TransparentLifecycleLog.logger.info("stage=providerDrain gatesClosed")
                 lifecycleQueue.async { [self] in
                     providerDrainFinished()
                 }
@@ -653,6 +728,7 @@ public final class TransparentProxyProviderLifecycleController:
     }
 
     private func providerDrainFinished() {
+        TransparentLifecycleLog.logger.info("stage=providerDrain finished")
         guard let runtime else {
             finishWithoutRuntime()
             return
@@ -665,6 +741,7 @@ public final class TransparentProxyProviderLifecycleController:
     }
 
     private func finishRuntimeStop() {
+        TransparentLifecycleLog.logger.info("stage=finishRuntimeStop")
         let startCompletion = pendingStart
         let startError = pendingStartError
         let stopCallbacks = stopCompletions
@@ -674,6 +751,7 @@ public final class TransparentProxyProviderLifecycleController:
     }
 
     private func finishWithoutRuntime() {
+        TransparentLifecycleLog.logger.info("stage=finishWithoutRuntime")
         let startCompletion = pendingStart
         let startError = pendingStartError ?? .runtimePreparationFailed
         let stopCallbacks = stopCompletions
@@ -684,6 +762,7 @@ public final class TransparentProxyProviderLifecycleController:
 
     private func resetToIdle() {
         phase = .idle
+        TransparentLifecycleLog.logger.info("stage=lifecyclePhase value=idle")
         operationID = nil
         runtime = nil
         pendingStart = nil

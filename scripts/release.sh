@@ -7,6 +7,7 @@ NOTARY_PROFILE=${2:-}
 VERSION=${3:-}
 BUILD_NUMBER=${4:-}
 OUTPUT_DIRECTORY=${5:-}
+notary_keychain=${AETHERROUTE_NOTARY_KEYCHAIN:-}
 
 usage() {
   echo "usage: $0 /absolute/path/to/Signing.json notary-keychain-profile version build-number /absolute/output/directory" >&2
@@ -32,8 +33,19 @@ test -d "$OUTPUT_DIRECTORY" || {
   echo "output directory does not exist: $OUTPUT_DIRECTORY" >&2
   exit 1
 }
+if [ -n "$notary_keychain" ]; then
+  case "$notary_keychain" in
+    /*) ;;
+    *) echo "AETHERROUTE_NOTARY_KEYCHAIN must be absolute" >&2; exit 64 ;;
+  esac
+  test -f "$notary_keychain" || {
+    echo "configured notary Keychain is missing" >&2
+    exit 66
+  }
+fi
 
-for command in codesign file hdiutil jq lipo plutil security shasum spctl xcodebuild xcrun; do
+for command in codesign ditto file git hdiutil jq lipo plutil security \
+  shasum spctl syspolicy_check xcodebuild xcrun; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "release requires $command" >&2
     exit 1
@@ -93,6 +105,36 @@ distribution_product_id=${AETHERROUTE_DISTRIBUTION_PRODUCT_ID:-$(
   jq -r '.profiles[] | select(.role == "direct-host") | .bundleID' \
     "$SIGNING_CONFIG"
 )}
+printf '%s\n' "$distribution_product_id" \
+  | grep -Eq '^[A-Za-z0-9][A-Za-z0-9.-]{2,127}$' || {
+  echo "stable release requires a valid distribution product identifier" >&2
+  exit 64
+}
+update_signing_public_key_sha256=$(printf '%s' "$distribution_public_key" \
+  | base64 -D | shasum -a 256 | awk '{print $1}')
+
+git -C "$ROOT" diff --quiet -- || {
+  echo "stable release requires a clean source tree" >&2
+  exit 1
+}
+git -C "$ROOT" diff --cached --quiet -- || {
+  echo "stable release requires a clean source tree" >&2
+  exit 1
+}
+test -z "$(git -C "$ROOT" ls-files --others --exclude-standard)" || {
+  echo "stable release requires a clean source tree" >&2
+  exit 1
+}
+release_branch=$(git -C "$ROOT" symbolic-ref --quiet --short HEAD || true)
+test "$release_branch" = main || {
+  echo "stable release candidates must be created from main" >&2
+  exit 1
+}
+git_commit=$(git -C "$ROOT" rev-parse HEAD)
+printf '%s\n' "$git_commit" | grep -Eq '^[0-9a-f]{40}$' || {
+  echo "could not resolve the frozen release commit" >&2
+  exit 1
+}
 
 artifact_name="AetherRoute-$VERSION-arm64"
 final_dmg="$OUTPUT_DIRECTORY/$artifact_name.dmg"
@@ -122,9 +164,37 @@ signed_ne_cycles=$(awk -F= '$1 == "cycles_per_engine" {print $2}' \
   "$signed_ne_evidence_directory/result.txt")
 
 "$ROOT/scripts/signing_preflight.sh" "$SIGNING_CONFIG"
+identity=$(jq -r '.developerIDIdentitySHA1 | ascii_upcase' "$SIGNING_CONFIG")
+"$ROOT/scripts/verify_developer_id_private_key_access.sh" "$identity"
 "$ROOT/scripts/bootstrap.sh"
-xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" \
-  --output-format json >/dev/null
+if [ -n "$notary_keychain" ]; then
+  xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" \
+    --keychain "$notary_keychain" --output-format json >/dev/null
+else
+  xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" \
+    --output-format json >/dev/null
+fi
+
+submit_for_notarization() {
+  artifact=$1
+  result_path=$2
+  if [ -n "$notary_keychain" ]; then
+    xcrun notarytool submit "$artifact" \
+      --keychain-profile "$NOTARY_PROFILE" \
+      --keychain "$notary_keychain" \
+      --wait \
+      --output-format json >"$result_path"
+  else
+    xcrun notarytool submit "$artifact" \
+      --keychain-profile "$NOTARY_PROFILE" \
+      --wait \
+      --output-format json >"$result_path"
+  fi
+  test "$(jq -r '.status' "$result_path")" = Accepted || {
+    jq '{id,status,message}' "$result_path" >&2
+    exit 1
+  }
+}
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-release.XXXXXX")
 mounted=0
@@ -142,6 +212,12 @@ trap cleanup EXIT HUP INT TERM
 source_manifest_before="$temporary/source-before.txt"
 source_manifest_after="$temporary/source-after.txt"
 "$ROOT/scripts/source_manifest.sh" >"$source_manifest_before"
+source_manifest_sha256=$(awk \
+  '$1 == "MANIFEST_SHA256" {print $2}' "$source_manifest_before")
+printf '%s\n' "$source_manifest_sha256" | grep -Eq '^[0-9a-f]{64}$' || {
+  echo "could not resolve the frozen source manifest" >&2
+  exit 1
+}
 AETHERROUTE_DERIVED_DATA_PATH="$temporary/ReleaseValidationDerivedData" \
   "$ROOT/scripts/test.sh"
 "$ROOT/scripts/test_sanitizers.sh"
@@ -155,7 +231,6 @@ overrides="$temporary/AetherRouteRelease.xcconfig"
 "$ROOT/scripts/generate_signing_overrides.sh" \
   "$SIGNING_CONFIG" "$overrides" >/dev/null
 
-identity=$(jq -r '.developerIDIdentitySHA1 | ascii_upcase' "$SIGNING_CONFIG")
 profile_uuid() {
   role=$1
   profile_path=$(jq -r --arg role "$role" \
@@ -237,8 +312,26 @@ if ! xcodebuild \
 fi
 
 app="$archive/Products/Applications/AetherRoute.app"
-packet="$app/Contents/PlugIns/AetherRoutePacketTunnel.appex"
-transparent="$app/Contents/PlugIns/AetherRouteTransparentProxy.appex"
+actual_product_id=$(plutil -extract CFBundleIdentifier raw -o - \
+  "$app/Contents/Info.plist")
+test "$actual_product_id" = "$distribution_product_id" || {
+  echo "release product identifier differs from the signed host bundle" >&2
+  exit 1
+}
+minimum_system_version=$(plutil -extract LSMinimumSystemVersion raw -o - \
+  "$app/Contents/Info.plist")
+printf '%s\n' "$minimum_system_version" \
+  | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$' || {
+  echo "release app contains an invalid minimum system version" >&2
+  exit 1
+}
+packet_bundle=$(jq -r '.profiles[] | select(.role == "packet-tunnel") | .bundleID' \
+  "$SIGNING_CONFIG")
+transparent_bundle=$(jq -r \
+  '.profiles[] | select(.role == "transparent-proxy") | .bundleID' \
+  "$SIGNING_CONFIG")
+packet="$app/Contents/Library/SystemExtensions/$packet_bundle.systemextension"
+transparent="$app/Contents/Library/SystemExtensions/$transparent_bundle.systemextension"
 for bundle in "$app" "$packet" "$transparent"; do
   test -d "$bundle"
   codesign --verify --deep --strict --verbose=2 "$bundle"
@@ -250,7 +343,7 @@ for bundle in "$app" "$packet" "$transparent"; do
     | grep -F 'Timestamp=' >/dev/null
   entitlements="$temporary/$(basename "$bundle").entitlements.plist"
   codesign -d --entitlements :- "$bundle" >"$entitlements" 2>/dev/null
-  if [ "$(plutil -extract com.apple.security.get-task-allow raw -o - \
+  if [ "$(plutil -extract 'com\.apple\.security\.get-task-allow' raw -o - \
     "$entitlements" 2>/dev/null || echo false)" = true ]; then
     echo "release bundle contains get-task-allow: $bundle" >&2
     exit 1
@@ -258,16 +351,22 @@ for bundle in "$app" "$packet" "$transparent"; do
 done
 
 packet_entitlements="$temporary/$(basename "$packet").entitlements.plist"
-if [ "$(plutil -extract com.apple.security.network.server raw -o - \
+if [ "$(plutil -extract 'com\.apple\.security\.network\.server' raw -o - \
   "$packet_entitlements" 2>/dev/null || echo false)" != true ]; then
   echo "packet tunnel is missing its loopback listener entitlement" >&2
   exit 1
 fi
-for bundle in "$app" "$transparent"; do
+transparent_entitlements="$temporary/$(basename "$transparent").entitlements.plist"
+if [ "$(plutil -extract 'com\.apple\.security\.network\.server' raw -o - \
+  "$transparent_entitlements" 2>/dev/null || echo false)" != true ]; then
+  echo "transparent proxy is missing its UDP receive entitlement" >&2
+  exit 1
+fi
+for bundle in "$app"; do
   entitlements="$temporary/$(basename "$bundle").entitlements.plist"
-  if plutil -extract com.apple.security.network.server raw -o - \
+  if plutil -extract 'com\.apple\.security\.network\.server' raw -o - \
     "$entitlements" >/dev/null 2>&1; then
-    echo "network.server escaped the packet tunnel boundary: $bundle" >&2
+    echo "network.server escaped the Network Extension boundary: $bundle" >&2
     exit 1
   fi
 done
@@ -294,6 +393,29 @@ test "$mach_o_count" -ge 3 || {
   exit 1
 }
 
+# sysextd validates the installed app, not merely the enclosing DMG. Submit a
+# compact bootstrap DMG first and staple the app ticket so Network Extensions
+# can activate even when the destination Mac cannot contact Apple's
+# notarization service. The bootstrap DMG avoids unreliable large ZIP uploads.
+app_notary_stage="$temporary/app-notary-stage"
+app_notary_archive="$temporary/AetherRoute-app-notarization.dmg"
+app_notary_result="$temporary/app-notary-result.json"
+mkdir -p "$app_notary_stage"
+ditto "$app" "$app_notary_stage/AetherRoute.app"
+hdiutil create \
+  -volname "AetherRoute App Notarization" \
+  -srcfolder "$app_notary_stage" \
+  -format UDZO \
+  -imagekey zlib-level=9 \
+  "$app_notary_archive" >/dev/null
+codesign --force --timestamp --sign "$identity" "$app_notary_archive"
+submit_for_notarization "$app_notary_archive" "$app_notary_result"
+app_submission_id=$(jq -r '.id' "$app_notary_result")
+xcrun stapler staple "$app"
+xcrun stapler validate "$app"
+spctl --assess --type execute --verbose=4 "$app"
+syspolicy_check distribution "$app"
+
 stage="$temporary/stage"
 mkdir -p "$stage"
 ditto "$app" "$stage/AetherRoute.app"
@@ -307,16 +429,9 @@ hdiutil create \
   "$unsigned_dmg" >/dev/null
 codesign --force --timestamp --sign "$identity" "$unsigned_dmg"
 
-notary_result="$temporary/notary-result.json"
-xcrun notarytool submit "$unsigned_dmg" \
-  --keychain-profile "$NOTARY_PROFILE" \
-  --wait \
-  --output-format json >"$notary_result"
-test "$(jq -r '.status' "$notary_result")" = Accepted || {
-  cat "$notary_result" >&2
-  exit 1
-}
-submission_id=$(jq -r '.id' "$notary_result")
+notary_result="$temporary/dmg-notary-result.json"
+submit_for_notarization "$unsigned_dmg" "$notary_result"
+dmg_submission_id=$(jq -r '.id' "$notary_result")
 xcrun stapler staple "$unsigned_dmg"
 xcrun stapler validate "$unsigned_dmg"
 spctl --assess --type open --context context:primary-signature \
@@ -328,7 +443,9 @@ hdiutil attach "$unsigned_dmg" -readonly -nobrowse \
 mounted=1
 installed_app="$mount_point/AetherRoute.app"
 codesign --verify --deep --strict --verbose=2 "$installed_app"
+xcrun stapler validate "$installed_app"
 spctl --assess --type execute --verbose=4 "$installed_app"
+syspolicy_check distribution "$installed_app"
 hdiutil detach "$mount_point" -quiet
 mounted=0
 
@@ -337,12 +454,18 @@ dmg_bytes=$(stat -f '%z' "$unsigned_dmg")
 jq -n \
   --arg product AetherRoute \
   --arg author '陈艳男 (ChenYanNan)' \
+  --arg productID "$distribution_product_id" \
   --arg version "$VERSION" \
-  --arg build "$BUILD_NUMBER" \
+  --argjson build "$BUILD_NUMBER" \
   --arg releasedAt "$release_timestamp" \
+  --arg minimumSystemVersion "$minimum_system_version" \
   --arg architecture arm64 \
+  --arg gitCommit "$git_commit" \
+  --arg sourceManifestSHA256 "$source_manifest_sha256" \
+  --arg updateSigningPublicKeySHA256 "$update_signing_public_key_sha256" \
   --arg sha256 "$dmg_sha256" \
-  --arg notarySubmissionID "$submission_id" \
+  --arg appNotarySubmissionID "$app_submission_id" \
+  --arg dmgNotarySubmissionID "$dmg_submission_id" \
   --arg soakEvidenceSHA256 "$soak_evidence_sha256" \
   --arg signedNEEvidenceSHA256 "$signed_ne_evidence_sha256" \
   --argjson bytes "$dmg_bytes" \
@@ -351,9 +474,20 @@ jq -n \
   --argjson signedNECycles "$signed_ne_cycles" \
   '{schemaVersion: 1, releaseStatus: "notarized-candidate",
     product: $product, author: $author,
+    productID: $productID,
     version: $version, build: $build, releasedAt: $releasedAt,
-    architecture: $architecture, dmg: {sha256: $sha256, bytes: $bytes},
-    notarization: {status: "Accepted", submissionID: $notarySubmissionID},
+    minimumSystemVersion: $minimumSystemVersion,
+    architecture: $architecture,
+    source: {gitCommit: $gitCommit,
+      manifestSHA256: $sourceManifestSHA256},
+    distribution: {
+      updateSigningPublicKeySHA256: $updateSigningPublicKeySHA256},
+    dmg: {sha256: $sha256, bytes: $bytes},
+    notarization: {status: "Accepted",
+      submissionID: $dmgNotarySubmissionID,
+      appSubmissionID: $appNotarySubmissionID,
+      dmgSubmissionID: $dmgNotarySubmissionID,
+      appTicketStapled: true, dmgTicketStapled: true},
     stability: {schema: 2, evidenceSHA256: $soakEvidenceSHA256,
       durationSeconds: $soakDurationSeconds, rounds: $soakRounds},
     signedRuntime: {schema: 1, evidenceSHA256: $signedNEEvidenceSHA256,

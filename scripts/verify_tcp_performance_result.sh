@@ -57,10 +57,11 @@ require_number_at_most() {
     }
 }
 
-require_equal schema 1
+require_equal schema 2
 require_equal machine arm64
 require_equal repetitions 5
 require_equal payload_bytes_per_repetition 33554432
+require_equal minimum_direct_mibps 2048
 require_equal minimum_engine_mibps 1024
 require_equal maximum_added_p95_ms 5
 require_equal flow_transport_surface flow_abi
@@ -68,6 +69,8 @@ require_equal packet_transport_surface loopback_socks5
 require_equal network_extension disabled
 require_equal system_network_settings unchanged
 require_equal status passed
+require_number_at_least flow_direct_mibps 2048
+require_number_at_least packet_direct_mibps 2048
 require_number_at_least flow_engine_mibps 1024
 require_number_at_least packet_engine_mibps 1024
 require_number_at_most flow_added_p95_ms 5

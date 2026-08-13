@@ -1,5 +1,12 @@
 import AetherRouteKit
 import Foundation
+import OSLog
+
+private enum TransparentSessionRuntimeLog {
+    static let log = DiagnosticLogCenter.current.log(
+        category: "transparent-session"
+    )
+}
 
 protocol AppleProxyFlowOpening: Sendable {
     func open(
@@ -131,6 +138,9 @@ final class TransparentTCPProxySession:
             return true
         }
         guard shouldOpen else { return }
+        TransparentSessionRuntimeLog.log.verbose(
+            "transport=tcp session=\(self.sessionID.uuidString) stage=open requested"
+        )
         issueOpen()
     }
 
@@ -189,6 +199,16 @@ final class TransparentTCPProxySession:
     }
 
     private func openCompleted(_ result: Result<Void, FlowIOError>) {
+        switch result {
+        case .success:
+            TransparentSessionRuntimeLog.log.verbose(
+                "transport=tcp session=\(self.sessionID.uuidString) stage=open success"
+            )
+        case let .failure(error):
+            TransparentSessionRuntimeLog.log.failure(
+                "transport=tcp session=\(self.sessionID.uuidString) stage=open failed error=\(String(reflecting: error))"
+            )
+        }
         let action = lock.withLock { () -> OpenAction in
             guard openCallbackPending else { return .none }
             openCallbackPending = false
@@ -219,6 +239,12 @@ final class TransparentTCPProxySession:
         case .none:
             break
         case .activate:
+            // Paired with `stage=coreActivate`. If this line appears without a
+            // matching completion the core never answered, which strands the
+            // session in `activating` and moves no bytes at all.
+            TransparentSessionRuntimeLog.log.verbose(
+                "transport=tcp session=\(self.sessionID.uuidString) stage=coreActivate requested"
+            )
             rust.activate { [weak self] result in
                 guard let self else { return }
                 lifecycleQueue.async { [weak self] in
@@ -235,6 +261,16 @@ final class TransparentTCPProxySession:
     }
 
     private func activationCompleted(_ result: Result<Void, FlowIOError>) {
+        switch result {
+        case .success:
+            TransparentSessionRuntimeLog.log.verbose(
+                "transport=tcp session=\(self.sessionID.uuidString) stage=coreActivate success"
+            )
+        case let .failure(error):
+            TransparentSessionRuntimeLog.log.failure(
+                "transport=tcp session=\(self.sessionID.uuidString) stage=coreActivate failed error=\(String(reflecting: error))"
+            )
+        }
         let action = lock.withLock { () -> ActivationAction in
             guard phase == .activating else { return .none }
             switch result {
@@ -256,10 +292,14 @@ final class TransparentTCPProxySession:
                 return
             }
             Task { [weak self] in
+                guard let self else { return }
                 do {
                     try await machine.start()
                 } catch {
-                    self?.cancel()
+                    TransparentSessionRuntimeLog.log.failure(
+                        "transport=tcp session=\(self.sessionID.uuidString) stage=machineStart failed error=\(String(reflecting: error))"
+                    )
+                    self.cancel()
                 }
             }
         case .destroy:
@@ -273,7 +313,10 @@ final class TransparentTCPProxySession:
         }
     }
 
-    private func machineTerminated(_: FlowLifecycle) {
+    private func machineTerminated(_ lifecycle: FlowLifecycle) {
+        TransparentSessionRuntimeLog.log.verbose(
+            "transport=tcp session=\(self.sessionID.uuidString) stage=machineTerminated lifecycle=\(String(reflecting: lifecycle))"
+        )
         let shouldDestroy = lock.withLock { () -> Bool in
             guard phase == .running else { return false }
             phase = .terminating
@@ -304,6 +347,9 @@ final class TransparentTCPProxySession:
             return (true, shouldDrainApple)
         }
         guard action.0 else { return }
+        TransparentSessionRuntimeLog.log.verbose(
+            "transport=tcp session=\(self.sessionID.uuidString) stage=destroy begin"
+        )
 
         if action.1 { beginAppleDrain() }
 
@@ -358,6 +404,9 @@ final class TransparentTCPProxySession:
         }
         lease?.release()
         registry?.didTerminate(sessionID: sessionID)
+        TransparentSessionRuntimeLog.log.verbose(
+            "transport=tcp session=\(self.sessionID.uuidString) stage=terminated"
+        )
     }
 
     private enum Phase {
@@ -482,6 +531,9 @@ final class TransparentUDPProxySession:
             return true
         }
         guard shouldOpen else { return }
+        TransparentSessionRuntimeLog.log.verbose(
+            "transport=udp session=\(self.sessionID.uuidString) stage=open requested"
+        )
         issueOpen()
     }
 
@@ -533,6 +585,16 @@ final class TransparentUDPProxySession:
     }
 
     private func openCompleted(_ result: Result<Void, FlowIOError>) {
+        switch result {
+        case .success:
+            TransparentSessionRuntimeLog.log.verbose(
+                "transport=udp session=\(self.sessionID.uuidString) stage=open success"
+            )
+        case let .failure(error):
+            TransparentSessionRuntimeLog.log.failure(
+                "transport=udp session=\(self.sessionID.uuidString) stage=open failed error=\(String(reflecting: error))"
+            )
+        }
         let action = lock.withLock { () -> OpenAction in
             guard openCallbackPending else { return .none }
             openCallbackPending = false
@@ -562,6 +624,12 @@ final class TransparentUDPProxySession:
         case .none:
             break
         case .activate:
+            // Paired with `stage=coreActivate`. If this line appears without a
+            // matching completion the core never answered, which strands the
+            // session in `activating` and moves no bytes at all.
+            TransparentSessionRuntimeLog.log.verbose(
+                "transport=udp session=\(self.sessionID.uuidString) stage=coreActivate requested"
+            )
             rust.activate { [weak self] result in
                 guard let self else { return }
                 lifecycleQueue.async { [weak self] in
@@ -578,6 +646,16 @@ final class TransparentUDPProxySession:
     }
 
     private func activationCompleted(_ result: Result<Void, FlowIOError>) {
+        switch result {
+        case .success:
+            TransparentSessionRuntimeLog.log.verbose(
+                "transport=udp session=\(self.sessionID.uuidString) stage=coreActivate success"
+            )
+        case let .failure(error):
+            TransparentSessionRuntimeLog.log.failure(
+                "transport=udp session=\(self.sessionID.uuidString) stage=coreActivate failed error=\(String(reflecting: error))"
+            )
+        }
         let action = lock.withLock { () -> ActivationAction in
             guard phase == .activating else { return .none }
             switch result {
@@ -598,10 +676,14 @@ final class TransparentUDPProxySession:
                 return
             }
             Task { [weak self] in
+                guard let self else { return }
                 do {
                     try await machine.start()
                 } catch {
-                    self?.cancel()
+                    TransparentSessionRuntimeLog.log.failure(
+                        "transport=udp session=\(self.sessionID.uuidString) stage=machineStart failed error=\(String(reflecting: error))"
+                    )
+                    self.cancel()
                 }
             }
         case .destroy:
@@ -615,7 +697,10 @@ final class TransparentUDPProxySession:
         }
     }
 
-    private func machineTerminated(_: FlowLifecycle) {
+    private func machineTerminated(_ lifecycle: FlowLifecycle) {
+        TransparentSessionRuntimeLog.log.verbose(
+            "transport=udp session=\(self.sessionID.uuidString) stage=machineTerminated lifecycle=\(String(reflecting: lifecycle))"
+        )
         let shouldDestroy = lock.withLock { () -> Bool in
             guard phase == .running else { return false }
             phase = .terminating
@@ -642,6 +727,9 @@ final class TransparentUDPProxySession:
             return (true, shouldDrainApple)
         }
         guard action.0 else { return }
+        TransparentSessionRuntimeLog.log.verbose(
+            "transport=udp session=\(self.sessionID.uuidString) stage=destroy begin"
+        )
         if action.1 { beginAppleDrain() }
         rust.destroy { [self] in
             lifecycleQueue.async { [self] in
@@ -697,6 +785,9 @@ final class TransparentUDPProxySession:
         resources.0?.release()
         resources.1?.release()
         registry?.didTerminate(sessionID: sessionID)
+        TransparentSessionRuntimeLog.log.verbose(
+            "transport=udp session=\(self.sessionID.uuidString) stage=terminated"
+        )
     }
 
     private enum Phase {

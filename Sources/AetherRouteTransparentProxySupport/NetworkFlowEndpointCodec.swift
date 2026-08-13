@@ -14,6 +14,21 @@ public enum NetworkFlowEndpointCodecError: Error, Sendable, Equatable {
 /// Swift/Rust flow endpoint. IP endpoints use `sockaddr` so an IPv6 scope ID is
 /// preserved exactly; DNS endpoints remain names for DOMAIN routing.
 public enum NetworkFlowEndpointCodec {
+    static func hasUnspecifiedPort(
+        _ endpoint: Network.NWEndpoint
+    ) -> Bool {
+        switch endpoint {
+        case let .hostPort(_, port):
+            port.rawValue == 0
+        case let .opaque(rawEndpoint):
+            nw_endpoint_get_port(rawEndpoint) == 0
+        case .service, .unix, .url:
+            false
+        @unknown default:
+            false
+        }
+    }
+
     public static func decode(
         _ endpoint: Network.NWEndpoint,
         transport: FlowTransport

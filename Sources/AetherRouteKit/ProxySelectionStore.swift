@@ -1,6 +1,216 @@
 import CryptoKit
 import Foundation
 
+/// Supplies a safe first-run selector override without rewriting imported
+/// YAML. Some subscription services encode quota, expiry, contact, or website
+/// notices as syntactically valid proxy entries. Core parsing therefore cannot
+/// distinguish them from routes, but selecting one blackholes the first
+/// connection. Persisted, provider-verified choices always win; this policy is
+/// used only when a profile has no valid recorded choice.
+public enum InitialProxySelectionPolicy {
+    public static func selections(
+        persisted: [String: String],
+        summary: ProfileConfigurationSummary
+    ) -> [String: String] {
+        var result = persisted
+        for group in summary.proxyGroups where
+            group.strategy.caseInsensitiveCompare("select") == .orderedSame
+        {
+            if let selected = result[group.name],
+               group.members.contains(selected) {
+                continue
+            }
+            result.removeValue(forKey: group.name)
+            if let candidate = group.members.first(where: isRouteCandidate) {
+                result[group.name] = candidate
+            }
+        }
+        return result
+    }
+
+    public static func isSubscriptionMetadata(_ name: String) -> Bool {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !normalized.isEmpty else { return true }
+
+        let metadataMarkers = [
+            "剩余流量", "流量剩余", "套餐到期", "到期时间", "过期时间",
+            "有效期", "官网地址", "官方网站", "客服邮箱", "联系邮箱",
+            "remaining traffic", "traffic remaining", "expires at",
+            "expiration date", "subscription expires", "official website",
+            "support email",
+        ]
+        if metadataMarkers.contains(where: normalized.contains) {
+            return true
+        }
+
+        // Treat only a whole email-like label as metadata. Node names that
+        // merely contain an @ character remain eligible.
+        let emailPattern = #"^[^\s@]+@[^\s@]+\.[^\s@]+$"#
+        return normalized.range(
+            of: emailPattern,
+            options: .regularExpression
+        ) != nil
+    }
+
+    public static func isRouteCandidate(_ name: String) -> Bool {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+        guard !["DIRECT", "REJECT", "REJECT-DROP", "PASS"]
+            .contains(normalized) else {
+            return false
+        }
+        return !isSubscriptionMetadata(name)
+    }
+}
+
+/// Decides which bounded selector groups participate in the connection gate
+/// and which live member should be retained. The Network Extension supplies
+/// the measurements; this value-only policy is deterministic and unit-testable.
+public enum ProxyConnectionReadinessPolicy {
+    public static let maximumVerifiedGroupCount = 4
+    public static let maximumMembersPerVerifiedGroup = 64
+    public static let maximumProbeCandidateCount = 8
+
+    public enum GroupBehavior: Equatable, Sendable {
+        case manual
+        case automatic
+        case unsupported
+    }
+
+    public struct ProbeMeasurement: Equatable, Sendable {
+        public let member: String
+        public let elapsedMilliseconds: UInt64
+        public let statusCode: Int?
+
+        public init(
+            member: String,
+            elapsedMilliseconds: UInt64,
+            statusCode: Int?
+        ) {
+            self.member = member
+            self.elapsedMilliseconds = elapsedMilliseconds
+            self.statusCode = statusCode
+        }
+    }
+
+    public static func groupsToVerify(
+        summary: ProfileConfigurationSummary
+    ) -> [ProxyGroupConfigurationSummary] {
+        let selectable = summary.proxyGroups.filter {
+            $0.strategy.caseInsensitiveCompare("select") == .orderedSame
+                && !$0.members.isEmpty
+                && $0.memberCount <= maximumMembersPerVerifiedGroup
+        }
+        guard !selectable.isEmpty else { return [] }
+
+        let byName = Dictionary(
+            uniqueKeysWithValues: selectable.map { ($0.name, $0) }
+        )
+        var result: [ProxyGroupConfigurationSummary] = []
+        var seen = Set<String>()
+        for rule in summary.rules {
+            guard let group = byName[rule.target],
+                  seen.insert(group.name).inserted else { continue }
+            result.append(group)
+            if result.count == maximumVerifiedGroupCount { return result }
+        }
+        if !result.isEmpty { return result }
+        return Array(selectable.prefix(maximumVerifiedGroupCount))
+    }
+
+    public static func preferredMember(
+        snapshot: ProxySelectionState,
+        latency: ProxyLatencyState
+    ) -> String? {
+        let responsive = latency.results.filter {
+            $0.delayMilliseconds != nil && snapshot.members.contains($0.member)
+        }
+        if let selected = snapshot.selectedMember,
+           responsive.contains(where: { $0.member == selected }) {
+            return selected
+        }
+        return responsive.min {
+            ($0.delayMilliseconds ?? .max) < ($1.delayMilliseconds ?? .max)
+        }?.member
+    }
+
+    /// Maps the profile's explicit group type to user intent. A `select`
+    /// group is controlled by the user's current selection. Health-checking
+    /// groups choose their own route and must not be rewritten as a manual
+    /// selection by the host readiness gate.
+    public static func behavior(for group: ProxyGroupConfigurationSummary)
+        -> GroupBehavior
+    {
+        switch group.strategy.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() {
+        case "select":
+            .manual
+        case "url-test", "fallback", "load-balance":
+            .automatic
+        default:
+            .unsupported
+        }
+    }
+
+    /// Produces a bounded, stable candidate list without leaking subscription
+    /// notices or core pseudo-routes into live traffic probes. A responsive
+    /// selected member stays first; otherwise the fastest responsive member
+    /// is first, followed by the current selection and the profile/runtime
+    /// order. Names are returned for in-memory routing only and must not be
+    /// logged.
+    public static func orderedRouteCandidates(
+        selectedMember: String?,
+        summaryMembers: [String],
+        snapshotMembers: [String],
+        latency: ProxyLatencyState
+    ) -> [String] {
+        let eligible = Set(
+            (summaryMembers + snapshotMembers).filter(
+                InitialProxySelectionPolicy.isRouteCandidate
+            )
+        )
+        let responsive = latency.results.filter {
+            $0.delayMilliseconds != nil && eligible.contains($0.member)
+        }
+        var ordered: [String] = []
+        if let selectedMember,
+           responsive.contains(where: { $0.member == selectedMember }) {
+            ordered.append(selectedMember)
+        } else if let fastest = responsive.min(by: {
+            ($0.delayMilliseconds ?? .max) < ($1.delayMilliseconds ?? .max)
+        }) {
+            ordered.append(fastest.member)
+        }
+        if let selectedMember { ordered.append(selectedMember) }
+        ordered.append(contentsOf: summaryMembers)
+        ordered.append(contentsOf: snapshotMembers)
+        ordered.append(contentsOf: responsive.sorted {
+            ($0.delayMilliseconds ?? .max) < ($1.delayMilliseconds ?? .max)
+        }.map(\.member))
+
+        var seen = Set<String>()
+        return ordered.filter {
+            eligible.contains($0) && seen.insert($0).inserted
+        }.prefix(maximumProbeCandidateCount).map { $0 }
+    }
+
+    public static func fastestSuccessfulProbe(
+        _ measurements: [ProbeMeasurement]
+    ) -> ProbeMeasurement? {
+        measurements.filter { $0.statusCode == 204 }.min {
+            if $0.elapsedMilliseconds == $1.elapsedMilliseconds {
+                return false
+            }
+            return $0.elapsedMilliseconds < $1.elapsedMilliseconds
+        }
+    }
+
+    public static func acceptsProbeStatus(_ statusCode: Int?) -> Bool {
+        statusCode == 204
+    }
+}
+
 /// Encrypted, profile-bound persistence for selector overrides. A selection is
 /// recorded only after a live core snapshot confirms it, and an updated profile
 /// automatically receives an empty selection set because its digest changes.

@@ -6,7 +6,7 @@ struct PrivacyDisclosureView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: isOnboarding ? 26 : 20) {
+            VStack(alignment: .center, spacing: AetherVisual.s5) {
                 disclosureHeader
                 disclosurePoints
                 destinationNotice
@@ -15,16 +15,23 @@ struct PrivacyDisclosureView: View {
                 }
             }
             .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-            .padding(.top, isOnboarding ? 42 : AetherVisual.pageTopPadding)
+            .padding(
+                .top,
+                isOnboarding
+                    ? AetherVisual.onboardingTopPadding
+                    : AetherVisual.pageTopPadding
+            )
             .padding(.bottom, AetherVisual.pageBottomPadding)
+            .frame(maxWidth: isOnboarding ? .infinity : AetherVisual.formMaxWidth)
+            .frame(maxWidth: .infinity)
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if usesPinnedConsent {
                 consentStatus
                     .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, AetherVisual.s6)
+                    .padding(.vertical, AetherVisual.s3)
                     .background(Color(nsColor: .windowBackgroundColor))
                     .overlay(alignment: .top) {
                         Divider()
@@ -38,33 +45,29 @@ struct PrivacyDisclosureView: View {
     }
 
     private var disclosureHeader: some View {
-        VStack(spacing: 15) {
+        VStack(spacing: AetherVisual.s4) {
             ZStack(alignment: .bottomTrailing) {
-                AetherRouteBrandTile(size: 78)
+                AetherRouteBrandTile(size: 76)
                 Image(systemName: "hand.raised.fill")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
                     .frame(width: 27, height: 27)
                     .background(.regularMaterial, in: Circle())
-                    .overlay {
-                        Circle()
-                            .stroke(Color.primary.opacity(0.10), lineWidth: 0.5)
-                    }
                     .offset(x: 4, y: 4)
             }
-            .frame(width: 78, height: 78)
-            .shadow(color: AetherVisual.blue.opacity(0.16), radius: 18, y: 9)
+            .frame(width: 76, height: 76)
             .accessibilityHidden(true)
 
-            VStack(spacing: 7) {
+            VStack(spacing: AetherVisual.s2) {
                 Text("Your Network Privacy")
-                    .font(isOnboarding ? .largeTitle.weight(.semibold) : .title2.weight(.semibold))
+                    .font(.title2.weight(.semibold))
                 Text(disclosureSubtitle)
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var disclosureSubtitle: LocalizedStringKey {
@@ -76,44 +79,46 @@ struct PrivacyDisclosureView: View {
     @ViewBuilder
     private var disclosurePoints: some View {
         if isOnboarding {
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .top, spacing: AetherVisual.s4) {
                 ForEach(NetworkPrivacyPoint.allCases) { point in
                     PrivacyPointCard(point: point)
                 }
             }
         } else {
-            VStack(spacing: 10) {
+            VStack(spacing: AetherVisual.s3) {
                 ForEach(NetworkPrivacyPoint.allCases) { point in
                     PrivacyPointRow(point: point)
                 }
             }
+            .frame(maxWidth: .infinity)
         }
     }
 
     private var destinationNotice: some View {
-        HStack(alignment: .top, spacing: 13) {
+        HStack(alignment: .top, spacing: AetherVisual.s4) {
             Image(systemName: "arrow.up.right.square")
                 .font(.title3)
                 .foregroundStyle(.orange)
                 .frame(width: 26)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 Text("Your selected services receive traffic")
                     .font(.headline)
                     .accessibilityValue(
                         Text("When you connect, traffic and DNS queries may be sent to the proxy and DNS services in the profile you chose. Subscription updates contact the selected provider. If a release configures licensing, AetherRoute refreshes only its signed device receipt with the owner's HTTPS license service after you accept this disclosure. These services may observe your IP address. Review and trust a provider before importing it.")
                     )
                 Text("When you connect, traffic and DNS queries may be sent to the proxy and DNS services in the profile you chose. Subscription updates contact the selected provider. If a release configures licensing, AetherRoute refreshes only its signed device receipt with the owner's HTTPS license service after you accept this disclosure. These services may observe your IP address. Review and trust a provider before importing it.")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityHidden(true)
             }
         }
-        .padding(18)
-        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(AetherVisual.s5)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
+            RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
                 .stroke(Color.orange.opacity(0.18), lineWidth: 1)
         }
     }
@@ -121,23 +126,24 @@ struct PrivacyDisclosureView: View {
     @ViewBuilder
     private var consentStatus: some View {
         if tunnel.hasAcceptedPrivacyDisclosure {
+            // Consent granted is a passing state, so it takes the same green as
+            // a connected route rather than the accent, which owns selection.
             Label("Privacy disclosure accepted on this Mac", systemImage: "checkmark.seal.fill")
                 .font(.headline)
-                .foregroundStyle(.teal)
-                .padding(.top, 2)
+                .foregroundStyle(.green)
+                .padding(.top, AetherVisual.s1)
                 .accessibilityIdentifier("privacy-consent-accepted")
         } else {
-            VStack(spacing: 11) {
+            VStack(spacing: AetherVisual.s3) {
                 Button {
                     Task { await tunnel.acceptPrivacyDisclosure() }
                 } label: {
                     Label("I Understand and Continue", systemImage: "checkmark.shield.fill")
                         .font(.body.weight(.semibold))
                         .frame(minWidth: 230)
-                        .padding(.vertical, 3)
+                        .padding(.vertical, AetherVisual.s1)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.teal)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("privacy-consent-button")
@@ -146,8 +152,8 @@ struct PrivacyDisclosureView: View {
                 )
 
                 Text("AetherRoute will not create or save a network extension configuration, import or download a profile, or connect until you agree.")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .accessibilityHidden(true)
             }
@@ -194,24 +200,27 @@ private struct PrivacyPointRow: View {
     let point: NetworkPrivacyPoint
 
     var body: some View {
-        HStack(alignment: .top, spacing: 13) {
+        HStack(alignment: .top, spacing: AetherVisual.s4) {
             Image(systemName: point.symbol)
                 .font(.title3.weight(.medium))
-                .foregroundStyle(.teal)
+                .foregroundStyle(Color.accentColor)
                 .frame(width: 28)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(point.title)
                     .font(.headline)
                     .accessibilityValue(Text(point.detail))
                 Text(point.detail)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityHidden(true)
             }
         }
-        .padding(15)
-        .aetherPanel(radius: 13)
+        // Fill before the panel is applied, so the three points share one right
+        // edge with each other and with the notice below them.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(AetherVisual.s4)
+        .aetherPanel()
     }
 }
 
@@ -219,22 +228,22 @@ private struct PrivacyPointCard: View {
     let point: NetworkPrivacyPoint
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
             Image(systemName: point.symbol)
                 .font(.title3.weight(.medium))
-                .foregroundStyle(.teal)
+                .foregroundStyle(.secondary)
             Text(point.title)
                 .font(.headline)
                 .accessibilityValue(Text(point.detail))
             Text(point.detail)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityHidden(true)
         }
         .frame(width: 185, alignment: .topLeading)
         .frame(minHeight: 156, alignment: .topLeading)
-        .padding(18)
-        .aetherPanel(radius: 15)
+        .padding(AetherVisual.s5)
+        .aetherPanel()
     }
 }

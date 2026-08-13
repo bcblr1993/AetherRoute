@@ -11,7 +11,7 @@ struct BypassRulesView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: AetherVisual.s5) {
                 header
                 editor
                 providerSemantics
@@ -26,21 +26,12 @@ struct BypassRulesView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(AetherVisual.cyan.opacity(0.10))
-                Image(systemName: "arrow.trianglehead.branch")
-                    .font(.system(size: 28, weight: .medium))
-                    .foregroundStyle(AetherVisual.cyan)
-                    .accessibilityHidden(true)
-            }
-            .frame(width: 62, height: 62)
-
-            VStack(alignment: .leading, spacing: 5) {
+        HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s3) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text("Bypass Rules")
                     .font(.title2.weight(.semibold))
                 Text("Send trusted destinations over the normal network path instead of the selected proxy engine.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -53,20 +44,18 @@ struct BypassRulesView: View {
             )
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, AetherVisual.s3)
+            .padding(.vertical, AetherVisual.s2)
             .background(Color.secondary.opacity(0.08), in: Capsule())
         }
-        .padding(20)
-        .aetherPanel(radius: 18, elevated: true)
     }
 
     private var editor: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
             Text("Add a destination")
                 .font(.headline)
 
-            HStack(spacing: 10) {
+            HStack(spacing: AetherVisual.s3) {
                 TextField("example.com or 192.168.0.0/16", text: $newRule)
                     .textFieldStyle(.roundedBorder)
                     .focused($isInputFocused)
@@ -105,13 +94,13 @@ struct BypassRulesView: View {
                 )
                 .font(.callout)
                 .foregroundStyle(
-                    tunnel.bypassPolicyMessageIsError ? .orange : .teal
+                    tunnel.bypassPolicyMessageIsError ? .red : .green
                 )
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(18)
-        .aetherPanel(radius: 16)
+        .padding(AetherVisual.s5)
+        .aetherPanel()
     }
 
     @ViewBuilder
@@ -124,11 +113,11 @@ struct BypassRulesView: View {
             )
             .font(.callout)
             .foregroundStyle(.secondary)
-            .padding(15)
+            .padding(AetherVisual.s4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 Color.orange.opacity(0.08),
-                in: RoundedRectangle(cornerRadius: 14)
+                in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
             )
             .accessibilityIdentifier("bypass-provider-semantics")
         } else {
@@ -146,11 +135,11 @@ struct BypassRulesView: View {
         )
         .font(.callout)
         .foregroundStyle(.secondary)
-        .padding(15)
+        .padding(AetherVisual.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            AetherVisual.cyan.opacity(0.07),
-            in: RoundedRectangle(cornerRadius: 14)
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
         )
         .accessibilityIdentifier("bypass-provider-semantics")
     }
@@ -164,8 +153,8 @@ struct BypassRulesView: View {
                 description: Text("All supported traffic follows the selected routing mode.")
             )
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 28)
-            .aetherPanel(radius: 16)
+            .padding(.vertical, AetherVisual.s6)
+            .aetherPanel()
         } else {
             VStack(spacing: 0) {
                 ForEach(
@@ -174,16 +163,19 @@ struct BypassRulesView: View {
                 ) { index, rule in
                     ruleRow(rule)
                     if index < tunnel.bypassPolicy.rules.count - 1 {
-                        Divider().padding(.leading, 56)
+                        Divider().padding(
+                            .leading,
+                            AetherVisual.wideListIndent
+                        )
                     }
                 }
             }
-            .aetherPanel(radius: 16)
+            .aetherPanel()
         }
     }
 
     private func ruleRow(_ rule: BypassRule) -> some View {
-        HStack(spacing: 13) {
+        HStack(spacing: AetherVisual.s4) {
             Image(systemName: symbol(for: rule.kind))
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(color(for: rule.kind))
@@ -191,7 +183,7 @@ struct BypassRulesView: View {
                 .background(color(for: rule.kind).opacity(0.09), in: Circle())
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(rule.value)
                     .font(.body.weight(.medium))
                     .textSelection(.enabled)
@@ -226,8 +218,8 @@ struct BypassRulesView: View {
                 )
             )
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, AetherVisual.s4)
+        .padding(.vertical, AetherVisual.s3)
     }
 
     private func addRule() {
@@ -249,8 +241,11 @@ struct BypassRulesView: View {
         }
     }
 
-    private func color(for kind: BypassRuleKind) -> Color {
-        kind == .domainSuffix ? AetherVisual.blue : AetherVisual.cyan
+    /// Rule kind is already carried by the glyph and by the scope line beneath
+    /// the value, so the badge stays neutral. Color here would read as status,
+    /// which these rows do not have.
+    private func color(for _: BypassRuleKind) -> Color {
+        .secondary
     }
 
     private func scope(for kind: BypassRuleKind) -> String {

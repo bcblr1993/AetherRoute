@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 public enum TCPReadResult: Sendable, Equatable {
     case bytes(Data)
@@ -144,6 +145,12 @@ public actor TCPFlowStateMachine {
         self.onTermination = onTermination
     }
 
+    // Gated: the read callbacks fire per datagram, so an ungated record here
+    // is the single largest logging cost in the product.
+    private static let pumpLog = DiagnosticLogCenter.current.log(
+        category: "tcp-pump"
+    )
+
     public func start() throws {
         guard lifecycle == .idle else {
             throw FlowStateMachineStartError.alreadyStarted
@@ -234,11 +241,18 @@ public actor TCPFlowStateMachine {
 
         switch result {
         case let .failure(error):
+            Self.pumpLog.failure(
+                "stage=flowRead outcome=failure error=\(String(reflecting: error))"
+            )
             fail(error)
         case .success(.endOfStream):
+            Self.pumpLog.verbose("stage=flowRead outcome=endOfStream")
             flowInputEnded = true
             issueBridgeFinish()
         case let .success(.bytes(data)):
+            Self.pumpLog.verbose(
+                "stage=flowRead outcome=bytes count=\(data.count)"
+            )
             guard !data.isEmpty, data.count <= maximumReadBytes else {
                 fail(.invalidData("TCP flow returned an invalid read size"))
                 return
@@ -258,11 +272,20 @@ public actor TCPFlowStateMachine {
 
         switch result {
         case let .failure(error):
+            Self.pumpLog.failure(
+                "stage=bridgeRead outcome=failure error=\(String(reflecting: error))"
+            )
             fail(error)
         case .success(.endOfStream):
+            // An immediate end-of-stream here means the core closed the flow
+            // without ever reaching the upstream node.
+            Self.pumpLog.verbose("stage=bridgeRead outcome=endOfStream")
             bridgeInputEnded = true
             issueFlowFinish()
         case let .success(.bytes(data)):
+            Self.pumpLog.verbose(
+                "stage=bridgeRead outcome=bytes count=\(data.count)"
+            )
             guard !data.isEmpty, data.count <= maximumReadBytes else {
                 fail(.invalidData("TCP bridge returned an invalid read size"))
                 return

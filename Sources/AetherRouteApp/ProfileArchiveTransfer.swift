@@ -38,8 +38,8 @@ enum ProfileArchivePasswordMode: Equatable {
 
     var title: LocalizedStringKey {
         switch self {
-        case .export: "Protect Portable Archive"
-        case .import: "Open Portable Archive"
+        case .export: "Export Profile Archive"
+        case .import: "Import Profile Archive"
         }
     }
 
@@ -54,8 +54,8 @@ enum ProfileArchivePasswordMode: Equatable {
 
     var actionTitle: LocalizedStringKey {
         switch self {
-        case .export: "Create Archive"
-        case .import: "Import Profiles"
+        case .export: "Export Archive"
+        case .import: "Import Archive"
         }
     }
 }
@@ -70,20 +70,20 @@ struct ProfileArchivePasswordSheet: View {
     @State private var isWorking = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            HStack(alignment: .top, spacing: 15) {
+        VStack(alignment: .leading, spacing: AetherVisual.s6) {
+            HStack(alignment: .top, spacing: AetherVisual.s4) {
                 Image(systemName: "lock.shield.fill")
                     .font(.system(size: 25, weight: .medium))
-                    .foregroundStyle(.teal)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 48, height: 48)
                     .background(
                         Color.teal.opacity(0.09),
                         in: RoundedRectangle(
-                            cornerRadius: 13,
+                            cornerRadius: AetherVisual.insetRadius,
                             style: .continuous
                         )
                     )
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: AetherVisual.s2) {
                     Text(mode.title)
                         .font(.title2.weight(.semibold))
                     Text(mode.detail)
@@ -92,7 +92,7 @@ struct ProfileArchivePasswordSheet: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: AetherVisual.s3) {
                 SecureField("Archive password", text: $password)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("archive-password-field")
@@ -141,7 +141,7 @@ struct ProfileArchivePasswordSheet: View {
                 .disabled(!canSubmit || isWorking)
             }
         }
-        .padding(28)
+        .padding(AetherVisual.dialogPadding)
         .frame(width: 500)
     }
 

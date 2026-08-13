@@ -8,10 +8,13 @@ CATALOG="$ROOT/Sources/AetherRouteKit/ProtocolCapability.swift"
 CORE_SOURCE=${AETHERROUTE_CORE_SOURCE:-"$ROOT/Core/Engine"}
 INTEROP_SOURCE="$CORE_SOURCE/clash-lib/src/proxy/interop_tests.rs"
 PROXY_MANAGER_SOURCE="$CORE_SOURCE/clash-lib/src/app/remote_content_manager/mod.rs"
+OUTBOUND_MANAGER_SOURCE="$CORE_SOURCE/clash-lib/src/app/outbound/manager.rs"
+DISPATCHER_SOURCE="$CORE_SOURCE/clash-lib/src/app/dispatcher/dispatcher_impl.rs"
 CORE_MANIFEST="$CORE_SOURCE/clash-lib/Cargo.toml"
 FFI_MANIFEST="$CORE_SOURCE/clash-ffi/Cargo.toml"
 FFI_SOURCE="$CORE_SOURCE/clash-ffi/src/lib.rs"
 FLOW_FFI_SOURCE="$CORE_SOURCE/clash-ffi/src/flow_ffi.rs"
+EMBEDDED_FLOW_SOURCE="$CORE_SOURCE/clash-lib/src/embedded_flow.rs"
 FLOW_CORE="$ROOT/Core/Artifacts/macos-arm64/libclashrs.a"
 PACKET_FLOW_CORE="$ROOT/Core/Artifacts/macos-arm64/libclashrs-direct.a"
 CORE_HEADER="$ROOT/Core/Headers/clashrs.h"
@@ -50,6 +53,8 @@ verify_sha256 "$PACKET_FLOW_CORE" \
   "$(jq -r '.artifacts.packetFlowCoreSHA256' "$EVIDENCE")"
 verify_sha256 "$CORE_HEADER" \
   "$(jq -r '.artifacts.headerSHA256' "$EVIDENCE")"
+verify_sha256 "$EMBEDDED_FLOW_SOURCE" \
+  "$(jq -r '.sourceFiles.embeddedFlowSourceSHA256' "$EVIDENCE")"
 if [ -n "$INTEROP_TEST_BINARY" ]; then
   test -f "$INTEROP_TEST_BINARY" || {
     echo "configured interoperability test binary is missing" >&2
@@ -147,6 +152,8 @@ if [ -d "$CORE_SOURCE" ]; then
   for source_file in \
     "$INTEROP_SOURCE" \
     "$PROXY_MANAGER_SOURCE" \
+    "$OUTBOUND_MANAGER_SOURCE" \
+    "$DISPATCHER_SOURCE" \
     "$CORE_MANIFEST" \
     "$FFI_MANIFEST" \
     "$FFI_SOURCE" \
@@ -166,6 +173,10 @@ if [ -d "$CORE_SOURCE" ]; then
     "$(jq -r '.sourceFiles.interopTestsSHA256' "$EVIDENCE")"
   verify_sha256 "$PROXY_MANAGER_SOURCE" \
     "$(jq -r '.sourceFiles.proxyManagerSHA256' "$EVIDENCE")"
+  verify_sha256 "$OUTBOUND_MANAGER_SOURCE" \
+    "$(jq -r '.sourceFiles.outboundManagerSHA256' "$EVIDENCE")"
+  verify_sha256 "$DISPATCHER_SOURCE" \
+    "$(jq -r '.sourceFiles.dispatcherSHA256' "$EVIDENCE")"
   verify_sha256 "$CORE_MANIFEST" \
     "$(jq -r '.sourceFiles.coreManifestSHA256' "$EVIDENCE")"
   verify_sha256 "$FFI_MANIFEST" \

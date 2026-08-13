@@ -7,7 +7,7 @@ CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-"$ROOT/.build/core"}
 export CARGO_TARGET_DIR
 TARGET=aarch64-apple-darwin
 DESTINATION="$ROOT/Core/Artifacts/macos-arm64"
-FEATURES=aether-embedded
+FEATURES=${AETHERROUTE_DIRECT_CORE_FEATURES:-aether-embedded}
 ARTIFACT=libclashrs-direct.a
 export MACOSX_DEPLOYMENT_TARGET=14.0
 export CFLAGS="-mmacosx-version-min=14.0"

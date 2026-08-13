@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 public struct ActiveProfile: Codable, Equatable, Sendable {
     public static let currentFormatVersion = 1
@@ -27,6 +28,11 @@ public struct ActiveProfile: Codable, Equatable, Sendable {
 }
 
 public struct ActiveProfileStore: Sendable {
+    private static let runtimeLogger = Logger(
+        subsystem: "com.aetherroute.desktop",
+        category: "profile-runtime"
+    )
+
     public let directoryURL: URL
     private let keyStore: any ProfileKeyStoring
     private let codec: EncryptedProfileCodec
@@ -57,11 +63,14 @@ public struct ActiveProfileStore: Sendable {
     public static func applicationGroup(
         fileManager: FileManager = .default
     ) throws -> Self {
+        Self.runtimeLogger.info("stage=resolveAppGroup begin")
         guard let container = fileManager.containerURL(
             forSecurityApplicationGroupIdentifier: AppConstants.appGroup
         ) else {
+            Self.runtimeLogger.error("stage=resolveAppGroup failed")
             throw ActiveProfileStoreError.appGroupUnavailable
         }
+        Self.runtimeLogger.info("stage=resolveAppGroup success")
         return Self(
             directoryURL: container.appendingPathComponent(
                 "Library/Application Support/AetherRoute",
@@ -119,24 +128,72 @@ public struct ActiveProfileStore: Sendable {
     public func loadValidated(
         fileManager: FileManager = .default
     ) throws -> ActiveProfile {
+        Self.runtimeLogger.info("stage=loadEncryptedProfile begin")
         try rejectLegacyProfile(fileManager: fileManager)
         let data: Data
         do {
             data = try Data(contentsOf: profileURL, options: [.mappedIfSafe])
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            Self.runtimeLogger.error("stage=loadEncryptedProfile missing")
             throw ActiveProfileStoreError.noActiveProfile
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=loadEncryptedProfile failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            throw error
         }
 
-        let metadata = try codec.decodeEnvelope(data)
-        let key = try keyStore.loadKey(keyID: metadata.keyID)
-        let profile = try codec.open(data, keyData: key)
+        Self.runtimeLogger.info("stage=decodeProfileEnvelope begin")
+        let metadata: EncryptedProfileEnvelope
+        do {
+            metadata = try codec.decodeEnvelope(data)
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=decodeProfileEnvelope failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            throw error
+        }
+        Self.runtimeLogger.info("stage=decodeProfileEnvelope success")
+        Self.runtimeLogger.info("stage=loadProfileKey begin")
+        let key: Data
+        do {
+            key = try keyStore.loadKey(keyID: metadata.keyID)
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=loadProfileKey failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            throw error
+        }
+        Self.runtimeLogger.info("stage=loadProfileKey success")
+        Self.runtimeLogger.info("stage=openEncryptedProfile begin")
+        let profile: ActiveProfile
+        do {
+            profile = try codec.open(data, keyData: key)
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=openEncryptedProfile failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            throw error
+        }
+        Self.runtimeLogger.info("stage=openEncryptedProfile success")
         guard profile.formatVersion == ActiveProfile.currentFormatVersion else {
+            Self.runtimeLogger.error("stage=validateProfileFormat failed")
             throw ActiveProfileStoreError.unsupportedFormat(profile.formatVersion)
         }
         guard let yamlData = profile.yaml.data(using: .utf8) else {
+            Self.runtimeLogger.error("stage=validateProfileEncoding failed")
             throw ProfileImportError.notUTF8
         }
-        try ProfileImportValidator.validate(data: yamlData)
+        Self.runtimeLogger.info("stage=validateProfile begin")
+        do {
+            try ProfileImportValidator.validate(data: yamlData)
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=validateProfile failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            throw error
+        }
+        Self.runtimeLogger.info("stage=validateProfile success")
         return profile
     }
 

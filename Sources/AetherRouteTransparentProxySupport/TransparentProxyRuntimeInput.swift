@@ -1,6 +1,14 @@
 import AetherRouteKit
 import Darwin
 import Foundation
+import OSLog
+
+private enum TransparentRuntimeInputLog {
+    static let logger = Logger(
+        subsystem: "com.aetherroute.desktop",
+        category: "transparent-input"
+    )
+}
 
 public struct TransparentProxyRuntimeInput: Sendable, Equatable {
     public let profile: Data
@@ -37,17 +45,45 @@ public enum TransparentProxyRuntimeInputError:
 /// private FlowOnly working directory. The plaintext profile is never written
 /// to disk here, and this path performs no provider fetch or network access.
 public enum TransparentProxyRuntimeInputLoader {
-    public static func loadApplicationGroup() throws -> TransparentProxyRuntimeInput {
-        let store = try ActiveProfileStore.applicationGroup()
-        return try load(store: store, fileManager: .default)
-    }
-
-    static func load(
-        store: ActiveProfileStore,
-        fileManager: FileManager
+    public static func load(
+        snapshot: ProviderLaunchSnapshot,
+        fileManager: FileManager = .default
     ) throws -> TransparentProxyRuntimeInput {
-        let activeProfile = try store.loadValidated(fileManager: fileManager)
-        guard let profile = activeProfile.yaml.data(using: .utf8) else {
+        TransparentRuntimeInputLog.logger.info(
+            "stage=validateLaunchSnapshot begin"
+        )
+        try snapshot.validate()
+        TransparentRuntimeInputLog.logger.info(
+            "stage=validateLaunchSnapshot success"
+        )
+        TransparentRuntimeInputLog.logger.info("stage=resolveRuntimeStore begin")
+        let store = try ActiveProfileStore.applicationGroup(
+            fileManager: fileManager
+        )
+        TransparentRuntimeInputLog.logger.info(
+            "stage=resolveRuntimeStore success"
+        )
+        let resources = RoutingResourceStore(
+            applicationSupportDirectory: store.directoryURL
+        )
+        TransparentRuntimeInputLog.logger.info(
+            "stage=installLaunchResources begin count=\(snapshot.routingResources.count, privacy: .public)"
+        )
+        for (kind, data) in snapshot.routingResources {
+            _ = try resources.installUserProvided(
+                data: data,
+                kind: kind,
+                fileManager: fileManager
+            )
+        }
+        _ = try resources.prepareRuntimeResources(
+            for: snapshot.profileYAML,
+            fileManager: fileManager
+        )
+        TransparentRuntimeInputLog.logger.info(
+            "stage=installLaunchResources success"
+        )
+        guard let profile = snapshot.profileYAML.data(using: .utf8) else {
             throw TransparentProxyRuntimeInputError.profileEncodingFailed
         }
         let directory = try prepareRuntimeDirectory(
@@ -60,12 +96,70 @@ public enum TransparentProxyRuntimeInputLoader {
         )
     }
 
+    public static func loadApplicationGroup() throws -> TransparentProxyRuntimeInput {
+        TransparentRuntimeInputLog.logger.info("stage=resolveProfileStore begin")
+        let store: ActiveProfileStore
+        do {
+            store = try ActiveProfileStore.applicationGroup()
+        } catch {
+            TransparentRuntimeInputLog.logger.error(
+                "stage=resolveProfileStore failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            throw error
+        }
+        TransparentRuntimeInputLog.logger.info("stage=resolveProfileStore success")
+        return try load(store: store, fileManager: .default)
+    }
+
+    static func load(
+        store: ActiveProfileStore,
+        fileManager: FileManager
+    ) throws -> TransparentProxyRuntimeInput {
+        TransparentRuntimeInputLog.logger.info("stage=loadValidatedProfile begin")
+        let activeProfile: ActiveProfile
+        do {
+            activeProfile = try store.loadValidated(fileManager: fileManager)
+        } catch {
+            TransparentRuntimeInputLog.logger.error(
+                "stage=loadValidatedProfile failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            throw error
+        }
+        TransparentRuntimeInputLog.logger.info("stage=loadValidatedProfile success")
+        guard let profile = activeProfile.yaml.data(using: .utf8) else {
+            TransparentRuntimeInputLog.logger.error("stage=encodeProfile failed")
+            throw TransparentProxyRuntimeInputError.profileEncodingFailed
+        }
+        TransparentRuntimeInputLog.logger.info("stage=encodeProfile success")
+        TransparentRuntimeInputLog.logger.info("stage=prepareRuntimeDirectory begin")
+        let directory: URL
+        do {
+            directory = try prepareRuntimeDirectory(
+                beneath: store.directoryURL,
+                fileManager: fileManager
+            )
+        } catch {
+            TransparentRuntimeInputLog.logger.error(
+                "stage=prepareRuntimeDirectory failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            throw error
+        }
+        TransparentRuntimeInputLog.logger.info("stage=prepareRuntimeDirectory success")
+        return TransparentProxyRuntimeInput(
+            profile: profile,
+            runtimeDirectory: directory
+        )
+    }
+
     static func prepareRuntimeDirectory(
         beneath applicationSupportDirectory: URL,
         fileManager: FileManager
     ) throws -> URL {
         let base = applicationSupportDirectory.standardizedFileURL
         guard base.isFileURL, base.path.hasPrefix("/") else {
+            TransparentRuntimeInputLog.logger.error(
+                "stage=validateApplicationSupport failed"
+            )
             throw TransparentProxyRuntimeInputError
                 .invalidApplicationSupportDirectory
         }
@@ -89,6 +183,9 @@ public enum TransparentProxyRuntimeInputLoader {
         for candidate in [base, runtimeRoot, flowCore] {
             if try pathExists(candidate),
                try !isDirectoryWithoutSymlink(candidate) {
+                TransparentRuntimeInputLog.logger.error(
+                    "stage=validateRuntimeDirectory failed reason=unsafeExistingPath"
+                )
                 throw TransparentProxyRuntimeInputError.unsafeRuntimeDirectory
             }
         }
@@ -114,6 +211,9 @@ public enum TransparentProxyRuntimeInputLoader {
             try isDirectoryWithoutSymlink(runtimeRoot),
             try isDirectoryWithoutSymlink(flowCore)
         else {
+            TransparentRuntimeInputLog.logger.error(
+                "stage=validateRuntimeDirectory failed reason=containment"
+            )
             throw TransparentProxyRuntimeInputError.unsafeRuntimeDirectory
         }
 
@@ -124,6 +224,9 @@ public enum TransparentProxyRuntimeInputLoader {
             )
             try excludeFromBackup(directory)
         }
+        TransparentRuntimeInputLog.logger.info(
+            "stage=validateRuntimeDirectory success"
+        )
         return resolvedFlowCore
     }
 

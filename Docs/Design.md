@@ -11,8 +11,10 @@ keyboard focus, VoiceOver semantics, and Reduce Motion.
   inherits the user's system accent, row size, focus, and Liquid Glass behavior.
 - The primary connection action lives in the system toolbar. The content layer
   begins with task content instead of imitating a second toolbar.
-- Teal communicates an active, healthy data path. Orange is transitional, red
-  is a failure, and secondary color is inactive or unavailable.
+- Green communicates an active, healthy data path. Orange is transitional, red
+  is a failure, and secondary color is inactive or unavailable. The blue brand
+  gradient stays out of this vocabulary entirely; it carries identity, not
+  state.
 - Connection state comes only from the active Network Extension lifecycle and
   readiness signal. The interface never paints a successful state from a
   requested toggle value.

@@ -44,18 +44,18 @@ struct NativeProfileEditorSheet: View {
     }
 
     private var header: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: AetherVisual.s4) {
             Image(systemName: "point.3.connected.trianglepath.dotted")
                 .font(.system(size: 24, weight: .medium))
-                .foregroundStyle(AetherVisual.blue)
+                .foregroundStyle(Color.accentColor)
                 .frame(width: 50, height: 50)
                 .background(
-                    AetherVisual.blue.opacity(0.10),
-                    in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    Color.accentColor.opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                 )
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text("Edit Native Profile")
                     .font(.title3.weight(.semibold))
                 Text(profile.profile.name)
@@ -73,21 +73,26 @@ struct NativeProfileEditorSheet: View {
                     || nodes.count >= AetherNodeProfileCompiler.maximumNodes
             )
         }
-        .padding(22)
+        .padding(AetherVisual.s6)
     }
 
     private var nodeList: some View {
         List {
             ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
-                HStack(spacing: 14) {
+                HStack(spacing: AetherVisual.s4) {
+                    Image(systemName: "line.3.horizontal")
+                        .foregroundStyle(.tertiary)
+                        .help("Drag to reorder")
+                        .accessibilityHidden(true)
+
                     Text(node.protocolID.displayName.prefix(1))
                         .font(.callout.weight(.bold))
                         .foregroundStyle(.white)
                         .frame(width: 36, height: 36)
-                        .background(AetherVisual.blue, in: Circle())
+                        .background(Color.accentColor, in: Circle())
                         .accessibilityHidden(true)
 
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
                         Text(node.name)
                             .font(.body.weight(.medium))
                             .lineLimit(1)
@@ -100,26 +105,6 @@ struct NativeProfileEditorSheet: View {
                     }
 
                     Spacer(minLength: 12)
-
-                    Button {
-                        moveNode(at: index, offset: -1)
-                    } label: {
-                        Image(systemName: "chevron.up")
-                    }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                    .disabled(index == nodes.startIndex)
-                    .accessibilityLabel("Move Node Up")
-
-                    Button {
-                        moveNode(at: index, offset: 1)
-                    } label: {
-                        Image(systemName: "chevron.down")
-                    }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                    .disabled(index == nodes.index(before: nodes.endIndex))
-                    .accessibilityLabel("Move Node Down")
 
                     Button("Edit", systemImage: "pencil") {
                         nodeToEdit = node
@@ -139,7 +124,10 @@ struct NativeProfileEditorSheet: View {
                     .help("A native profile must keep at least one node.")
                     .accessibilityLabel("Remove Node")
                 }
-                .padding(.vertical, 7)
+                .padding(.vertical, AetherVisual.s2)
+            }
+            .onMove { offsets, destination in
+                nodes.move(fromOffsets: offsets, toOffset: destination)
             }
         }
         .listStyle(.inset)
@@ -147,7 +135,7 @@ struct NativeProfileEditorSheet: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
             if let validationMessage {
                 Label(
                     validationMessage,
@@ -199,7 +187,7 @@ struct NativeProfileEditorSheet: View {
                 .accessibilityIdentifier("save-native-profile")
             }
         }
-        .padding(18)
+        .padding(AetherVisual.s5)
     }
 
     private var validationMessage: String? {
@@ -231,13 +219,5 @@ struct NativeProfileEditorSheet: View {
         }
         nodes = candidate
         return true
-    }
-
-    private func moveNode(at index: Int, offset: Int) {
-        let destination = index + offset
-        guard nodes.indices.contains(index), nodes.indices.contains(destination) else {
-            return
-        }
-        nodes.swapAt(index, destination)
     }
 }

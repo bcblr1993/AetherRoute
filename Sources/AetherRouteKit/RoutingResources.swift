@@ -232,6 +232,42 @@ public struct RoutingResourceStore: Sendable {
         return requirements
     }
 
+    /// Returns the exact verified public routing databases needed by one
+    /// profile so a root-context Network System Extension can install them in
+    /// its own private runtime container. Profile YAML and credentials are not
+    /// written by this operation.
+    public func launchResourceSnapshot(
+        for profileYAML: String,
+        now: Date = .now,
+        fileManager: FileManager = .default
+    ) throws -> [RoutingResourceKind: Data] {
+        let requirements = ProfileConfigurationInspector
+            .inspect(yaml: profileYAML)
+            .requiredRoutingResources
+        var snapshot = [RoutingResourceKind: Data]()
+        for kind in requirements {
+            switch status(for: kind, now: now, fileManager: fileManager) {
+            case .missing:
+                throw RoutingResourceError.missing(kind)
+            case let .stale(record):
+                throw RoutingResourceError.stale(
+                    kind,
+                    installedAt: record.installedAt
+                )
+            case let .invalid(error):
+                throw error
+            case .ready:
+                let data = try Data(
+                    contentsOf: resourceURL(for: kind),
+                    options: [.mappedIfSafe]
+                )
+                _ = try Self.validate(data: data, kind: kind)
+                snapshot[kind] = data
+            }
+        }
+        return snapshot
+    }
+
     private func commit(
         data: Data,
         kind: RoutingResourceKind,
@@ -668,6 +704,43 @@ public struct RoutingResourceDownloadClient: Sendable {
             installedAt: now(),
             fileManager: fileManager
         )
+    }
+
+    /// Makes every public routing database referenced by one profile ready for
+    /// launch. A ready, checksum-verified resource is left untouched; missing,
+    /// stale, or invalid resources are replaced from the maintained HTTPS
+    /// source and verified before either embedded core can see them.
+    @discardableResult
+    public func ensureRequiredResources(
+        for profileYAML: String,
+        in store: RoutingResourceStore,
+        statusDate: Date = .now,
+        fileManager: FileManager = .default
+    ) async throws -> Set<RoutingResourceKind> {
+        let required = ProfileConfigurationInspector
+            .inspect(yaml: profileYAML)
+            .requiredRoutingResources
+        var installed = Set<RoutingResourceKind>()
+
+        for kind in RoutingResourceKind.allCases where required.contains(kind) {
+            if case .ready = store.status(
+                for: kind,
+                now: statusDate,
+                fileManager: fileManager
+            ) {
+                continue
+            }
+            try Task.checkCancellation()
+            let descriptor = try RoutingResourceRemoteDescriptor
+                .maintainedDefault(for: kind)
+            try await downloadAndInstall(
+                descriptor,
+                into: store,
+                fileManager: fileManager
+            )
+            installed.insert(kind)
+        }
+        return installed
     }
 
     public static func validateRemoteURL(_ url: URL) throws {

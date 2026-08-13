@@ -87,18 +87,18 @@ struct ManualNodeEditorSheet: View {
     }
 
     private var header: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: AetherVisual.s4) {
             ZStack {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(AetherVisual.blue.opacity(0.10))
+                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.10))
                 Image(systemName: "point.3.connected.trianglepath.dotted")
                     .font(.system(size: 24, weight: .medium))
-                    .foregroundStyle(AetherVisual.blue)
+                    .foregroundStyle(Color.accentColor)
                     .accessibilityHidden(true)
             }
             .frame(width: 50, height: 50)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(
                     isEditing
                         ? AppLocalization.string("Edit Node")
@@ -116,7 +116,7 @@ struct ManualNodeEditorSheet: View {
             }
             Spacer()
         }
-        .padding(22)
+        .padding(AetherVisual.s6)
     }
 
     private var connectionSection: some View {
@@ -176,7 +176,7 @@ struct ManualNodeEditorSheet: View {
                 TextField("Username", text: $node.username)
                     .accessibilityIdentifier("manual-node-username")
                 SecureField("Password (optional)", text: $node.password)
-                HStack(spacing: 10) {
+                HStack(spacing: AetherVisual.s3) {
                     Label(
                         node.privateKey.isEmpty
                             ? AppLocalization.string("No private key selected")
@@ -376,7 +376,7 @@ struct ManualNodeEditorSheet: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
@@ -407,7 +407,7 @@ struct ManualNodeEditorSheet: View {
                     .accessibilityIdentifier("create-manual-node")
             }
         }
-        .padding(18)
+        .padding(AetherVisual.s5)
     }
 
     private var storageStatusLabel: some View {

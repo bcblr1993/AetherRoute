@@ -406,12 +406,15 @@ public struct ProfileCatalogStore: Sendable {
     }
 
     private func load(fileManager: FileManager) throws -> ProfileCatalog {
-        let attributes = try fileManager.attributesOfItem(atPath: catalogURL.path)
-        let size = (attributes[.size] as? NSNumber)?.intValue ?? 0
+        // Reading attributes can block indefinitely on macOS 26 when the
+        // encrypted catalog carries provenance and backup-exclusion xattrs.
+        // Mapping the file keeps the pre-decode size gate without forcing
+        // Foundation to enumerate those extended attributes.
+        let data = try Data(contentsOf: catalogURL, options: [.mappedIfSafe])
+        let size = data.count
         guard size <= Self.maximumEncryptedBytes else {
             throw ProfileCatalogStoreError.encryptedCatalogTooLarge(size)
         }
-        let data = try Data(contentsOf: catalogURL, options: [.mappedIfSafe])
         let metadata = try codec.decodeEnvelope(data)
         let key = try keyStore.loadKey(keyID: metadata.keyID)
         let catalog = try codec.open(data, keyData: key)

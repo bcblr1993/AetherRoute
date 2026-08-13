@@ -13,6 +13,10 @@ extern int32_t clash_flow_engine_create(
 extern int32_t clash_flow_engine_destroy(
     clash_flow_engine_t *
 );
+extern int32_t clash_flow_engine_set_routing_mode_v1(
+    clash_flow_engine_t *,
+    int32_t
+);
 extern int32_t clash_flow_selector_snapshot_v1(
     clash_flow_engine_t *,
     const uint8_t *,
@@ -121,6 +125,13 @@ static int32_t engine_create_adapter(
 
 static int32_t engine_destroy_adapter(void *engine) {
     return clash_flow_engine_destroy((clash_flow_engine_t *)engine);
+}
+
+static int32_t engine_set_routing_mode_adapter(void *engine, int32_t mode) {
+    return clash_flow_engine_set_routing_mode_v1(
+        (clash_flow_engine_t *)engine,
+        mode
+    );
 }
 
 static int32_t selector_snapshot_adapter(
@@ -348,5 +359,22 @@ int32_t aetherroute_flow_abi_load_v2(aetherroute_flow_abi_v2_t *output) {
     output->udp_read = udp_read_adapter;
     output->cancel = cancel_adapter;
     output->destroy = destroy_adapter;
+    return 1;
+}
+
+int32_t aetherroute_flow_abi_load_v3(aetherroute_flow_abi_v3_t *output) {
+    if (output == NULL || output->struct_size != sizeof(*output)) {
+        return 0;
+    }
+    const uint32_t struct_size = output->struct_size;
+    memset(output, 0, sizeof(*output));
+    output->struct_size = struct_size;
+    output->v2.struct_size = sizeof(output->v2);
+    if (aetherroute_flow_abi_load_v2(&output->v2) != 1) {
+        memset(output, 0, sizeof(*output));
+        output->struct_size = struct_size;
+        return 0;
+    }
+    output->engine_set_routing_mode = engine_set_routing_mode_adapter;
     return 1;
 }

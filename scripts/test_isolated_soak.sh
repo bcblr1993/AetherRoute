@@ -87,6 +87,21 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+SOURCE_MANIFEST_BEFORE="$TEMP/source-before.txt"
+SOURCE_MANIFEST_AFTER="$TEMP/source-after.txt"
+"$ROOT/scripts/source_manifest.sh" >"$SOURCE_MANIFEST_BEFORE"
+SOURCE_MANIFEST_SHA256=$(awk \
+  '$1 == "MANIFEST_SHA256" {print $2}' "$SOURCE_MANIFEST_BEFORE")
+printf '%s\n' "$SOURCE_MANIFEST_SHA256" | grep -Eq '^[0-9a-f]{64}$' || {
+  echo "Could not resolve the soak source manifest" >&2
+  exit 1
+}
+GIT_COMMIT=$(git -C "$ROOT" rev-parse HEAD)
+printf '%s\n' "$GIT_COMMIT" | grep -Eq '^[0-9a-f]{40}$' || {
+  echo "Could not resolve the soak source commit" >&2
+  exit 1
+}
+
 diagnostic_manifest() {
   for diagnostic_directory in \
     "$HOME/Library/Logs/DiagnosticReports" \
@@ -142,6 +157,8 @@ printf 'round\tengine\tcompleted_utc\twall_seconds\tcycles\tmax_rss_bytes\tresul
   printf 'fd_growth_budget=%s\n' "$FD_GROWTH_BUDGET"
   printf 'machine=%s\n' "$(uname -m)"
   printf 'os=%s\n' "$(sw_vers -productVersion)"
+  printf 'git_commit=%s\n' "$GIT_COMMIT"
+  printf 'source_manifest_sha256=%s\n' "$SOURCE_MANIFEST_SHA256"
   printf 'runner_sha256=%s\n' "$(shasum -a 256 "$ROOT/scripts/test_isolated_soak.sh" | awk '{print $1}')"
   printf 'flow_harness_sha256=%s\n' "$(shasum -a 256 "$ROOT/Tests/CoreSmoke/flow_core_smoke.c" | awk '{print $1}')"
   printf 'packet_harness_sha256=%s\n' "$(shasum -a 256 "$ROOT/Tests/CoreSmoke/packet_tunnel_core_smoke.c" | awk '{print $1}')"
@@ -297,6 +314,16 @@ if [ -s "$new_diagnostics" ]; then
   echo "Isolated soak generated a core crash, hang, or spin report" >&2
   exit 1
 fi
+
+"$ROOT/scripts/source_manifest.sh" >"$SOURCE_MANIFEST_AFTER"
+cmp -s "$SOURCE_MANIFEST_BEFORE" "$SOURCE_MANIFEST_AFTER" || {
+  echo "Source tree changed during the isolated soak" >&2
+  exit 1
+}
+test "$(git -C "$ROOT" rev-parse HEAD)" = "$GIT_COMMIT" || {
+  echo "Git commit changed during the isolated soak" >&2
+  exit 1
+}
 
 END_EPOCH=$(date +%s)
 END_UTC=$(date -u '+%Y-%m-%dT%H:%M:%SZ')

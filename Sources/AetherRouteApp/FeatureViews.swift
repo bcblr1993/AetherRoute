@@ -9,7 +9,7 @@ struct ProxiesView: View {
             if let profile = tunnel.activeProfile,
                let summary = tunnel.activeProfileSummary {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: AetherVisual.s5) {
                         ProfileInspectionHeader(
                             profileName: profile.name,
                             itemCount: summary.proxyCount,
@@ -19,7 +19,7 @@ struct ProxiesView: View {
 
                         if !summary.proxyGroups.isEmpty {
                             FeatureSection(title: "Proxy groups", symbol: "square.stack.3d.up") {
-                                VStack(spacing: 12) {
+                                VStack(spacing: AetherVisual.s3) {
                                     ForEach(summary.proxyGroups) { group in
                                         ProxyGroupCard(group: group)
                                     }
@@ -29,7 +29,7 @@ struct ProxiesView: View {
 
                         if !summary.proxies.isEmpty {
                             FeatureSection(title: "Endpoints", symbol: "server.rack") {
-                                VStack(spacing: 12) {
+                                VStack(spacing: AetherVisual.s3) {
                                     ForEach(summary.proxies) { proxy in
                                         ProxyCard(proxy: proxy)
                                     }
@@ -43,7 +43,10 @@ struct ProxiesView: View {
                                     ForEach(summary.proxyProviders) { provider in
                                         ProviderRow(provider: provider)
                                         if provider.id != summary.proxyProviders.last?.id {
-                                            Divider().padding(.leading, 44)
+                                            Divider().padding(
+                                                .leading,
+                                                AetherVisual.onboardingTopPadding
+                                            )
                                         }
                                     }
                                 }
@@ -100,14 +103,14 @@ struct ConnectionsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: AetherVisual.s5) {
+                HStack(spacing: AetherVisual.s3) {
                     sessionMetric.frame(width: 170)
                     modeMetric.frame(width: 170)
                     profileMetric
                 }
 
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: AetherVisual.s4) {
                     HStack {
                         Label("Current session", systemImage: "clock.arrow.circlepath")
                             .font(.headline)
@@ -155,10 +158,10 @@ struct ConnectionsView: View {
                         }
                     }
                 }
-                .padding(20)
+                .padding(AetherVisual.s5)
                 .featureCard()
 
-                HStack(spacing: 12) {
+                HStack(spacing: AetherVisual.s3) {
                     TelemetryMetric(
                         title: "Upload",
                         symbol: "arrow.up",
@@ -197,7 +200,7 @@ struct ConnectionsView: View {
                             : "Connect with an active profile to start a session. No connection data is fabricated while the secure connection is stopped."
                     )
                 } else {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: AetherVisual.s3) {
                         HStack {
                             Label(
                                 "Active connections",
@@ -220,7 +223,7 @@ struct ConnectionsView: View {
                             ConnectionTelemetryRow(connection: connection)
                         }
                     }
-                    .padding(20)
+                    .padding(AetherVisual.s5)
                     .featureCard()
                 }
             }
@@ -300,19 +303,19 @@ struct RulesView: View {
         Group {
             if let summary = tunnel.activeProfileSummary {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 18) {
-                        HStack(spacing: 18) {
+                    LazyVStack(alignment: .leading, spacing: AetherVisual.s5) {
+                        HStack(spacing: AetherVisual.s5) {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                                     .fill(Color.indigo.opacity(0.10))
                                 Image(systemName: "list.number")
                                     .font(.system(size: 25, weight: .medium))
-                                    .foregroundStyle(.indigo)
+                                    .foregroundStyle(Color.accentColor)
                             }
                             .frame(width: 58, height: 58)
                             .accessibilityHidden(true)
 
-                            VStack(alignment: .leading, spacing: 5) {
+                            VStack(alignment: .leading, spacing: AetherVisual.s2) {
                                 Text("Ordered routing policy")
                                     .font(.title3.weight(.semibold))
                                     .foregroundStyle(.primary)
@@ -321,7 +324,7 @@ struct RulesView: View {
                                     .foregroundStyle(.primary)
                             }
                             Spacer()
-                            VStack(alignment: .trailing, spacing: 5) {
+                            VStack(alignment: .trailing, spacing: AetherVisual.s2) {
                                 Text(verbatim: String(summary.ruleCount))
                                     .font(.title2.weight(.semibold))
                                     .monospacedDigit()
@@ -342,7 +345,7 @@ struct RulesView: View {
                                 symbol: "arrow.triangle.branch"
                             )
                         }
-                        .padding(20)
+                        .padding(AetherVisual.s5)
                         .featureCard()
                         .accessibilityElement(children: .contain)
                         .accessibilityAddTraits(.isStaticText)
@@ -353,7 +356,10 @@ struct RulesView: View {
                                     ForEach(summary.ruleProviders) { provider in
                                         ProviderRow(provider: provider)
                                         if provider.id != summary.ruleProviders.last?.id {
-                                            Divider().padding(.leading, 44)
+                                            Divider().padding(
+                                                .leading,
+                                                AetherVisual.onboardingTopPadding
+                                            )
                                         }
                                     }
                                 }
@@ -368,10 +374,10 @@ struct RulesView: View {
                                 detail: "The active profile contains no ordered rule entries. Its effective fallback is determined only after the protocol core validates and starts the profile."
                             )
                         } else {
-                            VStack(alignment: .leading, spacing: 12) {
+                            VStack(alignment: .leading, spacing: AetherVisual.s3) {
                                 Label("Evaluation order", systemImage: "arrow.down")
                                     .font(.title3.weight(.bold))
-                                VStack(spacing: 10) {
+                                VStack(spacing: AetherVisual.s3) {
                                     ForEach(summary.rules) { rule in
                                         RuleRow(rule: rule)
                                     }
@@ -418,7 +424,7 @@ struct DNSView: View {
         Group {
             if let summary = tunnel.activeProfileSummary {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 18) {
+                    LazyVStack(alignment: .leading, spacing: AetherVisual.s5) {
                         header(summary.dns)
                         if summary.dns.isPresent {
                             configuredContent(summary.dns)
@@ -447,9 +453,9 @@ struct DNSView: View {
     }
 
     private func header(_ dns: DNSConfigurationSummary) -> some View {
-        HStack(spacing: 18) {
+        HStack(spacing: AetherVisual.s5) {
             ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                     .fill(headerColor(dns).opacity(0.10))
                 Image(systemName: headerSymbol(dns))
                     .font(.system(size: 25, weight: .medium))
@@ -458,7 +464,7 @@ struct DNSView: View {
             .frame(width: 58, height: 58)
             .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 Text("DNS & Fake-IP")
                     .font(.title3.weight(.semibold))
                 Text(headerDetail(dns))
@@ -472,13 +478,13 @@ struct DNSView: View {
                 symbol: headerSymbol(dns)
             )
         }
-        .padding(20)
+        .padding(AetherVisual.s5)
         .featureCard()
     }
 
     @ViewBuilder
     private func configuredContent(_ dns: DNSConfigurationSummary) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: AetherVisual.s3) {
             DNSMetricCard(
                 title: "Primary",
                 value: "\(dns.nameserverCount)",
@@ -511,7 +517,7 @@ struct DNSView: View {
                     symbol: modeSymbol(dns.mode),
                     tint: modeColor(dns.mode)
                 )
-                Divider().padding(.leading, 55)
+                Divider().padding(.leading, AetherVisual.wideListIndent)
                 DNSSettingRow(
                     title: "IPv6 answers",
                     detail: dns.allowsIPv6
@@ -523,7 +529,7 @@ struct DNSView: View {
                     symbol: "6.circle",
                     tint: dns.allowsIPv6 ? .teal : .secondary
                 )
-                Divider().padding(.leading, 55)
+                Divider().padding(.leading, AetherVisual.wideListIndent)
                 DNSSettingRow(
                     title: "Rule-aware queries",
                     detail: dns.respectsRules
@@ -535,7 +541,7 @@ struct DNSView: View {
                     symbol: "arrow.triangle.branch",
                     tint: dns.respectsRules ? .indigo : .secondary
                 )
-                Divider().padding(.leading, 55)
+                Divider().padding(.leading, AetherVisual.wideListIndent)
                 DNSSettingRow(
                     title: "Hosts mapping",
                     detail: dns.usesHosts
@@ -556,9 +562,9 @@ struct DNSView: View {
 #endif
 
         FeatureSection(title: "Upstream privacy", symbol: "lock.shield") {
-            VStack(alignment: .leading, spacing: 15) {
+            VStack(alignment: .leading, spacing: AetherVisual.s4) {
                 HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
                         Text("Transport types")
                             .font(.subheadline.weight(.semibold))
                         Text("Server addresses stay hidden in this summary.")
@@ -581,7 +587,7 @@ struct DNSView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
-                    HStack(spacing: 8) {
+                    HStack(spacing: AetherVisual.s2) {
                         ForEach(dns.upstreamTransports, id: \.self) { transport in
                             Label(
                                 transportTitle(transport),
@@ -589,8 +595,8 @@ struct DNSView: View {
                             )
                             .font(.caption.weight(.medium))
                             .foregroundStyle(transportColor(transport))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
+                            .padding(.horizontal, AetherVisual.s3)
+                            .padding(.vertical, AetherVisual.s2)
                             .background(
                                 transportColor(transport).opacity(0.09),
                                 in: Capsule()
@@ -627,7 +633,7 @@ struct DNSView: View {
                 }
                 .font(.subheadline)
             }
-            .padding(18)
+            .padding(AetherVisual.s5)
             .featureCard()
         }
 
@@ -656,7 +662,7 @@ struct DNSView: View {
                         symbol: "checkmark.shield"
                     )
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, AetherVisual.s2)
                 .featureCard()
             }
         }
@@ -668,7 +674,7 @@ struct DNSView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 2)
+        .padding(.horizontal, AetherVisual.s1)
     }
 
 #if AETHERROUTE_INDEPENDENT
@@ -677,8 +683,8 @@ struct DNSView: View {
     ) -> some View {
         FeatureSection(title: "TUN runtime overrides", symbol: "slider.horizontal.3") {
             VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: AetherVisual.s3) {
+                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
                         Text("Structured core policy")
                             .font(.subheadline.weight(.semibold))
                         Text(
@@ -702,9 +708,9 @@ struct DNSView: View {
                             : "slider.horizontal.3"
                     )
                 }
-                .padding(16)
+                .padding(AetherVisual.s4)
 
-                Divider().padding(.leading, 16)
+                Divider().padding(.leading, AetherVisual.s4)
                 dnsPolicyRow(
                     title: "Resolution mode",
                     detail: "Choose Normal, Fake-IP, or Redir-host without rewriting imported YAML."
@@ -720,7 +726,7 @@ struct DNSView: View {
                     .accessibilityIdentifier("dns-runtime-resolution-mode")
                 }
 
-                Divider().padding(.leading, 16)
+                Divider().padding(.leading, AetherVisual.s4)
                 dnsPolicyRow(
                     title: "IPv6 answers",
                     detail: "Override whether the resolver returns AAAA answers."
@@ -732,7 +738,7 @@ struct DNSView: View {
                     )
                 }
 
-                Divider().padding(.leading, 16)
+                Divider().padding(.leading, AetherVisual.s4)
                 dnsPolicyRow(
                     title: "Rule-aware queries",
                     detail: "Route upstream DNS queries through the rule engine."
@@ -745,7 +751,7 @@ struct DNSView: View {
                 }
 
                 if let message = tunnel.dnsRuntimePolicyMessage {
-                    Divider().padding(.leading, 16)
+                    Divider().padding(.leading, AetherVisual.s4)
                     Label(
                         message,
                         systemImage: tunnel.dnsRuntimePolicyMessageIsError
@@ -759,7 +765,7 @@ struct DNSView: View {
                             : Color.teal
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+                    .padding(AetherVisual.s4)
                 }
             }
             .featureCard()
@@ -771,18 +777,14 @@ struct DNSView: View {
         detail: LocalizedStringKey,
         @ViewBuilder control: () -> Control
     ) -> some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: AetherVisual.s4) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.primary)
                 Text(detail)
                     .font(.caption)
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.secondary)
             }
             Spacer(minLength: 16)
             control()
@@ -791,8 +793,8 @@ struct DNSView: View {
                         || !tunnel.canModifyDNSRuntimePolicy
                 )
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, AetherVisual.s4)
+        .padding(.vertical, AetherVisual.s3)
     }
 
     private func dnsBooleanPicker(
@@ -865,7 +867,7 @@ struct DNSView: View {
 #endif
 
     private var systemResolverContent: some View {
-        VStack(alignment: .leading, spacing: 15) {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
             Label("System resolver", systemImage: "macbook.and.iphone")
                 .font(.headline)
             Text("The active profile has no DNS section. The core therefore uses the system resolver behavior available to the selected network engine.")
@@ -876,9 +878,9 @@ struct DNSView: View {
                 systemImage: "hand.raised.fill"
             )
             .font(.subheadline)
-            .foregroundStyle(.teal)
+            .foregroundStyle(Color.accentColor)
         }
-        .padding(20)
+        .padding(AetherVisual.s5)
         .featureCard()
     }
 
@@ -991,15 +993,15 @@ private struct DNSMetricCard: View {
     let tint: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 9) {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            HStack(spacing: AetherVisual.s3) {
                 Image(systemName: symbol)
                     .font(.body)
                     .foregroundStyle(.primary)
                     .frame(width: 32, height: 32)
                     .background(
                         tint.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 9)
+                        in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
                     )
                     .accessibilityHidden(true)
                 Text(title)
@@ -1008,20 +1010,18 @@ private struct DNSMetricCard: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
                 Text(value)
                     .font(.title3.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.primary)
                 Text(detail)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
             }
         }
-        .padding(16)
+        .padding(AetherVisual.s4)
         .frame(maxWidth: .infinity)
         .featureCard()
         .accessibilityElement(children: .contain)
@@ -1039,35 +1039,29 @@ private struct DNSSettingRow: View {
     let tint: Color
 
     var body: some View {
-        HStack(spacing: 13) {
+        HStack(spacing: AetherVisual.s4) {
             Image(systemName: symbol)
                 .foregroundStyle(tint)
                 .frame(width: 34, height: 34)
-                .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
-            VStack(alignment: .leading, spacing: 3) {
+                .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.primary)
                 Text(detail)
                     .font(.caption)
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.secondary)
             }
             Spacer(minLength: 14)
             Text(value)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(
-                    colorScheme == .dark ? Color.white : Color.black
-                )
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, AetherVisual.s3)
+                .padding(.vertical, AetherVisual.s2)
                 .background(tint.opacity(0.09), in: Capsule())
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, AetherVisual.s4)
+        .padding(.vertical, AetherVisual.s3)
         .accessibilityElement(children: .combine)
     }
 }
@@ -1092,7 +1086,7 @@ private struct DNSCompactFact: View {
     let symbol: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
             Label(title, systemImage: symbol)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -1100,7 +1094,7 @@ private struct DNSCompactFact: View {
                 .font(.subheadline.weight(.semibold))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 18)
+        .padding(.horizontal, AetherVisual.s5)
         .accessibilityElement(children: .combine)
     }
 }
@@ -1114,30 +1108,26 @@ private struct ProfileInspectionHeader: View {
     let providerCount: Int
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: AetherVisual.s5) {
             ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                     .fill(Color.teal.opacity(0.10))
                 Image(systemName: "checkmark.shield")
                     .font(.system(size: 25, weight: .medium))
-                    .foregroundStyle(.teal)
+                    .foregroundStyle(Color.accentColor)
                     .accessibilityHidden(true)
             }
             .frame(width: 58, height: 58)
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 Text(profileName)
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                     .help(profileName)
                 Text("Import safety checks passed. The core validates protocol semantics when a session starts.")
                     .font(.body.weight(.medium))
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
@@ -1147,7 +1137,7 @@ private struct ProfileInspectionHeader: View {
                 CountBadge(value: providerCount, label: "Providers")
             }
         }
-        .padding(20)
+        .padding(AetherVisual.s5)
         .featureCard()
     }
 }
@@ -1159,32 +1149,29 @@ private struct CountBadge: View {
     let label: LocalizedStringKey
 
     var body: some View {
-        VStack(spacing: 3) {
+        VStack(spacing: AetherVisual.s1) {
             Text(verbatim: String(value))
                 .font(.title3.weight(.semibold))
                 .monospacedDigit()
-                .foregroundStyle(primaryTextColor)
+                .foregroundStyle(.primary)
             Text(label)
                 .font(.caption2.weight(.medium))
-                .foregroundStyle(primaryTextColor)
+                .foregroundStyle(.secondary)
         }
         .frame(minWidth: 52)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
+        .padding(.horizontal, AetherVisual.s2)
+        .padding(.vertical, AetherVisual.s2)
         .background(
             colorScheme == .dark ? Color.black : Color.white,
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
         }
         .accessibilityElement(children: .contain)
     }
 
-    private var primaryTextColor: Color {
-        colorScheme == .dark ? .white : .black
-    }
 }
 
 private struct FeatureSection<Content: View>: View {
@@ -1193,7 +1180,7 @@ private struct FeatureSection<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
             Label(title, systemImage: symbol)
                 .font(.headline)
             content
@@ -1208,21 +1195,21 @@ private struct ProxyGroupCard: View {
     let group: ProxyGroupConfigurationSummary
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            HStack(spacing: 13) {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            HStack(spacing: AetherVisual.s4) {
                 Image(systemName: "square.stack.3d.up.fill")
                     .font(.title3)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 34, height: 34)
                     .background(
                         Color.blue.opacity(0.09),
-                        in: RoundedRectangle(cornerRadius: 9)
+                        in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
                 )
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text(group.name)
                         .fontWeight(.medium)
-                        .foregroundStyle(primaryTextColor)
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                     Text(
                         String.localizedStringWithFormat(
@@ -1232,16 +1219,16 @@ private struct ProxyGroupCard: View {
                         )
                     )
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(primaryTextColor)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 if isManuallySelectable {
                     Text("Manual")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(primaryTextColor)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, AetherVisual.s2)
+                        .padding(.vertical, AetherVisual.s1)
                         .background(
                             colorScheme == .dark ? Color.black : Color.white,
                             in: Capsule()
@@ -1253,7 +1240,7 @@ private struct ProxyGroupCard: View {
                 } else {
                     Text(group.strategy.uppercased())
                         .font(.caption2.monospaced())
-                        .foregroundStyle(primaryTextColor)
+                        .foregroundStyle(.secondary)
                 }
             }
             .accessibilityElement(children: .contain)
@@ -1271,7 +1258,7 @@ private struct ProxyGroupCard: View {
                     .lineLimit(2)
             }
         }
-        .padding(15)
+        .padding(AetherVisual.s4)
         .featureCard()
         .help(group.name)
         .task(id: tunnel.isConnected) {
@@ -1289,24 +1276,24 @@ private struct ProxyGroupCard: View {
                 color: .secondary
             )
         } else if tunnel.proxySelectionRequests.contains(group.name) {
-            HStack(spacing: 10) {
+            HStack(spacing: AetherVisual.s3) {
                 ProgressView().controlSize(.small)
                 Text("Loading proxy choices")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, AetherVisual.s3)
             .frame(height: 40)
-            .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
             .accessibilityElement(children: .combine)
         } else if let snapshot = tunnel.proxySelections[group.name] {
             Button {
                 isPresentingMembers = true
             } label: {
-                HStack(spacing: 10) {
+                HStack(spacing: AetherVisual.s3) {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.teal)
+                        .foregroundStyle(Color.accentColor)
                     Text(snapshot.selectedMember ?? AppLocalization.string("No selection"))
                         .font(.subheadline.weight(.medium))
                         .lineLimit(1)
@@ -1315,10 +1302,10 @@ private struct ProxyGroupCard: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, AetherVisual.s3)
                 .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
-                .background(Color.blue.opacity(0.065), in: RoundedRectangle(cornerRadius: 10))
-                .contentShape(RoundedRectangle(cornerRadius: 10))
+                .background(Color.blue.opacity(0.065), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
+                .contentShape(RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
             }
             .buttonStyle(.plain)
             .fixedSize(horizontal: false, vertical: true)
@@ -1346,12 +1333,12 @@ private struct ProxyGroupCard: View {
     }
 
     private var latencyControl: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            HStack(spacing: AetherVisual.s3) {
                 Button {
                     Task { await tunnel.testProxyLatency(group: group.name) }
                 } label: {
-                    HStack(spacing: 7) {
+                    HStack(spacing: AetherVisual.s2) {
                         if tunnel.proxyLatencyRequests.contains(group.name) {
                             ProgressView().controlSize(.mini)
                         } else {
@@ -1374,7 +1361,7 @@ private struct ProxyGroupCard: View {
                 Spacer(minLength: 8)
 
                 if let best = bestLatency {
-                    HStack(spacing: 5) {
+                    HStack(spacing: AetherVisual.s2) {
                         Image(systemName: "bolt.fill")
                             .foregroundStyle(latencyColor(best))
                             .accessibilityHidden(true)
@@ -1384,21 +1371,21 @@ private struct ProxyGroupCard: View {
                                 Int64(best)
                             )
                         )
-                        .foregroundStyle(primaryTextColor)
+                        .foregroundStyle(.primary)
                     }
                     .font(.subheadline.weight(.semibold))
                 } else if tunnel.proxyLatencies[group.name] != nil {
                     Text("No response")
                         .font(.caption2.weight(.medium))
-                        .foregroundStyle(primaryTextColor)
+                        .foregroundStyle(.secondary)
                 }
             }
 
             if let results = tunnel.proxyLatencies[group.name]?.results,
                !results.isEmpty {
-                HStack(spacing: 7) {
+                HStack(spacing: AetherVisual.s2) {
                     ForEach(Array(results.prefix(3)), id: \.member) { result in
-                        HStack(spacing: 5) {
+                        HStack(spacing: AetherVisual.s2) {
                             Circle()
                                 .fill(
                                     result.delayMilliseconds.map(latencyColor)
@@ -1406,13 +1393,13 @@ private struct ProxyGroupCard: View {
                                 )
                                 .frame(width: 5, height: 5)
                             Text(result.member)
-                                .foregroundStyle(primaryTextColor)
+                                .foregroundStyle(.primary)
                                 .lineLimit(1)
                             Text(latencyText(result.delayMilliseconds))
-                                .foregroundStyle(primaryTextColor)
+                                .foregroundStyle(.secondary)
                         }
                         .font(.caption2)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, AetherVisual.s2)
                         .frame(height: 25)
                         .background(
                             Color.secondary.opacity(0.055),
@@ -1423,11 +1410,11 @@ private struct ProxyGroupCard: View {
                 }
             }
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 9)
+        .padding(.horizontal, AetherVisual.s3)
+        .padding(.vertical, AetherVisual.s3)
         .background(
             Color.secondary.opacity(0.035),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
         )
     }
 
@@ -1438,11 +1425,11 @@ private struct ProxyGroupCard: View {
     }
 
     private func memberChoices(_ snapshot: ProxySelectionState) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
             Text(group.name)
                 .font(.headline)
-                .padding(.horizontal, 10)
-                .padding(.top, 6)
+                .padding(.horizontal, AetherVisual.s3)
+                .padding(.top, AetherVisual.s2)
 
             Divider()
 
@@ -1461,17 +1448,17 @@ private struct ProxyGroupCard: View {
                         Spacer()
                         if member == snapshot.selectedMember {
                             Image(systemName: "checkmark")
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(Color.accentColor)
                         }
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, AetherVisual.s3)
                 .frame(height: 30)
             }
         }
-        .padding(8)
+        .padding(AetherVisual.s2)
         .frame(width: 260)
     }
 
@@ -1504,7 +1491,7 @@ private struct ProxyGroupCard: View {
         symbol: String,
         color: Color
     ) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: AetherVisual.s3) {
             Image(systemName: symbol).foregroundStyle(color)
             Text(title)
                 .font(.subheadline.weight(.medium))
@@ -1512,18 +1499,15 @@ private struct ProxyGroupCard: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, AetherVisual.s3)
         .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
-        .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
     }
 
     private var isManuallySelectable: Bool {
         group.strategy.lowercased() == "select"
     }
 
-    private var primaryTextColor: Color {
-        colorScheme == .dark ? .white : .black
-    }
 }
 
 private struct ProxyCard: View {
@@ -1531,7 +1515,7 @@ private struct ProxyCard: View {
     let proxy: ProxyConfigurationSummary
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
             HStack {
                 Image(systemName: "server.rack")
                     .foregroundStyle(statusColor)
@@ -1539,9 +1523,9 @@ private struct ProxyCard: View {
                 Spacer()
                 Text(statusTitle)
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(primaryTextColor)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, AetherVisual.s2)
+                    .padding(.vertical, AetherVisual.s1)
                     .background(
                         colorScheme == .dark ? Color.black : Color.white,
                         in: Capsule()
@@ -1551,17 +1535,17 @@ private struct ProxyCard: View {
                             .stroke(statusColor.opacity(0.72), lineWidth: 0.75)
                     }
             }
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(proxy.name)
                     .fontWeight(.medium)
-                    .foregroundStyle(primaryTextColor)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(proxy.protocolName.uppercased())
                     .font(.caption.monospaced().weight(.medium))
-                    .foregroundStyle(primaryTextColor)
+                    .foregroundStyle(.secondary)
             }
         }
-        .padding(15)
+        .padding(AetherVisual.s4)
         .featureCard()
         .help(proxy.name)
         .accessibilityElement(children: .contain)
@@ -1577,26 +1561,23 @@ private struct ProxyCard: View {
 
     private var statusColor: Color {
         switch proxy.recognition {
-        case .recognized: .teal
+        case .recognized: .green
         case .requiresCoreValidation: .orange
         case .incomplete: .red
         }
     }
 
-    private var primaryTextColor: Color {
-        colorScheme == .dark ? .white : .black
-    }
 }
 
 private struct ProviderRow: View {
     let provider: ProviderConfigurationSummary
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: AetherVisual.s3) {
             Image(systemName: "shippingbox.fill")
-                .foregroundStyle(.indigo)
+                .foregroundStyle(Color.accentColor)
                 .frame(width: 32)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(provider.name).fontWeight(.medium)
                 Text(provider.sourceType.uppercased())
                     .font(.caption.monospaced())
@@ -1604,46 +1585,38 @@ private struct ProviderRow: View {
             }
             Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, AetherVisual.s4)
+        .padding(.vertical, AetherVisual.s3)
         .accessibilityElement(children: .combine)
     }
 }
 
 private struct SessionMetric: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     let label: LocalizedStringKey
     let value: String
     let symbol: String
     let tint: Color
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: AetherVisual.s3) {
             Image(systemName: symbol)
                 .font(.title3)
-                .foregroundStyle(
-                    colorScheme == .dark ? Color.white : Color.black
-                )
+                .foregroundStyle(.primary)
                 .frame(width: 36, height: 36)
-                .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+                .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(label)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.primary)
                 Text(value)
                     .fontWeight(.medium)
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
-        .padding(15)
+        .padding(AetherVisual.s4)
         .frame(maxWidth: .infinity)
         .featureCard()
         .accessibilityElement(children: .contain)
@@ -1660,7 +1633,7 @@ private struct SessionLabel: View {
     var body: some View {
         Text(value)
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(Color(nsColor: .labelColor))
+            .foregroundStyle(.primary)
             .frame(width: 94, alignment: .leading)
     }
 }
@@ -1673,21 +1646,21 @@ private struct TelemetryMetric: View {
     let accessibilityIdentifier: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            HStack(spacing: AetherVisual.s2) {
                 Image(systemName: symbol)
                     .accessibilityHidden(true)
                 Text(title)
                     .accessibilityIdentifier(accessibilityIdentifier)
             }
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color(nsColor: .labelColor))
+                .foregroundStyle(.primary)
             Text(value)
                 .font(.title3.monospacedDigit().weight(.medium))
-                .foregroundStyle(Color(nsColor: .labelColor))
+                .foregroundStyle(.primary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(17)
+        .padding(AetherVisual.s5)
         .featureCard()
         // Keep the metric name and value as distinct semantic children. A
         // combined card is announced as one long phrase and also prevents
@@ -1700,22 +1673,22 @@ private struct ConnectionTelemetryRow: View {
     let connection: ConnectionTelemetry
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: AetherVisual.s4) {
             Image(systemName: connection.transport == .tcp ? "arrow.left.arrow.right" : "dot.radiowaves.left.and.right")
                 .font(.body.weight(.medium))
                 .foregroundStyle(connection.transport == .tcp ? .blue : .teal)
                 .frame(width: 34, height: 34)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(
                     verbatim: "\(connection.destination):\(connection.destinationPort)"
                 )
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                     .textSelection(.enabled)
-                HStack(spacing: 8) {
+                HStack(spacing: AetherVisual.s2) {
                     Text(connection.transport == .tcp ? "TCP" : "UDP")
                     if !connection.rule.isEmpty {
                         Text(connection.rulePayload.isEmpty
@@ -1727,13 +1700,13 @@ private struct ConnectionTelemetryRow: View {
                     }
                 }
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(Color(nsColor: .labelColor))
+                .foregroundStyle(.primary)
                 .lineLimit(1)
             }
 
             Spacer(minLength: 12)
 
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .trailing, spacing: AetherVisual.s1) {
                 Label(
                     formattedBytes(connection.downloadTotal),
                     systemImage: "arrow.down"
@@ -1744,9 +1717,9 @@ private struct ConnectionTelemetryRow: View {
                 )
             }
             .font(.caption.monospacedDigit())
-            .foregroundStyle(Color(nsColor: .labelColor))
+            .foregroundStyle(.primary)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, AetherVisual.s3)
         // Destination, route decision and byte counters are independently
         // useful to VoiceOver. Keeping them as children also avoids treating
         // the decorative transport tile as part of one giant text element.
@@ -1766,29 +1739,27 @@ private func formattedBytes(_ bytes: UInt64) -> String {
 }
 
 private struct RuleRow: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     let rule: RuleConfigurationSummary
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: AetherVisual.s4) {
             Text(verbatim: String(rule.order))
                 .font(.subheadline.monospacedDigit().weight(.semibold))
-                .foregroundStyle(primaryTextColor)
+                .foregroundStyle(.secondary)
                 .frame(width: 30, height: 30)
                 .background(Color.secondary.opacity(0.08), in: Circle())
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(rule.kind)
                     .font(.subheadline.monospaced().weight(.medium))
                 if let criteria = rule.criteria {
                     Text(criteria)
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(primaryTextColor)
+                        .foregroundStyle(.primary)
                         .lineLimit(2)
                 } else {
                     Text("Any remaining traffic")
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(primaryTextColor)
+                        .foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 14)
@@ -1797,18 +1768,15 @@ private struct RuleRow: View {
                 .accessibilityHidden(true)
             Text(rule.target)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(primaryTextColor)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
                 .frame(maxWidth: 180, alignment: .trailing)
         }
-        .padding(15)
+        .padding(AetherVisual.s4)
         .featureCard()
         .accessibilityElement(children: .contain)
     }
 
-    private var primaryTextColor: Color {
-        colorScheme == .dark ? .white : .black
-    }
 }
 
 private struct StatePill: View {
@@ -1821,18 +1789,14 @@ private struct StatePill: View {
     var body: some View {
         Label {
             Text(title)
-                .foregroundStyle(
-                    colorScheme == .dark ? Color.white : Color.black
-                )
+                .foregroundStyle(.primary)
         } icon: {
             Image(systemName: symbol)
-                .foregroundStyle(
-                    colorScheme == .dark ? Color.white : Color.black
-                )
+                .foregroundStyle(color)
         }
             .font(.subheadline.weight(.semibold))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, AetherVisual.s3)
+            .padding(.vertical, AetherVisual.s2)
             .background(
                 colorScheme == .dark ? Color.black : Color.white,
                 in: Capsule()
@@ -1855,7 +1819,7 @@ private struct FeatureEmptyState: View {
             Text(detail)
         }
         .frame(maxWidth: .infinity, minHeight: 210)
-        .aetherPanel(radius: 18)
+        .aetherPanel()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(title))
         .accessibilityValue(Text(detail))
@@ -1884,6 +1848,6 @@ private struct TruncationNotice: View {
 
 private extension View {
     func featureCard() -> some View {
-        aetherPanel(radius: 15)
+        aetherPanel()
     }
 }

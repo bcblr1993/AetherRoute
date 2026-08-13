@@ -116,6 +116,7 @@ final class BypassPolicyTests: XCTestCase {
             rules: [
                 BypassRule.parse("example.com"),
                 BypassRule.parse("10.20.30.40/20"),
+                BypassRule.parse("100.64.0.0/10"),
                 BypassRule.parse("2001:db8:1::f/48"),
             ]
         ).validated()
@@ -130,6 +131,11 @@ final class BypassPolicyTests: XCTestCase {
                     destinationAddress: "10.20.16.0",
                     subnetMask: "255.255.240.0",
                     prefixLength: 20
+                ),
+                .init(
+                    destinationAddress: "100.64.0.0",
+                    subnetMask: "255.192.0.0",
+                    prefixLength: 10
                 ),
             ]
         )

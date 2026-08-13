@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "releaseStatus": "notarized-test-candidate",
+  "product": "AetherRoute",
+  "author": "陈艳男 (ChenYanNan)",
+  "version": "1.0.0",
+  "build": "202608111411",
+  "createdAt": "2026-08-11T06:14:13Z",
+  "architecture": "arm64",
+  "safety": {
+    "productionApproved": false,
+    "networkActivatedDuringBuild": false,
+    "systemNetworkState": "unchanged",
+    "diagnosticsIncluded": true
+  },
+  "sourceManifestSHA256": "a57d52900c2f8e2016a261351cd8329496f9948fbfad5ebf1245784e2cec4d3f",
+  "dmg": {
+    "sha256": "152563ba7f4f719ce952c08036f68035227c8989f187fb041406b94c8c85172d",
+    "bytes": 15398737
+  },
+  "notarization": {
+    "status": "Accepted",
+    "submissionID": "40f124f8-1a45-4121-a7a3-df815665032a"
+  }
+}

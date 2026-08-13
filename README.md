@@ -165,6 +165,16 @@ AETHERROUTE_IDLE_USE_SAMPLE=YES \
 ./scripts/test_manual_nodes.sh
 # Validate user-supplied Clash profiles without changing system networking.
 ./scripts/test_external_profiles.sh /absolute/profile-a.yaml /absolute/profile-b.yaml
+# Authorized live egress check. Drives the Direct core with a real profile and
+# a loopback SOCKS5/HTTP listener, bypassing NetworkExtension entirely, and
+# reports whether traffic reaches the selected node. Every other gate runs on
+# loopback peers with networking denied and therefore cannot answer "does the
+# proxy carry real traffic". Run this first when the product cannot browse: a
+# pass isolates the fault to the Swift NetworkExtension integration, a failure
+# isolates it to the profile, the node, or the Rust core. It binds loopback
+# only and never changes system proxy, DNS, or routes.
+AETHERROUTE_ALLOW_LIVE_PROBE=YES \
+  ./scripts/live_proxy_probe.sh /absolute/profile.yaml PROXY
 # Normalize a provider body, then start both cores with all networking denied.
 ./scripts/test_external_subscription_payload.sh /absolute/subscription-body
 # Authorized live URL gate reads the credential from stdin, never argv.

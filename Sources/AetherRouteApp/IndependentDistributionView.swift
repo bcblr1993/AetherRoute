@@ -10,7 +10,7 @@ struct IndependentDistributionView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: AetherVisual.s5) {
                 header
                 licenseCard
                 updateCard
@@ -27,41 +27,31 @@ struct IndependentDistributionView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 16) {
-            Image(systemName: "person.badge.key.fill")
-                .font(.system(size: 24, weight: .medium))
-                .foregroundStyle(.blue)
-                .accessibilityHidden(true)
-                .frame(width: 52, height: 52)
-                .background(
-                    Color.blue.opacity(0.10),
-                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                )
-            VStack(alignment: .leading, spacing: 5) {
-                Text("License & Updates")
-                    .font(.title2.weight(.semibold))
-                Text("AetherRoute verifies signed license receipts and update manifests without storing your activation key.")
-                    .foregroundStyle(.primary.opacity(0.82))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+            Text("License & Updates")
+                .font(.title2.weight(.semibold))
+            Text("AetherRoute verifies signed license receipts and update manifests without storing your activation key.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var licenseCard: some View {
         distributionCard {
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .top, spacing: AetherVisual.s4) {
                 statusIcon(
                     symbol: licenseSymbol,
                     tint: licenseTint
                 )
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text("License")
                         .font(.headline)
                     Text(licenseTitle)
                         .font(.subheadline.weight(.medium))
                     Text(licenseDetail)
                         .font(.caption)
-                        .foregroundStyle(.primary.opacity(0.82))
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
@@ -92,7 +82,7 @@ struct IndependentDistributionView: View {
 
             if distribution.isConfigured && !hasStoredLicense {
                 Divider()
-                HStack(spacing: 10) {
+                HStack(spacing: AetherVisual.s3) {
                     SecureField("License key", text: $licenseKey)
                         .textFieldStyle(.roundedBorder)
                         .accessibilityIdentifier("license-key-field")
@@ -119,16 +109,16 @@ struct IndependentDistributionView: View {
 
     private var updateCard: some View {
         distributionCard {
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .top, spacing: AetherVisual.s4) {
                 statusIcon(symbol: updateSymbol, tint: updateTint)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text("Software Updates")
                         .font(.headline)
                     Text(updateTitle)
                         .font(.subheadline.weight(.medium))
                     Text(updateDetail)
                         .font(.caption)
-                        .foregroundStyle(.primary.opacity(0.82))
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
@@ -170,7 +160,7 @@ struct IndependentDistributionView: View {
                 .font(.caption)
                 .foregroundStyle(
                     distribution.updateDownloadSucceeded
-                        ? AetherVisual.success
+                        ? Color.green
                         : Color.orange
                 )
                 .fixedSize(horizontal: false, vertical: true)
@@ -185,24 +175,24 @@ struct IndependentDistributionView: View {
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: "lock.shield")
-                .foregroundStyle(.teal)
+                .foregroundStyle(Color.accentColor)
         }
         .font(.subheadline)
-        .foregroundStyle(.primary)
-        .padding(.horizontal, 2)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, AetherVisual.s1)
     }
 
     private func distributionCard<Content: View>(
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 16, content: content)
-            .padding(18)
+        VStack(alignment: .leading, spacing: AetherVisual.s4, content: content)
+            .padding(AetherVisual.s5)
             .background(
                 Color(nsColor: .controlBackgroundColor),
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.07))
             }
     }
@@ -214,7 +204,7 @@ struct IndependentDistributionView: View {
             .frame(width: 36, height: 36)
             .background(
                 tint.opacity(0.11),
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
             )
             .accessibilityHidden(true)
     }
@@ -272,7 +262,7 @@ struct IndependentDistributionView: View {
 
     private var licenseTint: Color {
         switch distribution.licenseState {
-        case .active: AetherVisual.success
+        case .active: Color.green
         case .restricted: .orange
         case .failure: .red
         case .inactive: .blue
@@ -338,7 +328,7 @@ struct IndependentDistributionView: View {
     private var updateTint: Color {
         switch distribution.updateState {
         case .available: .blue
-        case .current: AetherVisual.success
+        case .current: Color.green
         case .failure: .red
         case .idle: .blue
         case .notConfigured: .secondary

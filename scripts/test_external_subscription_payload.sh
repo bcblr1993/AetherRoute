@@ -42,11 +42,20 @@ CANONICAL_PROFILE="$TEMP_DIR/canonical-profile.yaml"
 # those read-only runtime inputs adjacent to the canonical temporary profile so
 # the existing dual-core gate sees the same resources as the original fixture.
 PAYLOAD_DIRECTORY=$(dirname -- "$PAYLOAD")
+PAYLOAD_PARENT_DIRECTORY=$(dirname -- "$PAYLOAD_DIRECTORY")
 for ASSET in Country.mmdb GeoSite.dat; do
-  if [ -f "$PAYLOAD_DIRECTORY/$ASSET" ]; then
-    cp "$PAYLOAD_DIRECTORY/$ASSET" "$TEMP_DIR/$ASSET"
-    chmod 600 "$TEMP_DIR/$ASSET"
-  fi
+  LOWERCASE_ASSET=$(printf '%s' "$ASSET" | tr '[:upper:]' '[:lower:]')
+  for SOURCE in \
+    "$PAYLOAD_DIRECTORY/$ASSET" \
+    "$PAYLOAD_DIRECTORY/$LOWERCASE_ASSET" \
+    "$PAYLOAD_PARENT_DIRECTORY/$ASSET" \
+    "$PAYLOAD_PARENT_DIRECTORY/$LOWERCASE_ASSET"; do
+    if [ -f "$SOURCE" ] && [ ! -L "$SOURCE" ]; then
+      cp "$SOURCE" "$TEMP_DIR/$ASSET"
+      chmod 600 "$TEMP_DIR/$ASSET"
+      break
+    fi
+  done
 done
 
 "$ROOT/scripts/test_external_profiles.sh" "$CANONICAL_PROFILE"

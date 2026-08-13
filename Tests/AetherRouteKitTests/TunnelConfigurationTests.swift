@@ -5,6 +5,11 @@ final class TunnelConfigurationTests: XCTestCase {
     func testDefaultConfigurationIsValid() throws {
         let configuration = TunnelConfiguration()
         XCTAssertEqual(try configuration.validated(), configuration)
+        XCTAssertEqual(
+            configuration.dnsServers,
+            TunnelConfiguration.packetFlowDNSServers
+        )
+        XCTAssertEqual(configuration.dnsServers, ["198.18.0.2"])
     }
 
     func testRejectsUnsafeMTU() {
@@ -65,8 +70,8 @@ final class TunnelConfigurationTests: XCTestCase {
     func testProviderConfigurationRoundTripsEveryRoutingMode() {
         let localProxy = LocalProxySettings(
             isEnabled: true,
-            httpPort: 17_890,
-            socksPort: 17_891
+            httpPort: 7_890,
+            socksPort: 7_891
         )
         for mode in RoutingMode.allCases {
             let encoded = TunnelProviderConfigurationCodec.setting(
@@ -180,8 +185,8 @@ final class TunnelConfigurationTests: XCTestCase {
             routingMode: .global,
             localProxy: LocalProxySettings(
                 isEnabled: true,
-                httpPort: 17_890,
-                socksPort: 17_891
+                httpPort: 7_890,
+                socksPort: 7_891
             )
         )
         XCTAssertFalse(
@@ -189,8 +194,8 @@ final class TunnelConfigurationTests: XCTestCase {
                 routingMode: .global,
                 localProxy: LocalProxySettings(
                     isEnabled: true,
-                    httpPort: 17_890,
-                    socksPort: 17_891
+                    httpPort: 7_890,
+                    socksPort: 7_891
                 ),
                 configuration: current,
                 isEnabled: true
@@ -201,8 +206,8 @@ final class TunnelConfigurationTests: XCTestCase {
                 routingMode: .global,
                 localProxy: LocalProxySettings(
                     isEnabled: true,
-                    httpPort: 17_890,
-                    socksPort: 17_891
+                    httpPort: 7_890,
+                    socksPort: 7_891
                 ),
                 configuration: current,
                 isEnabled: false
@@ -231,5 +236,66 @@ final class TunnelConfigurationTests: XCTestCase {
         )
         store.save(.global)
         XCTAssertEqual(store.load(), .global)
+    }
+
+    func testProviderLaunchSnapshotRoundTripsThroughStartOptions() throws {
+        let snapshot = try ProviderLaunchSnapshot(
+            profileYAML: """
+            proxies:
+              - name: Local Test
+                type: socks5
+                server: 127.0.0.1
+                port: 1080
+            proxy-groups:
+              - name: Main
+                type: select
+                proxies: [Local Test]
+            rules:
+              - MATCH,Main
+            """,
+            routingMode: .direct,
+            bypassPolicy: .empty,
+            dnsPolicy: .inherited,
+            proxySelections: ["Main": "Local Test"],
+            routingResources: [:]
+        )
+
+        let options = try ProviderLaunchSnapshotCodec.startOptions(
+            for: snapshot
+        )
+
+        XCTAssertEqual(
+            try ProviderLaunchSnapshotCodec.decode(options: options),
+            snapshot
+        )
+    }
+
+    func testProviderLaunchSnapshotRejectsMissingPayload() {
+        XCTAssertThrowsError(
+            try ProviderLaunchSnapshotCodec.decode(options: nil)
+        ) { error in
+            XCTAssertEqual(
+                error as? ProviderLaunchSnapshotError,
+                .missingPayload
+            )
+        }
+    }
+
+    func testProviderLaunchSnapshotRejectsUnexpectedRoutingResource() {
+        XCTAssertThrowsError(
+            try ProviderLaunchSnapshot(
+                profileYAML: "proxies:\n  - {name: Node, type: direct}\n",
+                routingMode: .rule,
+                bypassPolicy: .empty,
+                dnsPolicy: .inherited,
+                proxySelections: [:],
+                routingResources: [.geoSite: Data(repeating: 1, count: 16)]
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ProviderLaunchSnapshotError,
+                .routingResourceSetMismatch
+            )
+        }
     }
 }

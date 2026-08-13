@@ -12,12 +12,19 @@ APP_PRIVACY="$ROOT/Config/App/PrivacyInfo.xcprivacy"
 KIT_PRIVACY="$ROOT/Config/Kit/PrivacyInfo.xcprivacy"
 EXTENSION_PRIVACY="$ROOT/Config/PacketTunnel/PrivacyInfo.xcprivacy"
 TRANSPARENT_PRIVACY="$ROOT/Config/TransparentProxy/PrivacyInfo.xcprivacy"
+APP_INFO_PLIST_EN="$ROOT/Sources/AetherRouteApp/en.lproj/InfoPlist.strings"
+APP_INFO_PLIST_ZH="$ROOT/Sources/AetherRouteApp/zh-Hans.lproj/InfoPlist.strings"
+PACKET_INFO_PLIST_EN="$ROOT/Sources/AetherRoutePacketTunnel/en.lproj/InfoPlist.strings"
+PACKET_INFO_PLIST_ZH="$ROOT/Sources/AetherRoutePacketTunnel/zh-Hans.lproj/InfoPlist.strings"
+TRANSPARENT_INFO_PLIST_EN="$ROOT/Sources/AetherRouteTransparentProxy/en.lproj/InfoPlist.strings"
+TRANSPARENT_INFO_PLIST_ZH="$ROOT/Sources/AetherRouteTransparentProxy/zh-Hans.lproj/InfoPlist.strings"
 KEYCHAIN_ACCESS_GROUP_TEMPLATE='$(AppIdentifierPrefix)$(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)'
 APP_GROUP_TEMPLATE='$(AETHERROUTE_APP_GROUP)'
 PROFILE_ARCHIVE_TYPE_TEMPLATE='$(AETHERROUTE_PROFILE_ARCHIVE_TYPE)'
 CORE_ARTIFACT="$ROOT/Core/Artifacts/macos-arm64/libclashrs.a"
 FLOW_ABI_SYMBOLS='clash_flow_status_message
 clash_flow_engine_create
+clash_flow_engine_set_routing_mode_v1
 clash_flow_engine_destroy
 clash_flow_selector_snapshot_v1
 clash_flow_selector_select_v1
@@ -132,7 +139,7 @@ verify_core_artifact() {
   done
   flow_symbol_count=$(awk '{print $NF}' \
     "$core_symbols_directory/symbols.txt" | grep -Ec '^_clash_flow_' || true)
-  test "$flow_symbol_count" -eq 17 || \
+  test "$flow_symbol_count" -eq 18 || \
     fail "core artifact exposes an unexpected Flow ABI count: $flow_symbol_count"
   if awk '{print $NF}' "$core_symbols_directory/symbols.txt" \
     | grep -Eq '^_clash_(start|shutdown|packet_|push_packet_|install_packet_|uninstall_packet_|is_packet_)'; then
@@ -166,6 +173,31 @@ verify_source() {
   verify_privacy_manifest "$TRANSPARENT_PRIVACY"
   verify_release_metadata "$APP_INFO"
 
+  test "$(plist_value "$EXTENSION_INFO" CFBundlePackageType)" = SYSX || \
+    fail "Packet Tunnel source plist must declare the SYSX package type"
+  test "$(plist_value "$TRANSPARENT_INFO" CFBundlePackageType)" = SYSX || \
+    fail "Transparent Proxy source plist must declare the SYSX package type"
+
+  for info in "$APP_INFO" "$EXTENSION_INFO" "$TRANSPARENT_INFO"; do
+    system_extension_description=$(plist_value "$info" \
+      NSSystemExtensionUsageDescription)
+    test -n "$system_extension_description" || \
+      fail "System Extension usage description is empty in $info"
+  done
+  for localized_info in \
+    "$APP_INFO_PLIST_EN" \
+    "$APP_INFO_PLIST_ZH" \
+    "$PACKET_INFO_PLIST_EN" \
+    "$PACKET_INFO_PLIST_ZH" \
+    "$TRANSPARENT_INFO_PLIST_EN" \
+    "$TRANSPARENT_INFO_PLIST_ZH"
+  do
+    plutil -lint "$localized_info" >/dev/null
+    test -n "$(plist_value "$localized_info" \
+      NSSystemExtensionUsageDescription)" || \
+      fail "localized System Extension usage description is empty in $localized_info"
+  done
+
   test "$(plist_value "$APP_INFO" CFBundleShortVersionString)" = \
     '$(MARKETING_VERSION)' || fail "host marketing version is not build-setting driven"
   test "$(plist_value "$EXTENSION_INFO" CFBundleShortVersionString)" = \
@@ -185,9 +217,14 @@ verify_source() {
     '$(MARKETING_VERSION)' || fail "transparent extension marketing version is not build-setting driven"
   test "$(plist_value "$TRANSPARENT_INFO" CFBundleVersion)" = \
     '$(CURRENT_PROJECT_VERSION)' || fail "transparent extension build number is not build-setting driven"
-  test "$(plist_value "$TRANSPARENT_INFO" NSExtension:NSExtensionPointIdentifier)" = \
-    com.apple.networkextension.app-proxy || \
-    fail "transparent extension point is incorrect"
+  test "$(plist_value "$EXTENSION_INFO" \
+    NetworkExtension:NEProviderClasses:com.apple.networkextension.packet-tunnel)" = \
+    '$(PRODUCT_MODULE_NAME).PacketTunnelProvider' || \
+    fail "packet system-extension provider class is incorrect"
+  test "$(plist_value "$TRANSPARENT_INFO" \
+    NetworkExtension:NEProviderClasses:com.apple.networkextension.app-proxy)" = \
+    '$(PRODUCT_MODULE_NAME).TransparentProxyProvider' || \
+    fail "transparent system-extension provider class is incorrect"
 
   for info in "$APP_INFO" "$EXTENSION_INFO" "$TRANSPARENT_INFO"; do
     test "$(plist_value "$info" AetherRouteKeychainAccessGroup)" = \
@@ -226,21 +263,39 @@ verify_source() {
 
 verify_built_products() {
   app="$PRODUCTS_DIR/AetherRoute.app"
-  transparent_extension="$app/Contents/PlugIns/AetherRouteTransparentProxy.appex"
-  packet_extension="$app/Contents/PlugIns/AetherRoutePacketTunnel.appex"
+  app_built_info="$app/Contents/Info.plist"
+  transparent_bundle_id=$(plist_value "$app_built_info" \
+    AetherRouteTransparentProxyBundleIdentifier)
+  packet_bundle_id=$(plist_value "$app_built_info" \
+    AetherRouteTunnelBundleIdentifier)
+  transparent_extension="$app/Contents/Library/SystemExtensions/$transparent_bundle_id.systemextension"
+  packet_extension="$app/Contents/Library/SystemExtensions/$packet_bundle_id.systemextension"
   app_manifest="$app/Contents/Resources/PrivacyInfo.xcprivacy"
   kit_manifest="$app/Contents/Frameworks/AetherRouteKit.framework/Resources/PrivacyInfo.xcprivacy"
   transparent_manifest="$transparent_extension/Contents/Resources/PrivacyInfo.xcprivacy"
-  app_built_info="$app/Contents/Info.plist"
+  packet_built_info="$packet_extension/Contents/Info.plist"
   transparent_built_info="$transparent_extension/Contents/Info.plist"
   kit_built_info="$app/Contents/Frameworks/AetherRouteKit.framework/Resources/Info.plist"
-  flow_core="$transparent_extension/Contents/Frameworks/AetherRouteFlowCoreBridge.framework/AetherRouteFlowCoreBridge"
+  transparent_frameworks="$transparent_extension/Contents/Frameworks"
+  flow_core="$transparent_frameworks/AetherRouteFlowCoreBridge.framework/AetherRouteFlowCoreBridge"
 
   test -d "$app" || fail "host app not found at $app"
   test -d "$transparent_extension" || \
     fail "embedded transparent extension not found at $transparent_extension"
   test -d "$packet_extension" || \
     fail "independent app must embed the Packet Tunnel extension"
+  test "$(plist_value "$packet_built_info" CFBundlePackageType)" = SYSX || \
+    fail "Packet Tunnel is not packaged as a system extension"
+  test "$(plist_value "$transparent_built_info" CFBundlePackageType)" = SYSX || \
+    fail "Transparent Proxy is not packaged as a system extension"
+  for info in \
+    "$app_built_info" \
+    "$packet_built_info" \
+    "$transparent_built_info"
+  do
+    test -n "$(plist_value "$info" NSSystemExtensionUsageDescription)" || \
+      fail "built System Extension usage description is empty in $info"
+  done
   test -f "$flow_core" || \
     fail "embedded strong-linked FlowCoreBridge framework is missing"
   test -f "$app_manifest" || fail "host privacy manifest was not packaged"
@@ -315,9 +370,14 @@ verify_built_products() {
     *"$app_keychain_suffix") ;;
     *) fail "built Keychain access group has an unexpected suffix" ;;
   esac
-  test "$(plist_value "$transparent_built_info" NSExtension:NSExtensionPointIdentifier)" = \
-    com.apple.networkextension.app-proxy || \
-    fail "built transparent extension point is incorrect"
+  test "$(plist_value "$packet_built_info" \
+    NetworkExtension:NEProviderClasses:com.apple.networkextension.packet-tunnel)" = \
+    AetherRoutePacketTunnel.PacketTunnelProvider || \
+    fail "built packet system-extension provider class is incorrect"
+  test "$(plist_value "$transparent_built_info" \
+    NetworkExtension:NEProviderClasses:com.apple.networkextension.app-proxy)" = \
+    AetherRouteTransparentProxy.TransparentProxyProvider || \
+    fail "built transparent system-extension provider class is incorrect"
   test "$(plist_value "$app_built_info" NSLocalNetworkUsageDescription)" = \
     "$(plist_value "$APP_INFO" NSLocalNetworkUsageDescription)" || \
     fail "built host local-network purpose string differs from source"
@@ -358,13 +418,13 @@ verify_built_products() {
     -Wall -Wextra -Werror \
     -I "$ROOT/Sources/AetherRouteFlowABI/include" \
     -I "$ROOT/Core/Headers" \
-    -F "$PRODUCTS_DIR" \
-    -Wl,-rpath,"$PRODUCTS_DIR" \
+    -F "$transparent_frameworks" \
+    -Wl,-rpath,"$transparent_frameworks" \
     "$ROOT/Tests/FlowABI/flow_abi_load.c" \
     -framework AetherRouteFlowCoreBridge \
     -o "$harness"
-  DYLD_FRAMEWORK_PATH="$PRODUCTS_DIR" "$harness" || \
-    fail "aetherroute_flow_abi_load_v1 did not return 1"
+  DYLD_FRAMEWORK_PATH="$transparent_frameworks" "$harness" || \
+    fail "the versioned AetherRoute Flow ABI tables did not load"
   find "$harness_directory" -depth -delete
   trap - EXIT HUP INT TERM
 }

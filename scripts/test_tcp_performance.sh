@@ -99,15 +99,70 @@ packet_ratio=$(metric "$OUTPUT/packet.log" ratio_percent)
 packet_added=$(metric "$OUTPUT/packet.log" added_p95_ms)
 flow_rss=$(awk '/maximum resident set size/ {print $1}' "$OUTPUT/flow.log" | tail -1)
 packet_rss=$(awk '/maximum resident set size/ {print $1}' "$OUTPUT/packet.log" | tail -1)
+minimum_direct_mibps=2048
+minimum_engine_mibps=1024
+
+require_at_least() {
+  key=$1
+  actual=$2
+  minimum=$3
+  awk -v actual="$actual" -v minimum="$minimum" '
+    BEGIN {
+      exit !(actual ~ /^[0-9]+([.][0-9]+)?$/ && actual + 0 >= minimum + 0)
+    }
+  ' || {
+    echo "TCP performance $key below $minimum: $actual" >&2
+    return 1
+  }
+}
+require_at_most() {
+  key=$1
+  actual=$2
+  maximum=$3
+  awk -v actual="$actual" -v maximum="$maximum" '
+    BEGIN {
+      exit !(actual ~ /^[0-9]+([.][0-9]+)?$/ && actual + 0 <= maximum + 0)
+    }
+  ' || {
+    echo "TCP performance $key above $maximum: $actual" >&2
+    return 1
+  }
+}
+
+# A failed measurement must never leave a result that says "passed". Keep the
+# raw logs for a caller-provided evidence directory, but create result.txt and
+# its checksum only after every release threshold is satisfied.
+# First prove that the host can supply enough uncontended loopback throughput
+# to evaluate the 1 GiB/s product floor. Network filters, VPN extensions, power
+# state, and background system work can depress both the direct control and the
+# engine path. Such a run is an unsuitable measurement environment, not product
+# evidence, and must not be used to weaken or satisfy the engine threshold.
+baseline_failed=0
+require_at_least flow_direct_mibps "$flow_direct" "$minimum_direct_mibps" \
+  || baseline_failed=1
+require_at_least packet_direct_mibps "$packet_direct" "$minimum_direct_mibps" \
+  || baseline_failed=1
+if [ "$baseline_failed" -ne 0 ]; then
+  echo "TCP performance measurement environment is unsuitable: direct loopback must reach ${minimum_direct_mibps} MiB/s before evaluating the engine" >&2
+  exit 1
+fi
+
+require_at_least flow_engine_mibps "$flow_engine" "$minimum_engine_mibps"
+require_at_least packet_engine_mibps "$packet_engine" "$minimum_engine_mibps"
+require_at_most flow_added_p95_ms "$flow_added" 5
+require_at_most packet_added_p95_ms "$packet_added" 5
+require_at_most flow_max_rss_bytes "$flow_rss" 134217728
+require_at_most packet_max_rss_bytes "$packet_rss" 268435456
 
 {
-  printf 'schema=1\n'
+  printf 'schema=2\n'
   printf 'completed_utc=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   printf 'machine=%s\n' "$(uname -m)"
   printf 'os=%s\n' "$(sw_vers -productVersion)"
   printf 'repetitions=5\n'
   printf 'payload_bytes_per_repetition=33554432\n'
-  printf 'minimum_engine_mibps=1024\n'
+  printf 'minimum_direct_mibps=%s\n' "$minimum_direct_mibps"
+  printf 'minimum_engine_mibps=%s\n' "$minimum_engine_mibps"
   printf 'maximum_added_p95_ms=5\n'
   printf 'flow_direct_mibps=%s\n' "$flow_direct"
   printf 'flow_engine_mibps=%s\n' "$flow_engine"

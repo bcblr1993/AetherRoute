@@ -213,9 +213,9 @@ struct ContentView: View {
                 .accessibilityLabel("Primary navigation")
                 .accessibilityIdentifier("aetherroute-primary-navigation")
                 .navigationSplitViewColumnWidth(
-                    min: 220,
-                    ideal: 236,
-                    max: 280
+                    min: AetherVisual.sidebarWidth,
+                    ideal: AetherVisual.sidebarWidth,
+                    max: AetherVisual.sidebarWidth
                 )
         } detail: {
             detail
@@ -295,43 +295,36 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 11) {
+            HStack(spacing: AetherVisual.s3) {
                 AetherRouteBrandTile(size: 34, isActive: tunnel.isConnected)
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text("AetherRoute")
                         .font(.headline.weight(.semibold))
                         .tracking(-0.15)
                         .foregroundStyle(.primary)
                     Text("Private routing")
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            .padding(.bottom, 12)
+            .padding(.horizontal, AetherVisual.s4)
+            .padding(.top, AetherVisual.s2)
+            .padding(.bottom, AetherVisual.s3)
 
             Divider()
-                .padding(.horizontal, 12)
-                .padding(.bottom, 6)
+                .padding(.horizontal, AetherVisual.s3)
+                .padding(.bottom, AetherVisual.s2)
 
             List(selection: $selectedSection) {
                 Section {
                     ForEach(AppSection.allCases) { section in
-                        Button {
-                            UIResponsivenessProbe.begin(
-                                "main.\(section.rawValue)"
-                            )
-                            selectedSection = section
-                        } label: {
+                        NavigationLink(value: section) {
                             Label(section.title, systemImage: section.symbol)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
                         }
-                            .buttonStyle(.plain)
-                            .tag(section)
                             .keyboardShortcut(
                                 section.keyboardShortcut,
                                 modifiers: .command
@@ -355,11 +348,11 @@ struct ContentView: View {
                             )
                         )
 
-                    HStack(spacing: 10) {
+                    HStack(spacing: AetherVisual.s3) {
                         Image(systemName: "doc.badge.gearshape")
                             .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: AetherVisual.s1) {
                             Text(
                                 tunnel.activeProfile?.name
                                     ?? AppLocalization.string("No profile")
@@ -376,12 +369,12 @@ struct ContentView: View {
                             .font(.caption)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .layoutPriority(1)
                     }
-                    .padding(.vertical, 5)
+                    .padding(.vertical, AetherVisual.s2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .listRowInsets(
                         EdgeInsets(
@@ -404,7 +397,6 @@ struct ContentView: View {
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
-            .tint(.accentColor)
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }
@@ -476,7 +468,7 @@ private struct ConnectionToolbarButton: View {
         Button {
             Task { await tunnel.setEnabled(!tunnel.isEnabled) }
         } label: {
-            HStack(spacing: 7) {
+            HStack(spacing: AetherVisual.s2) {
                 Image(systemName: "power")
                 Text(tunnel.primaryActionTitle)
             }
@@ -485,7 +477,6 @@ private struct ConnectionToolbarButton: View {
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
-        .tint(actionTint)
         .disabled(!tunnel.canPerformPrimaryAction)
         .accessibilityIdentifier("primary-connection-button")
         .accessibilityHint(primaryActionHint)
@@ -506,17 +497,6 @@ private struct ConnectionToolbarButton: View {
         }
     }
 
-    private var actionTint: Color {
-        return switch state {
-        case .connected: AetherVisual.success
-        case .connecting, .disconnecting: .orange
-        case .failed: .red
-        case .disconnected: .accentColor
-        case .privacyConsentRequired, .loading: .secondary
-        }
-    }
-
-    private var state: TunnelManager.State { tunnel.state }
 }
 
 private struct OverviewView: View {
@@ -525,8 +505,9 @@ private struct OverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: AetherVisual.s5) {
                 ConnectionHero()
+                ConnectionControlBar()
                 overviewDetails
             }
             .padding(.horizontal, AetherVisual.pageHorizontalPadding)
@@ -539,7 +520,7 @@ private struct OverviewView: View {
     }
 
     private var overviewDetails: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: AetherVisual.s4) {
             RouteSummary()
             if let recoveryPlan = tunnel.recoveryPlan {
                 ConnectionRecoveryCard(
@@ -551,20 +532,34 @@ private struct OverviewView: View {
                 MetricTile(
                     label: "Latency",
                     value: bestLatency,
-                    unit: "ms",
+                    unit: bestLatencyUnit,
                     symbol: "waveform.path.ecg"
                 )
                 Divider()
                     .frame(height: 52)
                 MetricTile(
-                    label: "Live traffic",
+                    label: "Download",
                     value: formattedRate(tunnel.telemetry.downloadBytesPerSecond),
-                    unit: "Download",
-                    symbol: "arrow.up.arrow.down"
+                    unit: "",
+                    symbol: "arrow.down"
+                )
+                Divider().frame(height: 52)
+                MetricTile(
+                    label: "Upload",
+                    value: formattedRate(tunnel.telemetry.uploadBytesPerSecond),
+                    unit: "",
+                    symbol: "arrow.up"
+                )
+                Divider().frame(height: 52)
+                MetricTile(
+                    label: "Active connections",
+                    value: String(tunnel.telemetry.connections.count),
+                    unit: "",
+                    symbol: "point.3.connected.trianglepath.dotted"
                 )
             }
-            .padding(.vertical, 4)
-            .aetherPanel(radius: 16)
+            .padding(.vertical, AetherVisual.s1)
+            .aetherPanel()
             SafetyNotice()
         }
         .frame(maxWidth: .infinity)
@@ -574,7 +569,15 @@ private struct OverviewView: View {
         let values = tunnel.proxyLatencies.values
             .flatMap(\.results)
             .compactMap(\.delayMilliseconds)
-        return values.min().map(String.init) ?? "--"
+        return values.min().map(String.init)
+            ?? AppLocalization.string("Not measured")
+    }
+
+    private var bestLatencyUnit: LocalizedStringKey {
+        let values = tunnel.proxyLatencies.values
+            .flatMap(\.results)
+            .compactMap(\.delayMilliseconds)
+        return values.isEmpty ? "" : "ms"
     }
 }
 
@@ -584,18 +587,18 @@ private struct ConnectionRecoveryCard: View {
     let openProfiles: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            HStack(alignment: .top, spacing: 13) {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            HStack(alignment: .top, spacing: AetherVisual.s4) {
                 Image(systemName: "wrench.and.screwdriver.fill")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.orange)
                     .frame(width: 42, height: 42)
                     .background(
                         Color.orange.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 12)
+                        in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius)
                     )
 
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: AetherVisual.s2) {
                     Text("Recovery Assistant")
                         .font(.headline)
                     Text(recoveryDetail)
@@ -606,7 +609,7 @@ private struct ConnectionRecoveryCard: View {
                 Spacer()
             }
 
-            HStack(spacing: 10) {
+            HStack(spacing: AetherVisual.s3) {
                 recoveryButton(plan.primaryAction, prominent: true)
                 if let secondaryAction = plan.secondaryAction {
                     recoveryButton(secondaryAction, prominent: false)
@@ -618,13 +621,13 @@ private struct ConnectionRecoveryCard: View {
                     .multilineTextAlignment(.trailing)
             }
         }
-        .padding(18)
+        .padding(AetherVisual.s5)
         .background(
             Color.orange.opacity(0.055),
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
                 .stroke(Color.orange.opacity(0.18), lineWidth: 1)
         }
         .accessibilityIdentifier("connection-recovery-card")
@@ -657,7 +660,7 @@ private struct ConnectionRecoveryCard: View {
         .accessibilityIdentifier("recovery-\(action.rawValue)")
 
         if prominent {
-            button.buttonStyle(.borderedProminent)
+            button.buttonStyle(.bordered)
         } else {
             button.buttonStyle(.bordered)
         }
@@ -690,21 +693,19 @@ private struct ConnectionRecoveryCard: View {
 private struct ConnectionHero: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(spacing: 20) {
-            HStack(spacing: 24) {
+        VStack(spacing: AetherVisual.s4) {
+            HStack(spacing: AetherVisual.s6) {
                 connectionIdentity
                 ConnectionToolbarButton()
                     .environmentObject(tunnel)
             }
-
-            Divider()
-
-            connectionControls
+            if tunnel.state == .connecting {
+                ConnectionProgressStages()
+            }
         }
-        .padding(24)
+        .padding(AetherVisual.s5)
         .frame(maxWidth: .infinity)
         .aetherHeroPanel()
         .animation(
@@ -718,15 +719,15 @@ private struct ConnectionHero: View {
     }
 
     private var connectionIdentity: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: AetherVisual.s4) {
             AetherRouteStatusLens(size: 54, isActive: tunnel.isConnected)
 
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 Text(stateBadgeTitle)
-                    .foregroundStyle(stateBadgeForeground)
+                    .foregroundStyle(.primary)
                     .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, AetherVisual.s3)
+                    .padding(.vertical, AetherVisual.s2)
                     .background(
                         stateBadgeBackground,
                         in: Capsule()
@@ -740,17 +741,17 @@ private struct ConnectionHero: View {
                 Text(tunnel.statusTitle)
                     .font(.title.weight(.semibold))
                     .tracking(-0.45)
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.primary)
                     .accessibilityValue(Text(tunnel.statusDetail))
                 Text(tunnel.statusDetail)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityHidden(true)
+                Label(nextStep, systemImage: nextStepSymbol)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -760,14 +761,14 @@ private struct ConnectionHero: View {
     private var connectionControls: some View {
 #if AETHERROUTE_INDEPENDENT
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 20) {
+            HStack(alignment: .top, spacing: AetherVisual.s5) {
                 engineControl
                 Divider()
                     .frame(height: 66)
                 routingControl
             }
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: AetherVisual.s4) {
                 engineControl
                 Divider()
                 routingControl
@@ -780,13 +781,11 @@ private struct ConnectionHero: View {
 
 #if AETHERROUTE_INDEPENDENT
     private var engineControl: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            HStack(spacing: AetherVisual.s2) {
                 Text("Network engine")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.primary)
                     .accessibilityHidden(true)
                 Spacer()
                 Text(tunnel.networkEngineMode.localizedCompactDetail)
@@ -803,7 +802,6 @@ private struct ConnectionHero: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .tint(AetherVisual.blue)
             .disabled(!tunnel.canChangeNetworkEngine)
             .accessibilityIdentifier("network-engine-picker")
         }
@@ -812,12 +810,10 @@ private struct ConnectionHero: View {
 #endif
 
     private var routingControl: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
             Text("Routing mode")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(
-                    colorScheme == .dark ? Color.white : Color.black
-                )
+                .foregroundStyle(.primary)
                 .accessibilityHidden(true)
 
             Picker("Routing mode", selection: $tunnel.routingMode) {
@@ -827,7 +823,6 @@ private struct ConnectionHero: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .tint(AetherVisual.blue)
             .disabled(!tunnel.canChangeRoutingMode)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -856,22 +851,222 @@ private struct ConnectionHero: View {
         }
     }
 
-    private var stateBadgeForeground: Color {
-        colorScheme == .dark ? .white : .black
+    private var stateBadgeBackground: Color {
+        Color(nsColor: .controlBackgroundColor)
     }
 
-    private var stateBadgeBackground: Color {
-        colorScheme == .dark
-            ? Color(red: 0.08, green: 0.08, blue: 0.09)
-            : .white
+    private var nextStep: String {
+        switch tunnel.state {
+        case .privacyConsentRequired:
+            AppLocalization.string("Review the privacy disclosure to unlock connection controls.")
+        case .loading:
+            AppLocalization.string("AetherRoute is preparing the local extension configuration.")
+        case .disconnected:
+            tunnel.activeProfile == nil
+                ? AppLocalization.string("Import or select a profile before connecting.")
+                : AppLocalization.string("Connect when ready, or review the active profile first.")
+        case .connecting:
+            AppLocalization.string("You can cancel safely while readiness checks are running.")
+        case .connected:
+            AppLocalization.string("Readiness checks passed. Open Connections for per-flow details.")
+        case .disconnecting:
+            AppLocalization.string("Wait while the normal network path is restored.")
+        case .failed:
+            AppLocalization.string("Retry once, then review the active profile and diagnostics.")
+        }
     }
+
+    private var nextStepSymbol: String {
+        switch tunnel.state {
+        case .connected: "checkmark.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        case .connecting, .disconnecting, .loading: "clock"
+        case .privacyConsentRequired: "hand.raised.fill"
+        case .disconnected: "arrow.right.circle"
+        }
+    }
+}
+
+/// Makes the fail-closed wait legible: the extension has to clear four steps
+/// before this app will report "connected", and this draws which one is
+/// running right now. Every value here is derived from the live provider
+/// status — nothing is scripted.
+private struct ConnectionProgressStages: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+
+    private static let stages: [(ConnectionStage, String)] = [
+        (.systemAuthorization, "System authorization"),
+        (.extensionStartup, "Extension startup"),
+        (.protocolHandshake, "Protocol handshake"),
+        (.readinessCheck, "Readiness check"),
+    ]
+
+    var body: some View {
+        let current = tunnel.connectionStage
+
+        HStack(spacing: AetherVisual.s2) {
+            ForEach(Array(Self.stages.enumerated()), id: \.offset) { index, stage in
+                let position = position(of: stage.0, relativeTo: current)
+
+                HStack(spacing: AetherVisual.s2) {
+                    Image(systemName: symbol(for: position))
+                        .font(.caption.weight(.semibold))
+                    Text(LocalizedStringKey(stage.1))
+                        .font(.caption2.weight(position == .current ? .semibold : .medium))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                }
+                .foregroundStyle(tint(for: position))
+                .fixedSize(horizontal: false, vertical: true)
+
+                if index < Self.stages.count - 1 {
+                    Rectangle()
+                        .fill(connectorTint(after: stage.0, current: current))
+                        .frame(minWidth: AetherVisual.s2, maxWidth: .infinity)
+                        .frame(height: 1)
+                }
+            }
+        }
+        .padding(.horizontal, AetherVisual.s4)
+        .padding(.vertical, AetherVisual.s3)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Connection progress")
+        .accessibilityValue(LocalizedStringKey(currentStageLabel(current)))
+    }
+
+    private enum StagePosition {
+        case complete
+        case current
+        case pending
+    }
+
+    private func position(
+        of stage: ConnectionStage,
+        relativeTo current: ConnectionStage
+    ) -> StagePosition {
+        if stage.rawValue < current.rawValue { return .complete }
+        if stage == current { return .current }
+        return .pending
+    }
+
+    private func symbol(for position: StagePosition) -> String {
+        switch position {
+        case .complete: "checkmark.circle.fill"
+        case .current: "circle.dotted"
+        case .pending: "circle"
+        }
+    }
+
+    /// Three status colors only, per the color-semantics rule: done is green,
+    /// in-flight needs attention so it is orange, not-yet is idle.
+    private func tint(for position: StagePosition) -> Color {
+        switch position {
+        case .complete: .green
+        case .current: .orange
+        case .pending: .secondary
+        }
+    }
+
+    private func connectorTint(
+        after stage: ConnectionStage,
+        current: ConnectionStage
+    ) -> AnyShapeStyle {
+        if stage.rawValue < current.rawValue - 1 {
+            return AnyShapeStyle(Color.green)
+        }
+        if stage.rawValue == current.rawValue - 1 {
+            // The segment feeding the running step fades out, so the eye lands
+            // on where progress has actually reached.
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [.green, Color(nsColor: .separatorColor)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+        }
+        return AnyShapeStyle(Color(nsColor: .separatorColor))
+    }
+
+    private func currentStageLabel(
+        _ current: ConnectionStage
+    ) -> String {
+        Self.stages.first { $0.0 == current }?.1 ?? ""
+    }
+}
+
+private struct ConnectionControlBar: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: AetherVisual.s4) { controls }
+            VStack(alignment: .leading, spacing: AetherVisual.s3) { controls }
+        }
+        .padding(AetherVisual.s4)
+        .aetherPanel()
+    }
+
+    @ViewBuilder
+    private var controls: some View {
+#if AETHERROUTE_INDEPENDENT
+        labeledPicker("Network engine") {
+            Picker("Network engine", selection: networkEngineBinding) {
+                ForEach(NetworkEngineMode.allCases) { mode in
+                    Text(mode.localizedTitleKey).tag(mode)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .disabled(!tunnel.canChangeNetworkEngine)
+            .accessibilityIdentifier("network-engine-picker")
+        }
+#endif
+        labeledPicker("Routing mode") {
+            Picker("Routing mode", selection: $tunnel.routingMode) {
+                ForEach(RoutingMode.allCases, id: \.self) { mode in
+                    Text(mode.localizedTitleKey).tag(mode)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .disabled(!tunnel.canChangeRoutingMode)
+        }
+    }
+
+    private func labeledPicker<Control: View>(
+        _ title: LocalizedStringKey,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(spacing: AetherVisual.s2) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.primary)
+                .frame(width: 92, alignment: .leading)
+            control()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+#if AETHERROUTE_INDEPENDENT
+    private var networkEngineBinding: Binding<NetworkEngineMode> {
+        Binding(
+            get: { tunnel.networkEngineMode },
+            set: { mode in Task { await tunnel.setNetworkEngineMode(mode) } }
+        )
+    }
+#endif
 }
 
 private struct RouteSummary: View {
     @EnvironmentObject private var tunnel: TunnelManager
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 17) {
+        VStack(alignment: .leading, spacing: AetherVisual.s5) {
             HStack {
                 Text("Current route")
                     .font(.headline)
@@ -882,19 +1077,19 @@ private struct RouteSummary: View {
             }
 
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) {
+                HStack(spacing: AetherVisual.s3) {
                     routeStops(horizontal: true)
                 }
                 .fixedSize(horizontal: true, vertical: false)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                VStack(spacing: 8) {
+                VStack(spacing: AetherVisual.s2) {
                     routeStops(horizontal: false)
                 }
             }
         }
-        .padding(20)
-        .aetherPanel(radius: 16)
+        .padding(AetherVisual.s5)
+        .aetherPanel()
     }
 
     @ViewBuilder
@@ -961,18 +1156,18 @@ private struct ExternalSubscriptionConfirmationSheet: View {
     @State private var isConfirming = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .top, spacing: 15) {
+        VStack(alignment: .leading, spacing: AetherVisual.s5) {
+            HStack(alignment: .top, spacing: AetherVisual.s4) {
                 Image(systemName: "link.badge.plus")
                     .font(.system(size: 27, weight: .medium))
-                    .foregroundStyle(AetherVisual.blue)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 54, height: 54)
                     .background(
-                        AetherVisual.blue.opacity(0.09),
-                        in: RoundedRectangle(cornerRadius: 15)
+                        Color.accentColor.opacity(0.09),
+                        in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius)
                     )
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text("Review Subscription Link")
                         .font(.title2.weight(.semibold))
                     Text("AetherRoute has not downloaded or changed anything yet.")
@@ -980,23 +1175,24 @@ private struct ExternalSubscriptionConfirmationSheet: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 7) {
-                Text("Profile provider")
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                Text("Address")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Label(request.providerHost, systemImage: "lock.fill")
                     .font(.body.weight(.medium))
                     .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("external-subscription-host")
-                Text("Only the provider host is shown. Private query tokens stay hidden.")
+                Text("AetherRoute will not access this address until you confirm.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .padding(16)
+            .padding(AetherVisual.s4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 Color.secondary.opacity(0.06),
-                in: RoundedRectangle(cornerRadius: 14)
+                in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
             )
 
             Label(
@@ -1048,7 +1244,7 @@ private struct ExternalSubscriptionConfirmationSheet: View {
                     }
                 } label: {
                     AetherProgressButtonLabel(
-                        "Review and Import",
+                        "Download and Enable",
                         isWorking: isConfirming
                             || tunnel.isRefreshingSubscription
                     )
@@ -1063,7 +1259,7 @@ private struct ExternalSubscriptionConfirmationSheet: View {
                 .accessibilityIdentifier("confirm-external-subscription")
             }
         }
-        .padding(26)
+        .padding(AetherVisual.s6)
         .frame(width: 540)
         .interactiveDismissDisabled(isConfirming)
     }
@@ -1082,7 +1278,6 @@ private struct ProfilesView: View {
     @State private var isArchivePasswordPresented = false
     @State private var isArchiveExporterPresented = false
     @State private var isExportPasswordPresented = false
-    @State private var isPortableTransferPresented = false
     @State private var isRoutingResourceImporterPresented = false
     @State private var routingResourceImportKind: RoutingResourceKind?
     @State private var archiveImportURL: URL?
@@ -1091,44 +1286,37 @@ private struct ProfilesView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .center, spacing: 18) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(Color.teal.opacity(0.10))
-                            Image(systemName: "doc.badge.gearshape")
-                                .font(.system(size: 30, weight: .medium))
-                                .foregroundStyle(.teal)
-                                .accessibilityHidden(true)
-                        }
-                        .frame(width: 68, height: 68)
-
-                        VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: AetherVisual.s5) {
+                VStack(alignment: .leading, spacing: AetherVisual.s4) {
+                    HStack(alignment: .center, spacing: AetherVisual.s4) {
+                        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                            Text("Profiles")
+                                .font(.title2.weight(.semibold))
                             Text(
                                 tunnel.activeProfile?.name
                                     ?? AppLocalization.string("No active profile")
                             )
-                                .font(.title3.weight(.semibold))
+                                .font(.headline)
                                 .foregroundStyle(.primary)
                                 .help(
                                     tunnel.activeProfile?.name
                                         ?? AppLocalization.string("No active profile")
                                 )
                             Text(profileDetail)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(.primary)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
                     }
 
                     Divider()
 
-                    HStack(spacing: 9) {
+                    HStack(spacing: AetherVisual.s2) {
                         Button("Add Node…", systemImage: "plus") {
                             tunnel.clearProfileMessage()
                             isManualNodeEditorPresented = true
                         }
+                        .buttonStyle(.borderedProminent)
                         .disabled(!tunnel.canModifyProfiles)
 
                         Button("Import Profile…", systemImage: "square.and.arrow.down") {
@@ -1137,73 +1325,46 @@ private struct ProfilesView: View {
                         }
                         .disabled(!tunnel.canModifyProfiles)
 
-                        Button("Add Subscription…", systemImage: "link.badge.plus") {
-                            tunnel.clearProfileMessage()
-                            subscriptionURL = ""
-                            isSubscriptionEditorPresented = true
-                        }
-                        .disabled(!tunnel.canModifyProfiles)
-
-                        Button {
-                            isPortableTransferPresented.toggle()
-                        } label: {
-                            Image(systemName: "arrow.left.arrow.right.circle")
-                                .frame(width: 22)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(!tunnel.canModifyProfiles)
-                        .help("Move encrypted profiles between Macs")
-                        .accessibilityLabel("Portable profile transfer")
-                        .popover(
-                            isPresented: $isPortableTransferPresented,
-                            arrowEdge: .trailing
-                        ) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Button(
-                                    "Export Portable Archive…",
-                                    systemImage: "square.and.arrow.up"
-                                ) {
-                                    isPortableTransferPresented = false
-                                    tunnel.clearProfileMessage()
-                                    isExportPasswordPresented = true
-                                }
-                                .disabled(tunnel.profiles.isEmpty)
-
-                                Button(
-                                    "Import Portable Archive…",
-                                    systemImage: "square.and.arrow.down"
-                                ) {
-                                    isPortableTransferPresented = false
-                                    tunnel.clearProfileMessage()
-                                    isArchiveImporterPresented = true
-                                }
+                        Menu("More", systemImage: "ellipsis.circle") {
+                            Button("Add Subscription…", systemImage: "link.badge.plus") {
+                                tunnel.clearProfileMessage()
+                                subscriptionURL = ""
+                                isSubscriptionEditorPresented = true
                             }
-                            .buttonStyle(.borderless)
-                            .padding(12)
+                            Button("Export Portable Archive…", systemImage: "square.and.arrow.up") {
+                                tunnel.clearProfileMessage()
+                                isExportPasswordPresented = true
+                            }
+                            .disabled(tunnel.profiles.isEmpty)
+                            Button("Import Portable Archive…", systemImage: "square.and.arrow.down") {
+                                tunnel.clearProfileMessage()
+                                isArchiveImporterPresented = true
+                            }
                         }
+                        .accessibilityIdentifier("profiles-more-menu")
+                        .disabled(!tunnel.canModifyProfiles)
                         Spacer(minLength: 0)
                     }
                     .controlSize(.large)
-                }
-                .padding(22)
-                .aetherPanel(radius: 18, elevated: true)
 
-                if let message = tunnel.profileMessage,
-                   !tunnel.isImportingProfile {
-                    Label(
-                        message,
-                        systemImage: tunnel.profileMessageIsError
-                            ? "exclamationmark.triangle"
-                            : "checkmark.circle"
-                    )
-                        .foregroundStyle(tunnel.profileMessageIsError ? .orange : .teal)
-                        .padding(15)
+                    if let message = tunnel.profileMessage,
+                       !tunnel.isImportingProfile {
+                        Label(
+                            message,
+                            systemImage: tunnel.profileMessageIsError
+                                ? "exclamationmark.triangle"
+                                : "checkmark.circle"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(tunnel.profileMessageIsError ? .red : .green)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                    }
                 }
+                .padding(AetherVisual.s6)
+                .aetherPanel()
 
                 if tunnel.isImportingProfile {
-                    HStack(spacing: 12) {
+                    HStack(spacing: AetherVisual.s3) {
                         ProgressView()
                             .controlSize(.small)
                         Text("Importing profile…")
@@ -1214,9 +1375,9 @@ private struct ProfilesView: View {
                             tunnel.cancelProfileImport()
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 13)
-                    .aetherPanel(radius: 14)
+                    .padding(.horizontal, AetherVisual.s4)
+                    .padding(.vertical, AetherVisual.s4)
+                    .aetherPanel()
                     .accessibilityIdentifier("profile-import-progress")
                 }
 
@@ -1243,7 +1404,7 @@ private struct ProfilesView: View {
                 if !tunnel.profiles.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
                         HStack {
-                            VStack(alignment: .leading, spacing: 3) {
+                            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                                 Text("Profile Library")
                                     .font(.headline)
                                     .foregroundStyle(.primary)
@@ -1254,22 +1415,18 @@ private struct ProfilesView: View {
                                     )
                                 )
                                 .font(.subheadline.weight(.medium))
-                                .foregroundStyle(
-                                    colorScheme == .dark
-                                        ? Color.white
-                                        : Color.black
-                                )
+                                .foregroundStyle(.secondary)
                             }
                             Spacer()
                             Label("Encrypted on this Mac", systemImage: "lock.fill")
                                 .font(.caption.weight(.medium))
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(.secondary)
                         }
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 15)
+                        .padding(.horizontal, AetherVisual.s5)
+                        .padding(.vertical, AetherVisual.s4)
 
                         Divider()
-                            .padding(.horizontal, 18)
+                            .padding(.horizontal, AetherVisual.s5)
 
                         ForEach(Array(tunnel.profiles.enumerated()), id: \.element.id) { index, managed in
                             ManagedProfileRow(
@@ -1299,15 +1456,15 @@ private struct ProfilesView: View {
                             )
                             if index < tunnel.profiles.count - 1 {
                                 Divider()
-                                    .padding(.leading, 74)
-                                    .padding(.trailing, 18)
+                                    .padding(.leading, AetherVisual.tableContentIndent)
+                                    .padding(.trailing, AetherVisual.s5)
                             }
                         }
                     }
-                    .aetherPanel(radius: 17)
+                    .aetherPanel()
                 }
 
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: AetherVisual.s3) {
                     Label("Safe import", systemImage: "checkmark.shield")
                         .font(.headline)
                     Text("YAML profiles are size-limited, UTF-8 checked, and rejected when they request scripts, plug-ins, commands, or downloadable external UI. The protocol engine performs a second parse before the network extension can report ready.")
@@ -1315,8 +1472,8 @@ private struct ProfilesView: View {
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(20)
-                .background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(AetherVisual.s5)
+                .background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous))
             }
             .padding(.horizontal, AetherVisual.pageHorizontalPadding)
             .padding(.top, AetherVisual.pageTopPadding)
@@ -1455,17 +1612,17 @@ private struct RoutingResourcesCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .top, spacing: AetherVisual.s4) {
                 Image(systemName: "map.fill")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 42, height: 42)
                     .background(
                         Color.blue.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 12)
+                        in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius)
                     )
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text("Routing Resources")
                         .font(.headline)
                     Text(
@@ -1477,10 +1634,10 @@ private struct RoutingResourcesCard: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(18)
+            .padding(AetherVisual.s5)
 
             Divider()
-                .padding(.horizontal, 18)
+                .padding(.horizontal, AetherVisual.s5)
 
             ForEach(
                 Array(tunnel.requiredRoutingResources.enumerated()),
@@ -1489,15 +1646,15 @@ private struct RoutingResourcesCard: View {
                 resourceRow(kind)
                 if index < tunnel.requiredRoutingResources.count - 1 {
                     Divider()
-                        .padding(.leading, 74)
-                        .padding(.trailing, 18)
+                        .padding(.leading, AetherVisual.tableContentIndent)
+                        .padding(.trailing, AetherVisual.s5)
                 }
             }
 
             Divider()
-                .padding(.horizontal, 18)
+                .padding(.horizontal, AetherVisual.s5)
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: AetherVisual.s3) {
                 if let message = tunnel.routingResourceMessage {
                     Label(
                         message,
@@ -1508,12 +1665,12 @@ private struct RoutingResourcesCard: View {
                     .font(.callout)
                     .foregroundStyle(
                         tunnel.routingResourceMessageIsError
-                            ? Color.orange : Color.teal
+                            ? Color.red : Color.green
                     )
                     .fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack(spacing: 10) {
+                HStack(spacing: AetherVisual.s3) {
                     Button {
                         Task {
                             await tunnel.downloadRequiredRoutingResources()
@@ -1525,7 +1682,7 @@ private struct RoutingResourcesCard: View {
                             isWorking: tunnel.isUpdatingRoutingResources
                         )
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
                     .disabled(
                         !tunnel.canModifyProfiles
                             || tunnel.isUpdatingRoutingResources
@@ -1539,24 +1696,24 @@ private struct RoutingResourcesCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(18)
+            .padding(AetherVisual.s5)
         }
-        .aetherPanel(radius: 17)
+        .aetherPanel()
         .accessibilityIdentifier("routing-resources-card")
     }
 
     private func resourceRow(_ kind: RoutingResourceKind) -> some View {
-        HStack(spacing: 14) {
+        HStack(spacing: AetherVisual.s4) {
             Image(systemName: resourceSymbol(kind))
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(resourceColor(kind))
                 .frame(width: 42, height: 42)
                 .background(
                     resourceColor(kind).opacity(0.10),
-                    in: RoundedRectangle(cornerRadius: 11)
+                    in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
                 )
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(kind.fileName)
                     .font(.body.weight(.medium))
                 Text(resourceStatusTitle(kind))
@@ -1576,8 +1733,8 @@ private struct RoutingResourcesCard: View {
                     || tunnel.isUpdatingRoutingResources
             )
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.horizontal, AetherVisual.s5)
+        .padding(.vertical, AetherVisual.s3)
     }
 
     private func resourceStatusTitle(_ kind: RoutingResourceKind) -> String {
@@ -1639,9 +1796,9 @@ private struct ManagedProfileRow: View {
     let remove: () -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: AetherVisual.s4) {
             ZStack {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                     .fill(iconColor.opacity(0.10))
                 Image(systemName: managed.profile.subscription == nil
                     ? "doc.text.fill"
@@ -1652,8 +1809,8 @@ private struct ManagedProfileRow: View {
             .frame(width: 42, height: 42)
             .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 7) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                HStack(spacing: AetherVisual.s2) {
                     Text(managed.profile.name)
                         .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
@@ -1662,8 +1819,8 @@ private struct ManagedProfileRow: View {
                         Text("In Use")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.primary)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
+                            .padding(.horizontal, AetherVisual.s2)
+                            .padding(.vertical, AetherVisual.s1)
                             .background(
                                 Color.teal.opacity(0.10),
                                 in: Capsule()
@@ -1697,7 +1854,7 @@ private struct ManagedProfileRow: View {
             .frame(width: 28)
             .accessibilityLabel("Profile actions")
             .popover(isPresented: $isActionsPresented, arrowEdge: .trailing) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: AetherVisual.s2) {
                     if let editNative {
                         Button("Edit Nodes…", systemImage: "point.3.connected.trianglepath.dotted") {
                             isActionsPresented = false
@@ -1724,11 +1881,11 @@ private struct ManagedProfileRow: View {
                     }
                 }
                 .buttonStyle(.borderless)
-                .padding(12)
+                .padding(AetherVisual.s3)
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.horizontal, AetherVisual.s5)
+        .padding(.vertical, AetherVisual.s3)
         .contentShape(Rectangle())
     }
 
@@ -1766,8 +1923,8 @@ private struct ProfileRenameSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: AetherVisual.s5) {
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 Text("Rename Profile")
                     .font(.title2.weight(.semibold))
                 Text("Choose a short name that is easy to recognize in the menu bar.")
@@ -1803,7 +1960,7 @@ private struct ProfileRenameSheet: View {
                 )
             }
         }
-        .padding(26)
+        .padding(AetherVisual.s6)
         .frame(width: 460)
     }
 }
@@ -1815,14 +1972,14 @@ private struct ProfileSubscriptionCard: View {
     let refresh: () -> Void
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: AetherVisual.s4) {
             Image(systemName: "link.circle.fill")
                 .font(.system(size: 26))
-                .foregroundStyle(.blue)
+                .foregroundStyle(Color.accentColor)
                 .frame(width: 48, height: 48)
-                .background(Color.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: 13))
+                .background(Color.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(subscription.url.host ?? AppLocalization.string("HTTPS subscription"))
                     .font(.headline)
                     .lineLimit(1)
@@ -1856,8 +2013,8 @@ private struct ProfileSubscriptionCard: View {
             }
                 .disabled(!canRefresh || isRefreshing)
         }
-        .padding(18)
-        .aetherPanel(radius: 16)
+        .padding(AetherVisual.s5)
+        .aetherPanel()
     }
 
     private var updateDetail: String {
@@ -1878,14 +2035,14 @@ private struct SubscriptionEditorSheet: View {
     @Binding var urlText: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: AetherVisual.s5) {
+            HStack(spacing: AetherVisual.s4) {
                 Image(systemName: "link.badge.plus")
                     .font(.system(size: 26, weight: .medium))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 52, height: 52)
-                    .background(Color.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: 14))
-                VStack(alignment: .leading, spacing: 3) {
+                    .background(Color.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text("Add Profile Subscription")
                         .font(.title2.weight(.semibold))
                     Text("Paste the HTTPS address supplied by your trusted provider.")
@@ -1954,7 +2111,7 @@ private struct SubscriptionEditorSheet: View {
                 .accessibilityIdentifier("activate-subscription-button")
             }
         }
-        .padding(26)
+        .padding(AetherVisual.s6)
         .frame(width: 540)
     }
 }
@@ -1966,14 +2123,14 @@ private struct RouteStop: View {
     let value: String
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: AetherVisual.s3) {
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(AetherVisual.blue)
+                .foregroundStyle(Color.accentColor)
                 .frame(width: 32, height: 32)
-                .background(AetherVisual.blue.opacity(0.08), in: Circle())
+                .background(Color.accentColor.opacity(0.08), in: Circle())
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(caption)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
@@ -1984,15 +2141,15 @@ private struct RouteStop: View {
                     .help(value)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
+        .padding(.horizontal, AetherVisual.s2)
+        .padding(.vertical, AetherVisual.s2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
         }
         .accessibilityElement(children: .combine)
@@ -2006,14 +2163,14 @@ private struct RouteConnector: View {
     var body: some View {
         Group {
             if isHorizontal {
-                HStack(spacing: 3) {
+                HStack(spacing: AetherVisual.s1) {
                     Rectangle().frame(height: 1)
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
                 }
                 .frame(maxWidth: 42)
             } else {
-                VStack(spacing: 2) {
+                VStack(spacing: AetherVisual.s1) {
                     Rectangle().frame(width: 1, height: 7)
                     Image(systemName: "chevron.down")
                         .font(.caption2.weight(.semibold))
@@ -2027,65 +2184,53 @@ private struct RouteConnector: View {
 }
 
 private struct MetricTile: View {
-    @Environment(\.colorScheme) private var colorScheme
     let label: LocalizedStringKey
     let value: String
     let unit: LocalizedStringKey
     let symbol: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
             Label(label, systemImage: symbol)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(
-                    colorScheme == .dark ? Color.white : Color.black
-                )
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
                 Text(value)
                     .font(.title2.weight(.medium))
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
                 Text(unit)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
+        .padding(AetherVisual.s5)
     }
 }
 
 private struct SafetyNotice: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: AetherVisual.s3) {
             Image(systemName: "lock.shield")
-                .foregroundStyle(.teal)
+                .foregroundStyle(Color.accentColor)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Fail-closed development build")
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                Text("Verified connection status")
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.primary)
                     .accessibilityHint(
-                        Text("The network extension cannot report connected until the audited protocol bridge has started and passed readiness checks.")
+                        Text("You can connect normally. AetherRoute reports connected only after the selected network engine and protocol core have passed readiness checks.")
                     )
-                Text("The network extension cannot report connected until the audited protocol bridge has started and passed readiness checks.")
+                Text("You can connect normally. AetherRoute reports connected only after the selected network engine and protocol core have passed readiness checks.")
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(
-                        colorScheme == .dark ? Color.white : Color.black
-                    )
+                    .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 8)
+        .padding(.horizontal, AetherVisual.s1)
+        .padding(.vertical, AetherVisual.s2)
     }
 }
 

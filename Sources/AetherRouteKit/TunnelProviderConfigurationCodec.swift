@@ -1,5 +1,169 @@
 import Foundation
 
+/// Complete, validated input for one Network System Extension start.
+///
+/// A Developer ID Network System Extension runs as root, so its App Group
+/// container and data-protection Keychain are intentionally different from
+/// those of the signed GUI app. The host therefore sends this snapshot through
+/// NetworkExtension's start-options IPC instead of asking the provider to read
+/// user-scoped files or secrets. The snapshot is never persisted in the VPN
+/// configuration.
+public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
+    public static let currentFormatVersion = 2
+
+    public let formatVersion: Int
+    public let profileYAML: String
+    public let routingMode: RoutingMode
+    public let bypassPolicy: BypassPolicy
+    public let dnsPolicy: DNSRuntimePolicy
+    public let proxySelections: [String: String]
+    public let routingResources: [RoutingResourceKind: Data]
+
+    public init(
+        profileYAML: String,
+        routingMode: RoutingMode,
+        bypassPolicy: BypassPolicy,
+        dnsPolicy: DNSRuntimePolicy,
+        proxySelections: [String: String],
+        routingResources: [RoutingResourceKind: Data]
+    ) throws {
+        formatVersion = Self.currentFormatVersion
+        self.profileYAML = profileYAML
+        self.routingMode = routingMode
+        self.bypassPolicy = bypassPolicy
+        self.dnsPolicy = dnsPolicy
+        self.proxySelections = proxySelections
+        self.routingResources = routingResources
+        try validate()
+    }
+
+    public func validate() throws {
+        guard formatVersion == Self.currentFormatVersion else {
+            throw ProviderLaunchSnapshotError.unsupportedFormat(formatVersion)
+        }
+        guard let profileData = profileYAML.data(using: .utf8) else {
+            throw ProviderLaunchSnapshotError.profileEncodingFailed
+        }
+        do {
+            try ProfileImportValidator.validate(data: profileData)
+        } catch {
+            throw ProviderLaunchSnapshotError.invalidProfile
+        }
+        guard proxySelections.count <= ProxySelectionStore.maximumSelectionCount
+        else {
+            throw ProviderLaunchSnapshotError.tooManySelections
+        }
+        for (group, member) in proxySelections {
+            guard Self.isValidSelectionName(group),
+                  Self.isValidSelectionName(member) else {
+                throw ProviderLaunchSnapshotError.invalidSelection
+            }
+        }
+        let required = ProfileConfigurationInspector.inspect(
+            yaml: profileYAML
+        ).requiredRoutingResources
+        guard Set(routingResources.keys) == required else {
+            throw ProviderLaunchSnapshotError.routingResourceSetMismatch
+        }
+        for (kind, data) in routingResources {
+            guard !data.isEmpty, data.count <= kind.maximumBytes else {
+                throw ProviderLaunchSnapshotError.invalidRoutingResource(kind)
+            }
+        }
+    }
+
+    private static func isValidSelectionName(_ value: String) -> Bool {
+        let bytes = value.data(using: .utf8)?.count ?? 0
+        return (1...ProxySelectionProviderMessageCodec.maximumNameBytes)
+            .contains(bytes)
+            && value == value.trimmingCharacters(in: .whitespacesAndNewlines)
+            && !value.contains("\0")
+    }
+}
+
+public enum ProviderLaunchSnapshotCodec {
+    public static let startOptionsKey = "aetherRouteLaunchSnapshotV1"
+    public static let maximumCompressedBytes = 96 * 1_024 * 1_024
+    public static let maximumDecodedBytes = 160 * 1_024 * 1_024
+
+    public static func startOptions(
+        for snapshot: ProviderLaunchSnapshot
+    ) throws -> [String: NSObject] {
+        try snapshot.validate()
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        let encoded = try encoder.encode(snapshot)
+        guard encoded.count <= maximumDecodedBytes else {
+            throw ProviderLaunchSnapshotError.payloadTooLarge(encoded.count)
+        }
+        let compressed = try (encoded as NSData).compressed(using: .zlib)
+            as Data
+        guard compressed.count <= maximumCompressedBytes else {
+            throw ProviderLaunchSnapshotError.payloadTooLarge(compressed.count)
+        }
+        return [startOptionsKey: compressed as NSData]
+    }
+
+    public static func decode(
+        options: [String: Any]?
+    ) throws -> ProviderLaunchSnapshot {
+        guard let compressed = options?[startOptionsKey] as? Data else {
+            throw ProviderLaunchSnapshotError.missingPayload
+        }
+        guard compressed.count <= maximumCompressedBytes else {
+            throw ProviderLaunchSnapshotError.payloadTooLarge(compressed.count)
+        }
+        let decoded = try (compressed as NSData).decompressed(using: .zlib)
+            as Data
+        guard decoded.count <= maximumDecodedBytes else {
+            throw ProviderLaunchSnapshotError.payloadTooLarge(decoded.count)
+        }
+        let snapshot: ProviderLaunchSnapshot
+        do {
+            snapshot = try PropertyListDecoder().decode(
+                ProviderLaunchSnapshot.self,
+                from: decoded
+            )
+        } catch {
+            throw ProviderLaunchSnapshotError.decodingFailed
+        }
+        try snapshot.validate()
+        return snapshot
+    }
+}
+
+public enum ProviderLaunchSnapshotError: LocalizedError, Equatable, Sendable {
+    case missingPayload
+    case payloadTooLarge(Int)
+    case decodingFailed
+    case unsupportedFormat(Int)
+    case profileEncodingFailed
+    case invalidProfile
+    case tooManySelections
+    case invalidSelection
+    case routingResourceSetMismatch
+    case invalidRoutingResource(RoutingResourceKind)
+
+    public var errorDescription: String? {
+        switch self {
+        case .missingPayload:
+            "The Network Extension launch snapshot is missing."
+        case .payloadTooLarge:
+            "The Network Extension launch snapshot is too large."
+        case .decodingFailed:
+            "The Network Extension launch snapshot could not be decoded."
+        case .unsupportedFormat:
+            "The Network Extension launch snapshot version is unsupported."
+        case .profileEncodingFailed, .invalidProfile:
+            "The Network Extension launch profile is invalid."
+        case .tooManySelections, .invalidSelection:
+            "The Network Extension proxy selections are invalid."
+        case .routingResourceSetMismatch, .invalidRoutingResource:
+            "The Network Extension routing resources are invalid."
+        }
+    }
+}
+
 public enum TunnelProviderConfigurationCodec {
     public static let schemaVersionKey = "schemaVersion"
     public static let currentSchemaVersion = 2

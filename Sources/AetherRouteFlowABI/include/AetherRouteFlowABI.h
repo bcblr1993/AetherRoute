@@ -114,6 +114,15 @@ typedef struct aetherroute_flow_abi_v2 {
 /* Returns 1 only when the caller and the strongly linked table fit exactly. */
 int32_t aetherroute_flow_abi_load_v2(aetherroute_flow_abi_v2_t *output);
 
+typedef struct aetherroute_flow_abi_v3 {
+    uint32_t struct_size;
+    aetherroute_flow_abi_v2_t v2;
+    int32_t (*engine_set_routing_mode)(void *, int32_t);
+} aetherroute_flow_abi_v3_t;
+
+/* V3 retains the complete V2 table and adds a per-engine routing override. */
+int32_t aetherroute_flow_abi_load_v3(aetherroute_flow_abi_v3_t *output);
+
 #ifdef __cplusplus
 }
 #endif

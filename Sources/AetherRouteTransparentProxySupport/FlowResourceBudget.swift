@@ -1,18 +1,32 @@
 import Foundation
+import OSLog
 
 public enum TransparentFlowResourceKind: Sendable, Equatable {
     case tcp
     case udp
 
-    /// Conservative admission charge for the largest raw Apple callback,
-    /// copied/staged data, both state-machine directions, and bounded FFI
-    /// operation storage. These are accounting reservations, not allocations.
+    /// Steady-state admission charge for a live flow: the copied read buffer,
+    /// both state-machine directions, and bounded FFI operation storage.
+    ///
+    /// These are accounting reservations, not allocations, and they must track
+    /// what a flow actually holds rather than the ceiling it may briefly reach
+    /// under backpressure. Charging every flow its worst case reserves the peak
+    /// for all flows simultaneously, which collapses concurrency: the previous
+    /// 3 MiB/10 MiB charges admitted only 85 TCP or 25 UDP flows against a
+    /// 256 MiB budget, while `TransparentProxySessionRegistry` was sized for
+    /// 4,096 sessions. A single page load with QUIC exhausted it instantly.
+    ///
+    /// The per-flow worst case stays bounded where it belongs — the staging
+    /// ceilings in `AppleFlowAdapters` and `TCPFlowStateMachine` — so this
+    /// budget remains a global backstop rather than the binding limit.
     public var reservationBytes: Int {
         switch self {
         case .tcp:
-            3 * 1_024 * 1_024
+            // 64 KiB read buffer plus state-machine and FFI overhead.
+            256 * 1_024
         case .udp:
-            10 * 1_024 * 1_024
+            // Datagram staging runs deeper than TCP, so it charges more.
+            512 * 1_024
         }
     }
 }
@@ -32,7 +46,16 @@ public struct FlowResourceBudgetSnapshot: Sendable, Equatable {
 /// A session must own a lease before it can retain/open an Apple flow, and may
 /// release it only after the Rust destroy and Apple-open callback barriers.
 public final class FlowResourceBudget: @unchecked Sendable {
-    public static let defaultMaximumBytes = 256 * 1_024 * 1_024
+    /// Global accounting ceiling. With the steady-state charges above this
+    /// admits roughly 2,048 concurrent TCP or 1,024 concurrent UDP flows, so
+    /// the session registry's 4,096-session limit is the intended binding
+    /// constraint for ordinary traffic instead of this backstop.
+    public static let defaultMaximumBytes = 512 * 1_024 * 1_024
+
+    private static let logger = Logger(
+        subsystem: "com.aetherroute.desktop",
+        category: "transparent-flow-budget"
+    )
 
     private let maximumBytes: Int
     private let lock = NSLock()
@@ -50,13 +73,29 @@ public final class FlowResourceBudget: @unchecked Sendable {
         for kind: TransparentFlowResourceKind
     ) throws -> FlowResourceLease {
         let bytes = kind.reservationBytes
-        let accepted = lock.withLock { () -> Bool in
-            guard bytes <= maximumBytes - reservedBytes else { return false }
+        let outcome = lock.withLock { () -> (Bool, Int, Int) in
+            guard bytes <= maximumBytes - reservedBytes else {
+                return (false, reservedBytes, activeLeaseCount)
+            }
             reservedBytes += bytes
             activeLeaseCount += 1
-            return true
+            return (true, reservedBytes, activeLeaseCount)
         }
-        guard accepted else { throw FlowResourceBudgetError.exhausted }
+        guard outcome.0 else {
+            // Admission exhaustion silently drops user traffic, so it must be
+            // observable with the numbers needed to retune the charges.
+            Self.logger.error(
+                """
+                stage=flowBudgetExhausted \
+                kind=\(String(describing: kind), privacy: .public) \
+                requestedBytes=\(bytes, privacy: .public) \
+                reservedBytes=\(outcome.1, privacy: .public) \
+                maximumBytes=\(self.maximumBytes, privacy: .public) \
+                activeLeases=\(outcome.2, privacy: .public)
+                """
+            )
+            throw FlowResourceBudgetError.exhausted
+        }
         return FlowResourceLease(budget: self, kind: kind, bytes: bytes)
     }
 

@@ -40,7 +40,7 @@ final class SupportDiagnosticsTests: XCTestCase {
         let report = makeReport(events: [
             DiagnosticEvent(
                 timestampUnixMilliseconds: 123,
-                code: .diagnosticExportRequested
+                code: .networkExtensionConflict
             ),
         ])
         let data = try DiagnosticReportEncoder.encode(report)
@@ -68,6 +68,7 @@ final class SupportDiagnosticsTests: XCTestCase {
         XCTAssertTrue(text.contains("destination_addresses"))
         XCTAssertTrue(text.contains("\"provider\""))
         XCTAssertTrue(text.contains("\"isAvailable\" : false"))
+        XCTAssertTrue(text.contains("networkExtensionConflict"))
     }
 
     func testReportRejectsMoreThanMaximumEvents() {

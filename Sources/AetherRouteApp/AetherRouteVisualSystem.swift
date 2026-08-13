@@ -1,21 +1,46 @@
 import SwiftUI
 
 enum AetherVisual {
-    static let cyan = Color(red: 0.18, green: 0.86, blue: 0.98)
-    static let blue = Color(red: 0.04, green: 0.43, blue: 0.98)
-    static let indigo = Color(red: 0.34, green: 0.24, blue: 0.91)
-    static let success = Color(red: 0.03, green: 0.64, blue: 0.52)
+    // Brand colors are identity-only. Runtime state always uses system
+    // semantic colors so accessibility and accent-color preferences win.
+    // The palette shares a family with the system accent so the app reads as a
+    // native network tool; the known cost is that brand and selection sit close
+    // together, which is why brand color appears only in the sidebar header and
+    // never carries state.
+    static let portalLight = Color(red: 0.298, green: 0.659, blue: 1.0)
+    static let portalMid = Color(red: 0.039, green: 0.431, blue: 0.980)
+    static let portalDark = Color(red: 0.035, green: 0.259, blue: 0.659)
+    // Four-point spacing grid from the final design handoff.
+    static let s1: CGFloat = 4
+    static let s2: CGFloat = 8
+    static let s3: CGFloat = 12
+    static let s4: CGFloat = 16
+    static let s5: CGFloat = 20
+    static let s6: CGFloat = 24
 
-    static let pageHorizontalPadding: CGFloat = 24
-    static let pageTopPadding: CGFloat = 20
-    static let pageBottomPadding: CGFloat = 28
-    static let sectionSpacing: CGFloat = 16
-    static let panelRadius: CGFloat = 15
-    static let contentMaxWidth: CGFloat = 960
-    static let formMaxWidth: CGFloat = 720
+    static let controlRadius: CGFloat = 6
+    static let insetRadius: CGFloat = 8
+    static let panelRadius: CGFloat = 12
+
+    static let pageHorizontalPadding = s5
+    static let pageTopPadding = s5
+    static let pageBottomPadding = s6
+    static let sectionSpacing = s4
+    static let contentMaxWidth: CGFloat = 704
+    static let formMaxWidth: CGFloat = 704
+    static let sidebarWidth: CGFloat = 236
+    static let windowWidth: CGFloat = 940
+    static let windowHeight: CGFloat = 640
+    static let popoverWidth: CGFloat = 330
+    /// Sheet content follows the final dialog handoff rather than the page
+    /// spacing grid.
+    static let dialogPadding: CGFloat = 26
+    static let onboardingTopPadding = s6 + s5
+    static let wideListIndent = s6 * 2 + s2
+    static let tableContentIndent = s6 * 3
 
     static let brandGradient = LinearGradient(
-        colors: [cyan, blue, indigo],
+        colors: [portalLight, portalMid, portalDark],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
@@ -23,22 +48,19 @@ enum AetherVisual {
     static let pageBackground = Color(nsColor: .windowBackgroundColor)
     static let sidebarBackground = Material.regular
 
-    static func panelFill(for colorScheme: ColorScheme) -> Color {
+    static func panelFill(for _: ColorScheme) -> Color {
         Color(nsColor: .controlBackgroundColor)
     }
 
-    static func panelBorder(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.085)
-            : Color.black.opacity(0.055)
+    static func panelBorder(for _: ColorScheme) -> Color {
+        Color(nsColor: .separatorColor)
     }
 }
 
-/// Aether Lens pairs a nearly complete portal with a route that exits through
-/// its deliberate north-east opening. The quiet circular silhouette reads at
-/// menu-bar size, while the open terminal and rising path communicate an
-/// intentional route instead of the shield/globe clichés common to network
-/// utilities.
+/// The adopted channel mark: two arcs forming a tunnel, with the route arrow
+/// passing through and out. It is authored on the same grid and stroke weight
+/// as the shipped app icon, so the sidebar, settings and status surfaces stay
+/// in register with the icon in the Dock.
 struct AetherRouteGlyph: View {
     var isActive = false
     var isOnColor = false
@@ -46,167 +68,107 @@ struct AetherRouteGlyph: View {
     var body: some View {
         GeometryReader { proxy in
             let side = min(proxy.size.width, proxy.size.height)
-            let gateWidth = max(1.55, side * 0.074)
-            let routeWidth = max(1.25, side * 0.054)
-            let gate = gatePath(in: proxy.size)
-            let route = risingRoutePath(in: proxy.size)
+            let strokeWidth = max(1.4, side * Self.strokeUnits / Self.gridSide)
 
             ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color.white.opacity(isOnColor ? 0.14 : 0.035),
-                                Color.clear,
-                            ],
-                            center: .topLeading,
-                            startRadius: 0,
-                            endRadius: side * 0.72
-                        )
-                    )
-                    .padding(side * 0.12)
+                channelArc(side: side, rightSide: false)
+                    .stroke(markStyle, style: channelStroke(strokeWidth))
 
-                gate
-                    .stroke(
-                        glowColor.opacity(isActive ? 0.30 : 0.10),
-                        style: StrokeStyle(
-                            lineWidth: gateWidth * 1.55,
-                            lineCap: .round,
-                            lineJoin: .round
-                        )
-                    )
-                    .blur(radius: isActive ? side * 0.052 : side * 0.020)
+                // The far wall of the channel is held back so the two arcs read
+                // as one tunnel seen in perspective rather than as a ring.
+                channelArc(side: side, rightSide: true)
+                    .stroke(markStyle, style: channelStroke(strokeWidth))
+                    .opacity(0.45)
 
-                gate
-                    .stroke(
-                        gateGradient,
-                        style: StrokeStyle(
-                            lineWidth: gateWidth,
-                            lineCap: .round,
-                            lineJoin: .round
-                        )
-                    )
-
-                gate
-                    .trim(from: 0.08, to: 0.56)
-                    .stroke(
-                        Color.white.opacity(isOnColor ? 0.58 : 0.22),
-                        style: StrokeStyle(
-                            lineWidth: max(0.55, gateWidth * 0.16),
-                            lineCap: .round,
-                            lineJoin: .round
-                        )
-                    )
-
-                route
-                    .stroke(
-                        routeGradient,
-                        style: StrokeStyle(
-                            lineWidth: routeWidth,
-                            lineCap: .round,
-                            lineJoin: .round
-                        )
-                    )
-
-                Circle()
-                    .fill(isOnColor ? Color.white : Color(nsColor: .windowBackgroundColor))
-                    .overlay {
-                        Circle()
-                            .stroke(terminalColor.opacity(0.86), lineWidth: max(0.7, side * 0.018))
-                    }
-                    .frame(width: max(2.4, side * 0.080))
-                    .shadow(
-                        color: glowColor.opacity(isActive ? 0.72 : 0.36),
-                        radius: isActive ? side * 0.065 : side * 0.030
-                    )
-                    .position(point(0.840, 0.300, in: proxy.size))
+                routeArrow(side: side)
+                    .stroke(markStyle, style: channelStroke(strokeWidth))
             }
+            .frame(width: side, height: side)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .shadow(
+                color: isActive ? glowColor.opacity(0.28) : .clear,
+                radius: side * 0.055
+            )
         }
         .aspectRatio(1, contentMode: .fit)
         .accessibilityHidden(true)
     }
 
-    private func gatePath(in size: CGSize) -> Path {
+    // The mark is authored on the same 96-unit grid as the app icon, so the
+    // sidebar and the icon in the Dock stay in register.
+    private static let gridSide: CGFloat = 96
+    private static let strokeUnits: CGFloat = 13
+    private static let arcTop: CGFloat = 14
+    private static let arcRadius: CGFloat = 38
+
+    private func channelArc(side: CGFloat, rightSide: Bool) -> Path {
         Path { path in
-            path.move(to: point(0.675, 0.195, in: size))
-            path.addCurve(
-                to: point(0.255, 0.255, in: size),
-                control1: point(0.555, 0.125, in: size),
-                control2: point(0.370, 0.145, in: size)
+            let chordX: CGFloat = rightSide ? 64 : 32
+            let halfChord = (Self.gridSide - 2 * Self.arcTop) / 2
+            let offset = sqrt(
+                Self.arcRadius * Self.arcRadius - halfChord * halfChord
             )
-            path.addCurve(
-                to: point(0.255, 0.755, in: size),
-                control1: point(0.105, 0.395, in: size),
-                control2: point(0.105, 0.625, in: size)
+            let center = point(
+                rightSide ? chordX - offset : chordX + offset,
+                Self.gridSide / 2,
+                side: side
             )
-            path.addCurve(
-                to: point(0.755, 0.735, in: size),
-                control1: point(0.395, 0.885, in: size),
-                control2: point(0.620, 0.875, in: size)
-            )
-            path.addCurve(
-                to: point(0.825, 0.590, in: size),
-                control1: point(0.805, 0.685, in: size),
-                control2: point(0.830, 0.635, in: size)
+            // Half-sweep measured from the bulge direction out to the chord,
+            // which picks the minor arc the icon specification calls for.
+            let sweep = atan2(halfChord, offset)
+            let through: CGFloat = rightSide ? 0 : .pi
+            path.addRelativeArc(
+                center: center,
+                radius: Self.arcRadius / Self.gridSide * side,
+                startAngle: .radians(through - sweep),
+                delta: .radians(2 * sweep)
             )
         }
     }
 
-    private func risingRoutePath(in size: CGSize) -> Path {
+    private func routeArrow(side: CGFloat) -> Path {
         Path { path in
-            path.move(to: point(0.265, 0.700, in: size))
-            path.addCurve(
-                to: point(0.505, 0.625, in: size),
-                control1: point(0.360, 0.745, in: size),
-                control2: point(0.445, 0.695, in: size)
-            )
-            path.addCurve(
-                to: point(0.705, 0.340, in: size),
-                control1: point(0.585, 0.535, in: size),
-                control2: point(0.620, 0.455, in: size)
-            )
-            path.addCurve(
-                to: point(0.840, 0.300, in: size),
-                control1: point(0.755, 0.310, in: size),
-                control2: point(0.805, 0.300, in: size)
-            )
+            let axis = Self.gridSide / 2
+            path.move(to: point(18, axis, side: side))
+            path.addLine(to: point(58, axis, side: side))
+            path.move(to: point(50, axis - 15, side: side))
+            path.addLine(to: point(66, axis, side: side))
+            path.addLine(to: point(50, axis + 15, side: side))
         }
     }
 
-    private var gateGradient: LinearGradient {
+    private var markStyle: LinearGradient {
         LinearGradient(
             colors: isOnColor
-                ? [Color.white, Color.white.opacity(0.96), Color.cyan.opacity(0.78)]
-                : [AetherVisual.cyan, AetherVisual.blue, AetherVisual.indigo],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+                ? [Color.white, Color.white.opacity(0.90)]
+                : [AetherVisual.portalLight, AetherVisual.portalMid, AetherVisual.portalDark],
+            startPoint: .leading,
+            endPoint: .trailing
         )
     }
 
-    private var routeGradient: LinearGradient {
-        LinearGradient(
-            colors: isOnColor
-                ? [Color.white.opacity(0.78), AetherVisual.cyan, Color.white]
-                : [AetherVisual.indigo, AetherVisual.blue, AetherVisual.cyan],
-            startPoint: .bottomLeading,
-            endPoint: .topTrailing
+    private func channelStroke(_ width: CGFloat) -> StrokeStyle {
+        StrokeStyle(
+            lineWidth: width,
+            lineCap: .round,
+            lineJoin: .round
         )
     }
 
     private var glowColor: Color {
-        isOnColor ? .white : AetherVisual.cyan
+        isOnColor ? .white : AetherVisual.portalLight
     }
 
-    private var terminalColor: Color {
-        isOnColor ? AetherVisual.cyan : AetherVisual.blue
-    }
-
+    /// Maps a point on the 96-unit design grid into the glyph's square box.
     private func point(
         _ x: CGFloat,
         _ y: CGFloat,
-        in size: CGSize
+        side: CGFloat
     ) -> CGPoint {
-        CGPoint(x: size.width * x, y: size.height * y)
+        CGPoint(
+            x: x / Self.gridSide * side,
+            y: y / Self.gridSide * side
+        )
     }
 }
 
@@ -220,25 +182,31 @@ struct AetherRouteBrandTile: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color(red: 0.17, green: 0.76, blue: 0.98),
-                            Color(red: 0.04, green: 0.39, blue: 0.94),
-                            Color(red: 0.21, green: 0.13, blue: 0.61),
+                            AetherVisual.portalLight,
+                            AetherVisual.portalMid,
+                            AetherVisual.portalDark,
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
-            RadialGradient(
-                colors: [Color.white.opacity(0.30), Color.clear],
-                center: UnitPoint(x: 0.24, y: 0.16),
-                startRadius: 0,
-                endRadius: size * 0.68
-            )
-            Circle()
-                .stroke(Color.white.opacity(0.13), lineWidth: max(0.5, size * 0.012))
-                .padding(size * 0.15)
+            // The highlight has to be painted *into* the tile shape. As a bare
+            // RadialGradient it filled the square frame instead, so the part
+            // outside the rounded corner showed up as a pale square nub against
+            // the window background.
+            RoundedRectangle(cornerRadius: size * 0.255, style: .continuous)
+                .fill(
+                    RadialGradient(
+                        colors: [Color.white.opacity(0.30), Color.clear],
+                        center: UnitPoint(x: 0.24, y: 0.16),
+                        startRadius: 0,
+                        endRadius: size * 0.68
+                    )
+                )
+            // 664 graphic safe area inside an 824 tile, matching the exported
+            // icon exactly so the sidebar mark and the Dock icon register.
             AetherRouteGlyph(isActive: isActive, isOnColor: true)
-                .padding(size * 0.115)
+                .padding(size * 0.097)
         }
         .frame(width: size, height: size)
         .overlay {
@@ -252,7 +220,7 @@ struct AetherRouteBrandTile: View {
                     lineWidth: max(0.55, size * 0.014)
                 )
         }
-        .shadow(color: AetherVisual.indigo.opacity(0.20), radius: size * 0.10, y: size * 0.045)
+        .shadow(color: AetherVisual.portalDark.opacity(0.20), radius: size * 0.10, y: size * 0.045)
         .accessibilityLabel("AetherRoute")
     }
 }
@@ -272,8 +240,8 @@ struct AetherRouteStatusLens: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            AetherVisual.cyan.opacity(colorScheme == .dark ? 0.16 : 0.11),
-                            AetherVisual.blue.opacity(colorScheme == .dark ? 0.10 : 0.055),
+                            AetherVisual.portalLight.opacity(colorScheme == .dark ? 0.16 : 0.11),
+                            AetherVisual.portalMid.opacity(colorScheme == .dark ? 0.10 : 0.055),
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -284,8 +252,8 @@ struct AetherRouteStatusLens: View {
                 .stroke(
                     LinearGradient(
                         colors: [
-                            AetherVisual.cyan.opacity(isActive ? 0.42 : 0.20),
-                            AetherVisual.indigo.opacity(isActive ? 0.22 : 0.10),
+                            AetherVisual.portalLight.opacity(isActive ? 0.42 : 0.20),
+                            AetherVisual.portalDark.opacity(isActive ? 0.22 : 0.10),
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -298,7 +266,7 @@ struct AetherRouteStatusLens: View {
         }
         .frame(width: size, height: size)
         .shadow(
-            color: AetherVisual.cyan.opacity(isActive ? 0.13 : 0.035),
+            color: AetherVisual.portalLight.opacity(isActive ? 0.13 : 0.035),
             radius: isActive ? 12 : 5
         )
         .accessibilityHidden(true)
@@ -308,29 +276,19 @@ struct AetherRouteStatusLens: View {
 private struct AetherPanelModifier: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
 
-    let radius: CGFloat
-    let elevated: Bool
-
     func body(content: Content) -> some View {
         content
             .background(
                 AetherVisual.panelFill(for: colorScheme),
-                in: RoundedRectangle(cornerRadius: radius, style: .continuous)
+                in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
                     .stroke(
                         AetherVisual.panelBorder(for: colorScheme),
                         lineWidth: 0.5
                     )
             }
-            .shadow(
-                color: elevated && colorScheme == .light
-                    ? Color.black.opacity(0.035)
-                    : .clear,
-                radius: elevated ? 8 : 0,
-                y: elevated ? 3 : 0
-            )
     }
 }
 
@@ -341,27 +299,15 @@ private struct AetherHeroPanelModifier: ViewModifier {
         content
             .background(
                 AetherVisual.panelFill(for: colorScheme),
-                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+                in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
                     .stroke(
-                        LinearGradient(
-                            colors: [
-                                AetherVisual.blue.opacity(colorScheme == .dark ? 0.15 : 0.10),
-                                AetherVisual.panelBorder(for: colorScheme),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 0.6
+                        AetherVisual.panelBorder(for: colorScheme),
+                        lineWidth: 0.5
                     )
             }
-            .shadow(
-                color: colorScheme == .light ? Color.black.opacity(0.035) : .clear,
-                radius: 10,
-                y: 3
-            )
     }
 }
 
@@ -375,16 +321,7 @@ struct AetherContentCanvas: View {
         ZStack {
             Color(nsColor: .windowBackgroundColor)
 
-            if !reduceTransparency {
-                LinearGradient(
-                    colors: [
-                        AetherVisual.blue.opacity(colorScheme == .dark ? 0.018 : 0.008),
-                        Color.clear,
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .center
-                )
-            }
+            if !reduceTransparency { Color.clear }
         }
         .ignoresSafeArea()
         .accessibilityHidden(true)
@@ -410,7 +347,7 @@ struct AetherProgressButtonLabel: View {
     }
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: AetherVisual.s2) {
             if isWorking {
                 ProgressView()
                     .controlSize(.small)
@@ -426,11 +363,8 @@ struct AetherProgressButtonLabel: View {
 }
 
 extension View {
-    func aetherPanel(
-        radius: CGFloat = 16,
-        elevated: Bool = false
-    ) -> some View {
-        modifier(AetherPanelModifier(radius: radius, elevated: elevated))
+    func aetherPanel() -> some View {
+        modifier(AetherPanelModifier())
     }
 
     func aetherHeroPanel() -> some View {

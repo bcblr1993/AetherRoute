@@ -9,6 +9,7 @@ public enum DiagnosticEventCode: String, Codable, CaseIterable, Sendable {
     case providerReady
     case disconnectRequested
     case providerFailed
+    case networkExtensionConflict
     case profileImported
     case profileOperationFailed
     case subscriptionRefreshed

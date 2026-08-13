@@ -1,7 +1,13 @@
 import AetherRouteKit
 @preconcurrency import NetworkExtension
+import OSLog
 
 final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
+    private static let runtimeLogger = Logger(
+        subsystem: "com.aetherroute.desktop",
+        category: "packet-runtime"
+    )
+
     private lazy var core: any CoreBridge = RustCoreBridge(packetFlow: packetFlow)
     private let diagnostics = ProviderDiagnosticAccumulator()
     private let providerMessageQueue = DispatchQueue(
@@ -13,8 +19,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         options: [String: NSObject]? = nil,
         completionHandler: @escaping (Error?) -> Void
     ) {
+        Self.runtimeLogger.info("stage=startTunnel requested")
         let completion = TunnelStartCompletion(completionHandler)
         do {
+            Self.runtimeLogger.info("stage=decodeLaunchSnapshot begin")
+            let snapshot = try ProviderLaunchSnapshotCodec.decode(
+                options: options
+            )
+            Self.runtimeLogger.info(
+                "stage=decodeLaunchSnapshot success selections=\(snapshot.proxySelections.count, privacy: .public) resources=\(snapshot.routingResources.count, privacy: .public)"
+            )
+            Self.runtimeLogger.info("stage=decodeProviderConfiguration begin")
             let provider = protocolConfiguration as? NETunnelProviderProtocol
             let routingMode = try TunnelProviderConfigurationCodec.routingMode(
                 from: provider?.providerConfiguration
@@ -25,34 +40,61 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 mode: routingMode,
                 localProxy: localProxy
             ).validated()
-            let bypassPlan = try BypassNetworkSettingsPlan(
-                policy: BypassPolicyStore.applicationGroup().load()
+            Self.runtimeLogger.info(
+                "stage=decodeProviderConfiguration success routing=\(routingMode.rawValue, privacy: .public) localProxyEnabled=\(localProxy.isEnabled, privacy: .public)"
             )
-            try core.start(configuration: configuration) { [weak self] coreError in
+            Self.runtimeLogger.info("stage=loadBypassPolicy begin source=launchSnapshot")
+            let bypassPlan = try BypassNetworkSettingsPlan(
+                policy: snapshot.bypassPolicy
+            )
+            Self.runtimeLogger.info("stage=loadBypassPolicy success")
+            Self.runtimeLogger.info("stage=startCore begin")
+            try core.start(
+                configuration: configuration,
+                snapshot: snapshot
+            ) { [weak self] coreError in
                 guard let self else {
+                    Self.runtimeLogger.error("stage=startCore failed reason=providerUnavailable")
                     completion.call(PacketTunnelError.coreUnavailable)
                     return
                 }
                 if let coreError {
+                    Self.runtimeLogger.error(
+                        "stage=startCore failed error=\(String(reflecting: coreError), privacy: .public)"
+                    )
                     self.diagnostics.record(.startupFailure)
                     self.core.stop()
                     completion.call(coreError)
                     return
                 }
 
-                let settings = self.makeNetworkSettings(
-                    configuration,
+                Self.runtimeLogger.info("stage=startCore success")
+                Self.runtimeLogger.info("stage=makeNetworkSettings begin")
+                let settingsPlan = PacketTunnelNetworkSettingsPlan(
+                    configuration: configuration,
                     bypassPlan: bypassPlan
                 )
+                let settings = self.makeNetworkSettings(settingsPlan)
+                Self.runtimeLogger.info("stage=makeNetworkSettings success")
+                Self.runtimeLogger.info("stage=installNetworkSettings begin")
                 self.setTunnelNetworkSettings(settings) { settingsError in
-                    if settingsError != nil {
+                    if let settingsError {
+                        Self.runtimeLogger.error(
+                            "stage=installNetworkSettings failed error=\(String(reflecting: settingsError), privacy: .public)"
+                        )
                         self.diagnostics.record(.networkSettingsFailure)
                         self.core.stop()
+                    } else {
+                        Self.runtimeLogger.info("stage=installNetworkSettings success")
                     }
                     completion.call(settingsError)
                 }
             }
+            Self.runtimeLogger.info("stage=startCore submitted")
         } catch {
+            Self.runtimeLogger.error(
+                "stage=startTunnel failed error=\(String(reflecting: error), privacy: .public)"
+            )
             diagnostics.record(.startupFailure)
             core.stop()
             completion.call(error)
@@ -63,7 +105,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         with reason: NEProviderStopReason,
         completionHandler: @escaping () -> Void
     ) {
+        Self.runtimeLogger.info(
+            "stage=stopTunnel requested reason=\(reason.rawValue, privacy: .public)"
+        )
         core.stop()
+        Self.runtimeLogger.info("stage=stopTunnel complete")
         completionHandler()
     }
 
@@ -130,91 +176,54 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     }
 
     private func makeNetworkSettings(
-        _ configuration: TunnelConfiguration,
-        bypassPlan: BypassNetworkSettingsPlan
+        _ plan: PacketTunnelNetworkSettingsPlan
     ) -> NEPacketTunnelNetworkSettings {
-        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
-        settings.mtu = NSNumber(value: configuration.mtu)
+        let settings = NEPacketTunnelNetworkSettings(
+            tunnelRemoteAddress: plan.tunnelRemoteAddress
+        )
+        settings.mtu = NSNumber(value: plan.mtu)
 
         let ipv4 = NEIPv4Settings(
-            addresses: [configuration.ipv4Address],
-            subnetMasks: [configuration.ipv4SubnetMask]
+            addresses: plan.ipv4.addresses,
+            subnetMasks: plan.ipv4.subnetMasks
         )
-        ipv4.includedRoutes = [.default()]
-        let customIPv4Routes = bypassPlan.ipv4Routes.map {
+        ipv4.includedRoutes = plan.ipv4.includedRoutes.map {
             NEIPv4Route(
                 destinationAddress: $0.destinationAddress,
                 subnetMask: $0.subnetMask
             )
         }
-        ipv4.excludedRoutes = Self.uniqueIPv4Routes(
-            (configuration.excludeLocalNetworks ? Self.localIPv4Routes : [])
-                + customIPv4Routes
-        )
+        ipv4.excludedRoutes = plan.ipv4.excludedRoutes.map {
+            NEIPv4Route(
+                destinationAddress: $0.destinationAddress,
+                subnetMask: $0.subnetMask
+            )
+        }
         settings.ipv4Settings = ipv4
 
         let ipv6 = NEIPv6Settings(
-            addresses: [configuration.ipv6Address],
-            networkPrefixLengths: [NSNumber(value: configuration.ipv6PrefixLength)]
+            addresses: plan.ipv6.addresses,
+            networkPrefixLengths: plan.ipv6.prefixLengths.map(NSNumber.init)
         )
-        ipv6.includedRoutes = [.default()]
-        let customIPv6Routes = bypassPlan.ipv6Routes.map {
+        ipv6.includedRoutes = plan.ipv6.includedRoutes.map {
             NEIPv6Route(
                 destinationAddress: $0.destinationAddress,
                 networkPrefixLength: NSNumber(value: $0.prefixLength)
             )
         }
-        ipv6.excludedRoutes = Self.uniqueIPv6Routes(
-            (configuration.excludeLocalNetworks ? Self.localIPv6Routes : [])
-                + customIPv6Routes
-        )
+        ipv6.excludedRoutes = plan.ipv6.excludedRoutes.map {
+            NEIPv6Route(
+                destinationAddress: $0.destinationAddress,
+                networkPrefixLength: NSNumber(value: $0.prefixLength)
+            )
+        }
         settings.ipv6Settings = ipv6
 
-        let dns = NEDNSSettings(servers: configuration.dnsServers)
-        dns.matchDomains = [""]
+        let dns = NEDNSSettings(servers: plan.dns.servers)
+        dns.matchDomains = plan.dns.matchDomains
         settings.dnsSettings = dns
 
         return settings
-    }
-
-    private static var localIPv4Routes: [NEIPv4Route] {
-        [
-            .init(destinationAddress: "10.0.0.0", subnetMask: "255.0.0.0"),
-            .init(destinationAddress: "127.0.0.0", subnetMask: "255.0.0.0"),
-            .init(destinationAddress: "169.254.0.0", subnetMask: "255.255.0.0"),
-            .init(destinationAddress: "172.16.0.0", subnetMask: "255.240.0.0"),
-            .init(destinationAddress: "192.168.0.0", subnetMask: "255.255.0.0")
-        ]
-    }
-
-    private static var localIPv6Routes: [NEIPv6Route] {
-        [
-            .init(destinationAddress: "::1", networkPrefixLength: 128),
-            .init(destinationAddress: "fc00::", networkPrefixLength: 7),
-            .init(destinationAddress: "fe80::", networkPrefixLength: 10)
-        ]
-    }
-
-    private static func uniqueIPv4Routes(
-        _ routes: [NEIPv4Route]
-    ) -> [NEIPv4Route] {
-        var seen = Set<String>()
-        return routes.filter {
-            seen.insert(
-                "\($0.destinationAddress)/\($0.destinationSubnetMask)"
-            ).inserted
-        }
-    }
-
-    private static func uniqueIPv6Routes(
-        _ routes: [NEIPv6Route]
-    ) -> [NEIPv6Route] {
-        var seen = Set<String>()
-        return routes.filter {
-            seen.insert(
-                "\($0.destinationAddress)/\($0.destinationNetworkPrefixLength)"
-            ).inserted
-        }
     }
 
     private static func failure(

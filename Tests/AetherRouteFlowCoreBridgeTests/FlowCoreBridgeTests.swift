@@ -8,8 +8,9 @@ final class FlowCoreBridgeTests: XCTestCase {
     func testLiveStrongLinkedABIAndFiveHundredStagedFlowCycles() throws {
         XCTAssertNoThrow(try LiveFlowCoreABIBackend())
         let engine = try FlowCoreEngine(
-            profile: Data("mode: direct\nproxies: []\nrules: []\n".utf8),
-            runtimeDirectory: FileManager.default.temporaryDirectory
+            profile: Data("mode: rule\nproxies: []\nrules: []\n".utf8),
+            runtimeDirectory: FileManager.default.temporaryDirectory,
+            configuration: FlowCoreEngineConfiguration(routingMode: .direct)
         )
         let telemetry = try engine.telemetrySnapshot()
         XCTAssertEqual(telemetry.uploadBytesPerSecond, 0)

@@ -1,6 +1,14 @@
 import AetherRouteKit
 import AetherRouteTransparentProxySupport
 import Foundation
+import OSLog
+
+private enum FlowCoreRuntimeLog {
+    static let logger = Logger(
+        subsystem: "com.aetherroute.desktop",
+        category: "flow-core"
+    )
+}
 
 public struct FlowCoreEngineConfiguration: Sendable, Equatable {
     public static let `default` = FlowCoreEngineConfiguration()
@@ -9,17 +17,20 @@ public struct FlowCoreEngineConfiguration: Sendable, Equatable {
     public let queueDepth: Int
     public let maximumTCPChunkBytes: Int
     public let maximumUDPPayloadBytes: Int
+    public let routingMode: RoutingMode?
 
     public init(
         workerThreads: Int = 2,
         queueDepth: Int = 32,
         maximumTCPChunkBytes: Int = 64 * 1_024,
-        maximumUDPPayloadBytes: Int = UDPBatchPolicy.maximumPayloadBytes
+        maximumUDPPayloadBytes: Int = UDPBatchPolicy.maximumPayloadBytes,
+        routingMode: RoutingMode? = nil
     ) {
         self.workerThreads = workerThreads
         self.queueDepth = queueDepth
         self.maximumTCPChunkBytes = maximumTCPChunkBytes
         self.maximumUDPPayloadBytes = maximumUDPPayloadBytes
+        self.routingMode = routingMode
     }
 
     @discardableResult
@@ -75,7 +86,17 @@ public final class FlowCoreEngine: @unchecked Sendable {
         runtimeDirectory: URL,
         configuration: FlowCoreEngineConfiguration = .default
     ) throws {
-        let backend = try LiveFlowCoreABIBackend()
+        FlowCoreRuntimeLog.logger.info("stage=loadFlowABI begin")
+        let backend: LiveFlowCoreABIBackend
+        do {
+            backend = try LiveFlowCoreABIBackend()
+        } catch {
+            FlowCoreRuntimeLog.logger.error(
+                "stage=loadFlowABI failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            throw error
+        }
+        FlowCoreRuntimeLog.logger.info("stage=loadFlowABI success")
         try self.init(
             profile: profile,
             runtimeDirectory: runtimeDirectory,
@@ -110,13 +131,20 @@ public final class FlowCoreEngine: @unchecked Sendable {
             workingDirectory: directory,
             configuration: validated
         )
+        FlowCoreRuntimeLog.logger.info(
+            "stage=createEngine status=\(created.status, privacy: .public)"
+        )
         guard
             created.status == FlowCoreABIStatus.success,
             let handle = created.handle
         else {
+            FlowCoreRuntimeLog.logger.error(
+                "stage=createEngine failed status=\(created.status, privacy: .public)"
+            )
             throw Self.engineError(for: created.status)
         }
         storage = FlowCoreEngineStorage(backend: backend, handle: handle)
+        FlowCoreRuntimeLog.logger.info("stage=createEngine success")
     }
 
     public func makeTCPFlow(
@@ -250,6 +278,9 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
                     source: sourceData,
                     destination: destinationData
                 )
+                FlowCoreRuntimeLog.logger.debug(
+                    "stage=createFlow transport=tcp status=\(created.status, privacy: .public)"
+                )
                 guard
                     created.status == FlowCoreABIStatus.success,
                     let flowHandle = created.handle
@@ -287,6 +318,9 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
                 let created = backend.udpCreate(
                     engine: handle,
                     source: sourceData
+                )
+                FlowCoreRuntimeLog.logger.debug(
+                    "stage=createFlow transport=udp status=\(created.status, privacy: .public)"
                 )
                 guard
                     created.status == FlowCoreABIStatus.success,
@@ -867,6 +901,9 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
                 return
             }
             let status = backend.activate(handle)
+            FlowCoreRuntimeLog.logger.debug(
+                "stage=activateFlow transport=\(self.kindLabel, privacy: .public) status=\(status, privacy: .public)"
+            )
             if status == FlowCoreABIStatus.success {
                 phase = .active
                 completion(.success(()))
@@ -896,6 +933,9 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
                 completion(token, .failure(.invalidData("Empty TCP write")))
                 return
             }
+            FlowCoreRuntimeLog.logger.debug(
+                "stage=tcpWrite submit bytes=\(data.count, privacy: .public)"
+            )
             issueWriteOperation(token: token, completion: completion) {
                 handle, abiToken, callback in
                 backend.tcpWrite(
@@ -918,6 +958,7 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
                 completion(token, .failure(.invalidData("TCP/UDP flow mismatch")))
                 return
             }
+            FlowCoreRuntimeLog.logger.debug("stage=tcpFinishWrite submit")
             issueWriteOperation(token: token, completion: completion) {
                 handle, abiToken, callback in
                 backend.tcpFinishWrite(
@@ -951,6 +992,9 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
                 completion(token, .failure(.closed))
                 return
             }
+            FlowCoreRuntimeLog.logger.debug(
+                "stage=tcpRead submit maximumBytes=\(maximumBytes, privacy: .public)"
+            )
             let abiToken = beginOperation(token)
             let status = backend.tcpRead(
                 handle,
@@ -968,6 +1012,9 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
                 }
             }
             if status != FlowCoreABIStatus.success {
+                FlowCoreRuntimeLog.logger.error(
+                    "stage=tcpRead submitFailed status=\(status, privacy: .public)"
+                )
                 operations.removeValue(forKey: abiToken)
                 completion(token, .failure(Self.flowError(for: status)))
             }
@@ -987,6 +1034,9 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
             }
             do {
                 try UDPBatchValidator.validate(datagrams)
+                FlowCoreRuntimeLog.logger.debug(
+                    "stage=udpWrite submit datagrams=\(datagrams.count, privacy: .public) bytes=\(datagrams.reduce(0) { $0 + $1.payload.count }, privacy: .public)"
+                )
             } catch {
                 completion(token, .failure(.invalidData("Invalid UDP batch")))
                 return
@@ -1062,6 +1112,9 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
                 }
             }
             if status != FlowCoreABIStatus.success {
+                FlowCoreRuntimeLog.logger.error(
+                    "stage=udpRead submitFailed status=\(status, privacy: .public)"
+                )
                 operations.removeValue(forKey: abiToken)
                 completion(token, .failure(Self.flowError(for: status)))
             }
@@ -1136,6 +1189,9 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
             }
         }
         if status != FlowCoreABIStatus.success {
+            FlowCoreRuntimeLog.logger.error(
+                "stage=flowWrite submitFailed transport=\(self.kindLabel, privacy: .public) status=\(status, privacy: .public)"
+            )
             operations.removeValue(forKey: abiToken)
             completion(token, .failure(Self.flowError(for: status)))
         }
@@ -1162,12 +1218,21 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
             return
         }
         guard mapped == expected, returned == abiToken else {
+            FlowCoreRuntimeLog.logger.error(
+                "stage=flowWrite callbackMalformed transport=\(self.kindLabel, privacy: .public)"
+            )
             completion(expected, .failure(.invalidData("FFI token mismatch")))
             return
         }
         if status == FlowCoreABIStatus.success {
+            FlowCoreRuntimeLog.logger.debug(
+                "stage=flowWrite callbackSuccess transport=\(self.kindLabel, privacy: .public) operation=\(expected.kind.rawValue, privacy: .public)"
+            )
             completion(mapped, .success(()))
         } else {
+            FlowCoreRuntimeLog.logger.error(
+                "stage=flowWrite callbackFailed transport=\(self.kindLabel, privacy: .public) operation=\(expected.kind.rawValue, privacy: .public) status=\(status, privacy: .public)"
+            )
             completion(mapped, .failure(Self.flowError(for: status)))
         }
     }
@@ -1186,16 +1251,24 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
             response.token == abiToken,
             !response.malformed
         else {
+            FlowCoreRuntimeLog.logger.error("stage=tcpRead callbackMalformed")
             completion(expected, .failure(.invalidData("Malformed TCP callback")))
             return
         }
         guard response.status == FlowCoreABIStatus.success else {
+            FlowCoreRuntimeLog.logger.error(
+                "stage=tcpRead callbackFailed status=\(response.status, privacy: .public)"
+            )
             completion(mapped, .failure(Self.flowError(for: response.status)))
             return
         }
         if response.endOfStream {
+            FlowCoreRuntimeLog.logger.debug("stage=tcpRead endOfStream")
             completion(mapped, .success(.endOfStream))
         } else if let data = response.data, !data.isEmpty {
+            FlowCoreRuntimeLog.logger.debug(
+                "stage=tcpRead success bytes=\(data.count, privacy: .public)"
+            )
             completion(mapped, .success(.bytes(data)))
         } else {
             completion(mapped, .failure(.invalidData("Empty TCP callback")))
@@ -1217,14 +1290,19 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
             response.token == abiToken,
             !response.malformed
         else {
+            FlowCoreRuntimeLog.logger.error("stage=udpRead callbackMalformed")
             completion(expected, .failure(.invalidData("Malformed UDP callback")))
             return
         }
         guard response.status == FlowCoreABIStatus.success else {
+            FlowCoreRuntimeLog.logger.error(
+                "stage=udpRead callbackFailed status=\(response.status, privacy: .public)"
+            )
             completion(mapped, .failure(Self.flowError(for: response.status)))
             return
         }
         if response.endOfStream {
+            FlowCoreRuntimeLog.logger.debug("stage=udpRead endOfStream")
             completion(mapped, .success(.endOfStream))
             return
         }
@@ -1239,7 +1317,11 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
                 )
             }
             try UDPBatchValidator.validate(datagrams, policy: policy)
+            FlowCoreRuntimeLog.logger.debug(
+                "stage=udpRead success datagrams=\(datagrams.count, privacy: .public) bytes=\(datagrams.reduce(0) { $0 + $1.payload.count }, privacy: .public)"
+            )
         } catch {
+            FlowCoreRuntimeLog.logger.error("stage=udpRead batchDecodeFailed")
             completion(mapped, .failure(.invalidData("Malformed UDP batch")))
             return
         }
@@ -1248,7 +1330,10 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
 
     private func cancelSerialized() {
         guard phase == .staged || phase == .active, let handle else { return }
-        _ = backend.cancel(handle)
+        let status = backend.cancel(handle)
+        FlowCoreRuntimeLog.logger.debug(
+            "stage=cancelFlow transport=\(self.kindLabel, privacy: .public) status=\(status, privacy: .public)"
+        )
         phase = .cancelled
     }
 
@@ -1262,6 +1347,9 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
         }
         phase = .destroying
         let status = backend.destroy(handle)
+        FlowCoreRuntimeLog.logger.debug(
+            "stage=destroyFlow transport=\(self.kindLabel, privacy: .public) status=\(status, privacy: .public)"
+        )
         guard status == FlowCoreABIStatus.success else {
             assertionFailure("FlowCore flow destroy barrier failed")
             return
@@ -1301,6 +1389,13 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
             .transport("Flow ABI state mismatch")
         default:
             .transport("Flow ABI operation failed")
+        }
+    }
+
+    private var kindLabel: String {
+        switch kind {
+        case .tcp: "tcp"
+        case .udp: "udp"
         }
     }
 

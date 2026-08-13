@@ -256,12 +256,6 @@
       "license": "MIT OR Apache-2.0",
       "name": "block-padding",
       "repository": "https://github.com/RustCrypto/utils",
-      "version": "0.3.3"
-    },
-    {
-      "license": "MIT OR Apache-2.0",
-      "name": "block-padding",
-      "repository": "https://github.com/RustCrypto/utils",
       "version": "0.4.2"
     },
     {
@@ -508,7 +502,7 @@
       "license": "MIT OR Apache-2.0",
       "name": "crossbeam-epoch",
       "repository": "https://github.com/crossbeam-rs/crossbeam",
-      "version": "0.9.18"
+      "version": "0.9.20"
     },
     {
       "license": "MIT OR Apache-2.0",
@@ -520,7 +514,7 @@
       "license": "Apache-2.0 OR MIT",
       "name": "crypto-bigint",
       "repository": "https://github.com/RustCrypto/crypto-bigint",
-      "version": "0.7.3"
+      "version": "0.7.5"
     },
     {
       "license": "MIT OR Apache-2.0",
@@ -533,12 +527,6 @@
       "name": "crypto-common",
       "repository": "https://github.com/RustCrypto/traits",
       "version": "0.2.2"
-    },
-    {
-      "license": "Apache-2.0 OR MIT",
-      "name": "crypto-primes",
-      "repository": "https://github.com/entropyxyz/crypto-primes",
-      "version": "0.7.0"
     },
     {
       "license": "MIT OR Apache-2.0",
@@ -568,7 +556,7 @@
       "license": "BSD-3-Clause",
       "name": "curve25519-dalek",
       "repository": "https://github.com/dalek-cryptography/curve25519-dalek/tree/main/curve25519-dalek",
-      "version": "5.0.0-pre.6"
+      "version": "5.0.0"
     },
     {
       "license": "MIT",
@@ -640,7 +628,7 @@
       "license": "Apache-2.0 OR MIT",
       "name": "ecdsa",
       "repository": "https://github.com/RustCrypto/signatures",
-      "version": "0.17.0-rc.18"
+      "version": "0.17.0"
     },
     {
       "license": "Apache-2.0 OR MIT",
@@ -652,7 +640,7 @@
       "license": "BSD-3-Clause",
       "name": "ed25519-dalek",
       "repository": "https://github.com/dalek-cryptography/curve25519-dalek/tree/main/ed25519-dalek",
-      "version": "3.0.0-pre.7"
+      "version": "3.0.0"
     },
     {
       "license": "MIT",
@@ -670,7 +658,7 @@
       "license": "Apache-2.0 OR MIT",
       "name": "elliptic-curve",
       "repository": "https://github.com/RustCrypto/traits",
-      "version": "0.14.0-rc.32"
+      "version": "0.14.1"
     },
     {
       "license": "(Apache-2.0 OR MIT) AND BSD-3-Clause",
@@ -733,10 +721,10 @@
       "version": "2.4.1"
     },
     {
-      "license": "MIT OR Apache-2.0 OR BSD-1-Clause",
-      "name": "fiat-crypto",
-      "repository": "https://github.com/mit-plv/fiat-crypto",
-      "version": "0.3.0"
+      "license": "MIT OR Apache-2.0",
+      "name": "ff",
+      "repository": "https://github.com/zkcrypto/ff",
+      "version": "0.14.0"
     },
     {
       "license": "MIT OR Apache-2.0",
@@ -875,6 +863,12 @@
       "name": "granit-parser",
       "repository": "https://github.com/bourumir-wyngs/granit-parser",
       "version": "0.0.2"
+    },
+    {
+      "license": "MIT OR Apache-2.0",
+      "name": "group",
+      "repository": "https://github.com/zkcrypto/group",
+      "version": "0.14.0"
     },
     {
       "license": "MIT",
@@ -1036,7 +1030,7 @@
       "license": "MIT OR Apache-2.0",
       "name": "hybrid-array",
       "repository": "https://github.com/RustCrypto/hybrid-array",
-      "version": "0.4.12"
+      "version": "0.4.14"
     },
     {
       "license": "MIT",
@@ -1213,12 +1207,6 @@
       "version": "0.2.186"
     },
     {
-      "license": "MIT",
-      "name": "libm",
-      "repository": "https://github.com/rust-lang/compiler-builtins",
-      "version": "0.2.16"
-    },
-    {
       "license": "Unicode-3.0",
       "name": "litemap",
       "repository": "https://github.com/unicode-org/icu4x",
@@ -1282,7 +1270,7 @@
       "license": "Apache-2.0 OR MIT",
       "name": "md5",
       "repository": "https://github.com/stainless-steel/md5",
-      "version": "0.7.0"
+      "version": "0.8.1"
     },
     {
       "license": "Unlicense OR MIT",
@@ -1444,19 +1432,19 @@
       "license": "Apache-2.0 OR MIT",
       "name": "p256",
       "repository": "https://github.com/RustCrypto/elliptic-curves",
-      "version": "0.14.0-rc.9"
+      "version": "0.14.0"
     },
     {
       "license": "Apache-2.0 OR MIT",
       "name": "p384",
       "repository": "https://github.com/RustCrypto/elliptic-curves",
-      "version": "0.14.0-rc.9"
+      "version": "0.14.0"
     },
     {
       "license": "Apache-2.0 OR MIT",
       "name": "p521",
       "repository": "https://github.com/RustCrypto/elliptic-curves",
-      "version": "0.14.0-rc.9"
+      "version": "0.14.0"
     },
     {
       "license": "MIT OR Apache-2.0",
@@ -1517,12 +1505,6 @@
       "name": "pin-project-lite",
       "repository": "https://github.com/taiki-e/pin-project-lite",
       "version": "0.2.17"
-    },
-    {
-      "license": "Apache-2.0 OR MIT",
-      "name": "pkcs1",
-      "repository": "https://github.com/RustCrypto/formats",
-      "version": "0.8.0-rc.4"
     },
     {
       "license": "Apache-2.0 OR MIT",
@@ -1594,13 +1576,13 @@
       "license": "Apache-2.0 OR MIT",
       "name": "primefield",
       "repository": "https://github.com/RustCrypto/elliptic-curves",
-      "version": "0.14.0-rc.9"
+      "version": "0.14.0"
     },
     {
       "license": "Apache-2.0 OR MIT",
       "name": "primeorder",
       "repository": "https://github.com/RustCrypto/elliptic-curves",
-      "version": "0.14.0-rc.9"
+      "version": "0.14.0"
     },
     {
       "license": "MIT OR Apache-2.0",
@@ -1648,7 +1630,7 @@
       "license": "MIT OR Apache-2.0",
       "name": "quinn-proto",
       "repository": "https://github.com/quinn-rs/quinn",
-      "version": "0.11.14"
+      "version": "0.11.16"
     },
     {
       "license": "MIT OR Apache-2.0",
@@ -1712,6 +1694,12 @@
     },
     {
       "license": "MIT OR Apache-2.0",
+      "name": "rand_pcg",
+      "repository": "https://github.com/rust-random/rngs",
+      "version": "0.10.2"
+    },
+    {
+      "license": "MIT OR Apache-2.0",
       "name": "rcgen",
       "repository": "https://github.com/rustls/rcgen",
       "version": "0.14.8"
@@ -1744,7 +1732,7 @@
       "license": "Apache-2.0 OR MIT",
       "name": "rfc6979",
       "repository": "https://github.com/RustCrypto/signatures",
-      "version": "0.5.0"
+      "version": "0.6.0"
     },
     {
       "license": "Apache-2.0 AND ISC",
@@ -1753,22 +1741,16 @@
       "version": "0.17.14"
     },
     {
-      "license": "MIT OR Apache-2.0",
-      "name": "rsa",
-      "repository": "https://github.com/RustCrypto/RSA",
-      "version": "0.10.0-rc.18"
-    },
-    {
       "license": "Apache-2.0",
       "name": "russh",
       "repository": "https://github.com/warp-tech/russh",
-      "version": "0.61.1"
+      "version": "0.62.5"
     },
     {
       "license": "Apache-2.0",
       "name": "russh-cryptovec",
       "repository": "https://github.com/warp-tech/russh",
-      "version": "0.61.0"
+      "version": "0.62.0"
     },
     {
       "license": "Apache-2.0",
@@ -1781,18 +1763,6 @@
       "name": "rustc-hash",
       "repository": "https://github.com/rust-lang/rustc-hash",
       "version": "2.1.2"
-    },
-    {
-      "license": "MIT OR Apache-2.0",
-      "name": "rustcrypto-ff",
-      "repository": "https://github.com/RustCrypto/ff",
-      "version": "0.14.0-rc.1"
-    },
-    {
-      "license": "MIT OR Apache-2.0",
-      "name": "rustcrypto-group",
-      "repository": "https://github.com/RustCrypto/group",
-      "version": "0.14.0-rc.1"
     },
     {
       "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
@@ -1981,6 +1951,12 @@
       "version": "0.11.0"
     },
     {
+      "license": "MIT OR Apache-2.0",
+      "name": "sha3",
+      "repository": "https://github.com/RustCrypto/hashes",
+      "version": "0.12.0"
+    },
+    {
       "license": "MIT",
       "name": "shadowquic",
       "repository": "https://github.com/spongebob888/shadowquic.git",
@@ -2077,6 +2053,12 @@
       "version": "0.8.0"
     },
     {
+      "license": "MIT OR Apache-2.0",
+      "name": "sponge-cursor",
+      "repository": "https://github.com/RustCrypto/utils",
+      "version": "0.1.0"
+    },
+    {
       "license": "Apache-2.0 OR MIT",
       "name": "ssh-cipher",
       "repository": "https://github.com/RustCrypto/SSH/tree/master/ssh-cipher",
@@ -2086,7 +2068,7 @@
       "license": "Apache-2.0 OR MIT",
       "name": "ssh-cipher",
       "repository": "https://github.com/RustCrypto/SSH",
-      "version": "0.3.0-rc.9"
+      "version": "0.3.0"
     },
     {
       "license": "Apache-2.0 OR MIT",
@@ -2098,7 +2080,7 @@
       "license": "Apache-2.0 OR MIT",
       "name": "ssh-encoding",
       "repository": "https://github.com/RustCrypto/SSH",
-      "version": "0.3.0-rc.9"
+      "version": "0.3.0"
     },
     {
       "license": "Apache-2.0 OR MIT",
@@ -2110,7 +2092,7 @@
       "license": "Apache-2.0 OR MIT",
       "name": "ssh-key",
       "repository": "https://github.com/RustCrypto/SSH",
-      "version": "0.7.0-rc.10"
+      "version": "0.7.0-rc.11"
     },
     {
       "license": "MIT OR Apache-2.0",
@@ -2497,6 +2479,12 @@
       "version": "1.0.7"
     },
     {
+      "license": "Apache-2.0 OR MIT",
+      "name": "wnaf",
+      "repository": "https://github.com/RustCrypto/elliptic-curves",
+      "version": "0.14.0"
+    },
+    {
       "license": "Unicode-3.0",
       "name": "writeable",
       "repository": "https://github.com/unicode-org/icu4x",
@@ -2560,13 +2548,13 @@
       "license": "Apache-2.0 OR MIT",
       "name": "zeroize",
       "repository": "https://github.com/RustCrypto/utils",
-      "version": "1.8.2"
+      "version": "1.9.0"
     },
     {
       "license": "Apache-2.0 OR MIT",
       "name": "zeroize_derive",
-      "repository": "https://github.com/RustCrypto/utils/tree/master/zeroize/derive",
-      "version": "1.4.3"
+      "repository": "https://github.com/RustCrypto/utils",
+      "version": "1.5.0"
     },
     {
       "license": "Unicode-3.0",
@@ -2630,8 +2618,8 @@
     }
   ],
   "coreArtifacts": {
-    "packetTunnel": "7639fa60faa77eedf0e6c4708eed8c6ea121213fbb742f3e1b77db71fa16f3f0",
-    "transparentProxy": "3b35d4b775736a5ddce85fdf2d29597f84432f6675f9f6c38d006ab95a7492f3"
+    "packetTunnel": "5b244864c2936a311670e9413c4cb759ed18cf75ba4c1c4e99f750209d718fc8",
+    "transparentProxy": "4cb1ed7e80e0ce4c23ef7ac53831b114379e697e12d90241127aeb49d50e940d"
   },
   "licenses": [
     {
@@ -2691,8 +2679,8 @@
         "nohash-hasher@0.2.0",
         "tinyvec@1.11.0",
         "utf8_iter@1.0.4",
-        "zeroize@1.8.2",
-        "zeroize_derive@1.4.3"
+        "zeroize@1.9.0",
+        "zeroize_derive@1.5.0"
       ],
       "id": "Apache-2.0",
       "name": "Apache License 2.0",
@@ -2748,10 +2736,9 @@
     },
     {
       "components": [
-        "crypto-primes@0.7.0",
         "quinn-jls@0.3.6",
         "quinn-proto-jls@0.3.6",
-        "quinn-proto@0.11.14",
+        "quinn-proto@0.11.16",
         "quinn-udp-jls@0.3.6",
         "quinn-udp@0.5.14",
         "quinn@0.11.9"
@@ -2854,9 +2841,9 @@
     },
     {
       "components": [
-        "ecdsa@0.17.0-rc.18",
+        "ecdsa@0.17.0",
         "ed25519@3.0.0",
-        "rfc6979@0.5.0"
+        "rfc6979@0.6.0"
       ],
       "id": "Apache-2.0",
       "name": "Apache License 2.0",
@@ -2906,7 +2893,6 @@
     {
       "components": [
         "async-recursion@1.1.1",
-        "rsa@0.10.0-rc.18",
         "sealed@0.6.0"
       ],
       "id": "Apache-2.0",
@@ -2930,7 +2916,7 @@
         "core-foundation@0.9.4",
         "critical-section@1.2.0",
         "crossbeam-channel@0.5.15",
-        "crossbeam-epoch@0.9.18",
+        "crossbeam-epoch@0.9.20",
         "crossbeam-utils@0.8.21",
         "displaydoc@0.2.5",
         "either@1.15.0",
@@ -2942,6 +2928,7 @@
         "flate2@1.1.9",
         "fnv@1.0.7",
         "form_urlencoded@1.2.2",
+        "group@0.14.0",
         "hash32@0.3.1",
         "hashbrown@0.16.1",
         "hashbrown@0.17.1",
@@ -2974,7 +2961,6 @@
         "regex-syntax@0.8.10",
         "regex@1.12.3",
         "ring@0.17.14",
-        "rustcrypto-group@0.14.0-rc.1",
         "rustix@1.1.4",
         "rustls-jls@1.3.3",
         "rustls-pemfile@2.2.0",
@@ -3005,7 +2991,7 @@
     {
       "components": [
         "bcrypt-pbkdf@0.11.0",
-        "rustcrypto-ff@0.14.0-rc.1"
+        "ff@0.14.0"
       ],
       "id": "Apache-2.0",
       "name": "Apache License 2.0",
@@ -3050,7 +3036,6 @@
         "blake2@0.11.0-rc.6",
         "block-buffer@0.10.4",
         "block-buffer@0.12.0",
-        "block-padding@0.3.3",
         "block-padding@0.4.2",
         "blowfish@0.10.0",
         "camellia@0.1.0",
@@ -3066,7 +3051,7 @@
         "cpubits@0.1.1",
         "cpufeatures@0.2.17",
         "cpufeatures@0.3.0",
-        "crypto-bigint@0.7.3",
+        "crypto-bigint@0.7.5",
         "crypto-common@0.1.7",
         "crypto-common@0.2.2",
         "ctr@0.10.0",
@@ -3074,13 +3059,13 @@
         "der@0.8.0",
         "digest@0.10.7",
         "digest@0.11.3",
-        "elliptic-curve@0.14.0-rc.32",
+        "elliptic-curve@0.14.1",
         "ghash@0.5.1",
         "ghash@0.6.0",
         "hex-literal@1.1.0",
         "hmac@0.12.1",
         "hmac@0.13.0",
-        "hybrid-array@0.4.12",
+        "hybrid-array@0.4.14",
         "inout@0.1.4",
         "inout@0.2.2",
         "keccak@0.2.0",
@@ -3088,21 +3073,20 @@
         "ml-kem@0.3.2",
         "module-lattice@0.2.3",
         "opaque-debug@0.3.1",
-        "p256@0.14.0-rc.9",
-        "p384@0.14.0-rc.9",
-        "p521@0.14.0-rc.9",
+        "p256@0.14.0",
+        "p384@0.14.0",
+        "p521@0.14.0",
         "pbkdf2@0.13.0",
         "pem-rfc7468@0.7.0",
         "pem-rfc7468@1.0.0",
-        "pkcs1@0.8.0-rc.4",
         "pkcs5@0.8.0",
         "pkcs8@0.11.0",
         "poly1305@0.8.0",
         "poly1305@0.9.0",
         "polyval@0.6.2",
         "polyval@0.7.1",
-        "primefield@0.14.0-rc.9",
-        "primeorder@0.14.0-rc.9",
+        "primefield@0.14.0",
+        "primeorder@0.14.0",
         "salsa20@0.11.0",
         "scrypt@0.12.0",
         "sec1@0.7.3",
@@ -3112,18 +3096,21 @@
         "sha2@0.10.9",
         "sha2@0.11.0",
         "sha3@0.11.0",
+        "sha3@0.12.0",
         "signature@2.2.0",
         "signature@3.0.0",
         "sm4@0.5.1",
         "spki@0.8.0",
+        "sponge-cursor@0.1.0",
         "ssh-cipher@0.2.0",
-        "ssh-cipher@0.3.0-rc.9",
+        "ssh-cipher@0.3.0",
         "ssh-encoding@0.2.0",
-        "ssh-encoding@0.3.0-rc.9",
+        "ssh-encoding@0.3.0",
         "ssh-key@0.6.7",
-        "ssh-key@0.7.0-rc.10",
+        "ssh-key@0.7.0-rc.11",
         "universal-hash@0.5.1",
-        "universal-hash@0.6.1"
+        "universal-hash@0.6.1",
+        "wnaf@0.14.0"
       ],
       "id": "Apache-2.0",
       "name": "Apache License 2.0",
@@ -3142,7 +3129,8 @@
       "components": [
         "rand_core@0.10.1",
         "rand_core@0.6.4",
-        "rand_core@0.9.5"
+        "rand_core@0.9.5",
+        "rand_pcg@0.10.2"
       ],
       "id": "Apache-2.0",
       "name": "Apache License 2.0",
@@ -3189,12 +3177,11 @@
         "enum_dispatch@0.3.13",
         "erased-serde@0.4.10",
         "etherparse@0.20.1",
-        "fiat-crypto@0.3.0",
         "granit-parser@0.0.2",
         "itoa@1.0.18",
         "kem@0.3.0",
         "libc@0.2.186",
-        "md5@0.7.0",
+        "md5@0.8.1",
         "miniz_oxide@0.8.9",
         "num-conv@0.2.2",
         "pin-project-internal@1.1.13",
@@ -3208,9 +3195,9 @@
         "rand@0.9.4",
         "rand_chacha@0.9.0",
         "rcgen@0.14.8",
-        "russh-cryptovec@0.61.0",
+        "russh-cryptovec@0.62.0",
         "russh-util@0.52.0",
-        "russh@0.61.1",
+        "russh@0.62.5",
         "rustc-hash@2.1.2",
         "rustversion@1.0.22",
         "ryu@1.0.23",
@@ -3286,7 +3273,7 @@
     },
     {
       "components": [
-        "curve25519-dalek@5.0.0-pre.6"
+        "curve25519-dalek@5.0.0"
       ],
       "id": "BSD-3-Clause",
       "name": "BSD 3-Clause \"New\" or \"Revised\" License",
@@ -3294,7 +3281,7 @@
     },
     {
       "components": [
-        "ed25519-dalek@3.0.0-pre.7"
+        "ed25519-dalek@3.0.0"
       ],
       "id": "BSD-3-Clause",
       "name": "BSD 3-Clause \"New\" or \"Revised\" License",
@@ -3688,7 +3675,6 @@
       "components": [
         "brutal-core@0.1.0",
         "dhcproto-macros@0.2.0",
-        "libm@0.2.16",
         "shadowquic-macros@0.3.11",
         "tonic-prost@0.14.6",
         "watfaq-dns@0.10.8"

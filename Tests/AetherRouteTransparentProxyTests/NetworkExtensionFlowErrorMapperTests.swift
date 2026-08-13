@@ -73,7 +73,7 @@ final class NetworkExtensionFlowErrorMapperTests:
         )
     }
 
-    func testNativeDrainWaitsForCloseAndEveryAcceptedCallback() {
+    func testNativeDrainCompletesWhenCloseExecutesWithoutWaitingForAppleRead() {
         let gate = NativeFlowDrainGate()
         let completed = DrainCompletionCounter()
 
@@ -84,14 +84,12 @@ final class NetworkExtensionFlowErrorMapperTests:
         XCTAssertTrue(request.completions.isEmpty)
         XCTAssertFalse(gate.beginOperation())
 
-        XCTAssertTrue(gate.closeExecuted().isEmpty)
-        XCTAssertTrue(gate.operationReturned().isEmpty)
-        XCTAssertEqual(completed.value, 0)
-        gate.operationReturned().forEach { $0() }
+        gate.closeExecuted().forEach { $0() }
         XCTAssertEqual(completed.value, 1)
 
-        // Duplicate native callbacks cannot underflow the count or replay a
-        // previously delivered drain completion.
+        // Apple may still deliver the callbacks after close. They cannot
+        // underflow the count or replay a previously delivered completion.
+        XCTAssertTrue(gate.operationReturned().isEmpty)
         XCTAssertTrue(gate.operationReturned().isEmpty)
         let repeated = gate.requestCancel { completed.increment() }
         XCTAssertFalse(repeated.shouldIssueClose)

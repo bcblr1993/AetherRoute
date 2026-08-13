@@ -36,6 +36,32 @@ public struct DNSRuntimePolicy: Codable, Equatable, Sendable {
     public var isInherited: Bool {
         self == .inherited
     }
+
+    /// Conservative first-run behavior for Packet Tunnel profiles. Normal DNS
+    /// exposes macOS to poisoned or split-horizon upstream answers before the
+    /// rule engine can preserve the original hostname. Fake-IP keeps the name
+    /// bound to the packet so the selected proxy can resolve it on the intended
+    /// route. IPv6 stays disabled by default because many otherwise healthy
+    /// nodes do not provide a usable IPv6 egress path. An explicit saved choice
+    /// always takes precedence over this compatibility default.
+    public static func packetTunnelCompatibilityDefault(
+        for dns: DNSConfigurationSummary
+    ) -> DNSRuntimePolicy {
+        guard dns.isEnabled else {
+            return .inherited
+        }
+        switch dns.mode {
+        case .normal:
+            return DNSRuntimePolicy(
+                resolutionMode: .fakeIP,
+                ipv6: .disabled
+            )
+        case .fakeIP where dns.allowsIPv6:
+            return DNSRuntimePolicy(ipv6: .disabled)
+        case .fakeIP, .redirHost, .unsupported:
+            return .inherited
+        }
+    }
 }
 
 public struct DNSRuntimePolicyStore: Sendable {
@@ -74,11 +100,22 @@ public struct DNSRuntimePolicyStore: Sendable {
         forProfileYAML yaml: String,
         fileManager: FileManager = .default
     ) throws -> DNSRuntimePolicy {
+        try loadIfPresent(forProfileYAML: yaml, fileManager: fileManager)
+            ?? .inherited
+    }
+
+    /// Returns nil when no choice has been saved for this exact profile. This
+    /// lets the host distinguish a first-run compatibility default from an
+    /// explicit saved `.inherited` choice.
+    public func loadIfPresent(
+        forProfileYAML yaml: String,
+        fileManager: FileManager = .default
+    ) throws -> DNSRuntimePolicy? {
         let data: Data
         do {
             data = try Data(contentsOf: policyURL, options: [.mappedIfSafe])
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
-            return .inherited
+            return nil
         }
         guard data.count <= Self.maximumFileBytes else {
             throw DNSRuntimePolicyError.fileTooLarge(data.count)
@@ -100,7 +137,7 @@ public struct DNSRuntimePolicyStore: Sendable {
             throw DNSRuntimePolicyError.invalidProfileDigest
         }
         guard payload.profileDigest == Self.profileDigest(yaml) else {
-            return .inherited
+            return nil
         }
         return payload.policy
     }

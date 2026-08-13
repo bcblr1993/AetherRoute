@@ -294,6 +294,65 @@ final class RoutingResourceStoreTests: XCTestCase {
         }
     }
 
+    func testEnsureRequiredResourcesDownloadsMissingDatabasesAndSkipsReadyOnes() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = RoutingResourceStore(
+            applicationSupportDirectory: root.appendingPathComponent("Support")
+        )
+        let mmdb = validMMDB()
+        let geoSite = validGeoSite()
+        let mmdbDigest = digest(mmdb)
+        let geoSiteDigest = digest(geoSite)
+        let installedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let requestCount = LockedRequestCount()
+        let client = RoutingResourceDownloadClient(
+            transport: { url, _ in
+                requestCount.increment()
+                let isMMDB = url.absoluteString.localizedCaseInsensitiveContains(
+                    "mmdb"
+                )
+                let data = isMMDB ? mmdb : geoSite
+                let expectedDigest = isMMDB ? mmdbDigest : geoSiteDigest
+                if url.lastPathComponent.hasSuffix("sha256sum") {
+                    return RoutingResourceHTTPResponse(
+                        data: Data("\(expectedDigest)  resource\n".utf8),
+                        statusCode: 200,
+                        finalURL: url
+                    )
+                }
+                return RoutingResourceHTTPResponse(
+                    data: data,
+                    statusCode: 200,
+                    finalURL: url,
+                    contentLength: data.count
+                )
+            },
+            now: { installedAt }
+        )
+        let profile = """
+        rules:
+          - GEOIP,CN,DIRECT,no-resolve
+          - GEOSITE,private,DIRECT
+        """
+
+        let installed = try await client.ensureRequiredResources(
+            for: profile,
+            in: store,
+            statusDate: installedAt
+        )
+        XCTAssertEqual(installed, [.countryMMDB, .geoSite])
+        XCTAssertEqual(requestCount.value, 4)
+
+        let installedAgain = try await client.ensureRequiredResources(
+            for: profile,
+            in: store,
+            statusDate: installedAt.addingTimeInterval(60)
+        )
+        XCTAssertEqual(installedAgain, [])
+        XCTAssertEqual(requestCount.value, 4)
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(
             "RoutingResourceStoreTests-\(UUID().uuidString)",
@@ -322,5 +381,22 @@ final class RoutingResourceStoreTests: XCTestCase {
         SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+}
+
+private final class LockedRequestCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage = 0
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func increment() {
+        lock.lock()
+        storage += 1
+        lock.unlock()
     }
 }

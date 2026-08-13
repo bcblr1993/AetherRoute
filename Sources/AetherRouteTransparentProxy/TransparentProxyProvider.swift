@@ -4,6 +4,7 @@ import AetherRouteTransparentProxySupport
 import Foundation
 import Network
 @preconcurrency import NetworkExtension
+import OSLog
 
 /// Native direct-flow provider embedded beside the Packet Tunnel extension.
 /// Compile/link, synthetic lifecycle, and loopback flow gates exercise this
@@ -12,6 +13,14 @@ import Network
 final class TransparentProxyProvider: NETransparentProxyProvider,
     @unchecked Sendable
 {
+    private static let runtimeLog = DiagnosticLogCenter.current.log(
+        category: "transparent-runtime"
+    )
+    /// Standard-level summary of the data plane. Counting is O(1) per flow and
+    /// emission is on a fixed interval, so this stays affordable at any volume.
+    private static let aggregator = DiagnosticAggregator(log: runtimeLog)
+
+    private let identityGuard: TransparentProxySelfIdentityGuard
     private let diagnostics: ProviderDiagnosticAccumulator
     private let runtimeController: TransparentProxyProviderLifecycleController
     private let providerMessageQueue = DispatchQueue(
@@ -22,37 +31,60 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     override init() {
         let identityGuard = TransparentProxySelfIdentityGuard()
         let diagnostics = ProviderDiagnosticAccumulator()
+        self.identityGuard = identityGuard
         self.diagnostics = diagnostics
         runtimeController = TransparentProxyProviderLifecycleController(
             identityGuard: identityGuard
         ) {
-            let input = try TransparentProxyRuntimeInputLoader
-                .loadApplicationGroup()
-            let engine = try FlowCoreEngine(
-                profile: input.profile,
-                runtimeDirectory: input.runtimeDirectory
-            )
-            let profileYAML = String(
-                decoding: input.profile,
-                as: UTF8.self
-            )
-            let savedSelections = try ProxySelectionStore.applicationGroup()
-                .selections(forProfileYAML: profileYAML)
-            for (group, member) in savedSelections.sorted(
-                by: { $0.key < $1.key }
-            ) {
-                // A subscription can retain a group name while replacing its
-                // members. Ignore only that stale per-group override; corrupt
-                // encrypted storage still fails startup before reaching here.
-                _ = try? engine.selectProxy(group: group, member: member)
-            }
-            return try TransparentProxyFlowRuntime(
-                engine: engine,
-                identityGuard: identityGuard,
-                failureObserver: { _ in
-                    diagnostics.record(.flowAdmissionFailure)
+            do {
+                Self.runtimeLog.aggregate("stage=loadSharedProfile begin")
+                let input = try TransparentProxyRuntimeInputLoader
+                    .loadApplicationGroup()
+                Self.runtimeLog.aggregate("stage=loadSharedProfile success")
+                Self.runtimeLog.aggregate("stage=createFlowCore begin")
+                let engine = try FlowCoreEngine(
+                    profile: input.profile,
+                    runtimeDirectory: input.runtimeDirectory
+                )
+                Self.runtimeLog.aggregate("stage=createFlowCore success")
+                let profileYAML = String(
+                    decoding: input.profile,
+                    as: UTF8.self
+                )
+                Self.runtimeLog.aggregate("stage=loadSelections begin")
+                let savedSelections = try ProxySelectionStore.applicationGroup()
+                    .selections(forProfileYAML: profileYAML)
+                Self.runtimeLog.aggregate(
+                    "stage=loadSelections success count=\(savedSelections.count)"
+                )
+                for (group, member) in savedSelections.sorted(
+                    by: { $0.key < $1.key }
+                ) {
+                    // A subscription can retain a group name while replacing its
+                    // members. Ignore only that stale per-group override; corrupt
+                    // encrypted storage still fails startup before reaching here.
+                    _ = try? engine.selectProxy(group: group, member: member)
                 }
-            )
+                Self.runtimeLog.aggregate("stage=createFlowRuntime begin")
+                let runtime = try TransparentProxyFlowRuntime(
+                    engine: engine,
+                    identityGuard: identityGuard,
+                    failureObserver: { failure in
+                        Self.runtimeLog.failure(
+                            "stage=flowIngress failed point=\(String(describing: failure))"
+                        )
+                        Self.aggregator.record(.admissionRejected)
+                        diagnostics.record(.flowAdmissionFailure)
+                    }
+                )
+                Self.runtimeLog.aggregate("stage=createFlowRuntime success")
+                return runtime
+            } catch {
+                Self.runtimeLog.failure(
+                    "runtime preparation failed: \(String(reflecting: error))"
+                )
+                throw error
+            }
         }
         super.init()
     }
@@ -61,18 +93,79 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         options: [String: Any]? = nil,
         completionHandler: @escaping (Error?) -> Void
     ) {
+        Self.runtimeLog.aggregate("stage=startProxy requested")
         let completion = ProxyStartCompletion(completionHandler)
+        let snapshot: ProviderLaunchSnapshot
         let bypassPlan: BypassNetworkSettingsPlan
         do {
-            bypassPlan = try BypassNetworkSettingsPlan(
-                policy: BypassPolicyStore.applicationGroup().load()
+            Self.runtimeLog.aggregate("stage=decodeLaunchSnapshot begin")
+            snapshot = try ProviderLaunchSnapshotCodec.decode(options: options)
+            Self.runtimeLog.aggregate(
+                "stage=decodeLaunchSnapshot success mode=\(snapshot.routingMode.rawValue) selections=\(snapshot.proxySelections.count) resources=\(snapshot.routingResources.count)"
             )
+            Self.runtimeLog.aggregate("stage=loadBypassPolicy begin source=launchSnapshot")
+            bypassPlan = try BypassNetworkSettingsPlan(
+                policy: snapshot.bypassPolicy
+            )
+            Self.runtimeLog.aggregate("stage=loadBypassPolicy success")
         } catch {
             diagnostics.record(.startupFailure)
+            Self.runtimeLog.failure(
+                "stage=loadBypassPolicy failed error=\(String(reflecting: error))"
+            )
             completion.call(error)
             return
         }
         runtimeController.start(
+            runtimeFactory: { [identityGuard, diagnostics] in
+                do {
+                    Self.runtimeLog.aggregate("stage=loadLaunchProfile begin")
+                    let input = try TransparentProxyRuntimeInputLoader.load(
+                        snapshot: snapshot
+                    )
+                    Self.runtimeLog.aggregate("stage=loadLaunchProfile success")
+                    Self.runtimeLog.aggregate("stage=createFlowCore begin")
+                    let engine = try FlowCoreEngine(
+                        profile: input.profile,
+                        runtimeDirectory: input.runtimeDirectory,
+                        configuration: FlowCoreEngineConfiguration(
+                            routingMode: snapshot.routingMode
+                        )
+                    )
+                    Self.runtimeLog.aggregate("stage=createFlowCore success")
+                    Self.runtimeLog.aggregate("stage=restoreSelections begin")
+                    for (group, member) in snapshot.proxySelections.sorted(
+                        by: { $0.key < $1.key }
+                    ) {
+                        _ = try? engine.selectProxy(
+                            group: group,
+                            member: member
+                        )
+                    }
+                    Self.runtimeLog.aggregate(
+                        "stage=restoreSelections success count=\(snapshot.proxySelections.count)"
+                    )
+                    Self.runtimeLog.aggregate("stage=createFlowRuntime begin")
+                    let runtime = try TransparentProxyFlowRuntime(
+                        engine: engine,
+                        identityGuard: identityGuard,
+                        failureObserver: { failure in
+                            Self.runtimeLog.failure(
+                                "stage=flowIngress failed point=\(String(describing: failure))"
+                            )
+                            Self.aggregator.record(.admissionRejected)
+                        diagnostics.record(.flowAdmissionFailure)
+                        }
+                    )
+                    Self.runtimeLog.aggregate("stage=createFlowRuntime success")
+                    return runtime
+                } catch {
+                    Self.runtimeLog.failure(
+                        "runtime preparation failed: \(String(reflecting: error))"
+                    )
+                    throw error
+                }
+            },
             installNetworkSettings: { [weak self] installed in
                 guard let self else {
                     installed(false)
@@ -81,14 +174,29 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 let once = ProxySettingsCompletion(installed)
                 let settings: NETransparentProxyNetworkSettings
                 do {
+                    Self.runtimeLog.aggregate("stage=makeNetworkSettings begin")
                     settings = try Self.makeNetworkSettings(
                         bypassPlan: bypassPlan
                     )
+                    Self.runtimeLog.aggregate("stage=makeNetworkSettings success")
                 } catch {
+                    Self.runtimeLog.failure(
+                        "stage=makeNetworkSettings failed error=\(String(reflecting: error))"
+                    )
                     once.call(false)
                     return
                 }
+                Self.runtimeLog.aggregate("stage=installNetworkSettings begin")
                 setTunnelNetworkSettings(settings) { error in
+                    if let error {
+                        Self.runtimeLog.failure(
+                            "stage=installNetworkSettings failed error=\(String(reflecting: error))"
+                        )
+                    } else {
+                        Self.runtimeLog.aggregate(
+                            "stage=installNetworkSettings success"
+                        )
+                    }
                     once.call(error == nil)
                 }
             },
@@ -101,6 +209,15 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 case .alreadyActive, .startCancelled, nil:
                     break
                 }
+                if let error {
+                    Self.runtimeLog.failure(
+                        "stage=startProxy failed error=\(String(reflecting: error))"
+                    )
+                } else {
+                    DiagnosticFlowOpenObserver.shared.attach(Self.aggregator)
+                Self.aggregator.start()
+                    Self.runtimeLog.aggregate("stage=startProxy success")
+                }
                 completion.call(error)
             }
         )
@@ -110,23 +227,26 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         with reason: NEProviderStopReason,
         completionHandler: @escaping () -> Void
     ) {
+        Self.runtimeLog.aggregate(
+            "stage=stopProxy requested reason=\(reason.rawValue)"
+        )
         let completion = ProxyStopCompletion(completionHandler)
-        runtimeController.stop { [weak self] in
-            guard let self else {
-                completion.call()
-                return
-            }
-            // Explicitly clear any settings that may have won a concurrent
-            // start/stop race. Signed provider tests must still prove the OS
-            // teardown callback semantics before production promotion.
-            setTunnelNetworkSettings(nil) { _ in
-                completion.call()
-            }
+        runtimeController.stop {
+            // NETransparentProxyProvider accepts only
+            // NETransparentProxyNetworkSettings. Passing nil through
+            // setTunnelNetworkSettings during teardown is rejected by macOS
+            // and can turn a clean disconnect into an apparent provider
+            // failure. The system owns removal after this completion returns.
+            DiagnosticFlowOpenObserver.shared.detach()
+            Self.aggregator.stop()
+            Self.runtimeLog.aggregate("stage=stopProxy success")
+            completion.call()
         }
     }
 
     override func handleNewFlow(_ flow: NEAppProxyFlow) -> Bool {
-        runtimeController.withFlowAdmission { [self] in
+        Self.runtimeLog.verbose("stage=handleNewFlow transport=tcp begin")
+        return runtimeController.withFlowAdmission { [self] in
             handleAdmittedFlow(flow)
         } ?? NetworkExtensionStoppedProviderFlow
             .claimAndCloseSynchronously(flow)
@@ -143,6 +263,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             do {
                 let request = try ProxySelectionProviderMessageCodec
                     .decodeRequest(messageData)
+                Self.runtimeLog.verbose(
+                    "stage=providerMessage request=\(Self.messageKind(request)) bytes=\(messageData.count)"
+                )
                 response = switch request {
                 case let .snapshot(group):
                     .snapshot(try runtimeController.selectorSnapshot(group: group))
@@ -183,7 +306,12 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             }
 
             if case let .failure(failure) = response {
+                Self.runtimeLog.failure(
+                    "stage=providerMessage response=failure code=\(failure.rawValue)"
+                )
                 diagnostics.record(failure)
+            } else {
+                Self.runtimeLog.verbose("stage=providerMessage response=success")
             }
 
             do {
@@ -206,13 +334,26 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     private func handleAdmittedFlow(_ flow: NEAppProxyFlow) -> Bool {
         switch runtimeController.identityDisposition(for: flow) {
         case .bypass:
+            Self.aggregator.record(.flowBypassed)
+            Self.runtimeLog.verbose(
+                "stage=handleNewFlow transport=tcp disposition=bypass"
+            )
             // This is the only false return in the provider: code-identity-
             // verified egress from this extension must escape recursion.
             return false
         case .reject:
+            Self.runtimeLog.failure(
+                "stage=handleNewFlow transport=tcp disposition=reject"
+            )
             return failClosed(flow)
         case .proxy:
+            Self.runtimeLog.verbose(
+                "stage=handleNewFlow transport=tcp disposition=proxy"
+            )
             guard let tcpFlow = flow as? NEAppProxyTCPFlow else {
+                Self.runtimeLog.failure(
+                    "stage=handleNewFlow transport=tcp error=unexpectedFlowType"
+                )
                 return failClosed(flow)
             }
             return claimTCP(tcpFlow)
@@ -221,8 +362,10 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
 
     private func claimTCP(_ flow: NEAppProxyTCPFlow) -> Bool {
         do {
+            Self.runtimeLog.verbose("stage=claimTCP destinationDecode begin")
             let destination = try NetworkExtensionFlowLifecycle
                 .tcpDestination(for: flow)
+            Self.runtimeLog.verbose("stage=claimTCP components begin")
             let components = try NetworkExtensionTCPFlowComponents(flow: flow)
             guard runtimeController.claimTCP(
                 components: components.ingress,
@@ -232,19 +375,31 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 source: nil,
                 destination: destination
             ) else {
+                Self.runtimeLog.failure(
+                    "stage=claimTCP result=rejected destination=\(String(describing: destination))"
+                )
                 return failClosed(flow)
             }
+            Self.aggregator.record(.flowAdmitted)
+            Self.runtimeLog.verbose(
+                "stage=claimTCP result=accepted destination=\(String(describing: destination))"
+            )
             return true
         } catch {
+            Self.runtimeLog.failure(
+                "stage=claimTCP failed error=\(String(reflecting: error))"
+            )
             return failClosed(flow)
         }
     }
 
     private func claimUDP(
         _ flow: NEAppProxyUDPFlow,
-        initialRemoteEndpoint: Network.NWEndpoint
+        initialRemoteEndpoint: Network.NWEndpoint,
+        admittedAt: UInt64
     ) -> Bool {
         do {
+            Self.runtimeLog.verbose("stage=claimUDP endpointDecode begin")
             // The first target is validated even though subsequent datagrams
             // carry their own endpoint. This prevents malformed initial flow
             // metadata from reaching the data plane.
@@ -252,22 +407,40 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 initialRemoteEndpoint,
                 transport: .udp
             )
+            Self.runtimeLog.verbose("stage=claimUDP localSource begin")
             let localSource = try NetworkExtensionFlowLifecycle
                 .udpLocalSource(for: flow)
+            Self.runtimeLog.verbose(
+                "stage=claimUDP localSource status=\(localSource == nil ? "synthetic" : "native")"
+            )
             let components = try NetworkExtensionUDPFlowComponents(flow: flow)
+            Self.runtimeLog.verbose("stage=claimUDP components success")
             guard runtimeController.claimUDP(
                 components: components.ingress,
                 localSource: localSource
             ) else {
+                Self.runtimeLog.failure(
+                    "stage=claimUDP result=rejected endpoint=\(String(describing: initialRemoteEndpoint))"
+                )
                 return failClosed(flow)
             }
+            Self.aggregator.record(.flowAdmitted)
+            Self.runtimeLog.verbose(
+                "stage=claimUDP result=accepted endpoint=\(String(describing: initialRemoteEndpoint)) setupUs=\((DispatchTime.now().uptimeNanoseconds &- admittedAt) / 1_000)"
+            )
             return true
         } catch {
+            Self.runtimeLog.failure(
+                "stage=claimUDP failed error=\(String(reflecting: error))"
+            )
             return failClosed(flow)
         }
     }
 
     private func failClosed(_ flow: NEAppProxyFlow) -> Bool {
+        Self.runtimeLog.failure(
+            "stage=failClosed flowType=\(String(describing: type(of: flow)))"
+        )
         diagnostics.record(.flowAdmissionFailure)
         guard runtimeController.claimAndCloseRawFlow(flow) else {
             return NetworkExtensionStoppedProviderFlow
@@ -359,6 +532,18 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             .internalFailure
         }
     }
+
+    private static func messageKind(
+        _ request: ProxySelectionProviderRequest
+    ) -> String {
+        switch request {
+        case .snapshot: "snapshot"
+        case .select: "select"
+        case .latency: "latency"
+        case .telemetry: "telemetry"
+        case .diagnostics: "diagnostics"
+        }
+    }
 }
 
 // Swift 6 exposes UDP delivery through this typed macOS 15 protocol.
@@ -368,10 +553,16 @@ extension TransparentProxyProvider: NEAppProxyUDPFlowHandling {
         _ flow: NEAppProxyUDPFlow,
         initialRemoteFlowEndpoint remoteEndpoint: Network.NWEndpoint
     ) -> Bool {
-        runtimeController.withFlowAdmission { [self] in
+        Self.runtimeLog.verbose("stage=handleNewFlow transport=udp begin")
+        // NetworkExtension hands us short-lived UDP flows. Everything between
+        // this point and `open()` is latency the peer may not wait through, so
+        // it has to be measurable rather than inferred.
+        let admittedAt = DispatchTime.now().uptimeNanoseconds
+        return runtimeController.withFlowAdmission { [self] in
             handleAdmittedUDPFlow(
                 flow,
-                initialRemoteEndpoint: remoteEndpoint
+                initialRemoteEndpoint: remoteEndpoint,
+                admittedAt: admittedAt
             )
         } ?? NetworkExtensionStoppedProviderFlow
             .claimAndCloseSynchronously(flow)
@@ -379,15 +570,30 @@ extension TransparentProxyProvider: NEAppProxyUDPFlowHandling {
 
     private func handleAdmittedUDPFlow(
         _ flow: NEAppProxyUDPFlow,
-        initialRemoteEndpoint remoteEndpoint: Network.NWEndpoint
+        initialRemoteEndpoint remoteEndpoint: Network.NWEndpoint,
+        admittedAt: UInt64
     ) -> Bool {
         switch runtimeController.identityDisposition(for: flow) {
         case .bypass:
+            Self.aggregator.record(.flowBypassed)
+            Self.runtimeLog.verbose(
+                "stage=handleNewFlow transport=udp disposition=bypass"
+            )
             return false
         case .reject:
+            Self.runtimeLog.failure(
+                "stage=handleNewFlow transport=udp disposition=reject"
+            )
             return failClosed(flow)
         case .proxy:
-            return claimUDP(flow, initialRemoteEndpoint: remoteEndpoint)
+            Self.runtimeLog.verbose(
+                "stage=handleNewFlow transport=udp disposition=proxy"
+            )
+            return claimUDP(
+                flow,
+                initialRemoteEndpoint: remoteEndpoint,
+                admittedAt: admittedAt
+            )
         }
     }
 }

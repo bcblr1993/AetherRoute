@@ -16,6 +16,11 @@ for required in \
   'xcrun stapler validate' \
   'spctl --assess --type open' \
   'candidate DMG SHA-256 does not match' \
+  'candidate was not produced from the current Git commit' \
+  'candidate was not produced from the current source manifest' \
+  'production approval cannot predate the notarized candidate' \
+  'source.manifestSHA256' \
+  'distribution.updateSigningPublicKeySHA256' \
   '.releaseStatus = "production-approved"' \
   'candidateManifestSHA256' \
   'postInstallEvidenceSHA256' \

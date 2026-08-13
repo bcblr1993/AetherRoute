@@ -205,6 +205,10 @@ int32_t clash_flow_engine_create(
     const clash_flow_engine_options_v1_t *options,
     clash_flow_engine_t **output
 );
+int32_t clash_flow_engine_set_routing_mode_v1(
+    clash_flow_engine_t *engine,
+    int32_t mode
+);
 int32_t clash_flow_engine_destroy(clash_flow_engine_t *engine);
 
 /*

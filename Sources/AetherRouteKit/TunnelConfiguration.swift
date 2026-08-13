@@ -155,6 +155,14 @@ public enum RoutingMode: String, CaseIterable, Codable, Sendable {
 }
 
 public struct TunnelConfiguration: Codable, Equatable, Sendable {
+    /// Synthetic resolver address routed into `NEPacketTunnelFlow`.
+    ///
+    /// NetworkExtension may bind public DNS server addresses to the underlying
+    /// interface, bypassing the packet-flow DNS hijack. The core intercepts
+    /// port 53 at this address and applies the active profile's real DNS,
+    /// fake-IP, fallback, and routing policies.
+    public static let packetFlowDNSServers = ["198.18.0.2"]
+
     public var mode: RoutingMode
     public var mtu: Int
     public var ipv4Address: String
@@ -172,7 +180,7 @@ public struct TunnelConfiguration: Codable, Equatable, Sendable {
         ipv4SubnetMask: String = "255.255.0.0",
         ipv6Address: String = "fd00:a37e:0:1::1",
         ipv6PrefixLength: Int = 64,
-        dnsServers: [String] = ["1.1.1.1", "8.8.8.8"],
+        dnsServers: [String] = TunnelConfiguration.packetFlowDNSServers,
         excludeLocalNetworks: Bool = true,
         localProxy: LocalProxySettings = LocalProxySettings()
     ) {

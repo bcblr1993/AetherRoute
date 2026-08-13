@@ -67,13 +67,30 @@ for profile in "$@"; do
 done
 
 mkdir -m 700 "$TEMP_DIR/runtime"
-for asset in Country.mmdb GeoSite.dat; do
-  first_directory=$(dirname -- "$1")
-  if [ -f "$first_directory/$asset" ]; then
-    cp "$first_directory/$asset" "$TEMP_DIR/runtime/$asset"
-    chmod 600 "$TEMP_DIR/runtime/$asset"
-  fi
-done
+copy_runtime_asset() {
+  destination_name=$1
+  shift
+  for profile in "$@"; do
+    profile_directory=$(dirname -- "$profile")
+    parent_directory=$(dirname -- "$profile_directory")
+    lowercase_name=$(printf '%s' "$destination_name" \
+      | tr '[:upper:]' '[:lower:]')
+    for source_directory in "$profile_directory" "$parent_directory"; do
+      for source_name in "$destination_name" "$lowercase_name"; do
+        source_path="$source_directory/$source_name"
+        if [ -f "$source_path" ] && [ ! -L "$source_path" ]; then
+          cp "$source_path" "$TEMP_DIR/runtime/$destination_name"
+          chmod 600 "$TEMP_DIR/runtime/$destination_name"
+          return 0
+        fi
+      done
+    done
+  done
+  return 0
+}
+
+copy_runtime_asset Country.mmdb "$@"
+copy_runtime_asset GeoSite.dat "$@"
 
 COMMON_FLAGS="-std=c17 -Wall -Wextra -Werror -mmacosx-version-min=14.0"
 clang $COMMON_FLAGS \

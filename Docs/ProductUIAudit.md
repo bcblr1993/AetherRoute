@@ -24,11 +24,12 @@ must use the same native macOS grammar.
   12 points; hero regions may use 20 points.
 - Scroll content reserves a visible 12-point trailing gutter before the system
   scroll indicator. Content never touches or hides beneath the indicator.
-- Standard panels use native semantic fills, a 14-16 point continuous radius,
-  and a 0.5-point semantic separator. Large shadows and stacked glass effects
-  are reserved for no ordinary settings or list surface.
-- Brand cyan/indigo identifies AetherRoute. The user's system accent owns
-  selection and keyboard focus; green, orange, and red remain state colors.
+- Standard panels use native semantic fills, a 12-point continuous radius, and
+  a 0.5-point semantic separator. Large shadows and stacked glass effects are
+  reserved for no ordinary settings or list surface.
+- The blue brand gradient identifies AetherRoute and appears only in the app
+  icon and empty-state illustration. The user's system accent owns selection
+  and keyboard focus; green, orange, and red remain state colors.
 - Every page remains usable at 780 x 560 points and with 30 percent text
   expansion. A wider screenshot cannot hide clipping at the minimum size.
 - Main-page navigation preserves one outer window size, and Settings-page

@@ -2,6 +2,13 @@ import AetherRouteKit
 import Foundation
 import Network
 @preconcurrency import NetworkExtension
+import OSLog
+
+private enum NativeFlowRuntimeLog {
+    static let log = DiagnosticLogCenter.current.log(
+        category: "transparent-native-flow"
+    )
+}
 
 /// Stable, privacy-preserving translation of NetworkExtension failures. Error
 /// descriptions can contain endpoint or profile details, so only the numeric
@@ -83,10 +90,16 @@ final class NetworkExtensionTCPFlowAccess:
             flow.readData { data, error in
                 once.run { [self] in
                     if let error {
+                        NativeFlowRuntimeLog.log.failure(
+                            "stage=tcpNativeRead failed code=\((error as NSError).code)"
+                        )
                         completion(
                             .failure(NetworkExtensionFlowErrorMapper.map(error))
                         )
                     } else {
+                        NativeFlowRuntimeLog.log.verbose(
+                            "stage=tcpNativeRead success bytes=\(data?.count ?? 0) eof=\((data == nil || data?.isEmpty == true))"
+                        )
                         completion(.success(data))
                     }
                     completeOperation()
@@ -106,14 +119,23 @@ final class NetworkExtensionTCPFlowAccess:
                 completion(.failure(.cancelled))
                 return
             }
+            NativeFlowRuntimeLog.log.verbose(
+                "stage=tcpNativeWrite submit bytes=\(data.count)"
+            )
             let once = NativeOperationOnce()
             flow.write(data) { error in
                 once.run { [self] in
                     if let error {
+                        NativeFlowRuntimeLog.log.failure(
+                            "stage=tcpNativeWrite failed code=\((error as NSError).code)"
+                        )
                         completion(
                             .failure(NetworkExtensionFlowErrorMapper.map(error))
                         )
                     } else {
+                        NativeFlowRuntimeLog.log.verbose(
+                            "stage=tcpNativeWrite success bytes=\(data.count)"
+                        )
                         completion(.success(()))
                     }
                     completeOperation()
@@ -125,6 +147,7 @@ final class NetworkExtensionTCPFlowAccess:
     public func finishWriting() {
         executor.execute { [self] in
             guard drainGate.beginOperation() else { return }
+            NativeFlowRuntimeLog.log.verbose("stage=tcpNativeFinishWrite")
             flow.closeWriteWithError(nil)
             completeOperation()
         }
@@ -137,13 +160,16 @@ final class NetworkExtensionTCPFlowAccess:
     public func cancelAndDrain(
         completion: @escaping @Sendable () -> Void
     ) {
+        NativeFlowRuntimeLog.log.verbose("stage=tcpNativeDrain requested")
         let request = drainGate.requestCancel(completion: completion)
         request.completions.forEach { $0() }
         guard request.shouldIssueClose else { return }
         executor.execute { [self] in
+            NativeFlowRuntimeLog.log.verbose("stage=tcpNativeDrain close begin")
             let error = NetworkExtensionFlowErrorMapper.aborted
             flow.closeReadWithError(error)
             flow.closeWriteWithError(error)
+            NativeFlowRuntimeLog.log.verbose("stage=tcpNativeDrain close success")
             drainGate.closeExecuted().forEach { $0() }
         }
     }
@@ -211,7 +237,13 @@ final class NetworkExtensionUDPFlowAccess:
             values = try datagrams.map {
                 ($0.payload, try NetworkFlowEndpointCodec.encode($0.remoteEndpoint))
             }
+            NativeFlowRuntimeLog.log.verbose(
+                "stage=udpNativeWrite submit datagrams=\(values.count) bytes=\(values.reduce(0) { $0 + $1.0.count })"
+            )
         } catch {
+            NativeFlowRuntimeLog.log.failure(
+                "stage=udpNativeWrite endpointEncodeFailed"
+            )
             completion(.failure(.invalidData("Invalid UDP endpoint from core")))
             return
         }
@@ -238,13 +270,16 @@ final class NetworkExtensionUDPFlowAccess:
     public func cancelAndDrain(
         completion: @escaping @Sendable () -> Void
     ) {
+        NativeFlowRuntimeLog.log.verbose("stage=udpNativeDrain requested")
         let request = drainGate.requestCancel(completion: completion)
         request.completions.forEach { $0() }
         guard request.shouldIssueClose else { return }
         executor.execute { [self] in
+            NativeFlowRuntimeLog.log.verbose("stage=udpNativeDrain close begin")
             let error = NetworkExtensionFlowErrorMapper.aborted
             flow.closeReadWithError(error)
             flow.closeWriteWithError(error)
+            NativeFlowRuntimeLog.log.verbose("stage=udpNativeDrain close success")
             drainGate.closeExecuted().forEach { $0() }
         }
     }
@@ -258,10 +293,14 @@ final class NetworkExtensionUDPFlowAccess:
         ) -> Void
     ) {
         if let error {
+            NativeFlowRuntimeLog.log.failure(
+                "stage=udpNativeRead failed code=\((error as NSError).code)"
+            )
             completion(.failure(NetworkExtensionFlowErrorMapper.map(error)))
             return
         }
         guard let values else {
+            NativeFlowRuntimeLog.log.verbose("stage=udpNativeRead endOfStream")
             completion(.success(nil))
             return
         }
@@ -270,12 +309,18 @@ final class NetworkExtensionUDPFlowAccess:
         // raw Data objects, but an oversized callback must not trigger a
         // second full-batch representation in the extension process.
         guard readBatchGuard.accepts(values, payloadByteCount: { $0.0.count }) else {
+            NativeFlowRuntimeLog.log.failure(
+                "stage=udpNativeRead stagingLimitExceeded datagrams=\(values.count)"
+            )
             completion(
                 .failure(.invalidData("Apple UDP staging limit exceeded"))
             )
             return
         }
         do {
+            NativeFlowRuntimeLog.log.verbose(
+                "stage=udpNativeRead success datagrams=\(values.count) bytes=\(values.reduce(0) { $0 + $1.0.count })"
+            )
             completion(
                 .success(
                     try values.map { payload, endpoint in
@@ -290,6 +335,9 @@ final class NetworkExtensionUDPFlowAccess:
                 )
             )
         } catch {
+            NativeFlowRuntimeLog.log.failure(
+                "stage=udpNativeRead endpointDecodeFailed"
+            )
             completion(
                 .failure(.invalidData("Invalid UDP endpoint from NetworkExtension"))
             )
@@ -303,8 +351,12 @@ final class NetworkExtensionUDPFlowAccess:
         ) -> Void
     ) {
         if let error {
+            NativeFlowRuntimeLog.log.failure(
+                "stage=udpNativeWrite failed code=\((error as NSError).code)"
+            )
             completion(.failure(NetworkExtensionFlowErrorMapper.map(error)))
         } else {
+            NativeFlowRuntimeLog.log.verbose("stage=udpNativeWrite success")
             completion(.success(()))
         }
     }
@@ -365,9 +417,11 @@ struct NativeDrainRequest {
     let completions: [@Sendable () -> Void]
 }
 
-/// Counts callbacks that have been accepted by a concrete Apple flow access.
-/// Drain completion runs only after close calls execute on the flow's serial
-/// executor and every accepted callback body has returned exactly once.
+/// Counts callbacks accepted by one concrete Apple flow access. NetworkExtension
+/// does not guarantee that an outstanding read callback is delivered after the
+/// provider closes a flow during stop. Close execution is therefore the native
+/// cancellation barrier: late callbacks retain their own access object, are
+/// ignored by the bounded adapter, and cannot replay drain completion.
 final class NativeFlowDrainGate: @unchecked Sendable {
     private let lock = NSLock()
     private var accepting = true
@@ -411,6 +465,7 @@ final class NativeFlowDrainGate: @unchecked Sendable {
     func closeExecuted() -> [@Sendable () -> Void] {
         lock.withLock {
             closeHasExecuted = true
+            pendingOperationCount = 0
             return takeCompletionsIfDrainedLocked()
         }
     }
@@ -461,8 +516,20 @@ public enum NetworkExtensionFlowLifecycle {
         _ flow: NEAppProxyFlow,
         completion: @escaping @Sendable (Result<Void, FlowIOError>) -> Void
     ) {
+        // Captured before the call so the completion closure stays Sendable
+        // without retaining the non-Sendable flow.
+        let transport = flow is NEAppProxyTCPFlow ? "tcp" : "udp"
+        let remote = (flow as? NEAppProxyTCPFlow)
+            .map { String(describing: $0.remoteFlowEndpoint) } ?? "n/a"
+        let startedAt = DispatchTime.now().uptimeNanoseconds
         flow.open(withLocalFlowEndpoint: nil) { error in
-            completeOpen(error, completion: completion)
+            completeOpen(
+                error,
+                transport: transport,
+                remote: remote,
+                startedAt: startedAt,
+                completion: completion
+            )
         }
     }
 
@@ -486,7 +553,20 @@ public enum NetworkExtensionFlowLifecycle {
     public static func udpLocalSource(
         for flow: NEAppProxyUDPFlow
     ) throws -> FlowEndpoint? {
-        guard let rawEndpoint = flow.localFlowEndpoint else { return nil }
+        try udpLocalSource(from: flow.localFlowEndpoint)
+    }
+
+    /// NetworkExtension legitimately reports an unspecified local port for
+    /// virtual DNS and some system-owned UDP flows. That value is not a usable
+    /// socket identity, so it must enter the existing synthetic-source lease
+    /// path rather than being rejected as a malformed remote endpoint.
+    static func udpLocalSource(
+        from rawEndpoint: Network.NWEndpoint?
+    ) throws -> FlowEndpoint? {
+        guard let rawEndpoint else { return nil }
+        guard !NetworkFlowEndpointCodec.hasUnspecifiedPort(rawEndpoint) else {
+            return nil
+        }
         let endpoint = try NetworkFlowEndpointCodec.decode(
             rawEndpoint,
             transport: .udp
@@ -524,11 +604,42 @@ public enum NetworkExtensionFlowLifecycle {
 
     private static func completeOpen(
         _ error: (any Error)?,
+        transport: String,
+        remote: String,
+        startedAt: UInt64,
         completion: @escaping @Sendable (Result<Void, FlowIOError>) -> Void
     ) {
+        let elapsedMicroseconds =
+            (DispatchTime.now().uptimeNanoseconds &- startedAt) / 1_000
         if let error {
+            let nsError = error as NSError
+            DiagnosticFlowOpenObserver.shared.record(
+                transport: transport, succeeded: false
+            )
+            NativeFlowRuntimeLog.log.failure(
+                """
+                stage=nativeOpen failed transport=\(transport) \
+                domain=\(nsError.domain) \
+                code=\(nsError.code) \
+                remote=\(remote) \
+                elapsedUs=\(elapsedMicroseconds)
+                """
+            )
             completion(.failure(NetworkExtensionFlowErrorMapper.map(error)))
         } else {
+            // Notice level so the success path survives in the default log
+            // store. `info` is not persisted by default, which previously made
+            // field captures look as if no flow had ever opened.
+            DiagnosticFlowOpenObserver.shared.record(
+                transport: transport, succeeded: true
+            )
+            NativeFlowRuntimeLog.log.verbose(
+                """
+                stage=nativeOpen success transport=\(transport) \
+                remote=\(remote) \
+                elapsedUs=\(elapsedMicroseconds)
+                """
+            )
             completion(.success(()))
         }
     }

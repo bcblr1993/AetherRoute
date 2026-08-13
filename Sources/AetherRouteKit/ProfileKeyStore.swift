@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import Security
 
 public protocol ProfileKeyStoring: Sendable {
@@ -29,6 +30,10 @@ public enum ProfileKeyStoreError: LocalizedError, Equatable {
 public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Sendable {
     public static let defaultService = "com.aetherroute.profile-encryption"
     public static let keySizeBytes = 32
+    private static let runtimeLogger = Logger(
+        subsystem: "com.aetherroute.desktop",
+        category: "profile-keychain"
+    )
 
     private let accessGroupResolver: @Sendable () throws -> String
     private let service: String
@@ -82,6 +87,7 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
     }
 
     public func loadKey(keyID: String) throws -> Data {
+        Self.runtimeLogger.info("stage=keychainLoad begin")
         var query = try baseQuery(keyID: keyID)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -90,13 +96,23 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
         switch status {
         case errSecSuccess:
             guard let result else {
+                Self.runtimeLogger.error(
+                    "stage=keychainLoad failed status=\(errSecDecode, privacy: .public)"
+                )
                 throw ProfileKeyStoreError.securityError(errSecDecode)
             }
             try Self.validateKey(result)
+            Self.runtimeLogger.info("stage=keychainLoad success")
             return result
         case errSecItemNotFound:
+            Self.runtimeLogger.error(
+                "stage=keychainLoad missing status=\(status, privacy: .public)"
+            )
             throw ProfileKeyStoreError.keyNotFound
         default:
+            Self.runtimeLogger.error(
+                "stage=keychainLoad failed status=\(status, privacy: .public)"
+            )
             throw ProfileKeyStoreError.securityError(status)
         }
     }
@@ -110,7 +126,17 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
             // re-reading the winning item below.
         }
 
-        let candidate = try operations.randomData(Self.keySizeBytes)
+        Self.runtimeLogger.info("stage=keychainRandom begin")
+        let candidate: Data
+        do {
+            candidate = try operations.randomData(Self.keySizeBytes)
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=keychainRandom failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            throw error
+        }
+        Self.runtimeLogger.info("stage=keychainRandom success")
         try Self.validateKey(candidate)
 
         var attributes = try baseQuery(keyID: keyID)
@@ -120,16 +146,31 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
 
         switch operations.add(attributes) {
         case errSecSuccess:
+            Self.runtimeLogger.info("stage=keychainCreate success")
             return candidate
         case errSecDuplicateItem:
+            Self.runtimeLogger.info("stage=keychainCreate racedReload")
             return try loadKey(keyID: keyID)
         case let status:
+            Self.runtimeLogger.error(
+                "stage=keychainCreate failed status=\(status, privacy: .public)"
+            )
             throw ProfileKeyStoreError.securityError(status)
         }
     }
 
     private func baseQuery(keyID: String) throws -> [String: Any] {
-        let accessGroup = try accessGroupResolver()
+        Self.runtimeLogger.info("stage=resolveKeychainAccessGroup begin")
+        let accessGroup: String
+        do {
+            accessGroup = try accessGroupResolver()
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=resolveKeychainAccessGroup failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            throw error
+        }
+        Self.runtimeLogger.info("stage=resolveKeychainAccessGroup success")
         return [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

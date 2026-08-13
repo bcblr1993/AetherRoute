@@ -5,131 +5,218 @@ import XCTest
 
 final class TransparentProxySelfIdentityGuardTests: XCTestCase {
     private let tokenByteCount = MemoryLayout<audit_token_t>.size
+    private let selfIdentifier = "com.aetherroute.desktop.transparent-proxy"
 
-    func testMissingAuditTokenFailsClosed() {
+    // MARK: - Self egress must bypass
+
+    func testMatchingSigningIdentifierBypassesWithoutAuditToken() {
         let guardUnderTest = makeGuard(pid: 41)
 
-        XCTAssertEqual(
-            guardUnderTest.evaluate(auditToken: nil),
-            .notVerified(.missingAuditToken)
-        )
-    }
-
-    func testShortAuditTokenFailsClosedBeforeInspection() {
-        let guardUnderTest = makeGuard(pid: 41)
-
-        XCTAssertEqual(
-            guardUnderTest.evaluate(
-                auditToken: Data(repeating: 0, count: tokenByteCount - 1)
-            ),
-            .notVerified(
-                .invalidAuditTokenLength(
-                    expected: tokenByteCount,
-                    actual: tokenByteCount - 1
-                )
-            )
-        )
-    }
-
-    func testLongAuditTokenFailsClosedBeforeInspection() {
-        let guardUnderTest = makeGuard(pid: 41)
-
-        XCTAssertEqual(
-            guardUnderTest.evaluate(
-                auditToken: Data(repeating: 0, count: tokenByteCount + 1)
-            ),
-            .notVerified(
-                .invalidAuditTokenLength(
-                    expected: tokenByteCount,
-                    actual: tokenByteCount + 1
-                )
-            )
-        )
-    }
-
-    func testInvalidCurrentPIDFailsClosed() {
-        let guardUnderTest = makeGuard(pid: 41, currentPID: 0)
-
-        XCTAssertEqual(
-            guardUnderTest.evaluate(auditToken: validLengthToken()),
-            .notVerified(.invalidCurrentProcessIdentifier)
-        )
-    }
-
-    func testAuditTokenInspectionFailureFailsClosed() {
-        let guardUnderTest = TransparentProxySelfIdentityGuard(
-            identityVerifier: StubIdentityVerifier(mode: .pidFailure),
-            currentProcessIdentifier: { 41 }
-        )
-
-        XCTAssertEqual(
-            guardUnderTest.evaluate(auditToken: validLengthToken()),
-            .notVerified(.auditTokenInspectionFailed)
-        )
-    }
-
-    func testPIDMismatchFailsClosed() {
-        let guardUnderTest = makeGuard(pid: 42, currentPID: 41)
-
-        XCTAssertEqual(
-            guardUnderTest.evaluate(auditToken: validLengthToken()),
-            .notVerified(.processIdentifierMismatch(expected: 41, actual: 42))
-        )
-    }
-
-    func testDesignatedRequirementFailureFailsClosed() {
-        let guardUnderTest = TransparentProxySelfIdentityGuard(
-            identityVerifier: StubIdentityVerifier(
-                mode: .signatureFailure(pid: 41)
-            ),
-            currentProcessIdentifier: { 41 }
-        )
-
-        XCTAssertEqual(
-            guardUnderTest.evaluate(auditToken: validLengthToken()),
-            .notVerified(.designatedRequirementValidationFailed)
-        )
-    }
-
-    func testOnlyPIDAndDesignatedRequirementMatchCanBypass() {
-        let guardUnderTest = makeGuard(pid: 41)
         let result = guardUnderTest.evaluate(
+            signingIdentifier: selfIdentifier,
+            auditToken: nil
+        )
+
+        XCTAssertEqual(result.disposition, .bypass)
+        XCTAssertEqual(result.reason, .signingIdentifierMatchedSelf)
+        XCTAssertTrue(result.shouldBypassProxy)
+    }
+
+    func testMatchingAuditTokenPIDBypassesWithoutSigningIdentifier() {
+        let guardUnderTest = makeGuard(pid: 41, currentPID: 41)
+
+        let result = guardUnderTest.evaluate(
+            signingIdentifier: "",
             auditToken: validLengthToken()
         )
 
-        XCTAssertEqual(result, .verifiedSelfEgress)
-        XCTAssertTrue(result.shouldBypassProxy)
         XCTAssertEqual(result.disposition, .bypass)
+        XCTAssertEqual(result.reason, .auditTokenMatchedSelf)
     }
 
-    func testEveryFailureResultRefusesBypass() {
-        let results: [TransparentProxySelfIdentityGuard.Evaluation] = [
-            .notVerified(.missingAuditToken),
-            .notVerified(.invalidCurrentProcessIdentifier),
-            .notVerified(.auditTokenInspectionFailed),
-            .notVerified(.processIdentifierMismatch(expected: 1, actual: 2)),
-            .notVerified(.designatedRequirementValidationFailed),
-        ]
+    /// Upstream egress can carry the identifier of any bundle in the product.
+    /// Missing a sibling re-proxies our own connection to the node, which is an
+    /// infinite loop that leaves the tunnel unable to reach its server at all.
+    func testSiblingProductBundlesAreTreatedAsSelfEgress() {
+        let guardUnderTest = TransparentProxySelfIdentityGuard(
+            identityVerifier: StubIdentityVerifier(mode: .success(pid: 99)),
+            currentProcessIdentifier: { 41 },
+            selfSigningIdentifiers: [
+                "com.aetherroute.desktop",
+                "com.aetherroute.desktop.tunnel",
+                "com.aetherroute.desktop.transparent-proxy",
+            ]
+        )
 
-        XCTAssertTrue(results.allSatisfy { !$0.shouldBypassProxy })
-    }
+        for identifier in [
+            "com.aetherroute.desktop",
+            "com.aetherroute.desktop.tunnel",
+            "com.aetherroute.desktop.transparent-proxy",
+        ] {
+            let result = guardUnderTest.evaluate(
+                signingIdentifier: identifier,
+                auditToken: nil
+            )
+            XCTAssertEqual(
+                result.disposition,
+                .bypass,
+                "\(identifier) must bypass to break upstream recursion"
+            )
+            XCTAssertEqual(result.reason, .signingIdentifierMatchedSelf)
+        }
 
-    func testOnlyVerifiedExternalPIDIsEligibleForProxying() {
+        // A lookalike outside the product must still be proxied.
         XCTAssertEqual(
-            TransparentProxySelfIdentityGuard.Evaluation.notVerified(
-                .processIdentifierMismatch(expected: 41, actual: 42)
+            guardUnderTest.evaluate(
+                signingIdentifier: "com.aetherroute.desktop.evil.example",
+                auditToken: nil
             ).disposition,
             .proxy
         )
+    }
 
-        let unverifiable: [TransparentProxySelfIdentityGuard.Evaluation] = [
-            .notVerified(.missingAuditToken),
-            .notVerified(.invalidAuditTokenLength(expected: 32, actual: 0)),
-            .notVerified(.invalidCurrentProcessIdentifier),
-            .notVerified(.auditTokenInspectionFailed),
-            .notVerified(.designatedRequirementValidationFailed),
+    // MARK: - Everything else must be proxied, never closed
+
+    /// The regression that took the product offline: a nil audit token is
+    /// normal for system-process flows and must not close the connection.
+    func testMissingAuditTokenIsProxiedNotRejected() {
+        let guardUnderTest = makeGuard(pid: 41)
+
+        let result = guardUnderTest.evaluate(auditToken: nil)
+
+        XCTAssertEqual(result.disposition, .proxy)
+        XCTAssertEqual(result.reason, .systemProcessWithoutIdentity)
+        XCTAssertNotEqual(result.disposition, .reject)
+    }
+
+    func testShortAuditTokenIsProxiedNotRejected() {
+        let guardUnderTest = makeGuard(pid: 41)
+
+        let result = guardUnderTest.evaluate(
+            auditToken: Data(repeating: 0, count: tokenByteCount - 1)
+        )
+
+        XCTAssertEqual(result.disposition, .proxy)
+        XCTAssertEqual(result.auditTokenByteCount, tokenByteCount - 1)
+    }
+
+    func testLongAuditTokenIsProxiedNotRejected() {
+        let guardUnderTest = makeGuard(pid: 41)
+
+        let result = guardUnderTest.evaluate(
+            auditToken: Data(repeating: 0, count: tokenByteCount + 1)
+        )
+
+        XCTAssertEqual(result.disposition, .proxy)
+    }
+
+    func testAuditTokenInspectionFailureIsProxiedNotRejected() {
+        let guardUnderTest = TransparentProxySelfIdentityGuard(
+            identityVerifier: StubIdentityVerifier(mode: .pidFailure),
+            currentProcessIdentifier: { 41 },
+            selfSigningIdentifiers: [selfIdentifier]
+        )
+
+        let result = guardUnderTest.evaluate(auditToken: validLengthToken())
+
+        XCTAssertEqual(result.disposition, .proxy)
+        XCTAssertEqual(result.reason, .systemProcessWithoutIdentity)
+    }
+
+    func testDifferentSigningIdentifierIsProxied() {
+        let guardUnderTest = makeGuard(pid: 42, currentPID: 41)
+
+        let result = guardUnderTest.evaluate(
+            signingIdentifier: "com.apple.Safari",
+            auditToken: validLengthToken()
+        )
+
+        XCTAssertEqual(result.disposition, .proxy)
+        XCTAssertEqual(result.reason, .signingIdentifierDiffers)
+        XCTAssertEqual(result.sourceProcessIdentifier, 42)
+    }
+
+    func testDifferentPIDWithoutSigningIdentifierIsProxied() {
+        let guardUnderTest = makeGuard(pid: 42, currentPID: 41)
+
+        let result = guardUnderTest.evaluate(
+            signingIdentifier: "",
+            auditToken: validLengthToken()
+        )
+
+        XCTAssertEqual(result.disposition, .proxy)
+        XCTAssertEqual(result.reason, .auditTokenDiffers)
+    }
+
+    /// An invalid current PID must not turn ordinary traffic into a closed
+    /// flow. The source is simply unidentifiable and gets proxied.
+    func testInvalidCurrentPIDStillProxies() {
+        let guardUnderTest = makeGuard(pid: 41, currentPID: 0)
+
+        let result = guardUnderTest.evaluate(auditToken: validLengthToken())
+
+        XCTAssertEqual(result.disposition, .proxy)
+    }
+
+    // MARK: - Contract guarantees
+
+    /// Identity evaluation must never close a flow. `reject` stays in the
+    /// enum for genuine internal inconsistency handled elsewhere.
+    func testIdentityEvaluationNeverRejects() {
+        let guardUnderTest = makeGuard(pid: 42, currentPID: 41)
+
+        let evaluations = [
+            guardUnderTest.evaluate(signingIdentifier: "", auditToken: nil),
+            guardUnderTest.evaluate(
+                signingIdentifier: "",
+                auditToken: validLengthToken()
+            ),
+            guardUnderTest.evaluate(
+                signingIdentifier: "com.apple.Safari",
+                auditToken: nil
+            ),
+            guardUnderTest.evaluate(
+                signingIdentifier: selfIdentifier,
+                auditToken: nil
+            ),
+            guardUnderTest.evaluate(
+                signingIdentifier: "",
+                auditToken: Data(repeating: 0, count: 3)
+            ),
         ]
-        XCTAssertTrue(unverifiable.allSatisfy { $0.disposition == .reject })
+
+        XCTAssertTrue(evaluations.allSatisfy { $0.disposition != .reject })
+    }
+
+    func testOnlySelfMatchesReportBypass() {
+        let guardUnderTest = makeGuard(pid: 41, currentPID: 41)
+
+        XCTAssertTrue(
+            guardUnderTest.evaluate(
+                signingIdentifier: selfIdentifier,
+                auditToken: nil
+            ).shouldBypassProxy
+        )
+        XCTAssertFalse(
+            guardUnderTest.evaluate(
+                signingIdentifier: "com.apple.Safari",
+                auditToken: nil
+            ).shouldBypassProxy
+        )
+    }
+
+    /// The signing identifier is the primary signal, so a self match must win
+    /// even when the audit token names a different process.
+    func testSigningIdentifierTakesPrecedenceOverAuditToken() {
+        let guardUnderTest = makeGuard(pid: 999, currentPID: 41)
+
+        let result = guardUnderTest.evaluate(
+            signingIdentifier: selfIdentifier,
+            auditToken: validLengthToken()
+        )
+
+        XCTAssertEqual(result.disposition, .bypass)
+        XCTAssertEqual(result.reason, .signingIdentifierMatchedSelf)
     }
 
     func testProductionVerifierUsesKernelAuditTokenSize() {
@@ -146,7 +233,8 @@ final class TransparentProxySelfIdentityGuardTests: XCTestCase {
     ) -> TransparentProxySelfIdentityGuard {
         TransparentProxySelfIdentityGuard(
             identityVerifier: StubIdentityVerifier(mode: .success(pid: pid)),
-            currentProcessIdentifier: { currentPID }
+            currentProcessIdentifier: { currentPID },
+            selfSigningIdentifiers: [selfIdentifier]
         )
     }
 
@@ -159,7 +247,6 @@ private struct StubIdentityVerifier: TransparentProxyFlowIdentityVerifying {
     enum Mode: Sendable {
         case success(pid: pid_t)
         case pidFailure
-        case signatureFailure(pid: pid_t)
     }
 
     let auditTokenByteCount = MemoryLayout<audit_token_t>.size
@@ -167,15 +254,9 @@ private struct StubIdentityVerifier: TransparentProxyFlowIdentityVerifying {
 
     func processIdentifier(from auditToken: Data) throws -> pid_t {
         switch mode {
-        case let .success(pid), let .signatureFailure(pid):
+        case let .success(pid):
             pid
         case .pidFailure:
-            throw StubError.expectedFailure
-        }
-    }
-
-    func validateCurrentDesignatedRequirement(for auditToken: Data) throws {
-        if case .signatureFailure = mode {
             throw StubError.expectedFailure
         }
     }

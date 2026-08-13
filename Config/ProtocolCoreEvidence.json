@@ -4,17 +4,20 @@
   "coreCommit": "c655adf2050d4502e7412cc1c21d186d528cafd4",
   "sourceFiles": {
     "interopTestsSHA256": "a5e134e73920f318a4eba5e6be7533decea764bc433e53aebf3bcd885582af3c",
-    "proxyManagerSHA256": "8837fed3ffdebf6c77cedc9b10bd6763bebc1c842e1516a913e750802d899980",
-    "coreManifestSHA256": "afb72be83c518c5676fb03824050a2d5dcbcdb85ee2b9562f4438b2219dae91e",
-    "ffiManifestSHA256": "22a87e13336aa0bc7e4d6a6b503b0f9ff883cb35b0d5fc6bb5a59d819e714fe4",
-    "ffiSourceSHA256": "9bbdc611dad3468d12c6c7feb319af35736dc0055490d581cd8a52c024a3ca0f",
-    "flowFFISourceSHA256": "106d8ca1521fc583aa315884a3c4622cd06ff2bc172c8ee1d688f3628dcaa6bd"
+    "proxyManagerSHA256": "be0edf49cb5f82315b0c63b2b9683bd4609f166990a04bbff8465b24105177bb",
+    "outboundManagerSHA256": "538bdd3c87f720ff44f254868714540907681cd9ff384875efd14a441d29ba94",
+    "dispatcherSHA256": "827646fee1f9a0bd5d14c9f68906a98ceb148e08d58a1874f100b6e84e25cd59",
+    "coreManifestSHA256": "fffefc34b51e2617d47df63582d4c8d5fee3e24ab675e9cd3032f82f0fae16ca",
+    "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
+    "ffiSourceSHA256": "3defaaffec39596a45ddfba753f9e3d8b2b7e6c433eb81de634d4f1b59f47953",
+    "flowFFISourceSHA256": "805f427e823dd1555961d42316b85bc55a76672febc576db145a4f0b8f6d004a",
+    "embeddedFlowSourceSHA256": "5e333179400e6bea4a4046d20113c7f4d524b7c3a76744a84798ac7c3ad8d4f8"
   },
   "artifacts": {
-    "flowCoreSHA256": "3b35d4b775736a5ddce85fdf2d29597f84432f6675f9f6c38d006ab95a7492f3",
-    "packetFlowCoreSHA256": "7639fa60faa77eedf0e6c4708eed8c6ea121213fbb742f3e1b77db71fa16f3f0",
-    "headerSHA256": "5e158ae79080e02b2a01235dc2f94b005290bf0aed03d8072101122ae052e7a5",
-    "interopTestBinarySHA256": "b964b5724d0f553037600c45415ed0f78fc448da2f216fa234f259b3ec0895fa"
+    "flowCoreSHA256": "4cb1ed7e80e0ce4c23ef7ac53831b114379e697e12d90241127aeb49d50e940d",
+    "packetFlowCoreSHA256": "5b244864c2936a311670e9413c4cb759ed18cf75ba4c1c4e99f750209d718fc8",
+    "headerSHA256": "fde1ac33874e70d86b3876e39b397de278e995dc3d7bf6dc7b14186d41e3e548",
+    "interopTestBinarySHA256": "3bc93f9fa83b408b979cbe86ddeabe39b6417ee7094db8a66464e27d7a57a7d1"
   },
   "interopCases": [
     "AnyTLS",

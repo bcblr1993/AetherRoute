@@ -7,7 +7,7 @@ CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-"$ROOT/.build/core"}
 export CARGO_TARGET_DIR
 TARGET=aarch64-apple-darwin
 DESTINATION="$ROOT/Core/Artifacts/macos-arm64"
-FEATURES=aether-flow-only
+FEATURES=${AETHERROUTE_CORE_FEATURES:-aether-flow-only}
 export MACOSX_DEPLOYMENT_TARGET=14.0
 export CFLAGS="-mmacosx-version-min=14.0"
 export RUSTFLAGS="${RUSTFLAGS:--D warnings}"
@@ -110,6 +110,7 @@ UNDEFINED_SYMBOLS=$(nm -u "$SYMBOL_DIR/$CORE_OBJECT" | awk '{print $NF}')
 for SYMBOL in \
   clash_flow_status_message \
   clash_flow_engine_create \
+  clash_flow_engine_set_routing_mode_v1 \
   clash_flow_engine_destroy \
   clash_flow_selector_snapshot_v1 \
   clash_flow_selector_select_v1 \
@@ -133,7 +134,7 @@ do
 done
 
 FLOW_ABI_COUNT=$(printf '%s\n' "$FLOW_SYMBOLS" | grep -Ec '^_clash_flow_' || true)
-if [ "$FLOW_ABI_COUNT" -ne 17 ]; then
+if [ "$FLOW_ABI_COUNT" -ne 18 ]; then
   echo "Refusing core artifact with unexpected Flow ABI count: $FLOW_ABI_COUNT" >&2
   exit 1
 fi

@@ -121,9 +121,78 @@ static int verify_selector_snapshot(uint32_t expected_index) {
     return valid;
 }
 
+static int verify_global_selector_default(void) {
+    static const uint8_t group[] = "GLOBAL";
+    static const char expected_member[] = "Route";
+    size_t required = 0;
+    int32_t status = clash_packet_selector_snapshot_v1(
+        group,
+        sizeof(group) - 1,
+        NULL,
+        0,
+        &required
+    );
+    if (status != CLASH_FLOW_OK || required < 12 || required > 4096) {
+        return 0;
+    }
+
+    uint8_t *snapshot = malloc(required);
+    if (snapshot == NULL) {
+        return 0;
+    }
+    size_t copied = required;
+    status = clash_packet_selector_snapshot_v1(
+        group,
+        sizeof(group) - 1,
+        snapshot,
+        required,
+        &copied
+    );
+    if (status != CLASH_FLOW_OK || copied != required
+        || memcmp(snapshot, "ARS1", 4) != 0) {
+        free(snapshot);
+        return 0;
+    }
+
+    uint32_t selected_index = read_be32(snapshot + 4);
+    uint32_t member_count = read_be32(snapshot + 8);
+    size_t offset = 12;
+    int valid = 0;
+    for (uint32_t index = 0; index < member_count; index += 1) {
+        if (offset + 4 > required) {
+            break;
+        }
+        uint32_t length = read_be32(snapshot + offset);
+        offset += 4;
+        if (length == 0 || offset + length > required) {
+            break;
+        }
+        if (index == selected_index
+            && length == sizeof(expected_member) - 1
+            && memcmp(snapshot + offset, expected_member, length) == 0) {
+            valid = 1;
+        }
+        offset += length;
+    }
+    free(snapshot);
+    return valid;
+}
+
 static int verify_selector_control(void) {
     static const uint8_t group[] = "Route";
     static const uint8_t member[] = "REJECT";
+    static const uint8_t missing_member[] = "Removed subscription node";
+    if (!verify_selector_snapshot(0)) {
+        return 0;
+    }
+    if (clash_packet_selector_select_v1(
+            group,
+            sizeof(group) - 1,
+            missing_member,
+            sizeof(missing_member) - 1
+        ) != CLASH_FLOW_INVALID_ARGUMENT) {
+        return 0;
+    }
     if (!verify_selector_snapshot(0)) {
         return 0;
     }
@@ -197,6 +266,7 @@ static int run_cycle(
         usleep(25000);
     }
 
+    int global_default_verified = ready && verify_global_selector_default();
     int selector_verified = ready && verify_selector_control();
     int telemetry_verified = ready && verify_telemetry_snapshot();
     int stopped = clash_shutdown();
@@ -212,6 +282,11 @@ static int run_cycle(
     }
     if (!selector_verified) {
         fprintf(stderr, "cycle %ld: selector control was not verified\n", cycle);
+        clash_free_string(arguments.result);
+        return 1;
+    }
+    if (!global_default_verified) {
+        fprintf(stderr, "cycle %ld: GLOBAL did not default to Route\n", cycle);
         clash_free_string(arguments.result);
         return 1;
     }
@@ -344,7 +419,7 @@ int main(int argc, char **argv) {
     }
 
     printf(
-        "isolated packet-flow startup, selector, telemetry, and shutdown passed: cycles=%ld "
+        "isolated packet-flow startup, GLOBAL default, selector, telemetry, and shutdown passed: cycles=%ld "
         "max_rss_bytes=%ld rss_budget_bytes=%ld "
         "fd_baseline=%d fd_warmed=%d fd_final=%d fd_growth=%d "
         "fd_growth_budget=%d\n",

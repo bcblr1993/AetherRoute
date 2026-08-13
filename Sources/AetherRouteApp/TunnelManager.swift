@@ -1,6 +1,7 @@
 import AetherRouteKit
 import Foundation
 import NetworkExtension
+import OSLog
 
 enum NetworkEngineMode: String, CaseIterable, Identifiable, Sendable {
     case transparent
@@ -96,12 +97,17 @@ private enum ProfileCatalogProjectionBuilder {
             )
         }
         do {
+            let compatibilityDefault = summary.map {
+                DNSRuntimePolicy.packetTunnelCompatibilityDefault(
+                    for: $0.dns
+                )
+            } ?? .inherited
             return ProfileCatalogProjection(
                 catalog: catalog,
                 summary: summary,
-                dnsPolicy: try DNSRuntimePolicyStore.applicationGroup().load(
-                    forProfileYAML: active.yaml
-                ),
+                dnsPolicy: try DNSRuntimePolicyStore.applicationGroup()
+                    .loadIfPresent(forProfileYAML: active.yaml)
+                    ?? compatibilityDefault,
                 dnsErrorDescription: nil
             )
         } catch {
@@ -160,6 +166,11 @@ private enum ProductionStartupLoader {
 
 @MainActor
 final class TunnelManager: ObservableObject {
+    private static let runtimeLogger = Logger(
+        subsystem: "com.aetherroute.desktop",
+        category: "host-lifecycle"
+    )
+
     enum State: Equatable {
         case privacyConsentRequired
         case loading
@@ -180,6 +191,9 @@ final class TunnelManager: ObservableObject {
             let previous = Self.diagnosticEventCode(for: oldValue)
             let current = Self.diagnosticEventCode(for: state)
             guard previous != current else { return }
+            Self.runtimeLogger.info(
+                "stage=stateTransition from=\(previous.rawValue, privacy: .public) to=\(current.rawValue, privacy: .public)"
+            )
             diagnosticEvents.record(current)
         }
     }
@@ -216,11 +230,14 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var sessionRoutingMode: RoutingMode?
     @Published private(set) var sessionNetworkEngineMode: NetworkEngineMode?
     @Published private(set) var networkEngineMode: NetworkEngineMode
+    @Published private(set) var systemExtensionApprovalRequired = false
     @Published private(set) var proxySelections: [String: ProxySelectionState] = [:]
     @Published private(set) var proxySelectionMessages: [String: String] = [:]
     @Published private(set) var proxySelectionRequests: Set<String> = []
     @Published private(set) var proxyLatencies: [String: ProxyLatencyState] = [:]
     @Published private(set) var proxyLatencyRequests: Set<String> = []
+    @Published private(set) var isVerifyingProxyReadiness = false
+    @Published private(set) var connectionStage: ConnectionStage = .systemAuthorization
     @Published private(set) var telemetry: NetworkTelemetrySnapshot = .empty
     @Published private(set) var telemetryUpdatedAt: Date?
     @Published private(set) var localProxySettings: LocalProxySettings
@@ -238,6 +255,8 @@ final class TunnelManager: ObservableObject {
     private let localProxySettingsStore: LocalProxySettingsStore
     private let userDefaults: UserDefaults
     private let subscriptionClient: ProfileSubscriptionClient
+    private let routingResourceDownloadClient: RoutingResourceDownloadClient
+    private let systemExtensionActivator: any SystemExtensionActivating
     private let routingResourceStoreFactory:
         @Sendable () throws -> RoutingResourceStore
     private let diagnosticEvents = DiagnosticEventBuffer()
@@ -253,7 +272,15 @@ final class TunnelManager: ObservableObject {
     private var profileImportTask: Task<Void, Never>?
     private var routingResourceStatusTask: Task<Void, Never>?
     private var connectionWatchdogTask: Task<Void, Never>?
+    private var disconnectionWatchdogTask: Task<Void, Never>?
+    private var connectionReadinessTask: Task<Void, Never>?
+    private var connectionRequestID: UUID?
     private var connectionAttemptID: UUID?
+    private var disconnectionAttemptID: UUID?
+    private var providerConnectionID: UUID?
+    private var readinessVerifiedConnectionID: UUID?
+    private var lastObservedProviderStatus: NEVPNStatus?
+    private var disconnectErrorLookupID: UUID?
     private var failureContext: ConnectionFailureContext?
 
     init(
@@ -263,6 +290,9 @@ final class TunnelManager: ObservableObject {
             RoutingModePreferenceStore(),
         userDefaults: UserDefaults = .standard,
         subscriptionClient: ProfileSubscriptionClient = .live(),
+        routingResourceDownloadClient: RoutingResourceDownloadClient = .live(),
+        systemExtensionActivator: any SystemExtensionActivating =
+            SystemExtensionActivationCoordinator(),
         routingResourceStoreFactory:
             @escaping @Sendable () throws -> RoutingResourceStore = {
                 try RoutingResourceStore.applicationGroup()
@@ -272,6 +302,8 @@ final class TunnelManager: ObservableObject {
         self.routingModePreferenceStore = routingModePreferenceStore
         self.userDefaults = userDefaults
         self.subscriptionClient = subscriptionClient
+        self.routingResourceDownloadClient = routingResourceDownloadClient
+        self.systemExtensionActivator = systemExtensionActivator
         self.routingResourceStoreFactory = routingResourceStoreFactory
         localProxySettingsStore = LocalProxySettingsStore(defaults: userDefaults)
         localProxySettings = localProxySettingsStore.load()
@@ -399,6 +431,10 @@ final class TunnelManager: ObservableObject {
             if reviewState == "failed" || reviewState == "error" {
                 failureContext = .provider
             }
+            if reviewState == "extension-approval" {
+                systemExtensionApprovalRequired = true
+                failureContext = .configuration
+            }
             state = switch reviewState {
             case "loading": .loading
             case "connecting": .connecting
@@ -407,6 +443,12 @@ final class TunnelManager: ObservableObject {
             case "failed", "error":
                 .failed(
                     AppLocalization.string("The secure connection could not start. Review the profile and try again.")
+                )
+            case "extension-approval":
+                .failed(
+                    AppLocalization.string(
+                        "Approve the AetherRoute network extension to continue."
+                    )
                 )
             default: .disconnected
             }
@@ -476,6 +518,19 @@ final class TunnelManager: ObservableObject {
                 hasLoadedBypassPolicy = true
             }
             installProfileProjection(startup.profileProjection)
+            try await systemExtensionActivator.activate(
+                identifier: networkEngineMode.providerBundleIdentifier
+            ) { [weak self] in
+                guard let self else { return }
+                failureContext = .configuration
+                systemExtensionApprovalRequired = true
+                state = .failed(
+                    AppLocalization.string(
+                        "Approve the AetherRoute network extension to continue."
+                    )
+                )
+            }
+            systemExtensionApprovalRequired = false
             installManager(try await loadOrCreateManager())
             observeConfigurationChanges()
             updateState()
@@ -483,16 +538,26 @@ final class TunnelManager: ObservableObject {
                 await refreshSubscriptionIfDue()
             }
         } catch {
+            systemExtensionApprovalRequired = false
             recordFailure(error, context: .configuration)
         }
     }
 
+    /// Re-runs preparation after the user returns from System Settings. When
+    /// the original activation request is still pending, `prepare()` safely
+    /// coalesces this call through `isPreparing`; macOS will complete that
+    /// request as soon as approval is granted.
+    func recheckSystemExtensionApproval() async {
+        guard systemExtensionApprovalRequired else { return }
+        await prepare()
+    }
+
     private func rejectDevelopmentPreviewStart() -> Bool {
-#if AETHERROUTE_DEVELOPMENT_PREVIEW
+#if DEBUG || AETHERROUTE_DEVELOPMENT_PREVIEW
         failureContext = .configuration
         state = .failed(
             AppLocalization.string(
-                "This unsigned UI preview cannot start Network Extensions."
+                "This preview can import and inspect profiles, but it cannot enable system routing."
             )
         )
         return true
@@ -502,6 +567,15 @@ final class TunnelManager: ObservableObject {
     }
 
     func setEnabled(_ enabled: Bool) async {
+        Self.runtimeLogger.info(
+            "stage=setEnabled request=\(enabled ? "connect" : "disconnect", privacy: .public) state=\(Self.diagnosticEventCode(for: self.state).rawValue, privacy: .public) engine=\(self.networkEngineMode.rawValue, privacy: .public) routing=\(self.routingMode.rawValue, privacy: .public)"
+        )
+        if !enabled {
+            // Invalidate before any guard or await. A connect request may still
+            // be preparing resources even though NetworkExtension has not
+            // received startVPNTunnel yet.
+            invalidateConnectionRequest()
+        }
         guard ensurePrivacyConsent() else { return }
         guard !enabled || distributionConnectionAccess.permitsNewConnection
         else { return }
@@ -517,42 +591,195 @@ final class TunnelManager: ObservableObject {
             return
         }
 
+        var requestID: UUID?
         if enabled {
-            guard !isTransitioning else { return }
+            guard TunnelLifecycleTransitionPolicy.canBeginConnection(
+                hostIsTransitioning: isTransitioning,
+                providerPermitsStart: managerConnectionPermitsStart
+            ) else {
+                Self.runtimeLogger.info(
+                    "stage=setEnabled ignored reason=hostOrProviderTransitioning"
+                )
+                return
+            }
+            disconnectErrorLookupID = nil
+            cancelDisconnectionWatchdog()
+            let newRequestID = beginConnectionRequest()
+            requestID = newRequestID
+            if manager == nil {
+                Self.runtimeLogger.info(
+                    "stage=setEnabled prepareRequired reason=managerMissing"
+                )
+                state = .loading
+                await prepare()
+                guard isCurrentConnectionRequest(newRequestID) else {
+                    Self.runtimeLogger.info(
+                        "stage=setEnabled stopped reason=staleAfterPrepare"
+                    )
+                    return
+                }
+                guard manager != nil else {
+                    Self.runtimeLogger.info(
+                        "stage=setEnabled deferred reason=managerUnavailable"
+                    )
+                    completeConnectionRequest(newRequestID)
+                    return
+                }
+                guard TunnelLifecycleTransitionPolicy.canBeginConnection(
+                    hostIsTransitioning: isTransitioning,
+                    providerPermitsStart: managerConnectionPermitsStart
+                ) else {
+                    Self.runtimeLogger.info(
+                        "stage=setEnabled stopped reason=transitioningAfterPrepare"
+                    )
+                    completeConnectionRequest(newRequestID)
+                    return
+                }
+            }
+            resetConnectionReadiness()
+            connectionStage = .systemAuthorization
             state = .connecting
         } else {
+            disconnectErrorLookupID = nil
             cancelConnectionWatchdog()
-            guard state == .connected || state == .connecting else { return }
+            cancelConnectionReadiness()
+            guard state == .connected || state == .connecting else {
+                Self.runtimeLogger.info("stage=setEnabled ignored reason=notActive")
+                return
+            }
             state = .disconnecting
+            beginDisconnectionWatchdog()
         }
         let requestedMode = routingMode
+        var launchSnapshot: ProviderLaunchSnapshot?
 
         do {
             if enabled, activeProfile == nil {
                 throw ActiveProfileStoreError.noActiveProfile
             }
             if enabled, let activeProfile {
+                Self.runtimeLogger.info("stage=prepareRuntimeResources begin")
                 let profileYAML = activeProfile.yaml
                 let storeFactory = routingResourceStoreFactory
-                try await Task.detached(priority: .userInitiated) {
+                let downloadClient = routingResourceDownloadClient
+                let launchInput = try await Task.detached(
+                    priority: .userInitiated
+                ) {
                     let store = try storeFactory()
+                    let installedResources = try await downloadClient
+                        .ensureRequiredResources(
+                            for: profileYAML,
+                            in: store
+                        )
                     try store.prepareRuntimeResources(for: profileYAML)
+                    let persistedSelections = try ProxySelectionStore
+                        .applicationGroup()
+                        .selections(forProfileYAML: profileYAML)
+                    let initialSelections = InitialProxySelectionPolicy
+                        .selections(
+                            persisted: persistedSelections,
+                            summary: ProfileConfigurationInspector.inspect(
+                                yaml: profileYAML
+                            )
+                        )
+                    return (
+                        initialSelections,
+                        try store.launchResourceSnapshot(
+                            for: profileYAML
+                        ),
+                        installedResources
+                    )
                 }.value
+                guard let requestID,
+                      shouldContinueConnectionPreparation(requestID) else {
+                    Self.runtimeLogger.info(
+                        "stage=setEnabled stopped reason=staleAfterRuntimeResources"
+                    )
+                    return
+                }
+                if !launchInput.2.isEmpty {
+                    routingResourceMessage = AppLocalization.string(
+                        "Routing resources were downloaded and verified."
+                    )
+                    routingResourceMessageIsError = false
+                    refreshRoutingResourceStatuses()
+                }
+                launchSnapshot = try ProviderLaunchSnapshot(
+                    profileYAML: profileYAML,
+                    routingMode: requestedMode,
+                    bypassPolicy: bypassPolicy,
+                    dnsPolicy: dnsRuntimePolicy,
+                    proxySelections: launchInput.0,
+                    routingResources: launchInput.1
+                )
+                Self.runtimeLogger.info("stage=prepareRuntimeResources success")
             }
+            Self.runtimeLogger.info("stage=requireManager begin")
             let manager = try await requireManager()
             if enabled {
+                guard let requestID,
+                      shouldContinueConnectionPreparation(requestID) else {
+                    Self.runtimeLogger.info(
+                        "stage=setEnabled stopped reason=staleAfterRequireManager"
+                    )
+                    return
+                }
+            }
+            Self.runtimeLogger.info("stage=requireManager success")
+            if enabled {
+                Self.runtimeLogger.info("stage=persistProviderConfiguration begin")
                 try await persistProviderConfiguration(
                     requestedMode,
                     localProxy: providerLocalProxySettings,
                     in: manager
                 )
+                guard let requestID,
+                      shouldContinueConnectionPreparation(requestID) else {
+                    Self.runtimeLogger.info(
+                        "stage=setEnabled stopped reason=staleAfterPersistConfiguration"
+                    )
+                    return
+                }
+                Self.runtimeLogger.info("stage=persistProviderConfiguration success")
                 beginConnectionWatchdog()
-                try manager.connection.startVPNTunnel()
+                Self.runtimeLogger.info("stage=startVPNTunnel begin")
+                guard let launchSnapshot,
+                      let session = manager.connection
+                        as? NETunnelProviderSession else {
+                    throw TunnelManagerError.providerSessionUnavailable
+                }
+                let options = try ProviderLaunchSnapshotCodec.startOptions(
+                    for: launchSnapshot
+                )
+                Self.runtimeLogger.info(
+                    "stage=startVPNTunnel launchSnapshotReady mode=\(launchSnapshot.routingMode.rawValue, privacy: .public) selections=\(launchSnapshot.proxySelections.count, privacy: .public) resources=\(launchSnapshot.routingResources.count, privacy: .public)"
+                )
+                try session.startVPNTunnel(options: options)
+                completeConnectionRequest(requestID)
+                Self.runtimeLogger.info("stage=startVPNTunnel submitted")
             } else {
+                Self.runtimeLogger.info("stage=stopVPNTunnel begin")
                 manager.connection.stopVPNTunnel()
+                Self.runtimeLogger.info("stage=stopVPNTunnel submitted")
+                // A cancel issued while the provider is still starting may
+                // leave NetworkExtension at .invalid/.disconnected without a
+                // new status notification. Reconcile synchronously so the UI
+                // cannot remain in Disconnecting after the OS already stopped.
+                reconcileDisconnectionStatus()
             }
         } catch {
+            if enabled, let requestID,
+               !shouldContinueConnectionPreparation(requestID) {
+                Self.runtimeLogger.info(
+                    "stage=setEnabled errorIgnored reason=staleConnectionRequest"
+                )
+                return
+            }
+            Self.runtimeLogger.error(
+                "stage=setEnabled failed error=\(String(reflecting: error), privacy: .public)"
+            )
             cancelConnectionWatchdog()
+            cancelDisconnectionWatchdog()
             invalidateCachedManager()
             let context: ConnectionFailureContext
             if (error as? ActiveProfileStoreError) == .noActiveProfile {
@@ -638,15 +865,15 @@ final class TunnelManager: ObservableObject {
         defer { isUpdatingRoutingResources = false }
 
         let storeFactory = routingResourceStoreFactory
+        let downloadClient = routingResourceDownloadClient
         do {
             try await Task.detached(priority: .userInitiated) {
                 let store = try storeFactory()
-                let client = RoutingResourceDownloadClient.live()
                 for kind in required {
                     let descriptor = try RoutingResourceRemoteDescriptor
                         .maintainedDefault(for: kind)
                     try Task.checkCancellation()
-                    try await client.downloadAndInstall(
+                    try await downloadClient.downloadAndInstall(
                         descriptor,
                         into: store
                     )
@@ -809,6 +1036,9 @@ final class TunnelManager: ObservableObject {
             return
         }
         proxyLatencyRequests.insert(groupName)
+        Self.runtimeLogger.info(
+            "stage=proxyLatency request members=\(self.activeProfileSummary?.proxyGroups.first(where: { $0.name == groupName })?.memberCount ?? 0, privacy: .public)"
+        )
         proxySelectionMessages[groupName] = nil
         defer { proxyLatencyRequests.remove(groupName) }
 
@@ -834,7 +1064,10 @@ final class TunnelManager: ObservableObject {
                     guard let self else {
                         throw TunnelManagerError.providerSessionUnavailable
                     }
-                    return try await self.sendProviderMessage(data)
+                    return try await self.sendProviderMessage(
+                        data,
+                        timeout: .seconds(25)
+                    )
                 }
                 latency = try await client.latency(
                     group: groupName,
@@ -843,7 +1076,13 @@ final class TunnelManager: ObservableObject {
                 )
             }
             proxyLatencies[groupName] = latency
+            Self.runtimeLogger.info(
+                "stage=proxyLatency success results=\(latency.results.count, privacy: .public) responsive=\(latency.results.lazy.filter { $0.delayMilliseconds != nil }.count, privacy: .public)"
+            )
         } catch {
+            Self.runtimeLogger.error(
+                "stage=proxyLatency failed error=\(String(reflecting: error), privacy: .public)"
+            )
             proxySelectionMessages[groupName] = error.localizedDescription
         }
     }
@@ -858,6 +1097,9 @@ final class TunnelManager: ObservableObject {
             return
         }
         proxySelectionRequests.insert(groupName)
+        Self.runtimeLogger.debug(
+            "stage=proxySelection request operation=\(requestedMember == nil ? "snapshot" : "select", privacy: .public)"
+        )
         proxySelectionMessages[groupName] = nil
         defer { proxySelectionRequests.remove(groupName) }
 
@@ -886,6 +1128,9 @@ final class TunnelManager: ObservableObject {
             }
 
             proxySelections[groupName] = snapshot
+            Self.runtimeLogger.debug(
+                "stage=proxySelection success members=\(snapshot.members.count, privacy: .public) selected=\(snapshot.selectedMember == nil ? "none" : "present", privacy: .public)"
+            )
             guard !isUIReviewMode,
                   snapshot.selectedMember != nil,
                   let yaml = activeProfile?.yaml else {
@@ -907,6 +1152,9 @@ final class TunnelManager: ObservableObject {
                 proxySelectionMessages[groupName] = error.localizedDescription
             }
         } catch {
+            Self.runtimeLogger.error(
+                "stage=proxySelection failed error=\(String(reflecting: error), privacy: .public)"
+            )
             proxySelectionMessages[groupName] = error.localizedDescription
         }
     }
@@ -939,24 +1187,42 @@ final class TunnelManager: ObservableObject {
         )
     }
 
-    private func sendProviderMessage(_ data: Data) async throws -> Data {
-        guard state == .connected,
+    private func sendProviderMessage(
+        _ data: Data,
+        timeout: Duration = .seconds(5)
+    ) async throws -> Data {
+        guard state == .connected
+                || (state == .connecting && isVerifyingProxyReadiness),
               let session = manager?.connection as? NETunnelProviderSession,
               session.status == .connected else {
             throw TunnelManagerError.providerSessionUnavailable
         }
 
-        return try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<Data, Error>) in
-            let reply = ProviderMessageReply(continuation)
-            do {
-                try session.sendProviderMessage(data) { response in
-                    reply.receive(response)
+        Self.runtimeLogger.debug(
+            "stage=providerMessage hostSend begin bytes=\(data.count, privacy: .public)"
+        )
+        do {
+            let response = try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Data, Error>) in
+                let reply = ProviderMessageReply(continuation)
+                do {
+                    try session.sendProviderMessage(data) { response in
+                        reply.receive(response)
+                    }
+                } catch {
+                    reply.fail(error)
                 }
-            } catch {
-                reply.fail(error)
+                reply.startTimeout(after: timeout)
             }
-            reply.startTimeout()
+            Self.runtimeLogger.debug(
+                "stage=providerMessage hostSend success bytes=\(response.count, privacy: .public)"
+            )
+            return response
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=providerMessage hostSend failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            throw error
         }
     }
 
@@ -1990,6 +2256,18 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    private var managerConnectionIsTransitioning: Bool {
+        guard let status = manager?.connection.status else { return false }
+        return status == .connecting
+            || status == .reasserting
+            || status == .disconnecting
+    }
+
+    private var managerConnectionPermitsStart: Bool {
+        guard let status = manager?.connection.status else { return true }
+        return status == .invalid || status == .disconnected
+    }
+
     var canConnect: Bool {
 #if AETHERROUTE_DEVELOPMENT_PREVIEW
         false
@@ -1997,6 +2275,10 @@ final class TunnelManager: ObservableObject {
         hasAcceptedPrivacyDisclosure
             && activeProfile != nil
             && distributionConnectionAccess.permitsNewConnection
+            && !isPreparing
+            && !systemExtensionApprovalRequired
+            && managerConnectionPermitsStart
+            && !managerConnectionIsTransitioning
             && !isTransitioning
             && !isImportingProfile
             && !isUpdatingProfiles
@@ -2148,10 +2430,16 @@ final class TunnelManager: ObservableObject {
     }
 
     private func loadOrCreateManager() async throws -> NEVPNManager {
+        Self.runtimeLogger.info(
+            "stage=loadOrCreateManager begin engine=\(self.networkEngineMode.rawValue, privacy: .public)"
+        )
         try privacyConsentStore.requireCurrentConsent()
+        Self.runtimeLogger.info("stage=loadExistingManager begin")
         if let existing = try await loadExistingManager() {
+            Self.runtimeLogger.info("stage=loadExistingManager success result=existing")
             return existing
         }
+        Self.runtimeLogger.info("stage=loadExistingManager success result=none")
 
         let manager: NEVPNManager = switch networkEngineMode {
         case .transparent: NETransparentProxyManager()
@@ -2169,8 +2457,12 @@ final class TunnelManager: ObservableObject {
         manager.protocolConfiguration = provider
         manager.localizedDescription = AppConstants.localizedDescription
         manager.isEnabled = true
+        Self.runtimeLogger.info("stage=createManager save begin")
         try await manager.saveToPreferences()
+        Self.runtimeLogger.info("stage=createManager save success")
+        Self.runtimeLogger.info("stage=createManager reload begin")
         try await manager.loadFromPreferences()
+        Self.runtimeLogger.info("stage=createManager reload success")
         return manager
     }
 
@@ -2182,9 +2474,12 @@ final class TunnelManager: ObservableObject {
         isPersistingConfiguration = true
         defer { isPersistingConfiguration = false }
 
+        Self.runtimeLogger.info("stage=persistConfiguration reloadBeforeSave begin")
         try await manager.loadFromPreferences()
+        Self.runtimeLogger.info("stage=persistConfiguration reloadBeforeSave success")
         guard let provider = manager.protocolConfiguration
             as? NETunnelProviderProtocol else {
+            Self.runtimeLogger.error("stage=persistConfiguration failed reason=invalidProtocol")
             throw TunnelManagerError.invalidProtocolConfiguration
         }
         guard TunnelProviderConfigurationCodec.requiresPersistence(
@@ -2193,6 +2488,7 @@ final class TunnelManager: ObservableObject {
             configuration: provider.providerConfiguration,
             isEnabled: manager.isEnabled
         ) else {
+            Self.runtimeLogger.info("stage=persistConfiguration skipped reason=unchanged")
             return
         }
 
@@ -2208,8 +2504,12 @@ final class TunnelManager: ObservableObject {
         )
         manager.protocolConfiguration = updatedProvider
         manager.isEnabled = true
+        Self.runtimeLogger.info("stage=persistConfiguration save begin")
         try await manager.saveToPreferences()
+        Self.runtimeLogger.info("stage=persistConfiguration save success")
+        Self.runtimeLogger.info("stage=persistConfiguration reloadAfterSave begin")
         try await manager.loadFromPreferences()
+        Self.runtimeLogger.info("stage=persistConfiguration reloadAfterSave success")
 
         guard manager.isEnabled,
               let persistedProvider = manager.protocolConfiguration
@@ -2223,8 +2523,10 @@ final class TunnelManager: ObservableObject {
               try TunnelProviderConfigurationCodec.localProxySettings(
                   from: persistedProvider.providerConfiguration
               ) == localProxy else {
+            Self.runtimeLogger.error("stage=persistConfiguration failed reason=verification")
             throw TunnelManagerError.configurationDidNotPersist
         }
+        Self.runtimeLogger.info("stage=persistConfiguration verification success")
     }
 
     private var providerLocalProxySettings: LocalProxySettings {
@@ -2264,7 +2566,11 @@ final class TunnelManager: ObservableObject {
 
     private func requireManager() async throws -> NEVPNManager {
         try privacyConsentStore.requireCurrentConsent()
-        if let manager { return manager }
+        if let manager {
+            Self.runtimeLogger.info("stage=requireManager source=cache")
+            return manager
+        }
+        Self.runtimeLogger.info("stage=requireManager source=preferences")
         let loaded = try await loadOrCreateManager()
         installManager(loaded)
         observeConfigurationChanges()
@@ -2272,6 +2578,9 @@ final class TunnelManager: ObservableObject {
     }
 
     private func loadExistingManager() async throws -> NEVPNManager? {
+        Self.runtimeLogger.info(
+            "stage=queryManagers begin engine=\(self.networkEngineMode.rawValue, privacy: .public)"
+        )
         let loaded: [NEVPNManager] = switch networkEngineMode {
         case .transparent:
             try await NETransparentProxyManager.loadAllFromPreferences().map { $0 }
@@ -2286,7 +2595,11 @@ final class TunnelManager: ObservableObject {
                     .providerBundleIdentifier ==
                     networkEngineMode.providerBundleIdentifier
             }
+        Self.runtimeLogger.info(
+            "stage=queryManagers success total=\(loaded.count, privacy: .public) matching=\(matching.count, privacy: .public)"
+        )
         guard matching.count <= 1 else {
+            Self.runtimeLogger.error("stage=queryManagers failed reason=duplicates")
             throw TunnelManagerError.duplicateConfigurations
         }
         return matching.first
@@ -2297,16 +2610,20 @@ final class TunnelManager: ObservableObject {
             NotificationCenter.default.removeObserver(statusObserver)
             self.statusObserver = nil
         }
+        resetManagerScopedLifecycleState()
         self.manager = manager
         observeStatus()
     }
 
     private func invalidateCachedManager() {
+        invalidateConnectionRequest()
         cancelConnectionWatchdog()
+        cancelDisconnectionWatchdog()
         if let statusObserver {
             NotificationCenter.default.removeObserver(statusObserver)
             self.statusObserver = nil
         }
+        resetManagerScopedLifecycleState()
         manager = nil
         connectedSince = nil
         sessionRoutingMode = nil
@@ -2342,27 +2659,35 @@ final class TunnelManager: ObservableObject {
         guard !isUIReviewMode,
               !isPersistingConfiguration,
               !isReloadingConfiguration else {
+            Self.runtimeLogger.info("stage=configurationChange ignored reason=busyOrReview")
             return
         }
+        Self.runtimeLogger.info("stage=configurationChange reload begin")
         isReloadingConfiguration = true
         defer { isReloadingConfiguration = false }
 
         do {
             guard let reloaded = try await loadExistingManager() else {
+                Self.runtimeLogger.info("stage=configurationChange reload result=missing")
                 invalidateCachedManager()
                 state = .disconnected
                 return
             }
             installManager(reloaded)
             updateState()
+            Self.runtimeLogger.info("stage=configurationChange reload success")
         } catch {
+            Self.runtimeLogger.error(
+                "stage=configurationChange reload failed error=\(String(reflecting: error), privacy: .public)"
+            )
             invalidateCachedManager()
             recordFailure(error, context: .configuration)
         }
     }
 
     private func updateState() {
-        guard let status = manager?.connection.status else {
+        guard let connection = manager?.connection else {
+            Self.runtimeLogger.info("stage=updateState status=missing")
             state = .disconnected
             connectedSince = nil
             sessionRoutingMode = nil
@@ -2370,21 +2695,89 @@ final class TunnelManager: ObservableObject {
             clearProxySelectionRuntimeState()
             return
         }
+        let status = connection.status
+        let previousProviderStatus = lastObservedProviderStatus
+        if status == .connected, previousProviderStatus != .connected {
+            providerConnectionID = UUID()
+            readinessVerifiedConnectionID = nil
+        } else if status != .connected {
+            providerConnectionID = nil
+            readinessVerifiedConnectionID = nil
+        }
+        lastObservedProviderStatus = status
+
+        if TunnelLifecycleTransitionPolicy.shouldArmDisconnectionWatchdog(
+            providerIsDisconnecting: status == .disconnecting,
+            disconnectionAttemptPending: disconnectionAttemptID != nil
+        ) {
+            Self.runtimeLogger.info(
+                "stage=updateState adoptingDisconnectingStatus"
+            )
+            beginDisconnectionWatchdog()
+        }
+
+        if disconnectionAttemptID != nil,
+           status != .invalid,
+           status != .disconnected {
+            Self.runtimeLogger.info(
+                "stage=updateState preservingDisconnectRequest status=\(status.rawValue, privacy: .public)"
+            )
+            cancelConnectionReadiness()
+            state = .disconnecting
+            return
+        }
+
+        let readinessGroups = activeProfileSummary.map {
+            ProxyConnectionReadinessPolicy.groupsToVerify(summary: $0)
+        } ?? []
+        let requiresReadiness = status == .connected
+            && !readinessGroups.isEmpty
+            && providerConnectionID != readinessVerifiedConnectionID
+
+        Self.runtimeLogger.info(
+            "stage=updateState status=\(status.rawValue, privacy: .public)"
+        )
+        if ProviderTerminationPolicy.isUnexpectedTerminalState(
+            currentIsTerminal: Self.isTerminalProviderStatus(status),
+            previousWasActive: previousProviderStatus.map {
+                Self.isActiveProviderStatus($0)
+            } ?? false,
+            connectionAttemptPending: connectionAttemptID != nil,
+            disconnectionAttemptPending: disconnectionAttemptID != nil
+        ) {
+            Self.runtimeLogger.error(
+                "stage=updateState unexpectedTerminal status=\(status.rawValue, privacy: .public) previous=\(previousProviderStatus?.rawValue ?? -1, privacy: .public)"
+            )
+            handleUnexpectedProviderTermination(connection)
+            return
+        }
         state = switch status {
         case .invalid, .disconnected: .disconnected
         case .connecting, .reasserting: .connecting
-        case .connected: .connected
+        case .connected: requiresReadiness ? .connecting : .connected
         case .disconnecting: .disconnecting
         @unknown default: .failed(AppLocalization.string("Unknown network extension status"))
+        }
+        connectionStage = ConnectionStagePolicy.stage(
+            providerPhase: Self.providerLifecyclePhase(status),
+            isVerifyingReadiness: requiresReadiness || isVerifyingProxyReadiness
+        )
+        if status == .connected {
+            cancelConnectionWatchdog()
         }
         switch state {
         case .connected, .disconnected, .failed:
             cancelConnectionWatchdog()
+            cancelDisconnectionWatchdog()
         case .privacyConsentRequired, .loading, .connecting, .disconnecting:
             break
         }
         if !distributionConnectionAccess.permitsNewConnection,
            state == .connecting || state == .connected {
+            invalidateConnectionRequest()
+            cancelConnectionWatchdog()
+            cancelConnectionReadiness()
+            beginDisconnectionWatchdog()
             manager?.connection.stopVPNTunnel()
             state = .disconnecting
             connectedSince = nil
@@ -2396,8 +2789,7 @@ final class TunnelManager: ObservableObject {
         if case .failed = state, failureContext == nil {
             failureContext = .provider
         }
-        switch state {
-        case .connected:
+        if status == .connected {
             connectedSince = manager?.connection.connectedDate ?? connectedSince ?? .now
             let provider = manager?.protocolConfiguration as? NETunnelProviderProtocol
             do {
@@ -2415,14 +2807,26 @@ final class TunnelManager: ObservableObject {
                 recordFailure(error, context: .configuration)
             }
             if state == .connected {
+                isVerifyingProxyReadiness = false
                 startTelemetryPollingIfNeeded()
+            } else if let connectionID = providerConnectionID {
+                startConnectionReadinessCheck(
+                    groups: readinessGroups,
+                    connectionID: connectionID
+                )
             }
+            return
+        }
+
+        cancelConnectionReadiness()
+        switch state {
         case .disconnected, .failed:
             connectedSince = nil
             sessionRoutingMode = nil
             sessionNetworkEngineMode = nil
             clearProxySelectionRuntimeState()
-        case .privacyConsentRequired, .loading, .connecting, .disconnecting:
+        case .privacyConsentRequired, .loading, .connecting, .connected,
+             .disconnecting:
             break
         }
     }
@@ -2487,11 +2891,246 @@ final class TunnelManager: ObservableObject {
         telemetryUpdatedAt = nil
     }
 
+    private func startConnectionReadinessCheck(
+        groups: [ProxyGroupConfigurationSummary],
+        connectionID: UUID
+    ) {
+        guard connectionReadinessTask == nil,
+              !groups.isEmpty,
+              providerConnectionID == connectionID else { return }
+        isVerifyingProxyReadiness = true
+        connectionStage = .readinessCheck
+        Self.runtimeLogger.info(
+            "stage=connectionReadiness begin groups=\(groups.count, privacy: .public)"
+        )
+        connectionReadinessTask = Task { [weak self] in
+            await self?.verifyConnectionReadiness(
+                groups: groups,
+                connectionID: connectionID
+            )
+        }
+    }
+
+    private func verifyConnectionReadiness(
+        groups: [ProxyGroupConfigurationSummary],
+        connectionID: UUID
+    ) async {
+        defer {
+            if providerConnectionID == connectionID {
+                connectionReadinessTask = nil
+            }
+        }
+        do {
+            let client = ProxySelectionProviderClient { [weak self] data in
+                guard let self else {
+                    throw TunnelManagerError.providerSessionUnavailable
+                }
+                return try await self.sendProviderMessage(
+                    data,
+                    timeout: .seconds(25)
+                )
+            }
+            for group in groups {
+                try Task.checkCancellation()
+                let latency = try await client.latency(
+                    group: group.name,
+                    url: Self.defaultLatencyTestURL,
+                    timeoutMilliseconds: 3_000
+                )
+                guard providerConnectionID == connectionID else { return }
+                proxyLatencies[group.name] = latency
+                var snapshot = try await client.snapshot(group: group.name)
+                guard let preferred = ProxyConnectionReadinessPolicy
+                    .preferredMember(snapshot: snapshot, latency: latency) else {
+                    throw TunnelManagerError.noResponsiveProxy
+                }
+                if snapshot.selectedMember != preferred {
+                    snapshot = try await client.select(
+                        group: group.name,
+                        member: preferred
+                    )
+                }
+                proxySelections[group.name] = snapshot
+                if let yaml = activeProfile?.yaml {
+                    try await Task.detached(priority: .utility) {
+                        try ProxySelectionStore.applicationGroup()
+                            .recordVerified(
+                                snapshot: snapshot,
+                                group: group.name,
+                                profileYAML: yaml
+                            )
+                    }.value
+                }
+            }
+            guard providerConnectionID == connectionID else { return }
+            readinessVerifiedConnectionID = connectionID
+            isVerifyingProxyReadiness = false
+            state = .connected
+            startTelemetryPollingIfNeeded()
+            Self.runtimeLogger.info("stage=connectionReadiness success")
+        } catch is CancellationError {
+            Self.runtimeLogger.info("stage=connectionReadiness cancelled")
+        } catch {
+            guard providerConnectionID == connectionID else { return }
+            Self.runtimeLogger.error(
+                "stage=connectionReadiness failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            isVerifyingProxyReadiness = false
+            manager?.connection.stopVPNTunnel()
+            recordFailure(error, context: .provider)
+        }
+    }
+
+    private func cancelConnectionReadiness() {
+        connectionReadinessTask?.cancel()
+        connectionReadinessTask = nil
+        isVerifyingProxyReadiness = false
+    }
+
+    private func resetConnectionReadiness() {
+        cancelConnectionReadiness()
+        providerConnectionID = nil
+        readinessVerifiedConnectionID = nil
+        lastObservedProviderStatus = nil
+    }
+
+    private func resetManagerScopedLifecycleState() {
+        disconnectErrorLookupID = nil
+        resetConnectionReadiness()
+    }
+
+    private func beginConnectionRequest() -> UUID {
+        let requestID = UUID()
+        connectionRequestID = requestID
+        Self.runtimeLogger.info("stage=connectionRequest began")
+        return requestID
+    }
+
+    private func invalidateConnectionRequest() {
+        if connectionRequestID != nil {
+            Self.runtimeLogger.info("stage=connectionRequest invalidated")
+        }
+        connectionRequestID = nil
+    }
+
+    private func completeConnectionRequest(_ requestID: UUID) {
+        guard connectionRequestID == requestID else { return }
+        connectionRequestID = nil
+        Self.runtimeLogger.info("stage=connectionRequest completed")
+    }
+
+    private func isCurrentConnectionRequest(_ requestID: UUID) -> Bool {
+        connectionRequestID == requestID
+    }
+
+    private func shouldContinueConnectionPreparation(
+        _ requestID: UUID
+    ) -> Bool {
+        TunnelLifecycleTransitionPolicy.shouldContinueConnectionPreparation(
+            generationMatches: isCurrentConnectionRequest(requestID),
+            hostIsConnecting: state == .connecting,
+            providerPermitsStart: managerConnectionPermitsStart
+        )
+    }
+
+    private func handleUnexpectedProviderTermination(
+        _ connection: NEVPNConnection
+    ) {
+        let lookupID = UUID()
+        disconnectErrorLookupID = lookupID
+        cancelConnectionReadiness()
+        connectedSince = nil
+        sessionRoutingMode = nil
+        sessionNetworkEngineMode = nil
+        clearProxySelectionRuntimeState()
+        recordFailure(
+            LocalizedConnectionError(
+                message: AppLocalization.string(
+                    "The network extension stopped before it became ready. Another active proxy or VPN may be using the required network channel, or the active profile may have failed. Turn off conflicting network extensions, then retry."
+                )
+            ),
+            context: .provider
+        )
+        connection.fetchLastDisconnectError { [weak self] error in
+            let nsError = error as NSError?
+            let kind = ProviderDisconnectErrorClassifier.classify(nsError)
+            let domain = nsError?.domain ?? "none"
+            let code = nsError?.code ?? 0
+            Task { @MainActor [weak self] in
+                self?.applyDisconnectError(
+                    kind,
+                    domain: domain,
+                    code: code,
+                    lookupID: lookupID
+                )
+            }
+        }
+    }
+
+    private func applyDisconnectError(
+        _ kind: ProviderDisconnectErrorKind,
+        domain: String,
+        code: Int,
+        lookupID: UUID
+    ) {
+        guard disconnectErrorLookupID == lookupID else {
+            Self.runtimeLogger.info(
+                "stage=disconnectError ignored reason=stale"
+            )
+            return
+        }
+        disconnectErrorLookupID = nil
+        Self.runtimeLogger.error(
+            "stage=disconnectError resolved domain=\(domain, privacy: .public) code=\(code, privacy: .public) classification=\(String(describing: kind), privacy: .public)"
+        )
+        guard kind == .competingNetworkExtension else { return }
+        diagnosticEvents.record(.networkExtensionConflict)
+        failureContext = .provider
+        state = .failed(
+            AppLocalization.string(
+                "Another network extension is already controlling this traffic. Turn off the conflicting proxy or VPN extension, then retry."
+            )
+        )
+    }
+
+    private static func isTerminalProviderStatus(_ status: NEVPNStatus) -> Bool {
+        status == .invalid || status == .disconnected
+    }
+
+    /// Narrows the provider status to the phases the stage policy reasons
+    /// about, so the policy itself stays free of NetworkExtension types.
+    private static func providerLifecyclePhase(
+        _ status: NEVPNStatus?
+    ) -> ProviderLifecyclePhase {
+        switch status {
+        case nil, .invalid, .disconnected, .disconnecting: .inactive
+        case .connecting, .reasserting: .starting
+        case .connected: .established
+        @unknown default: .inactive
+        }
+    }
+
+    private static func isActiveProviderStatus(_ status: NEVPNStatus) -> Bool {
+        switch status {
+        case .connecting, .connected, .reasserting, .disconnecting:
+            true
+        case .invalid, .disconnected:
+            false
+        @unknown default:
+            true
+        }
+    }
+
     private func recordFailure(
         _ error: Error,
         context: ConnectionFailureContext
     ) {
+        Self.runtimeLogger.error(
+            "stage=recordFailure context=\(String(describing: context), privacy: .public) error=\(String(reflecting: error), privacy: .public)"
+        )
+        invalidateConnectionRequest()
         cancelConnectionWatchdog()
+        cancelDisconnectionWatchdog()
         failureContext = context
         state = .failed(error.localizedDescription)
     }
@@ -2504,9 +3143,14 @@ final class TunnelManager: ObservableObject {
         cancelConnectionWatchdog()
         let attemptID = UUID()
         connectionAttemptID = attemptID
+        Self.runtimeLogger.info(
+            "stage=connectionWatchdog armed timeoutSeconds=\(TunnelStartupTimingPolicy.hostConnectionWatchdogTimeoutSeconds, privacy: .public)"
+        )
         connectionWatchdogTask = Task { [weak self] in
             do {
-                try await Task.sleep(for: .seconds(30))
+                try await Task.sleep(
+                    for: TunnelStartupTimingPolicy.hostConnectionWatchdogTimeout
+                )
             } catch {
                 return
             }
@@ -2516,16 +3160,97 @@ final class TunnelManager: ObservableObject {
     }
 
     private func cancelConnectionWatchdog() {
+        if connectionWatchdogTask != nil {
+            Self.runtimeLogger.info("stage=connectionWatchdog cancelled")
+        }
         connectionWatchdogTask?.cancel()
         connectionWatchdogTask = nil
         connectionAttemptID = nil
     }
 
+    private func beginDisconnectionWatchdog() {
+        cancelDisconnectionWatchdog()
+        let attemptID = UUID()
+        disconnectionAttemptID = attemptID
+        Self.runtimeLogger.info(
+            "stage=disconnectionWatchdog armed timeoutSeconds=\(TunnelStartupTimingPolicy.hostDisconnectionWatchdogTimeoutSeconds, privacy: .public)"
+        )
+        disconnectionWatchdogTask = Task { [weak self] in
+            do {
+                try await Task.sleep(
+                    for: TunnelStartupTimingPolicy
+                        .hostDisconnectionWatchdogTimeout
+                )
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.disconnectionWatchdogFired(attemptID)
+        }
+    }
+
+    private func cancelDisconnectionWatchdog() {
+        if disconnectionWatchdogTask != nil {
+            Self.runtimeLogger.info(
+                "stage=disconnectionWatchdog cancelled"
+            )
+        }
+        disconnectionWatchdogTask?.cancel()
+        disconnectionWatchdogTask = nil
+        disconnectionAttemptID = nil
+    }
+
+    private func disconnectionWatchdogFired(_ attemptID: UUID) {
+        guard disconnectionAttemptID == attemptID,
+              case .disconnecting = state else {
+            Self.runtimeLogger.info(
+                "stage=disconnectionWatchdog ignored reason=stale"
+            )
+            return
+        }
+        Self.runtimeLogger.error("stage=disconnectionWatchdog fired")
+        reconcileDisconnectionStatus()
+        let resolution = TunnelLifecycleTransitionPolicy
+            .disconnectionWatchdogResolution(
+                hostIsDisconnectingAfterReconciliation: state == .disconnecting
+            )
+        guard resolution == .timedOut else {
+            cancelDisconnectionWatchdog()
+            return
+        }
+        cancelDisconnectionWatchdog()
+        recordFailure(
+            LocalizedConnectionError(
+                message: AppLocalization.string(
+                    "The network extension did not finish stopping. Wait a moment, then retry; macOS will update the status when shutdown completes."
+                )
+            ),
+            context: .provider
+        )
+    }
+
+    private func reconcileDisconnectionStatus() {
+        guard let status = manager?.connection.status else {
+            state = .disconnected
+            return
+        }
+        Self.runtimeLogger.info(
+            "stage=reconcileDisconnection status=\(status.rawValue, privacy: .public)"
+        )
+        if status == .invalid || status == .disconnected {
+            updateState()
+        } else {
+            state = .disconnecting
+        }
+    }
+
     private func connectionWatchdogFired(_ attemptID: UUID) {
         guard connectionAttemptID == attemptID,
               case .connecting = state else {
+            Self.runtimeLogger.info("stage=connectionWatchdog ignored reason=stale")
             return
         }
+        Self.runtimeLogger.error("stage=connectionWatchdog fired")
         cancelConnectionWatchdog()
         manager?.connection.stopVPNTunnel()
         invalidateCachedManager()
@@ -2673,6 +3398,7 @@ private enum TunnelManagerError: LocalizedError, Sendable, Equatable {
     case providerReplyMissing
     case providerSelectorUnavailable
     case providerSessionUnavailable
+    case noResponsiveProxy
 
     var errorDescription: String? {
         switch self {
@@ -2690,6 +3416,8 @@ private enum TunnelManagerError: LocalizedError, Sendable, Equatable {
             AppLocalization.string("This profile does not expose selectable proxy members.")
         case .providerSessionUnavailable:
             AppLocalization.string("Connect the network extension before selecting a proxy.")
+        case .noResponsiveProxy:
+            AppLocalization.string("No proxy node in the active route passed the connection check.")
         }
     }
 }
@@ -2714,9 +3442,9 @@ private final class ProviderMessageReply: @unchecked Sendable {
         finish(.failure(error))
     }
 
-    func startTimeout() {
+    func startTimeout(after timeout: Duration) {
         Task.detached(priority: .utility) { [self] in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: timeout)
             fail(TunnelManagerError.providerMessageTimedOut)
         }
     }

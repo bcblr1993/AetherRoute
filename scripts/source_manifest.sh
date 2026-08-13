@@ -24,7 +24,8 @@ MANIFEST="$WORK/manifest.txt"
     Tests \
     scripts
   do
-    find "$manifest_path" -type f -print
+    find "$manifest_path" -type f \
+      ! -path 'Config/Signing.json' -print
   done
   for manifest_path in \
     .gitmodules \

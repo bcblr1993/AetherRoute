@@ -23,7 +23,7 @@ struct AboutAetherRouteView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: AetherVisual.s5) {
                 productHeader
                 releaseSection
                 authorSection
@@ -42,82 +42,65 @@ struct AboutAetherRouteView: View {
     }
 
     private var productHeader: some View {
-        ZStack(alignment: .topTrailing) {
-            headerDecoration
+        HStack(spacing: AetherVisual.s6) {
+            AetherRouteBrandTile(size: 94, isActive: true)
+                .accessibilityHidden(true)
 
-            HStack(spacing: 22) {
-                AetherRouteBrandTile(size: 94, isActive: true)
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(productDisplayName)
-                            .font(
-                                .system(
-                                    size: 30,
-                                    weight: .semibold,
-                                    design: .rounded
-                                )
+            VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s3) {
+                    Text(productDisplayName)
+                        .font(
+                            .system(
+                                size: 30,
+                                weight: .semibold,
+                                design: .rounded
                             )
-                            .tracking(-0.7)
-
-                        releaseStatusBadge
-                    }
-
-                    Text("Private routing, thoughtfully native.")
-                        .font(.body)
-                        .foregroundStyle(.primary)
-
-                    HStack(spacing: 8) {
-                        metadataCapsule(
-                            symbol: "apple.logo",
-                            title: "Apple silicon"
                         )
-                        metadataCapsule(
-                            symbol: "swift",
-                            title: "Native macOS"
-                        )
-                    }
+                        .tracking(-0.7)
+
+                    releaseStatusBadge
                 }
 
-                Spacer(minLength: 0)
+                Text("Private routing, thoughtfully native.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: AetherVisual.s2) {
+                    metadataCapsule(
+                        symbol: "apple.logo",
+                        title: "Apple silicon"
+                    )
+                    metadataCapsule(
+                        symbol: "swift",
+                        title: "Native macOS"
+                    )
+                }
             }
-            .padding(24)
+
+            Spacer(minLength: 0)
         }
-        .background(panelBackground(radius: 24))
-        .overlay(panelBorder(radius: 24))
+        .padding(AetherVisual.s6)
+        .background(panelBackground(radius: AetherVisual.panelRadius))
+        .overlay(panelBorder(radius: AetherVisual.panelRadius))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(productDisplayName)
     }
 
-    private var headerDecoration: some View {
-        ZStack {
-            Circle()
-                .fill(AetherVisual.cyan.opacity(colorScheme == .dark ? 0.12 : 0.08))
-                .frame(width: 154, height: 154)
-                .offset(x: 48, y: -74)
-            Circle()
-                .stroke(AetherVisual.blue.opacity(0.13), lineWidth: 18)
-                .frame(width: 108, height: 108)
-                .offset(x: 46, y: -60)
-        }
-        .accessibilityHidden(true)
-    }
-
     private var releaseStatusBadge: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: AetherVisual.s2) {
             Circle()
                 .fill(releaseChannelColor)
                 .frame(width: 7, height: 7)
                 .accessibilityHidden(true)
             Text(releaseChannelDescription)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("about-release-channel")
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
+        .padding(.horizontal, AetherVisual.s3)
+        .padding(.vertical, AetherVisual.s2)
         .background(
-            Color(nsColor: .windowBackgroundColor),
+            Color(nsColor: .controlBackgroundColor),
             in: Capsule()
         )
         .overlay {
@@ -126,7 +109,6 @@ struct AboutAetherRouteView: View {
                 lineWidth: 0.5
             )
         }
-        .accessibilityIdentifier("about-release-channel")
     }
 
     private func metadataCapsule(
@@ -135,9 +117,9 @@ struct AboutAetherRouteView: View {
     ) -> some View {
         Label(title, systemImage: symbol)
             .font(.caption.weight(.medium))
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, AetherVisual.s3)
+            .padding(.vertical, AetherVisual.s2)
             .background(
                 Color(nsColor: .windowBackgroundColor),
                 in: Capsule()
@@ -151,12 +133,12 @@ struct AboutAetherRouteView: View {
                 title: "Release information",
                 symbol: "shippingbox"
             )
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-            .padding(.bottom, 14)
+            .padding(.horizontal, AetherVisual.s5)
+            .padding(.top, AetherVisual.s5)
+            .padding(.bottom, AetherVisual.s4)
 
             Divider()
-                .padding(.horizontal, 20)
+                .padding(.horizontal, AetherVisual.s5)
 
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 0) {
@@ -184,11 +166,11 @@ struct AboutAetherRouteView: View {
                         identifier: "about-release-date"
                     )
                 }
-                .padding(.vertical, 18)
+                .padding(.vertical, AetherVisual.s5)
 
                 LazyVGrid(
                     columns: [GridItem(.flexible()), GridItem(.flexible())],
-                    spacing: 18
+                    spacing: AetherVisual.s4
                 ) {
                     releaseMetric(
                         title: "Version",
@@ -211,11 +193,11 @@ struct AboutAetherRouteView: View {
                         identifier: "about-release-date"
                     )
                 }
-                .padding(20)
+                .padding(AetherVisual.s5)
             }
         }
-        .background(panelBackground(radius: 20))
-        .overlay(panelBorder(radius: 20))
+        .background(panelBackground(radius: AetherVisual.panelRadius))
+        .overlay(panelBorder(radius: AetherVisual.panelRadius))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Release information")
     }
@@ -224,10 +206,10 @@ struct AboutAetherRouteView: View {
         title: LocalizedStringKey,
         symbol: String
     ) -> some View {
-        HStack(spacing: 9) {
+        HStack(spacing: AetherVisual.s2) {
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(AetherVisual.blue)
+                .foregroundStyle(Color.accentColor)
                 .accessibilityHidden(true)
             Text(title)
                 .font(.headline)
@@ -239,19 +221,19 @@ struct AboutAetherRouteView: View {
         value: String,
         identifier: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: AetherVisual.s1) {
             Text(title)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(Color(nsColor: .labelColor))
+                .foregroundStyle(.secondary)
             Text(value)
                 .font(.subheadline.monospacedDigit().weight(.semibold))
-                .foregroundStyle(Color(nsColor: .labelColor))
+                .foregroundStyle(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
                 .accessibilityIdentifier(identifier)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, AetherVisual.s5)
         .accessibilityElement(children: .contain)
     }
 
@@ -262,9 +244,9 @@ struct AboutAetherRouteView: View {
     }
 
     private var authorSection: some View {
-        HStack(spacing: 15) {
+        HStack(spacing: AetherVisual.s4) {
             ZStack {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                     .fill(Color(nsColor: .windowBackgroundColor))
                 Image(systemName: "signature")
                     .font(.system(size: 20, weight: .medium))
@@ -273,28 +255,28 @@ struct AboutAetherRouteView: View {
             .frame(width: 48, height: 48)
             .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text("Created by")
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.secondary)
                 Text(localizedAuthorName)
                     .font(.title3.weight(.semibold))
                     .accessibilityIdentifier("about-author-name")
                 Text("Original design and native macOS development")
                     .font(.caption)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.secondary)
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: AetherVisual.s3)
 
             Text(versionDescription)
                 .font(.subheadline.monospacedDigit().weight(.semibold))
-                .foregroundStyle(highContrastTextColor)
+                .foregroundStyle(.primary)
                 .accessibilityIdentifier("about-version")
         }
-        .padding(18)
-        .background(panelBackground(radius: 20))
-        .overlay(panelBorder(radius: 20))
+        .padding(AetherVisual.s5)
+        .background(panelBackground(radius: AetherVisual.panelRadius))
+        .overlay(panelBorder(radius: AetherVisual.panelRadius))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Created by")
     }
@@ -318,10 +300,6 @@ struct AboutAetherRouteView: View {
 
     private var productDisplayName: String {
         bundleText(for: "CFBundleDisplayName", fallback: "AetherRoute")
-    }
-
-    private var highContrastTextColor: Color {
-        colorScheme == .dark ? .white : .black
     }
 
     private var versionDescription: String {
@@ -351,9 +329,9 @@ struct AboutAetherRouteView: View {
 
     private var releaseChannelColor: Color {
         switch releaseChannel {
-        case "stable": AetherVisual.success
+        case "stable": Color.green
         case "beta": .orange
-        default: AetherVisual.blue
+        default: .secondary
         }
     }
 

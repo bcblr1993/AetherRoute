@@ -116,12 +116,12 @@ struct ThirdPartyLicensesView: View {
                 TextField("Search components", text: $searchText)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("license-search-field")
-                    .padding(12)
+                    .padding(AetherVisual.s3)
 
                 Divider()
 
                 ScrollView {
-                    LazyVStack(spacing: 2) {
+                    LazyVStack(spacing: AetherVisual.s1) {
                         ForEach(filteredComponents(in: report)) { component in
                             let isSelected = selectedComponentID == component.id
                             Button {
@@ -131,11 +131,11 @@ struct ThirdPartyLicensesView: View {
                                     component: component,
                                     isSelected: isSelected
                                 )
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
+                                .padding(.horizontal, AetherVisual.s3)
+                                .padding(.vertical, AetherVisual.s2)
                                 .background {
                                     RoundedRectangle(
-                                        cornerRadius: 7,
+                                        cornerRadius: AetherVisual.controlRadius,
                                         style: .continuous
                                     )
                                     .fill(
@@ -162,11 +162,11 @@ struct ThirdPartyLicensesView: View {
                             .accessibilityAddTraits(
                                 isSelected ? .isSelected : []
                             )
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, AetherVisual.s2)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, AetherVisual.s2)
                 }
 
                 componentSummary(report)
@@ -227,7 +227,7 @@ struct ThirdPartyLicensesView: View {
     private func componentSummary(
         _ report: ThirdPartyLicenseReport
     ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: AetherVisual.s1) {
             Divider()
             Text(
                 String.localizedStringWithFormat(
@@ -237,11 +237,11 @@ struct ThirdPartyLicensesView: View {
             )
                 .font(.caption.weight(.medium))
             Text("Independent app runtime")
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.primary)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color(nsColor: .labelColor))
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
+        .padding(.horizontal, AetherVisual.s3)
+        .padding(.bottom, AetherVisual.s2)
         .background(.bar)
     }
 }
@@ -251,7 +251,7 @@ private struct ComponentRow: View {
     let isSelected: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: AetherVisual.s1) {
             Text(verbatim: component.name)
                 .font(.body.weight(.medium))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -269,7 +269,7 @@ private struct ComponentRow: View {
         .foregroundStyle(isSelected ? Color.white : Color.primary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .padding(.vertical, 3)
+        .padding(.vertical, AetherVisual.s1)
     }
 }
 
@@ -279,7 +279,7 @@ private struct ComponentLicenseDetail: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: AetherVisual.s6) {
                 header
 
                 if blocks.isEmpty {
@@ -295,19 +295,19 @@ private struct ComponentLicenseDetail: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(28)
+            .padding(AetherVisual.s6)
         }
         .navigationTitle(component.name)
         .background(Color(nsColor: .textBackgroundColor))
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
             Text(component.name)
                 .font(.largeTitle.weight(.semibold))
                 .textSelection(.enabled)
 
-            HStack(spacing: 8) {
+            HStack(spacing: AetherVisual.s2) {
                 Text(
                     String.localizedStringWithFormat(
                         AppLocalization.string("Version %@"),
@@ -332,15 +332,15 @@ private struct ComponentLicenseDetail: View {
     private func licenseBlock(
         _ block: ThirdPartyLicenseReport.LicenseBlock
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
             Text(block.name)
                 .font(.title3.weight(.semibold))
             Text(block.text)
                 .font(.system(.callout, design: .monospaced))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+                .padding(AetherVisual.s4)
+                .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius))
         }
     }
 }
@@ -349,8 +349,8 @@ private extension View {
     func licensePillStyle() -> some View {
         font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
+            .padding(.horizontal, AetherVisual.s3)
+            .padding(.vertical, AetherVisual.s2)
             .background(.quaternary, in: Capsule())
     }
 }

@@ -77,4 +77,31 @@ final class NetworkFlowEndpointCodecTests: XCTestCase {
             )
         )
     }
+
+    func testUnspecifiedUDPLocalPortUsesSyntheticSourceLease() throws {
+        let unspecified = Network.NWEndpoint.hostPort(
+            host: .ipv4(.init("100.64.0.5")!),
+            port: .any
+        )
+        XCTAssertTrue(NetworkFlowEndpointCodec.hasUnspecifiedPort(unspecified))
+        XCTAssertNil(
+            try NetworkExtensionFlowLifecycle.udpLocalSource(
+                from: unspecified
+            )
+        )
+
+        let concrete = Network.NWEndpoint.hostPort(
+            host: .ipv4(.init("192.168.50.24")!),
+            port: 54_189
+        )
+        XCTAssertFalse(NetworkFlowEndpointCodec.hasUnspecifiedPort(concrete))
+        XCTAssertEqual(
+            try NetworkExtensionFlowLifecycle.udpLocalSource(from: concrete),
+            FlowEndpoint(
+                host: .ipv4([192, 168, 50, 24]),
+                port: 54_189,
+                transport: .udp
+            )
+        )
+    }
 }

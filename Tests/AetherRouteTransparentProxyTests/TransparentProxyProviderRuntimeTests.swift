@@ -456,17 +456,11 @@ final class TransparentProxyProviderRuntimeTests: XCTestCase,
     func testIdentityControllerBypassesOnlyVerifiedSelf() {
         let token = Data(repeating: 0xA5, count: 32)
         let verified = TransparentProxySelfIdentityGuard(
-            identityVerifier: RuntimeIdentityVerifier(
-                processIdentifier: 410,
-                requirementSucceeds: true
-            ),
+            identityVerifier: RuntimeIdentityVerifier(processIdentifier: 410),
             currentProcessIdentifier: { 410 }
         )
         let otherProcess = TransparentProxySelfIdentityGuard(
-            identityVerifier: RuntimeIdentityVerifier(
-                processIdentifier: 411,
-                requirementSucceeds: true
-            ),
+            identityVerifier: RuntimeIdentityVerifier(processIdentifier: 411),
             currentProcessIdentifier: { 410 }
         )
         let verifiedController = TransparentProxyProviderLifecycleController(
@@ -486,15 +480,17 @@ final class TransparentProxyProviderRuntimeTests: XCTestCase,
             otherController.identityDisposition(auditToken: token),
             .proxy
         )
+        // An unidentifiable source is ordinary traffic for a transparent
+        // proxy. It must be routed, never claimed and closed.
         XCTAssertEqual(
             verifiedController.identityDisposition(auditToken: nil),
-            .reject
+            .proxy
         )
         XCTAssertEqual(
             verifiedController.identityDisposition(
                 auditToken: Data(repeating: 0, count: 31)
             ),
-            .reject
+            .proxy
         )
     }
 
@@ -965,14 +961,9 @@ private final class RuntimeTCPFlow: TransparentTCPFlowIO,
 private struct RuntimeIdentityVerifier: TransparentProxyFlowIdentityVerifying {
     let auditTokenByteCount = 32
     let processIdentifier: pid_t
-    let requirementSucceeds: Bool
 
     func processIdentifier(from auditToken: Data) throws -> pid_t {
         processIdentifier
-    }
-
-    func validateCurrentDesignatedRequirement(for auditToken: Data) throws {
-        if !requirementSucceeds { throw RuntimeTestError.injected }
     }
 }
 
