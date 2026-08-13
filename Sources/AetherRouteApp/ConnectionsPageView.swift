@@ -89,24 +89,34 @@ struct ConnectionsView: View {
             .padding(.horizontal, AetherVisual.s4)
             .padding(.vertical, AetherVisual.s2)
 
-            ConnectionTableHeader()
-
-            Divider()
-
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(
-                        Array(visibleConnections.enumerated()),
-                        id: \.offset
-                    ) { index, connection in
-                        ConnectionRow(connection: connection)
-                        if index < visibleConnections.count - 1 {
-                            Divider()
-                                .padding(.leading, AetherVisual.pageHorizontalPadding)
-                        }
-                    }
+            Table(connectionRows) {
+                TableColumn("Destination") { row in
+                    ConnectionDestinationCell(connection: row.connection)
                 }
+                TableColumn("Matched rule") { row in
+                    ConnectionRuleCell(connection: row.connection)
+                }
+                .width(min: 120, ideal: 150, max: 170)
+                TableColumn("Outlet") { row in
+                    ConnectionOutletCell(connection: row.connection)
+                }
+                .width(min: 92, ideal: 104, max: 120)
+                TableColumn("Traffic") { row in
+                    ConnectionTrafficCell(connection: row.connection)
+                }
+                .width(min: 82, ideal: 88, max: 96)
+                TableColumn("Duration") { row in
+                    ConnectionDurationCell(connection: row.connection)
+                }
+                .width(44)
             }
+            .tableStyle(.inset(alternatesRowBackgrounds: false))
+        }
+    }
+
+    private var connectionRows: [ConnectionTableItem] {
+        visibleConnections.enumerated().map { offset, connection in
+            ConnectionTableItem(offset: offset, connection: connection)
         }
     }
 
@@ -294,28 +304,16 @@ private struct SessionBar: View {
     }
 }
 
-private struct ConnectionTableHeader: View {
-    var body: some View {
-        HStack(spacing: AetherVisual.s3) {
-            Text("Destination")
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text("Matched rule")
-                .frame(width: 150, alignment: .leading)
-            Text("Outlet")
-                .frame(width: 104, alignment: .leading)
-            Text("Traffic")
-                .frame(width: 88, alignment: .trailing)
-            Text("Duration")
-                .frame(width: 44, alignment: .trailing)
-        }
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, AetherVisual.s4)
-        .frame(height: 24)
+private struct ConnectionTableItem: Identifiable {
+    let offset: Int
+    let connection: ConnectionTelemetry
+
+    var id: String {
+        "\(offset)-\(connection.startedAtUnixMilliseconds)-\(connection.destination)-\(connection.destinationPort)"
     }
 }
 
-private struct ConnectionRow: View {
+private struct ConnectionDestinationCell: View {
     let connection: ConnectionTelemetry
 
     var body: some View {
@@ -334,35 +332,43 @@ private struct ConnectionRow: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(ruleText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(width: 150, alignment: .leading)
-
-            Label(outlet.localizedTitle, systemImage: outletSymbol)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(outlet.tint)
-                .lineLimit(1)
-                .frame(width: 104, alignment: .leading)
-
-            VStack(alignment: .trailing, spacing: AetherVisual.s1) {
-                Text(verbatim: "↓ \(formattedBytes(connection.downloadTotal))")
-                Text(verbatim: "↑ \(formattedBytes(connection.uploadTotal))")
-            }
-            .font(.caption.monospacedDigit())
-            .frame(width: 88, alignment: .trailing)
-
-            Text(duration)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 44, alignment: .trailing)
         }
-        .padding(.horizontal, AetherVisual.pageHorizontalPadding)
         .frame(height: 36)
         .background(outlet == .rejected ? Color.red.opacity(0.04) : .clear)
         .accessibilityElement(children: .combine)
+    }
+
+    private var outlet: ConnectionOutlet {
+        ConnectionOutlet(proxyChain: connection.proxyChain)
+    }
+
+}
+
+private struct ConnectionRuleCell: View {
+    let connection: ConnectionTelemetry
+
+    var body: some View {
+        Text(ruleText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+    }
+
+    private var ruleText: String {
+        let payload = connection.rulePayload.trimmingCharacters(in: .whitespaces)
+        guard !payload.isEmpty else { return connection.rule }
+        return "\(connection.rule) \(payload)"
+    }
+}
+
+private struct ConnectionOutletCell: View {
+    let connection: ConnectionTelemetry
+
+    var body: some View {
+        Label(outlet.localizedTitle, systemImage: outletSymbol)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(outlet.tint)
+            .lineLimit(1)
     }
 
     private var outlet: ConnectionOutlet {
@@ -377,10 +383,29 @@ private struct ConnectionRow: View {
         }
     }
 
-    private var ruleText: String {
-        let payload = connection.rulePayload.trimmingCharacters(in: .whitespaces)
-        guard !payload.isEmpty else { return connection.rule }
-        return "\(connection.rule) \(payload)"
+}
+
+private struct ConnectionTrafficCell: View {
+    let connection: ConnectionTelemetry
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: AetherVisual.s1) {
+            Text(verbatim: "↓ \(formattedBytes(connection.downloadTotal))")
+            Text(verbatim: "↑ \(formattedBytes(connection.uploadTotal))")
+        }
+        .font(.caption.monospacedDigit())
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+}
+
+private struct ConnectionDurationCell: View {
+    let connection: ConnectionTelemetry
+
+    var body: some View {
+        Text(duration)
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private var duration: String {

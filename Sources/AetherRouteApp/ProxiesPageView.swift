@@ -341,18 +341,6 @@ private struct ProxyGroupDisclosure: View {
                     detail: "Change the filter, or clear the search field."
                 )
             } else {
-                HStack(spacing: AetherVisual.s3) {
-                    Text("Name")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("Protocol")
-                        .frame(width: 84, alignment: .leading)
-                    Text("Latency")
-                        .frame(width: 72, alignment: .trailing)
-                    Color.clear.frame(width: 14)
-                }
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, AetherVisual.s2)
                 memberList
 
                 HStack {
@@ -373,43 +361,75 @@ private struct ProxyGroupDisclosure: View {
     }
 
     private var memberList: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(visibleMembers.enumerated()), id: \.element) { index, member in
-                    ProxyMemberRow(
-                        member: member,
-                        protocolName: protocols[member],
-                        status: status(for: member),
-                        isSelected: member == selectedMember,
-                        isBusy: tunnel.proxySelectionRequests.contains(group.name)
-                    ) {
+        Table(memberRows) {
+            TableColumn("Name") { row in
+                Button {
+                    Task {
+                        await tunnel.selectProxy(
+                            group: group.name,
+                            member: row.member
+                        )
+                    }
+                } label: {
+                    Text(row.member)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(row.isBusy)
+                .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
+                .contextMenu {
+                    Button("Switch to this node") {
                         Task {
-                            await tunnel.selectProxy(group: group.name, member: member)
+                            await tunnel.selectProxy(
+                                group: group.name,
+                                member: row.member
+                            )
                         }
                     }
-                    .contextMenu {
-                        Button("Switch to this node") {
-                            Task {
-                                await tunnel.selectProxy(
-                                    group: group.name,
-                                    member: member
-                                )
-                            }
-                        }
-                        Button("Retest this group") {
-                            Task { await tunnel.testProxyLatency(group: group.name) }
-                        }
-                        Divider()
-                        Button("Copy node name") { copy(member) }
+                    Button("Retest this group") {
+                        Task { await tunnel.testProxyLatency(group: group.name) }
                     }
-
-                    if index < visibleMembers.count - 1 {
-                        Divider()
-                    }
+                    Divider()
+                    Button("Copy node name") { copy(row.member) }
                 }
             }
+            TableColumn("Protocol") { row in
+                Text(row.protocolName?.uppercased() ?? "—")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            .width(84)
+            TableColumn("Latency") { row in
+                ProxyLatencyBadge(status: row.status, name: nil)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .width(72)
+            TableColumn("") { row in
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .opacity(row.isSelected ? 1 : 0)
+                    .accessibilityHidden(true)
+            }
+            .width(14)
         }
-        .frame(maxHeight: 196)
+        .tableStyle(.inset(alternatesRowBackgrounds: false))
+        .environment(\.defaultMinListRowHeight, 28)
+        .frame(height: min(CGFloat(memberRows.count * 28 + 34), 196))
+    }
+
+    private var memberRows: [ProxyMemberTableItem] {
+        visibleMembers.map { member in
+            ProxyMemberTableItem(
+                member: member,
+                protocolName: protocols[member],
+                status: status(for: member),
+                isSelected: member == selectedMember,
+                isBusy: tunnel.proxySelectionRequests.contains(group.name)
+            )
+        }
     }
 
     /// A url-test group is chosen by the core, so the expansion explains the
@@ -509,40 +529,14 @@ private struct ProxyGroupDisclosure: View {
     }
 }
 
-private struct ProxyMemberRow: View {
+private struct ProxyMemberTableItem: Identifiable {
     let member: String
     let protocolName: String?
     let status: ProxyLatencyStatus
     let isSelected: Bool
     let isBusy: Bool
-    let select: () -> Void
 
-    var body: some View {
-        Button(action: select) {
-            HStack(spacing: AetherVisual.s3) {
-                Text(member)
-                    .font(.body)
-                    .lineLimit(1)
-                Spacer(minLength: AetherVisual.s3)
-                Text(protocolName?.uppercased() ?? "—")
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 84, alignment: .leading)
-                ProxyLatencyBadge(status: status, name: nil)
-                    .frame(width: 72, alignment: .trailing)
-                Image(systemName: "checkmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .opacity(isSelected ? 1 : 0)
-                    .accessibilityHidden(true)
-            }
-            .contentShape(Rectangle())
-            .frame(height: 28)
-        }
-        .buttonStyle(.plain)
-        .disabled(isBusy)
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-    }
+    var id: String { member }
 }
 
 /// The status dot plus its text. The text is what makes this readable without
