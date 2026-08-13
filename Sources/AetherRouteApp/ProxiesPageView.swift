@@ -106,8 +106,8 @@ struct ProxiesView: View {
                         Int64(groups.count)
                     )
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.primary)
                 Spacer()
                 Button {
                     Task {
@@ -320,6 +320,7 @@ private struct ProxyGroupDisclosure: View {
                     }
                 }
                 .labelsHidden()
+                .accessibilityIdentifier("proxy-sort-picker")
                 .frame(width: 108)
 
                 Button {
@@ -354,8 +355,8 @@ private struct ProxyGroupDisclosure: View {
                     Spacer()
                     Text(isTesting ? "Testing…" : "Latency results are local")
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.primary)
             }
         }
     }
@@ -397,8 +398,8 @@ private struct ProxyGroupDisclosure: View {
             }
             TableColumn("Protocol") { row in
                 Text(row.protocolName?.uppercased() ?? "—")
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.monospaced().weight(.semibold))
+                    .foregroundStyle(.primary)
             }
             .width(84)
             TableColumn("Latency") { row in
@@ -416,6 +417,8 @@ private struct ProxyGroupDisclosure: View {
             .width(14)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
+        .accessibilityLabel("Proxy group members")
+        .accessibilityIdentifier("proxy-group-members-table")
         .scrollIndicators(.hidden, axes: .horizontal)
         .environment(\.defaultMinListRowHeight, 28)
         .frame(height: min(CGFloat(memberRows.count * 28 + 34), 196))
@@ -565,8 +568,8 @@ private struct ProxyLatencyBadge: View {
             }
 
             Text(text)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(status.isMeasured ? status.tint : .secondary)
+                .font(.subheadline.monospacedDigit().weight(.semibold))
+                .foregroundStyle(status.isMeasured ? .primary : .secondary)
         }
         .accessibilityElement(children: .combine)
     }
@@ -596,8 +599,8 @@ private struct ProxyNodeInventory: View {
         FeatureSection(title: "Nodes", symbol: "server.rack") {
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 Text(inventorySummary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.primary)
 
                 Table(visibleProxies) {
                     TableColumn("Name") { proxy in
@@ -608,14 +611,14 @@ private struct ProxyNodeInventory: View {
                     }
                     TableColumn("Protocol") { proxy in
                         Text(proxy.protocolName.uppercased())
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
+                            .font(.subheadline.monospaced().weight(.semibold))
+                            .foregroundStyle(.primary)
                     }
                     .width(92)
                     TableColumn("In groups") { proxy in
                         Text(membership(of: proxy.name))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
                             .lineLimit(1)
                     }
                     .width(min: 120, ideal: 148, max: 170)
@@ -624,13 +627,15 @@ private struct ProxyNodeInventory: View {
                             proxy.recognition.localizedTitle,
                             systemImage: proxy.recognition.symbol
                         )
-                        .font(.caption)
-                        .foregroundStyle(proxy.recognition.tint)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
                         .labelStyle(.titleAndIcon)
                     }
                     .width(min: 104, ideal: 118, max: 132)
                 }
                 .tableStyle(.inset(alternatesRowBackgrounds: false))
+                .accessibilityLabel("Proxy nodes")
+                .accessibilityIdentifier("proxy-node-inventory-table")
                 .scrollIndicators(.hidden, axes: .horizontal)
                 .environment(\.defaultMinListRowHeight, 36)
                 .frame(height: min(CGFloat(visibleProxies.count * 36 + 34), 320))

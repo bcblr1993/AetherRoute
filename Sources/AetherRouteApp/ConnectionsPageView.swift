@@ -28,8 +28,8 @@ struct ConnectionsView: View {
                 Spacer()
                 Text("Only connections visible on this Mac are counted, and nothing is reported anywhere.")
             }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
                 .padding(.horizontal, AetherVisual.s4)
                 .frame(height: 24)
                 .overlay(alignment: .top) { Divider() }
@@ -74,6 +74,7 @@ struct ConnectionsView: View {
                     }
                 }
                 .labelsHidden()
+                .accessibilityIdentifier("connections-sort-picker")
                 .frame(width: 112)
 
                 if tunnel.isConnected {
@@ -111,6 +112,8 @@ struct ConnectionsView: View {
                 .width(44)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: false))
+            .accessibilityLabel("Connections")
+            .accessibilityIdentifier("connections-table")
             .scrollIndicators(.hidden, axes: .horizontal)
         }
     }
@@ -325,12 +328,12 @@ private struct ConnectionDestinationCell: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(verbatim: "\(connection.destination):\(connection.destinationPort)")
-                    .font(.subheadline)
+                    .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(connection.transport == .tcp ? "TCP" : "UDP")
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.monospaced().weight(.medium))
+                    .foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -350,8 +353,8 @@ private struct ConnectionRuleCell: View {
 
     var body: some View {
         Text(ruleText)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.primary)
             .lineLimit(1)
     }
 
@@ -368,7 +371,7 @@ private struct ConnectionOutletCell: View {
     var body: some View {
         Label(outlet.localizedTitle, systemImage: outletSymbol)
             .font(.caption.weight(.medium))
-            .foregroundStyle(outlet.tint)
+            .foregroundStyle(.primary)
             .lineLimit(1)
     }
 
@@ -404,8 +407,8 @@ private struct ConnectionDurationCell: View {
 
     var body: some View {
         Text(duration)
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
+            .font(.caption.monospacedDigit().weight(.medium))
+            .foregroundStyle(.primary)
             .frame(maxWidth: .infinity, alignment: .trailing)
     }
 

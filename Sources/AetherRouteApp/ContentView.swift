@@ -305,7 +305,7 @@ struct ContentView: View {
                         .foregroundStyle(.primary)
                     Text("Private routing")
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                 }
                 Spacer()
             }
@@ -325,6 +325,9 @@ struct ContentView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
                         }
+                            .accessibilityIdentifier(
+                                "primary-navigation-\(section.rawValue)"
+                            )
                             .keyboardShortcut(
                                 section.keyboardShortcut,
                                 modifiers: .command
