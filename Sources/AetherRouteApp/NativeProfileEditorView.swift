@@ -25,9 +25,9 @@ struct NativeProfileEditorSheet: View {
             footer
         }
         .frame(
-            minWidth: 640,
+            minWidth: 680,
             idealWidth: 680,
-            maxWidth: 720,
+            maxWidth: 680,
             minHeight: 480,
             idealHeight: 600,
             maxHeight: 760

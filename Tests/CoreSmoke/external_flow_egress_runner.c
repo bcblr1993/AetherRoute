@@ -11,6 +11,7 @@ enum {
     MAXIMUM_PROFILE_BYTES = 10 * 1024 * 1024,
     CALLBACK_TIMEOUT_SECONDS = 30,
     MAXIMUM_RESPONSE_BYTES = 4096,
+    MAXIMUM_SELECTOR_RESPONSE_BYTES = 256 * 1024,
 };
 
 typedef struct callback_state {
@@ -144,6 +145,79 @@ static size_t make_domain_endpoint(
     return required;
 }
 
+static uint32_t read_big_endian_u32(const uint8_t *bytes) {
+    return ((uint32_t)bytes[0] << 24U)
+        | ((uint32_t)bytes[1] << 16U)
+        | ((uint32_t)bytes[2] << 8U)
+        | (uint32_t)bytes[3];
+}
+
+static int run_selector_preflight(
+    clash_flow_engine_t *engine,
+    const char *group
+) {
+    static const char test_url[] = "http://www.gstatic.com/generate_204";
+    uint8_t *output = malloc(MAXIMUM_SELECTOR_RESPONSE_BYTES);
+    if (output == NULL) {
+        return 0;
+    }
+    size_t output_length = 0U;
+    int32_t status = clash_flow_selector_latency_v1(
+        engine,
+        (const uint8_t *)group,
+        strlen(group),
+        (const uint8_t *)test_url,
+        strlen(test_url),
+        3000U,
+        output,
+        MAXIMUM_SELECTOR_RESPONSE_BYTES,
+        &output_length
+    );
+    if (status != CLASH_FLOW_OK || output_length < 8U ||
+        memcmp(output, "ARL1", 4U) != 0) {
+        free(output);
+        return 0;
+    }
+
+    uint32_t member_count = read_big_endian_u32(output + 4U);
+    uint32_t reachable_count = 0U;
+    uint32_t fastest_delay = UINT32_MAX;
+    size_t offset = 8U;
+    int valid = member_count > 0U && member_count <= 4096U;
+    for (uint32_t index = 0U; valid && index < member_count; index += 1U) {
+        if (offset + 4U > output_length) {
+            valid = 0;
+            break;
+        }
+        uint32_t name_length = read_big_endian_u32(output + offset);
+        offset += 4U;
+        if (name_length == 0U || name_length > 1024U ||
+            offset + name_length + 4U > output_length) {
+            valid = 0;
+            break;
+        }
+        uint32_t delay = read_big_endian_u32(output + offset + name_length);
+        offset += name_length + 4U;
+        if (delay != UINT32_MAX) {
+            reachable_count += 1U;
+            if (delay < fastest_delay) {
+                fastest_delay = delay;
+            }
+        }
+    }
+    valid = valid && offset == output_length && reachable_count > 0U;
+    if (valid) {
+        printf(
+            "PREFLIGHT members=%u reachable=%u fastest_ms=%u\n",
+            member_count,
+            reachable_count,
+            fastest_delay
+        );
+    }
+    free(output);
+    return valid;
+}
+
 int main(int argc, char **argv) {
     static const char group_default[] = "";
     static const char member_default[] = "";
@@ -152,10 +226,10 @@ int main(int argc, char **argv) {
         "GET /generate_204 HTTP/1.1\r\n"
         "Host: www.google.com\r\n"
         "Connection: close\r\n\r\n";
-    if (argc != 3 && argc != 5) {
+    if (argc != 3 && argc != 5 && argc != 6) {
         fprintf(
             stderr,
-            "usage: external_flow_egress_runner PROFILE RUNTIME_DIR [GROUP MEMBER]\n"
+            "usage: external_flow_egress_runner PROFILE RUNTIME_DIR [GROUP MEMBER [PREFLIGHT_GROUP]]\n"
         );
         return 64;
     }
@@ -189,9 +263,9 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    const char *group = argc == 5 ? argv[3] : group_default;
-    const char *member = argc == 5 ? argv[4] : member_default;
-    if (argc == 5) {
+    const char *group = argc >= 5 ? argv[3] : group_default;
+    const char *member = argc >= 5 ? argv[4] : member_default;
+    if (argc >= 5) {
         status = clash_flow_selector_select_v1(
             engine,
             (const uint8_t *)group,
@@ -204,6 +278,11 @@ int main(int argc, char **argv) {
             fprintf(stderr, "selector update status=%d\n", status);
             return 2;
         }
+    }
+    if (argc == 6 && !run_selector_preflight(engine, argv[5])) {
+        (void)clash_flow_engine_destroy(engine);
+        fprintf(stderr, "selector preflight failed\n");
+        return 6;
     }
 
     uint8_t endpoint[256];
@@ -294,4 +373,3 @@ int main(int argc, char **argv) {
     puts("FLOW_EGRESS_OK target=www.google.com:80 protocol=http");
     return 0;
 }
-

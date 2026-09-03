@@ -58,7 +58,7 @@ test "$(uname -m)" = arm64 || {
   echo "notarized test candidates require Apple silicon" >&2
   exit 1
 }
-for command in codesign ditto file hdiutil jq lipo plutil security \
+for command in codesign ditto file hdiutil jq lipo plutil realpath security \
   shasum spctl strings syspolicy_check xcodebuild xcrun; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "notarized test candidate requires $command" >&2
@@ -67,6 +67,7 @@ for command in codesign ditto file hdiutil jq lipo plutil security \
 done
 
 "$ROOT/scripts/signing_preflight.sh" "$SIGNING_CONFIG"
+SIGNING_CONFIG_SHA256=$(shasum -a 256 "$SIGNING_CONFIG" | awk '{print $1}')
 IDENTITY=$(jq -r '.developerIDIdentitySHA1 | ascii_upcase' "$SIGNING_CONFIG")
 "$ROOT/scripts/verify_developer_id_private_key_access.sh" "$IDENTITY"
 
@@ -87,6 +88,11 @@ strings "$ROOT/Core/Artifacts/macos-arm64/libclashrs-direct.a" \
   echo "notarized test candidate Packet core is missing privacy-safe diagnostics" >&2
   exit 1
 }
+# The protocol evidence binds the exact Rust archives embedded in the
+# candidate. Re-verify it after rebuilding both archives so stale evidence can
+# never enter the signing and notarization stages.
+"$ROOT/scripts/verify_protocol_matrix.sh"
+"$ROOT/scripts/verify_licenses.sh" source
 "$ROOT/scripts/bootstrap.sh"
 if [ -n "$NOTARY_KEYCHAIN" ]; then
   xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" \
@@ -99,22 +105,87 @@ fi
 submit_for_notarization() {
   artifact=$1
   result_path=$2
-  if [ -n "$NOTARY_KEYCHAIN" ]; then
-    xcrun notarytool submit "$artifact" \
-      --keychain-profile "$NOTARY_PROFILE" \
-      --keychain "$NOTARY_KEYCHAIN" \
-      --wait \
-      --output-format json >"$result_path"
-  else
-    xcrun notarytool submit "$artifact" \
-      --keychain-profile "$NOTARY_PROFILE" \
-      --wait \
-      --output-format json >"$result_path"
-  fi
-  test "$(jq -r '.status' "$result_path")" = Accepted || {
-    jq '{id,status,message}' "$result_path" >&2
+  attempt=1
+  while test "$attempt" -le 5; do
+    output=
+    if [ -n "$NOTARY_KEYCHAIN" ]; then
+      if output=$(xcrun notarytool submit "$artifact" \
+        --keychain-profile "$NOTARY_PROFILE" \
+        --keychain "$NOTARY_KEYCHAIN" \
+        --wait \
+        --output-format json 2>&1); then
+        printf '%s\n' "$output" >"$result_path"
+        test "$(jq -r '.status' "$result_path")" = Accepted || {
+          jq '{id,status,message}' "$result_path" >&2
+          return 1
+        }
+        return 0
+      fi
+    else
+      if output=$(xcrun notarytool submit "$artifact" \
+        --keychain-profile "$NOTARY_PROFILE" \
+        --wait \
+        --output-format json 2>&1); then
+        printf '%s\n' "$output" >"$result_path"
+        test "$(jq -r '.status' "$result_path")" = Accepted || {
+          jq '{id,status,message}' "$result_path" >&2
+          return 1
+        }
+        return 0
+      fi
+    fi
+    if test "$attempt" -lt 5 \
+      && printf '%s\n' "$output" \
+        | grep -Eiq 'abortedUpload|deadlineExceeded|HTTPClientError|timed out|network connection was lost|connection reset|temporarily unavailable|service unavailable'; then
+      echo "Apple notarization upload unavailable; retrying submission ($attempt/5)" >&2
+      attempt=$((attempt+1))
+      sleep 15
+      continue
+    fi
+    printf '%s\n' "$output" >&2
+    return 1
+  done
+  return 1
+}
+
+bundle_cdhash() {
+  codesign -dv --verbose=4 "$1" 2>&1 \
+    | awk -F= '$1 == "CDHash" {print $2; exit}'
+}
+
+bundle_executable_sha256() {
+  bundle=$1
+  executable_name=$(plutil -extract CFBundleExecutable raw -o - \
+    "$bundle/Contents/Info.plist")
+  executable="$bundle/Contents/MacOS/$executable_name"
+  test -x "$executable" || {
+    echo "bundle executable is missing: $executable" >&2
     exit 1
   }
+  shasum -a 256 "$executable" | awk '{print $1}'
+}
+
+codesign_with_timestamp_retry() {
+  attempt=1
+  while test "$attempt" -le 3; do
+    output=
+    if output=$(codesign --force --timestamp=http://timestamp.apple.com/ts01 \
+      "$@" 2>&1); then
+      test -z "$output" || printf '%s\n' "$output"
+      return 0
+    fi
+    if test "$attempt" -lt 3 \
+      && printf '%s\n' "$output" \
+        | grep -Eiq 'timestamp service is not available'; then
+      echo "Apple timestamp service unavailable; retrying codesign ($attempt/3)" >&2
+      attempt=$((attempt+1))
+      sleep 5
+      continue
+    fi
+    printf '%s\n' "$output" >&2
+    return 1
+  done
+  return 1
 }
 
 TEMPORARY=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-notarized-test.XXXXXX")
@@ -140,6 +211,78 @@ network_snapshot() {
     /usr/sbin/netstat -rn -f inet6 | awk '$1 == "default" {print}'
     /sbin/ifconfig -l
   }
+}
+
+# macOS 26 can return from `hdiutil create` while its write-once DiskImages
+# device still owns the destination. Passing that path directly to notarytool
+# can then block in open(2), and detaching the device removes the write-once
+# path. Always copy the completed bytes to an independent file, verify that
+# copy as UDIF, and only then detach the private work image.
+create_finalized_dmg() {
+  finalized=$1
+  volume_name=$2
+  source_directory=$3
+  case "$finalized" in
+    *.dmg) write_once="${finalized%.dmg}.write-once.dmg" ;;
+    *)
+      echo "finalized DMG path must end in .dmg" >&2
+      exit 1
+      ;;
+  esac
+  test ! -e "$finalized" || {
+    echo "refusing to overwrite finalized DMG: $finalized" >&2
+    exit 1
+  }
+  test ! -e "$write_once" || {
+    echo "refusing to overwrite write-once DMG: $write_once" >&2
+    exit 1
+  }
+
+  hdiutil create \
+    -volname "$volume_name" \
+    -srcfolder "$source_directory" \
+    -format UDZO \
+    -imagekey zlib-level=9 \
+    "$write_once" >/dev/null
+  test -f "$write_once" && test ! -L "$write_once" || {
+    echo "hdiutil did not produce a regular write-once DMG" >&2
+    exit 1
+  }
+  ditto "$write_once" "$finalized"
+  test -f "$finalized" && test ! -L "$finalized" || {
+    echo "finalized DMG copy is invalid" >&2
+    exit 1
+  }
+  hdiutil verify "$finalized" >/dev/null
+
+  canonical_write_once=$(realpath "$write_once")
+  attached_root=$(hdiutil info -plist \
+    | plutil -convert json -o - - \
+    | jq -r --arg raw "$write_once" --arg canonical "$canonical_write_once" '
+        .images[]
+        | select(
+            ((."image-path" // "") | gsub("//"; "/")) == $raw
+            or (."image-alias" // "") == $canonical
+          )
+        | ."system-entities"[]
+        | select(."content-hint" == "GUID_partition_scheme")
+        | ."dev-entry"
+      ')
+  case "$attached_root" in
+    '') ;;
+    /dev/disk[0-9]*)
+      test "$(printf '%s\n' "$attached_root" | wc -l | tr -d ' ')" -eq 1 || {
+        echo "write-once DMG resolved to multiple root devices" >&2
+        exit 1
+      }
+      hdiutil detach "$attached_root" >/dev/null
+      ;;
+    *)
+      echo "write-once DMG resolved to an invalid root device" >&2
+      exit 1
+      ;;
+  esac
+  hdiutil verify "$finalized" >/dev/null
 }
 
 SOURCE_BEFORE="$TEMPORARY/source-before.txt"
@@ -169,7 +312,9 @@ TUNNEL_PROFILE=$(profile_uuid packet-tunnel)
 {
   printf 'CODE_SIGN_STYLE = Manual\n'
   printf 'CODE_SIGN_IDENTITY = %s\n' "$IDENTITY"
-  printf 'OTHER_CODE_SIGN_FLAGS = --timestamp\n'
+  # xcconfig treats // as a comment delimiter. The empty build-setting
+  # expansion preserves the RFC 3161 URL as http:// in the codesign command.
+  printf 'OTHER_CODE_SIGN_FLAGS = --timestamp=http:/$()/timestamp.apple.com/ts01\n'
   printf 'MARKETING_VERSION = %s\n' "$VERSION"
   printf 'CURRENT_PROJECT_VERSION = %s\n' "$BUILD_NUMBER"
   printf 'AETHERROUTE_RELEASE_CHANNEL = beta\n'
@@ -182,23 +327,51 @@ TUNNEL_PROFILE=$(profile_uuid packet-tunnel)
 } >>"$SIGNING_OVERRIDES"
 chmod 600 "$SIGNING_OVERRIDES"
 
-ARCHIVE="$TEMPORARY/AetherRoute.xcarchive"
-BUILD_LOG="$TEMPORARY/archive.log"
-if ! xcodebuild \
-  -project "$ROOT/AetherRoute.xcodeproj" \
-  -scheme AetherRoute \
-  -configuration Release \
-  -destination 'generic/platform=macOS' \
-  -derivedDataPath "$TEMPORARY/DerivedData" \
-  -archivePath "$ARCHIVE" \
-  -xcconfig "$SIGNING_OVERRIDES" \
-  SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
-  GCC_TREAT_WARNINGS_AS_ERRORS=YES \
-  archive >"$BUILD_LOG" 2>&1; then
-  grep -nE '(^|[[:space:]])(error:|fatal error:)' "$BUILD_LOG" >&2 || true
-  tail -160 "$BUILD_LOG" >&2
+ARCHIVE=
+BUILD_LOG=
+archive_attempt=1
+while test "$archive_attempt" -le 3; do
+  candidate_archive="$TEMPORARY/AetherRoute-$archive_attempt.xcarchive"
+  candidate_log="$TEMPORARY/archive-$archive_attempt.log"
+  if xcodebuild \
+    -project "$ROOT/AetherRoute.xcodeproj" \
+    -scheme AetherRoute \
+    -configuration Release \
+    -destination 'generic/platform=macOS' \
+    -derivedDataPath "$TEMPORARY/DerivedData" \
+    -archivePath "$candidate_archive" \
+    -xcconfig "$SIGNING_OVERRIDES" \
+    SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+    GCC_TREAT_WARNINGS_AS_ERRORS=YES \
+    archive >"$candidate_log" 2>&1; then
+    ARCHIVE=$candidate_archive
+    BUILD_LOG=$candidate_log
+    break
+  fi
+  archive_retryable=0
+  if grep -Eiq 'timestamp service is not available' "$candidate_log"; then
+    archive_retryable=1
+  elif grep -Eq '^\*\* ARCHIVE FAILED \*\*$' "$candidate_log" \
+    && grep -Eq '^[[:space:]]*CodeSign ' "$candidate_log"; then
+    # Xcode occasionally suppresses the timestamp-service diagnostic and only
+    # reports the affected CodeSign build command. A bounded clean archive
+    # retry is safe; the final attempt still surfaces the complete build log.
+    archive_retryable=1
+  fi
+  if test "$archive_attempt" -lt 3 && test "$archive_retryable" -eq 1; then
+    echo "Apple signing service unavailable; retrying archive ($archive_attempt/3)" >&2
+    archive_attempt=$((archive_attempt+1))
+    sleep 5
+    continue
+  fi
+  grep -nE '(^|[[:space:]])(error:|fatal error:)' "$candidate_log" >&2 || true
+  tail -160 "$candidate_log" >&2
   exit 1
-fi
+done
+test -n "$ARCHIVE" && test -n "$BUILD_LOG" || {
+  echo "archive retry budget exhausted" >&2
+  exit 1
+}
 
 APP="$ARCHIVE/Products/Applications/AetherRoute.app"
 HOST_BUNDLE=$(jq -r \
@@ -258,13 +431,12 @@ APP_NOTARY_ARCHIVE="$TEMPORARY/AetherRoute-app-notarization.dmg"
 APP_NOTARY_RESULT="$TEMPORARY/app-notary-result.json"
 mkdir -p "$APP_NOTARY_STAGE"
 ditto "$APP" "$APP_NOTARY_STAGE/AetherRoute.app"
-hdiutil create \
-  -volname "AetherRoute App Notarization" \
-  -srcfolder "$APP_NOTARY_STAGE" \
-  -format UDZO \
-  -imagekey zlib-level=9 \
-  "$APP_NOTARY_ARCHIVE" >/dev/null
-codesign --force --timestamp --sign "$IDENTITY" "$APP_NOTARY_ARCHIVE"
+create_finalized_dmg \
+  "$APP_NOTARY_ARCHIVE" \
+  "AetherRoute App Notarization" \
+  "$APP_NOTARY_STAGE"
+codesign_with_timestamp_retry \
+  --sign "$IDENTITY" "$APP_NOTARY_ARCHIVE"
 submit_for_notarization "$APP_NOTARY_ARCHIVE" "$APP_NOTARY_RESULT"
 APP_SUBMISSION_ID=$(jq -r '.id' "$APP_NOTARY_RESULT")
 xcrun stapler staple "$APP"
@@ -284,13 +456,12 @@ cp "$TEMPORARY/README.txt" "$STAGE/测试版本说明.txt"
 
 ARTIFACT_NAME="AetherRoute-$VERSION-build-$BUILD_NUMBER-arm64-Notarized-Test"
 DMG="$TEMPORARY/$ARTIFACT_NAME.dmg"
-hdiutil create \
-  -volname "AetherRoute Test $VERSION" \
-  -srcfolder "$STAGE" \
-  -format UDZO \
-  -imagekey zlib-level=9 \
-  "$DMG" >/dev/null
-codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+create_finalized_dmg \
+  "$DMG" \
+  "AetherRoute Test $VERSION" \
+  "$STAGE"
+codesign_with_timestamp_retry \
+  --sign "$IDENTITY" "$DMG"
 
 NOTARY_RESULT="$TEMPORARY/dmg-notary-result.json"
 submit_for_notarization "$DMG" "$NOTARY_RESULT"
@@ -313,6 +484,26 @@ test "$(plutil -extract CFBundleVersion raw -o - \
 hdiutil detach "$MOUNT_POINT" -quiet
 MOUNTED=0
 
+APP_CDHASH=$(bundle_cdhash "$APP")
+PACKET_CDHASH=$(bundle_cdhash "$PACKET")
+TRANSPARENT_CDHASH=$(bundle_cdhash "$TRANSPARENT")
+APP_EXECUTABLE_SHA256=$(bundle_executable_sha256 "$APP")
+PACKET_EXECUTABLE_SHA256=$(bundle_executable_sha256 "$PACKET")
+TRANSPARENT_EXECUTABLE_SHA256=$(bundle_executable_sha256 "$TRANSPARENT")
+for value in "$APP_CDHASH" "$PACKET_CDHASH" "$TRANSPARENT_CDHASH"; do
+  printf '%s\n' "$value" | grep -Eq '^[0-9a-f]{40}$' || {
+    echo "bundle CDHash is invalid: $value" >&2
+    exit 1
+  }
+done
+for value in "$APP_EXECUTABLE_SHA256" "$PACKET_EXECUTABLE_SHA256" \
+  "$TRANSPARENT_EXECUTABLE_SHA256"; do
+  printf '%s\n' "$value" | grep -Eq '^[0-9a-f]{64}$' || {
+    echo "bundle executable SHA256 is invalid: $value" >&2
+    exit 1
+  }
+done
+
 "$ROOT/scripts/source_manifest.sh" >"$SOURCE_AFTER"
 network_snapshot >"$NETWORK_AFTER"
 cmp -s "$SOURCE_BEFORE" "$SOURCE_AFTER" || {
@@ -321,6 +512,11 @@ cmp -s "$SOURCE_BEFORE" "$SOURCE_AFTER" || {
 }
 cmp -s "$NETWORK_BEFORE" "$NETWORK_AFTER" || {
   echo "system network state changed while building the notarized test candidate" >&2
+  exit 1
+}
+test "$(shasum -a 256 "$SIGNING_CONFIG" | awk '{print $1}')" \
+  = "$SIGNING_CONFIG_SHA256" || {
+  echo "signing configuration changed while building the notarized test candidate" >&2
   exit 1
 }
 
@@ -335,6 +531,16 @@ jq -n \
   --arg createdAt "$RELEASE_TIMESTAMP" \
   --arg architecture arm64 \
   --arg sourceManifestSHA256 "$SOURCE_SHA256" \
+  --arg signingConfigurationSHA256 "$SIGNING_CONFIG_SHA256" \
+  --arg hostBundleID "$HOST_BUNDLE" \
+  --arg appCDHash "$APP_CDHASH" \
+  --arg appExecutableSHA256 "$APP_EXECUTABLE_SHA256" \
+  --arg packetBundleID "$PACKET_BUNDLE" \
+  --arg packetCDHash "$PACKET_CDHASH" \
+  --arg packetExecutableSHA256 "$PACKET_EXECUTABLE_SHA256" \
+  --arg transparentBundleID "$TRANSPARENT_BUNDLE" \
+  --arg transparentCDHash "$TRANSPARENT_CDHASH" \
+  --arg transparentExecutableSHA256 "$TRANSPARENT_EXECUTABLE_SHA256" \
   --arg dmgSHA256 "$DMG_SHA256" \
   --arg appNotarySubmissionID "$APP_SUBMISSION_ID" \
   --arg dmgNotarySubmissionID "$DMG_SUBMISSION_ID" \
@@ -345,6 +551,14 @@ jq -n \
     safety: {productionApproved: false, networkActivatedDuringBuild: false,
       systemNetworkState: "unchanged", diagnosticsIncluded: true},
     sourceManifestSHA256: $sourceManifestSHA256,
+    signing: {configurationSHA256: $signingConfigurationSHA256,
+      app: {bundleID: $hostBundleID, cdhash: $appCDHash,
+        executableSHA256: $appExecutableSHA256},
+      packetTunnel: {bundleID: $packetBundleID, cdhash: $packetCDHash,
+        executableSHA256: $packetExecutableSHA256},
+      transparentProxy: {bundleID: $transparentBundleID,
+        cdhash: $transparentCDHash,
+        executableSHA256: $transparentExecutableSHA256}},
     dmg: {sha256: $dmgSHA256, bytes: $dmgBytes},
     notarization: {status: "Accepted",
       submissionID: $dmgNotarySubmissionID,

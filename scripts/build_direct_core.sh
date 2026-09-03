@@ -11,7 +11,13 @@ FEATURES=${AETHERROUTE_DIRECT_CORE_FEATURES:-aether-embedded}
 ARTIFACT=libclashrs-direct.a
 export MACOSX_DEPLOYMENT_TARGET=14.0
 export CFLAGS="-mmacosx-version-min=14.0"
-export RUSTFLAGS="${RUSTFLAGS:--D warnings}"
+case "$CORE_SOURCE:$CARGO_TARGET_DIR" in
+  *[[:space:]]*)
+    echo "Core source and Cargo target paths must not contain whitespace" >&2
+    exit 1
+    ;;
+esac
+export RUSTFLAGS="${RUSTFLAGS:--D warnings} --remap-path-prefix=$CORE_SOURCE=/aetherroute-core --remap-path-prefix=$CARGO_TARGET_DIR=/aetherroute-target"
 
 if [ ! -f "$CORE_SOURCE/Cargo.lock" ]; then
   echo "Pinned core source not found: $CORE_SOURCE" >&2
@@ -113,6 +119,7 @@ for SYMBOL in \
   clash_packet_selector_snapshot_v1 \
   clash_packet_selector_select_v1 \
   clash_packet_selector_latency_v1 \
+  clash_packet_selector_active_latency_v1 \
   clash_packet_telemetry_snapshot_v1 \
   clash_uninstall_packet_flow
 do

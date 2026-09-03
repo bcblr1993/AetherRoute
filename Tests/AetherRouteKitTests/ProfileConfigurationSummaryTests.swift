@@ -2,6 +2,29 @@ import AetherRouteKit
 import XCTest
 
 final class ProfileConfigurationSummaryTests: XCTestCase {
+    func testUpstreamEndpointInspectorReadsBlockAndFlowProxyEntriesOnly() {
+        let yaml = """
+        proxies:
+          - name: VLESS
+            type: vless
+            server: edge.example.com
+            port: 443
+          - {name: HY2, type: hysteria2, server: '2001:db8::8', port: 8443}
+          - {name: DIRECT, type: direct}
+          - {name: Invalid, type: vmess, server: invalid.example, port: 0}
+        proxy-groups:
+          - {name: Auto, type: url-test, proxies: [VLESS, HY2]}
+        """
+
+        XCTAssertEqual(
+            ProfileUpstreamEndpointInspector.inspect(yaml: yaml),
+            [
+                ProfileUpstreamEndpoint(host: "edge.example.com", port: 443),
+                ProfileUpstreamEndpoint(host: "2001:db8::8", port: 8443),
+            ]
+        )
+    }
+
     func testInspectsBlockAndFlowConfigurationWithoutReturningSecrets() {
         let yaml = """
         dns:

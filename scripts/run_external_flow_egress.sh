@@ -3,8 +3,8 @@ set -eu
 umask 077
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-if [ "$#" -ne 2 ] && [ "$#" -ne 4 ]; then
-  echo "usage: $0 PROFILE RUNTIME_DIR [GROUP MEMBER]" >&2
+if [ "$#" -ne 2 ] && [ "$#" -ne 4 ] && [ "$#" -ne 5 ]; then
+  echo "usage: $0 PROFILE RUNTIME_DIR [GROUP MEMBER [PREFLIGHT_GROUP]]" >&2
   exit 64
 fi
 
@@ -44,4 +44,3 @@ clang \
   -o "$BUILD_DIR/external_flow_egress_runner"
 
 "$BUILD_DIR/external_flow_egress_runner" "$@"
-

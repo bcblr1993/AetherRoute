@@ -3,6 +3,7 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 APP="$ROOT/Sources/AetherRouteApp"
+CONNECTIONS="$APP/ConnectionsPageView.swift"
 
 fail_if_found() {
   description=$1
@@ -39,5 +40,12 @@ test -z "$bare_values" || {
   printf '%s\n' "$bare_values" >&2
   exit 1
 }
+
+rg -Uq \
+  'TableColumn\("Duration"\)[^{]*\{[^}]*\}[[:space:]]*\.width\(min:[[:space:]]*64,[[:space:]]*ideal:[[:space:]]*68,[[:space:]]*max:[[:space:]]*76\)' \
+  "$CONNECTIONS" || {
+    echo "UI design-token violation: the localized Duration header needs its 64...76pt column budget" >&2
+    exit 1
+  }
 
 echo "UI design tokens verified."

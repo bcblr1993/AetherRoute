@@ -11,5 +11,13 @@ int main(void) {
     if (aetherroute_flow_abi_load_v3(&v3) != 1) {
         return 2;
     }
-    return v3.engine_set_routing_mode != NULL ? 0 : 3;
+    if (v3.engine_set_routing_mode == NULL) {
+        return 3;
+    }
+    aetherroute_flow_abi_v4_t v4 = {0};
+    v4.struct_size = (uint32_t)sizeof(v4);
+    if (aetherroute_flow_abi_load_v4(&v4) != 1) {
+        return 4;
+    }
+    return v4.selector_active_latency != NULL ? 0 : 5;
 }

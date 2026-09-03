@@ -14,6 +14,7 @@ MANIFEST="$WORK/manifest.txt"
   cd "$ROOT"
   for manifest_path in \
     .github \
+    AetherRoute.xcodeproj \
     Artifacts/Validation \
     Config \
     Core/Headers \
@@ -25,7 +26,9 @@ MANIFEST="$WORK/manifest.txt"
     scripts
   do
     find "$manifest_path" -type f \
-      ! -path 'Config/Signing.json' -print
+      ! -path 'Config/Signing.json' \
+      ! -path '*/xcuserdata/*' \
+      ! -name '*.xcuserstate' -print
   done
   for manifest_path in \
     .gitmodules \
@@ -41,6 +44,21 @@ MANIFEST="$WORK/manifest.txt"
       printf '%s\n' "$manifest_path"
     fi
   done
+
+  # The networking engine is a nested Git worktree. Binding only the static
+  # archives proves the shipped bytes but cannot independently identify the
+  # source that produced them. Include every tracked and non-ignored untracked
+  # engine source file while still excluding `.git`, `target`, and other
+  # ignored build state. A missing tracked file is intentionally left in the
+  # list so the hashing pass rejects an incomplete checkout.
+  if [ -d Core/Engine ] \
+    && git -C Core/Engine rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C Core/Engine ls-files --cached --others --exclude-standard \
+      | while IFS= read -r engine_path
+        do
+          printf 'Core/Engine/%s\n' "$engine_path"
+        done
+  fi
 ) | LC_ALL=C sort -u > "$LIST"
 
 (

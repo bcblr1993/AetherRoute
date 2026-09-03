@@ -1,6 +1,105 @@
 import AppKit
 import AetherRouteKit
+import Darwin
+import OSLog
 import SwiftUI
+
+@MainActor
+final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
+    private static let lifecycleLogger = Logger(
+        subsystem: "com.aetherroute.desktop",
+        category: "host-lifecycle"
+    )
+
+    weak var tunnel: TunnelManager?
+    private var terminationReplyPending = false
+    private var signalTerminationPending = false
+    private var terminationSignalSource: (any DispatchSourceSignal)?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        installTerminationSignalSource()
+    }
+
+    func applicationShouldTerminate(
+        _ sender: NSApplication
+    ) -> NSApplication.TerminateReply {
+        Self.lifecycleLogger.info(
+            "stage=applicationTermination source=AppKit requested pending=\(self.terminationReplyPending, privacy: .public)"
+        )
+        guard !terminationReplyPending, let tunnel else {
+            return terminationReplyPending ? .terminateLater : .terminateNow
+        }
+        guard tunnel.requiresDisconnectBeforeApplicationTermination else {
+            return .terminateNow
+        }
+
+        terminationReplyPending = true
+        Task { @MainActor [weak self, weak sender] in
+            guard let self else { return }
+            let disconnected = await tunnel
+                .disconnectForApplicationTermination()
+            self.terminationReplyPending = false
+            sender?.reply(toApplicationShouldTerminate: disconnected)
+        }
+        return .terminateLater
+    }
+
+    private func installTerminationSignalSource() {
+        guard terminationSignalSource == nil else { return }
+
+        // applicationShouldTerminate(_:) is invoked for AppKit termination,
+        // not for the default Unix SIGTERM disposition. Keep the signal
+        // handler async-signal-safe by asking Dispatch to monitor SIGTERM,
+        // then re-enter the existing AppKit termination path on the main
+        // queue so NetworkExtension can restore routes and DNS before exit.
+        Darwin.signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(
+            signal: SIGTERM,
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            Task { @MainActor [weak self] in
+                await self?.handleTerminationSignal()
+            }
+        }
+        source.resume()
+        terminationSignalSource = source
+        Self.lifecycleLogger.info(
+            "stage=applicationTermination signal=SIGTERM armed"
+        )
+    }
+
+    private func handleTerminationSignal() async {
+        guard !signalTerminationPending else {
+            Self.lifecycleLogger.info(
+                "stage=applicationTermination signal=SIGTERM ignored reason=pending"
+            )
+            return
+        }
+        signalTerminationPending = true
+        Self.lifecycleLogger.info(
+            "stage=applicationTermination signal=SIGTERM received"
+        )
+
+        let disconnected = if let tunnel {
+            await tunnel.disconnectForApplicationTermination()
+        } else {
+            true
+        }
+        guard disconnected else {
+            signalTerminationPending = false
+            Self.lifecycleLogger.fault(
+                "stage=applicationTermination signal=SIGTERM cancelled reason=networkRecoveryFailed"
+            )
+            return
+        }
+
+        Self.lifecycleLogger.info(
+            "stage=applicationTermination signal=SIGTERM exit"
+        )
+        Darwin.exit(EXIT_SUCCESS)
+    }
+}
 
 struct WindowChromeSynchronizer: NSViewRepresentable {
     let title: String
@@ -124,8 +223,46 @@ final class WindowChromeView: NSView {
     }
 }
 
+@MainActor
+private enum NavigationShortcutMonitor {
+    private static var monitor: Any?
+
+    static func install() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+            event in
+            let modifiers = event.modifierFlags.intersection(
+                .deviceIndependentFlagsMask
+            )
+            guard modifiers == .command,
+                  let key = event.charactersIgnoringModifiers,
+                  let section = section(for: key)
+            else { return event }
+            NotificationCenter.default.post(
+                name: .aetherRouteNavigateToSection,
+                object: section.rawValue
+            )
+            return nil
+        }
+    }
+
+    private static func section(for key: String) -> AppSection? {
+        switch key {
+        case "1": return .overview
+        case "2": return .proxies
+        case "3": return .connections
+        case "4": return .profiles
+        case "5": return .rules
+        case "6": return .dns
+        default: return nil
+        }
+    }
+}
+
 @main
 struct AetherRouteApp: App {
+    @NSApplicationDelegateAdaptor(AetherRouteApplicationDelegate.self)
+    private var applicationDelegate
     @StateObject private var language: AppLanguageController
     @StateObject private var tunnel: TunnelManager
     @StateObject private var automation: AppAutomationController
@@ -135,6 +272,7 @@ struct AetherRouteApp: App {
         AppRuntimeEnvironmentController
 
     init() {
+        NavigationShortcutMonitor.install()
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
         if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] != nil {
             // MenuBarExtra can cause XCTest to observe a newly launched app as
@@ -171,13 +309,14 @@ struct AetherRouteApp: App {
         _runtimeEnvironment = StateObject(
             wrappedValue: AppRuntimeEnvironmentController(tunnel: tunnel)
         )
+        applicationDelegate.tunnel = tunnel
     }
 
     var body: some Scene {
         mainWindow
 
         MenuBarExtra {
-            MenuBarContent()
+            MenuBarContent(telemetry: tunnel.telemetryViewModel)
                 .environmentObject(tunnel)
                 .environmentObject(language)
                 .environment(\.locale, language.locale)
@@ -214,6 +353,44 @@ struct AetherRouteApp: App {
         )
         .windowResizability(.contentMinSize)
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
+        .commands {
+            CommandMenu("Navigate") {
+                ForEach(AppSection.allCases) { section in
+                    Button(section.title) {
+                        NotificationCenter.default.post(
+                            name: .aetherRouteNavigateToSection,
+                            object: section.rawValue
+                        )
+                    }
+                    .keyboardShortcut(
+                        section.keyboardShortcut,
+                        modifiers: .command
+                    )
+                }
+                Divider()
+                Button("Previous proxy node") {
+                    Task {
+                        await tunnel.cycleManualProxySelection(.previous)
+                    }
+                }
+                .keyboardShortcut(
+                    .leftArrow,
+                    modifiers: [.command, .option]
+                )
+                .disabled(!tunnel.canCycleManualProxySelection)
+
+                Button("Next proxy node") {
+                    Task {
+                        await tunnel.cycleManualProxySelection(.next)
+                    }
+                }
+                .keyboardShortcut(
+                    .rightArrow,
+                    modifiers: [.command, .option]
+                )
+                .disabled(!tunnel.canCycleManualProxySelection)
+            }
+        }
     }
 
     private var menuBarIcon: String {
@@ -238,6 +415,7 @@ private struct MenuBarContent: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @EnvironmentObject private var language: AppLanguageController
     @Environment(\.openWindow) private var openWindow
+    let telemetry: NetworkTelemetryViewModel
 
     var body: some View {
         Group {
@@ -275,24 +453,23 @@ private struct MenuBarContent: View {
 
             if tunnel.isConnected {
                 HStack(spacing: AetherVisual.s4) {
-                    MenuTrafficMetric(
+                    MenuLiveTrafficMetric(
                         title: "Download",
-                        value: formattedRate(
-                            tunnel.telemetry.downloadBytesPerSecond
-                        ),
-                        symbol: "arrow.down"
+                        symbol: "arrow.down",
+                        metric: .download,
+                        telemetry: telemetry
                     )
-                    MenuTrafficMetric(
+                    MenuLiveTrafficMetric(
                         title: "Upload",
-                        value: formattedRate(
-                            tunnel.telemetry.uploadBytesPerSecond
-                        ),
-                        symbol: "arrow.up"
+                        symbol: "arrow.up",
+                        metric: .upload,
+                        telemetry: telemetry
                     )
-                    MenuTrafficMetric(
+                    MenuLiveTrafficMetric(
                         title: "Flows",
-                        value: "\(tunnel.telemetry.connections.count)",
-                        symbol: "point.3.connected.trianglepath.dotted"
+                        symbol: "point.3.connected.trianglepath.dotted",
+                        metric: .connections,
+                        telemetry: telemetry
                     )
                 }
                 .padding(.horizontal, AetherVisual.s4)
@@ -324,7 +501,15 @@ private struct MenuBarContent: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(width: 58, alignment: .leading)
-                    Picker("Routing", selection: $tunnel.routingMode) {
+                    Picker(
+                        "Routing",
+                        selection: Binding(
+                            get: { tunnel.routingMode },
+                            set: { mode in
+                                Task { await tunnel.setRoutingMode(mode) }
+                            }
+                        )
+                    ) {
                         ForEach(RoutingMode.allCases, id: \.self) { mode in
                             Text(mode.localizedTitleKey).tag(mode)
                         }
@@ -425,22 +610,49 @@ private struct MenuBarContent: View {
     }
 }
 
-private struct MenuTrafficMetric: View {
+private enum MenuLiveTrafficMetricKind {
+    case download
+    case upload
+    case connections
+}
+
+private struct MenuLiveTrafficMetric: View {
     let title: LocalizedStringKey
-    let value: String
     let symbol: String
+    let metric: MenuLiveTrafficMetricKind
+    let telemetry: NetworkTelemetryViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s1) {
             Label(title, systemImage: symbol)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            Text(value)
-                .font(.caption.monospacedDigit().weight(.semibold))
-                .lineLimit(1)
+            MenuLiveTrafficValue(metric: metric, telemetry: telemetry)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct MenuLiveTrafficValue: View {
+    let metric: MenuLiveTrafficMetricKind
+    @ObservedObject var telemetry: NetworkTelemetryViewModel
+
+    var body: some View {
+        Text(value)
+            .font(.caption.monospacedDigit().weight(.semibold))
+            .lineLimit(1)
+    }
+
+    private var value: String {
+        switch metric {
+        case .download:
+            return formattedRate(telemetry.snapshot.downloadBytesPerSecond)
+        case .upload:
+            return formattedRate(telemetry.snapshot.uploadBytesPerSecond)
+        case .connections:
+            return String(telemetry.snapshot.connections.count)
+        }
     }
 }
 
@@ -507,6 +719,7 @@ private struct SettingsView: View {
             List(selection: $selectedTab) {
                 ForEach(SettingsTab.allCases) { tab in
                     Label(tab.title, systemImage: tab.symbol)
+                        .font(.system(size: 14, weight: .semibold))
                         .tag(Optional(tab))
                         .accessibilityIdentifier("settings-tab-\(tab.rawValue)")
                 }
@@ -634,7 +847,15 @@ private struct SettingsView: View {
 
                     Spacer(minLength: 12)
 
-                    Picker("", selection: $tunnel.routingMode) {
+                    Picker(
+                        "",
+                        selection: Binding(
+                            get: { tunnel.routingMode },
+                            set: { mode in
+                                Task { await tunnel.setRoutingMode(mode) }
+                            }
+                        )
+                    ) {
                         ForEach(RoutingMode.allCases, id: \.self) { mode in
                             Text(mode.localizedTitleKey).tag(mode)
                         }
@@ -882,7 +1103,7 @@ private struct SettingsView: View {
 
                 Label {
                     Text(shortcutStatusText)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.secondary)
                 } icon: {
                     Image(systemName: shortcutStatusSymbol)
                         .foregroundStyle(shortcutStatusColor)
@@ -912,11 +1133,11 @@ private struct SettingsView: View {
 
             Label(notificationStatusText, systemImage: notificationStatusSymbol)
                 .font(.caption)
-                .foregroundStyle(.primary)
+                .foregroundStyle(.secondary)
 
             Text("Shortcuts work while AetherRoute is running and do not require Accessibility access. Notifications are optional and never include profile names, addresses, or traffic details.")
                 .font(.subheadline)
-                .foregroundStyle(.primary)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityHidden(true)
         }

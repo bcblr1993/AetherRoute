@@ -34,8 +34,10 @@ public enum ProxySelectionProviderRequest: Sendable, Equatable {
     case snapshot(group: String)
     case select(group: String, member: String)
     case latency(group: String, url: String, timeoutMilliseconds: UInt32)
+    case activeLatency(group: String, url: String, timeoutMilliseconds: UInt32)
     case telemetry(maximumConnections: UInt16)
     case diagnostics
+    case setRoutingMode(RoutingMode)
 }
 
 public enum ProxySelectionProviderFailure: UInt8, Sendable, Equatable {
@@ -51,6 +53,7 @@ public enum ProxySelectionProviderResponse: Sendable, Equatable {
     case latency(ProxyLatencyState)
     case telemetry(NetworkTelemetrySnapshot)
     case diagnostics(ProviderDiagnosticSnapshot)
+    case routingMode(RoutingMode)
     case failure(ProxySelectionProviderFailure)
 }
 
@@ -80,6 +83,30 @@ public enum ProxySelectionProviderMessageCodec {
     private static let responseHeaderBytes = 16
     private static let noSelection = UInt32.max
     private static let diagnosticCounterCount: UInt32 = 8
+
+    /// Maximum bytes needed by the core's raw `ARL1` selector-latency payload.
+    ///
+    /// The provider-message envelope permits up to 1 MiB, but the embedded
+    /// cores intentionally test at most 64 members. Using that envelope limit
+    /// as a scratch-buffer size on every 15-second health check creates nearly
+    /// 240 MiB/hour of avoidable allocation churn in each Network Extension.
+    public static func maximumSelectorLatencyPayloadBytes(
+        memberCount: Int
+    ) -> Int? {
+        guard memberCount >= 0 else { return nil }
+        let (recordBytes, recordOverflow) = maximumNameBytes
+            .addingReportingOverflow(8)
+        guard !recordOverflow else { return nil }
+        let (payloadBytes, payloadOverflow) = memberCount
+            .multipliedReportingOverflow(by: recordBytes)
+        guard !payloadOverflow else { return nil }
+        let (totalBytes, totalOverflow) = 8
+            .addingReportingOverflow(payloadBytes)
+        guard !totalOverflow, totalBytes <= maximumMessageBytes else {
+            return nil
+        }
+        return totalBytes
+    }
 
     public static func encode(
         request: ProxySelectionProviderRequest
@@ -112,6 +139,19 @@ public enum ProxySelectionProviderMessageCodec {
                 UInt8((timeoutMilliseconds >> 8) & 0xff),
                 UInt8(timeoutMilliseconds & 0xff),
             ]
+        case let .activeLatency(value, url, timeoutMilliseconds):
+            guard
+                timeoutMilliseconds >= minimumLatencyTimeoutMilliseconds,
+                timeoutMilliseconds <= maximumLatencyTimeoutMilliseconds
+            else { throw ProxySelectionProviderMessageError.invalidLatency }
+            operation = 6
+            group = try nameData(value)
+            member = try urlData(url)
+            reserved = [
+                UInt8((timeoutMilliseconds >> 16) & 0xff),
+                UInt8((timeoutMilliseconds >> 8) & 0xff),
+                UInt8(timeoutMilliseconds & 0xff),
+            ]
         case let .telemetry(maximumConnections):
             guard
                 maximumConnections > 0,
@@ -130,6 +170,11 @@ public enum ProxySelectionProviderMessageCodec {
             group = Data()
             member = Data()
             reserved = [0, 0, 0]
+        case let .setRoutingMode(mode):
+            operation = 7
+            group = Data()
+            member = Data()
+            reserved = [routingModeCode(mode), 0, 0]
         }
 
         var output = Data(requestMagic)
@@ -192,7 +237,7 @@ public enum ProxySelectionProviderMessageCodec {
                 group: try name(bytes[groupStart..<memberStart]),
                 member: try name(bytes[memberStart..<end])
             )
-        case 3:
+        case 3, 6:
             let timeoutMilliseconds = UInt32(bytes[5]) << 16
                 | UInt32(bytes[6]) << 8
                 | UInt32(bytes[7])
@@ -200,11 +245,19 @@ public enum ProxySelectionProviderMessageCodec {
                 timeoutMilliseconds >= minimumLatencyTimeoutMilliseconds,
                 timeoutMilliseconds <= maximumLatencyTimeoutMilliseconds
             else { throw ProxySelectionProviderMessageError.invalidLatency }
-            return .latency(
-                group: try name(bytes[groupStart..<memberStart]),
-                url: try url(bytes[memberStart..<end]),
-                timeoutMilliseconds: timeoutMilliseconds
-            )
+            let group = try name(bytes[groupStart..<memberStart])
+            let url = try url(bytes[memberStart..<end])
+            return bytes[4] == 3
+                ? .latency(
+                    group: group,
+                    url: url,
+                    timeoutMilliseconds: timeoutMilliseconds
+                )
+                : .activeLatency(
+                    group: group,
+                    url: url,
+                    timeoutMilliseconds: timeoutMilliseconds
+                )
         case 4:
             let maximumConnections = UInt16(bytes[6]) << 8 | UInt16(bytes[7])
             guard
@@ -224,6 +277,15 @@ public enum ProxySelectionProviderMessageCodec {
                 memberLength == 0
             else { throw ProxySelectionProviderMessageError.malformed }
             return .diagnostics
+        case 7:
+            guard
+                bytes[6] == 0,
+                bytes[7] == 0,
+                groupLength == 0,
+                memberLength == 0,
+                let mode = routingMode(code: bytes[5])
+            else { throw ProxySelectionProviderMessageError.malformed }
+            return .setRoutingMode(mode)
         default:
             throw ProxySelectionProviderMessageError.malformed
         }
@@ -322,6 +384,14 @@ public enum ProxySelectionProviderMessageCodec {
                 appendUInt64(value, to: &output)
             }
             return output
+        case let .routingMode(mode):
+            var output = Data(responseMagic)
+            output.append(6)
+            output.append(routingModeCode(mode))
+            output.append(contentsOf: [0, 0])
+            appendUInt32(noSelection, to: &output)
+            appendUInt32(0, to: &output)
+            return output
         }
     }
 
@@ -375,11 +445,24 @@ public enum ProxySelectionProviderMessageCodec {
                 data.count == responseHeaderBytes
                     + Int(diagnosticCounterCount) * MemoryLayout<UInt64>.size
             else { throw ProxySelectionProviderMessageError.malformed }
+        case 6:
+            guard
+                selectedIndex == noSelection,
+                memberCount == 0,
+                data.count == responseHeaderBytes,
+                routingMode(code: bytes[5]) != nil
+            else { throw ProxySelectionProviderMessageError.malformed }
         default:
             throw ProxySelectionProviderMessageError.malformed
         }
 
         var offset = responseHeaderBytes
+        if bytes[4] == 6 {
+            guard let mode = routingMode(code: bytes[5]) else {
+                throw ProxySelectionProviderMessageError.malformed
+            }
+            return .routingMode(mode)
+        }
         if bytes[4] == 5 {
             var counters: [UInt64] = []
             counters.reserveCapacity(Int(diagnosticCounterCount))
@@ -489,6 +572,23 @@ public enum ProxySelectionProviderMessageCodec {
             !data.contains(0)
         else { throw ProxySelectionProviderMessageError.invalidName }
         return data
+    }
+
+    private static func routingModeCode(_ mode: RoutingMode) -> UInt8 {
+        switch mode {
+        case .rule: 0
+        case .global: 1
+        case .direct: 2
+        }
+    }
+
+    private static func routingMode(code: UInt8) -> RoutingMode? {
+        switch code {
+        case 0: .rule
+        case 1: .global
+        case 2: .direct
+        default: nil
+        }
     }
 
     private static func name(_ bytes: ArraySlice<UInt8>) throws -> String {

@@ -63,7 +63,7 @@ struct AboutAetherRouteView: View {
 
                 Text("Private routing, thoughtfully native.")
                     .font(.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
 
                 HStack(spacing: AetherVisual.s2) {
                     metadataCapsule(
@@ -94,7 +94,7 @@ struct AboutAetherRouteView: View {
                 .accessibilityHidden(true)
             Text(releaseChannelDescription)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .accessibilityIdentifier("about-release-channel")
         }
         .padding(.horizontal, AetherVisual.s3)
@@ -117,7 +117,7 @@ struct AboutAetherRouteView: View {
     ) -> some View {
         Label(title, systemImage: symbol)
             .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.primary)
             .padding(.horizontal, AetherVisual.s3)
             .padding(.vertical, AetherVisual.s2)
             .background(
@@ -224,7 +224,7 @@ struct AboutAetherRouteView: View {
         VStack(alignment: .leading, spacing: AetherVisual.s1) {
             Text(title)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
             Text(value)
                 .font(.subheadline.monospacedDigit().weight(.semibold))
                 .foregroundStyle(.primary)
@@ -258,13 +258,13 @@ struct AboutAetherRouteView: View {
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text("Created by")
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                 Text(localizedAuthorName)
                     .font(.title3.weight(.semibold))
                     .accessibilityIdentifier("about-author-name")
                 Text("Original design and native macOS development")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
             }
 
             Spacer(minLength: AetherVisual.s3)
@@ -288,7 +288,7 @@ struct AboutAetherRouteView: View {
 
     private func panelBorder(radius: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .stroke(AetherVisual.panelBorder(for: colorScheme), lineWidth: 1)
+            .stroke(AetherVisual.panelBorder(for: colorScheme), lineWidth: 0.5)
     }
 
     private var localizedAuthorName: String {

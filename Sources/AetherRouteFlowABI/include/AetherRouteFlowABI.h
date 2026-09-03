@@ -123,6 +123,24 @@ typedef struct aetherroute_flow_abi_v3 {
 /* V3 retains the complete V2 table and adds a per-engine routing override. */
 int32_t aetherroute_flow_abi_load_v3(aetherroute_flow_abi_v3_t *output);
 
+typedef struct aetherroute_flow_abi_v4 {
+    uint32_t struct_size;
+    aetherroute_flow_abi_v3_t v3;
+    int32_t (*selector_active_latency)(
+        void *,
+        const uint8_t *,
+        size_t,
+        const uint8_t *,
+        size_t,
+        uint32_t,
+        uint8_t *,
+        size_t,
+        size_t *
+    );
+} aetherroute_flow_abi_v4_t;
+
+int32_t aetherroute_flow_abi_load_v4(aetherroute_flow_abi_v4_t *output);
+
 #ifdef __cplusplus
 }
 #endif

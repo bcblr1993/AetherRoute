@@ -1,23 +1,25 @@
 {
   "schemaVersion": 1,
   "coreRepository": "https://github.com/bcblr1993/aetherroute-core.git",
-  "coreCommit": "c655adf2050d4502e7412cc1c21d186d528cafd4",
+  "coreCommit": "870ac4782c370d8413bb4f342fa5bbf900c5589e",
   "sourceFiles": {
-    "interopTestsSHA256": "a5e134e73920f318a4eba5e6be7533decea764bc433e53aebf3bcd885582af3c",
-    "proxyManagerSHA256": "be0edf49cb5f82315b0c63b2b9683bd4609f166990a04bbff8465b24105177bb",
-    "outboundManagerSHA256": "538bdd3c87f720ff44f254868714540907681cd9ff384875efd14a441d29ba94",
-    "dispatcherSHA256": "827646fee1f9a0bd5d14c9f68906a98ceb148e08d58a1874f100b6e84e25cd59",
+    "interopTestsSHA256": "25d4c14b208633d6524a434a6925af63e7bd15cf3553441ca98bcb8f61182c23",
+    "proxyManagerSHA256": "560fc42d699f21cf5a3801f587f6c76ddb1fce90bbe7a7b0a2eb69cf00ad9548",
+    "outboundManagerSHA256": "8d259df7493cec5c78a7821a034920db888e18b3449f7b7134f930a59213f1f2",
+    "selectorSourceSHA256": "b1092a6558910c5ab19e62eb613cdde72fe692a284d2b50f269b582fa25fc332",
+    "dispatcherSHA256": "70d74b1f706d3608cc5caeba846234ab6f3412098e771ffe31287a18f72c7454",
+    "directSourceSHA256": "1e8d3ba1b28b957ca6f54ae8193d10b6fa65383082d591bbf7fe949eeab723bf",
     "coreManifestSHA256": "fffefc34b51e2617d47df63582d4c8d5fee3e24ab675e9cd3032f82f0fae16ca",
     "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
-    "ffiSourceSHA256": "3defaaffec39596a45ddfba753f9e3d8b2b7e6c433eb81de634d4f1b59f47953",
-    "flowFFISourceSHA256": "805f427e823dd1555961d42316b85bc55a76672febc576db145a4f0b8f6d004a",
-    "embeddedFlowSourceSHA256": "5e333179400e6bea4a4046d20113c7f4d524b7c3a76744a84798ac7c3ad8d4f8"
+    "ffiSourceSHA256": "3ba5c070a8a9e9f65e38e12ca453c9d1247c6a820de47df454eb47bb2a44d8fe",
+    "flowFFISourceSHA256": "d04dff48c777c299be98295bd033a394a954b87b0d9fdafa3d65c2e1ba755904",
+    "embeddedFlowSourceSHA256": "a79acca8f666238fc0ac4d3c3261500e1485e003b6de7d6b6c5db352c8de84da"
   },
   "artifacts": {
-    "flowCoreSHA256": "4cb1ed7e80e0ce4c23ef7ac53831b114379e697e12d90241127aeb49d50e940d",
-    "packetFlowCoreSHA256": "5b244864c2936a311670e9413c4cb759ed18cf75ba4c1c4e99f750209d718fc8",
-    "headerSHA256": "fde1ac33874e70d86b3876e39b397de278e995dc3d7bf6dc7b14186d41e3e548",
-    "interopTestBinarySHA256": "3bc93f9fa83b408b979cbe86ddeabe39b6417ee7094db8a66464e27d7a57a7d1"
+    "flowCoreSHA256": "396730df2f74ce6119c65a7d56e76d51e3a1084c2f74e10b84713b0fbc7e2b5b",
+    "packetFlowCoreSHA256": "248c953f40813b084992760b0c5651fdf1fb1bf3564b5021f0e74a0a19ebc9ce",
+    "headerSHA256": "00395c191cea964496808a8b871bf976ea860645b9a9f9ce08d3d516fe179e56",
+    "interopTestBinarySHA256": "af0f6174cd7513d80ce4cba4097a66f10f839d7bc88dcaa202a0208e8f5f6dde"
   },
   "interopCases": [
     "AnyTLS",

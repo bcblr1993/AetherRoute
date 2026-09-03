@@ -147,10 +147,17 @@ fi
 copy_test_workspace() {
   mkdir -p "$ROOT"
   for item in \
-    .tools Config Core Licenses Services Sources Tests project.yml scripts
+    .tools Config Licenses Services Sources Tests project.yml scripts
   do
     ditto "$REPOSITORY_ROOT/$item" "$ROOT/$item"
   done
+  # Cargo's disposable build cache can grow to tens of gigabytes and is not
+  # consumed by the Xcode UI-review target, which links the audited artifacts
+  # in Core/Artifacts. Excluding it keeps each isolated UI run bounded without
+  # changing any source or product input.
+  mkdir -p "$ROOT/Core"
+  rsync -a --exclude '/Engine/target/' \
+    "$REPOSITORY_ROOT/Core/" "$ROOT/Core/"
 }
 
 extract_safe_screenshots() {

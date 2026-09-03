@@ -1,0 +1,32 @@
+mode: rule
+log-level: warning
+ipv6: true
+dns:
+  enable: true
+  ipv6: true
+  enhanced-mode: fake-ip
+  nameserver:
+    - 1.1.1.1
+proxies:
+  - name: Fixture A
+    type: vmess
+    server: 192.168.64.1
+    port: 59103
+    uuid: b831381d-6324-4d53-ad4f-8cda48b30811
+    alterId: 0
+    cipher: auto
+  - name: Fixture B
+    type: vmess
+    server: 192.168.64.1
+    port: 59104
+    uuid: b831381d-6324-4d53-ad4f-8cda48b30811
+    alterId: 0
+    cipher: auto
+proxy-groups:
+  - name: Route
+    type: select
+    proxies:
+      - Fixture A
+      - Fixture B
+rules:
+  - MATCH,Route

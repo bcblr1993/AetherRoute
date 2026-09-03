@@ -15,9 +15,11 @@ that state before shutdown begins.
   destructive actions without confirmation.
 - Standard macOS type, controls, focus rings, keyboard navigation, materials,
   semantic colors, and SF Symbols take precedence over custom drawing.
-- The primary window uses `NavigationSplitView`, including the system sidebar
-  toggle and user-resizable column. The sidebar owns navigation only; content
-  panels never imitate navigation material.
+- The primary window uses `NavigationSplitView` with the fixed 236-point
+  navigation rail from the final handoff. The automatic sidebar toggle is
+  removed so the compact title bar and the 940-point window geometry remain
+  stable. The sidebar owns navigation only; content panels never imitate
+  navigation material.
 - The minimum window is 780 x 560 points. Content must remain usable at the
   minimum size and expand without fixed-width clipping.
 - Window size is stable within each task class. All six primary destinations
@@ -53,10 +55,10 @@ that state before shutdown begins.
   and familiar platform behavior.
 
 - Accent: the system accent for selection and focus, applied by writing no
-  `.tint` at all. The brand gradient is reserved for AetherRoute identity and
-  never encodes state. Because the brand blue and the default accent blue are
-  close relatives, the brand mark is confined to the sidebar header and is kept
-  a step darker than the accent.
+  `.tint` at all. The blue brand gradient is reserved for AetherRoute identity
+  and never encodes state. Because the brand blue and the default accent blue
+  are close relatives, the brand mark stays confined to identity surfaces such
+  as the sidebar header, About, onboarding, and the app icon.
 - Status colors are semantic and limited to four: green for connected or
   passing, orange for in-transition or needs-attention, red for failure, and
   secondary for idle or unavailable. Color is always paired with text and/or a

@@ -235,7 +235,8 @@ struct ThirdPartyLicensesView: View {
                     report.components.count
                 )
             )
-                .font(.caption.weight(.medium))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color(nsColor: .labelColor))
             Text("Independent app runtime")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color(nsColor: .labelColor))

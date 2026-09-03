@@ -12,7 +12,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private let diagnostics = ProviderDiagnosticAccumulator()
     private let providerMessageQueue = DispatchQueue(
         label: "com.aetherroute.packet-provider.messages",
-        qos: .userInitiated
+        qos: .userInitiated,
+        attributes: [],
+        autoreleaseFrequency: .workItem
     )
 
     override func startTunnel(
@@ -137,6 +139,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                             timeoutMilliseconds: timeoutMilliseconds
                         )
                     )
+                case let .activeLatency(group, url, timeoutMilliseconds):
+                    .latency(
+                        try core.testActiveProxyLatency(
+                            group: group,
+                            url: url,
+                            timeoutMilliseconds: timeoutMilliseconds
+                        )
+                    )
                 case let .telemetry(maximumConnections):
                     .telemetry(
                         try core.telemetrySnapshot(
@@ -145,6 +155,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     )
                 case .diagnostics:
                     .diagnostics(diagnostics.snapshot())
+                case let .setRoutingMode(mode):
+                    try applyRoutingMode(mode)
                 }
             } catch is ProxySelectionProviderMessageError {
                 response = .failure(.invalidRequest)
@@ -173,6 +185,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 )
             }
         }
+    }
+
+    private func applyRoutingMode(
+        _ mode: RoutingMode
+    ) throws -> ProxySelectionProviderResponse {
+        try core.setRoutingMode(mode)
+        return .routingMode(mode)
     }
 
     private func makeNetworkSettings(

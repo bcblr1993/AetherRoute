@@ -164,6 +164,10 @@ public final class FlowCoreEngine: @unchecked Sendable {
         try storage.selectorSnapshot(group: group)
     }
 
+    public func setRoutingMode(_ mode: RoutingMode) throws {
+        try storage.setRoutingMode(mode)
+    }
+
     @discardableResult
     public func selectProxy(
         group: String,
@@ -178,6 +182,18 @@ public final class FlowCoreEngine: @unchecked Sendable {
         timeoutMilliseconds: UInt32
     ) throws -> ProxyLatencyState {
         try storage.testProxyLatency(
+            group: group,
+            url: url,
+            timeoutMilliseconds: timeoutMilliseconds
+        )
+    }
+
+    public func testActiveProxyLatency(
+        group: String,
+        url: String,
+        timeoutMilliseconds: UInt32
+    ) throws -> ProxyLatencyState {
+        try storage.testActiveProxyLatency(
             group: group,
             url: url,
             timeoutMilliseconds: timeoutMilliseconds
@@ -363,6 +379,21 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
         }
     }
 
+    func setRoutingMode(_ mode: RoutingMode) throws {
+        try gate.withLock {
+            guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
+            try queue.sync {
+                guard phase == .running, let handle else {
+                    throw FlowCoreEngineError.engineClosed
+                }
+                let status = backend.engineSetRoutingMode(handle, mode: mode)
+                guard status == FlowCoreABIStatus.success else {
+                    throw Self.routingModeError(status)
+                }
+            }
+        }
+    }
+
     func selectProxy(
         group: String,
         member: String
@@ -418,6 +449,42 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
                     throw FlowCoreEngineError.engineClosed
                 }
                 let result = backend.selectorLatency(
+                    engine: handle,
+                    group: group,
+                    url: url,
+                    timeoutMilliseconds: timeoutMilliseconds
+                )
+                guard
+                    result.status == FlowCoreABIStatus.success,
+                    let latencies = result.latencies
+                else {
+                    throw Self.selectorError(result.status, selecting: false)
+                }
+                return try ProxyLatencyResultCodec.decode(latencies)
+            }
+        }
+    }
+
+    func testActiveProxyLatency(
+        group: String,
+        url: String,
+        timeoutMilliseconds: UInt32
+    ) throws -> ProxyLatencyState {
+        let group = try Self.selectorNameData(group)
+        let url = try Self.latencyURLData(url)
+        guard
+            timeoutMilliseconds >= ProxySelectionProviderMessageCodec
+                .minimumLatencyTimeoutMilliseconds,
+            timeoutMilliseconds <= ProxySelectionProviderMessageCodec
+                .maximumLatencyTimeoutMilliseconds
+        else { throw FlowCoreEngineError.selectorUnavailable }
+        return try gate.withLock {
+            guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
+            return try queue.sync {
+                guard phase == .running, let handle else {
+                    throw FlowCoreEngineError.engineClosed
+                }
+                let result = backend.selectorActiveLatency(
                     engine: handle,
                     group: group,
                     url: url,
@@ -610,6 +677,18 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
             .resourceExhausted
         case FlowCoreABIStatus.closed, FlowCoreABIStatus.cancelled:
             .engineClosed
+        default:
+            .internalFailure
+        }
+    }
+
+    private static func routingModeError(_ status: Int32) -> FlowCoreEngineError {
+        switch status {
+        case FlowCoreABIStatus.closed, FlowCoreABIStatus.cancelled,
+             FlowCoreABIStatus.invalidState:
+            .engineClosed
+        case FlowCoreABIStatus.invalidArgument:
+            .invalidConfiguration
         default:
             .internalFailure
         }
@@ -1012,9 +1091,15 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
                 }
             }
             if status != FlowCoreABIStatus.success {
-                FlowCoreRuntimeLog.logger.error(
-                    "stage=tcpRead submitFailed status=\(status, privacy: .public)"
-                )
+                if FlowCoreABIStatus.isExpectedTermination(status) {
+                    FlowCoreRuntimeLog.logger.debug(
+                        "stage=tcpRead terminated status=\(status, privacy: .public)"
+                    )
+                } else {
+                    FlowCoreRuntimeLog.logger.error(
+                        "stage=tcpRead submitFailed status=\(status, privacy: .public)"
+                    )
+                }
                 operations.removeValue(forKey: abiToken)
                 completion(token, .failure(Self.flowError(for: status)))
             }
@@ -1112,9 +1197,15 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
                 }
             }
             if status != FlowCoreABIStatus.success {
-                FlowCoreRuntimeLog.logger.error(
-                    "stage=udpRead submitFailed status=\(status, privacy: .public)"
-                )
+                if FlowCoreABIStatus.isExpectedTermination(status) {
+                    FlowCoreRuntimeLog.logger.debug(
+                        "stage=udpRead terminated status=\(status, privacy: .public)"
+                    )
+                } else {
+                    FlowCoreRuntimeLog.logger.error(
+                        "stage=udpRead submitFailed status=\(status, privacy: .public)"
+                    )
+                }
                 operations.removeValue(forKey: abiToken)
                 completion(token, .failure(Self.flowError(for: status)))
             }
@@ -1189,9 +1280,15 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
             }
         }
         if status != FlowCoreABIStatus.success {
-            FlowCoreRuntimeLog.logger.error(
-                "stage=flowWrite submitFailed transport=\(self.kindLabel, privacy: .public) status=\(status, privacy: .public)"
-            )
+            if FlowCoreABIStatus.isExpectedTermination(status) {
+                FlowCoreRuntimeLog.logger.debug(
+                    "stage=flowWrite terminated transport=\(self.kindLabel, privacy: .public) status=\(status, privacy: .public)"
+                )
+            } else {
+                FlowCoreRuntimeLog.logger.error(
+                    "stage=flowWrite submitFailed transport=\(self.kindLabel, privacy: .public) status=\(status, privacy: .public)"
+                )
+            }
             operations.removeValue(forKey: abiToken)
             completion(token, .failure(Self.flowError(for: status)))
         }
@@ -1230,9 +1327,15 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
             )
             completion(mapped, .success(()))
         } else {
-            FlowCoreRuntimeLog.logger.error(
-                "stage=flowWrite callbackFailed transport=\(self.kindLabel, privacy: .public) operation=\(expected.kind.rawValue, privacy: .public) status=\(status, privacy: .public)"
-            )
+            if FlowCoreABIStatus.isExpectedTermination(status) {
+                FlowCoreRuntimeLog.logger.debug(
+                    "stage=flowWrite terminated transport=\(self.kindLabel, privacy: .public) operation=\(expected.kind.rawValue, privacy: .public) status=\(status, privacy: .public)"
+                )
+            } else {
+                FlowCoreRuntimeLog.logger.error(
+                    "stage=flowWrite callbackFailed transport=\(self.kindLabel, privacy: .public) operation=\(expected.kind.rawValue, privacy: .public) status=\(status, privacy: .public)"
+                )
+            }
             completion(mapped, .failure(Self.flowError(for: status)))
         }
     }
@@ -1256,9 +1359,15 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
             return
         }
         guard response.status == FlowCoreABIStatus.success else {
-            FlowCoreRuntimeLog.logger.error(
-                "stage=tcpRead callbackFailed status=\(response.status, privacy: .public)"
-            )
+            if FlowCoreABIStatus.isExpectedTermination(response.status) {
+                FlowCoreRuntimeLog.logger.debug(
+                    "stage=tcpRead terminated status=\(response.status, privacy: .public)"
+                )
+            } else {
+                FlowCoreRuntimeLog.logger.error(
+                    "stage=tcpRead callbackFailed status=\(response.status, privacy: .public)"
+                )
+            }
             completion(mapped, .failure(Self.flowError(for: response.status)))
             return
         }
@@ -1295,9 +1404,15 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
             return
         }
         guard response.status == FlowCoreABIStatus.success else {
-            FlowCoreRuntimeLog.logger.error(
-                "stage=udpRead callbackFailed status=\(response.status, privacy: .public)"
-            )
+            if FlowCoreABIStatus.isExpectedTermination(response.status) {
+                FlowCoreRuntimeLog.logger.debug(
+                    "stage=udpRead terminated status=\(response.status, privacy: .public)"
+                )
+            } else {
+                FlowCoreRuntimeLog.logger.error(
+                    "stage=udpRead callbackFailed status=\(response.status, privacy: .public)"
+                )
+            }
             completion(mapped, .failure(Self.flowError(for: response.status)))
             return
         }

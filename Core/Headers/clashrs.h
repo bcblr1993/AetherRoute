@@ -178,7 +178,18 @@ int32_t clash_packet_selector_select_v1(
     const uint8_t *member,
     size_t member_length
 );
+int32_t clash_packet_set_routing_mode_v1(int32_t routing_mode);
 int32_t clash_packet_selector_latency_v1(
+    const uint8_t *group,
+    size_t group_length,
+    const uint8_t *url,
+    size_t url_length,
+    uint32_t timeout_millis,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+);
+int32_t clash_packet_selector_active_latency_v1(
     const uint8_t *group,
     size_t group_length,
     const uint8_t *url,
@@ -235,6 +246,17 @@ int32_t clash_flow_selector_select_v1(
     size_t member_length
 );
 int32_t clash_flow_selector_latency_v1(
+    clash_flow_engine_t *engine,
+    const uint8_t *group,
+    size_t group_length,
+    const uint8_t *url,
+    size_t url_length,
+    uint32_t timeout_millis,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+);
+int32_t clash_flow_selector_active_latency_v1(
     clash_flow_engine_t *engine,
     const uint8_t *group,
     size_t group_length,

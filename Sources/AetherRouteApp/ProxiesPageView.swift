@@ -99,7 +99,8 @@ struct ProxiesView: View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             HStack {
                 Text("Proxy groups")
-                    .font(.headline)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
                 Text(
                     String.localizedStringWithFormat(
                         AppLocalization.string("%lld groups"),
@@ -186,7 +187,7 @@ private struct ProxyGroupDisclosure: View {
         .padding(.horizontal, AetherVisual.s3)
         .frame(minHeight: 46)
         .task(id: tunnel.isConnected) {
-            guard isManuallySelectable, tunnel.isConnected else { return }
+            guard isManuallySelectable else { return }
             await tunnel.refreshProxySelection(group: group.name)
         }
     }
@@ -233,7 +234,11 @@ private struct ProxyGroupDisclosure: View {
 
             if let selected = selectedMember {
                 HStack(spacing: AetherVisual.s2) {
-                    Text(isManuallySelectable ? "In use" : "Auto-selected")
+                    Text(
+                        isAutomaticSelectionMode || !isManuallySelectable
+                            ? "Auto-selected"
+                            : "In use"
+                    )
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                     ProxyLatencyBadge(
@@ -257,9 +262,7 @@ private struct ProxyGroupDisclosure: View {
 
     @ViewBuilder
     private var expandedContent: some View {
-        if !tunnel.isConnected {
-            disconnectedState
-        } else if isManuallySelectable {
+        if isManuallySelectable {
             selectableContent
         } else {
             automaticContent
@@ -273,35 +276,47 @@ private struct ProxyGroupDisclosure: View {
         }
     }
 
-    /// An empty expansion has to say why it is empty and offer the way out,
-    /// rather than leaving a line of grey text.
-    private var disconnectedState: some View {
-        VStack(spacing: AetherVisual.s2) {
-            Image(systemName: "bolt.horizontal.circle")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text("Connect before testing or switching nodes")
-                .font(.subheadline.weight(.medium))
-            Text(
-                String.localizedStringWithFormat(
-                    AppLocalization.string("The node list is ready — %lld in total."),
-                    Int64(group.memberCount)
-                )
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            Button("Connect") {
-                Task { await tunnel.setEnabled(true) }
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(tunnel.isTransitioning)
-        }
-        .frame(maxWidth: .infinity, minHeight: 150)
-    }
-
     private var selectableContent: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            HStack(spacing: AetherVisual.s3) {
+                Text("Selection mode")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Picker(
+                    selection: Binding(
+                        get: { isAutomaticSelectionMode },
+                        set: { isAutomatic in
+                            Task {
+                                await tunnel.setProxySelectionAutomatic(
+                                    group: group.name,
+                                    isAutomatic: isAutomatic
+                                )
+                            }
+                        }
+                    )
+                ) {
+                    Text("Manual").tag(false)
+                    Text("Automatic").tag(true)
+                } label: {
+                    EmptyView()
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel(Text("Selection mode"))
+                .frame(width: 190)
+                .disabled(tunnel.proxySelectionRequests.contains(group.name))
+                .accessibilityIdentifier(
+                    "proxy-selection-mode-\(group.name)"
+                )
+                Spacer()
+                Text(
+                    isAutomaticSelectionMode
+                        ? "Retries the fastest available node"
+                        : "Keeps the selected node pinned"
+                )
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+            }
+
             HStack(spacing: AetherVisual.s2) {
                 Picker("Filter", selection: $filter) {
                     ForEach(ProxyNodeFilter.allCases) { option in
@@ -332,7 +347,16 @@ private struct ProxyGroupDisclosure: View {
                     )
                 }
                 .buttonStyle(.bordered)
-                .disabled(isTesting)
+                .disabled(!tunnel.isConnected || isTesting)
+            }
+
+            if !tunnel.isConnected {
+                Label(
+                    "The selected node will be used on the next connection.",
+                    systemImage: "checkmark.circle"
+                )
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
             }
 
             if visibleMembers.isEmpty {
@@ -378,7 +402,11 @@ private struct ProxyGroupDisclosure: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(row.isBusy)
+                .disabled(
+                    row.isBusy
+                        || !isManuallySelectable
+                        || isAutomaticSelectionMode
+                )
                 .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
                 .contextMenu {
                     Button("Switch to this node") {
@@ -389,9 +417,13 @@ private struct ProxyGroupDisclosure: View {
                             )
                         }
                     }
+                    .disabled(
+                        !isManuallySelectable || isAutomaticSelectionMode
+                    )
                     Button("Retest this group") {
                         Task { await tunnel.testProxyLatency(group: group.name) }
                     }
+                    .disabled(!tunnel.isConnected)
                     Divider()
                     Button("Copy node name") { copy(row.member) }
                 }
@@ -436,14 +468,24 @@ private struct ProxyGroupDisclosure: View {
         }
     }
 
+    private var isAutomaticSelectionMode: Bool {
+        tunnel.automaticProxySelectionGroups.contains(group.name)
+    }
+
     /// A url-test group is chosen by the core, so the expansion explains the
     /// rule rather than offering a control that would be ignored.
     private var automaticContent: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            Text("This group is chosen by the protocol core from its own latency tests, so it cannot be set by hand. Expand a manual group to choose a node.")
+            Text(
+                tunnel.isConnected
+                    ? "This group is chosen by the protocol core from its own latency tests, so it cannot be set by hand. Expand a manual group to choose a node."
+                    : "This automatic group is ready and will choose the fastest available node when you connect."
+            )
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            memberList
 
             Button {
                 Task { await tunnel.testProxyLatency(group: group.name) }
@@ -451,7 +493,7 @@ private struct ProxyGroupDisclosure: View {
                 AetherProgressButtonLabel("Test latency", isWorking: isTesting)
             }
             .buttonStyle(.bordered)
-            .disabled(isTesting)
+            .disabled(!tunnel.isConnected || isTesting)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

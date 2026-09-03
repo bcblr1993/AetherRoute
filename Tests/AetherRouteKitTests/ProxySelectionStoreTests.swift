@@ -3,6 +3,58 @@ import Foundation
 import XCTest
 
 final class ProxySelectionStoreTests: XCTestCase {
+    func testProxySelectionCycleWrapsAndRecoversFromStaleSelection() {
+        let members = ["VLESS", "HY2", "VMess"]
+
+        XCTAssertEqual(
+            ProxySelectionCyclePolicy.adjacentMember(
+                members: members,
+                selectedMember: "VLESS",
+                direction: .next
+            ),
+            "HY2"
+        )
+        XCTAssertEqual(
+            ProxySelectionCyclePolicy.adjacentMember(
+                members: members,
+                selectedMember: "VMess",
+                direction: .next
+            ),
+            "VLESS"
+        )
+        XCTAssertEqual(
+            ProxySelectionCyclePolicy.adjacentMember(
+                members: members,
+                selectedMember: "VLESS",
+                direction: .previous
+            ),
+            "VMess"
+        )
+        XCTAssertEqual(
+            ProxySelectionCyclePolicy.adjacentMember(
+                members: members,
+                selectedMember: "Removed",
+                direction: .next
+            ),
+            "VLESS"
+        )
+        XCTAssertEqual(
+            ProxySelectionCyclePolicy.adjacentMember(
+                members: members,
+                selectedMember: nil,
+                direction: .previous
+            ),
+            "VMess"
+        )
+        XCTAssertNil(
+            ProxySelectionCyclePolicy.adjacentMember(
+                members: [],
+                selectedMember: nil,
+                direction: .next
+            )
+        )
+    }
+
     func testInitialSelectionSkipsSubscriptionMetadataAndBuiltins() {
         let summary = ProfileConfigurationSummary(
             dns: .init(),
@@ -75,6 +127,51 @@ final class ProxySelectionStoreTests: XCTestCase {
         XCTAssertEqual(
             InitialProxySelectionPolicy.selections(
                 persisted: ["Route": "Removed"],
+                summary: summary
+            ),
+            ["Route": "Edge A"]
+        )
+    }
+
+    func testInitialSelectionPrefersAutomaticChildButKeepsManualOverride() {
+        let manual = ProxyGroupConfigurationSummary(
+            id: 0,
+            name: "Route",
+            strategy: "select",
+            memberCount: 3,
+            members: ["Edge A", "Automatic", "DIRECT"]
+        )
+        let automatic = ProxyGroupConfigurationSummary(
+            id: 1,
+            name: "Automatic",
+            strategy: "url-test",
+            memberCount: 2,
+            members: ["Edge A", "Edge B"]
+        )
+        let summary = ProfileConfigurationSummary(
+            dns: .init(),
+            proxies: [],
+            proxyGroups: [manual, automatic],
+            proxyProviders: [],
+            rules: [],
+            ruleProviders: [],
+            proxyCount: 2,
+            proxyGroupCount: 2,
+            proxyProviderCount: 0,
+            ruleCount: 0,
+            ruleProviderCount: 0
+        )
+
+        XCTAssertEqual(
+            InitialProxySelectionPolicy.selections(
+                persisted: [:],
+                summary: summary
+            ),
+            ["Route": "Automatic"]
+        )
+        XCTAssertEqual(
+            InitialProxySelectionPolicy.selections(
+                persisted: ["Route": "Edge A"],
                 summary: summary
             ),
             ["Route": "Edge A"]
@@ -162,6 +259,38 @@ final class ProxySelectionStoreTests: XCTestCase {
         )
     }
 
+    func testExplicitAutomaticModeChoosesFastestRealResponsiveProxy() {
+        XCTAssertEqual(
+            ProxyConnectionReadinessPolicy.fastestResponsiveRoute(
+                members: [
+                    "DIRECT", "Remaining traffic: 10 GB", "Slow", "Fast",
+                    "Unavailable",
+                ],
+                latency: .init(results: [
+                    .init(member: "DIRECT", delayMilliseconds: 1),
+                    .init(
+                        member: "Remaining traffic: 10 GB",
+                        delayMilliseconds: 2
+                    ),
+                    .init(member: "Slow", delayMilliseconds: 180),
+                    .init(member: "Fast", delayMilliseconds: 42),
+                    .init(member: "Unavailable", delayMilliseconds: nil),
+                    .init(member: "Not in group", delayMilliseconds: 3),
+                ])
+            ),
+            "Fast"
+        )
+        XCTAssertNil(
+            ProxyConnectionReadinessPolicy.fastestResponsiveRoute(
+                members: ["DIRECT", "Unavailable"],
+                latency: .init(results: [
+                    .init(member: "DIRECT", delayMilliseconds: 1),
+                    .init(member: "Unavailable", delayMilliseconds: nil),
+                ])
+            )
+        )
+    }
+
     func testConnectionReadinessDistinguishesManualAndAutomaticGroups() {
         for strategy in ["url-test", "fallback", "load-balance"] {
             XCTAssertEqual(
@@ -191,6 +320,222 @@ final class ProxySelectionStoreTests: XCTestCase {
         )
     }
 
+    func testRouteIntentTreatsLeafAsManualAndAutomaticChildAsAutomatic() {
+        let route = ProxyGroupConfigurationSummary(
+            id: 0,
+            name: "Route",
+            strategy: "select",
+            memberCount: 2,
+            members: ["Edge", "Automatic"]
+        )
+        let automatic = ProxyGroupConfigurationSummary(
+            id: 1,
+            name: "Automatic",
+            strategy: "fallback",
+            memberCount: 1,
+            members: ["Edge"]
+        )
+        let summary = ProfileConfigurationSummary(
+            dns: .init(),
+            proxies: [],
+            proxyGroups: [route, automatic],
+            proxyProviders: [],
+            rules: [],
+            ruleProviders: [],
+            proxyCount: 1,
+            proxyGroupCount: 2,
+            proxyProviderCount: 0,
+            ruleCount: 0,
+            ruleProviderCount: 0
+        )
+
+        XCTAssertEqual(
+            ProxyConnectionReadinessPolicy.routeIntent(
+                selectedMember: "Edge",
+                summary: summary
+            ).behavior,
+            .manual
+        )
+        XCTAssertEqual(
+            ProxyConnectionReadinessPolicy.routeIntent(
+                selectedMember: "Automatic",
+                summary: summary
+            ),
+            .init(behavior: .automatic, automaticGroup: automatic)
+        )
+    }
+
+    func testExplicitAutomaticSelectorRefreshKeepsHealthMonitoringIntent() {
+        let route = ProxyGroupConfigurationSummary(
+            id: 0,
+            name: "Route",
+            strategy: "select",
+            memberCount: 2,
+            members: ["Fixture A", "Fixture B"]
+        )
+        let summary = ProfileConfigurationSummary(
+            dns: .init(),
+            proxies: [],
+            proxyGroups: [route],
+            proxyProviders: [],
+            rules: [],
+            ruleProviders: [],
+            proxyCount: 2,
+            proxyGroupCount: 1,
+            proxyProviderCount: 0,
+            ruleCount: 0,
+            ruleProviderCount: 0
+        )
+
+        XCTAssertEqual(
+            ProxyConnectionReadinessPolicy.effectiveRouteIntent(
+                selectedMember: "Fixture A",
+                summary: summary,
+                explicitlyAutomatic: true
+            ),
+            .init(behavior: .automatic)
+        )
+        XCTAssertEqual(
+            ProxyConnectionReadinessPolicy.effectiveRouteIntent(
+                selectedMember: "Fixture A",
+                summary: summary,
+                explicitlyAutomatic: false
+            ),
+            .init(behavior: .manual)
+        )
+    }
+
+    func testAutomaticRouteHealthRecoveryRescansChildBeforeStopping() {
+        XCTAssertEqual(
+            AutomaticRouteHealthRecoveryPolicy.action(
+                automaticChildGroup: "Automatic",
+                explicitlyAutomatic: false,
+                recoveryAlreadyAttempted: false
+            ),
+            .rescanAutomaticChild("Automatic")
+        )
+        XCTAssertEqual(
+            AutomaticRouteHealthRecoveryPolicy.action(
+                automaticChildGroup: nil,
+                explicitlyAutomatic: true,
+                recoveryAlreadyAttempted: false
+            ),
+            .reselectExplicitGroup
+        )
+        XCTAssertEqual(
+            AutomaticRouteHealthRecoveryPolicy.action(
+                automaticChildGroup: "Automatic",
+                explicitlyAutomatic: true,
+                recoveryAlreadyAttempted: true
+            ),
+            .none
+        )
+        XCTAssertEqual(
+            AutomaticRouteHealthRecoveryPolicy.action(
+                automaticChildGroup: nil,
+                explicitlyAutomatic: false,
+                recoveryAlreadyAttempted: false
+            ),
+            .none
+        )
+        XCTAssertEqual(
+            AutomaticRouteHealthRecoveryPolicy.exhaustionAction(
+                connectionWasReady: true
+            ),
+            .continueMonitoring
+        )
+        XCTAssertEqual(
+            AutomaticRouteHealthRecoveryPolicy.exhaustionAction(
+                connectionWasReady: false
+            ),
+            .stopProvider
+        )
+    }
+
+    func testConnectedManualHotSwitchRequiresSelectedLeafToRespond() {
+        let automatic = ProxyGroupConfigurationSummary(
+            id: 2,
+            name: "Automatic",
+            strategy: "url-test",
+            memberCount: 2,
+            members: ["Edge A", "Edge B"]
+        )
+        let summary = ProfileConfigurationSummary(
+            dns: .init(),
+            proxies: [],
+            proxyGroups: [automatic],
+            proxyProviders: [],
+            rules: [],
+            ruleProviders: [],
+            proxyCount: 2,
+            proxyGroupCount: 1,
+            proxyProviderCount: 0,
+            ruleCount: 0,
+            ruleProviderCount: 0
+        )
+
+        XCTAssertTrue(
+            ProxySelectionHotSwitchPolicy.accepts(
+                requestedMember: "Edge A",
+                summary: summary,
+                latency: .init(results: [
+                    .init(member: "Edge A", delayMilliseconds: 42),
+                ])
+            )
+        )
+        XCTAssertFalse(
+            ProxySelectionHotSwitchPolicy.accepts(
+                requestedMember: "Edge A",
+                summary: summary,
+                latency: .init(results: [
+                    .init(member: "Edge B", delayMilliseconds: 21),
+                ])
+            )
+        )
+        XCTAssertFalse(
+            ProxySelectionHotSwitchPolicy.accepts(
+                requestedMember: "Edge A",
+                summary: summary,
+                latency: .init(results: [
+                    .init(member: "Edge A", delayMilliseconds: nil),
+                ])
+            )
+        )
+    }
+
+    func testConnectedAutomaticChildHotSwitchAcceptsResponsiveLeaf() {
+        let automatic = ProxyGroupConfigurationSummary(
+            id: 2,
+            name: "Automatic",
+            strategy: "url-test",
+            memberCount: 2,
+            members: ["Edge A", "Edge B"]
+        )
+        let summary = ProfileConfigurationSummary(
+            dns: .init(),
+            proxies: [],
+            proxyGroups: [automatic],
+            proxyProviders: [],
+            rules: [],
+            ruleProviders: [],
+            proxyCount: 2,
+            proxyGroupCount: 1,
+            proxyProviderCount: 0,
+            ruleCount: 0,
+            ruleProviderCount: 0
+        )
+
+        XCTAssertTrue(
+            ProxySelectionHotSwitchPolicy.accepts(
+                requestedMember: "Automatic",
+                summary: summary,
+                latency: .init(results: [
+                    .init(member: "Edge B", delayMilliseconds: 18),
+                ])
+            )
+        )
+    }
+
     func testAutomaticCandidatesExcludePseudoRoutesDeduplicateAndBound() {
         let candidates = ProxyConnectionReadinessPolicy
             .orderedRouteCandidates(
@@ -212,6 +557,29 @@ final class ProxySelectionStoreTests: XCTestCase {
         XCTAssertFalse(candidates.contains("DIRECT"))
         XCTAssertFalse(candidates.contains("剩余流量：100 GB"))
         XCTAssertFalse(candidates.contains("support@example.com"))
+    }
+
+    func testAutomaticCandidatesIncludeFastestLateMemberBeforeBound() {
+        let members = (0..<12).map { "Edge \($0)" }
+        let candidates = ProxyConnectionReadinessPolicy
+            .orderedRouteCandidates(
+                selectedMember: "Edge 0",
+                summaryMembers: members,
+                snapshotMembers: members,
+                latency: .init(results: members.enumerated().map {
+                    index, member in
+                    .init(
+                        member: member,
+                        delayMilliseconds: index == 11
+                            ? 5
+                            : 100 + UInt32(index)
+                    )
+                })
+            )
+
+        XCTAssertEqual(candidates.count, 8)
+        XCTAssertEqual(candidates.first, "Edge 11")
+        XCTAssertTrue(candidates.contains("Edge 0"))
     }
 
     func testManualCandidateNeverFallsBackFromExplicitSelection() {
@@ -272,7 +640,21 @@ final class ProxySelectionStoreTests: XCTestCase {
         )
     }
 
-    func testConnectionReadinessBoundsGroupsAndSkipsOversizedSelectors() {
+    func testConnectionReadinessProbeTargetsRequiredHTTPSExternalRoute() {
+        let probe = URL(
+            string: ProxyConnectionReadinessPolicy
+                .requiredExternalProbeURLString
+        )
+
+        XCTAssertEqual(probe?.scheme, "https")
+        XCTAssertEqual(probe?.host, "www.google.com")
+        XCTAssertEqual(probe?.path, "/generate_204")
+        XCTAssertNil(probe?.query)
+        XCTAssertNil(probe?.user)
+        XCTAssertNil(probe?.password)
+    }
+
+    func testConnectionReadinessUsesLastCatchAllAndSkipsOversizedSelectors() {
         let groups = (0..<6).map { index in
             ProxyGroupConfigurationSummary(
                 id: index,
@@ -309,7 +691,7 @@ final class ProxySelectionStoreTests: XCTestCase {
         XCTAssertEqual(
             ProxyConnectionReadinessPolicy.groupsToVerify(summary: summary)
                 .map(\.name),
-            ["Route 0", "Route 2", "Route 3", "Route 4"]
+            ["Route 5"]
         )
     }
 
@@ -334,6 +716,67 @@ final class ProxySelectionStoreTests: XCTestCase {
             try fixture.store.selections(
                 forProfileYAML: "proxies: [b]"
             ).isEmpty
+        )
+    }
+
+    func testSelectionsForMultipleProfilesRemainIndependent() throws {
+        let fixture = try makeFixture()
+        try fixture.store.recordUserSelection(
+            group: "Route",
+            member: "Fixture A",
+            allowedMembers: ["Dead Fixture", "Fixture A", "Fixture B"],
+            profileYAML: "fixture-profile"
+        )
+        try fixture.store.recordUserSelection(
+            group: "Proxy",
+            member: "Verge Node",
+            allowedMembers: ["Verge Node"],
+            profileYAML: "verge-profile"
+        )
+
+        XCTAssertEqual(
+            try fixture.store.selections(
+                forProfileYAML: "fixture-profile"
+            ),
+            ["Route": "Fixture A"]
+        )
+        XCTAssertEqual(
+            try fixture.store.selections(
+                forProfileYAML: "verge-profile"
+            ),
+            ["Proxy": "Verge Node"]
+        )
+    }
+
+    func testOfflineUserSelectionMustBelongToValidatedGroup() throws {
+        let fixture = try makeFixture()
+
+        try fixture.store.recordUserSelection(
+            group: "Route",
+            member: "Edge B",
+            allowedMembers: ["Edge A", "Edge B", "DIRECT"],
+            profileYAML: "profile"
+        )
+        XCTAssertEqual(
+            try fixture.store.selections(forProfileYAML: "profile"),
+            ["Route": "Edge B"]
+        )
+        XCTAssertThrowsError(
+            try fixture.store.recordUserSelection(
+                group: "Route",
+                member: "Removed",
+                allowedMembers: ["Edge A", "Edge B"],
+                profileYAML: "profile"
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ProxySelectionStoreError,
+                .unverifiedSelection
+            )
+        }
+        XCTAssertEqual(
+            try fixture.store.selections(forProfileYAML: "profile"),
+            ["Route": "Edge B"]
         )
     }
 

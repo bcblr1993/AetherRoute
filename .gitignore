@@ -11,6 +11,7 @@ build/
 Core/Artifacts/
 outputs/
 work/
+.codex-validation-tools/
 
 # Local configuration, signing material, and distributable artifacts.
 .env

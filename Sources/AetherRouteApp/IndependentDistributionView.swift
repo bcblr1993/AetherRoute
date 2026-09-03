@@ -32,7 +32,7 @@ struct IndependentDistributionView: View {
                 .font(.title2.weight(.semibold))
             Text("AetherRoute verifies signed license receipts and update manifests without storing your activation key.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -51,7 +51,7 @@ struct IndependentDistributionView: View {
                         .font(.subheadline.weight(.medium))
                     Text(licenseDetail)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
@@ -118,7 +118,7 @@ struct IndependentDistributionView: View {
                         .font(.subheadline.weight(.medium))
                     Text(updateDetail)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
@@ -131,7 +131,7 @@ struct IndependentDistributionView: View {
                             isWorking: distribution.isDownloadingUpdate
                         )
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
                     .disabled(distribution.isDownloadingUpdate)
                     .accessibilityIdentifier("download-update-button")
                 } else {
@@ -177,8 +177,8 @@ struct IndependentDistributionView: View {
             Image(systemName: "lock.shield")
                 .foregroundStyle(Color.accentColor)
         }
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
+        .font(.body.weight(.medium))
+        .foregroundStyle(.primary)
         .padding(.horizontal, AetherVisual.s1)
     }
 
@@ -193,7 +193,7 @@ struct IndependentDistributionView: View {
             )
             .overlay {
                 RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.07))
+                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
             }
     }
 

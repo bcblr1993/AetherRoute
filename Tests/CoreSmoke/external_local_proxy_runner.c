@@ -103,7 +103,7 @@ static void report_selector_latency(
     const char *group,
     const char *selected_member
 ) {
-    static const char test_url[] = "http://www.google.com/generate_204";
+    static const char test_url[] = "http://www.gstatic.com/generate_204";
     uint8_t *output = malloc(MAXIMUM_SELECTOR_RESPONSE_BYTES);
     if (output == NULL) {
         puts("LATENCY diagnostic=allocation_failed");
@@ -135,6 +135,8 @@ static void report_selector_latency(
     size_t offset = 8U;
     uint32_t reachable_count = 0U;
     uint32_t selected_delay = UINT32_MAX;
+    uint32_t fastest_index = UINT32_MAX;
+    uint32_t fastest_delay = UINT32_MAX;
     int valid = member_count <= 4096U;
     for (uint32_t index = 0U; valid && index < member_count; index += 1U) {
         if (offset + 4U > output_length) {
@@ -152,6 +154,10 @@ static void report_selector_latency(
         uint32_t delay = read_big_endian_u32(output + offset + name_length);
         if (delay != UINT32_MAX) {
             reachable_count += 1U;
+            if (delay < fastest_delay) {
+                fastest_delay = delay;
+                fastest_index = index;
+            }
         }
         if (strlen(selected_member) == name_length
             && memcmp(name, selected_member, name_length) == 0) {
@@ -168,16 +174,20 @@ static void report_selector_latency(
         );
     } else if (selected_delay == UINT32_MAX) {
         printf(
-            "LATENCY reachable=%u/%u selected=timeout\n",
+            "LATENCY reachable=%u/%u selected=timeout fastest_index=%u fastest_ms=%u\n",
             reachable_count,
-            member_count
+            member_count,
+            fastest_index,
+            fastest_delay
         );
     } else {
         printf(
-            "LATENCY reachable=%u/%u selected_ms=%u\n",
+            "LATENCY reachable=%u/%u selected_ms=%u fastest_index=%u fastest_ms=%u\n",
             reachable_count,
             member_count,
-            selected_delay
+            selected_delay,
+            fastest_index,
+            fastest_delay
         );
     }
     (void)fflush(stdout);
@@ -281,7 +291,13 @@ int main(int argc, char **argv) {
         );
         if (latency_diagnostic != NULL
             && strcmp(latency_diagnostic, "1") == 0) {
-            report_selector_latency(argv[5], argv[6]);
+            const char *latency_group = getenv(
+                "AETHERROUTE_TEST_SELECTOR_LATENCY_GROUP"
+            );
+            report_selector_latency(
+                latency_group != NULL ? latency_group : argv[5],
+                argv[6]
+            );
         }
     }
 
@@ -310,4 +326,3 @@ int main(int argc, char **argv) {
     puts("STOPPED cleanly");
     return 0;
 }
-

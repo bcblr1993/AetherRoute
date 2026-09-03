@@ -34,45 +34,37 @@ final class TransparentProxySelfIdentityGuardTests: XCTestCase {
         XCTAssertEqual(result.reason, .auditTokenMatchedSelf)
     }
 
-    /// Upstream egress can carry the identifier of any bundle in the product.
-    /// Missing a sibling re-proxies our own connection to the node, which is an
-    /// infinite loop that leaves the tunnel unable to reach its server at all.
-    func testSiblingProductBundlesAreTreatedAsSelfEgress() {
+    /// The host readiness request and a packet-tunnel sibling are ordinary
+    /// client traffic. Only this extension's own egress may bypass capture.
+    func testOnlyTransparentExtensionBundleIsTreatedAsSelfEgress() {
         let guardUnderTest = TransparentProxySelfIdentityGuard(
             identityVerifier: StubIdentityVerifier(mode: .success(pid: 99)),
             currentProcessIdentifier: { 41 },
-            selfSigningIdentifiers: [
-                "com.aetherroute.desktop",
-                "com.aetherroute.desktop.tunnel",
-                "com.aetherroute.desktop.transparent-proxy",
-            ]
+            selfSigningIdentifiers: [selfIdentifier]
+        )
+
+        XCTAssertEqual(
+            guardUnderTest.evaluate(
+                signingIdentifier: selfIdentifier,
+                auditToken: nil
+            ).disposition,
+            .bypass
         )
 
         for identifier in [
             "com.aetherroute.desktop",
             "com.aetherroute.desktop.tunnel",
-            "com.aetherroute.desktop.transparent-proxy",
+            "com.aetherroute.desktop.evil.example",
         ] {
-            let result = guardUnderTest.evaluate(
-                signingIdentifier: identifier,
-                auditToken: nil
-            )
             XCTAssertEqual(
-                result.disposition,
-                .bypass,
-                "\(identifier) must bypass to break upstream recursion"
+                guardUnderTest.evaluate(
+                    signingIdentifier: identifier,
+                    auditToken: nil
+                ).disposition,
+                .proxy,
+                "\(identifier) is client traffic, not extension self egress"
             )
-            XCTAssertEqual(result.reason, .signingIdentifierMatchedSelf)
         }
-
-        // A lookalike outside the product must still be proxied.
-        XCTAssertEqual(
-            guardUnderTest.evaluate(
-                signingIdentifier: "com.aetherroute.desktop.evil.example",
-                auditToken: nil
-            ).disposition,
-            .proxy
-        )
     }
 
     // MARK: - Everything else must be proxied, never closed

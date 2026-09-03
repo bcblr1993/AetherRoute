@@ -35,6 +35,7 @@
     {"id":"vless-tcp-private","protocol":"vless","variant":"VLESS over raw TCP for a private endpoint","source":"https://xtls.github.io/en/config/outbounds/vless.html"},
     {"id":"vless-tcp-tls","protocol":"vless","variant":"VLESS over TCP and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vless/"},
     {"id":"vless-reality-vision","protocol":"vless","variant":"VLESS TCP with REALITY and XTLS Vision","source":"https://xtls.github.io/en/config/outbounds/vless.html"},
+    {"id":"vless-reality-vision-udp443","protocol":"vless","variant":"VLESS TCP with REALITY and the official Vision UDP/443 flow suffix","source":"https://github.com/XTLS/Xray-core/blob/main/infra/conf/vless_test.go"},
     {"id":"vless-ws-tls","protocol":"vless","variant":"VLESS over WebSocket and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vless/"},
     {"id":"vless-grpc-tls","protocol":"vless","variant":"VLESS over gRPC and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vless/"},
     {"id":"vless-h2-tls","protocol":"vless","variant":"VLESS over HTTP/2 and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vless/"},

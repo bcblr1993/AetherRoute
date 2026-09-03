@@ -1,0 +1,21 @@
+mode: rule
+log-level: warning
+ipv6: false
+dns:
+  enable: false
+proxies:
+  - name: VMess Interop
+    type: vmess
+    server: 127.0.0.1
+    port: 59003
+    uuid: b831381d-6324-4d53-ad4f-8cda48b30811
+    alterId: 0
+    cipher: auto
+    udp: true
+proxy-groups:
+  - name: AetherRoute Interop
+    type: select
+    proxies:
+      - VMess Interop
+rules:
+  - MATCH,AetherRoute Interop

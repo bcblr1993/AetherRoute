@@ -15,10 +15,9 @@ private let outputDirectory: URL = {
         .appendingPathComponent("Sources/AetherRouteApp/AppIcon.icon/Assets")
 }()
 
-// The 96-unit design grid maps onto the 664 px graphic safe area, not the whole
-// canvas. That is what puts the specified 13-unit stroke at 90 px, and it keeps
-// these layers in register with the flattened Assets.xcassets renditions.
-private let safeAreaSide: CGFloat = 664
+// The 96-unit design grid maps onto the handoff's 512 px graphic safe area,
+// keeping these layers in register with the flattened fallback renditions.
+private let safeAreaSide: CGFloat = 512
 private let gridSide: CGFloat = 96
 private let safeAreaOrigin = (side - safeAreaSide) / 2
 private let unit = safeAreaSide / gridSide

@@ -9,7 +9,9 @@ CORE_SOURCE=${AETHERROUTE_CORE_SOURCE:-"$ROOT/Core/Engine"}
 INTEROP_SOURCE="$CORE_SOURCE/clash-lib/src/proxy/interop_tests.rs"
 PROXY_MANAGER_SOURCE="$CORE_SOURCE/clash-lib/src/app/remote_content_manager/mod.rs"
 OUTBOUND_MANAGER_SOURCE="$CORE_SOURCE/clash-lib/src/app/outbound/manager.rs"
+SELECTOR_SOURCE="$CORE_SOURCE/clash-lib/src/proxy/group/selector/mod.rs"
 DISPATCHER_SOURCE="$CORE_SOURCE/clash-lib/src/app/dispatcher/dispatcher_impl.rs"
+DIRECT_SOURCE="$CORE_SOURCE/clash-lib/src/proxy/direct/mod.rs"
 CORE_MANIFEST="$CORE_SOURCE/clash-lib/Cargo.toml"
 FFI_MANIFEST="$CORE_SOURCE/clash-ffi/Cargo.toml"
 FFI_SOURCE="$CORE_SOURCE/clash-ffi/src/lib.rs"
@@ -153,7 +155,9 @@ if [ -d "$CORE_SOURCE" ]; then
     "$INTEROP_SOURCE" \
     "$PROXY_MANAGER_SOURCE" \
     "$OUTBOUND_MANAGER_SOURCE" \
+    "$SELECTOR_SOURCE" \
     "$DISPATCHER_SOURCE" \
+    "$DIRECT_SOURCE" \
     "$CORE_MANIFEST" \
     "$FFI_MANIFEST" \
     "$FFI_SOURCE" \
@@ -175,8 +179,12 @@ if [ -d "$CORE_SOURCE" ]; then
     "$(jq -r '.sourceFiles.proxyManagerSHA256' "$EVIDENCE")"
   verify_sha256 "$OUTBOUND_MANAGER_SOURCE" \
     "$(jq -r '.sourceFiles.outboundManagerSHA256' "$EVIDENCE")"
+  verify_sha256 "$SELECTOR_SOURCE" \
+    "$(jq -r '.sourceFiles.selectorSourceSHA256' "$EVIDENCE")"
   verify_sha256 "$DISPATCHER_SOURCE" \
     "$(jq -r '.sourceFiles.dispatcherSHA256' "$EVIDENCE")"
+  verify_sha256 "$DIRECT_SOURCE" \
+    "$(jq -r '.sourceFiles.directSourceSHA256' "$EVIDENCE")"
   verify_sha256 "$CORE_MANIFEST" \
     "$(jq -r '.sourceFiles.coreManifestSHA256' "$EVIDENCE")"
   verify_sha256 "$FFI_MANIFEST" \

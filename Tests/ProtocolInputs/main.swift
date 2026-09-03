@@ -127,7 +127,8 @@ enum ProtocolInputCompatibilityVerifier {
             "vmess-grpc-tls", "vmess-h2-tls", "vmess-cipher-aes128gcm",
             "vmess-cipher-chacha20", "vmess-url-safe-unpadded",
             "vless-tcp-private", "vless-tcp-tls", "vless-reality-vision",
-            "vless-ws-tls", "vless-grpc-tls", "vless-h2-tls",
+            "vless-reality-vision-udp443", "vless-ws-tls", "vless-grpc-tls",
+            "vless-h2-tls",
             "vless-query-aliases", "vless-ipv6", "trojan-tcp-tls",
             "trojan-ws-tls", "trojan-grpc-tls", "trojan-percent-password",
             "hy2-standard", "hy2-alias", "hy2-salamander", "hy2-bandwidth",
@@ -258,6 +259,15 @@ enum ProtocolInputCompatibilityVerifier {
             return fixture(
                 "vless://\(uuid)@127.0.0.1:1443?security=reality&sni=edge.example&pbk=\(urlKey)&sid=abcd&fp=chrome&flow=xtls-rprx-vision&type=tcp#VLESS-Reality",
                 ["reality-opts:", "flow: 'xtls-rprx-vision'", "client-fingerprint: 'chrome'"]
+            )
+        case "vless-reality-vision-udp443":
+            return fixture(
+                "vless://\(uuid)@127.0.0.1:1443?security=reality&sni=edge.example&pbk=\(urlKey)&sid=abcd&fp=chrome&flow=xtls-rprx-vision-udp443&type=tcp#VLESS-Reality-UDP443",
+                [
+                    "reality-opts:",
+                    "flow: 'xtls-rprx-vision-udp443'",
+                    "client-fingerprint: 'chrome'",
+                ]
             )
         case "vless-ws-tls":
             return fixture(

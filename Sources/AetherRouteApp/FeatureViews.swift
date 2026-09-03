@@ -488,8 +488,8 @@ struct DNSView: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                 Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
             }
             Spacer(minLength: 16)
             control()
@@ -721,7 +721,7 @@ private struct DNSMetricCard: View {
                     .foregroundStyle(.primary)
                 Text(detail)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
             }
@@ -749,18 +749,19 @@ private struct DNSSettingRow: View {
                 .foregroundStyle(tint)
                 .frame(width: 34, height: 34)
                 .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                 Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
             }
             Spacer(minLength: 14)
             Text(value)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
                 .padding(.horizontal, AetherVisual.s3)
                 .padding(.vertical, AetherVisual.s2)
                 .background(tint.opacity(0.09), in: Capsule())
@@ -848,8 +849,6 @@ struct ProfileInspectionHeader: View {
 }
 
 private struct CountBadge: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     let value: Int
     let label: LocalizedStringKey
 
@@ -867,12 +866,12 @@ private struct CountBadge: View {
         .padding(.horizontal, AetherVisual.s2)
         .padding(.vertical, AetherVisual.s2)
         .background(
-            colorScheme == .dark ? Color.black : Color.white,
+            Color(nsColor: .controlBackgroundColor),
             in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
         )
         .overlay {
             RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
         }
         .accessibilityElement(children: .contain)
     }
@@ -933,7 +932,7 @@ private struct RuleRow: View {
         HStack(spacing: AetherVisual.s4) {
             Text(verbatim: String(rule.order))
                 .font(.subheadline.monospacedDigit().weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .frame(width: 30, height: 30)
                 .background(Color.secondary.opacity(0.08), in: Circle())
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
@@ -947,7 +946,7 @@ private struct RuleRow: View {
                 } else {
                     Text("Any remaining traffic")
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                 }
             }
             Spacer(minLength: 14)
@@ -968,8 +967,6 @@ private struct RuleRow: View {
 }
 
 private struct StatePill: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     let title: String
     let color: Color
     let symbol: String
@@ -986,7 +983,7 @@ private struct StatePill: View {
             .padding(.horizontal, AetherVisual.s3)
             .padding(.vertical, AetherVisual.s2)
             .background(
-                colorScheme == .dark ? Color.black : Color.white,
+                Color(nsColor: .controlBackgroundColor),
                 in: Capsule()
             )
             .overlay {

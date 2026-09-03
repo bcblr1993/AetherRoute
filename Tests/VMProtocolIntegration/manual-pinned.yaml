@@ -1,0 +1,28 @@
+mode: rule
+log-level: warning
+ipv6: false
+dns:
+  enable: false
+proxies:
+  - name: Unavailable VMess
+    type: vmess
+    server: 127.0.0.1
+    port: 59999
+    uuid: b831381d-6324-4d53-ad4f-8cda48b30811
+    alterId: 0
+    cipher: auto
+  - name: Available VMess
+    type: vmess
+    server: 127.0.0.1
+    port: 59003
+    uuid: b831381d-6324-4d53-ad4f-8cda48b30811
+    alterId: 0
+    cipher: auto
+proxy-groups:
+  - name: Manual Route
+    type: select
+    proxies:
+      - Unavailable VMess
+      - Available VMess
+rules:
+  - MATCH,Manual Route

@@ -63,11 +63,14 @@ copy_review_workspace() {
   mkdir -p "$ROOT"
   for item in \
     .github .gitmodules .tools Artifacts/Validation CHANGELOG.md CONTRIBUTING.md \
-    Config Core Docs Licenses README.md SECURITY.md Services Sources Tests \
+    Config Docs Licenses README.md SECURITY.md Services Sources Tests \
     project.yml scripts
   do
     ditto "$REPOSITORY_ROOT/$item" "$ROOT/$item"
   done
+  mkdir -p "$ROOT/Core"
+  rsync -a --exclude '/Engine/target/' \
+    "$REPOSITORY_ROOT/Core/" "$ROOT/Core/"
 }
 
 "$REPOSITORY_ROOT/scripts/source_manifest.sh" \

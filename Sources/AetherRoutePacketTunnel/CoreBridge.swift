@@ -18,8 +18,14 @@ protocol CoreBridge: Sendable {
         completion: @escaping @Sendable (Error?) -> Void
     ) throws
     func selectorSnapshot(group: String) throws -> ProxySelectionState
+    func setRoutingMode(_ mode: RoutingMode) throws
     func selectProxy(group: String, member: String) throws -> ProxySelectionState
     func testProxyLatency(
+        group: String,
+        url: String,
+        timeoutMilliseconds: UInt32
+    ) throws -> ProxyLatencyState
+    func testActiveProxyLatency(
         group: String,
         url: String,
         timeoutMilliseconds: UInt32
@@ -38,6 +44,8 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         var startupFinished = false
         var retainedContext: UnsafeMutableRawPointer?
         var failure: Error?
+        var engineGeneration: UInt64 = 0
+        var engineCompletion: DispatchGroup?
     }
 
     private let packetFlow: NEPacketTunnelFlow
@@ -47,11 +55,21 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
     )
     private let packetQueue = DispatchQueue(
         label: "com.aetherroute.packet-output",
-        qos: .userInitiated
+        qos: .userInitiated,
+        attributes: [],
+        autoreleaseFrequency: .workItem
     )
     private let stateLock = NSLock()
+    private let lifecycleLock = NSLock()
     private let controlLock = NSLock()
     private var state = State()
+    // Telemetry is polled every five seconds while connected. Keeping the
+    // trust-boundary-sized destination alive for the bridge lifetime avoids a
+    // query snapshot followed by a second copy snapshot on every poll. The
+    // control lock serializes all access to this mutable storage.
+    private var telemetryOutputBuffer = Data(
+        count: NetworkTelemetryCodec.maximumMessageBytes
+    )
 
     init(packetFlow: NEPacketTunnelFlow) {
         self.packetFlow = packetFlow
@@ -62,6 +80,10 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         snapshot: ProviderLaunchSnapshot,
         completion: @escaping @Sendable (Error?) -> Void
     ) throws {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        reapStoppedEngineIfPossible()
+
         PacketCoreRuntimeLog.logger.info("stage=validateLaunchSnapshot begin")
         try snapshot.validate()
         PacketCoreRuntimeLog.logger.info("stage=validateLaunchSnapshot success")
@@ -112,8 +134,15 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         }
         PacketCoreRuntimeLog.logger.info("stage=prepareRuntimeDirectory success")
 
-        stateLock.withLock {
-            state = State(running: true)
+        let engineGeneration = try stateLock.withLock {
+            guard !state.running,
+                  !state.stopping,
+                  state.engineCompletion == nil else {
+                throw PacketTunnelError.lifecycleBusy
+            }
+            let generation = state.engineGeneration &+ 1
+            state = State(running: true, engineGeneration: generation)
+            return generation
         }
 
         let retainedContext = Unmanaged.passRetained(self).toOpaque()
@@ -138,13 +167,20 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
 
         beginReadingPackets()
         PacketCoreRuntimeLog.logger.info("stage=startEngine begin")
+        let engineCompletion = DispatchGroup()
+        engineCompletion.enter()
+        stateLock.withLock {
+            state.engineCompletion = engineCompletion
+        }
         startEngine(
             profile: profileYAML,
             runtimeDirectory: runtimeDirectory,
             mtu: configuration.mtu,
             routingMode: configuration.mode,
             dnsPolicy: dnsPolicy,
-            localProxy: configuration.localProxy
+            localProxy: configuration.localProxy,
+            generation: engineGeneration,
+            completionGroup: engineCompletion
         )
         PacketCoreRuntimeLog.logger.info("stage=startEngine submitted")
         PacketCoreRuntimeLog.logger.info(
@@ -206,33 +242,73 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
     }
 
     func stop() {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
         PacketCoreRuntimeLog.logger.info("stage=stopCore requested")
-        let retainedContext = stateLock.withLock {
-            guard state.bridgeInstalled, !state.stopping else {
-                return Optional<UnsafeMutableRawPointer>.none
+        let stopResources: StopResources? = stateLock.withLock {
+            if state.stopping, let completion = state.engineCompletion {
+                return StopResources(
+                    retainedContext: nil,
+                    generation: state.engineGeneration,
+                    completion: completion,
+                    requestsShutdown: false
+                )
+            }
+            guard state.bridgeInstalled, !state.stopping,
+                  let completion = state.engineCompletion else {
+                return Optional<StopResources>.none
             }
             state.running = false
             state.stopping = true
             state.bridgeInstalled = false
             let context = state.retainedContext
             state.retainedContext = nil
-            return context
+            return StopResources(
+                retainedContext: context,
+                generation: state.engineGeneration,
+                completion: completion,
+                requestsShutdown: true
+            )
         }
-        guard let retainedContext else {
+        guard let stopResources else {
             PacketCoreRuntimeLog.logger.info("stage=stopCore skipped reason=inactive")
             return
         }
 
-        PacketCoreRuntimeLog.logger.info("stage=shutdownEngine begin")
-        controlLock.withLock {
-            let status = clash_shutdown()
-            PacketCoreRuntimeLog.logger.info(
-                "stage=shutdownEngine status=\(status, privacy: .public)"
-            )
-            clash_uninstall_packet_flow()
+        if stopResources.requestsShutdown {
+            PacketCoreRuntimeLog.logger.info("stage=shutdownEngine begin")
+            controlLock.withLock {
+                let status = clash_shutdown()
+                PacketCoreRuntimeLog.logger.info(
+                    "stage=shutdownEngine status=\(status, privacy: .public)"
+                )
+                clash_uninstall_packet_flow()
+            }
+            if let retainedContext = stopResources.retainedContext {
+                Unmanaged<RustCoreBridge>.fromOpaque(retainedContext).release()
+            }
         }
-        stateLock.withLock { state.stopping = false }
-        Unmanaged<RustCoreBridge>.fromOpaque(retainedContext).release()
+
+        let waitResult = stopResources.completion.wait(
+            timeout: .now() + .seconds(
+                TunnelStartupTimingPolicy
+                    .providerCoreShutdownWaitTimeoutSeconds
+            )
+        )
+        guard waitResult == .success else {
+            PacketCoreRuntimeLog.logger.error(
+                "stage=stopCore failed reason=engineShutdownTimeout generation=\(stopResources.generation, privacy: .public) timeoutSeconds=\(TunnelStartupTimingPolicy.providerCoreShutdownWaitTimeoutSeconds, privacy: .public)"
+            )
+            stateLock.withLock {
+                guard state.engineGeneration == stopResources.generation else {
+                    return
+                }
+                state.failure = PacketTunnelError.shutdownTimedOut
+            }
+            return
+        }
+
+        finishStoppedEngine(generation: stopResources.generation)
         PacketCoreRuntimeLog.logger.info("stage=stopCore complete")
     }
 
@@ -243,6 +319,20 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                 throw PacketTunnelSelectorError.unavailable
             }
             return try selectorSnapshotLocked(group: groupData)
+        }
+    }
+
+    func setRoutingMode(_ mode: RoutingMode) throws {
+        try controlLock.withLock {
+            guard isRunning(), !isStopping(), clash_packet_flow_ready() == 1 else {
+                throw PacketTunnelSelectorError.unavailable
+            }
+            let status = clash_packet_set_routing_mode_v1(
+                mode.packetFlowABIValue
+            )
+            guard status == CLASH_FLOW_OK else {
+                throw Self.selectorError(status, selecting: true)
+            }
         }
     }
 
@@ -294,14 +384,67 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             guard isRunning(), !isStopping(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
             }
+            guard let outputCapacity = ProxySelectionProviderMessageCodec
+                .maximumSelectorLatencyPayloadBytes(
+                    memberCount: TunnelStartupTimingPolicy
+                        .selectorReadinessMaximumMemberCount
+                )
+            else { throw PacketTunnelSelectorError.responseTooLarge }
             var requiredLength = 0
-            var output = Data(
-                count: ProxySelectionProviderMessageCodec.maximumMessageBytes
-            )
+            var output = Data(count: outputCapacity)
             let status = output.withUnsafeMutableBytes { outputBytes in
                 groupData.withUnsafeBytes { groupBytes in
                     urlData.withUnsafeBytes { urlBytes in
                         clash_packet_selector_latency_v1(
+                            groupBytes.bindMemory(to: UInt8.self).baseAddress,
+                            groupBytes.count,
+                            urlBytes.bindMemory(to: UInt8.self).baseAddress,
+                            urlBytes.count,
+                            timeoutMilliseconds,
+                            outputBytes.bindMemory(to: UInt8.self).baseAddress,
+                            outputBytes.count,
+                            &requiredLength
+                        )
+                    }
+                }
+            }
+            guard status == CLASH_FLOW_OK else {
+                throw Self.selectorError(status, selecting: false)
+            }
+            guard (8...output.count).contains(requiredLength) else {
+                throw PacketTunnelSelectorError.responseTooLarge
+            }
+            output.count = requiredLength
+            return try PacketSelectorLatencyCodec.decode(output)
+        }
+    }
+
+    func testActiveProxyLatency(
+        group: String,
+        url: String,
+        timeoutMilliseconds: UInt32
+    ) throws -> ProxyLatencyState {
+        let groupData = try Self.selectorNameData(group)
+        let urlData = try Self.latencyURLData(url)
+        guard
+            timeoutMilliseconds >= ProxySelectionProviderMessageCodec
+                .minimumLatencyTimeoutMilliseconds,
+            timeoutMilliseconds <= ProxySelectionProviderMessageCodec
+                .maximumLatencyTimeoutMilliseconds
+        else { throw PacketTunnelSelectorError.invalidLatency }
+        return try controlLock.withLock {
+            guard isRunning(), !isStopping(), clash_packet_flow_ready() == 1 else {
+                throw PacketTunnelSelectorError.unavailable
+            }
+            guard let outputCapacity = ProxySelectionProviderMessageCodec
+                .maximumSelectorLatencyPayloadBytes(memberCount: 1)
+            else { throw PacketTunnelSelectorError.responseTooLarge }
+            var requiredLength = 0
+            var output = Data(count: outputCapacity)
+            let status = output.withUnsafeMutableBytes { outputBytes in
+                groupData.withUnsafeBytes { groupBytes in
+                    urlData.withUnsafeBytes { urlBytes in
+                        clash_packet_selector_active_latency_v1(
                             groupBytes.bindMemory(to: UInt8.self).baseAddress,
                             groupBytes.count,
                             urlBytes.bindMemory(to: UInt8.self).baseAddress,
@@ -337,8 +480,8 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                 throw PacketTunnelSelectorError.unavailable
             }
             var requiredLength = 0
-            var output = Data(count: NetworkTelemetryCodec.maximumMessageBytes)
-            let status = output.withUnsafeMutableBytes { outputBytes in
+            let status = telemetryOutputBuffer.withUnsafeMutableBytes {
+                outputBytes in
                 clash_packet_telemetry_snapshot_v1(
                     UInt32(maximumConnections),
                     outputBytes.bindMemory(to: UInt8.self).baseAddress,
@@ -349,11 +492,11 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             guard status == CLASH_FLOW_OK else {
                 throw Self.selectorError(status, selecting: false)
             }
-            guard (48...output.count).contains(requiredLength) else {
-                throw PacketTunnelSelectorError.responseTooLarge
-            }
-            output.count = requiredLength
-            return try NetworkTelemetryCodec.decode(output)
+            guard (48...telemetryOutputBuffer.count).contains(requiredLength)
+            else { throw PacketTunnelSelectorError.responseTooLarge }
+            return try NetworkTelemetryCodec.decode(
+                telemetryOutputBuffer.prefix(requiredLength)
+            )
         }
     }
 
@@ -362,10 +505,17 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         ipVersion: UInt8
     ) {
         guard ipVersion == 4 || ipVersion == 6 else { return }
-        let family = NSNumber(value: ipVersion == 6 ? AF_INET6 : AF_INET)
         packetQueue.async { [weak self] in
             guard let self, self.isRunning() else { return }
-            _ = self.packetFlow.writePackets([data], withProtocols: [family])
+            autoreleasepool {
+                let family = NSNumber(
+                    value: ipVersion == 6 ? AF_INET6 : AF_INET
+                )
+                _ = self.packetFlow.writePackets(
+                    [data],
+                    withProtocols: [family]
+                )
+            }
         }
     }
 
@@ -375,14 +525,19 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         mtu: Int,
         routingMode: RoutingMode,
         dnsPolicy: DNSRuntimePolicy,
-        localProxy: LocalProxySettings
+        localProxy: LocalProxySettings,
+        generation: UInt64,
+        completionGroup: DispatchGroup
     ) {
         let cwd = runtimeDirectory.path
         let routingModeABI = routingMode.packetFlowABIValue
 
         engineQueue.async { [weak self] in
+            defer { completionGroup.leave() }
             guard let self else { return }
-            PacketCoreRuntimeLog.logger.info("stage=engineWorker entered")
+            PacketCoreRuntimeLog.logger.info(
+                "stage=engineWorker entered generation=\(generation, privacy: .public)"
+            )
             var dnsPolicyABI = clash_packet_dns_policy_v1_t(
                 struct_size: UInt32(
                     MemoryLayout<clash_packet_dns_policy_v1_t>.size
@@ -433,17 +588,20 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             }
             let message = String(cString: result)
             clash_free_string(result)
-            if !self.isStopping() {
+            if !self.isExpectedStop(generation: generation) {
                 PacketCoreRuntimeLog.logger.error(
-                    "stage=engineWorker returned hasMessage=\(!message.isEmpty, privacy: .public)"
+                    "stage=engineWorker returned generation=\(generation, privacy: .public) hasMessage=\(!message.isEmpty, privacy: .public)"
                 )
-                self.recordFailure(
+                self.recordFailureIfCurrent(
                     message.isEmpty
                         ? PacketTunnelError.engineStoppedUnexpectedly
-                        : PacketTunnelError.engineFailed(message)
+                        : PacketTunnelError.engineFailed(message),
+                    generation: generation
                 )
             } else {
-                PacketCoreRuntimeLog.logger.info("stage=engineWorker stopped")
+                PacketCoreRuntimeLog.logger.info(
+                    "stage=engineWorker stopped generation=\(generation, privacy: .public)"
+                )
             }
         }
     }
@@ -452,12 +610,14 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         guard isRunning() else { return }
         packetFlow.readPackets { [weak self] packets, _ in
             guard let self, self.isRunning() else { return }
-            for packet in packets {
-                packet.withUnsafeBytes { bytes in
-                    guard let base = bytes.bindMemory(to: UInt8.self).baseAddress else {
-                        return
+            autoreleasepool {
+                for packet in packets {
+                    packet.withUnsafeBytes { bytes in
+                        guard let base = bytes.bindMemory(to: UInt8.self).baseAddress else {
+                            return
+                        }
+                        _ = clash_packet_input(base, bytes.count)
                     }
-                    _ = clash_packet_input(base, bytes.count)
                 }
             }
             self.beginReadingPackets()
@@ -568,6 +728,13 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         }
     }
 
+    private func recordFailureIfCurrent(_ error: Error, generation: UInt64) {
+        stateLock.withLock {
+            guard state.engineGeneration == generation else { return }
+            state.failure = error
+        }
+    }
+
     private func currentFailure() -> Error? {
         stateLock.withLock { state.failure }
     }
@@ -580,6 +747,43 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         stateLock.withLock { state.stopping }
     }
 
+    private func isExpectedStop(generation: UInt64) -> Bool {
+        stateLock.withLock {
+            state.engineGeneration == generation && state.stopping
+        }
+    }
+
+    private func reapStoppedEngineIfPossible() {
+        let stoppedGeneration = stateLock.withLock { () -> UInt64? in
+            guard state.stopping,
+                  let completion = state.engineCompletion,
+                  completion.wait(timeout: .now()) == .success else {
+                return nil
+            }
+            return state.engineGeneration
+        }
+        guard let stoppedGeneration else { return }
+        PacketCoreRuntimeLog.logger.info(
+            "stage=reapStoppedEngine generation=\(stoppedGeneration, privacy: .public)"
+        )
+        finishStoppedEngine(generation: stoppedGeneration)
+    }
+
+    private func finishStoppedEngine(generation: UInt64) {
+        let finalized = stateLock.withLock {
+            guard state.engineGeneration == generation,
+                  state.stopping else { return false }
+            state.stopping = false
+            state.engineCompletion = nil
+            return true
+        }
+        guard finalized else { return }
+        let releasedBytes = malloc_zone_pressure_relief(nil, 0)
+        PacketCoreRuntimeLog.logger.info(
+            "stage=releaseAllocatorPages generation=\(generation, privacy: .public) bytes=\(releasedBytes, privacy: .public)"
+        )
+    }
+
     private func finishStartup() -> Bool {
         stateLock.withLock {
             guard !state.startupFinished else { return false }
@@ -587,6 +791,13 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             return true
         }
     }
+}
+
+private struct StopResources {
+    let retainedContext: UnsafeMutableRawPointer?
+    let generation: UInt64
+    let completion: DispatchGroup
+    let requestsShutdown: Bool
 }
 
 private func aetherRoutePacketOutput(
@@ -605,10 +816,12 @@ private func aetherRoutePacketOutput(
 enum PacketTunnelError: LocalizedError {
     case bridgeInstallationFailed
     case coreUnavailable
+    case lifecycleBusy
     case engineFailed(String)
     case engineReturnedNoResult
     case engineStoppedUnexpectedly
     case readinessTimedOut
+    case shutdownTimedOut
     case startupCancelled
 
     var errorDescription: String? {
@@ -617,6 +830,8 @@ enum PacketTunnelError: LocalizedError {
             "The bounded packet bridge could not be installed."
         case .coreUnavailable:
             "The packet tunnel provider became unavailable during startup."
+        case .lifecycleBusy:
+            "The previous packet tunnel protocol core is still stopping."
         case let .engineFailed(message):
             "The protocol engine failed: \(message)"
         case .engineReturnedNoResult:
@@ -625,6 +840,8 @@ enum PacketTunnelError: LocalizedError {
             "The protocol engine stopped before the tunnel was closed."
         case .readinessTimedOut:
             "The packet tunnel protocol core did not become ready before its bounded startup deadline."
+        case .shutdownTimedOut:
+            "The packet tunnel protocol core did not stop before its bounded shutdown deadline."
         case .startupCancelled:
             "Packet tunnel startup was cancelled."
         }

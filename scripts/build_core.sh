@@ -10,7 +10,13 @@ DESTINATION="$ROOT/Core/Artifacts/macos-arm64"
 FEATURES=${AETHERROUTE_CORE_FEATURES:-aether-flow-only}
 export MACOSX_DEPLOYMENT_TARGET=14.0
 export CFLAGS="-mmacosx-version-min=14.0"
-export RUSTFLAGS="${RUSTFLAGS:--D warnings}"
+case "$CORE_SOURCE:$CARGO_TARGET_DIR" in
+  *[[:space:]]*)
+    echo "Core source and Cargo target paths must not contain whitespace" >&2
+    exit 1
+    ;;
+esac
+export RUSTFLAGS="${RUSTFLAGS:--D warnings} --remap-path-prefix=$CORE_SOURCE=/aetherroute-core --remap-path-prefix=$CARGO_TARGET_DIR=/aetherroute-target"
 
 if [ ! -f "$CORE_SOURCE/Cargo.lock" ]; then
   echo "Pinned core source not found: $CORE_SOURCE" >&2
@@ -115,6 +121,7 @@ for SYMBOL in \
   clash_flow_selector_snapshot_v1 \
   clash_flow_selector_select_v1 \
   clash_flow_selector_latency_v1 \
+  clash_flow_selector_active_latency_v1 \
   clash_flow_telemetry_snapshot_v1 \
   clash_flow_tcp_create \
   clash_flow_udp_create \
@@ -134,7 +141,7 @@ do
 done
 
 FLOW_ABI_COUNT=$(printf '%s\n' "$FLOW_SYMBOLS" | grep -Ec '^_clash_flow_' || true)
-if [ "$FLOW_ABI_COUNT" -ne 18 ]; then
+if [ "$FLOW_ABI_COUNT" -ne 19 ]; then
   echo "Refusing core artifact with unexpected Flow ABI count: $FLOW_ABI_COUNT" >&2
   exit 1
 fi

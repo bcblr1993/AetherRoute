@@ -25,12 +25,20 @@ public protocol TransparentProxyFlowEngine: AnyObject, Sendable {
 
     func selectorSnapshot(group: String) throws -> ProxySelectionState
 
+    func setRoutingMode(_ mode: RoutingMode) throws
+
     func selectProxy(
         group: String,
         member: String
     ) throws -> ProxySelectionState
 
     func testProxyLatency(
+        group: String,
+        url: String,
+        timeoutMilliseconds: UInt32
+    ) throws -> ProxyLatencyState
+
+    func testActiveProxyLatency(
         group: String,
         url: String,
         timeoutMilliseconds: UInt32
@@ -44,6 +52,10 @@ public protocol TransparentProxyFlowEngine: AnyObject, Sendable {
 }
 
 public extension TransparentProxyFlowEngine {
+    func setRoutingMode(_: RoutingMode) throws {
+        throw TransparentProxySelectionError.unsupported
+    }
+
     func selectorSnapshot(group _: String) throws -> ProxySelectionState {
         throw TransparentProxySelectionError.unsupported
     }
@@ -56,6 +68,14 @@ public extension TransparentProxyFlowEngine {
     }
 
     func testProxyLatency(
+        group _: String,
+        url _: String,
+        timeoutMilliseconds _: UInt32
+    ) throws -> ProxyLatencyState {
+        throw TransparentProxySelectionError.unsupported
+    }
+
+    func testActiveProxyLatency(
         group _: String,
         url _: String,
         timeoutMilliseconds _: UInt32
@@ -273,6 +293,15 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         }
     }
 
+    public func setRoutingMode(_ mode: RoutingMode) throws {
+        try admissionLock.withLock {
+            guard acceptingFlows else {
+                throw TransparentProxySelectionError.runtimeStopping
+            }
+            try engine.setRoutingMode(mode)
+        }
+    }
+
     public func selectProxy(
         group: String,
         member: String
@@ -295,6 +324,23 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
                 throw TransparentProxySelectionError.runtimeStopping
             }
             return try engine.testProxyLatency(
+                group: group,
+                url: url,
+                timeoutMilliseconds: timeoutMilliseconds
+            )
+        }
+    }
+
+    public func testActiveProxyLatency(
+        group: String,
+        url: String,
+        timeoutMilliseconds: UInt32
+    ) throws -> ProxyLatencyState {
+        try admissionLock.withLock {
+            guard acceptingFlows else {
+                throw TransparentProxySelectionError.runtimeStopping
+            }
+            return try engine.testActiveProxyLatency(
                 group: group,
                 url: url,
                 timeoutMilliseconds: timeoutMilliseconds
@@ -589,6 +635,13 @@ public final class TransparentProxyProviderLifecycleController:
         return try runtime.selectorSnapshot(group: group)
     }
 
+    public func setRoutingMode(_ mode: RoutingMode) throws {
+        guard let runtime = runningRuntime() else {
+            throw TransparentProxySelectionError.providerUnavailable
+        }
+        try runtime.setRoutingMode(mode)
+    }
+
     public func selectProxy(
         group: String,
         member: String
@@ -608,6 +661,21 @@ public final class TransparentProxyProviderLifecycleController:
             throw TransparentProxySelectionError.providerUnavailable
         }
         return try runtime.testProxyLatency(
+            group: group,
+            url: url,
+            timeoutMilliseconds: timeoutMilliseconds
+        )
+    }
+
+    public func testActiveProxyLatency(
+        group: String,
+        url: String,
+        timeoutMilliseconds: UInt32
+    ) throws -> ProxyLatencyState {
+        guard let runtime = runningRuntime() else {
+            throw TransparentProxySelectionError.providerUnavailable
+        }
+        return try runtime.testActiveProxyLatency(
             group: group,
             url: url,
             timeoutMilliseconds: timeoutMilliseconds

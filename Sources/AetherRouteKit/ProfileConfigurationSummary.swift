@@ -151,6 +151,29 @@ public struct ProxyConfigurationSummary: Identifiable, Equatable, Sendable {
     }
 }
 
+/// One proxy-server socket from an already validated profile. This projection
+/// is used only inside the Network Extension while constructing narrowly
+/// scoped recursion exclusions. Callers must not log or persist these values.
+public struct ProfileUpstreamEndpoint: Equatable, Hashable, Sendable {
+    public let host: String
+    public let port: UInt16
+
+    public init(host: String, port: UInt16) {
+        self.host = host
+        self.port = port
+    }
+}
+
+public enum ProfileUpstreamEndpointInspector {
+    public static let maximumEndpoints =
+        ProfileConfigurationInspector.maximumDisplayedItemsPerSection
+
+    public static func inspect(yaml: String) -> [ProfileUpstreamEndpoint] {
+        var parser = Parser(yaml: yaml)
+        return parser.parseUpstreamEndpoints()
+    }
+}
+
 public struct ProxyGroupConfigurationSummary: Identifiable, Equatable, Sendable {
     public let id: Int
     public let name: String
@@ -234,6 +257,8 @@ private struct Parser {
     private struct Item {
         var name = ""
         var type = ""
+        var server = ""
+        var port = ""
         var members: [String] = []
     }
 
@@ -295,6 +320,7 @@ private struct Parser {
     private var dnsNestedField: String?
 
     private var proxies: [ProxyConfigurationSummary] = []
+    private var upstreamEndpoints: [ProfileUpstreamEndpoint] = []
     private var groups: [ProxyGroupConfigurationSummary] = []
     private var proxyProviders: [ProviderConfigurationSummary] = []
     private var rules: [RuleConfigurationSummary] = []
@@ -312,6 +338,16 @@ private struct Parser {
     }
 
     mutating func parse() -> ProfileConfigurationSummary {
+        parseDocument()
+        return summary
+    }
+
+    mutating func parseUpstreamEndpoints() -> [ProfileUpstreamEndpoint] {
+        parseDocument()
+        return upstreamEndpoints
+    }
+
+    private mutating func parseDocument() {
         for rawLine in lines {
             let line = Self.removingComment(from: rawLine)
             guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -359,7 +395,10 @@ private struct Parser {
 
         finishPendingItem()
         finishPendingProvider()
-        return ProfileConfigurationSummary(
+    }
+
+    private var summary: ProfileConfigurationSummary {
+        ProfileConfigurationSummary(
             dns: dns.summary,
             proxies: proxies,
             proxyGroups: groups,
@@ -562,6 +601,12 @@ private struct Parser {
         case "type":
             item?.type = Self.scalar(value)
             readingMembers = false
+        case "server" where section == .proxies:
+            item?.server = Self.scalar(value)
+            readingMembers = false
+        case "port" where section == .proxies:
+            item?.port = Self.scalar(value)
+            readingMembers = false
         case let key where section == .proxyGroups
             && (key == "proxies" || key == "use"):
             readingMembers = value.isEmpty
@@ -583,6 +628,10 @@ private struct Parser {
             switch key.lowercased() {
             case "name": item?.name = Self.scalar(value)
             case "type": item?.type = Self.scalar(value)
+            case "server" where section == .proxies:
+                item?.server = Self.scalar(value)
+            case "port" where section == .proxies:
+                item?.port = Self.scalar(value)
             case let key where section == .proxyGroups
                 && (key == "proxies" || key == "use"):
                 item?.members.append(contentsOf: Self.splitFlowSequence(value))
@@ -601,6 +650,15 @@ private struct Parser {
         switch section {
         case .proxies:
             proxyCount += 1
+            if upstreamEndpoints.count
+                < ProfileUpstreamEndpointInspector.maximumEndpoints,
+               !item.server.isEmpty,
+               let port = UInt16(item.port),
+               port > 0 {
+                upstreamEndpoints.append(
+                    ProfileUpstreamEndpoint(host: item.server, port: port)
+                )
+            }
             guard proxies.count < ProfileConfigurationInspector.maximumDisplayedItemsPerSection else {
                 return
             }

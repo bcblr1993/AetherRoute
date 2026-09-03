@@ -16,7 +16,7 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 cp /usr/bin/true "$PROBE_ROOT/probe"
-if ! codesign --force --sign "$IDENTITY" -o runtime \
+if ! codesign --force --sign "$IDENTITY" -o runtime --timestamp=none \
   "$PROBE_ROOT/probe" >"$PROBE_ROOT/codesign.log" 2>&1; then
   echo "Developer ID certificate is installed, but its private key is unavailable." >&2
   echo "Unlock the login Keychain in Keychain Access, then rerun this build." >&2
@@ -31,4 +31,3 @@ codesign --verify --strict --verbose=2 "$PROBE_ROOT/probe" >/dev/null 2>&1 || {
 }
 
 echo "Developer ID private-key access passed."
-

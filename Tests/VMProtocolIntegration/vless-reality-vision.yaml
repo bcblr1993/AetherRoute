@@ -1,0 +1,25 @@
+mode: rule
+log-level: warning
+ipv6: false
+dns:
+  enable: false
+proxies:
+  - name: VLESS REALITY Vision Interop
+    type: vless
+    server: 192.168.64.4
+    port: 59020
+    uuid: b831381d-6324-4d53-ad4f-8cda48b30811
+    tls: true
+    servername: localhost
+    flow: xtls-rprx-vision
+    client-fingerprint: safari
+    reality-opts:
+      public-key: eom0Be6p7gnM1br3yT0SolVLmM8EW98yATnVYC1SnBg
+      short-id: 6ba85179e30d4fc2
+proxy-groups:
+  - name: AetherRoute Interop
+    type: select
+    proxies:
+      - VLESS REALITY Vision Interop
+rules:
+  - MATCH,AetherRoute Interop

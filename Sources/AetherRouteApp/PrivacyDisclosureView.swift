@@ -62,7 +62,7 @@ struct PrivacyDisclosureView: View {
                     .font(.title2.weight(.semibold))
                 Text(disclosureSubtitle)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }

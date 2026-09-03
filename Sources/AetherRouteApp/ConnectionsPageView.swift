@@ -7,17 +7,18 @@ import SwiftUI
 /// nowhere to go.
 struct ConnectionsView: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    @ObservedObject var telemetry: NetworkTelemetryViewModel
     @State private var filter: ConnectionOutletFilter = .all
     @State private var sort: ConnectionSort = .traffic
 
     var body: some View {
         VStack(spacing: 0) {
-            SessionBar()
+            SessionBar(telemetry: telemetry)
                 .environmentObject(tunnel)
                 .padding(.horizontal, AetherVisual.s4)
                 .padding(.top, AetherVisual.s3)
 
-            if tunnel.telemetry.connections.isEmpty {
+            if telemetry.snapshot.connections.isEmpty {
                 emptyState
             } else {
                 connectionList
@@ -109,7 +110,7 @@ struct ConnectionsView: View {
                 TableColumn("Duration") { row in
                     ConnectionDurationCell(connection: row.connection)
                 }
-                .width(44)
+                .width(min: 64, ideal: 68, max: 76)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: false))
             .accessibilityLabel("Connections")
@@ -125,7 +126,7 @@ struct ConnectionsView: View {
     }
 
     private var visibleConnections: [ConnectionTelemetry] {
-        tunnel.telemetry.connections
+        telemetry.snapshot.connections
             .filter {
                 ConnectionOutlet(proxyChain: $0.proxyChain).matches(filter)
             }
@@ -145,7 +146,7 @@ struct ConnectionsView: View {
         String.localizedStringWithFormat(
             AppLocalization.string("Showing %lld of %lld connections"),
             Int64(visibleConnections.count),
-            Int64(tunnel.telemetry.connections.count)
+            Int64(telemetry.snapshot.connections.count)
         )
     }
 
@@ -164,7 +165,7 @@ struct ConnectionsView: View {
     }
 
     private func label(for option: ConnectionOutletFilter) -> String {
-        let count = tunnel.telemetry.connections.filter {
+        let count = telemetry.snapshot.connections.filter {
             ConnectionOutlet(proxyChain: $0.proxyChain).matches(option)
         }.count
         return "\(option.localizedTitle) \(count)"
@@ -176,6 +177,7 @@ struct ConnectionsView: View {
 /// measurement that was never taken is what made the old page feel wrong.
 private struct SessionBar: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    @ObservedObject var telemetry: NetworkTelemetryViewModel
 
     var body: some View {
         HStack(spacing: AetherVisual.s4) {
@@ -242,6 +244,7 @@ private struct SessionBar: View {
             RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                 .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("connections-session-bar")
     }
 
@@ -259,13 +262,13 @@ private struct SessionBar: View {
 
     private var downloadText: String {
         tunnel.isConnected
-            ? formattedRate(tunnel.telemetry.downloadBytesPerSecond)
+            ? formattedRate(telemetry.snapshot.downloadBytesPerSecond)
             : "—"
     }
 
     private var uploadText: String {
         tunnel.isConnected
-            ? formattedRate(tunnel.telemetry.uploadBytesPerSecond)
+            ? formattedRate(telemetry.snapshot.uploadBytesPerSecond)
             : "—"
     }
 
@@ -338,8 +341,13 @@ private struct ConnectionDestinationCell: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(height: 36)
-        .background(outlet == .rejected ? Color.red.opacity(0.04) : .clear)
-        .accessibilityElement(children: .combine)
+        .foregroundStyle(.primary)
+        .background(
+            outlet == .rejected
+                ? Color.red.opacity(0.08)
+                : Color(nsColor: .controlBackgroundColor)
+        )
+        .accessibilityElement(children: .contain)
     }
 
     private var outlet: ConnectionOutlet {

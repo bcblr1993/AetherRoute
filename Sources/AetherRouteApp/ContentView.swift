@@ -68,6 +68,12 @@ enum AppSection: String, CaseIterable, Identifiable {
     }
 }
 
+extension Notification.Name {
+    static let aetherRouteNavigateToSection = Notification.Name(
+        "com.aetherroute.desktop.navigate-to-section"
+    )
+}
+
 extension RoutingMode {
     var localizedTitleKey: LocalizedStringKey {
         switch self {
@@ -137,6 +143,16 @@ struct ContentView: View {
                 .accessibilityHidden(true)
         }
         .animation(effectiveReduceMotion ? nil : .snappy(duration: 0.28), value: selectedSection)
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .aetherRouteNavigateToSection
+            )
+        ) { notification in
+            guard let rawValue = notification.object as? String,
+                  let section = AppSection(rawValue: rawValue)
+            else { return }
+            selectedSection = section
+        }
         .onOpenURL { url in
             tunnel.handleExternalURL(url)
         }
@@ -328,10 +344,6 @@ struct ContentView: View {
                             .accessibilityIdentifier(
                                 "primary-navigation-\(section.rawValue)"
                             )
-                            .keyboardShortcut(
-                                section.keyboardShortcut,
-                                modifiers: .command
-                            )
                     }
                 }
 
@@ -443,7 +455,7 @@ struct ContentView: View {
                 case .proxies:
                     ProxiesView()
                 case .connections:
-                    ConnectionsView()
+                    ConnectionsView(telemetry: tunnel.telemetryViewModel)
                 case .profiles:
                     ProfilesView()
                 case .rules:
@@ -510,7 +522,18 @@ private struct OverviewView: View {
         ScrollView {
             VStack(spacing: AetherVisual.s5) {
                 ConnectionHero()
-                ConnectionControlBar()
+                ConnectionControlBar(
+                    networkEngineMode: tunnel.networkEngineMode,
+                    routingMode: tunnel.routingMode,
+                    canChangeNetworkEngine: tunnel.canChangeNetworkEngine,
+                    canChangeRoutingMode: tunnel.canChangeRoutingMode,
+                    selectNetworkEngine: { mode in
+                        Task { await tunnel.setNetworkEngineMode(mode) }
+                    },
+                    selectRoutingMode: { mode in
+                        Task { await tunnel.setRoutingMode(mode) }
+                    }
+                )
                 overviewDetails
             }
             .padding(.horizontal, AetherVisual.pageHorizontalPadding)
@@ -540,25 +563,31 @@ private struct OverviewView: View {
                 )
                 Divider()
                     .frame(height: 52)
-                MetricTile(
+                LiveTelemetryMetricTile(
                     label: "Download",
-                    value: formattedRate(tunnel.telemetry.downloadBytesPerSecond),
                     unit: "",
-                    symbol: "arrow.down"
+                    symbol: "arrow.down",
+                    metric: .download,
+                    isConnected: tunnel.isConnected,
+                    telemetry: tunnel.telemetryViewModel
                 )
                 Divider().frame(height: 52)
-                MetricTile(
+                LiveTelemetryMetricTile(
                     label: "Upload",
-                    value: formattedRate(tunnel.telemetry.uploadBytesPerSecond),
                     unit: "",
-                    symbol: "arrow.up"
+                    symbol: "arrow.up",
+                    metric: .upload,
+                    isConnected: tunnel.isConnected,
+                    telemetry: tunnel.telemetryViewModel
                 )
                 Divider().frame(height: 52)
-                MetricTile(
+                LiveTelemetryMetricTile(
                     label: "Active connections",
-                    value: String(tunnel.telemetry.connections.count),
                     unit: "",
-                    symbol: "point.3.connected.trianglepath.dotted"
+                    symbol: "point.3.connected.trianglepath.dotted",
+                    metric: .connections,
+                    isConnected: tunnel.isConnected,
+                    telemetry: tunnel.telemetryViewModel
                 )
             }
             .padding(.vertical, AetherVisual.s1)
@@ -737,7 +766,7 @@ private struct ConnectionHero: View {
                     )
                     .overlay {
                         Capsule()
-                            .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+                            .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
                     }
                     .accessibilityHidden(true)
 
@@ -760,94 +789,14 @@ private struct ConnectionHero: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
-    private var connectionControls: some View {
-#if AETHERROUTE_INDEPENDENT
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: AetherVisual.s5) {
-                engineControl
-                Divider()
-                    .frame(height: 66)
-                routingControl
-            }
-
-            VStack(alignment: .leading, spacing: AetherVisual.s4) {
-                engineControl
-                Divider()
-                routingControl
-            }
-        }
-#else
-        routingControl
-#endif
-    }
-
-#if AETHERROUTE_INDEPENDENT
-    private var engineControl: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            HStack(spacing: AetherVisual.s2) {
-                Text("Network engine")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .accessibilityHidden(true)
-                Spacer()
-                Text(tunnel.networkEngineMode.localizedCompactDetail)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .accessibilityHidden(true)
-            }
-
-            Picker("Network engine", selection: networkEngineBinding) {
-                ForEach(NetworkEngineMode.allCases) { mode in
-                    Text(mode.localizedTitleKey).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .disabled(!tunnel.canChangeNetworkEngine)
-            .accessibilityIdentifier("network-engine-picker")
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-#endif
-
-    private var routingControl: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            Text("Routing mode")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .accessibilityHidden(true)
-
-            Picker("Routing mode", selection: $tunnel.routingMode) {
-                ForEach(RoutingMode.allCases, id: \.self) { mode in
-                    Text(mode.localizedTitleKey).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .disabled(!tunnel.canChangeRoutingMode)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-#if AETHERROUTE_INDEPENDENT
-    private var networkEngineBinding: Binding<NetworkEngineMode> {
-        Binding(
-            get: { tunnel.networkEngineMode },
-            set: { mode in
-                Task { await tunnel.setNetworkEngineMode(mode) }
-            }
-        )
-    }
-#endif
-
     private var stateBadgeTitle: String {
         switch tunnel.state {
         case .privacyConsentRequired: AppLocalization.string("Privacy")
         case .loading: AppLocalization.string("Preparing")
         case .disconnected: AppLocalization.string("Standby")
         case .connecting: AppLocalization.string("Starting")
+        case .connected where tunnel.isAutomaticRouteRecovering:
+            AppLocalization.string("Recovering")
         case .connected: AppLocalization.string("Protected")
         case .disconnecting: AppLocalization.string("Stopping")
         case .failed: AppLocalization.string("Attention")
@@ -870,6 +819,10 @@ private struct ConnectionHero: View {
                 : AppLocalization.string("Connect when ready, or review the active profile first.")
         case .connecting:
             AppLocalization.string("You can cancel safely while readiness checks are running.")
+        case .connected where tunnel.isAutomaticRouteRecovering:
+            AppLocalization.string(
+                "The tunnel remains active while AetherRoute retries the fastest available node."
+            )
         case .connected:
             AppLocalization.string("Readiness checks passed. Open Connections for per-flow details.")
         case .disconnecting:
@@ -881,6 +834,8 @@ private struct ConnectionHero: View {
 
     private var nextStepSymbol: String {
         switch tunnel.state {
+        case .connected where tunnel.isAutomaticRouteRecovering:
+            "arrow.triangle.2.circlepath"
         case .connected: "checkmark.circle.fill"
         case .failed: "exclamationmark.triangle.fill"
         case .connecting, .disconnecting, .loading: "clock"
@@ -1003,7 +958,12 @@ private struct ConnectionProgressStages: View {
 }
 
 private struct ConnectionControlBar: View {
-    @EnvironmentObject private var tunnel: TunnelManager
+    let networkEngineMode: NetworkEngineMode
+    let routingMode: RoutingMode
+    let canChangeNetworkEngine: Bool
+    let canChangeRoutingMode: Bool
+    let selectNetworkEngine: (NetworkEngineMode) -> Void
+    let selectRoutingMode: (RoutingMode) -> Void
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -1018,26 +978,23 @@ private struct ConnectionControlBar: View {
     private var controls: some View {
 #if AETHERROUTE_INDEPENDENT
         labeledPicker("Network engine") {
-            Picker("Network engine", selection: networkEngineBinding) {
-                ForEach(NetworkEngineMode.allCases) { mode in
-                    Text(mode.localizedTitleKey).tag(mode)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .disabled(!tunnel.canChangeNetworkEngine)
-            .accessibilityIdentifier("network-engine-picker")
+            NetworkEngineSegmentedControl(
+                selection: Binding(
+                    get: { networkEngineMode },
+                    set: { mode in selectNetworkEngine(mode) }
+                ),
+                isEnabled: canChangeNetworkEngine
+            )
         }
 #endif
         labeledPicker("Routing mode") {
-            Picker("Routing mode", selection: $tunnel.routingMode) {
-                ForEach(RoutingMode.allCases, id: \.self) { mode in
-                    Text(mode.localizedTitleKey).tag(mode)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .disabled(!tunnel.canChangeRoutingMode)
+            RoutingModeSegmentedControl(
+                selection: Binding(
+                    get: { routingMode },
+                    set: { mode in selectRoutingMode(mode) }
+                ),
+                isEnabled: canChangeRoutingMode
+            )
         }
     }
 
@@ -1055,14 +1012,112 @@ private struct ConnectionControlBar: View {
         .frame(maxWidth: .infinity)
     }
 
+}
+
 #if AETHERROUTE_INDEPENDENT
-    private var networkEngineBinding: Binding<NetworkEngineMode> {
-        Binding(
-            get: { tunnel.networkEngineMode },
-            set: { mode in Task { await tunnel.setNetworkEngineMode(mode) } }
-        )
+private struct NetworkEngineSegmentedControl: NSViewRepresentable {
+    @Binding var selection: NetworkEngineMode
+    let isEnabled: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selection: $selection)
     }
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl(
+            labels: NetworkEngineMode.allCases.map(\.localizedTitle),
+            trackingMode: .selectOne,
+            target: context.coordinator,
+            action: #selector(Coordinator.selectionChanged(_:))
+        )
+        configure(control)
+        return control
+    }
+
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.selection = $selection
+        configure(control)
+    }
+
+    private func configure(_ control: NSSegmentedControl) {
+        let modes = NetworkEngineMode.allCases
+        for (index, mode) in modes.enumerated() {
+            control.setLabel(mode.localizedTitle, forSegment: index)
+        }
+        control.selectedSegment = modes.firstIndex(of: selection) ?? -1
+        control.isEnabled = isEnabled
+        control.segmentDistribution = .fillEqually
+        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        control.setAccessibilityIdentifier("network-engine-picker")
+        control.setAccessibilityLabel(AppLocalization.string("Network engine"))
+    }
+
+    final class Coordinator: NSObject {
+        var selection: Binding<NetworkEngineMode>
+
+        init(selection: Binding<NetworkEngineMode>) {
+            self.selection = selection
+        }
+
+        @MainActor @objc func selectionChanged(_ sender: NSSegmentedControl) {
+            let modes = NetworkEngineMode.allCases
+            guard modes.indices.contains(sender.selectedSegment) else { return }
+            selection.wrappedValue = modes[sender.selectedSegment]
+        }
+    }
+}
 #endif
+
+private struct RoutingModeSegmentedControl: NSViewRepresentable {
+    @Binding var selection: RoutingMode
+    let isEnabled: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selection: $selection)
+    }
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl(
+            labels: RoutingMode.allCases.map(\.localizedTitle),
+            trackingMode: .selectOne,
+            target: context.coordinator,
+            action: #selector(Coordinator.selectionChanged(_:))
+        )
+        configure(control)
+        return control
+    }
+
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.selection = $selection
+        configure(control)
+    }
+
+    private func configure(_ control: NSSegmentedControl) {
+        let modes = RoutingMode.allCases
+        for (index, mode) in modes.enumerated() {
+            control.setLabel(mode.localizedTitle, forSegment: index)
+        }
+        control.selectedSegment = modes.firstIndex(of: selection) ?? -1
+        control.isEnabled = isEnabled
+        control.segmentDistribution = .fillEqually
+        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        control.setAccessibilityIdentifier("routing-mode-picker")
+        control.setAccessibilityLabel(AppLocalization.string("Routing mode"))
+    }
+
+    final class Coordinator: NSObject {
+        var selection: Binding<RoutingMode>
+
+        init(selection: Binding<RoutingMode>) {
+            self.selection = selection
+        }
+
+        @MainActor @objc func selectionChanged(_ sender: NSSegmentedControl) {
+            let modes = RoutingMode.allCases
+            guard modes.indices.contains(sender.selectedSegment) else { return }
+            selection.wrappedValue = modes[sender.selectedSegment]
+        }
+    }
 }
 
 private struct RouteSummary: View {
@@ -1126,6 +1181,8 @@ private struct RouteSummary: View {
         case .loading: AppLocalization.string("Preparing")
         case .disconnected: AppLocalization.string("Normal network")
         case .connecting: AppLocalization.string("Starting")
+        case .connected where tunnel.isAutomaticRouteRecovering:
+            AppLocalization.string("Retrying nodes")
         case .connected: AppLocalization.string("Extension ready")
         case .disconnecting: AppLocalization.string("Stopping")
         case .failed: AppLocalization.string("Unavailable")
@@ -1142,6 +1199,8 @@ private struct RouteSummary: View {
             (AppLocalization.string("Standby"), "pause.circle", .secondary)
         case .connecting:
             (AppLocalization.string("Starting"), "progress.indicator", .orange)
+        case .connected where tunnel.isAutomaticRouteRecovering:
+            (AppLocalization.string("Recovering"), "arrow.triangle.2.circlepath", .orange)
         case .connected:
             (AppLocalization.string("Active"), "checkmark.circle.fill", .teal)
         case .disconnecting:
@@ -1262,26 +1321,42 @@ private struct ExternalSubscriptionConfirmationSheet: View {
                 .accessibilityIdentifier("confirm-external-subscription")
             }
         }
-        .padding(AetherVisual.s6)
+        .padding(AetherVisual.dialogPadding)
         .frame(width: 540)
         .interactiveDismissDisabled(isConfirming)
     }
 }
 
 private struct ProfilesView: View {
+    private enum FileImporterKind {
+        case profile
+        case portableArchive
+        case routingResource
+
+        var allowedContentTypes: [UTType] {
+            switch self {
+            case .profile:
+                [.plainText, .data]
+            case .portableArchive:
+                [.aetherRouteProfileArchive, .data]
+            case .routingResource:
+                [.data]
+            }
+        }
+    }
+
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var tunnel: TunnelManager
-    @State private var isImporterPresented = false
+    @State private var fileImporterKind: FileImporterKind = .profile
+    @State private var isFileImporterPresented = false
     @State private var isManualNodeEditorPresented = false
     @State private var isSubscriptionEditorPresented = false
     @State private var subscriptionURL = ""
     @State private var profileToRename: ManagedProfile?
     @State private var nativeProfileToEdit: ManagedProfile?
-    @State private var isArchiveImporterPresented = false
     @State private var isArchivePasswordPresented = false
     @State private var isArchiveExporterPresented = false
     @State private var isExportPasswordPresented = false
-    @State private var isRoutingResourceImporterPresented = false
     @State private var routingResourceImportKind: RoutingResourceKind?
     @State private var archiveImportURL: URL?
     @State private var pendingArchiveData: Data?
@@ -1307,7 +1382,7 @@ private struct ProfilesView: View {
                                 )
                             Text(profileDetail)
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.primary)
                         }
                         Spacer(minLength: 0)
                     }
@@ -1324,7 +1399,7 @@ private struct ProfilesView: View {
 
                         Button("Import Profile…", systemImage: "square.and.arrow.down") {
                             tunnel.clearProfileMessage()
-                            isImporterPresented = true
+                            presentFileImporter(.profile)
                         }
                         .disabled(!tunnel.canModifyProfiles)
 
@@ -1341,7 +1416,7 @@ private struct ProfilesView: View {
                             .disabled(tunnel.profiles.isEmpty)
                             Button("Import Portable Archive…", systemImage: "square.and.arrow.down") {
                                 tunnel.clearProfileMessage()
-                                isArchiveImporterPresented = true
+                                presentFileImporter(.portableArchive)
                             }
                         }
                         .accessibilityIdentifier("profiles-more-menu")
@@ -1398,7 +1473,7 @@ private struct ProfilesView: View {
                     RoutingResourcesCard(
                         importResource: { kind in
                             routingResourceImportKind = kind
-                            isRoutingResourceImporterPresented = true
+                            presentFileImporter(.routingResource)
                         }
                     )
                     .environmentObject(tunnel)
@@ -1435,6 +1510,7 @@ private struct ProfilesView: View {
                             ManagedProfileRow(
                                 managed: managed,
                                 isActive: managed.id == tunnel.activeProfileID,
+                                canActivate: tunnel.canActivateProfile,
                                 canModify: tunnel.canModifyProfiles,
                                 activate: {
                                     Task {
@@ -1472,7 +1548,7 @@ private struct ProfilesView: View {
                         .font(.headline)
                     Text("YAML profiles are size-limited, UTF-8 checked, and rejected when they request scripts, plug-ins, commands, or downloadable external UI. The protocol engine performs a second parse before the network extension can report ready.")
                         .font(.subheadline)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(AetherVisual.s5)
@@ -1485,47 +1561,11 @@ private struct ProfilesView: View {
             .frame(maxWidth: .infinity)
         }
         .fileImporter(
-            isPresented: $isImporterPresented,
-            allowedContentTypes: [.plainText, .data],
+            isPresented: $isFileImporterPresented,
+            allowedContentTypes: fileImporterKind.allowedContentTypes,
             allowsMultipleSelection: false
         ) { result in
-            if case let .success(urls) = result, let url = urls.first {
-                tunnel.importProfile(from: url)
-            } else if case let .failure(error) = result {
-                tunnel.reportProfileImportError(error)
-            }
-        }
-        .fileImporter(
-            isPresented: $isArchiveImporterPresented,
-            allowedContentTypes: [.aetherRouteProfileArchive, .data],
-            allowsMultipleSelection: false
-        ) { result in
-            if case let .success(urls) = result, let url = urls.first {
-                archiveImportURL = url
-                Task { @MainActor in
-                    await Task.yield()
-                    isArchivePasswordPresented = true
-                }
-            } else if case let .failure(error) = result {
-                tunnel.reportProfileImportError(error)
-            }
-        }
-        .fileImporter(
-            isPresented: $isRoutingResourceImporterPresented,
-            allowedContentTypes: [.data],
-            allowsMultipleSelection: false
-        ) { result in
-            guard let kind = routingResourceImportKind else { return }
-            routingResourceImportKind = nil
-            switch result {
-            case let .success(urls):
-                guard let url = urls.first else { return }
-                Task {
-                    await tunnel.importRoutingResource(kind, from: url)
-                }
-            case let .failure(error):
-                tunnel.reportProfileImportError(error)
-            }
+            handleFileImport(result, kind: fileImporterKind)
         }
         .fileExporter(
             isPresented: $isArchiveExporterPresented,
@@ -1601,6 +1641,39 @@ private struct ProfilesView: View {
         )
     }
 
+    private func presentFileImporter(_ kind: FileImporterKind) {
+        fileImporterKind = kind
+        isFileImporterPresented = true
+    }
+
+    private func handleFileImport(
+        _ result: Result<[URL], any Error>,
+        kind: FileImporterKind
+    ) {
+        switch (kind, result) {
+        case let (.profile, .success(urls)):
+            guard let url = urls.first else { return }
+            tunnel.importProfile(from: url)
+        case let (.portableArchive, .success(urls)):
+            guard let url = urls.first else { return }
+            archiveImportURL = url
+            Task { @MainActor in
+                await Task.yield()
+                isArchivePasswordPresented = true
+            }
+        case let (.routingResource, .success(urls)):
+            guard let kind = routingResourceImportKind,
+                  let url = urls.first else { return }
+            routingResourceImportKind = nil
+            Task {
+                await tunnel.importRoutingResource(kind, from: url)
+            }
+        case let (_, .failure(error)):
+            routingResourceImportKind = nil
+            tunnel.reportProfileImportError(error)
+        }
+    }
+
     private func presentPendingArchiveExporter() {
         guard let pendingArchiveData else { return }
         archiveDocument = ProfileArchiveDocument(data: pendingArchiveData)
@@ -1631,8 +1704,8 @@ private struct RoutingResourcesCard: View {
                     Text(
                         "The active profile uses GEOIP or GEOSITE rules. Required databases must pass integrity checks before connection."
                     )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
@@ -1694,8 +1767,8 @@ private struct RoutingResourcesCard: View {
                     Text(
                         "Downloads are user-initiated over HTTPS and checksum-verified. Country.mmdb is MaxMind-derived through Loyalsoldier; GeoSite.dat is provided by V2Fly. Their upstream licenses apply."
                     )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1720,8 +1793,8 @@ private struct RoutingResourcesCard: View {
                 Text(kind.fileName)
                     .font(.body.weight(.medium))
                 Text(resourceStatusTitle(kind))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
             }
 
             Spacer(minLength: 12)
@@ -1792,6 +1865,7 @@ private struct ManagedProfileRow: View {
     @State private var isActionsPresented = false
     let managed: ManagedProfile
     let isActive: Bool
+    let canActivate: Bool
     let canModify: Bool
     let activate: () -> Void
     let rename: () -> Void
@@ -1842,7 +1916,7 @@ private struct ManagedProfileRow: View {
                 Button("Use", action: activate)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(!canModify)
+                    .disabled(!canActivate)
                     .accessibilityIdentifier("activate-profile-\(managed.id.uuidString)")
             }
 
@@ -1963,7 +2037,7 @@ private struct ProfileRenameSheet: View {
                 )
             }
         }
-        .padding(AetherVisual.s6)
+        .padding(AetherVisual.dialogPadding)
         .frame(width: 460)
     }
 }
@@ -2114,7 +2188,7 @@ private struct SubscriptionEditorSheet: View {
                 .accessibilityIdentifier("activate-subscription-button")
             }
         }
-        .padding(AetherVisual.s6)
+        .padding(AetherVisual.dialogPadding)
         .frame(width: 540)
     }
 }
@@ -2136,7 +2210,7 @@ private struct RouteStop: View {
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(caption)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.secondary)
                 Text(value)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
@@ -2153,7 +2227,7 @@ private struct RouteStop: View {
         )
         .overlay {
             RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(identifier)
@@ -2212,6 +2286,68 @@ private struct MetricTile: View {
     }
 }
 
+private enum LiveTelemetryMetricKind {
+    case download
+    case upload
+    case connections
+}
+
+/// The label, SF Symbol and panel layout remain structurally stable while only
+/// the numeric text observes high-frequency telemetry updates.
+private struct LiveTelemetryMetricTile: View {
+    let label: LocalizedStringKey
+    let unit: LocalizedStringKey
+    let symbol: String
+    let metric: LiveTelemetryMetricKind
+    let isConnected: Bool
+    let telemetry: NetworkTelemetryViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            Label(label, systemImage: symbol)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
+                LiveTelemetryMetricValue(
+                    metric: metric,
+                    isConnected: isConnected,
+                    telemetry: telemetry
+                )
+                Text(unit)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(AetherVisual.s5)
+    }
+}
+
+private struct LiveTelemetryMetricValue: View {
+    let metric: LiveTelemetryMetricKind
+    let isConnected: Bool
+    @ObservedObject var telemetry: NetworkTelemetryViewModel
+
+    var body: some View {
+        Text(value)
+            .font(.title2.weight(.medium))
+            .foregroundStyle(.primary)
+            .monospacedDigit()
+    }
+
+    private var value: String {
+        guard isConnected else { return "—" }
+        switch metric {
+        case .download:
+            return formattedRate(telemetry.snapshot.downloadBytesPerSecond)
+        case .upload:
+            return formattedRate(telemetry.snapshot.uploadBytesPerSecond)
+        case .connections:
+            return String(telemetry.snapshot.connections.count)
+        }
+    }
+}
+
 private struct SafetyNotice: View {
     var body: some View {
         HStack(alignment: .top, spacing: AetherVisual.s3) {
@@ -2235,8 +2371,4 @@ private struct SafetyNotice: View {
         .padding(.horizontal, AetherVisual.s1)
         .padding(.vertical, AetherVisual.s2)
     }
-}
-
-private func formattedRate(_ bytes: UInt64) -> String {
-    "\(ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file))/s"
 }

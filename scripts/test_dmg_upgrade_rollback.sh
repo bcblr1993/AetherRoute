@@ -5,13 +5,68 @@ umask 077
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-dmg-upgrade.XXXXXX")
 ACTIVE_MOUNT=
+V1_DMG=
+V2_DMG=
 PHASE=initialization
+OPERATION=none
+
+attached_device_for_dmg() {
+  dmg=$1
+  test -n "$dmg" || return 0
+  case "$dmg" in
+    "$TEMP_DIR"/AetherRoute-*.dmg) ;;
+    *)
+      echo "Refusing to inspect an unexpected DMG path: $dmg" >&2
+      return 1
+      ;;
+  esac
+  hdiutil info | awk -v expected="$dmg" '
+    /^={10,}$/ { matches = 0; next }
+    /^image-path[[:space:]]*:/ {
+      actual = $0
+      sub(/^[^:]*:[[:space:]]*/, "", actual)
+      normalized_actual = actual
+      normalized_expected = expected
+      gsub(/\/+/, "/", normalized_actual)
+      gsub(/\/+/, "/", normalized_expected)
+      matches = normalized_actual == normalized_expected
+      next
+    }
+    matches && $1 ~ /^\/dev\/disk[0-9]+$/ && $2 == "GUID_partition_scheme" {
+      print $1
+      exit
+    }
+  '
+}
+
+detach_dmg_image() {
+  dmg=$1
+  device=$(attached_device_for_dmg "$dmg")
+  test -n "$device" || return 0
+  case "$device" in
+    /dev/disk[0-9]*) ;;
+    *)
+      echo "Refusing unexpected disk-image device: $device" >&2
+      return 1
+      ;;
+  esac
+  attempt=1
+  while ! hdiutil detach "$device" -quiet; do
+    if [ "$attempt" -ge 3 ]; then
+      echo "Unable to detach temporary disk-image device $device" >&2
+      return 1
+    fi
+    sleep "$attempt"
+    attempt=$((attempt + 1))
+  done
+}
 
 cleanup() {
   status=$?
   trap - EXIT HUP INT TERM
   if [ "$status" -ne 0 ]; then
     printf '%s\n' "DMG upgrade/rollback gate failed during phase: $PHASE" >&2
+    printf '%s\n' "Last operation: $OPERATION" >&2
     if [ -n "$ACTIVE_MOUNT" ]; then
       printf '%s\n' "Active temporary mount at failure: $ACTIVE_MOUNT" >&2
     fi
@@ -19,6 +74,8 @@ cleanup() {
   if [ -n "$ACTIVE_MOUNT" ]; then
     hdiutil detach "$ACTIVE_MOUNT" -quiet 2>/dev/null || true
   fi
+  detach_dmg_image "$V1_DMG" 2>/dev/null || true
+  detach_dmg_image "$V2_DMG" 2>/dev/null || true
   find "$TEMP_DIR" -depth -delete 2>/dev/null || true
   exit "$status"
 }
@@ -108,9 +165,34 @@ make_dmg() {
 attach_dmg() {
   dmg=$1
   mount=$2
+  case "$mount" in
+    "$TEMP_DIR"/mount-*) ;;
+    *)
+      echo "Refusing unexpected temporary mountpoint: $mount" >&2
+      return 1
+      ;;
+  esac
   mkdir -p "$mount"
-  hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount" -quiet
+  attempt=1
+  while :; do
+    attach_log="$TEMP_DIR/attach-$(basename "$dmg")-attempt-$attempt.log"
+    OPERATION="attaching $(basename "$dmg") attempt $attempt"
+    if hdiutil attach "$dmg" -readonly -nobrowse \
+      -mountpoint "$mount" >"$attach_log" 2>&1; then
+      break
+    fi
+    hdiutil detach "$mount" -quiet 2>/dev/null || true
+    detach_dmg_image "$dmg" || true
+    if [ "$attempt" -ge 3 ]; then
+      echo "Unable to attach temporary DMG after $attempt attempts" >&2
+      tail -40 "$attach_log" >&2 || true
+      return 1
+    fi
+    sleep "$attempt"
+    attempt=$((attempt + 1))
+  done
   ACTIVE_MOUNT=$mount
+  OPERATION="verifying mounted $(basename "$dmg")"
   test -d "$mount/AetherRoute.app"
   test -L "$mount/Applications"
   test "$(readlink "$mount/Applications")" = /Applications
@@ -118,8 +200,30 @@ attach_dmg() {
 
 detach_active() {
   test -n "$ACTIVE_MOUNT"
-  hdiutil detach "$ACTIVE_MOUNT" -quiet
+  case "$ACTIVE_MOUNT" in
+    "$TEMP_DIR"/mount-*) ;;
+    *)
+      echo "Refusing unexpected active mountpoint: $ACTIVE_MOUNT" >&2
+      return 1
+      ;;
+  esac
+  attempt=1
+  while :; do
+    OPERATION="detaching temporary DMG attempt $attempt"
+    if hdiutil detach "$ACTIVE_MOUNT" -quiet; then
+      break
+    fi
+    if [ "$attempt" -ge 3 ]; then
+      echo "Unable to detach temporary DMG after $attempt attempts" >&2
+      return 1
+    fi
+    sleep "$attempt"
+    attempt=$((attempt + 1))
+  done
+  detach_dmg_image "$V1_DMG"
+  detach_dmg_image "$V2_DMG"
   ACTIVE_MOUNT=
+  OPERATION=none
 }
 
 replace_installed_app() {
@@ -129,15 +233,21 @@ replace_installed_app() {
   previous="$TEMP_DIR/Applications/.AetherRoute.app.previous"
   test ! -e "$staged"
   test ! -e "$previous"
+  OPERATION="staging replacement application"
   ditto "$source" "$staged"
+  OPERATION="verifying staged replacement application"
   codesign --verify --deep --strict "$staged"
   if [ -d "$target" ]; then
+    OPERATION="preserving previous application"
     mv "$target" "$previous"
   fi
+  OPERATION="activating staged replacement application"
   mv "$staged" "$target"
   if [ -d "$previous" ]; then
+    OPERATION="removing previous temporary application"
     find "$previous" -depth -delete
   fi
+  OPERATION=none
 }
 
 mkdir -p "$TEMP_DIR/v1" "$TEMP_DIR/v2" "$TEMP_DIR/Applications"

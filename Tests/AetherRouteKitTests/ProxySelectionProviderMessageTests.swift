@@ -3,6 +3,35 @@ import Foundation
 import XCTest
 
 final class ProxySelectionProviderMessageTests: XCTestCase {
+    func testRawSelectorLatencyCapacityUsesProtocolBoundInsteadOfEnvelope() {
+        XCTAssertEqual(
+            ProxySelectionProviderMessageCodec
+                .maximumSelectorLatencyPayloadBytes(memberCount: 0),
+            8
+        )
+        XCTAssertEqual(
+            ProxySelectionProviderMessageCodec
+                .maximumSelectorLatencyPayloadBytes(memberCount: 1),
+            1_040
+        )
+        XCTAssertEqual(
+            ProxySelectionProviderMessageCodec
+                .maximumSelectorLatencyPayloadBytes(memberCount: 64),
+            66_056
+        )
+        XCTAssertNil(
+            ProxySelectionProviderMessageCodec
+                .maximumSelectorLatencyPayloadBytes(memberCount: -1)
+        )
+        XCTAssertNil(
+            ProxySelectionProviderMessageCodec
+                .maximumSelectorLatencyPayloadBytes(
+                    memberCount: ProxySelectionProviderMessageCodec
+                        .maximumMemberCount
+                )
+        )
+    }
+
     func testRequestRoundTripsSnapshotAndSelection() throws {
         let requests: [ProxySelectionProviderRequest] = [
             .snapshot(group: "Balanced"),
@@ -12,8 +41,16 @@ final class ProxySelectionProviderMessageTests: XCTestCase {
                 url: "https://example.invalid/generate_204",
                 timeoutMilliseconds: 5_000
             ),
+            .activeLatency(
+                group: "Balanced",
+                url: "https://example.invalid/generate_204",
+                timeoutMilliseconds: 5_000
+            ),
             .telemetry(maximumConnections: 50),
             .diagnostics,
+            .setRoutingMode(.rule),
+            .setRoutingMode(.global),
+            .setRoutingMode(.direct),
         ]
         for request in requests {
             XCTAssertEqual(
@@ -21,6 +58,23 @@ final class ProxySelectionProviderMessageTests: XCTestCase {
                     ProxySelectionProviderMessageCodec.encode(request: request)
                 ),
                 request
+            )
+        }
+    }
+
+    func testRoutingModeResponseRoundTripsAndRejectsUnknownCode() throws {
+        for mode in RoutingMode.allCases {
+            var encoded = try ProxySelectionProviderMessageCodec.encode(
+                response: .routingMode(mode)
+            )
+            XCTAssertEqual(encoded.count, 16)
+            XCTAssertEqual(
+                try ProxySelectionProviderMessageCodec.decodeResponse(encoded),
+                .routingMode(mode)
+            )
+            encoded[5] = 3
+            XCTAssertThrowsError(
+                try ProxySelectionProviderMessageCodec.decodeResponse(encoded)
             )
         }
     }

@@ -43,6 +43,17 @@ extern int32_t clash_flow_selector_latency_v1(
     size_t,
     size_t *
 );
+extern int32_t clash_flow_selector_active_latency_v1(
+    clash_flow_engine_t *,
+    const uint8_t *,
+    size_t,
+    const uint8_t *,
+    size_t,
+    uint32_t,
+    uint8_t *,
+    size_t,
+    size_t *
+);
 extern int32_t clash_flow_telemetry_snapshot_v1(
     clash_flow_engine_t *,
     uint32_t,
@@ -180,6 +191,30 @@ static int32_t selector_latency_adapter(
     size_t *required_length
 ) {
     return clash_flow_selector_latency_v1(
+        (clash_flow_engine_t *)engine,
+        group,
+        group_length,
+        url,
+        url_length,
+        timeout_millis,
+        output,
+        output_capacity,
+        required_length
+    );
+}
+
+static int32_t selector_active_latency_adapter(
+    void *engine,
+    const uint8_t *group,
+    size_t group_length,
+    const uint8_t *url,
+    size_t url_length,
+    uint32_t timeout_millis,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+) {
+    return clash_flow_selector_active_latency_v1(
         (clash_flow_engine_t *)engine,
         group,
         group_length,
@@ -376,5 +411,22 @@ int32_t aetherroute_flow_abi_load_v3(aetherroute_flow_abi_v3_t *output) {
         return 0;
     }
     output->engine_set_routing_mode = engine_set_routing_mode_adapter;
+    return 1;
+}
+
+int32_t aetherroute_flow_abi_load_v4(aetherroute_flow_abi_v4_t *output) {
+    if (output == NULL || output->struct_size != sizeof(*output)) {
+        return 0;
+    }
+    const uint32_t struct_size = output->struct_size;
+    memset(output, 0, sizeof(*output));
+    output->struct_size = struct_size;
+    output->v3.struct_size = sizeof(output->v3);
+    if (aetherroute_flow_abi_load_v3(&output->v3) != 1) {
+        memset(output, 0, sizeof(*output));
+        output->struct_size = struct_size;
+        return 0;
+    }
+    output->selector_active_latency = selector_active_latency_adapter;
     return 1;
 }

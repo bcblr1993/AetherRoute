@@ -139,6 +139,7 @@ verify_source() {
     clash_packet_selector_snapshot_v1 \
     clash_packet_selector_select_v1 \
     clash_packet_selector_latency_v1 \
+    clash_packet_selector_active_latency_v1 \
     clash_packet_telemetry_snapshot_v1 \
     clash_uninstall_packet_flow
   do
@@ -254,6 +255,7 @@ verify_built() {
     clash_packet_selector_snapshot_v1 \
     clash_packet_selector_select_v1 \
     clash_packet_selector_latency_v1 \
+    clash_packet_selector_active_latency_v1 \
     clash_packet_telemetry_snapshot_v1 \
     clash_uninstall_packet_flow
   do

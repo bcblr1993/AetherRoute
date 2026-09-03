@@ -212,11 +212,11 @@ final class AppAutomationController: ObservableObject {
     private func selectRoutingMode(_ mode: RoutingMode) {
         guard tunnel.canChangeRoutingMode else {
             shortcutMessage = AppLocalization.string(
-                "Disconnect before changing the routing mode."
+                "The routing mode is temporarily unavailable."
             )
             return
         }
-        tunnel.routingMode = mode
+        Task { await tunnel.setRoutingMode(mode) }
     }
 
     private func refreshNotificationAuthorization() async {

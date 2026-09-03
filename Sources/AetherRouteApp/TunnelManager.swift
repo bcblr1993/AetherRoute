@@ -164,6 +164,19 @@ private enum ProductionStartupLoader {
     }
 }
 
+/// Publishes high-frequency traffic counters independently from the host
+/// lifecycle model. Keeping this object separate prevents every telemetry
+/// sample from invalidating the complete navigation, icon and panel tree.
+@MainActor
+final class NetworkTelemetryViewModel: ObservableObject {
+    @Published private(set) var snapshot: NetworkTelemetrySnapshot = .empty
+
+    func update(_ snapshot: NetworkTelemetrySnapshot) {
+        guard snapshot != self.snapshot else { return }
+        self.snapshot = snapshot
+    }
+}
+
 @MainActor
 final class TunnelManager: ObservableObject {
     private static let runtimeLogger = Logger(
@@ -219,6 +232,12 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var isUpdatingProfiles = false
     @Published private(set) var isUpdatingBypassPolicy = false
     @Published private(set) var isUpdatingDNSRuntimePolicy = false
+    @Published private(set) var isUpdatingRoutingMode = false
+    @Published private(set) var routingModeMessage: String?
+    @Published private(set) var routingModeMessageIsError = false
+    @Published private(set) var isSwitchingNetworkEngine = false
+    @Published private(set) var networkEngineMessage: String?
+    @Published private(set) var networkEngineMessageIsError = false
     @Published private(set) var isTransferringProfiles = false
     @Published private(set) var routingResourceStatuses:
         [RoutingResourceKind: RoutingResourceStatus] = [:]
@@ -234,12 +253,15 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var proxySelections: [String: ProxySelectionState] = [:]
     @Published private(set) var proxySelectionMessages: [String: String] = [:]
     @Published private(set) var proxySelectionRequests: Set<String> = []
+    @Published private(set) var automaticProxySelectionGroups: Set<String> = []
     @Published private(set) var proxyLatencies: [String: ProxyLatencyState] = [:]
     @Published private(set) var proxyLatencyRequests: Set<String> = []
+    @Published private(set) var isAutomaticRouteRecovering = false
     @Published private(set) var isVerifyingProxyReadiness = false
     @Published private(set) var connectionStage: ConnectionStage = .systemAuthorization
-    @Published private(set) var telemetry: NetworkTelemetrySnapshot = .empty
-    @Published private(set) var telemetryUpdatedAt: Date?
+    let telemetryViewModel = NetworkTelemetryViewModel()
+    var telemetry: NetworkTelemetrySnapshot { telemetryViewModel.snapshot }
+    private(set) var telemetryUpdatedAt: Date?
     @Published private(set) var localProxySettings: LocalProxySettings
     @Published private(set) var localProxySettingsMessage: String? = nil
     @Published var routingMode: RoutingMode {
@@ -269,6 +291,9 @@ final class TunnelManager: ObservableObject {
     private var persistsRoutingModeSelection = false
     private var hasLoadedBypassPolicy = false
     private var telemetryPollingTask: Task<Void, Never>?
+    private var automaticReadinessGroupNames: Set<String> = []
+    private var automaticReadinessChildGroups: [String: String] = [:]
+    private var automaticRouteFailureCounts: [String: Int] = [:]
     private var profileImportTask: Task<Void, Never>?
     private var routingResourceStatusTask: Task<Void, Never>?
     private var connectionWatchdogTask: Task<Void, Never>?
@@ -279,6 +304,7 @@ final class TunnelManager: ObservableObject {
     private var disconnectionAttemptID: UUID?
     private var providerConnectionID: UUID?
     private var readinessVerifiedConnectionID: UUID?
+    private var readinessFailureStopPending = false
     private var lastObservedProviderStatus: NEVPNStatus?
     private var disconnectErrorLookupID: UUID?
     private var failureContext: ConnectionFailureContext?
@@ -955,8 +981,90 @@ final class TunnelManager: ObservableObject {
         Task { await setEnabled(false) }
     }
 
+    var requiresDisconnectBeforeApplicationTermination: Bool {
+        managerConnectionIsActive
+    }
+
+    /// A VPN or transparent proxy must not outlive an intentional App quit.
+    /// AppKit defers termination while this completes so NetworkExtension has
+    /// time to restore the system route and DNS state. If shutdown does not
+    /// settle, the delegate cancels termination instead of leaving an
+    /// unmanaged network extension active in the background.
+    func disconnectForApplicationTermination() async -> Bool {
+        guard managerConnectionIsActive else { return true }
+        Self.runtimeLogger.info(
+            "stage=applicationTermination disconnect begin"
+        )
+        await setEnabled(false)
+        let stopped = await waitForProviderToBecomeInactive(
+            timeout: .seconds(30)
+        )
+        Self.runtimeLogger.info(
+            "stage=applicationTermination disconnect complete stopped=\(stopped, privacy: .public)"
+        )
+        return stopped
+    }
+
     func setNetworkEngineMode(_ mode: NetworkEngineMode) async {
         guard mode != networkEngineMode, canChangeNetworkEngine else { return }
+        let previousMode = networkEngineMode
+        let shouldReconnect = isEnabled || managerConnectionIsActive
+        isSwitchingNetworkEngine = true
+        networkEngineMessage = shouldReconnect
+            ? AppLocalization.string("Switching network engine…")
+            : nil
+        networkEngineMessageIsError = false
+        defer { isSwitchingNetworkEngine = false }
+
+        if shouldReconnect {
+            await setEnabled(false)
+            guard await waitForProviderToBecomeInactive() else {
+                networkEngineMessage = AppLocalization.string(
+                    "The current network engine did not stop in time. It remains selected."
+                )
+                networkEngineMessageIsError = true
+                return
+            }
+        }
+
+        await applyNetworkEngineMode(mode)
+        guard shouldReconnect else {
+            networkEngineMessage = AppLocalization.string(
+                "Network engine updated."
+            )
+            return
+        }
+
+        await setEnabled(true)
+        if await waitForConnectionToSettle() {
+            networkEngineMessage = AppLocalization.string(
+                "Network engine switched without manual disconnection."
+            )
+            return
+        }
+
+        if managerConnectionIsActive {
+            if state == .connected || state == .connecting {
+                await setEnabled(false)
+            } else {
+                manager?.connection.stopVPNTunnel()
+            }
+            _ = await waitForProviderToBecomeInactive()
+        }
+        await applyNetworkEngineMode(previousMode)
+        await setEnabled(true)
+        let restored = await waitForConnectionToSettle()
+        networkEngineMessage = restored
+            ? AppLocalization.string(
+                "The new network engine could not connect. The previous engine was restored."
+            )
+            : AppLocalization.string(
+                "The new network engine and automatic rollback both failed."
+            )
+        networkEngineMessageIsError = true
+    }
+
+    private func applyNetworkEngineMode(_ mode: NetworkEngineMode) async {
         invalidateCachedManager()
         networkEngineMode = mode
 
@@ -1027,6 +1135,161 @@ final class TunnelManager: ObservableObject {
         )
     }
 
+    var canCycleManualProxySelection: Bool {
+        guard let group = preferredManualProxyGroupForCycling else {
+            return false
+        }
+        let members = proxySelections[group.name]?.members ?? group.members
+        return members.count > 1
+            && !proxySelectionRequests.contains(group.name)
+    }
+
+    func cycleManualProxySelection(
+        _ direction: ProxySelectionCyclePolicy.Direction
+    ) async {
+        guard let group = preferredManualProxyGroupForCycling,
+              !proxySelectionRequests.contains(group.name) else {
+            return
+        }
+        let snapshot = proxySelections[group.name]
+        let members = snapshot?.members ?? group.members
+        guard let member = ProxySelectionCyclePolicy.adjacentMember(
+            members: members,
+            selectedMember: snapshot?.selectedMember,
+            direction: direction
+        ) else {
+            return
+        }
+        await performProxySelectionRequest(
+            group: group.name,
+            requestedMember: member
+        )
+    }
+
+    func setProxySelectionAutomatic(
+        group groupName: String,
+        isAutomatic: Bool
+    ) async {
+        guard let group = activeProfileSummary?.proxyGroups.first(where: {
+            $0.name == groupName
+                && $0.strategy.caseInsensitiveCompare("select") == .orderedSame
+        }), group.memberCount > 1, let yaml = activeProfile?.yaml else { return }
+
+        let previous = automaticProxySelectionGroups.contains(groupName)
+        guard previous != isAutomatic else { return }
+        let key = automaticProxySelectionPreferenceKey(
+            profileYAML: yaml,
+            group: groupName
+        )
+        userDefaults.set(isAutomatic, forKey: key)
+        if isAutomatic {
+            automaticProxySelectionGroups.insert(groupName)
+        } else {
+            automaticProxySelectionGroups.remove(groupName)
+            automaticReadinessGroupNames.remove(groupName)
+            automaticReadinessChildGroups[groupName] = nil
+            automaticRouteFailureCounts[groupName] = nil
+            updateAutomaticRouteRecoveryPresentation()
+            proxySelectionMessages[groupName] = nil
+            return
+        }
+
+        guard isConnected else {
+            proxySelectionMessages[groupName] = nil
+            return
+        }
+
+        do {
+            let client = makeProxySelectionProviderClient()
+            _ = try await selectFastestAvailableProxy(
+                group: group,
+                client: client
+            )
+            automaticReadinessGroupNames.insert(groupName)
+            proxySelectionMessages[groupName] = nil
+        } catch {
+            userDefaults.set(previous, forKey: key)
+            automaticProxySelectionGroups.remove(groupName)
+            proxySelectionMessages[groupName] = AppLocalization.string(
+                "No proxy node in this group passed the automatic connection check."
+            )
+        }
+    }
+
+    func setRoutingMode(_ mode: RoutingMode) async {
+        guard ensurePrivacyConsent(), canChangeRoutingMode else { return }
+        guard mode != routingMode || sessionRoutingMode != mode else { return }
+
+        if state != .connected {
+            routingMode = mode
+            sessionRoutingMode = nil
+            routingModeMessage = nil
+            routingModeMessageIsError = false
+            return
+        }
+
+        isUpdatingRoutingMode = true
+        routingModeMessage = nil
+        defer { isUpdatingRoutingMode = false }
+        let previousMode = sessionRoutingMode ?? routingMode
+        let client: ProxySelectionProviderClient? = isUIReviewMode
+            ? nil
+            : ProxySelectionProviderClient { [weak self] data in
+                guard let self else {
+                    throw TunnelManagerError.providerSessionUnavailable
+                }
+                return try await self.sendProviderMessage(data)
+            }
+        do {
+            let applied: RoutingMode
+            if isUIReviewMode {
+                applied = mode
+            } else {
+                guard let client else {
+                    throw TunnelManagerError.providerSessionUnavailable
+                }
+                applied = try await client.setRoutingMode(mode)
+            }
+            guard state == .connected else {
+                throw TunnelManagerError.providerSessionUnavailable
+            }
+            routingMode = applied
+            sessionRoutingMode = applied
+            routingModeMessage = AppLocalization.string(
+                "Routing mode updated without disconnecting."
+            )
+            routingModeMessageIsError = false
+            Self.runtimeLogger.info(
+                "stage=routingMode hotSwitch success mode=\(applied.rawValue, privacy: .public)"
+            )
+        } catch {
+            let switchError = error
+            if let client, state == .connected {
+                do {
+                    let restored = try await client.setRoutingMode(
+                        previousMode
+                    )
+                    guard restored == previousMode else {
+                        throw TunnelManagerError.providerSelectorUnavailable
+                    }
+                    sessionRoutingMode = restored
+                    Self.runtimeLogger.info(
+                        "stage=routingMode hotSwitch rollback success"
+                    )
+                } catch {
+                    Self.runtimeLogger.error(
+                        "stage=routingMode hotSwitch rollback failed"
+                    )
+                }
+            }
+            routingModeMessage = switchError.localizedDescription
+            routingModeMessageIsError = true
+            Self.runtimeLogger.error(
+                "stage=routingMode hotSwitch failed error=\(String(reflecting: switchError), privacy: .public)"
+            )
+        }
+    }
+
     func testProxyLatency(group groupName: String) async {
         guard state == .connected,
               activeProfileSummary?.proxyGroups.contains(where: {
@@ -1066,13 +1329,15 @@ final class TunnelManager: ObservableObject {
                     }
                     return try await self.sendProviderMessage(
                         data,
-                        timeout: .seconds(25)
+                        timeout: TunnelStartupTimingPolicy
+                            .selectorReadinessProviderMessageTimeout
                     )
                 }
                 latency = try await client.latency(
                     group: groupName,
-                    url: Self.defaultLatencyTestURL,
-                    timeoutMilliseconds: 5_000
+                    url: Self.selectorLatencyTestURL,
+                    timeoutMilliseconds: TunnelStartupTimingPolicy
+                        .selectorReadinessPerMemberTimeoutMilliseconds
                 )
             }
             proxyLatencies[groupName] = latency
@@ -1087,13 +1352,172 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    private func makeProxySelectionProviderClient()
+        -> ProxySelectionProviderClient
+    {
+        ProxySelectionProviderClient { [weak self] data in
+            guard let self else {
+                throw TunnelManagerError.providerSessionUnavailable
+            }
+            return try await self.sendProviderMessage(
+                data,
+                timeout: TunnelStartupTimingPolicy
+                    .automaticRouteProviderMessageTimeout
+            )
+        }
+    }
+
+    @discardableResult
+    private func selectFastestAvailableProxy(
+        group: ProxyGroupConfigurationSummary,
+        client: ProxySelectionProviderClient
+    ) async throws -> ProxySelectionState {
+        let previous = try await client.snapshot(group: group.name)
+        let latency = try await client.latency(
+            group: group.name,
+            url: Self.selectorLatencyTestURL,
+            timeoutMilliseconds: TunnelStartupTimingPolicy
+                .selectorReadinessPerMemberTimeoutMilliseconds
+        )
+        proxyLatencies[group.name] = latency
+        let responsiveMembers = Set(
+            latency.results.compactMap { result in
+                result.delayMilliseconds == nil ? nil : result.member
+            }
+        )
+        let candidates = ProxyConnectionReadinessPolicy
+            .orderedRouteCandidates(
+                selectedMember: previous.selectedMember,
+                summaryMembers: group.members,
+                snapshotMembers: previous.members,
+                latency: latency
+            )
+            .filter(responsiveMembers.contains)
+        guard !candidates.isEmpty else {
+            throw TunnelManagerError.noResponsiveProxy
+        }
+
+        var measurements: [
+            ProxyConnectionReadinessPolicy.ProbeMeasurement
+        ] = []
+        do {
+            for candidate in candidates {
+                try Task.checkCancellation()
+                let candidateDelay = UInt64(
+                    latency.results.first(where: {
+                        $0.member == candidate
+                    })?.delayMilliseconds ?? .max
+                )
+                do {
+                    let selected = try await client.select(
+                        group: group.name,
+                        member: candidate
+                    )
+                    guard selected.selectedMember == candidate else {
+                        throw TunnelManagerError.providerSelectorUnavailable
+                    }
+                } catch {
+                    try Task.checkCancellation()
+                    measurements.append(.init(
+                        member: candidate,
+                        elapsedMilliseconds: candidateDelay,
+                        statusCode: nil
+                    ))
+                    continue
+                }
+                do {
+                    let statusCode = try await currentRouteDataPlaneStatus(
+                        timeoutInterval: TimeInterval(
+                            TunnelStartupTimingPolicy
+                                .automaticRouteCandidateProbeTimeoutSeconds
+                        )
+                    )
+                    measurements.append(.init(
+                        member: candidate,
+                        elapsedMilliseconds: candidateDelay,
+                        statusCode: statusCode
+                    ))
+                    // Candidates share one provider latency batch and are
+                    // sorted fastest first. Once the first real 204 succeeds,
+                    // every faster candidate has already failed its data-plane
+                    // check; probing slower siblings would only delay
+                    // connection.
+                    if ProxyConnectionReadinessPolicy.acceptsProbeStatus(
+                        statusCode
+                    ) {
+                        break
+                    }
+                } catch {
+                    try Task.checkCancellation()
+                    measurements.append(.init(
+                        member: candidate,
+                        elapsedMilliseconds: candidateDelay,
+                        statusCode: nil
+                    ))
+                }
+            }
+
+            try Task.checkCancellation()
+            guard let winner = ProxyConnectionReadinessPolicy
+                .fastestSuccessfulProbe(measurements) else {
+                throw TunnelManagerError.noResponsiveProxy
+            }
+
+            let snapshot = try await client.select(
+                group: group.name,
+                member: winner.member
+            )
+            guard snapshot.selectedMember == winner.member else {
+                throw TunnelManagerError.providerSelectorUnavailable
+            }
+            Self.runtimeLogger.info(
+                "stage=automaticRouteSelection success candidates=\(candidates.count, privacy: .public) verified=\(measurements.lazy.filter { ProxyConnectionReadinessPolicy.acceptsProbeStatus($0.statusCode) }.count, privacy: .public)"
+            )
+            proxySelections[group.name] = snapshot
+            if let yaml = activeProfile?.yaml {
+                try await Task.detached(priority: .utility) {
+                    try ProxySelectionStore.applicationGroup().recordVerified(
+                        snapshot: snapshot,
+                        group: group.name,
+                        profileYAML: yaml
+                    )
+                }.value
+            }
+            return snapshot
+        } catch {
+            let selectionError = error
+            if let previousMember = previous.selectedMember {
+                do {
+                    proxySelections[group.name] = try await client.select(
+                        group: group.name,
+                        member: previousMember
+                    )
+                    Self.runtimeLogger.info(
+                        "stage=automaticRouteSelection rollback success"
+                    )
+                } catch {
+                    Self.runtimeLogger.error(
+                        "stage=automaticRouteSelection rollback failed"
+                    )
+                }
+            }
+            throw selectionError
+        }
+    }
+
     private func performProxySelectionRequest(
         group groupName: String,
         requestedMember: String?
     ) async {
-        guard state == .connected,
-              let group = selectableProxyGroup(named: groupName),
+        guard let group = selectableProxyGroup(named: groupName),
               !proxySelectionRequests.contains(groupName) else {
+            return
+        }
+        if state != .connected {
+            await performOfflineProxySelectionRequest(
+                group: group,
+                requestedMember: requestedMember
+            )
             return
         }
         proxySelectionRequests.insert(groupName)
@@ -1118,16 +1542,78 @@ final class TunnelManager: ObservableObject {
                     return try await self.sendProviderMessage(data)
                 }
                 if let requestedMember {
-                    snapshot = try await client.select(
+                    let previous = try await client.snapshot(group: groupName)
+                    let candidate = try await client.select(
                         group: groupName,
                         member: requestedMember
                     )
+                    do {
+                        guard let summary = activeProfileSummary else {
+                            throw TunnelManagerError
+                                .providerSelectorUnavailable
+                        }
+                        let latency = try await client.activeLatency(
+                            group: groupName,
+                            url: Self.selectorLatencyTestURL,
+                            timeoutMilliseconds: TunnelStartupTimingPolicy
+                                .selectorReadinessPerMemberTimeoutMilliseconds
+                        )
+                        guard ProxySelectionHotSwitchPolicy.accepts(
+                            requestedMember: requestedMember,
+                            summary: summary,
+                            latency: latency
+                        ) else {
+                            throw TunnelManagerError.noResponsiveProxy
+                        }
+                        try await verifyCurrentRouteDataPlane()
+                        proxyLatencies[groupName] = latency
+                        snapshot = candidate
+                    } catch {
+                        if let previousMember = previous.selectedMember,
+                           previousMember != requestedMember {
+                            do {
+                                let restored = try await client.select(
+                                    group: groupName,
+                                    member: previousMember
+                                )
+                                proxySelections[groupName] = restored
+                                Self.runtimeLogger.info(
+                                    "stage=proxySelection hotSwitch rollback success"
+                                )
+                            } catch {
+                                Self.runtimeLogger.error(
+                                    "stage=proxySelection hotSwitch rollback failed"
+                                )
+                            }
+                        }
+                        throw TunnelManagerError.noResponsiveProxy
+                    }
                 } else {
                     snapshot = try await client.snapshot(group: groupName)
                 }
             }
 
             proxySelections[groupName] = snapshot
+            if let selectedMember = snapshot.selectedMember,
+               let summary = activeProfileSummary {
+                let intent = ProxyConnectionReadinessPolicy
+                    .effectiveRouteIntent(
+                        selectedMember: selectedMember,
+                        summary: summary,
+                        explicitlyAutomatic: automaticProxySelectionGroups
+                            .contains(groupName)
+                    )
+                if intent.behavior == .automatic {
+                    automaticReadinessGroupNames.insert(groupName)
+                    automaticReadinessChildGroups[groupName] =
+                        intent.automaticGroup?.name
+                } else {
+                    automaticReadinessGroupNames.remove(groupName)
+                    automaticReadinessChildGroups[groupName] = nil
+                    automaticRouteFailureCounts[groupName] = nil
+                    updateAutomaticRouteRecoveryPresentation()
+                }
+            }
             Self.runtimeLogger.debug(
                 "stage=proxySelection success members=\(snapshot.members.count, privacy: .public) selected=\(snapshot.selectedMember == nil ? "none" : "present", privacy: .public)"
             )
@@ -1149,7 +1635,9 @@ final class TunnelManager: ObservableObject {
                 // The runtime selection remains truthful even if durable
                 // storage fails. Surface the persistence failure instead of
                 // pretending the choice will survive the next start.
-                proxySelectionMessages[groupName] = error.localizedDescription
+                proxySelectionMessages[groupName] = localizedProxySelectionError(
+                    error
+                )
             }
         } catch {
             Self.runtimeLogger.error(
@@ -1159,12 +1647,88 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    private func performOfflineProxySelectionRequest(
+        group: ProxyGroupConfigurationSummary,
+        requestedMember: String?
+    ) async {
+        let mayEdit: Bool = switch state {
+        case .disconnected, .failed: true
+        case .privacyConsentRequired, .loading, .connecting, .connected,
+             .disconnecting: false
+        }
+        guard mayEdit, let profileYAML = activeProfile?.yaml else { return }
+        proxySelectionRequests.insert(group.name)
+        proxySelectionMessages[group.name] = nil
+        defer { proxySelectionRequests.remove(group.name) }
+
+        do {
+            if isUIReviewMode {
+                proxySelections[group.name] = try reviewSelectionSnapshot(
+                    group: group,
+                    requestedMember: requestedMember
+                )
+                return
+            }
+            let store = try ProxySelectionStore.applicationGroup()
+            if let requestedMember {
+                try await Task.detached(priority: .userInitiated) {
+                    try store.recordUserSelection(
+                        group: group.name,
+                        member: requestedMember,
+                        allowedMembers: group.members,
+                        profileYAML: profileYAML
+                    )
+                }.value
+            }
+            let persisted = try await Task.detached(priority: .utility) {
+                try store.selections(forProfileYAML: profileYAML)
+            }.value
+            let selected = InitialProxySelectionPolicy.selections(
+                persisted: persisted,
+                summary: activeProfileSummary ?? ProfileConfigurationInspector
+                    .inspect(yaml: profileYAML)
+            )[group.name]
+            proxySelections[group.name] = ProxySelectionState(
+                selectedMember: selected,
+                members: group.members
+            )
+            Self.runtimeLogger.debug(
+                "stage=proxySelection offline success selected=\(selected == nil ? "none" : "present", privacy: .public)"
+            )
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=proxySelection offline failed error=\(String(reflecting: error), privacy: .public)"
+            )
+            proxySelectionMessages[group.name] = localizedProxySelectionError(
+                error
+            )
+        }
+    }
+
+    private func localizedProxySelectionError(_ error: Error) -> String {
+        if error is ProfileKeyStoreError || error is ProxySelectionStoreError {
+            return AppLocalization.string(
+                "The selected node could not be saved securely."
+            )
+        }
+        return error.localizedDescription
+    }
+
     private func selectableProxyGroup(
         named name: String
     ) -> ProxyGroupConfigurationSummary? {
         activeProfileSummary?.proxyGroups.first {
             $0.name == name
                 && $0.strategy.lowercased() == "select"
+        }
+    }
+
+    private var preferredManualProxyGroupForCycling:
+        ProxyGroupConfigurationSummary? {
+        activeProfileSummary?.proxyGroups.first {
+            $0.strategy.caseInsensitiveCompare("select") == .orderedSame
+                && $0.memberCount > 1
+                && !automaticProxySelectionGroups.contains($0.name)
         }
     }
 
@@ -1233,8 +1797,24 @@ final class TunnelManager: ObservableObject {
             telemetryPollingTask == nil
         else { return }
         telemetryPollingTask = Task { [weak self] in
+            var secondsUntilTelemetryRefresh = 0
+            var secondsUntilAutomaticHealthCheck =
+                TunnelStartupTimingPolicy.automaticRouteHealthIntervalSeconds
             while !Task.isCancelled {
-                await self?.refreshTelemetry()
+                if secondsUntilTelemetryRefresh <= 0 {
+                    await self?.refreshTelemetry()
+                    secondsUntilTelemetryRefresh =
+                        TunnelStartupTimingPolicy
+                            .telemetryPollingIntervalSeconds
+                }
+                secondsUntilTelemetryRefresh -= 1
+                secondsUntilAutomaticHealthCheck -= 1
+                if secondsUntilAutomaticHealthCheck <= 0 {
+                    await self?.refreshAutomaticRouteHealth()
+                    secondsUntilAutomaticHealthCheck =
+                        TunnelStartupTimingPolicy
+                            .automaticRouteHealthIntervalSeconds
+                }
                 do {
                     try await Task.sleep(for: .seconds(1))
                 } catch {
@@ -1279,16 +1859,179 @@ final class TunnelManager: ObservableObject {
                 }
                 return try await self.sendProviderMessage(data)
             }
-            telemetry = try await client.telemetry(maximumConnections: 50)
+            let refreshed = try await client.telemetry(maximumConnections: 50)
             telemetryUpdatedAt = .now
+            telemetryViewModel.update(refreshed)
         } catch {
             // A transient provider-message failure must not disconnect a healthy
             // tunnel or replace the last truthful sample with fabricated zeros.
         }
     }
 
+    /// Revalidates only automatic routes. When an active leaf fails, the host
+    /// refreshes the delegated automatic child (or explicitly automatic
+    /// selector) before retrying the parent route. Manual selections are
+    /// intentionally excluded and therefore never fall back.
+    private func refreshAutomaticRouteHealth() async {
+        guard state == .connected,
+              !Task.isCancelled,
+              proxyLatencyRequests.isEmpty,
+              !automaticReadinessGroupNames.isEmpty else { return }
+
+        let client = ProxySelectionProviderClient { [weak self] data in
+            guard let self else {
+                throw TunnelManagerError.providerSessionUnavailable
+            }
+            return try await self.sendProviderMessage(
+                data,
+                timeout: TunnelStartupTimingPolicy
+                    .automaticRouteProviderMessageTimeout
+            )
+        }
+
+        for group in automaticReadinessGroupNames.sorted() {
+            guard state == .connected, !Task.isCancelled else { return }
+            var responsiveLatency: ProxyLatencyState?
+            var recoveryAttempted = false
+            for _ in 0..<TunnelStartupTimingPolicy
+                .automaticRouteFailoverAttemptCount
+            {
+                do {
+                    let latency = try await client.activeLatency(
+                        group: group,
+                        url: Self.selectorLatencyTestURL,
+                        timeoutMilliseconds: TunnelStartupTimingPolicy
+                            .selectorReadinessPerMemberTimeoutMilliseconds
+                    )
+                    if latency.results.count == 1,
+                       latency.results[0].delayMilliseconds != nil {
+                        do {
+                            try await verifyCurrentRouteDataPlane()
+                            responsiveLatency = latency
+                            break
+                        } catch {
+                            try Task.checkCancellation()
+                            Self.runtimeLogger.error(
+                                "stage=automaticRouteHealth dataPlane unavailable"
+                            )
+                        }
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    // A missing or late reply consumes this bounded attempt.
+                }
+
+                let recovery = AutomaticRouteHealthRecoveryPolicy.action(
+                    automaticChildGroup:
+                        automaticReadinessChildGroups[group],
+                    explicitlyAutomatic:
+                        automaticProxySelectionGroups.contains(group),
+                    recoveryAlreadyAttempted: recoveryAttempted
+                )
+                guard recovery != .none else { continue }
+                recoveryAttempted = true
+                do {
+                    switch recovery {
+                    case let .rescanAutomaticChild(childGroup):
+                        let latency = try await client.latency(
+                            group: childGroup,
+                            url: Self.selectorLatencyTestURL,
+                            timeoutMilliseconds: TunnelStartupTimingPolicy
+                                .selectorReadinessPerMemberTimeoutMilliseconds
+                        )
+                        let responsiveCount = latency.results.lazy.filter {
+                            $0.delayMilliseconds != nil
+                        }.count
+                        guard responsiveCount > 0 else {
+                            throw TunnelManagerError.noResponsiveProxy
+                        }
+                        proxyLatencies[childGroup] = latency
+                        Self.runtimeLogger.info(
+                            "stage=automaticRouteHealth childRescan responsive=\(responsiveCount, privacy: .public)"
+                        )
+                    case .reselectExplicitGroup:
+                        guard let summary = activeProfileSummary?.proxyGroups
+                            .first(where: { $0.name == group }) else {
+                            throw TunnelManagerError
+                                .providerSelectorUnavailable
+                        }
+                        _ = try await selectFastestAvailableProxy(
+                            group: summary,
+                            client: client
+                        )
+                        proxySelectionMessages[group] = nil
+                        Self.runtimeLogger.info(
+                            "stage=automaticRouteHealth explicitReselection success"
+                        )
+                    case .none:
+                        break
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    Self.runtimeLogger.error(
+                        "stage=automaticRouteHealth recoveryScan unavailable"
+                    )
+                }
+            }
+
+            if responsiveLatency != nil {
+                let recovered = (automaticRouteFailureCounts[group] ?? 0) > 0
+                automaticRouteFailureCounts[group] = nil
+                updateAutomaticRouteRecoveryPresentation()
+                if recovered {
+                    Self.runtimeLogger.info(
+                        "stage=automaticRouteHealth recovered"
+                    )
+                }
+                Self.runtimeLogger.info(
+                    "stage=automaticRouteHealth success attemptsMax=\(TunnelStartupTimingPolicy.automaticRouteFailoverAttemptCount, privacy: .public)"
+                )
+                continue
+            }
+
+            let previousFailures = automaticRouteFailureCounts[group] ?? 0
+            let failures = previousFailures == Int.max
+                ? Int.max
+                : previousFailures + 1
+            automaticRouteFailureCounts[group] = failures
+            updateAutomaticRouteRecoveryPresentation()
+            Self.runtimeLogger.error(
+                "stage=automaticRouteHealth failed consecutive=\(failures, privacy: .public)"
+            )
+            guard failures
+                    >= TunnelStartupTimingPolicy.automaticRouteFailureThreshold,
+                  state == .connected else { continue }
+            switch AutomaticRouteHealthRecoveryPolicy.exhaustionAction(
+                connectionWasReady:
+                    readinessVerifiedConnectionID == providerConnectionID
+            ) {
+            case .continueMonitoring:
+                // Keep the already-verified provider alive so its automatic
+                // group can observe a recovered member on the next scan.
+                Self.runtimeLogger.error(
+                    "stage=automaticRouteHealth degraded action=continueMonitoring"
+                )
+            case .stopProvider:
+                readinessFailureStopPending = true
+                manager?.connection.stopVPNTunnel()
+                recordFailure(
+                    TunnelManagerError.noResponsiveProxy,
+                    context: .provider
+                )
+                return
+            }
+        }
+    }
+
+    private func updateAutomaticRouteRecoveryPresentation() {
+        isAutomaticRouteRecovering = automaticRouteFailureCounts.values
+            .contains(where: { $0 > 0 })
+    }
+
     private func installReviewTelemetry() {
-        telemetry = NetworkTelemetrySnapshot(
+        telemetryViewModel.update(NetworkTelemetrySnapshot(
             uploadBytesPerSecond: 384_000,
             downloadBytesPerSecond: 2_480_000,
             uploadTotal: 18_430_000,
@@ -1318,7 +2061,7 @@ final class TunnelManager: ObservableObject {
                     proxyChain: "DIRECT"
                 ),
             ]
-        )
+        ))
         telemetryUpdatedAt = .now
     }
 
@@ -1352,7 +2095,9 @@ final class TunnelManager: ObservableObject {
                 )
                 await applyProductionProfileCatalog(catalog)
                 diagnosticEvents.record(.profileImported)
-                profileMessage = "Profile imported and activated."
+                profileMessage = AppLocalization.string(
+                    "Profile imported and activated."
+                )
                 profileMessageIsError = false
             } catch is CancellationError {
                 profileMessage = AppLocalization.string("Profile import cancelled.")
@@ -1779,33 +2524,99 @@ final class TunnelManager: ObservableObject {
     }
 
     func activateProfile(id: UUID) async {
-        guard canModifyProfiles else {
+        guard id != activeProfileID else { return }
+        guard canActivateProfile else {
             profileMessage = AppLocalization.string(
-                "Stop the secure connection before changing profiles."
+                "Wait for the current network operation to finish before changing profiles."
             )
             profileMessageIsError = true
             return
         }
+        let previousProfileID = activeProfileID
+        let shouldReconnect = isEnabled || managerConnectionIsActive
         isUpdatingProfiles = true
         defer { isUpdatingProfiles = false }
+
+        do {
+            if shouldReconnect {
+                profileMessage = AppLocalization.string("Switching profile…")
+                profileMessageIsError = false
+                await setEnabled(false)
+                guard await waitForProviderToBecomeInactive() else {
+                    throw LocalizedConnectionError(
+                        message: AppLocalization.string(
+                            "The current connection did not stop in time."
+                        )
+                    )
+                }
+            }
+
+            try await applyProfileActivation(id: id)
+            guard shouldReconnect else {
+                profileMessage = AppLocalization.string("Profile activated.")
+                profileMessageIsError = false
+                return
+            }
+
+            await setEnabled(true)
+            guard await waitForConnectionToSettle() else {
+                throw LocalizedConnectionError(
+                    message: AppLocalization.string(
+                        "The selected profile could not establish a working connection."
+                    )
+                )
+            }
+            profileMessage = AppLocalization.string(
+                "Profile switched without manual disconnection."
+            )
+            profileMessageIsError = false
+        } catch {
+            if shouldReconnect, let previousProfileID {
+                if managerConnectionIsActive {
+                    if state == .connected || state == .connecting {
+                        await setEnabled(false)
+                    } else {
+                        manager?.connection.stopVPNTunnel()
+                    }
+                    _ = await waitForProviderToBecomeInactive()
+                }
+                do {
+                    if previousProfileID != activeProfileID {
+                        try await applyProfileActivation(id: previousProfileID)
+                    }
+                    await setEnabled(true)
+                    let restored = await waitForConnectionToSettle()
+                    profileMessage = restored
+                        ? AppLocalization.string(
+                            "The selected profile failed. The previous profile was restored."
+                        )
+                        : AppLocalization.string(
+                            "The selected profile and automatic rollback both failed."
+                        )
+                } catch {
+                    profileMessage = AppLocalization.string(
+                        "The selected profile and automatic rollback both failed."
+                    )
+                }
+            } else {
+                profileMessage = error.localizedDescription
+            }
+            profileMessageIsError = true
+        }
+    }
+
+    private func applyProfileActivation(id: UUID) async throws {
         if isUIReviewMode {
-            guard profiles.contains(where: { $0.id == id }) else { return }
+            guard profiles.contains(where: { $0.id == id }) else {
+                throw ProfileCatalogStoreError.activeProfileNotFound
+            }
             installReviewProfileCatalog(
                 ProfileCatalog(activeProfileID: id, profiles: profiles)
             )
-            profileMessage = AppLocalization.string("Profile activated.")
-            profileMessageIsError = false
             return
         }
-        do {
-            try await performProductionProfileCatalogOperation {
-                try ProfileCatalogStore.applicationGroup().activate(id: id)
-            }
-            profileMessage = AppLocalization.string("Profile activated.")
-            profileMessageIsError = false
-        } catch {
-            profileMessage = error.localizedDescription
-            profileMessageIsError = true
+        try await performProductionProfileCatalogOperation {
+            try ProfileCatalogStore.applicationGroup().activate(id: id)
         }
     }
 
@@ -2213,11 +3024,34 @@ final class TunnelManager: ObservableObject {
         activeProfileID = projection.catalog.activeProfileID
         activeProfile = projection.catalog.activeProfile?.profile
         activeProfileSummary = projection.summary
+        automaticProxySelectionGroups = Set(
+            projection.summary?.proxyGroups.filter { group in
+                group.strategy.caseInsensitiveCompare("select") == .orderedSame
+                    && projection.catalog.activeProfile.map { active in
+                        userDefaults.bool(
+                            forKey: automaticProxySelectionPreferenceKey(
+                                profileYAML: active.profile.yaml,
+                                group: group.name
+                            )
+                        )
+                    } == true
+            }.map(\.name) ?? []
+        )
         dnsRuntimePolicy = projection.dnsPolicy
         dnsRuntimePolicyMessage = projection.dnsErrorDescription
         dnsRuntimePolicyMessageIsError =
             projection.dnsErrorDescription != nil
         refreshRoutingResourceStatuses()
+    }
+
+    private func automaticProxySelectionPreferenceKey(
+        profileYAML: String,
+        group: String
+    ) -> String {
+        let digest = ProxySelectionStore.profileDigest(
+            yaml: profileYAML + "\u{0}automatic-selection\u{0}" + group
+        )
+        return "AetherRoute.ProxySelection.Automatic.\(digest)"
     }
 
     private func applyProductionProfileCatalog(
@@ -2263,6 +3097,11 @@ final class TunnelManager: ObservableObject {
             || status == .disconnecting
     }
 
+    private var managerConnectionIsActive: Bool {
+        guard let status = manager?.connection.status else { return false }
+        return Self.isActiveProviderStatus(status)
+    }
+
     private var managerConnectionPermitsStart: Bool {
         guard let status = manager?.connection.status else { return true }
         return status == .invalid || status == .disconnected
@@ -2295,19 +3134,44 @@ final class TunnelManager: ObservableObject {
     }
 
     var canChangeRoutingMode: Bool {
-        hasAcceptedPrivacyDisclosure
-            && !isEnabled
+        let statePermitsChange = switch state {
+        case .disconnected, .connected, .failed: true
+        case .privacyConsentRequired, .loading, .connecting, .disconnecting: false
+        }
+        return hasAcceptedPrivacyDisclosure
+            && statePermitsChange
             && !isTransitioning
+            && !isUpdatingRoutingMode
+            && !isSwitchingNetworkEngine
             && !isImportingProfile
             && !isUpdatingProfiles
     }
 
     var canChangeNetworkEngine: Bool {
-        hasAcceptedPrivacyDisclosure
-            && !isEnabled
-            && !isTransitioning
+        let statePermitsChange = switch state {
+        case .disconnected, .connected, .failed: true
+        case .privacyConsentRequired, .loading, .connecting, .disconnecting: false
+        }
+        return hasAcceptedPrivacyDisclosure
+            && statePermitsChange
+            && !isSwitchingNetworkEngine
             && !isImportingProfile
             && !isUpdatingProfiles
+    }
+
+    var canActivateProfile: Bool {
+        let statePermitsChange = switch state {
+        case .disconnected, .connected, .failed: true
+        case .privacyConsentRequired, .loading, .connecting, .disconnecting: false
+        }
+        return hasAcceptedPrivacyDisclosure
+            && statePermitsChange
+            && !isSwitchingNetworkEngine
+            && !isRefreshingSubscription
+            && !isImportingProfile
+            && !isUpdatingProfiles
+            && !isUpdatingBypassPolicy
+            && !isTransferringProfiles
     }
 
     var canModifyProfiles: Bool {
@@ -2371,6 +3235,8 @@ final class TunnelManager: ObservableObject {
             AppLocalization.string("License required")
         case .disconnected: AppLocalization.string("Not connected")
         case .connecting: AppLocalization.string("Connecting")
+        case .connected where isAutomaticRouteRecovering:
+            AppLocalization.string("Recovering route")
         case .connected: AppLocalization.string("Traffic routing active")
         case .disconnecting: AppLocalization.string("Disconnecting")
         case .failed: AppLocalization.string("Unavailable")
@@ -2394,6 +3260,10 @@ final class TunnelManager: ObservableObject {
             AppLocalization.string("Traffic is using the normal network path")
         case .connecting:
             AppLocalization.string("Verifying the network extension")
+        case .connected where isAutomaticRouteRecovering:
+            AppLocalization.string(
+                "The tunnel remains active while AetherRoute retries the fastest available node."
+            )
         case .connected:
             AppLocalization.string("The network extension reports ready")
         case .disconnecting:
@@ -2706,6 +3576,31 @@ final class TunnelManager: ObservableObject {
         }
         lastObservedProviderStatus = status
 
+        if readinessFailureStopPending {
+            if Self.isTerminalProviderStatus(status) {
+                readinessFailureStopPending = false
+                cancelConnectionReadiness()
+                cancelDisconnectionWatchdog()
+                connectedSince = nil
+                sessionRoutingMode = nil
+                sessionNetworkEngineMode = nil
+                clearProxySelectionRuntimeState()
+                Self.runtimeLogger.info(
+                    "stage=updateState readinessFailureStop completed"
+                )
+                return
+            }
+            if status == .disconnecting {
+                if disconnectionAttemptID == nil {
+                    beginDisconnectionWatchdog()
+                }
+                Self.runtimeLogger.info(
+                    "stage=updateState readinessFailureStop pending"
+                )
+                return
+            }
+        }
+
         if TunnelLifecycleTransitionPolicy.shouldArmDisconnectionWatchdog(
             providerIsDisconnecting: status == .disconnecting,
             disconnectionAttemptPending: disconnectionAttemptID != nil
@@ -2847,8 +3742,10 @@ final class TunnelManager: ObservableObject {
 
     private static let networkEnginePreferenceKey =
         "AetherRoute.NetworkEngineMode"
+    private static let selectorLatencyTestURL =
+        ProxyConnectionReadinessPolicy.requiredExternalProbeURLString
     private static let defaultLatencyTestURL =
-        "https://www.gstatic.com/generate_204"
+        ProxyConnectionReadinessPolicy.requiredExternalProbeURLString
 
     private func persistBypassPolicy(_ policy: BypassPolicy) async throws {
         let policy = try policy.validated()
@@ -2882,12 +3779,16 @@ final class TunnelManager: ObservableObject {
 
     private func clearProxySelectionRuntimeState() {
         stopTelemetryPolling()
+        automaticReadinessGroupNames = []
+        automaticReadinessChildGroups = [:]
+        automaticRouteFailureCounts = [:]
+        isAutomaticRouteRecovering = false
         proxySelections = [:]
         proxySelectionMessages = [:]
         proxySelectionRequests = []
         proxyLatencies = [:]
         proxyLatencyRequests = []
-        telemetry = .empty
+        telemetryViewModel.update(.empty)
         telemetryUpdatedAt = nil
     }
 
@@ -2927,29 +3828,65 @@ final class TunnelManager: ObservableObject {
                 }
                 return try await self.sendProviderMessage(
                     data,
-                    timeout: .seconds(25)
+                    timeout: TunnelStartupTimingPolicy
+                        .selectorReadinessProviderMessageTimeout
                 )
             }
+            guard let summary = activeProfileSummary else {
+                throw TunnelManagerError.providerSelectorUnavailable
+            }
+            var selectedRoutes: [(
+                group: String,
+                member: String,
+                behavior: ProxyConnectionReadinessPolicy.GroupBehavior,
+                automaticGroup: ProxyGroupConfigurationSummary?
+            )] = []
             for group in groups {
                 try Task.checkCancellation()
-                let latency = try await client.latency(
-                    group: group.name,
-                    url: Self.defaultLatencyTestURL,
-                    timeoutMilliseconds: 3_000
-                )
-                guard providerConnectionID == connectionID else { return }
-                proxyLatencies[group.name] = latency
-                var snapshot = try await client.snapshot(group: group.name)
-                guard let preferred = ProxyConnectionReadinessPolicy
-                    .preferredMember(snapshot: snapshot, latency: latency) else {
-                    throw TunnelManagerError.noResponsiveProxy
-                }
-                if snapshot.selectedMember != preferred {
-                    snapshot = try await client.select(
-                        group: group.name,
-                        member: preferred
+                let explicitlyAutomatic = automaticProxySelectionGroups
+                    .contains(group.name)
+                let snapshot = explicitlyAutomatic
+                    ? try await selectFastestAvailableProxy(
+                        group: group,
+                        client: client
                     )
+                    : try await client.snapshot(group: group.name)
+                guard let selectedMember = snapshot.selectedMember else {
+                    throw TunnelManagerError.providerSelectorUnavailable
                 }
+                let intent = ProxyConnectionReadinessPolicy
+                    .effectiveRouteIntent(
+                        selectedMember: selectedMember,
+                        summary: summary,
+                        explicitlyAutomatic: explicitlyAutomatic
+                    )
+                let effectiveBehavior = intent.behavior
+                let effectiveAutomaticGroup = explicitlyAutomatic
+                    ? nil
+                    : intent.automaticGroup
+                let behaviorLabel = effectiveBehavior == .automatic
+                    ? "automatic"
+                    : "manual"
+                let automaticChildLabel = effectiveAutomaticGroup == nil
+                    ? "absent"
+                    : "present"
+                Self.runtimeLogger.info(
+                    "stage=connectionReadiness route behavior=\(behaviorLabel, privacy: .public) automaticChild=\(automaticChildLabel, privacy: .public)"
+                )
+                // A leaf selection is manual and must remain pinned. A group
+                // selection delegates fastest/failover choice to that core
+                // strategy. In both cases the host probes only the selected
+                // route through its parent selector; duplicating an automatic
+                // group's full leaf health check here can race the group's own
+                // startup check on large subscriptions.
+                selectedRoutes.append(
+                    (
+                        group.name,
+                        selectedMember,
+                        effectiveBehavior,
+                        effectiveAutomaticGroup
+                    )
+                )
                 proxySelections[group.name] = snapshot
                 if let yaml = activeProfile?.yaml {
                     try await Task.detached(priority: .utility) {
@@ -2962,7 +3899,108 @@ final class TunnelManager: ObservableObject {
                     }.value
                 }
             }
+            for selection in selectedRoutes {
+                try Task.checkCancellation()
+                let maximumAttempts = selection.behavior == .automatic
+                    ? TunnelStartupTimingPolicy
+                        .automaticRouteFailoverAttemptCount
+                    : TunnelStartupTimingPolicy
+                        .manualRouteReadinessAttemptCount
+                var routeIsResponsive = false
+                for attempt in 0..<maximumAttempts {
+                    if selection.behavior == .automatic,
+                       let automaticGroup = selection.automaticGroup {
+                        // The selected parent delegates routing to this
+                        // url-test/fallback child. Probe every child member on
+                        // each bounded startup attempt so a cold-start default
+                        // cannot keep retrying one dead leaf while a sibling
+                        // has already recovered. This is required in both TUN
+                        // and flow-only engines; their background health-task
+                        // timing is intentionally not part of host readiness.
+                        let latency = try await client.latency(
+                            group: automaticGroup.name,
+                            url: Self.selectorLatencyTestURL,
+                            timeoutMilliseconds: TunnelStartupTimingPolicy
+                                .selectorReadinessPerMemberTimeoutMilliseconds
+                        )
+                        let responsiveCount = latency.results.lazy.filter {
+                            $0.delayMilliseconds != nil
+                        }.count
+                        Self.runtimeLogger.info(
+                            "stage=connectionReadiness automaticScan attempt=\(attempt + 1, privacy: .public) results=\(latency.results.count, privacy: .public) responsive=\(responsiveCount, privacy: .public)"
+                        )
+                        proxyLatencies[automaticGroup.name] = latency
+                        if responsiveCount > 0 {
+                            routeIsResponsive = true
+                            break
+                        }
+                    } else {
+                        let latency = try await client.activeLatency(
+                            group: selection.group,
+                            url: Self.selectorLatencyTestURL,
+                            timeoutMilliseconds: TunnelStartupTimingPolicy
+                                .selectorReadinessPerMemberTimeoutMilliseconds
+                        )
+                        if latency.results.count == 1 {
+                            let result = latency.results[0]
+                            let responsiveLabel = result.delayMilliseconds == nil
+                                ? "false"
+                                : "true"
+                            Self.runtimeLogger.info(
+                                "stage=connectionReadiness activeProbe attempt=\(attempt + 1, privacy: .public) resultCount=1 responsive=\(responsiveLabel, privacy: .public)"
+                            )
+                            if selection.behavior == .manual,
+                               result.member != selection.member {
+                                throw TunnelManagerError.noResponsiveProxy
+                            }
+                            if result.delayMilliseconds != nil {
+                                proxyLatencies[selection.group] = latency
+                                routeIsResponsive = true
+                                break
+                            }
+                        } else {
+                            Self.runtimeLogger.info(
+                                "stage=connectionReadiness activeProbe attempt=\(attempt + 1, privacy: .public) resultCount=\(latency.results.count, privacy: .public) responsive=false"
+                            )
+                        }
+                    }
+                    guard attempt + 1 < maximumAttempts else { break }
+                    try await Task.sleep(
+                        for: .milliseconds(
+                            TunnelStartupTimingPolicy
+                                .activeRouteReadinessRetryDelayMilliseconds
+                        )
+                    )
+                }
+                guard routeIsResponsive else {
+                    throw TunnelManagerError.noResponsiveProxy
+                }
+            }
+            Self.runtimeLogger.info(
+                "stage=connectionReadiness dataPlane begin"
+            )
+            try await verifyCurrentRouteDataPlaneForReadiness()
+            Self.runtimeLogger.info(
+                "stage=connectionReadiness dataPlane success"
+            )
             guard providerConnectionID == connectionID else { return }
+            automaticReadinessGroupNames = Set(
+                selectedRoutes.compactMap { selection in
+                    selection.behavior == .automatic
+                        ? selection.group
+                        : nil
+                }
+            )
+            automaticReadinessChildGroups = Dictionary(
+                uniqueKeysWithValues: selectedRoutes.compactMap { selection in
+                    guard selection.behavior == .automatic,
+                          let automaticGroup = selection.automaticGroup else {
+                        return nil
+                    }
+                    return (selection.group, automaticGroup.name)
+                }
+            )
+            automaticRouteFailureCounts = [:]
             readinessVerifiedConnectionID = connectionID
             isVerifyingProxyReadiness = false
             state = .connected
@@ -2976,6 +4014,7 @@ final class TunnelManager: ObservableObject {
                 "stage=connectionReadiness failed error=\(String(reflecting: error), privacy: .public)"
             )
             isVerifyingProxyReadiness = false
+            readinessFailureStopPending = true
             manager?.connection.stopVPNTunnel()
             recordFailure(error, context: .provider)
         }
@@ -2987,10 +4026,78 @@ final class TunnelManager: ObservableObject {
         isVerifyingProxyReadiness = false
     }
 
+    private func verifyCurrentRouteDataPlane() async throws {
+        let statusCode = try await currentRouteDataPlaneStatus()
+        guard ProxyConnectionReadinessPolicy.acceptsProbeStatus(statusCode) else {
+            throw TunnelManagerError.noResponsiveProxy
+        }
+    }
+
+    private func verifyCurrentRouteDataPlaneForReadiness() async throws {
+        var lastError: Error = TunnelManagerError.noResponsiveProxy
+        let maximumAttempts = TunnelStartupTimingPolicy
+            .routeDataPlaneReadinessAttemptCount
+        for attempt in 0..<maximumAttempts {
+            do {
+                try await verifyCurrentRouteDataPlane()
+                Self.runtimeLogger.info(
+                    "stage=connectionReadiness dataPlane attempt=\(attempt + 1, privacy: .public) responsive=true"
+                )
+                return
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                lastError = error
+                Self.runtimeLogger.info(
+                    "stage=connectionReadiness dataPlane attempt=\(attempt + 1, privacy: .public) responsive=false"
+                )
+                guard attempt + 1 < maximumAttempts else { break }
+                try await Task.sleep(
+                    for: .milliseconds(
+                        TunnelStartupTimingPolicy
+                            .routeReadinessRetryDelayMilliseconds
+                    )
+                )
+            }
+        }
+        throw lastError
+    }
+
+    private func currentRouteDataPlaneStatus(
+        timeoutInterval: TimeInterval = 10
+    ) async throws -> Int {
+        guard var components = URLComponents(
+            string: Self.defaultLatencyTestURL
+        ) else {
+            throw TunnelManagerError.noResponsiveProxy
+        }
+        components.queryItems = [
+            URLQueryItem(name: "aetherroute", value: UUID().uuidString),
+        ]
+        guard let url = components.url else {
+            throw TunnelManagerError.noResponsiveProxy
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 10
+        let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = timeoutInterval
+        let (_, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw TunnelManagerError.noResponsiveProxy
+        }
+        return http.statusCode
+    }
+
     private func resetConnectionReadiness() {
         cancelConnectionReadiness()
         providerConnectionID = nil
         readinessVerifiedConnectionID = nil
+        readinessFailureStopPending = false
         lastObservedProviderStatus = nil
     }
 
@@ -3121,6 +4228,44 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    private func waitForProviderToBecomeInactive(
+        timeout: Duration = .seconds(20)
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while clock.now < deadline {
+            guard let status = manager?.connection.status else { return true }
+            if Self.isTerminalProviderStatus(status) {
+                updateState()
+                return true
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+            } catch {
+                return false
+            }
+        }
+        return false
+    }
+
+    private func waitForConnectionToSettle(
+        timeout: Duration = TunnelStartupTimingPolicy
+            .hostConnectionWatchdogTimeout
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while clock.now < deadline {
+            if state == .connected { return true }
+            if case .failed = state { return false }
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+            } catch {
+                return false
+            }
+        }
+        return false
+    }
+
     private func recordFailure(
         _ error: Error,
         context: ConnectionFailureContext
@@ -3201,10 +4346,29 @@ final class TunnelManager: ObservableObject {
     }
 
     private func disconnectionWatchdogFired(_ attemptID: UUID) {
-        guard disconnectionAttemptID == attemptID,
-              case .disconnecting = state else {
+        guard disconnectionAttemptID == attemptID else {
             Self.runtimeLogger.info(
                 "stage=disconnectionWatchdog ignored reason=stale"
+            )
+            return
+        }
+        if readinessFailureStopPending, case .failed = state {
+            let status = manager?.connection.status
+            if status.map(Self.isTerminalProviderStatus) == true {
+                cancelDisconnectionWatchdog()
+                readinessFailureStopPending = false
+                return
+            }
+            Self.runtimeLogger.error(
+                "stage=disconnectionWatchdog fired reason=readinessFailureStop"
+            )
+            manager?.connection.stopVPNTunnel()
+            cancelDisconnectionWatchdog()
+            return
+        }
+        guard case .disconnecting = state else {
+            Self.runtimeLogger.info(
+                "stage=disconnectionWatchdog ignored reason=stateChanged"
             )
             return
         }

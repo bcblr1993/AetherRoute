@@ -96,6 +96,7 @@ type SignerServer struct {
 	productID  string
 	privateKey ed25519.PrivateKey
 	listener   net.Listener
+	socketGID  int
 }
 
 func NewSignerServer(path, productID string, seed []byte) (*SignerServer, error) {
@@ -113,8 +114,17 @@ func NewSignerServer(path, productID string, seed []byte) (*SignerServer, error)
 		return nil, errors.New("signer socket path already exists")
 	}
 	return &SignerServer{
-		path: canonicalPath, productID: productID, privateKey: ed25519.NewKeyFromSeed(seed),
+		path: canonicalPath, productID: productID,
+		privateKey: ed25519.NewKeyFromSeed(seed), socketGID: -1,
 	}, nil
+}
+
+func (server *SignerServer) SetSocketGroup(groupID int) error {
+	if groupID < 0 || server.listener != nil {
+		return errors.New("invalid signer socket group")
+	}
+	server.socketGID = groupID
+	return nil
 }
 
 func (server *SignerServer) Serve(ctx context.Context) error {
@@ -127,7 +137,14 @@ func (server *SignerServer) Serve(ctx context.Context) error {
 		_ = listener.Close()
 		_ = os.Remove(server.path)
 	}()
-	if err := os.Chmod(server.path, 0o600); err != nil {
+	if server.socketGID >= 0 {
+		if err := os.Chown(server.path, -1, server.socketGID); err != nil {
+			return err
+		}
+		if err := os.Chmod(server.path, 0o660); err != nil {
+			return err
+		}
+	} else if err := os.Chmod(server.path, 0o600); err != nil {
 		return err
 	}
 	go func() {

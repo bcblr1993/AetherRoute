@@ -143,4 +143,19 @@ final class ProxySelectionProviderClientTests: XCTestCase {
         let received = try await client.diagnostics()
         XCTAssertEqual(received, expected)
     }
+
+    func testRoutingModeRequiresProviderConfirmation() async throws {
+        let client = ProxySelectionProviderClient { data in
+            XCTAssertEqual(
+                try ProxySelectionProviderMessageCodec.decodeRequest(data),
+                .setRoutingMode(.global)
+            )
+            return try ProxySelectionProviderMessageCodec.encode(
+                response: .routingMode(.global)
+            )
+        }
+
+        let applied = try await client.setRoutingMode(.global)
+        XCTAssertEqual(applied, .global)
+    }
 }

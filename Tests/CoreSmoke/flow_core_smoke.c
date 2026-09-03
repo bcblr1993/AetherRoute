@@ -11,6 +11,7 @@
 #include <string.h>
 #include <sys/proc_info.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -255,43 +256,43 @@ static int loopback_server_join(loopback_server_t *server) {
 
 static void *udp_echo_server_main(void *raw_server) {
     udp_echo_server_t *server = (udp_echo_server_t *)raw_server;
-    struct sockaddr_storage peer;
-    socklen_t peer_length = (socklen_t)sizeof(peer);
-    uint8_t payload[128];
-    const struct timespec drain_period = {
-        .tv_sec = 0,
-        .tv_nsec = 100000000L,
+    const struct timeval receive_timeout = {
+        .tv_sec = CALLBACK_TIMEOUT_MS / 1000,
+        .tv_usec = (CALLBACK_TIMEOUT_MS % 1000) * 1000,
     };
-    ssize_t count;
 
-    do {
-        count = recvfrom(server->socket_descriptor, payload, sizeof(payload), 0,
-                         (struct sockaddr *)&peer, &peer_length);
-    } while (count < 0 && errno == EINTR);
-    if (count < 0) {
+    if (setsockopt(server->socket_descriptor, SOL_SOCKET, SO_RCVTIMEO,
+                   &receive_timeout, (socklen_t)sizeof(receive_timeout)) != 0) {
         atomic_store(&server->error, errno);
-    } else {
-        atomic_store(&server->received, 1);
-        for (int index = 0; index < UDP_PROBE_DATAGRAMS; ++index) {
-            ssize_t sent;
-            do {
-                sent = sendto(server->socket_descriptor, payload, (size_t)count,
-                              0, (const struct sockaddr *)&peer, peer_length);
-            } while (sent < 0 && errno == EINTR);
-            if (sent != count) {
-                atomic_store(&server->error, sent < 0 ? errno : EIO);
-                break;
-            }
-            atomic_fetch_add(&server->sent, 1);
+    }
+    for (int index = 0;
+         index < UDP_PROBE_DATAGRAMS && atomic_load(&server->error) == 0;
+         ++index) {
+        struct sockaddr_storage peer;
+        socklen_t peer_length = (socklen_t)sizeof(peer);
+        uint8_t payload[128];
+        ssize_t count;
+
+        do {
+            count = recvfrom(server->socket_descriptor, payload, sizeof(payload),
+                             0, (struct sockaddr *)&peer, &peer_length);
+        } while (count < 0 && errno == EINTR);
+        if (count < 0) {
+            atomic_store(&server->error, errno);
+            break;
         }
-        /* Keep the loopback server alive briefly after the final send. A UDP
-         * send succeeding immediately before close does not guarantee the
-         * peer's asynchronous receive task has been scheduled yet. This
-         * removes an artificial server-close race without retrying the client
-         * operation or relaxing its callback deadline. */
-        if (atomic_load(&server->error) == 0) {
-            (void)nanosleep(&drain_period, NULL);
+        atomic_fetch_add(&server->received, 1);
+
+        ssize_t sent;
+        do {
+            sent = sendto(server->socket_descriptor, payload, (size_t)count, 0,
+                          (const struct sockaddr *)&peer, peer_length);
+        } while (sent < 0 && errno == EINTR);
+        if (sent != count) {
+            atomic_store(&server->error, sent < 0 ? errno : EIO);
+            break;
         }
+        atomic_fetch_add(&server->sent, 1);
     }
     (void)close(server->socket_descriptor);
     return NULL;
@@ -330,7 +331,9 @@ static int udp_echo_server_start(udp_echo_server_t *server) {
 
 static int udp_echo_server_join(udp_echo_server_t *server) {
     return pthread_join(server->thread, NULL) == 0 &&
-                   atomic_load(&server->error) == 0
+                   atomic_load(&server->error) == 0 &&
+                   atomic_load(&server->received) == UDP_PROBE_DATAGRAMS &&
+                   atomic_load(&server->sent) == UDP_PROBE_DATAGRAMS
                ? 0
                : -1;
 }

@@ -15,7 +15,7 @@ public struct ProxySelectionProviderClient: Sendable {
     public func snapshot(group: String) async throws -> ProxySelectionState {
         switch try await send(.snapshot(group: group)) {
         case let .snapshot(snapshot): snapshot
-        case .latency, .telemetry, .diagnostics:
+        case .latency, .telemetry, .diagnostics, .routingMode:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -52,7 +52,27 @@ public struct ProxySelectionProviderClient: Sendable {
             )
         ) {
         case let .latency(state): state
-        case .snapshot, .telemetry, .diagnostics:
+        case .snapshot, .telemetry, .diagnostics, .routingMode:
+            throw ProxySelectionProviderClientError.unexpectedResponse
+        case let .failure(failure):
+            throw ProxySelectionProviderClientError.providerFailure(failure)
+        }
+    }
+
+    public func activeLatency(
+        group: String,
+        url: String,
+        timeoutMilliseconds: UInt32
+    ) async throws -> ProxyLatencyState {
+        switch try await send(
+            .activeLatency(
+                group: group,
+                url: url,
+                timeoutMilliseconds: timeoutMilliseconds
+            )
+        ) {
+        case let .latency(state): state
+        case .snapshot, .telemetry, .diagnostics, .routingMode:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -66,7 +86,7 @@ public struct ProxySelectionProviderClient: Sendable {
             .telemetry(maximumConnections: maximumConnections)
         ) {
         case let .telemetry(snapshot): snapshot
-        case .snapshot, .latency, .diagnostics:
+        case .snapshot, .latency, .diagnostics, .routingMode:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -76,10 +96,24 @@ public struct ProxySelectionProviderClient: Sendable {
     public func diagnostics() async throws -> ProviderDiagnosticSnapshot {
         switch try await send(.diagnostics) {
         case let .diagnostics(snapshot): snapshot
-        case .snapshot, .latency, .telemetry:
+        case .snapshot, .latency, .telemetry, .routingMode:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
+        }
+    }
+
+    public func setRoutingMode(_ mode: RoutingMode) async throws -> RoutingMode {
+        switch try await send(.setRoutingMode(mode)) {
+        case let .routingMode(applied):
+            guard applied == mode else {
+                throw ProxySelectionProviderClientError.routingModeNotApplied
+            }
+            return applied
+        case let .failure(failure):
+            throw ProxySelectionProviderClientError.providerFailure(failure)
+        case .snapshot, .latency, .telemetry, .diagnostics:
+            throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
 
@@ -99,6 +133,7 @@ public enum ProxySelectionProviderClientError: LocalizedError, Sendable,
 {
     case providerFailure(ProxySelectionProviderFailure)
     case selectionNotApplied
+    case routingModeNotApplied
     case unexpectedResponse
 
     public var errorDescription: String? {
@@ -118,6 +153,8 @@ public enum ProxySelectionProviderClientError: LocalizedError, Sendable,
             }
         case .selectionNotApplied:
             "The network extension did not confirm the selected proxy."
+        case .routingModeNotApplied:
+            "The network extension did not confirm the routing mode."
         case .unexpectedResponse:
             "The network extension returned an unexpected proxy response."
         }

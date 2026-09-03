@@ -89,30 +89,16 @@ public struct TransparentProxySelfIdentityGuard: Sendable {
            !bundleIdentifier.isEmpty {
             identifiers.insert(bundleIdentifier)
         }
-        // Egress that re-enters the proxy can carry the signing identifier of
-        // any bundle in this product, not only the running extension: the host
-        // app and the sibling packet tunnel share the same upstream nodes.
-        // Missing one of them re-proxies our own upstream connection, which is
-        // an infinite loop that leaves the tunnel permanently unable to reach
-        // its server. Read the identifiers the build already injects.
+        // Only the running transparent-proxy extension is self egress. The host
+        // app deliberately performs the end-to-end readiness request, so
+        // treating the host or packet-tunnel sibling as self would bypass that
+        // request and turn a healthy proxy into a false timeout whenever the
+        // machine's direct route cannot reach the canary.
         let info = Bundle.main.infoDictionary ?? [:]
-        for key in [
-            "AetherRouteTransparentProxyBundleIdentifier",
-            "AetherRouteTunnelBundleIdentifier",
-        ] {
-            if let value = info[key] as? String, !value.isEmpty {
-                identifiers.insert(value)
-            }
-        }
-        // The host application identifier is the shared prefix of both
-        // extension identifiers.
         if let proxyIdentifier =
             info["AetherRouteTransparentProxyBundleIdentifier"] as? String,
-            let separator = proxyIdentifier.range(
-                of: ".", options: .backwards
-            ) {
-            let host = String(proxyIdentifier[..<separator.lowerBound])
-            if !host.isEmpty { identifiers.insert(host) }
+            !proxyIdentifier.isEmpty {
+            identifiers.insert(proxyIdentifier)
         }
         let codeIdentityVerified = Self.validateOwnCodeIdentity(using: verifier)
         Self.diagnosticLog.aggregate(

@@ -97,6 +97,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         let completion = ProxyStartCompletion(completionHandler)
         let snapshot: ProviderLaunchSnapshot
         let bypassPlan: BypassNetworkSettingsPlan
+        let upstreamExclusions: [TransparentProxyUpstreamExclusion]
         do {
             Self.runtimeLog.aggregate("stage=decodeLaunchSnapshot begin")
             snapshot = try ProviderLaunchSnapshotCodec.decode(options: options)
@@ -108,6 +109,12 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 policy: snapshot.bypassPolicy
             )
             Self.runtimeLog.aggregate("stage=loadBypassPolicy success")
+            Self.runtimeLog.aggregate("stage=resolveUpstreamEndpoints begin")
+            upstreamExclusions = try TransparentProxyUpstreamEndpointResolver
+                .resolve(profileYAML: snapshot.profileYAML)
+            Self.runtimeLog.aggregate(
+                "stage=resolveUpstreamEndpoints success count=\(upstreamExclusions.count)"
+            )
         } catch {
             diagnostics.record(.startupFailure)
             Self.runtimeLog.failure(
@@ -176,7 +183,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 do {
                     Self.runtimeLog.aggregate("stage=makeNetworkSettings begin")
                     settings = try Self.makeNetworkSettings(
-                        bypassPlan: bypassPlan
+                        bypassPlan: bypassPlan,
+                        upstreamExclusions: upstreamExclusions
                     )
                     Self.runtimeLog.aggregate("stage=makeNetworkSettings success")
                 } catch {
@@ -258,7 +266,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     ) {
         guard let completionHandler else { return }
         let completion = ProxyMessageCompletion(completionHandler)
-        providerMessageQueue.async { [runtimeController, diagnostics] in
+        providerMessageQueue.async { [self, runtimeController, diagnostics] in
             let response: ProxySelectionProviderResponse
             do {
                 let request = try ProxySelectionProviderMessageCodec
@@ -284,6 +292,14 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                             timeoutMilliseconds: timeoutMilliseconds
                         )
                     )
+                case let .activeLatency(group, url, timeoutMilliseconds):
+                    .latency(
+                        try runtimeController.testActiveProxyLatency(
+                            group: group,
+                            url: url,
+                            timeoutMilliseconds: timeoutMilliseconds
+                        )
+                    )
                 case let .telemetry(maximumConnections):
                     .telemetry(
                         try runtimeController.telemetrySnapshot(
@@ -292,6 +308,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     )
                 case .diagnostics:
                     .diagnostics(diagnostics.snapshot())
+                case let .setRoutingMode(mode):
+                    try self.applyRoutingMode(mode)
                 }
             } catch is ProxySelectionProviderMessageError {
                 response = .failure(.invalidRequest)
@@ -329,6 +347,13 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 )
             }
         }
+    }
+
+    private func applyRoutingMode(
+        _ mode: RoutingMode
+    ) throws -> ProxySelectionProviderResponse {
+        try runtimeController.setRoutingMode(mode)
+        return .routingMode(mode)
     }
 
     private func handleAdmittedFlow(_ flow: NEAppProxyFlow) -> Bool {
@@ -450,7 +475,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     }
 
     private static func makeNetworkSettings(
-        bypassPlan: BypassNetworkSettingsPlan
+        bypassPlan: BypassNetworkSettingsPlan,
+        upstreamExclusions: [TransparentProxyUpstreamExclusion]
     ) throws -> NETransparentProxyNetworkSettings {
         let settings = NETransparentProxyNetworkSettings(
             tunnelRemoteAddress: "127.0.0.1"
@@ -514,6 +540,51 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 )
             )
         }
+        for endpoint in upstreamExclusions {
+            // Apple forbids port 53 in address-based transparent-proxy
+            // exclusions. A proxy server on that port therefore receives a
+            // host-only exclusion; all other servers remain exact IP+port.
+            let port: NWEndpoint.Port
+            if endpoint.port == 53 {
+                port = .any
+            } else {
+                guard let resolvedPort = NWEndpoint.Port(
+                    rawValue: endpoint.port
+                ) else {
+                    throw TransparentProxyUpstreamEndpointResolutionError
+                        .invalidEndpoint(index: 0)
+                }
+                port = resolvedPort
+            }
+            let host: NWEndpoint.Host
+            let prefix: Int
+            switch endpoint.addressFamily {
+            case .ipv4:
+                guard let address = Network.IPv4Address(endpoint.address) else {
+                    throw TransparentProxyUpstreamEndpointResolutionError
+                        .invalidEndpoint(index: 0)
+                }
+                host = .ipv4(address)
+                prefix = 32
+            case .ipv6:
+                guard let address = Network.IPv6Address(endpoint.address) else {
+                    throw TransparentProxyUpstreamEndpointResolutionError
+                        .invalidEndpoint(index: 0)
+                }
+                host = .ipv6(address)
+                prefix = 128
+            }
+            exclusions.append(
+                NENetworkRule(
+                    destinationNetworkEndpoint: .hostPort(
+                        host: host,
+                        port: port
+                    ),
+                    prefix: prefix,
+                    protocol: .any
+                )
+            )
+        }
         settings.excludedNetworkRules = exclusions
         return settings
     }
@@ -540,8 +611,10 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         case .snapshot: "snapshot"
         case .select: "select"
         case .latency: "latency"
+        case .activeLatency: "activeLatency"
         case .telemetry: "telemetry"
         case .diagnostics: "diagnostics"
+        case .setRoutingMode: "setRoutingMode"
         }
     }
 }

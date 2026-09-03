@@ -17,14 +17,13 @@ private let outputDirectory: URL = {
 
 // MARK: - Design grid
 //
-// The handoff draws on a 96-unit grid, and that grid maps onto the graphic
-// safe area (664 px centred on a 1024 px canvas) rather than the whole canvas.
-// That is what makes the specified stroke of 13 grid units land on 90 px.
+// The handoff draws on a 96-unit grid, and that grid maps onto the 512 px
+// graphic safe area centred on the 1024 px canvas.
 
 private let canvasSide: CGFloat = 1024
 private let tileInset: CGFloat = 100
 private let tileSide: CGFloat = 824
-private let safeAreaSide: CGFloat = 664
+private let safeAreaSide: CGFloat = 512
 private let gridSide: CGFloat = 96
 private let safeAreaOrigin = (canvasSide - safeAreaSide) / 2
 private let unit = safeAreaSide / gridSide

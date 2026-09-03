@@ -44,11 +44,12 @@ done
 KEY_GUARD="$ROOT/scripts/verify_developer_id_private_key_access.sh"
 sh -n "$KEY_GUARD"
 for required in \
+  '--timestamp=none' \
   'Developer ID certificate is installed, but its private key is unavailable.' \
   'Unlock the login Keychain in Keychain Access' \
   'will not fall back to an automatic Mac Team profile'
 do
-  grep -F "$required" "$KEY_GUARD" >/dev/null || {
+  grep -F -- "$required" "$KEY_GUARD" >/dev/null || {
     echo "Developer ID private-key guard is missing: $required" >&2
     exit 1
   }
@@ -159,4 +160,3 @@ do
 done
 
 echo "Developer ID local QA candidate and Release signing guards passed."
-

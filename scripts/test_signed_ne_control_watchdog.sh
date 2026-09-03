@@ -36,6 +36,9 @@ printf '%s\n' \
   'fi' >"$ROUTE_MAGIC_DNS_CHANGED"
 printf '%s\n' \
   '#!/bin/sh' \
+  'if [ -n "${AETHERROUTE_TEST_SUCCESS_MARKER:-}" ]; then' \
+  '  : >"$AETHERROUTE_TEST_SUCCESS_MARKER"' \
+  'fi' \
   "printf 'pong from test-peer via 192.0.2.10:41641 in 1ms\\n'" \
   >"$TAILSCALE_DIRECT"
 printf '%s\n' \
@@ -48,14 +51,24 @@ chmod 755 \
 
 STOP_FILE="$TEMP/stop"
 SUCCESS_LOG="$TEMP/success.log"
-"$WATCHDOG" \
+SUCCESS_MARKER="$TEMP/success-marker"
+AETHERROUTE_TEST_SUCCESS_MARKER="$SUCCESS_MARKER" "$WATCHDOG" \
   "$CONTROL_PEER" "$BASELINE_INTERFACE" \
   "$MAGIC_DNS_ADDRESS" "$BASELINE_INTERFACE" "$STOP_FILE" 10 \
   "$ROUTE_OK" "$TAILSCALE_DIRECT" 1 5 >"$SUCCESS_LOG" 2>&1 &
 watchdog_pid=$!
-sleep 0.5
+wait_attempt=0
+while [ ! -e "$SUCCESS_MARKER" ] && kill -0 "$watchdog_pid" 2>/dev/null \
+  && [ "$wait_attempt" -lt 50 ]; do
+  sleep 0.1
+  wait_attempt=$((wait_attempt + 1))
+done
 : >"$STOP_FILE"
 wait "$watchdog_pid"
+test -f "$SUCCESS_MARKER" || {
+  echo "control-peer watchdog did not reach its successful probe" >&2
+  exit 1
+}
 success_checks=$(awk -F= \
   '$1 == "control-peer watchdog stopped: checks" {print $2; exit}' \
   "$SUCCESS_LOG")

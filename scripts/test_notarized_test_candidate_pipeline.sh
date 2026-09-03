@@ -2,6 +2,26 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+SOURCE_MANIFEST=$(
+  "$ROOT/scripts/source_manifest.sh"
+)
+for required_build_input in \
+  AetherRoute.xcodeproj/project.pbxproj \
+  AetherRoute.xcodeproj/project.xcworkspace/contents.xcworkspacedata \
+  AetherRoute.xcodeproj/xcshareddata/xcschemes/AetherRoute.xcscheme
+do
+  printf '%s\n' "$SOURCE_MANIFEST" \
+    | grep -F "  $required_build_input" >/dev/null || {
+      echo "source manifest omitted Xcode build input: $required_build_input" >&2
+      exit 1
+    }
+done
+printf '%s\n' "$SOURCE_MANIFEST" | grep -E 'xcuserdata|\.xcuserstate' \
+  >/dev/null && {
+    echo "source manifest included local Xcode user state" >&2
+    exit 1
+  }
 SCRIPT="$ROOT/scripts/build_notarized_test_candidate.sh"
 
 sh -n "$SCRIPT"
@@ -18,14 +38,29 @@ for required in \
   "AETHERROUTE_DIRECT_CORE_FEATURES='aether-embedded,aether-diagnostics'" \
   "grep -F 'aether_flow stage='" \
   "grep -F 'aether_packet stage='" \
+  'scripts/verify_protocol_matrix.sh' \
+  'scripts/verify_licenses.sh" source' \
   'CODE_SIGN_STYLE = Manual' \
-  'OTHER_CODE_SIGN_FLAGS = --timestamp' \
+  'OTHER_CODE_SIGN_FLAGS = --timestamp=http:/$()/timestamp.apple.com/ts01' \
+  'codesign --force --timestamp=http://timestamp.apple.com/ts01' \
+  'codesign_with_timestamp_retry()' \
+  'timestamp service is not available' \
+  "grep -Eq '^[[:space:]]*CodeSign '" \
+  'retrying archive' \
   'AETHERROUTE_RELEASE_CHANNEL = beta' \
   'Authority=Developer ID Application' \
   'scripts/verify_product_metadata.sh' \
   'scripts/verify_transparent_proxy_metadata.sh' \
   'test candidate contains non-arm64 Mach-O' \
   'xcrun notarytool submit' \
+  'Apple notarization upload unavailable; retrying submission' \
+  'while test "$attempt" -le 5' \
+  'abortedUpload|deadlineExceeded|HTTPClientError' \
+  'create_finalized_dmg' \
+  'write_once="${finalized%.dmg}.write-once.dmg"' \
+  'hdiutil verify "$finalized"' \
+  'hdiutil detach "$attached_root"' \
+  'write-once DMG resolved to multiple root devices' \
   'AetherRoute-app-notarization.dmg' \
   'app-notary-stage' \
   'app-notary-result.json' \
@@ -38,12 +73,19 @@ for required in \
   'spctl --assess --type open' \
   'spctl --assess --type execute' \
   'releaseStatus: "notarized-test-candidate"' \
+  'SIGNING_CONFIG_SHA256=$(shasum -a 256 "$SIGNING_CONFIG"' \
+  'bundle_cdhash()' \
+  'bundle_executable_sha256()' \
+  'signing: {configurationSHA256: $signingConfigurationSHA256' \
+  'packetTunnel: {bundleID: $packetBundleID, cdhash: $packetCDHash' \
+  'transparentProxy: {bundleID: $transparentBundleID' \
   'appTicketStapled: true, dmgTicketStapled: true' \
   'productionApproved: false' \
   'diagnosticsIncluded: true' \
   'networkActivatedDuringBuild: false' \
   'system network state changed while building' \
   'source changed while building' \
+  'signing configuration changed while building' \
   'shasum -a 256' \
   'chmod 644'
 do
@@ -52,6 +94,25 @@ do
     exit 1
   }
 done
+
+flow_build_line=$(grep -nF \
+  "AETHERROUTE_CORE_FEATURES='aether-flow-only,aether-diagnostics'" \
+  "$SCRIPT" | cut -d: -f1)
+packet_build_line=$(grep -nF \
+  "AETHERROUTE_DIRECT_CORE_FEATURES='aether-embedded,aether-diagnostics'" \
+  "$SCRIPT" | cut -d: -f1)
+protocol_gate_line=$(grep -nF \
+  '"$ROOT/scripts/verify_protocol_matrix.sh"' "$SCRIPT" | cut -d: -f1)
+license_gate_line=$(grep -nF \
+  '"$ROOT/scripts/verify_licenses.sh" source' "$SCRIPT" | cut -d: -f1)
+bootstrap_line=$(grep -nF '"$ROOT/scripts/bootstrap.sh"' "$SCRIPT" | cut -d: -f1)
+if [ "$flow_build_line" -ge "$protocol_gate_line" ] \
+  || [ "$packet_build_line" -ge "$protocol_gate_line" ] \
+  || [ "$protocol_gate_line" -ge "$license_gate_line" ] \
+  || [ "$license_gate_line" -ge "$bootstrap_line" ]; then
+  echo "core evidence gates must run after both core builds and before project generation" >&2
+  exit 1
+fi
 
 keychain_test_temp=$(mktemp -d \
   "${TMPDIR:-/tmp}/aetherroute-notary-keychain-guard.XXXXXX")

@@ -5,6 +5,27 @@ import AetherRouteTransparentProxySupport
 import XCTest
 
 final class FlowCoreBridgeTests: XCTestCase {
+    func testOnlyClosedAndCancelledAreExpectedFlowTerminationStatuses() {
+        XCTAssertTrue(
+            FlowCoreABIStatus.isExpectedTermination(FlowCoreABIStatus.closed)
+        )
+        XCTAssertTrue(
+            FlowCoreABIStatus.isExpectedTermination(
+                FlowCoreABIStatus.cancelled
+            )
+        )
+        XCTAssertFalse(
+            FlowCoreABIStatus.isExpectedTermination(
+                FlowCoreABIStatus.invalidState
+            )
+        )
+        XCTAssertFalse(
+            FlowCoreABIStatus.isExpectedTermination(
+                FlowCoreABIStatus.internalError
+            )
+        )
+    }
+
     func testLiveStrongLinkedABIAndFiveHundredStagedFlowCycles() throws {
         XCTAssertNoThrow(try LiveFlowCoreABIBackend())
         let engine = try FlowCoreEngine(
@@ -63,6 +84,17 @@ final class FlowCoreBridgeTests: XCTestCase {
                 maximumUDPPayloadBytes: 65_508
             ).validated()
         )
+    }
+
+    func testRoutingModeUpdatesLiveEngineWithoutRecreation() throws {
+        let backend = MockFlowCoreABI()
+        let engine = try makeEngine(backend: backend)
+
+        try engine.setRoutingMode(.global)
+        try engine.setRoutingMode(.direct)
+
+        XCTAssertEqual(backend.routingModeUpdates, [.global, .direct])
+        XCTAssertEqual(backend.engineDestroyCalls, 0)
     }
 
     func testSelectorSelectionReturnsVerifiedCoreSnapshot() throws {
@@ -583,6 +615,7 @@ private final class MockFlowCoreABI: FlowCoreABIBackend, @unchecked Sendable {
     private(set) var engineDestroyCalls = 0
     private(set) var destroyedEngineAddresses: [UInt] = []
     private(set) var selectorSelectCalls = 0
+    private(set) var routingModeUpdates: [RoutingMode] = []
     private(set) var selectorLatencyCalls = 0
     private(set) var telemetryCalls = 0
     private var selectedSelectorMember = "Singapore"
@@ -602,6 +635,14 @@ private final class MockFlowCoreABI: FlowCoreABIBackend, @unchecked Sendable {
             destroyedEngineAddresses.append(UInt(bitPattern: engine.rawValue))
         }
         engineDestroyed.signal()
+        return FlowCoreABIStatus.success
+    }
+
+    func engineSetRoutingMode(
+        _: FlowCoreABIHandle,
+        mode: RoutingMode
+    ) -> Int32 {
+        lock.withLock { routingModeUpdates.append(mode) }
         return FlowCoreABIStatus.success
     }
 
@@ -674,6 +715,20 @@ private final class MockFlowCoreABI: FlowCoreABIBackend, @unchecked Sendable {
             }
             return (FlowCoreABIStatus.success, data)
         }
+    }
+
+    func selectorActiveLatency(
+        engine: FlowCoreABIHandle,
+        group: Data,
+        url: Data,
+        timeoutMilliseconds: UInt32
+    ) -> (status: Int32, latencies: Data?) {
+        selectorLatency(
+            engine: engine,
+            group: group,
+            url: url,
+            timeoutMilliseconds: timeoutMilliseconds
+        )
     }
 
     func telemetrySnapshot(
