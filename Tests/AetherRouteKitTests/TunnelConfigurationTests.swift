@@ -298,4 +298,57 @@ final class TunnelConfigurationTests: XCTestCase {
             )
         }
     }
+
+    /// Configurations written before the IPv6 switch existed must keep the
+    /// IPv4-only behaviour rather than being read as an opt-in.
+    func testProviderConfigurationWithoutIPv6KeyIsIPv4Only() throws {
+        XCTAssertFalse(
+            try TunnelProviderConfigurationCodec.ipv6Enabled(
+                from: [
+                    TunnelProviderConfigurationCodec.schemaVersionKey:
+                        TunnelProviderConfigurationCodec.currentSchemaVersion,
+                ]
+            )
+        )
+        XCTAssertFalse(
+            try TunnelProviderConfigurationCodec.ipv6Enabled(from: nil)
+        )
+    }
+
+    func testProviderConfigurationRoundTripsIPv6Switch() throws {
+        let configuration = TunnelProviderConfigurationCodec.setting(
+            routingMode: .rule,
+            enableIPv6: true
+        )
+
+        XCTAssertTrue(
+            try TunnelProviderConfigurationCodec.ipv6Enabled(
+                from: configuration
+            )
+        )
+    }
+
+    func testChangingIPv6SwitchRequiresPersistence() {
+        let configuration = TunnelProviderConfigurationCodec.setting(
+            routingMode: .rule,
+            enableIPv6: false
+        )
+
+        XCTAssertTrue(
+            TunnelProviderConfigurationCodec.requiresPersistence(
+                routingMode: .rule,
+                enableIPv6: true,
+                configuration: configuration,
+                isEnabled: true
+            )
+        )
+        XCTAssertFalse(
+            TunnelProviderConfigurationCodec.requiresPersistence(
+                routingMode: .rule,
+                enableIPv6: false,
+                configuration: configuration,
+                isEnabled: true
+            )
+        )
+    }
 }

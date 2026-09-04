@@ -169,6 +169,12 @@ public struct TunnelConfiguration: Codable, Equatable, Sendable {
     public var ipv4SubnetMask: String
     public var ipv6Address: String
     public var ipv6PrefixLength: Int
+    /// Claiming the IPv6 default route is only safe when the active profile
+    /// says its outbounds can carry IPv6. A profile that omits the top-level
+    /// `ipv6` switch is IPv4-only, exactly as the protocol core reads it, and
+    /// installing `::/0` for it black-holes every flow the system's Happy
+    /// Eyeballs prefers over IPv6 instead of letting it fall back to IPv4.
+    public var enableIPv6: Bool
     public var dnsServers: [String]
     public var excludeLocalNetworks: Bool
     public var localProxy: LocalProxySettings
@@ -180,6 +186,7 @@ public struct TunnelConfiguration: Codable, Equatable, Sendable {
         ipv4SubnetMask: String = "255.255.0.0",
         ipv6Address: String = "fd00:a37e:0:1::1",
         ipv6PrefixLength: Int = 64,
+        enableIPv6: Bool = false,
         dnsServers: [String] = TunnelConfiguration.packetFlowDNSServers,
         excludeLocalNetworks: Bool = true,
         localProxy: LocalProxySettings = LocalProxySettings()
@@ -190,6 +197,7 @@ public struct TunnelConfiguration: Codable, Equatable, Sendable {
         self.ipv4SubnetMask = ipv4SubnetMask
         self.ipv6Address = ipv6Address
         self.ipv6PrefixLength = ipv6PrefixLength
+        self.enableIPv6 = enableIPv6
         self.dnsServers = dnsServers
         self.excludeLocalNetworks = excludeLocalNetworks
         self.localProxy = localProxy

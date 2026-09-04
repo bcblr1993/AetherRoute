@@ -304,4 +304,38 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
         XCTAssertFalse(summary.requiresCountryMMDB)
         XCTAssertFalse(summary.requiresGeoSiteDatabase)
     }
+
+    /// The protocol core treats a missing top-level `ipv6` as `false`, and the
+    /// tunnel must read it the same way before claiming the IPv6 route.
+    func testProfileWithoutIPv6SwitchIsTreatedAsIPv4Only() {
+        let summary = ProfileConfigurationInspector.inspect(
+            yaml: """
+            rules:
+              - MATCH,DIRECT
+            """
+        )
+
+        XCTAssertFalse(summary.allowsIPv6)
+    }
+
+    func testProfileIPv6SwitchIsParsed() {
+        XCTAssertTrue(
+            ProfileConfigurationInspector.inspect(
+                yaml: """
+                ipv6: true
+                rules:
+                  - MATCH,DIRECT
+                """
+            ).allowsIPv6
+        )
+        XCTAssertFalse(
+            ProfileConfigurationInspector.inspect(
+                yaml: """
+                ipv6: false
+                rules:
+                  - MATCH,DIRECT
+                """
+            ).allowsIPv6
+        )
+    }
 }

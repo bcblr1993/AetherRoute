@@ -173,10 +173,12 @@ public enum TunnelProviderConfigurationCodec {
     public static let localProxyEnabledKey = "localProxyEnabled"
     public static let localProxyHTTPPortKey = "localProxyHTTPPort"
     public static let localProxySOCKSPortKey = "localProxySOCKSPort"
+    public static let ipv6EnabledKey = "ipv6Enabled"
 
     public static func setting(
         routingMode: RoutingMode,
         localProxy: LocalProxySettings = LocalProxySettings(),
+        enableIPv6: Bool = false,
         in configuration: [String: Any]? = nil
     ) -> [String: Any] {
         var configuration = configuration ?? [:]
@@ -186,7 +188,23 @@ public enum TunnelProviderConfigurationCodec {
         configuration[localProxyEnabledKey] = localProxy.isEnabled
         configuration[localProxyHTTPPortKey] = localProxy.httpPort
         configuration[localProxySOCKSPortKey] = localProxy.socksPort
+        configuration[ipv6EnabledKey] = enableIPv6
         return configuration
+    }
+
+    /// Absent means IPv4-only. Older stored configurations predate the key and
+    /// must not be read as an IPv6 opt-in.
+    public static func ipv6Enabled(
+        from configuration: [String: Any]?
+    ) throws -> Bool {
+        try validateSchemaVersion(in: configuration)
+        guard let storedValue = configuration?[ipv6EnabledKey] else {
+            return false
+        }
+        guard let enabled = storedValue as? Bool else {
+            throw TunnelProviderConfigurationError.invalidIPv6Setting
+        }
+        return enabled
     }
 
     public static func routingMode(
@@ -247,12 +265,14 @@ public enum TunnelProviderConfigurationCodec {
     public static func requiresPersistence(
         routingMode: RoutingMode,
         localProxy: LocalProxySettings = LocalProxySettings(),
+        enableIPv6: Bool = false,
         configuration: [String: Any]?,
         isEnabled: Bool
     ) -> Bool {
         configuration?[schemaVersionKey] as? Int != currentSchemaVersion
             || configuration?[routingModeKey] as? String != routingMode.rawValue
             || (try? localProxySettings(from: configuration)) != localProxy
+            || (try? ipv6Enabled(from: configuration)) != enableIPv6
             || !isPrimaryConfiguration(configuration)
             || !isEnabled
     }
@@ -284,6 +304,7 @@ public enum TunnelProviderConfigurationCodec {
 public enum TunnelProviderConfigurationError: LocalizedError, Equatable {
     case invalidRoutingMode
     case invalidLocalProxy
+    case invalidIPv6Setting
     case unsupportedSchema
 
     public var errorDescription: String? {
@@ -292,6 +313,8 @@ public enum TunnelProviderConfigurationError: LocalizedError, Equatable {
             "The saved packet tunnel routing mode is invalid."
         case .invalidLocalProxy:
             "The saved local proxy settings are invalid."
+        case .invalidIPv6Setting:
+            "The saved IPv6 tunnel setting is invalid."
         case .unsupportedSchema:
             "The saved network extension configuration version is not supported."
         }

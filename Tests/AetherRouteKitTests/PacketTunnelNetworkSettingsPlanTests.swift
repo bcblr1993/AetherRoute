@@ -31,12 +31,36 @@ final class PacketTunnelNetworkSettingsPlanTests: XCTestCase {
                 )
             )
         )
-        XCTAssertEqual(
-            plan.ipv6.includedRoutes,
-            [.init(destinationAddress: "::", prefixLength: 0)]
-        )
         XCTAssertEqual(plan.dns.servers, ["198.18.0.2"])
         XCTAssertEqual(plan.dns.matchDomains, [""])
+    }
+
+    /// An IPv4-only profile that still claimed `::/0` black-holed every flow
+    /// the system's Happy Eyeballs preferred over IPv6, because the outbound
+    /// had no IPv6 egress to carry it.
+    func testPlanLeavesIPv6UntouchedWhenProfileDoesNotEnableIt() throws {
+        let bypassPlan = try BypassNetworkSettingsPlan(policy: BypassPolicy())
+
+        let plan = PacketTunnelNetworkSettingsPlan(
+            configuration: TunnelConfiguration(),
+            bypassPlan: bypassPlan
+        )
+
+        XCTAssertNil(plan.ipv6)
+    }
+
+    func testPlanClaimsIPv6DefaultRouteOnlyWhenProfileEnablesIt() throws {
+        let bypassPlan = try BypassNetworkSettingsPlan(policy: BypassPolicy())
+
+        let plan = PacketTunnelNetworkSettingsPlan(
+            configuration: TunnelConfiguration(enableIPv6: true),
+            bypassPlan: bypassPlan
+        )
+
+        XCTAssertEqual(
+            plan.ipv6?.includedRoutes,
+            [.init(destinationAddress: "::", prefixLength: 0)]
+        )
     }
 
     func testPlanRetainsProviderSettingsAndDeduplicatesExcludedRoutes() throws {
@@ -54,6 +78,7 @@ final class PacketTunnelNetworkSettingsPlanTests: XCTestCase {
             ipv4SubnetMask: "255.255.255.0",
             ipv6Address: "fd00:a37e:0:12::1",
             ipv6PrefixLength: 96,
+            enableIPv6: true,
             dnsServers: ["198.18.0.2", "2001:db8::53"]
         )
 
@@ -66,8 +91,8 @@ final class PacketTunnelNetworkSettingsPlanTests: XCTestCase {
         XCTAssertEqual(plan.mtu, 1_280)
         XCTAssertEqual(plan.ipv4.addresses, ["198.18.12.1"])
         XCTAssertEqual(plan.ipv4.subnetMasks, ["255.255.255.0"])
-        XCTAssertEqual(plan.ipv6.addresses, ["fd00:a37e:0:12::1"])
-        XCTAssertEqual(plan.ipv6.prefixLengths, [96])
+        XCTAssertEqual(plan.ipv6?.addresses, ["fd00:a37e:0:12::1"])
+        XCTAssertEqual(plan.ipv6?.prefixLengths, [96])
         XCTAssertEqual(
             plan.ipv4.excludedRoutes.filter {
                 $0.destinationAddress == "10.0.0.0"
@@ -76,7 +101,7 @@ final class PacketTunnelNetworkSettingsPlanTests: XCTestCase {
             1
         )
         XCTAssertEqual(
-            plan.ipv6.excludedRoutes.filter {
+            plan.ipv6?.excludedRoutes.filter {
                 $0.destinationAddress == "fc00::" && $0.prefixLength == 7
             }.count,
             1
@@ -93,7 +118,10 @@ final class PacketTunnelNetworkSettingsPlanTests: XCTestCase {
         )
 
         let plan = PacketTunnelNetworkSettingsPlan(
-            configuration: TunnelConfiguration(excludeLocalNetworks: false),
+            configuration: TunnelConfiguration(
+                enableIPv6: true,
+                excludeLocalNetworks: false
+            ),
             bypassPlan: bypassPlan
         )
 
@@ -106,6 +134,6 @@ final class PacketTunnelNetworkSettingsPlanTests: XCTestCase {
                 ),
             ]
         )
-        XCTAssertTrue(plan.ipv6.excludedRoutes.isEmpty)
+        XCTAssertEqual(plan.ipv6?.excludedRoutes, [])
     }
 }

@@ -14,6 +14,11 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
     public let ruleProviderCount: Int
     public let requiresCountryMMDB: Bool
     public let requiresGeoSiteDatabase: Bool
+    /// Mirrors the profile's top-level `ipv6` switch, which defaults to `false`
+    /// exactly as the protocol core does. The tunnel must not claim the IPv6
+    /// default route unless the profile states that its outbounds can carry
+    /// IPv6; otherwise every IPv6 flow the system prefers is black-holed.
+    public let allowsIPv6: Bool
 
     public init(
         dns: DNSConfigurationSummary,
@@ -28,7 +33,8 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
         ruleCount: Int,
         ruleProviderCount: Int,
         requiresCountryMMDB: Bool = false,
-        requiresGeoSiteDatabase: Bool = false
+        requiresGeoSiteDatabase: Bool = false,
+        allowsIPv6: Bool = false
     ) {
         self.dns = dns
         self.proxies = proxies
@@ -43,6 +49,7 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
         self.ruleProviderCount = ruleProviderCount
         self.requiresCountryMMDB = requiresCountryMMDB
         self.requiresGeoSiteDatabase = requiresGeoSiteDatabase
+        self.allowsIPv6 = allowsIPv6
     }
 }
 
@@ -332,6 +339,7 @@ private struct Parser {
     private var ruleProviderCount = 0
     private var requiresCountryMMDB = false
     private var requiresGeoSiteDatabase = false
+    private var allowsIPv6 = false
 
     init(yaml: String) {
         lines = yaml.components(separatedBy: .newlines)
@@ -362,6 +370,9 @@ private struct Parser {
                let (key, value) = Self.keyValue(in: trimmed) {
                 finishPendingItem()
                 finishPendingProvider()
+                if key.lowercased() == "ipv6", let flag = Self.boolean(value) {
+                    allowsIPv6 = flag
+                }
                 section = Section(rawValue: key.lowercased())
                 itemIndent = nil
                 itemFieldIndent = nil
@@ -411,7 +422,8 @@ private struct Parser {
             ruleCount: ruleCount,
             ruleProviderCount: ruleProviderCount,
             requiresCountryMMDB: requiresCountryMMDB,
-            requiresGeoSiteDatabase: requiresGeoSiteDatabase
+            requiresGeoSiteDatabase: requiresGeoSiteDatabase,
+            allowsIPv6: allowsIPv6
         )
     }
 

@@ -38,12 +38,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             )
             let localProxy = try TunnelProviderConfigurationCodec
                 .localProxySettings(from: provider?.providerConfiguration)
+            let enableIPv6 = try TunnelProviderConfigurationCodec
+                .ipv6Enabled(from: provider?.providerConfiguration)
             let configuration = try TunnelConfiguration(
                 mode: routingMode,
+                enableIPv6: enableIPv6,
                 localProxy: localProxy
             ).validated()
             Self.runtimeLogger.info(
-                "stage=decodeProviderConfiguration success routing=\(routingMode.rawValue, privacy: .public) localProxyEnabled=\(localProxy.isEnabled, privacy: .public)"
+                "stage=decodeProviderConfiguration success routing=\(routingMode.rawValue, privacy: .public) localProxyEnabled=\(localProxy.isEnabled, privacy: .public) ipv6Enabled=\(enableIPv6, privacy: .public)"
             )
             Self.runtimeLogger.info("stage=loadBypassPolicy begin source=launchSnapshot")
             let bypassPlan = try BypassNetworkSettingsPlan(
@@ -220,23 +223,28 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         }
         settings.ipv4Settings = ipv4
 
-        let ipv6 = NEIPv6Settings(
-            addresses: plan.ipv6.addresses,
-            networkPrefixLengths: plan.ipv6.prefixLengths.map(NSNumber.init)
-        )
-        ipv6.includedRoutes = plan.ipv6.includedRoutes.map {
-            NEIPv6Route(
-                destinationAddress: $0.destinationAddress,
-                networkPrefixLength: NSNumber(value: $0.prefixLength)
+        // Leaving `ipv6Settings` nil keeps the system's own IPv6 routing in
+        // place. An IPv4-only profile that still claimed `::/0` would strand
+        // every IPv6 flow the system prefers.
+        if let plannedIPv6 = plan.ipv6 {
+            let ipv6 = NEIPv6Settings(
+                addresses: plannedIPv6.addresses,
+                networkPrefixLengths: plannedIPv6.prefixLengths.map(NSNumber.init)
             )
+            ipv6.includedRoutes = plannedIPv6.includedRoutes.map {
+                NEIPv6Route(
+                    destinationAddress: $0.destinationAddress,
+                    networkPrefixLength: NSNumber(value: $0.prefixLength)
+                )
+            }
+            ipv6.excludedRoutes = plannedIPv6.excludedRoutes.map {
+                NEIPv6Route(
+                    destinationAddress: $0.destinationAddress,
+                    networkPrefixLength: NSNumber(value: $0.prefixLength)
+                )
+            }
+            settings.ipv6Settings = ipv6
         }
-        ipv6.excludedRoutes = plan.ipv6.excludedRoutes.map {
-            NEIPv6Route(
-                destinationAddress: $0.destinationAddress,
-                networkPrefixLength: NSNumber(value: $0.prefixLength)
-            )
-        }
-        settings.ipv6Settings = ipv6
 
         let dns = NEDNSSettings(servers: plan.dns.servers)
         dns.matchDomains = plan.dns.matchDomains

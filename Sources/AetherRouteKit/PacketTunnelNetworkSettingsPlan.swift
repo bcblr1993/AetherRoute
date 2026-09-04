@@ -79,7 +79,9 @@ public struct PacketTunnelNetworkSettingsPlan: Equatable, Sendable {
     public let tunnelRemoteAddress: String
     public let mtu: Int
     public let ipv4: IPv4Settings
-    public let ipv6: IPv6Settings
+    /// `nil` leaves the system's existing IPv6 routing untouched, which is the
+    /// only correct behaviour for an IPv4-only profile.
+    public let ipv6: IPv6Settings?
     public let dns: DNSSettings
 
     public init(
@@ -111,24 +113,28 @@ public struct PacketTunnelNetworkSettingsPlan: Equatable, Sendable {
             )
         )
 
-        let customIPv6Routes = bypassPlan.ipv6Routes.map {
-            IPv6Route(
-                destinationAddress: $0.destinationAddress,
-                prefixLength: $0.prefixLength
+        if configuration.enableIPv6 {
+            let customIPv6Routes = bypassPlan.ipv6Routes.map {
+                IPv6Route(
+                    destinationAddress: $0.destinationAddress,
+                    prefixLength: $0.prefixLength
+                )
+            }
+            ipv6 = IPv6Settings(
+                addresses: [configuration.ipv6Address],
+                prefixLengths: [configuration.ipv6PrefixLength],
+                includedRoutes: [
+                    IPv6Route(destinationAddress: "::", prefixLength: 0),
+                ],
+                excludedRoutes: Self.uniqueIPv6Routes(
+                    (configuration.excludeLocalNetworks
+                        ? Self.localIPv6Routes
+                        : []) + customIPv6Routes
+                )
             )
+        } else {
+            ipv6 = nil
         }
-        ipv6 = IPv6Settings(
-            addresses: [configuration.ipv6Address],
-            prefixLengths: [configuration.ipv6PrefixLength],
-            includedRoutes: [
-                IPv6Route(destinationAddress: "::", prefixLength: 0),
-            ],
-            excludedRoutes: Self.uniqueIPv6Routes(
-                (configuration.excludeLocalNetworks
-                    ? Self.localIPv6Routes
-                    : []) + customIPv6Routes
-            )
-        )
 
         dns = DNSSettings(
             servers: configuration.dnsServers,
