@@ -194,6 +194,11 @@ final class TunnelManager: ObservableObject {
         case failed(String)
     }
 
+    /// Route quality for a tunnel that is already up and carrying traffic.
+    /// Defined in `AetherRouteKit` so the decision behind it is unit-testable
+    /// alongside the other connection policies.
+    typealias ConnectionQuality = AetherRouteKit.ConnectionQuality
+
     @Published private(set) var state: State = .loading {
         didSet {
             if case .failed = state {
@@ -258,6 +263,10 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var proxyLatencyRequests: Set<String> = []
     @Published private(set) var isAutomaticRouteRecovering = false
     @Published private(set) var isVerifyingProxyReadiness = false
+    /// Quality of the route behind an already-usable tunnel. The tunnel being
+    /// up and the selected route being fast are two different questions; this
+    /// reports the second without gating the first.
+    @Published private(set) var connectionQuality: ConnectionQuality = .unknown
     @Published private(set) var connectionStage: ConnectionStage = .systemAuthorization
     let telemetryViewModel = NetworkTelemetryViewModel()
     var telemetry: NetworkTelemetrySnapshot { telemetryViewModel.snapshot }
@@ -272,6 +281,9 @@ final class TunnelManager: ObservableObject {
     }
 
     private let isUIReviewMode: Bool
+    /// Captured at init so QA automation reads the same environment the rest
+    /// of the fixture hooks do, and so tests can inject one.
+    private let qaAutomationEnvironment: [String: String]
     private let privacyConsentStore: PrivacyConsentStore
     private let routingModePreferenceStore: RoutingModePreferenceStore
     private let localProxySettingsStore: LocalProxySettingsStore
@@ -324,6 +336,7 @@ final class TunnelManager: ObservableObject {
                 try RoutingResourceStore.applicationGroup()
             }
     ) {
+        self.qaAutomationEnvironment = environment
         self.privacyConsentStore = privacyConsentStore
         self.routingModePreferenceStore = routingModePreferenceStore
         self.userDefaults = userDefaults
@@ -563,10 +576,37 @@ final class TunnelManager: ObservableObject {
             if state == .disconnected {
                 await refreshSubscriptionIfDue()
             }
+            await connectForQAAutomationIfRequested()
         } catch {
             systemExtensionApprovalRequired = false
             recordFailure(error, context: .configuration)
         }
+    }
+
+    /// Starts the tunnel without UI so an acceptance run can be unattended.
+    ///
+    /// Starting a Packet Tunnel needs the launch snapshot that only this app
+    /// can build, so there is no command-line path to a connected tunnel and
+    /// every verification otherwise stops for a human click. This closes that
+    /// gap for QA builds only, behind two independent gates:
+    ///
+    /// 1. `AETHERROUTE_QA_AUTOMATION` must be compiled in. It is set by
+    ///    `build_signed_local_test_candidate.sh` and rejected outright by
+    ///    `guard_developer_id_network_extension_build.sh` for the stable
+    ///    channel, so notarized and release builds cannot contain this code.
+    /// 2. `AETHERROUTE_QA_AUTOCONNECT=1` must be in the environment, so even a
+    ///    QA build behaves normally when a person launches it by hand.
+    ///
+    /// Both gates are required. Neither is reachable from a shipped build.
+    private func connectForQAAutomationIfRequested() async {
+#if AETHERROUTE_QA_AUTOMATION
+        guard qaAutomationEnvironment["AETHERROUTE_QA_AUTOCONNECT"] == "1",
+              state == .disconnected else { return }
+        Self.runtimeLogger.info(
+            "stage=qaAutomation autoConnect requested engine=\(self.networkEngineMode.rawValue, privacy: .public)"
+        )
+        await setEnabled(true)
+#endif
     }
 
     /// Re-runs preparation after the user returns from System Settings. When
@@ -3322,7 +3362,8 @@ final class TunnelManager: ObservableObject {
         provider.serverAddress = networkEngineMode.serverAddress
         provider.providerConfiguration = TunnelProviderConfigurationCodec.setting(
             routingMode: routingMode,
-            localProxy: providerLocalProxySettings
+            localProxy: providerLocalProxySettings,
+            enableIPv6: providerAllowsIPv6
         )
         manager.protocolConfiguration = provider
         manager.localizedDescription = AppConstants.localizedDescription
@@ -3352,9 +3393,11 @@ final class TunnelManager: ObservableObject {
             Self.runtimeLogger.error("stage=persistConfiguration failed reason=invalidProtocol")
             throw TunnelManagerError.invalidProtocolConfiguration
         }
+        let enableIPv6 = providerAllowsIPv6
         guard TunnelProviderConfigurationCodec.requiresPersistence(
             routingMode: requestedMode,
             localProxy: localProxy,
+            enableIPv6: enableIPv6,
             configuration: provider.providerConfiguration,
             isEnabled: manager.isEnabled
         ) else {
@@ -3370,6 +3413,7 @@ final class TunnelManager: ObservableObject {
         updatedProvider.providerConfiguration = TunnelProviderConfigurationCodec.setting(
             routingMode: requestedMode,
             localProxy: localProxy,
+            enableIPv6: enableIPv6,
             in: provider.providerConfiguration
         )
         manager.protocolConfiguration = updatedProvider
@@ -3405,6 +3449,14 @@ final class TunnelManager: ObservableObject {
 #else
         LocalProxySettings()
 #endif
+    }
+
+    /// Only a profile that opts into IPv6 may have the tunnel claim `::/0`.
+    /// A profile without the switch is IPv4-only, and hijacking IPv6 for it
+    /// strands every flow the system prefers over IPv6 rather than letting it
+    /// fall back to the IPv4 path that actually works.
+    private var providerAllowsIPv6: Bool {
+        activeProfileSummary?.allowsIPv6 ?? false
     }
 
     private func updateLocalProxySettings(
@@ -3646,10 +3698,16 @@ final class TunnelManager: ObservableObject {
             handleUnexpectedProviderTermination(connection)
             return
         }
+        // Once the provider reports connected its network settings are
+        // installed and the tunnel already carries traffic. Holding the UI in
+        // `.connecting` until the readiness probe returns made a working
+        // tunnel look broken for as long as the slowest node took to answer.
+        // Readiness is now a background quality signal, so surface the usable
+        // connection immediately and let `connectionQuality` report the rest.
         state = switch status {
         case .invalid, .disconnected: .disconnected
         case .connecting, .reasserting: .connecting
-        case .connected: requiresReadiness ? .connecting : .connected
+        case .connected: .connected
         case .disconnecting: .disconnecting
         @unknown default: .failed(AppLocalization.string("Unknown network extension status"))
         }
@@ -3701,14 +3759,16 @@ final class TunnelManager: ObservableObject {
                 sessionNetworkEngineMode = nil
                 recordFailure(error, context: .configuration)
             }
-            if state == .connected {
-                isVerifyingProxyReadiness = false
-                startTelemetryPollingIfNeeded()
-            } else if let connectionID = providerConnectionID {
+            // Telemetry starts with the usable tunnel rather than waiting on
+            // the quality probe, so the dashboard is live immediately.
+            startTelemetryPollingIfNeeded()
+            if requiresReadiness, let connectionID = providerConnectionID {
                 startConnectionReadinessCheck(
                     groups: readinessGroups,
                     connectionID: connectionID
                 )
+            } else {
+                isVerifyingProxyReadiness = false
             }
             return
         }
@@ -3800,6 +3860,7 @@ final class TunnelManager: ObservableObject {
               !groups.isEmpty,
               providerConnectionID == connectionID else { return }
         isVerifyingProxyReadiness = true
+        connectionQuality = .verifying
         connectionStage = .readinessCheck
         Self.runtimeLogger.info(
             "stage=connectionReadiness begin groups=\(groups.count, privacy: .public)"
@@ -4003,20 +4064,61 @@ final class TunnelManager: ObservableObject {
             automaticRouteFailureCounts = [:]
             readinessVerifiedConnectionID = connectionID
             isVerifyingProxyReadiness = false
-            state = .connected
+            connectionQuality = .verified
             startTelemetryPollingIfNeeded()
             Self.runtimeLogger.info("stage=connectionReadiness success")
         } catch is CancellationError {
             Self.runtimeLogger.info("stage=connectionReadiness cancelled")
         } catch {
             guard providerConnectionID == connectionID else { return }
+            // A failed probe means the selected route looks slow or blocked —
+            // not necessarily that the tunnel is broken. Tearing it down here
+            // used to kill sessions that were already carrying traffic, and on
+            // a slow node it made the app impossible to connect at all.
+            //
+            // Distinguish the two cases with one last data-plane request. If
+            // traffic still gets through, the route is merely slow: keep the
+            // tunnel and mark it usable so the health monitor treats a later
+            // outage as transient. If nothing gets through, leave it
+            // unverified — the tunnel is fail-closed, so the health monitor
+            // must stay free to stop it and give the user their direct
+            // connection back rather than blackholing every request.
             Self.runtimeLogger.error(
-                "stage=connectionReadiness failed error=\(String(reflecting: error), privacy: .public)"
+                "stage=connectionReadiness degraded error=\(String(reflecting: error), privacy: .public)"
             )
             isVerifyingProxyReadiness = false
-            readinessFailureStopPending = true
-            manager?.connection.stopVPNTunnel()
-            recordFailure(error, context: .provider)
+            let outcome = ConnectionQualityPolicy.outcome(
+                probeSucceeded: false,
+                trafficReachesInternet:
+                    await routeCarriesTrafficAfterDegradation()
+            )
+            guard providerConnectionID == connectionID else { return }
+            connectionQuality = outcome.quality
+            if outcome.marksConnectionUsable {
+                readinessVerifiedConnectionID = connectionID
+            }
+            Self.runtimeLogger.info(
+                "stage=connectionReadiness degradedTraffic carries=\(outcome.marksConnectionUsable, privacy: .public)"
+            )
+            startTelemetryPollingIfNeeded()
+        }
+    }
+
+    /// Last-chance check used only after readiness has already been judged
+    /// degraded: does the tunnel still move real traffic? Any answer at all
+    /// counts, including HTTP errors — the question is reachability, not the
+    /// status code.
+    private func routeCarriesTrafficAfterDegradation() async -> Bool {
+        do {
+            _ = try await currentRouteDataPlaneStatus(
+                timeoutInterval: TimeInterval(
+                    TunnelStartupTimingPolicy
+                        .automaticRouteCandidateProbeTimeoutSeconds
+                )
+            )
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -4024,6 +4126,9 @@ final class TunnelManager: ObservableObject {
         connectionReadinessTask?.cancel()
         connectionReadinessTask = nil
         isVerifyingProxyReadiness = false
+        if connectionQuality == .verifying {
+            connectionQuality = .unknown
+        }
     }
 
     private func verifyCurrentRouteDataPlane() async throws {
@@ -4063,6 +4168,27 @@ final class TunnelManager: ObservableObject {
         throw lastError
     }
 
+    /// One shared session for every data-plane probe.
+    ///
+    /// A fresh `URLSession` per probe rebuilt the connection pool and repeated
+    /// the TLS handshake on each health tick, which made the probe slower than
+    /// the route it was measuring. Cache policy and a unique query item keep
+    /// each request honest without paying that cost. The resource timeout is
+    /// the outer bound for the slowest caller; individual requests still carry
+    /// their own, shorter `timeoutInterval`.
+    private static let probeSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.timeoutIntervalForRequest =
+            TimeInterval(TunnelStartupTimingPolicy
+                .automaticRouteCandidateProbeTimeoutSeconds) + 5
+        configuration.timeoutIntervalForResource =
+            TimeInterval(TunnelStartupTimingPolicy
+                .automaticRouteCandidateProbeTimeoutSeconds) + 10
+        configuration.waitsForConnectivity = false
+        return URLSession(configuration: configuration)
+    }()
+
     private func currentRouteDataPlaneStatus(
         timeoutInterval: TimeInterval = 10
     ) async throws -> Int {
@@ -4077,16 +4203,10 @@ final class TunnelManager: ObservableObject {
         guard let url = components.url else {
             throw TunnelManagerError.noResponsiveProxy
         }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.timeoutIntervalForRequest = 10
-        configuration.timeoutIntervalForResource = 10
-        let session = URLSession(configuration: configuration)
-        defer { session.finishTasksAndInvalidate() }
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = timeoutInterval
-        let (_, response) = try await session.data(for: request)
+        let (_, response) = try await Self.probeSession.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw TunnelManagerError.noResponsiveProxy
         }
@@ -4098,6 +4218,7 @@ final class TunnelManager: ObservableObject {
         providerConnectionID = nil
         readinessVerifiedConnectionID = nil
         readinessFailureStopPending = false
+        connectionQuality = .unknown
         lastObservedProviderStatus = nil
     }
 

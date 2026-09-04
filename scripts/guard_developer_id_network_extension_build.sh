@@ -14,6 +14,20 @@ fail() {
   exit 1
 }
 
+# QA automation can start the tunnel with no UI, which is exactly what an
+# unattended acceptance run needs and exactly what must never reach a user.
+# It is allowed only on the non-stable channel; anything destined for
+# distribution is rejected here rather than relying on the fixture staying
+# unset at runtime.
+case " ${SWIFT_ACTIVE_COMPILATION_CONDITIONS:-} " in
+  *' AETHERROUTE_QA_AUTOMATION '*)
+    [ "${AETHERROUTE_RELEASE_CHANNEL:-development}" != stable ] \
+      || fail "AETHERROUTE_QA_AUTOMATION cannot ship on the stable channel"
+    [ "${AETHERROUTE_NOTARIZED_CANDIDATE:-NO}" != YES ] \
+      || fail "AETHERROUTE_QA_AUTOMATION cannot be notarized for distribution"
+    echo "QA automation fixture present; this build is local QA only." ;;
+esac
+
 # A few isolated gates compile an optimized product in a disposable root but
 # never install or launch its Network Extensions. They must opt in explicitly,
 # remain non-stable, use the build action, and carry a compile-time fixture

@@ -852,11 +852,16 @@ private struct ConnectionHero: View {
 private struct ConnectionProgressStages: View {
     @EnvironmentObject private var tunnel: TunnelManager
 
+    /// The steps that stand between pressing Connect and carrying traffic.
+    ///
+    /// Route readiness is deliberately absent: it now runs after the tunnel is
+    /// already usable, so showing it here would have described the connection
+    /// as unfinished while traffic was already flowing. `SafetyNotice` reports
+    /// route quality once these three are done.
     private static let stages: [(ConnectionStage, String)] = [
         (.systemAuthorization, "System authorization"),
         (.extensionStartup, "Extension startup"),
         (.protocolHandshake, "Protocol handshake"),
-        (.readinessCheck, "Readiness check"),
     ]
 
     var body: some View {
@@ -2348,20 +2353,27 @@ private struct LiveTelemetryMetricValue: View {
     }
 }
 
+/// Reports route quality behind a tunnel that is already carrying traffic.
+///
+/// The tunnel being up and the selected route being fast are separate
+/// questions. This answers the second one without ever implying the first is
+/// in doubt, so a slow node reads as "still working, looking for better"
+/// rather than as a failure.
 private struct SafetyNotice: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+
     var body: some View {
         HStack(alignment: .top, spacing: AetherVisual.s3) {
-            Image(systemName: "lock.shield")
-                .foregroundStyle(Color.accentColor)
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+                .symbolEffect(.pulse, isActive: tunnel.connectionQuality == .verifying)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text("Verified connection status")
+                Text(title)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
-                    .accessibilityHint(
-                        Text("You can connect normally. AetherRoute reports connected only after the selected network engine and protocol core have passed readiness checks.")
-                    )
-                Text("You can connect normally. AetherRoute reports connected only after the selected network engine and protocol core have passed readiness checks.")
+                    .accessibilityHint(Text(detail))
+                Text(detail)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
@@ -2370,5 +2382,48 @@ private struct SafetyNotice: View {
         }
         .padding(.horizontal, AetherVisual.s1)
         .padding(.vertical, AetherVisual.s2)
+        .animation(
+            AetherVisual.animation(AetherVisual.gentleSpring),
+            value: tunnel.connectionQuality
+        )
+    }
+
+    private var symbol: String {
+        switch tunnel.connectionQuality {
+        case .unknown: "lock.shield"
+        case .verifying: "gauge.with.dots.needle.bottom.50percent"
+        case .verified: "checkmark.shield"
+        case .degraded: "exclamationmark.triangle"
+        }
+    }
+
+    private var tint: Color {
+        switch tunnel.connectionQuality {
+        case .unknown, .verifying: Color.accentColor
+        case .verified: .green
+        case .degraded: .orange
+        }
+    }
+
+    private var title: LocalizedStringKey {
+        switch tunnel.connectionQuality {
+        case .unknown: "Verified connection status"
+        case .verifying: "Checking route quality"
+        case .verified: "Route verified"
+        case .degraded: "Route is slow"
+        }
+    }
+
+    private var detail: LocalizedStringKey {
+        switch tunnel.connectionQuality {
+        case .unknown:
+            "Traffic is routed as soon as the network extension installs its settings."
+        case .verifying:
+            "You are already online. AetherRoute is measuring the selected route in the background."
+        case .verified:
+            "The selected route answered the latency and data-plane checks."
+        case .degraded:
+            "You are still connected. The selected route was slow to answer, and AetherRoute keeps looking for a faster node."
+        }
     }
 }

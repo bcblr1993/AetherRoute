@@ -330,12 +330,18 @@ public enum AutomaticRouteHealthRecoveryPolicy {
         return explicitlyAutomatic ? .reselectExplicitGroup : .none
     }
 
-    /// A route that has already passed the connection readiness gate keeps
-    /// its Network Extension alive while every automatic member is
-    /// temporarily unavailable. That allows later health scans to observe a
-    /// recovered member and resume traffic without user intervention. Initial
-    /// readiness remains fail-closed and never reports an unverified route as
-    /// connected.
+    /// A route already known to carry traffic keeps its Network Extension
+    /// alive while every automatic member is temporarily unavailable, so a
+    /// later health scan can observe a recovered member and resume without
+    /// user intervention.
+    ///
+    /// `connectionWasReady` means "this tunnel has moved real traffic at least
+    /// once" — it is set both by a clean readiness pass and by a degraded pass
+    /// whose final data-plane request still succeeded. A slow route therefore
+    /// survives, while a tunnel that has never moved a byte stays stoppable:
+    /// the extension is fail-closed, so keeping a dead one alive would
+    /// blackhole every request instead of returning the user to their direct
+    /// connection.
     public static func exhaustionAction(
         connectionWasReady: Bool
     ) -> ExhaustionAction {

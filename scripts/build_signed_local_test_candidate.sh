@@ -125,6 +125,13 @@ TUNNEL_PROFILE=$(profile_uuid packet-tunnel)
   printf 'MARKETING_VERSION = %s\n' "$VERSION"
   printf 'CURRENT_PROJECT_VERSION = %s\n' "$BUILD_NUMBER"
   printf 'AETHERROUTE_RELEASE_CHANNEL = development\n'
+  # Opt-in only: AETHERROUTE_QA_AUTOMATION=1 compiles in the unattended-connect
+  # fixture so an acceptance run needs no human click. It stays off by default
+  # so a hand-built QA candidate behaves exactly like a shipping one, and the
+  # Developer ID guard refuses it for any distribution build.
+  if [ "${AETHERROUTE_QA_AUTOMATION:-0}" = 1 ]; then
+    printf 'SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) AETHERROUTE_QA_AUTOMATION\n'
+  fi
   printf 'AETHERROUTE_RELEASE_TIMESTAMP = %s\n' "$CREATED_AT"
   printf 'AETHERROUTE_HOST_PROFILE_SPECIFIER = %s\n' "$HOST_PROFILE"
   printf 'AETHERROUTE_TRANSPARENT_PROXY_PROFILE_SPECIFIER = %s\n' \

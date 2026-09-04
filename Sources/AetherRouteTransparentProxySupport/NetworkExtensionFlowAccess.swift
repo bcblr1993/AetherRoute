@@ -126,9 +126,23 @@ final class NetworkExtensionTCPFlowAccess:
             flow.write(data) { error in
                 once.run { [self] in
                     if let error {
-                        NativeFlowRuntimeLog.log.failure(
-                            "stage=tcpNativeWrite failed code=\((error as NSError).code)"
-                        )
+                        // A client that closed its socket before the reply
+                        // arrived is ordinary traffic, not a fault. Logging it
+                        // at failure level buried real errors under hundreds of
+                        // routine disconnects during a normal browsing session.
+                        let code = (error as NSError).code
+                        let isPeerClosed =
+                            code == NEAppProxyFlowError.notConnected.rawValue
+                            || code == NEAppProxyFlowError.peerReset.rawValue
+                        if isPeerClosed {
+                            NativeFlowRuntimeLog.log.verbose(
+                                "stage=tcpNativeWrite peerClosed code=\(code)"
+                            )
+                        } else {
+                            NativeFlowRuntimeLog.log.failure(
+                                "stage=tcpNativeWrite failed code=\(code)"
+                            )
+                        }
                         completion(
                             .failure(NetworkExtensionFlowErrorMapper.map(error))
                         )

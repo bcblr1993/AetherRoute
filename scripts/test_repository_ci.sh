@@ -8,9 +8,16 @@ test "$(uname -m)" = arm64 || {
   exit 1
 }
 
+# Syntax-check every script with the interpreter it actually declares.
+# Checking a zsh script with `sh -n` reports its valid zsh constructs as
+# errors, which failed CI on a script that runs correctly.
 find "$ROOT/scripts" -type f -name '*.sh' -print | LC_ALL=C sort |
   while IFS= read -r script; do
-    sh -n "$script"
+    case "$(head -1 "$script")" in
+      *zsh) zsh -n "$script" ;;
+      *bash) bash -n "$script" ;;
+      *) sh -n "$script" ;;
+    esac
   done
 
 find "$ROOT/Config" -type f -name '*.json' -print | LC_ALL=C sort |

@@ -22,6 +22,29 @@ enum AetherVisual {
     static let insetRadius: CGFloat = 8
     static let panelRadius: CGFloat = 12
 
+    // MARK: - Motion
+    //
+    // A shared motion vocabulary so state changes read as one system instead
+    // of each view inventing its own timing. Durations stay short because this
+    // is a utility app: motion should explain what changed, never make the
+    // user wait for it. All of these respect Reduce Motion through
+    // `AetherVisual.animation(_:)`.
+
+    /// Status changes, badges, and inline text swaps.
+    static let quickFade = Animation.easeOut(duration: 0.18)
+    /// Default for layout and value changes that should feel physical.
+    static let gentleSpring = Animation.spring(response: 0.32, dampingFraction: 0.86)
+    /// Larger surfaces: panel swaps, list reflow, section reveals.
+    static let panelSpring = Animation.spring(response: 0.42, dampingFraction: 0.88)
+
+    /// Returns `animation` unless the user asked for reduced motion, in which
+    /// case state still changes but does so without travel.
+    static func animation(_ animation: Animation) -> Animation? {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? nil
+            : animation
+    }
+
     static let pageHorizontalPadding = s5
     static let pageTopPadding = s5
     static let pageBottomPadding = s6

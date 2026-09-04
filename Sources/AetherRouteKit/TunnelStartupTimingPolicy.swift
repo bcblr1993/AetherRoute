@@ -8,12 +8,20 @@ import Foundation
 /// still finishing before the host watchdog supplies a final safety bound.
 public enum TunnelStartupTimingPolicy {
     public static let providerCoreReadinessTimeoutSeconds = 20
+    /// Guards only the window between requesting a connection and the provider
+    /// reporting connected; it is cancelled the moment that happens. Route
+    /// readiness runs afterwards in the background, so this bound is
+    /// deliberately independent of the selector timeouts below — a slow node
+    /// must never lengthen the time it takes to notice a stuck connection.
     public static let hostConnectionWatchdogTimeoutSeconds = 60
     /// Real VLESS/Hysteria2 cold starts in a fresh Network Extension can spend
-    /// more than three seconds on DNS, transport and TLS even though the route
-    /// is healthy. Five seconds still fails quickly, while avoiding a false
-    /// "no responsive proxy" result before the first HTTPS response arrives.
-    public static let selectorReadinessPerMemberTimeoutMilliseconds: UInt32 = 5_000
+    /// well over five seconds on DNS, transport and TLS even though the route
+    /// is healthy — measured nodes have needed close to nine. Because readiness
+    /// no longer gates the connection (the tunnel is usable as soon as its
+    /// network settings install, and a failed probe only marks the route
+    /// degraded), a longer budget costs the user nothing and stops healthy but
+    /// distant nodes from being reported as dead.
+    public static let selectorReadinessPerMemberTimeoutMilliseconds: UInt32 = 10_000
     public static let selectorReadinessMaximumMemberCount = 64
     public static let selectorReadinessMaximumConcurrency = 8
     public static let selectorReadinessResponseGraceSeconds = 2
@@ -41,12 +49,12 @@ public enum TunnelStartupTimingPolicy {
     public static let routeDataPlaneReadinessAttemptCount = 3
     public static let routeReadinessRetryDelayMilliseconds = 250
     /// Candidates are already ordered by a common provider latency batch.
-    /// A five-second independent data-plane request preserves the cold-start
-    /// allowance used by selector readiness while keeping failover bounded.
-    public static let automaticRouteCandidateProbeTimeoutSeconds = 5
+    /// This independent data-plane request mirrors the selector cold-start
+    /// allowance so a node is never rejected by the stricter of two budgets.
+    public static let automaticRouteCandidateProbeTimeoutSeconds = 10
     /// Covers all eight bounded selector batches (64 members / concurrency 8)
-    /// at the five-second member timeout, plus reply and scheduling grace.
-    public static let automaticRouteProviderMessageTimeoutSeconds = 50
+    /// at the member timeout, plus reply and scheduling grace.
+    public static let automaticRouteProviderMessageTimeoutSeconds = 90
     /// `clash_shutdown` requests cancellation but the embedded Tokio runtime
     /// is not destroyed until its worker returns. Keep the provider alive long
     /// enough to join that worker before a subsequent tunnel start can reuse

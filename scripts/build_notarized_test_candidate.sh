@@ -318,6 +318,10 @@ TUNNEL_PROFILE=$(profile_uuid packet-tunnel)
   printf 'MARKETING_VERSION = %s\n' "$VERSION"
   printf 'CURRENT_PROJECT_VERSION = %s\n' "$BUILD_NUMBER"
   printf 'AETHERROUTE_RELEASE_CHANNEL = beta\n'
+  # Distribution candidate: the Developer ID guard rejects the QA automation
+  # fixture outright when this is set, so an unattended-connect build can never
+  # be notarized by mistake.
+  printf 'AETHERROUTE_NOTARIZED_CANDIDATE = YES\n'
   printf 'AETHERROUTE_RELEASE_TIMESTAMP = %s\n' "$RELEASE_TIMESTAMP"
   printf 'AETHERROUTE_HOST_PROFILE_SPECIFIER = %s\n' "$HOST_PROFILE"
   printf 'AETHERROUTE_TRANSPARENT_PROXY_PROFILE_SPECIFIER = %s\n' \

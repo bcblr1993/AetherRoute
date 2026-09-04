@@ -111,6 +111,16 @@
         }
       }
     },
+    "%lld groups": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 组"
+          }
+        }
+      }
+    },
     "%lld ms": {
       "localizations": {
         "zh-Hans": {
@@ -157,6 +167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "共 %lld 个"
+          }
+        }
+      }
+    },
+    "%lld total · %lld recognized · %lld pending core check · %lld unsupported": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共 %1$lld 个 · %2$lld 个已识别 · %3$lld 个待核心检查 · %4$lld 个不支持"
           }
         }
       }
@@ -571,6 +591,16 @@
         }
       }
     },
+    "All": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部"
+          }
+        }
+      }
+    },
     "All engines · IPv4 route": {
       "localizations": {
         "zh-Hans": {
@@ -721,12 +751,42 @@
         }
       }
     },
+    "Auto-selected": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动选择"
+          }
+        }
+      }
+    },
+    "Automatic": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动"
+          }
+        }
+      }
+    },
     "Automation": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "自动化"
+          }
+        }
+      }
+    },
+    "Available": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可用"
           }
         }
       }
@@ -797,6 +857,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "构建信息"
+          }
+        }
+      }
+    },
+    "By destination": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按目标"
+          }
+        }
+      }
+    },
+    "By latency": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按延迟"
+          }
+        }
+      }
+    },
+    "By name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按名称"
+          }
+        }
+      }
+    },
+    "By traffic": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按流量"
           }
         }
       }
@@ -937,6 +1037,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在检查资源"
+          }
+        }
+      }
+    },
+    "Checking route quality": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking route quality"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在校验线路质量"
           }
         }
       }
@@ -1101,6 +1218,16 @@
         }
       }
     },
+    "Connect before testing or switching nodes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接后才能测速与切换节点"
+          }
+        }
+      }
+    },
     "Connect or disconnect": {
       "localizations": {
         "zh-Hans": {
@@ -1231,6 +1358,16 @@
         }
       }
     },
+    "Connections appear here once you connect": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接后这里会显示每一条连接"
+          }
+        }
+      }
+    },
     "Copy Clear Command": {
       "localizations": {
         "zh-Hans": {
@@ -1241,22 +1378,22 @@
         }
       }
     },
-    "Copy node name": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "复制节点名称"
-          }
-        }
-      }
-    },
     "Copy Shell Environment": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "复制终端代理环境"
+          }
+        }
+      }
+    },
+    "Copy node name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制节点名称"
           }
         }
       }
@@ -1277,6 +1414,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "核心默认值"
+          }
+        }
+      }
+    },
+    "Core status": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核心状态"
           }
         }
       }
@@ -1471,6 +1618,16 @@
         }
       }
     },
+    "Destination": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标"
+          }
+        }
+      }
+    },
     "Detail": {
       "localizations": {
         "zh-Hans": {
@@ -1557,6 +1714,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "断开连接"
+          }
+        }
+      }
+    },
+    "Disconnect all": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部断开"
           }
         }
       }
@@ -1741,12 +1908,32 @@
         }
       }
     },
+    "Duration": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "时长"
+          }
+        }
+      }
+    },
     "EDNS subnet": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "EDNS 子网"
+          }
+        }
+      }
+    },
+    "Each row shows the destination, the rule that matched, which outlet carried it, and how much it moved. Nothing is fabricated while the session is stopped.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标、命中的规则、走哪个出口、上下行流量。停止时不会生成虚假数据。"
           }
         }
       }
@@ -2201,12 +2388,12 @@
         }
       }
     },
-    "In groups": {
+    "Groups": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在组中"
+            "value": "策略组"
           }
         }
       }
@@ -2541,6 +2728,16 @@
         }
       }
     },
+    "In groups": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在组中"
+          }
+        }
+      }
+    },
     "In use": {
       "localizations": {
         "zh-Hans": {
@@ -2631,6 +2828,16 @@
         }
       }
     },
+    "Keeps the selected node pinned": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定所选节点，失败时不回退"
+          }
+        }
+      }
+    },
     "Language": {
       "localizations": {
         "zh-Hans": {
@@ -2667,6 +2874,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "延迟"
+          }
+        }
+      }
+    },
+    "Latency results are local": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "延迟结果仅保存在本机"
           }
         }
       }
@@ -2926,7 +3143,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "手动选择"
+            "value": "手动"
           }
         }
       }
@@ -2947,6 +3164,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "将域名映射到合成地址段，以稳定执行域名路由。"
+          }
+        }
+      }
+    },
+    "Matched rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命中规则"
           }
         }
       }
@@ -3011,22 +3238,12 @@
         }
       }
     },
-    "Navigate": {
+    "Name": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导航"
-          }
-        }
-      }
-    },
-    "Next proxy node": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "下一个代理节点"
+            "value": "名称"
           }
         }
       }
@@ -3061,6 +3278,16 @@
         }
       }
     },
+    "Navigate": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导航"
+          }
+        }
+      }
+    },
     "Network": {
       "localizations": {
         "zh-Hans": {
@@ -3081,12 +3308,42 @@
         }
       }
     },
+    "Network engine switched without manual disconnection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络引擎已自动切换，无需手动断开。"
+          }
+        }
+      }
+    },
+    "Network engine updated.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络引擎已更新。"
+          }
+        }
+      }
+    },
     "Network settings remain locked until the privacy disclosure is accepted.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "接受隐私说明前，网络设置将保持锁定。"
+          }
+        }
+      }
+    },
+    "Next proxy node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一个代理节点"
           }
         }
       }
@@ -3231,6 +3488,26 @@
         }
       }
     },
+    "No proxy node in the active route passed the connection check.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前路由没有节点通过连接检查。"
+          }
+        }
+      }
+    },
+    "No proxy node in this group passed the automatic connection check.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此策略组没有节点通过自动连接检查。"
+          }
+        }
+      }
+    },
     "No resolver address or browsing-domain value is collected for this screen.": {
       "localizations": {
         "zh-Hans": {
@@ -3287,6 +3564,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "节点名称"
+          }
+        }
+      }
+    },
+    "Nodes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理节点"
           }
         }
       }
@@ -3461,6 +3748,16 @@
         }
       }
     },
+    "Only connections visible on this Mac are counted, and nothing is reported anywhere.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只统计本机可见的连接，不上报"
+          }
+        }
+      }
+    },
     "Only the provider host is shown. Private query tokens stay hidden.": {
       "localizations": {
         "zh-Hans": {
@@ -3567,6 +3864,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "原创设计与原生 macOS 开发"
+          }
+        }
+      }
+    },
+    "Outlet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出口"
           }
         }
       }
@@ -3751,6 +4058,16 @@
         }
       }
     },
+    "Previous proxy node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一个代理节点"
+          }
+        }
+      }
+    },
     "Primary": {
       "localizations": {
         "zh-Hans": {
@@ -3777,16 +4094,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "主导航与内容"
-          }
-        }
-      }
-    },
-    "Previous proxy node": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上一个代理节点"
           }
         }
       }
@@ -4071,6 +4378,16 @@
         }
       }
     },
+    "Profile switched without manual disconnection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置已自动切换，无需手动断开。"
+          }
+        }
+      }
+    },
     "Profiles": {
       "localizations": {
         "zh-Hans": {
@@ -4137,6 +4454,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "提供方"
+          }
+        }
+      }
+    },
+    "Proxied": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理"
           }
         }
       }
@@ -4341,16 +4668,6 @@
         }
       }
     },
-    "Recovery Assistant": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "恢复助手"
-          }
-        }
-      }
-    },
     "Recovering": {
       "localizations": {
         "zh-Hans": {
@@ -4371,6 +4688,16 @@
         }
       }
     },
+    "Recovery Assistant": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复助手"
+          }
+        }
+      }
+    },
     "Redir-host": {
       "localizations": {
         "zh-Hans": {
@@ -4387,6 +4714,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "刷新授权"
+          }
+        }
+      }
+    },
+    "Rejected": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒绝"
           }
         }
       }
@@ -4581,22 +4918,32 @@
         }
       }
     },
-    "Retries the secure connection": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新尝试安全连接"
-          }
-        }
-      }
-    },
     "Retest this group": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "重新测试此组"
+          }
+        }
+      }
+    },
+    "Retries the fastest available node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不可用时切换到最快可用节点"
+          }
+        }
+      }
+    },
+    "Retries the secure connection": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新尝试安全连接"
           }
         }
       }
@@ -4741,12 +5088,46 @@
         }
       }
     },
+    "Route is slow": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Route is slow"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "线路较慢"
+          }
+        }
+      }
+    },
     "Route upstream DNS queries through the rule engine.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "让上游 DNS 查询经过规则引擎路由。"
+          }
+        }
+      }
+    },
+    "Route verified": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Route verified"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "线路已校验"
           }
         }
       }
@@ -5031,6 +5412,26 @@
         }
       }
     },
+    "Search connections": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索连接"
+          }
+        }
+      }
+    },
+    "Search nodes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索节点"
+          }
+        }
+      }
+    },
     "Secure random data could not be generated.": {
       "localizations": {
         "zh-Hans": {
@@ -5097,6 +5498,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "已选择：%@"
+          }
+        }
+      }
+    },
+    "Selection mode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点模式"
           }
         }
       }
@@ -5231,12 +5642,32 @@
         }
       }
     },
+    "Showing %lld of %lld connections": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示 %1$lld / 共 %2$lld 条连接"
+          }
+        }
+      }
+    },
     "Showing %lld of %lld items.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "显示 %lld 项，共 %lld 项。"
+          }
+        }
+      }
+    },
+    "Showing %lld of %lld nodes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示 %lld / 共 %lld 个节点"
           }
         }
       }
@@ -5491,6 +5922,26 @@
         }
       }
     },
+    "Switching network engine…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在切换网络引擎…"
+          }
+        }
+      }
+    },
+    "Switching profile…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在切换配置…"
+          }
+        }
+      }
+    },
     "System authorization": {
       "localizations": {
         "zh-Hans": {
@@ -5567,6 +6018,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "TUN 运行时覆盖"
+          }
+        }
+      }
+    },
+    "Test all": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部测速"
           }
         }
       }
@@ -5711,12 +6172,32 @@
         }
       }
     },
+    "The current connection did not stop in time.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前连接未能及时停止。"
+          }
+        }
+      }
+    },
     "The current core bridge reports lifecycle readiness only. Per-flow destinations, matched rules, and byte counters are not exposed by this build.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "当前核心桥接仅报告生命周期就绪状态；此版本尚未提供单个连接的目标、命中规则和字节计数。"
+          }
+        }
+      }
+    },
+    "The current network engine did not stop in time. It remains selected.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前网络引擎未能及时停止，已保持原选择。"
           }
         }
       }
@@ -5971,6 +6452,36 @@
         }
       }
     },
+    "The new network engine and automatic rollback both failed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新网络引擎与自动恢复均失败，请检查诊断信息。"
+          }
+        }
+      }
+    },
+    "The new network engine could not connect. The previous engine was restored.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新网络引擎无法连接，已自动恢复原引擎。"
+          }
+        }
+      }
+    },
+    "The node list is ready — %lld in total.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点列表已就绪，共 %lld 个。"
+          }
+        }
+      }
+    },
     "The password is incorrect or the portable archive was modified.": {
       "localizations": {
         "zh-Hans": {
@@ -6151,6 +6662,16 @@
         }
       }
     },
+    "The routing mode is temporarily unavailable.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路由模式正在切换，请稍后再试。"
+          }
+        }
+      }
+    },
     "The saved license cannot authorize a connection. Review Settings > Account.": {
       "localizations": {
         "zh-Hans": {
@@ -6221,16 +6742,6 @@
         }
       }
     },
-    "The routing mode is temporarily unavailable.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "路由模式正在切换，请稍后再试。"
-          }
-        }
-      }
-    },
     "The secure connection is ready. New flows will appear here without exposing source addresses or account identifiers.": {
       "localizations": {
         "zh-Hans": {
@@ -6281,6 +6792,53 @@
         }
       }
     },
+    "The selected profile and automatic rollback both failed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选配置与自动恢复均失败，请检查诊断信息。"
+          }
+        }
+      }
+    },
+    "The selected profile could not establish a working connection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选配置无法建立可用连接。"
+          }
+        }
+      }
+    },
+    "The selected profile failed. The previous profile was restored.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选配置连接失败，已自动恢复原配置。"
+          }
+        }
+      }
+    },
+    "The selected route answered the latency and data-plane checks.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selected route answered the latency and data-plane checks."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选线路已通过延迟与数据面检查。"
+          }
+        }
+      }
+    },
     "The selected routing mode could not be saved to the network extension configuration.": {
       "localizations": {
         "zh-Hans": {
@@ -6327,16 +6885,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "签名回执报告状态为“%@”。转移授权前请联系支持。"
-          }
-        }
-      }
-    },
-    "The tunnel remains active while AetherRoute retries the fastest available node.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "隧道保持启用，AetherRoute 正在重试当前最快的可用节点。"
           }
         }
       }
@@ -6451,6 +6999,16 @@
         }
       }
     },
+    "The tunnel remains active while AetherRoute retries the fastest available node.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隧道保持启用，AetherRoute 正在重试当前最快的可用节点。"
+          }
+        }
+      }
+    },
     "This AetherRoute link could not be opened safely.": {
       "localizations": {
         "zh-Hans": {
@@ -6467,6 +7025,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "此 Mac"
+          }
+        }
+      }
+    },
+    "This automatic group is ready and will choose the fastest available node when you connect.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动策略组已就绪，将在连接时选择最快的可用节点。"
+          }
+        }
+      }
+    },
+    "This group is chosen by the protocol core from its own latency tests, so it cannot be set by hand. Expand a manual group to choose a node.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此策略组由协议核心根据延迟测试自动选择，不能手动指定。请展开手动策略组选择节点。"
           }
         }
       }
@@ -6541,12 +7119,32 @@
         }
       }
     },
+    "Timed out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超时"
+          }
+        }
+      }
+    },
     "Timeout": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "超时"
+          }
+        }
+      }
+    },
+    "Traffic": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "流量"
           }
         }
       }
@@ -6567,6 +7165,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "流量已恢复到正常网络路径。"
+          }
+        }
+      }
+    },
+    "Traffic is routed as soon as the network extension installs its settings.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Traffic is routed as soon as the network extension installs its settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络扩展装好设置后，流量即刻开始路由。"
           }
         }
       }
@@ -6697,6 +7312,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "未知的网络扩展状态"
+          }
+        }
+      }
+    },
+    "Untested": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未测"
           }
         }
       }
@@ -6991,6 +7616,16 @@
         }
       }
     },
+    "Wait for the current network operation to finish before changing profiles.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请等待当前网络操作完成后再切换配置。"
+          }
+        }
+      }
+    },
     "Wait while the normal network path is restored.": {
       "localizations": {
         "zh-Hans": {
@@ -7027,6 +7662,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "YAML 配置会经过大小限制和 UTF-8 检查；包含脚本、插件、命令或可下载外部界面的配置会被拒绝。网络扩展报告就绪前，协议核心还会进行第二次解析。"
+          }
+        }
+      }
+    },
+    "You are already online. AetherRoute is measuring the selected route in the background.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You are already online. AetherRoute is measuring the selected route in the background."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已经在线。AetherRoute 正在后台测量所选线路。"
+          }
+        }
+      }
+    },
+    "You are still connected. The selected route was slow to answer, and AetherRoute keeps looking for a faster node.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You are still connected. The selected route was slow to answer, and AetherRoute keeps looking for a faster node."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接仍然有效。所选线路响应较慢，AetherRoute 会继续寻找更快的节点。"
           }
         }
       }
@@ -7170,266 +7839,6 @@
           }
         }
       }
-    },
-    "%lld groups": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "%lld 组" }
-        }
-      }
-    },
-    "All": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "全部" }
-        }
-      }
-    },
-    "Available": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "可用" }
-        }
-      }
-    },
-    "By destination": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "按目标" }
-        }
-      }
-    },
-    "By latency": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "按延迟" }
-        }
-      }
-    },
-    "By name": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "按名称" }
-        }
-      }
-    },
-    "By traffic": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "按流量" }
-        }
-      }
-    },
-    "Destination": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "目标" }
-        }
-      }
-    },
-    "Duration": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "时长" }
-        }
-      }
-    },
-    "Matched rule": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "命中规则" }
-        }
-      }
-    },
-    "Name": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "名称" }
-        }
-      }
-    },
-    "Nodes": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "代理节点" }
-        }
-      }
-    },
-    "Only connections visible on this Mac are counted, and nothing is reported anywhere.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "只统计本机可见的连接，不上报" }
-        }
-      }
-    },
-    "Outlet": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "出口" }
-        }
-      }
-    },
-    "Proxied": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "代理" }
-        }
-      }
-    },
-    "Rejected": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "拒绝" }
-        }
-      }
-    },
-    "Search connections": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "搜索连接" }
-        }
-      }
-    },
-    "Search nodes": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "搜索节点" }
-        }
-      }
-    },
-    "Showing %lld of %lld connections": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "显示 %1$lld / 共 %2$lld 条连接" }
-        }
-      }
-    },
-    "Timed out": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "超时" }
-        }
-      }
-    },
-    "%lld total · %lld recognized · %lld pending core check · %lld unsupported": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "共 %1$lld 个 · %2$lld 个已识别 · %3$lld 个待核心检查 · %4$lld 个不支持" }
-        }
-      }
-    },
-    "Traffic": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "流量" }
-        }
-      }
-    },
-    "Untested": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "未测" }
-        }
-      }
-    },
-    "Core status": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "核心状态" } } }
-    },
-    "Disconnect all": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "全部断开" } } }
-    },
-    "Groups": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "策略组" } } }
-    },
-    "Test all": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "全部测速" } } }
-    },
-    "Connect before testing or switching nodes": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "连接后才能测速与切换节点" } } }
-    },
-    "Connections appear here once you connect": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "连接后这里会显示每一条连接" } } }
-    },
-    "Each row shows the destination, the rule that matched, which outlet carried it, and how much it moved. Nothing is fabricated while the session is stopped.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "目标、命中的规则、走哪个出口、上下行流量。停止时不会生成虚假数据。" } } }
-    },
-    "Latency results are local": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "延迟结果仅保存在本机" } } }
-    },
-    "Showing %lld of %lld nodes": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "显示 %lld / 共 %lld 个节点" } } }
-    },
-    "The node list is ready — %lld in total.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "节点列表已就绪，共 %lld 个。" } } }
-    },
-    "Network engine updated.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "网络引擎已更新。" } } }
-    },
-    "Switching network engine…": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在切换网络引擎…" } } }
-    },
-    "Network engine switched without manual disconnection.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "网络引擎已自动切换，无需手动断开。" } } }
-    },
-    "The current network engine did not stop in time. It remains selected.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前网络引擎未能及时停止，已保持原选择。" } } }
-    },
-    "The new network engine could not connect. The previous engine was restored.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "新网络引擎无法连接，已自动恢复原引擎。" } } }
-    },
-    "The new network engine and automatic rollback both failed.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "新网络引擎与自动恢复均失败，请检查诊断信息。" } } }
-    },
-    "Wait for the current network operation to finish before changing profiles.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请等待当前网络操作完成后再切换配置。" } } }
-    },
-    "Switching profile…": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在切换配置…" } } }
-    },
-    "The current connection did not stop in time.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前连接未能及时停止。" } } }
-    },
-    "The selected profile could not establish a working connection.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选配置无法建立可用连接。" } } }
-    },
-    "Profile switched without manual disconnection.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "配置已自动切换，无需手动断开。" } } }
-    },
-    "The selected profile failed. The previous profile was restored.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选配置连接失败，已自动恢复原配置。" } } }
-    },
-    "The selected profile and automatic rollback both failed.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选配置与自动恢复均失败，请检查诊断信息。" } } }
-    },
-    "This group is chosen by the protocol core from its own latency tests, so it cannot be set by hand. Expand a manual group to choose a node.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此策略组由协议核心根据延迟测试自动选择，不能手动指定。请展开手动策略组选择节点。" } } }
-    },
-    "This automatic group is ready and will choose the fastest available node when you connect.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "自动策略组已就绪，将在连接时选择最快的可用节点。" } } }
-    },
-    "Selection mode": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "节点模式" } } }
-    },
-    "Manual": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "手动" } } }
-    },
-    "Automatic": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "自动" } } }
-    },
-    "Auto-selected": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "自动选择" } } }
-    },
-    "Retries the fastest available node": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "不可用时切换到最快可用节点" } } }
-    },
-    "Keeps the selected node pinned": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "固定所选节点，失败时不回退" } } }
-    },
-    "No proxy node in this group passed the automatic connection check.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此策略组没有节点通过自动连接检查。" } } }
-    },
-    "No proxy node in the active route passed the connection check.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前路由没有节点通过连接检查。" } } }
     },
     "upstreams": {
       "localizations": {
