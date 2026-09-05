@@ -2630,8 +2630,8 @@
     }
   ],
   "coreArtifacts": {
-    "packetTunnel": "17d549c2a37904e89bf8485b06bdad0f93f41b90e92add04f54700376eda2754",
-    "transparentProxy": "493cfc3f255c127acb8f1c8d220926fcba15387a51654ba1ca825461ebac432e"
+    "packetTunnel": "20ded57c544b3414ebeb68de5ff655ebd4753f6be9eeeb68ff2df8d54165448a",
+    "transparentProxy": "7a4e938d4d94943de7a0981f4e0cd1d25ae7c09baa4d46372e98747ae73513ba"
   },
   "licenses": [
     {

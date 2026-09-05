@@ -1,26 +1,26 @@
 {
-  "schemaVersion": 1,
-  "coreRepository": "https://github.com/bcblr1993/aetherroute-core.git",
-  "coreCommit": "988decce5f8888cff4800a4dfaaf1ab784852626",
-  "sourceFiles": {
-    "interopTestsSHA256": "25d4c14b208633d6524a434a6925af63e7bd15cf3553441ca98bcb8f61182c23",
-    "proxyManagerSHA256": "560fc42d699f21cf5a3801f587f6c76ddb1fce90bbe7a7b0a2eb69cf00ad9548",
-    "outboundManagerSHA256": "8d259df7493cec5c78a7821a034920db888e18b3449f7b7134f930a59213f1f2",
-    "selectorSourceSHA256": "b1092a6558910c5ab19e62eb613cdde72fe692a284d2b50f269b582fa25fc332",
-    "dispatcherSHA256": "70d74b1f706d3608cc5caeba846234ab6f3412098e771ffe31287a18f72c7454",
-    "directSourceSHA256": "131b89896552381eca0ae7264d9b921c99569fbca68c2e1f40fa51b4ee6c5532",
-    "coreManifestSHA256": "fffefc34b51e2617d47df63582d4c8d5fee3e24ab675e9cd3032f82f0fae16ca",
-    "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
-    "ffiSourceSHA256": "8cfb06f75e0630ea2306e24cc75c8484ce1e1200879c5da7b7ecfd5c0b23b92a",
-    "flowFFISourceSHA256": "d04dff48c777c299be98295bd033a394a954b87b0d9fdafa3d65c2e1ba755904",
-    "embeddedFlowSourceSHA256": "a79acca8f666238fc0ac4d3c3261500e1485e003b6de7d6b6c5db352c8de84da"
-  },
   "artifacts": {
-    "flowCoreSHA256": "493cfc3f255c127acb8f1c8d220926fcba15387a51654ba1ca825461ebac432e",
-    "packetFlowCoreSHA256": "17d549c2a37904e89bf8485b06bdad0f93f41b90e92add04f54700376eda2754",
+    "flowCoreSHA256": "7a4e938d4d94943de7a0981f4e0cd1d25ae7c09baa4d46372e98747ae73513ba",
     "headerSHA256": "00395c191cea964496808a8b871bf976ea860645b9a9f9ce08d3d516fe179e56",
-    "interopTestBinarySHA256": "497b83631fb72c0240c1e4690aeb72ef357e521bbe93497064c126d8e5992ebf"
+    "interopTestBinarySHA256": "497b83631fb72c0240c1e4690aeb72ef357e521bbe93497064c126d8e5992ebf",
+    "packetFlowCoreSHA256": "20ded57c544b3414ebeb68de5ff655ebd4753f6be9eeeb68ff2df8d54165448a"
   },
+  "coreCommit": "321049d838a28b7bf90b52fb4fd2ad9e76a9bb0b",
+  "coreFeatures": [
+    "aether-tuic",
+    "shadowquic",
+    "shadowsocks",
+    "ssh",
+    "wireguard"
+  ],
+  "coreRepository": "https://github.com/bcblr1993/aetherroute-core.git",
+  "ffiFeatures": [
+    "aether-tuic",
+    "shadowquic",
+    "shadowsocks",
+    "ssh",
+    "wireguard"
+  ],
   "interopCases": [
     "AnyTLS",
     "HTTP CONNECT",
@@ -50,18 +50,18 @@
     "interoperates_wireguard_with_wireguard_go_netstack",
     "interoperates_with_openssh"
   ],
-  "coreFeatures": [
-    "aether-tuic",
-    "shadowquic",
-    "shadowsocks",
-    "ssh",
-    "wireguard"
-  ],
-  "ffiFeatures": [
-    "aether-tuic",
-    "shadowquic",
-    "shadowsocks",
-    "ssh",
-    "wireguard"
-  ]
+  "schemaVersion": 1,
+  "sourceFiles": {
+    "coreManifestSHA256": "fffefc34b51e2617d47df63582d4c8d5fee3e24ab675e9cd3032f82f0fae16ca",
+    "directSourceSHA256": "131b89896552381eca0ae7264d9b921c99569fbca68c2e1f40fa51b4ee6c5532",
+    "dispatcherSHA256": "70d74b1f706d3608cc5caeba846234ab6f3412098e771ffe31287a18f72c7454",
+    "embeddedFlowSourceSHA256": "a79acca8f666238fc0ac4d3c3261500e1485e003b6de7d6b6c5db352c8de84da",
+    "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
+    "ffiSourceSHA256": "8cfb06f75e0630ea2306e24cc75c8484ce1e1200879c5da7b7ecfd5c0b23b92a",
+    "flowFFISourceSHA256": "439cc244484dab1f876be9a4bf6e2d8ec6044afc2f0f18338de332702782f3a2",
+    "interopTestsSHA256": "25d4c14b208633d6524a434a6925af63e7bd15cf3553441ca98bcb8f61182c23",
+    "outboundManagerSHA256": "8d259df7493cec5c78a7821a034920db888e18b3449f7b7134f930a59213f1f2",
+    "proxyManagerSHA256": "560fc42d699f21cf5a3801f587f6c76ddb1fce90bbe7a7b0a2eb69cf00ad9548",
+    "selectorSourceSHA256": "b1092a6558910c5ab19e62eb613cdde72fe692a284d2b50f269b582fa25fc332"
+  }
 }
