@@ -30,9 +30,6 @@ struct SupportDiagnosticsView: View {
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var isCreatingReport = false
-    @State private var debug = DebugLoggingController()
-    @State private var debugDocument: DiagnosticReportDocument?
-    @State private var isDebugExporterPresented = false
 
     var body: some View {
         ScrollView {
@@ -83,8 +80,6 @@ struct SupportDiagnosticsView: View {
                     .accessibilityIdentifier("diagnostics-status")
                 }
 
-                debugLoggingSection
-
                 diagnosticSection(
                     title: "Included",
                     symbol: "checkmark.circle.fill",
@@ -116,12 +111,6 @@ struct SupportDiagnosticsView: View {
             .frame(maxWidth: .infinity)
         }
         .fileExporter(
-            isPresented: $isDebugExporterPresented,
-            document: debugDocument,
-            contentType: .plainText,
-            defaultFilename: debug.suggestedFileName()
-        ) { _ in debugDocument = nil }
-        .fileExporter(
             isPresented: $isExporterPresented,
             document: document,
             contentType: .json,
@@ -141,106 +130,6 @@ struct SupportDiagnosticsView: View {
             }
             document = nil
         }
-    }
-
-    /// Debug logging is deliberately separate from the bounded support report
-    /// above: it records destination endpoints and source application
-    /// identifiers, which the privacy-scoped report never discloses.
-    @ViewBuilder
-    private var debugLoggingSection: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text("Debug logging")
-                    .font(.headline)
-                Text("Records what the network extensions do while you reproduce a problem. Logs stay on this Mac, rotate automatically, and never exceed 16 MB per component.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Picker("Detail", selection: Binding(
-                get: { debug.level },
-                set: { debug.setLevel($0) }
-            )) {
-                Text("Off").tag(DiagnosticLogLevel.off)
-                Text("Errors and summaries").tag(DiagnosticLogLevel.standard)
-                Text("Every connection").tag(DiagnosticLogLevel.verbose)
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("debug-log-level")
-
-            if debug.level == .verbose {
-                Label(
-                    "Every connection is recorded. Use this only while reproducing a problem, then switch back.",
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-                .font(.caption)
-                .foregroundStyle(.orange)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if debug.isDebugEnabled {
-                Toggle("Show live log", isOn: $debug.isTailing)
-                    .accessibilityIdentifier("debug-log-live")
-
-                if debug.isTailing {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: AetherVisual.s1) {
-                            ForEach(Array(debug.lines.enumerated()), id: \.offset) { entry in
-                                Text(entry.element)
-                                    .font(.system(.caption2, design: .monospaced))
-                                    .textSelection(.enabled)
-                                    .frame(
-                                        maxWidth: .infinity,
-                                        alignment: .leading
-                                    )
-                            }
-                        }
-                        .padding(AetherVisual.s2)
-                    }
-                    .frame(height: 220)
-                    .background(.quaternary.opacity(0.35))
-                    .clipShape(RoundedRectangle(cornerRadius: AetherVisual.panelRadius))
-                    .accessibilityIdentifier("debug-log-output")
-                }
-
-                HStack(spacing: AetherVisual.s2) {
-                    Button("Export Debug Log…") {
-                        debugDocument = debug.makeDocument()
-                        isDebugExporterPresented = debugDocument != nil
-                    }
-                    .accessibilityIdentifier("debug-log-export")
-
-                    Button("Delete Recorded Logs", role: .destructive) {
-                        debug.deleteRecordedLogs()
-                    }
-                    .accessibilityIdentifier("debug-log-delete")
-
-                    Spacer()
-
-                    Text(Self.byteLabel(debug.recordedBytes))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            if let message = debug.statusMessage {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(debug.statusIsError ? .red : .green)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(AetherVisual.s4)
-        .background(.quaternary.opacity(0.18))
-        .clipShape(RoundedRectangle(cornerRadius: AetherVisual.panelRadius))
-    }
-
-    private static func byteLabel(_ bytes: Int) -> String {
-        guard bytes > 0 else { return "" }
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: Int64(bytes))
     }
 
     /// The group label sits outside the card as a quiet caption, and the colour
