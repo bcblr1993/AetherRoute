@@ -17,6 +17,7 @@ trap cleanup EXIT HUP INT TERM
 "$ROOT/scripts/test_signed_local_candidate_pipeline.sh"
 "$ROOT/scripts/test_signed_network_extension_evidence.sh"
 "$ROOT/scripts/test_postinstall_evidence.sh"
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_installed_ne_performance_collector.py"
 "$ROOT/scripts/test_promotion_pipeline.sh"
 "$ROOT/scripts/test_notarized_test_candidate_pipeline.sh"
 "$ROOT/scripts/test_ui_isolation_guards.sh"

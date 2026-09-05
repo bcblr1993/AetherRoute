@@ -13,7 +13,7 @@ replace the policy. A completed collection is not an acceptance result.
 
 ## Collector interface
 
-The reserved real collector entry point is:
+The real collector entry point is:
 
 ```sh
 scripts/collect_installed_ne_performance.sh \
@@ -21,10 +21,18 @@ scripts/collect_installed_ne_performance.sh \
   /absolute/new/installed-ne-performance
 ```
 
-This contract does not implement or simulate that collector. The validator
-requires every file named in `collectorSources` to exist and match its recorded
-SHA-256. A future helper must be added to that committed list; a missing or
-changed collector cannot satisfy the gate. Collection must run only on the
+The collector uses `installed_ne_performance_peer.py`, an explicitly started,
+task-owned HTTPS peer, and requires the controlled-peer options shown by
+`collect_installed_ne_performance.sh --help`. Its private token and local CA
+certificate stay in local files; the CA applies only to this collector's curl
+requests, without changing a system trust store. The operator prepares and
+confirms each disconnected or connected engine phase in the signed app; the
+collector independently checks that state and does not activate the app itself.
+Cancellation records an incomplete result and requires network restoration.
+
+The validator requires every file named in `collectorSources` to exist and
+match its recorded SHA-256. A new helper must be added to that committed list;
+a missing or changed collector cannot satisfy the gate. Collection runs on the
 designated test Mac with explicit network authorization and a recoverable
 control path. It must hash and mount the exact candidate DMG, derive archived
 provider identities from its signed app, compare installed identities, and
