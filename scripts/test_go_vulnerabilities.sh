@@ -36,6 +36,9 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 mkdir -p "$TEMP/bin" "$TEMP/cache"
 
+# `go install package@version` resolves outside the main module and otherwise
+# may download a newer default toolchain. Audit the exact pinned toolchain.
+export GOTOOLCHAIN="$EXPECTED_TOOLCHAIN"
 (
   cd "$SERVICE_ROOT"
   GOBIN="$TEMP/bin" GOCACHE="$TEMP/cache" \
@@ -47,4 +50,3 @@ done
 
 printf 'Production service and WireGuard test server passed govulncheck with %s.\n' \
   "$EXPECTED_TOOLCHAIN"
-

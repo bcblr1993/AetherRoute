@@ -2,11 +2,17 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+AUDIT_TEMP=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-repository-ci.XXXXXX")
+trap 'find "$AUDIT_TEMP" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 
 test "$(uname -m)" = arm64 || {
   echo "Repository CI requires an Apple Silicon runner" >&2
   exit 1
 }
+
+python3 "$ROOT/scripts/repository_worktree_snapshot.py" "$ROOT" \
+  >"$AUDIT_TEMP/before.json"
+"$ROOT/scripts/test_repository_worktree_snapshot.sh"
 
 # Syntax-check every script with the interpreter it actually declares.
 # Checking a zsh script with `sh -n` reports its valid zsh constructs as
@@ -35,6 +41,7 @@ xcodebuild -project "$ROOT/AetherRoute.xcodeproj" -list >/dev/null
 "$ROOT/scripts/verify_localizations.sh"
 "$ROOT/scripts/verify_app_icon.sh"
 "$ROOT/scripts/verify_ui_design_tokens.sh"
+"$ROOT/scripts/test_go_vulnerabilities.sh"
 
 (
   cd "$ROOT/Services/DistributionService"
@@ -48,5 +55,10 @@ xcodebuild -project "$ROOT/AetherRoute.xcodeproj" -list >/dev/null
   go test -race ./...
 )
 
-git -C "$ROOT" diff --exit-code -- . ':!AetherRoute.xcodeproj' >/dev/null
+python3 "$ROOT/scripts/repository_worktree_snapshot.py" "$ROOT" \
+  >"$AUDIT_TEMP/after.json"
+cmp -s "$AUDIT_TEMP/before.json" "$AUDIT_TEMP/after.json" || {
+  echo "Repository CI changed source, index, untracked files, or submodule state" >&2
+  exit 1
+}
 echo "Repository CI passed without loading a Network Extension."
