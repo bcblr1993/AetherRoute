@@ -2176,6 +2176,15 @@ private struct SubscriptionEditorSheet: View {
             TextField("HTTPS subscription URL", text: $urlText)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("subscription-url-field")
+                .onChange(of: urlText) { _, value in
+                    // Pasted addresses often include a trailing line break.
+                    // Normalize the editor as well as the submitted value so
+                    // the field never scrolls to an apparently empty line.
+                    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if normalized != value {
+                        urlText = normalized
+                    }
+                }
 
             if let message = tunnel.profileMessage {
                 Label(

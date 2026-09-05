@@ -949,6 +949,25 @@ final class AetherRouteUITests: XCTestCase {
             ].exists
         )
         XCTAssertFalse(app.buttons["activate-subscription-button"].isEnabled)
+        let field = app.textFields["subscription-url-field"]
+        pasteFixtureText(
+            " \nhttps://profiles.example/config.yaml?variant=demo%20route\r\n",
+            into: field,
+            in: app
+        )
+        let normalized = XCTNSPredicateExpectation(
+            predicate: NSPredicate(
+                format: "value == %@",
+                "https://profiles.example/config.yaml?variant=demo%20route"
+            ),
+            object: field
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [normalized], timeout: 2), .completed)
+        XCTAssertTrue(app.buttons["activate-subscription-button"].isEnabled)
+        let attachment = XCTAttachment(screenshot: app.windows["main-AppWindow-1"].screenshot())
+        attachment.name = "subscription-trimmed-url-en-light"
+        attachment.lifetime = .keepAlways
+        add(attachment)
         app.buttons["Cancel"].click()
     }
 
@@ -2564,6 +2583,52 @@ final class AetherRouteUITests: XCTestCase {
                 "Every node column must fit without horizontal scrolling."
             )
         }
+    }
+
+    private func pasteFixtureText(
+        _ text: String,
+        into field: XCUIElement,
+        in app: XCUIApplication
+    ) {
+        let pasteboard = NSPasteboard.general
+        let initialChangeCount = pasteboard.changeCount
+        var originalItems: [NSPasteboardItem] = []
+        for item in pasteboard.pasteboardItems ?? [] {
+            let saved = NSPasteboardItem()
+            for type in item.types {
+                guard let data = item.data(forType: type) else {
+                    XCTFail("Cannot preserve the existing pasteboard item; no fixture was pasted.")
+                    return
+                }
+                saved.setData(data, forType: type)
+            }
+            originalItems.append(saved)
+        }
+        guard pasteboard.changeCount == initialChangeCount else {
+            XCTFail("The pasteboard changed before the fixture could be pasted.")
+            return
+        }
+        pasteboard.clearContents()
+        var fixtureChangeCount = pasteboard.changeCount
+        defer {
+            // Preserve a newer user copy instead of overwriting it at teardown.
+            if pasteboard.changeCount == fixtureChangeCount {
+                pasteboard.clearContents()
+                if !originalItems.isEmpty {
+                    XCTAssertTrue(pasteboard.writeObjects(originalItems))
+                }
+            }
+        }
+        let wroteFixture = pasteboard.setString(text, forType: .string)
+        fixtureChangeCount = pasteboard.changeCount
+        XCTAssertTrue(wroteFixture)
+        guard wroteFixture else { return }
+        field.click()
+        guard pasteboard.changeCount == fixtureChangeCount else {
+            XCTFail("The pasteboard changed before the paste event; no clipboard content was pasted.")
+            return
+        }
+        app.typeKey("v", modifierFlags: .command)
     }
 
     private func assertCompactFilterWorks(
