@@ -226,7 +226,7 @@ struct AboutAetherRouteView: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
             Text(value)
-                .font(.subheadline.monospacedDigit().weight(.semibold))
+                .font(.body.monospacedDigit().weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)

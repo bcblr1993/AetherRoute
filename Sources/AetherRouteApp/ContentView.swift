@@ -1732,7 +1732,25 @@ private struct RoutingResourcesCard: View {
                 }
             }
 
-            DisclosureGroup("Advanced", isExpanded: $showsAdvanced) {
+            Button {
+                showsAdvanced.toggle()
+            } label: {
+                HStack(spacing: AetherVisual.s1) {
+                    Image(systemName: showsAdvanced ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 12)
+                        .accessibilityHidden(true)
+                    Text("Advanced")
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("routing-rules-advanced")
+            .accessibilityAddTraits(showsAdvanced ? .isSelected : [])
+
+            if showsAdvanced {
                 VStack(alignment: .leading, spacing: AetherVisual.s3) {
                     ForEach(tunnel.requiredRoutingResources, id: \.self) { kind in
                         resourceRow(kind)
@@ -1773,12 +1791,11 @@ private struct RoutingResourcesCard: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.top, AetherVisual.s3)
             }
-            .accessibilityIdentifier("routing-rules-advanced")
         }
         .padding(AetherVisual.s4)
         .aetherPanel()
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("routing-resources-card")
     }
 
