@@ -33,7 +33,13 @@ for item in \
   Config Core Docs Licenses README.md SECURITY.md Services Sources Tests \
   project.yml scripts
 do
-  ditto "$ROOT/$item" "$SOURCE/$item"
+  if [ "$item" = Core ]; then
+    mkdir -p "$SOURCE/Core"
+    rsync -a --exclude '/Engine/target/' --exclude '/Engine/.git' \
+      "$ROOT/Core/" "$SOURCE/Core/"
+  else
+    ditto "$ROOT/$item" "$SOURCE/$item"
+  fi
 done
 "$SOURCE/scripts/source_manifest.sh" > "$LOCAL_TEMP/expected-source.txt"
 
