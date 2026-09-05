@@ -87,7 +87,8 @@ Both measurements contain exactly these common fields:
 | --- | --- |
 | `bytesSent`, `bytesReceived` | Equal positive integers for payload actually received, excluding setup/headers; upload is client sent / peer received, download is peer sent / client received |
 | `sentPayloadSHA256`, `receivedPayloadSHA256` | Equal lowercase SHA-256 of the transferred payload |
-| `startedMonotonicNanoseconds`, `endedMonotonicNanoseconds` | Positive integers; their difference is the measured transfer duration, at least 10 seconds |
+| `startedMonotonicNanoseconds`, `endedMonotonicNanoseconds` | Positive integers bounding the observation, from before starting curl to receipt of its payload result; include arm/TLS setup and pipe scheduling, and must cover `transferDurationNanoseconds` |
+| `transferDurationNanoseconds` | Positive integer of curl's payload-operation `time_total`, at least 10 seconds; excludes the preceding arm/TLS setup and subsequent hold operation |
 | `latencyNanoseconds` | Exactly 200 positive integer round-trip echo durations collected on the same path |
 | `providerActive` | Baseline `false`, candidate `true` |
 | `peerIdentitySHA256` | Matches the topology's controlled peer |
@@ -113,7 +114,10 @@ service and payload contract; the collector must verify that causal receipt.
 
 `verify_installed_ne_performance_evidence.sh EVIDENCE CANDIDATE_MANIFEST`
 validates the strict schema, checksum and all bindings, then recomputes rates
-from received bytes divided by monotonic elapsed time. For each engine/direction
+from received bytes divided by the actual payload `transferDurationNanoseconds`.
+The surrounding monotonic interval establishes order and coverage, not the
+throughput denominator: stderr delivery and arm/setup delays are not transfer
+time. For each engine/direction
 it checks the median of the five candidate/baseline rate ratios against the
 committed minimum. Baseline spread `(max - min) / median` must stay within the
 committed bound; an unstable environment fails, never excuses a candidate.

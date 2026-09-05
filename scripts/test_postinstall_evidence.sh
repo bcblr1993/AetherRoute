@@ -64,6 +64,7 @@ for engine in ['tun', 'transparent']:
                 m = dict(bytesSent=size, bytesReceived=size, sentPayloadSHA256='1' * 64,
                          receivedPayloadSHA256='1' * 64, startedMonotonicNanoseconds=clock,
                          endedMonotonicNanoseconds=clock + 12_000_000_000,
+                         transferDurationNanoseconds=12_000_000_000,
                          latencyNanoseconds=[1_000_000 if role == 'baseline' else 2_000_000] * 200,
                          providerActive=role == 'candidate', peerIdentitySHA256='e' * 64)
                 clock += 13_000_000_000
@@ -109,6 +110,15 @@ def mutate(name, path, value):
     run(name)
 write_evidence()
 run('accept-bound-paired-measurements-below-isolated-core-floor', True)
+changed = copy.deepcopy(data)
+clock = 1_000_000_000
+for pair in changed['samples']:
+    for role in ['baseline', 'candidate']:
+        pair[role]['startedMonotonicNanoseconds'] = clock
+        pair[role]['endedMonotonicNanoseconds'] = clock + (12_000_000_000 if role == 'baseline' else 40_000_000_000)
+        clock += 50_000_000_000
+write_evidence(changed)
+run('accept-arm-delay-without-polluting-payload-throughput', True)
 metadata['schema'] = '1'
 write_evidence()
 run('reject-obsolete-postinstall-schema')
@@ -150,6 +160,9 @@ for name, path, value in [
     ('mismatched-actual-bytes', ['samples', 0, 'candidate', 'bytesReceived'], 1),
     ('payload-integrity', ['samples', 0, 'candidate', 'receivedPayloadSHA256'], '3' * 64),
     ('short-transfer', ['samples', 0, 'candidate', 'endedMonotonicNanoseconds'], 14_000_000_001),
+    ('short-payload-transfer', ['samples', 0, 'candidate', 'transferDurationNanoseconds'], 9_000_000_000),
+    ('payload-duration-outside-observation', ['samples', 0, 'candidate', 'transferDurationNanoseconds'], 13_000_000_000),
+    ('noninteger-payload-duration', ['samples', 0, 'candidate', 'transferDurationNanoseconds'], 12_000_000_000.0),
     ('noninteger-byte-count', ['samples', 0, 'candidate', 'bytesSent'], 12582912.0),
     ('insufficient-latency-samples', ['samples', 0, 'candidate', 'latencyNanoseconds'], [1]),
     ('wrong-sample-provider', ['samples', 0, 'candidate', 'providerBundleID'], 'org.unrelated.tunnel'),

@@ -140,7 +140,7 @@ def verify(evidence, candidate_path):
     grouped = {(e, d): [] for e in ENGINES for d in DIRECTIONS}
     seen = set()
     intervals = []
-    common = "bytesSent bytesReceived sentPayloadSHA256 receivedPayloadSHA256 startedMonotonicNanoseconds endedMonotonicNanoseconds latencyNanoseconds providerActive peerIdentitySHA256"
+    common = "bytesSent bytesReceived sentPayloadSHA256 receivedPayloadSHA256 startedMonotonicNanoseconds endedMonotonicNanoseconds transferDurationNanoseconds latencyNanoseconds providerActive peerIdentitySHA256"
     observed = "providerPID providerStartedAt providerBundleID providerCDHash providerObservedBytesBefore providerObservedBytesAfter counterSource pathAttribution providerFlowObservationSHA256"
     for pair in samples:
         keys(pair, "engine direction pairIndex baseline candidate", "sample pair")
@@ -155,7 +155,9 @@ def verify(evidence, candidate_path):
             require(integer(m["bytesSent"]) and type(m["bytesReceived"]) is int and m["bytesSent"] == m["bytesReceived"], "transferred payload byte counts differ")
             require(digest(m["sentPayloadSHA256"]) and m["sentPayloadSHA256"] == m["receivedPayloadSHA256"], "payload integrity differs")
             require(integer(m["startedMonotonicNanoseconds"]) and integer(m["endedMonotonicNanoseconds"]), "invalid transfer clock samples")
-            require(m["endedMonotonicNanoseconds"] - m["startedMonotonicNanoseconds"] >= policy["minimumSampleDurationNanoseconds"], "transfer sample is too short or reversed")
+            require(integer(m["transferDurationNanoseconds"]) and
+                    m["transferDurationNanoseconds"] >= policy["minimumSampleDurationNanoseconds"], "payload transfer duration is too short or invalid")
+            require(m["endedMonotonicNanoseconds"] - m["startedMonotonicNanoseconds"] >= m["transferDurationNanoseconds"], "transfer duration exceeds its observation interval")
             intervals.append((m["startedMonotonicNanoseconds"], m["endedMonotonicNanoseconds"]))
             require(m["providerActive"] is (role == "candidate"), "baseline/candidate provider activation differs")
             require(m["peerIdentitySHA256"] == topology["peerIdentitySHA256"], "baseline/candidate peer differs")
@@ -179,7 +181,7 @@ def verify(evidence, candidate_path):
     for (engine, direction), pairs in grouped.items():
         require(len(pairs) == 5, "incomplete engine/direction pairs")
         def rate(m):
-            return Fraction(m["bytesReceived"] * 1000000000, m["endedMonotonicNanoseconds"] - m["startedMonotonicNanoseconds"])
+            return Fraction(m["bytesReceived"] * 1000000000, m["transferDurationNanoseconds"])
         baselines = [rate(pair["baseline"]) for pair in pairs]
         ratios = [rate(pair["candidate"]) / rate(pair["baseline"]) * 10000 for pair in pairs]
         require((max(baselines) - min(baselines)) / statistics.median(baselines) * 10000 <= policy["maximumBaselineSpreadBasisPoints"], "unstable controlled baseline: " + engine + "/" + direction)
