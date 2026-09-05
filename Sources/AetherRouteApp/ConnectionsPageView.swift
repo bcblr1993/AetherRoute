@@ -85,7 +85,13 @@ struct ConnectionsView: View {
                 VStack(alignment: .leading, spacing: AetherVisual.s2) {
                     ViewThatFits(in: .horizontal) {
                         segmentedFilter
-                        filterPicker.pickerStyle(.menu)
+                        NativeFilterPicker(
+                            selection: $filter,
+                            options: ConnectionOutletFilter.allCases,
+                            title: label(for:),
+                            accessibilityLabel: AppLocalization.string("Filter"),
+                            accessibilityIdentifier: "connections-filter-picker"
+                        )
                     }
                     HStack {
                         Spacer(minLength: 0)

@@ -2670,7 +2670,10 @@ final class AetherRouteUITests: XCTestCase {
             )
         ).firstMatch
         XCTAssertTrue(original.waitForExistence(timeout: 2))
-        original.click()
+        original.hover()
+        app.typeKey(XCUIKeyboardKey.downArrow.rawValue, modifierFlags: [])
+        app.typeKey(XCUIKeyboardKey.upArrow.rawValue, modifierFlags: [])
+        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
         let restored = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value == %@", originalValue),
             object: picker

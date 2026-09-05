@@ -304,7 +304,13 @@ private struct ProxyGroupDisclosure: View {
                 VStack(alignment: .leading, spacing: AetherVisual.s2) {
                     ViewThatFits(in: .horizontal) {
                         memberFilter
-                        memberFilterPicker.pickerStyle(.menu)
+                        NativeFilterPicker(
+                            selection: $filter,
+                            options: ProxyNodeFilter.allCases,
+                            title: label(for:),
+                            accessibilityLabel: AppLocalization.string("Filter"),
+                            accessibilityIdentifier: "proxy-filter-picker-\(group.name)"
+                        )
                     }
                     HStack {
                         Spacer(minLength: 0)
@@ -342,7 +348,7 @@ private struct ProxyGroupDisclosure: View {
                     Spacer()
                     Text(isTesting ? "Testing…" : "Latency results are local")
                 }
-                .font(.caption2.weight(.medium))
+                .font(.callout.weight(.medium))
                 .foregroundStyle(.primary)
             }
         }
