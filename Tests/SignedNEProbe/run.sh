@@ -25,8 +25,8 @@ export AETHERROUTE_OFFLINE_CONSUMER="$work/swift-input-consumer"
   -F "$PLATFORM/Library/Frameworks" -framework XCTest \
   -Xlinker -rpath -Xlinker "$PLATFORM/Library/Frameworks" \
   -Xlinker -rpath -Xlinker "$PLATFORM/usr/lib" \
-  "$ROOT/Tests/AetherRouteUITests/SignedNEPythonRuntime.swift" "$ROOT/Tests/AetherRouteUITests/SignedNEProbe.swift" \
-  "$HERE/SignedNEProbeTests.swift" "$HERE/CycleBindingsTests.swift" "$HERE/CancellationTests.swift" "$HERE/RuntimeTests.swift" "$HERE/main.swift" \
+  "$ROOT/Tests/AetherRouteUITests/SignedNEPythonRuntime.swift" "$ROOT/Tests/AetherRouteUITests/SignedNEProbe.swift" "$ROOT/Tests/AetherRouteUITests/SignedNELease.swift" \
+  "$HERE/SignedNEProbeTests.swift" "$HERE/CycleBindingsTests.swift" "$HERE/CancellationTests.swift" "$HERE/RuntimeTests.swift" "$HERE/LeaseTests.swift" "$HERE/main.swift" \
   -o "$work/probe-tests"
 "$work/probe-tests"
 /usr/bin/xcrun swiftc -swift-version 6 -warnings-as-errors \

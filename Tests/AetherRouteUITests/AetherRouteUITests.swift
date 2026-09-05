@@ -1648,6 +1648,14 @@ final class AetherRouteUITests: XCTestCase {
             return
         }
 
+        let leaseConfiguration: SignedNELease.Configuration?
+        do {
+            leaseConfiguration = try SignedNELease.configuration(environment)
+        } catch {
+            XCTFail("Signed test lease configuration is invalid.")
+            return
+        }
+
         let app: XCUIApplication
         if environment["AETHERROUTE_SIGNED_NE_USE_INSTALLED_APP"] == "YES",
            let hostBundleID = environment[
@@ -1664,16 +1672,19 @@ final class AetherRouteUITests: XCTestCase {
         app.launch()
         let primary = app.buttons["primary-connection-button"]
         var temporaryBypassRules: [String] = []
+        var cleanupCompleted = false
         defer {
-            if primary.exists, primary.label == "Disconnect" || primary.label == "Cancel" {
-                primary.click()
-                _ = waitForLabel("Connect", on: primary, timeout: 30)
+            if !cleanupCompleted {
+                if primary.exists, primary.label == "Disconnect" || primary.label == "Cancel" {
+                    primary.click()
+                    _ = waitForLabel("Connect", on: primary, timeout: 30)
+                }
+                removeTemporarySignedBypassRules(
+                    temporaryBypassRules,
+                    in: app
+                )
+                app.terminate()
             }
-            removeTemporarySignedBypassRules(
-                temporaryBypassRules,
-                in: app
-            )
-            app.terminate()
         }
 
         XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 10))
@@ -1739,6 +1750,19 @@ final class AetherRouteUITests: XCTestCase {
             XCTFail("Signed DNS baseline gate failed: \(error.localizedDescription)")
             return
         }
+        // Capture the real App and XCTest lifetimes after static UI preparation.
+        // The host arms its independent guest watcher before the first Connect.
+        let lease: SignedNELease?
+        do {
+            if let leaseConfiguration {
+                lease = try await SignedNELease.arm(leaseConfiguration, engine: engine)
+            } else {
+                lease = nil
+            }
+        } catch {
+            XCTFail("Signed test lease could not arm for this worker.")
+            return
+        }
         for cycle in 1...cycles {
             let probeMatchedBeforeConnection = await signedLifecycleProbeMatches(
                 lifecycleProbe, cycle: cycle, phase: .before
@@ -1748,6 +1772,15 @@ final class AetherRouteUITests: XCTestCase {
                 "The proxy-only canary response was reachable before \(engineLabel) connected in cycle \(cycle)."
             )
 
+            do {
+                let permit = try await lease?.permit()
+                // No suspension or UI action between fresh receipt and Connect.
+                try permit?.requireFresh()
+                try Task.checkCancellation()
+            } catch {
+                XCTFail("Signed test lease did not permit Connect.")
+                return
+            }
             primary.click()
             switch waitForConnectionStart(
                 on: primary,
@@ -1848,6 +1881,16 @@ final class AetherRouteUITests: XCTestCase {
                 probeMatchedAfterDisconnect,
                 "The proxy-only canary response remained reachable after \(engineLabel) disconnected in cycle \(cycle)."
             )
+        }
+        // No UI operation may follow terminal-ready. Xcode can then seal its
+        // result and exit normally while the independent lease remains armed.
+        removeTemporarySignedBypassRules(temporaryBypassRules, in: app)
+        app.terminate()
+        cleanupCompleted = true
+        do {
+            try await lease?.terminalReady()
+        } catch {
+            XCTFail("Signed test lease could not confirm terminal readiness.")
         }
     }
 
