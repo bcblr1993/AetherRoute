@@ -35,10 +35,19 @@ grep -q '^run_with_watchdog()' "$TEMP/watchdog.sh"
 . "$TEMP/watchdog.sh"
 cat >"$TEMP/linger.c" <<'C'
 #include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 int main(int argc, char **argv) {
+    const char *pid_file = getenv("SOAK_FIXTURE_PID_FILE");
+    if (pid_file != NULL) {
+        FILE *output = fopen(pid_file, "w");
+        if (output == NULL) return 3;
+        fprintf(output, "%d\n", getpid());
+        if (fclose(output) != 0) return 4;
+    }
     if (argc > 1 && strcmp(argv[1], "ignore") == 0) {
         signal(SIGTERM, SIG_IGN);
     }
@@ -89,6 +98,8 @@ OUTPUT="$TEMP/evidence"
 mkdir "$OUTPUT" "$TEMP/flow-runtime"
 ROUND_TIMEOUT=1
 FD_GROWTH_BUDGET=4
+PREVIOUS_ROUND_END=$(date +%s)
+HARD_DEADLINE=$((PREVIOUS_ROUND_END + 60))
 watchdog_status=0
 run_with_watchdog flow 1 || watchdog_status=$?
 test "$watchdog_status" -eq 124
@@ -99,6 +110,24 @@ for observed_pid in $(pgrep -f "$FLOW_BINARY" 2>/dev/null || true); do
   test "$executable" != "$FLOW_BINARY"
 done
 echo 'PASS: production watchdog times out, records evidence, and leaves no harness'
+
+# The total cap must also terminate a real running child when the per-round
+# timeout has not expired. A PID written by the C fixture proves it ran.
+ROUND_TIMEOUT=60
+PREVIOUS_ROUND_END=$(date +%s)
+HARD_DEADLINE=$((PREVIOUS_ROUND_END + 2))
+SOAK_FIXTURE_PID_FILE="$TEMP/total-deadline.pid"
+export SOAK_FIXTURE_PID_FILE
+watchdog_status=0
+run_with_watchdog flow 2 || watchdog_status=$?
+unset SOAK_FIXTURE_PID_FILE
+test "$watchdog_status" -eq 124
+test -f "$OUTPUT/failure-flow-round-2.log"
+test -f "$TEMP/total-deadline.pid"
+observed_pid=$(cat "$TEMP/total-deadline.pid")
+assert_gone "$observed_pid"
+test -z "$CURRENT_PID"
+echo 'PASS: total runtime deadline terminates a running harness and preserves evidence'
 
 # A normal timeout/signal cleanup terminates both /usr/bin/time and its child.
 /usr/bin/time -lp "$FLOW_BINARY" >"$TEMP/graceful.log" 2>&1 &
@@ -146,4 +175,4 @@ assert_gone "$orphan_pid"
 kill -0 "$UNRELATED_PID"
 echo 'PASS: orphaned harness is removed while an unrelated same-name process survives'
 
-echo 'Isolated soak process cleanup regressions passed: 4 cases'
+echo 'Isolated soak process cleanup regressions passed: 5 cases'

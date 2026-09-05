@@ -212,14 +212,10 @@ clang \
 file "$FLOW_BINARY" | grep -q 'arm64'
 file "$PACKET_BINARY" | grep -q 'arm64'
 
-START_EPOCH=$(date +%s)
-START_UTC=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-DEADLINE=$((START_EPOCH + DURATION))
 SUMMARY="$OUTPUT/rounds.tsv"
 printf 'round\tengine\tcompleted_utc\twall_seconds\tcycles\tmax_rss_bytes\tresult_sha256\tfd_growth\n' >"$SUMMARY"
 {
   printf 'schema=2\n'
-  printf 'started_utc=%s\n' "$START_UTC"
   printf 'requested_duration_seconds=%s\n' "$DURATION"
   printf 'packet_cycles_per_round=%s\n' "$PACKET_CYCLES"
   printf 'flow_udp_probe_datagrams=3\n'
@@ -245,11 +241,30 @@ printf 'round\tengine\tcompleted_utc\twall_seconds\tcycles\tmax_rss_bytes\tresul
 caffeinate -i -m -s -w "$$" &
 CAFFEINATE_PID=$!
 
+# Source hashing, linking and metadata preparation are outside the measured
+# window. Each UTC value is formatted from its recorded integer epoch.
+START_EPOCH=$(date +%s)
+HARD_DEADLINE=$((START_EPOCH + DURATION + ROUND_TIMEOUT * 2))
+PREVIOUS_ROUND_END=$START_EPOCH
+START_UTC=$(date -u -r "$START_EPOCH" '+%Y-%m-%dT%H:%M:%SZ')
+printf 'started_utc=%s\n' "$START_UTC" >>"$OUTPUT/metadata.txt"
+
 run_with_watchdog() {
   engine=$1
   round=$2
   log="$OUTPUT/latest-$engine.log"
   started=$(date +%s)
+  if [ "$started" -ge "$HARD_DEADLINE" ]; then
+    echo "Total runtime deadline reached before $engine round $round" \
+      >"$OUTPUT/failure-$engine-round-$round.log"
+    return 124
+  fi
+  interval_gap=$((started - PREVIOUS_ROUND_END))
+  if [ "$interval_gap" -lt 0 ] || [ "$interval_gap" -gt 1 ]; then
+    echo "Uncovered interval before $engine round $round: ${interval_gap}s" \
+      >"$OUTPUT/failure-$engine-round-$round.log"
+    return 1
+  fi
 
   if [ "$engine" = flow ]; then
     /usr/bin/time -lp env \
@@ -267,10 +282,11 @@ run_with_watchdog() {
 
   while kill -0 "$CURRENT_PID" 2>/dev/null; do
     now=$(date +%s)
-    if [ $((now - started)) -ge "$ROUND_TIMEOUT" ]; then
+    if [ $((now - started)) -ge "$ROUND_TIMEOUT" ] || \
+       [ "$now" -ge "$HARD_DEADLINE" ]; then
       stop_current_round || true
       cp "$log" "$OUTPUT/failure-$engine-round-$round.log"
-      echo "$engine round $round exceeded ${ROUND_TIMEOUT}s" >&2
+      echo "$engine round $round exceeded its round or total runtime deadline" >&2
       return 124
     fi
     sleep 1
@@ -288,7 +304,12 @@ run_with_watchdog() {
   fi
 
   ended=$(date +%s)
+  PREVIOUS_ROUND_END=$ended
   wall=$((ended - started))
+  if [ "$wall" -lt 0 ]; then
+    echo "System clock moved backwards during a soak round" >&2
+    return 1
+  fi
   rss=$(awk '/maximum resident set size/ {print $1}' "$log" | tail -1)
   case "$rss" in
     ''|*[!0-9]*)
@@ -330,17 +351,27 @@ run_with_watchdog() {
   fi
   result_hash=$(shasum -a 256 "$log" | awk '{print $1}')
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$round" "$engine" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    "$round" "$engine" "$(date -u -r "$ended" '+%Y-%m-%dT%H:%M:%SZ')" \
     "$wall" "$cycles" "$rss" "$result_hash" "$fd_growth" >>"$SUMMARY"
 }
 
 round=0
-while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+active_wall_seconds=0
+END_EPOCH=$START_EPOCH
+# Bookkeeping never earns runtime credit. Always finish a complete pair.
+while [ "$active_wall_seconds" -lt "$DURATION" ]; do
   round=$((round + 1))
   run_with_watchdog flow "$round"
+  active_wall_seconds=$((active_wall_seconds + wall))
   run_with_watchdog packet "$round"
+  active_wall_seconds=$((active_wall_seconds + wall))
+  END_EPOCH=$ended
+  if [ "$END_EPOCH" -gt "$HARD_DEADLINE" ]; then
+    echo "Total measured span exceeded the existing final-round allowance" >&2
+    exit 1
+  fi
   printf 'soak heartbeat: round=%s elapsed_seconds=%s\n' \
-    "$round" "$(($(date +%s) - START_EPOCH))"
+    "$round" "$((END_EPOCH - START_EPOCH))"
 done
 
 if find "$TEMP/flow-runtime" -type f -print -quit | grep -q .; then
@@ -387,8 +418,7 @@ test "$(git -C "$ROOT" rev-parse HEAD)" = "$GIT_COMMIT" || {
   exit 1
 }
 
-END_EPOCH=$(date +%s)
-END_UTC=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+END_UTC=$(date -u -r "$END_EPOCH" '+%Y-%m-%dT%H:%M:%SZ')
 FLOW_PEAK=$(awk -F'\t' '$2 == "flow" && $6 > peak {peak=$6} END {print peak+0}' "$SUMMARY")
 PACKET_PEAK=$(awk -F'\t' '$2 == "packet" && $6 > peak {peak=$6} END {print peak+0}' "$SUMMARY")
 FLOW_FD_PEAK=$(awk -F'\t' '$2 == "flow" && $8 > peak {peak=$8} END {print peak+0}' "$SUMMARY")
