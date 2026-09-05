@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Negative controls and owned loopback HTTPS smoke; no VM or real NE run."""
 import copy
+import errno
 import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import re
 import socket
@@ -197,7 +199,7 @@ class CollectorTests(unittest.TestCase):
                 self.assertEqual(json.loads((output / "performance.json").read_bytes())["blockingReasons"],
                                  ["controlled-target-IP-required"])
 
-    def testObserverWaitFailureStillClosesItsPipeAndReportsIncomplete(self):
+    def testObserverWaitFailureStillClosesItsPTYAndReportsIncomplete(self):
         observed = self.observation()
         from unittest.mock import Mock
         process = Mock()
@@ -206,10 +208,15 @@ class CollectorTests(unittest.TestCase):
         observed.process = process
         observed.thread = Mock()
         observed.thread.is_alive.return_value = False
+        master, slave = os.openpty()
+        os.close(slave)
+        observed.master_fd = master
         with self.assertRaises(collector.Incomplete):
             observed.stop()
         process.kill.assert_called_once()
-        process.stdout.close.assert_called_once()
+        self.assertIsNone(observed.master_fd)
+        with self.assertRaises(OSError):
+            os.fstat(master)
         observed.thread.join.assert_called_once()
 
     def testSurvivingObserverReaderCannotBlockIncompleteEvidence(self):
@@ -221,7 +228,98 @@ class CollectorTests(unittest.TestCase):
         observed.thread.is_alive.return_value = True
         with self.assertRaises(collector.Incomplete):
             observed.stop()
-        observed.process.stdout.close.assert_not_called()
+        self.assertTrue(observed.reader_stop.is_set())
+
+    def testPTYLaunchFailureClosesBothOwnedDescriptors(self):
+        descriptors = os.openpty()
+        observed = self.observation()
+        with patch.object(collector.os, "openpty", return_value=descriptors), \
+                patch.object(collector.subprocess, "Popen", side_effect=OSError("injected launch failure")):
+            with self.assertRaisesRegex(collector.Incomplete, "provider-observer-start-failed"):
+                observed.start()
+        for descriptor in descriptors:
+            with self.assertRaises(OSError):
+                os.fstat(descriptor)
+
+    def testRealPTYDeliversBufferedLowVolumeLinesBeforeWriterExits(self):
+        observed = collector.NetTopObservation(123, "192.0.2.1", 4567, "download")
+        real_popen = subprocess.Popen
+        source = "import sys,time;assert sys.stdout.isatty();print(',bytes_in,bytes_out,');print('test.123,0,0,');print('tcp4 192.0.2.2:9<->192.0.2.1:4567,4,0,');time.sleep(10)"
+        def launch(_arguments, **kwargs):
+            return real_popen([sys.executable, "-I", "-B", "-c", source], **kwargs)
+        try:
+            with patch.object(collector.subprocess, "Popen", side_effect=launch):
+                observed.start()
+            self.assertTrue(observed.observed.wait(3))
+            self.assertIsNone(observed.process.poll())
+            master = observed.master_fd
+        finally:
+            observed.stop()
+        self.assertIsNotNone(observed.process.poll())
+        self.assertFalse(observed.thread.is_alive())
+        with self.assertRaises(OSError):
+            os.fstat(master)
+
+    def testPTYReaderStartupFailureReapsItsAlreadyLaunchedChild(self):
+        observed = self.observation()
+        real_popen = subprocess.Popen
+        descriptors = os.openpty()
+        def launch(_arguments, **kwargs):
+            return real_popen([sys.executable, "-I", "-B", "-c", "import time;time.sleep(10)"], **kwargs)
+        with patch.object(collector.os, "openpty", return_value=descriptors), \
+                patch.object(collector.subprocess, "Popen", side_effect=launch), \
+                patch.object(collector.threading.Thread, "start", side_effect=RuntimeError("injected thread failure")):
+            with self.assertRaisesRegex(collector.Incomplete, "provider-observer-start-failed"):
+                observed.start()
+        self.assertIsNotNone(observed.process.poll())
+        self.assertIsNone(observed.master_fd)
+        for descriptor in descriptors:
+            with self.assertRaises(OSError):
+                os.fstat(descriptor)
+
+    def testPTYReaderHandlesDarwinEOFAndLinuxEIOButRejectsTruncatedOrOtherErrors(self):
+        for ending, partial, failed in [(b"", b"", False), (OSError(errno.EIO, "hangup"), b"", False),
+                                        (b"", b"unfinished", True), (OSError(errno.EBADF, "bad descriptor"), b"", True)]:
+            with self.subTest(ending=repr(ending), partial=bool(partial)):
+                observed = self.observation()
+                master, slave = os.openpty(); os.close(slave); observed.master_fd = master
+                reads = [b",bytes_in,bytes_out,\r\n" + partial, ending]
+                with patch.object(collector.select, "select", return_value=([master], [], [])), \
+                        patch.object(collector.os, "read", side_effect=reads):
+                    observed.consume(master)
+                self.assertEqual(observed.reader_failed, failed)
+                self.assertIsNone(observed.master_fd)
+                with self.assertRaises(OSError):
+                    os.fstat(master)
+
+    def testActualNettopObservesOwnedLoopbackArmBeforePayload(self):
+        # A real macOS process/flow observation, not mocked CSV or a throughput
+        # result. Only four arm bytes cross an owned loopback socket before the
+        # observer signals ready, reproducing the pilot's pre-payload condition.
+        self.assertEqual(sys.platform, "darwin", "actual nettop regression requires the product's macOS test host")
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0)); listener.listen(1)
+            listener.settimeout(3)
+            port = listener.getsockname()[1]
+            observed = collector.NetTopObservation(os.getpid(), "127.0.0.1", port, "upload")
+            try:
+                observed.start()
+                with socket.create_connection(("127.0.0.1", port), timeout=3) as client:
+                    server, _ = listener.accept()
+                    with server:
+                        server.settimeout(3)
+                        client.sendall(b"arm\n")
+                        self.assertEqual(server.recv(4), b"arm\n")
+                        self.assertTrue(observed.observed.wait(8), "actual low-volume flow was not observed before payload")
+                        self.assertIsNone(observed.process.poll())
+                        with observed.lock:
+                            self.assertEqual(len(observed.flows), 1)
+                            self.assertTrue(all(0 <= value < 65536 for values in observed.flows.values() for value in values))
+            finally:
+                observed.stop()
+            self.assertFalse(observed.thread.is_alive())
+            self.assertIsNone(observed.master_fd)
+            self.assertIsNotNone(observed.process.poll())
 
     def testRejectedActualDMGTicketStopsBeforeMount(self):
         with tempfile.TemporaryDirectory(prefix="aether-ne-collector-test-") as temp:

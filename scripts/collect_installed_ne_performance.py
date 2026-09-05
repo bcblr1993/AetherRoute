@@ -9,6 +9,7 @@ phase-control requests. Missing facilities produce pending/incomplete evidence.
 """
 import argparse
 import csv
+import errno
 from datetime import datetime, timezone
 from decimal import Decimal
 import hashlib
@@ -19,6 +20,7 @@ from pathlib import Path
 import platform
 import plistlib
 import re
+import select
 import secrets
 import signal
 import socket
@@ -164,6 +166,9 @@ class NetTopObservation:
         self.observed = threading.Event()
         self.process = None
         self.thread = None
+        self.master_fd = None
+        self.reader_stop = threading.Event()
+        self.reader_failed = False
 
     def feed(self, line):
         row = next(csv.reader([line]))
@@ -195,17 +200,68 @@ class NetTopObservation:
             self.observed.set()
 
     def start(self):
-        self.process = subprocess.Popen(
-            ["/usr/bin/nettop", "-n", "-x", "-L", "0", "-s", "1", "-p", str(self.pid), "-J", "bytes_in,bytes_out"],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=clean_env())
+        require(self.process is None and self.master_fd is None, "provider-observer-already-started")
+        try:
+            # nettop buffers CSV when stdout is a pipe. An owned terminal makes
+            # even the initial, low-traffic held request observable in time.
+            master, slave = os.openpty()
+            self.master_fd = master
+            try:
+                os.set_inheritable(master, False)
+                os.set_inheritable(slave, False)
+                os.set_blocking(master, False)
+                self.process = subprocess.Popen(
+                    ["/usr/bin/nettop", "-n", "-x", "-L", "0", "-s", "1", "-p", str(self.pid), "-J", "bytes_in,bytes_out"],
+                    stdin=subprocess.DEVNULL, stdout=slave, stderr=subprocess.DEVNULL,
+                    close_fds=True, env={**clean_env(), "LC_ALL": "C"})
+            finally:
+                os.close(slave)
+            thread = threading.Thread(target=self.consume, args=(master,), daemon=True)
+            thread.start()
+            self.thread = thread
+        except (OSError, RuntimeError) as error:
+            self.stop()
+            raise Incomplete("provider-observer-start-failed") from error
 
-        def consume():
-            for index, line in enumerate(self.process.stdout):
-                if index > 5000:
+    def consume(self, master):
+        pending = bytearray()
+        lines = 0
+        try:
+            while not self.reader_stop.is_set():
+                if not select.select([master], [], [], .1)[0]:
+                    continue
+                try:
+                    block = os.read(master, 65536)
+                except OSError as error:
+                    if error.errno in (errno.EINTR, errno.EAGAIN, errno.EWOULDBLOCK):
+                        continue
+                    if error.errno == errno.EIO:  # Linux PTY hangup; Darwin returns EOF.
+                        break
+                    raise
+                if not block:
                     break
-                self.feed(line)
-        self.thread = threading.Thread(target=consume, daemon=True)
-        self.thread.start()
+                pending.extend(block)
+                while b"\n" in pending:
+                    line, _, remaining = pending.partition(b"\n")
+                    pending = bytearray(remaining)
+                    lines += 1
+                    require(lines <= 5001 and len(line) <= 65536, "provider-observer-output-limit")
+                    self.feed(line.decode("utf-8").rstrip("\r"))
+                require(len(pending) <= 65536, "provider-observer-output-limit")
+            if pending and not self.reader_stop.is_set():
+                self.reader_failed = True  # Truncated CSV is never evidence.
+        except (OSError, ValueError, Incomplete, csv.Error):
+            self.reader_failed = True
+        finally:
+            self.close_master()
+
+    def close_master(self):
+        if self.master_fd is not None:
+            descriptor, self.master_fd = self.master_fd, None
+            try:
+                os.close(descriptor)
+            except OSError:
+                self.reader_failed = True
 
     def stop(self):
         failed = False
@@ -222,20 +278,20 @@ class NetTopObservation:
                     failed = True
             except OSError:
                 failed = True
-            if self.thread:
-                self.thread.join(timeout=3)
-                failed = failed or self.thread.is_alive()
-            # TextIO.close can wait on a readline lock held by a surviving
-            # reader. Preserve an incomplete result instead of blocking here.
-            if not self.thread or not self.thread.is_alive():
-                try:
-                    self.process.stdout.close()
-                except OSError:
-                    failed = True
+        self.reader_stop.set()
+        if self.thread:
+            self.thread.join(timeout=3)
+            failed = failed or self.thread.is_alive()
+        # Only the reader closes its live master. Closing a reused descriptor
+        # under a blocked read could make a later iteration read another file.
+        if not self.thread or not self.thread.is_alive():
+            self.close_master()
+        failed = failed or self.reader_failed
         require(not failed, "provider-observer-cleanup-failed")
 
     def proof(self, count, receipt, lifetime):
         with self.lock:
+            require(not self.reader_failed, "provider-observer-read-failed")
             require(len(self.flows) == 1, "provider-flow-ambiguous-or-unobservable")
             label, values = next(iter(self.flows.items()))
             require(len(values) >= 2 and all(b >= a for a, b in zip(values, values[1:])), "provider-flow-counter-reset")
