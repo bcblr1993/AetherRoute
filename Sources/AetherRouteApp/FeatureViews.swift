@@ -26,7 +26,7 @@ struct RulesView: View {
                                         .font(.title3.weight(.semibold))
                                         .foregroundStyle(.primary)
                                     Text("Rules are evaluated from top to bottom by the protocol core.")
-                                        .font(.body)
+                                        .font(.body.weight(.medium))
                                         .foregroundStyle(.primary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
@@ -946,10 +946,10 @@ private struct RuleRow: View {
                 .background(Color.secondary.opacity(0.08), in: Circle())
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(rule.kind)
-                    .font(.subheadline.monospaced().weight(.medium))
+                    .font(.body.monospaced().weight(.semibold))
                 if let criteria = rule.criteria {
                     Text(criteria)
-                        .font(.body)
+                        .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
