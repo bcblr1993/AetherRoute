@@ -39,7 +39,9 @@ for required in \
   "grep -F 'aether_flow stage='" \
   "grep -F 'aether_packet stage='" \
   'scripts/verify_protocol_matrix.sh' \
+  'scripts/generate_licenses.sh' \
   'scripts/verify_licenses.sh" source' \
+  'scripts/verify_licenses.sh" built' \
   'CODE_SIGN_STYLE = Manual' \
   'OTHER_CODE_SIGN_FLAGS = --timestamp=http:/$()/timestamp.apple.com/ts01' \
   'codesign --force --timestamp=http://timestamp.apple.com/ts01' \
@@ -103,14 +105,25 @@ packet_build_line=$(grep -nF \
   "$SCRIPT" | cut -d: -f1)
 protocol_gate_line=$(grep -nF \
   '"$ROOT/scripts/verify_protocol_matrix.sh"' "$SCRIPT" | cut -d: -f1)
+license_generation_line=$(grep -nF \
+  '"$ROOT/scripts/generate_licenses.sh"' "$SCRIPT" | cut -d: -f1)
 license_gate_line=$(grep -nF \
   '"$ROOT/scripts/verify_licenses.sh" source' "$SCRIPT" | cut -d: -f1)
 bootstrap_line=$(grep -nF '"$ROOT/scripts/bootstrap.sh"' "$SCRIPT" | cut -d: -f1)
+license_built_line=$(grep -nF \
+  '"$ROOT/scripts/verify_licenses.sh" built' "$SCRIPT" | cut -d: -f1)
+signature_line=$(grep -nF \
+  'codesign --verify --deep --strict --verbose=2 "$bundle"' "$SCRIPT" | cut -d: -f1)
+package_line=$(grep -nF 'ditto "$APP" "$APP_NOTARY_STAGE/AetherRoute.app"' \
+  "$SCRIPT" | cut -d: -f1)
 if [ "$flow_build_line" -ge "$protocol_gate_line" ] \
   || [ "$packet_build_line" -ge "$protocol_gate_line" ] \
-  || [ "$protocol_gate_line" -ge "$license_gate_line" ] \
-  || [ "$license_gate_line" -ge "$bootstrap_line" ]; then
-  echo "core evidence gates must run after both core builds and before project generation" >&2
+  || [ "$protocol_gate_line" -ge "$license_generation_line" ] \
+  || [ "$license_generation_line" -ge "$license_gate_line" ] \
+  || [ "$license_gate_line" -ge "$bootstrap_line" ] \
+  || [ "$signature_line" -ge "$license_built_line" ] \
+  || [ "$license_built_line" -ge "$package_line" ]; then
+  echo "core evidence and notices must be current before project generation and notarization" >&2
   exit 1
 fi
 

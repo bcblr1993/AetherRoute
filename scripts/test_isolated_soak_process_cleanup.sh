@@ -17,7 +17,7 @@ cleanup_test() {
     kill -KILL "$UNRELATED_PID" 2>/dev/null || true
     wait "$UNRELATED_PID" 2>/dev/null || true
   fi
-  rm -rf "$TEMP"
+  find "$TEMP" -depth -delete 2>/dev/null || true
 }
 trap cleanup_test EXIT HUP INT TERM
 

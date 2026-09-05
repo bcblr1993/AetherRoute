@@ -5,6 +5,7 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 REPORT="$ROOT/Config/Licenses/ThirdPartyLicenses.json"
 MODE=${1:-source}
 PRODUCTS=${2:-}
+"$ROOT/scripts/verify_bundled_routing_resources.sh"
 
 jq -e '
   .schemaVersion == 1
@@ -17,6 +18,22 @@ jq -e '
     and (.license | length > 0)
   ] | all)
 ' "$REPORT" >/dev/null
+
+# Validating the resource pack alone does not prove its notices reached the
+# app's license browser. Require every bundled component and complete notice
+# in the combined report, including attribution and source metadata.
+jq -e --slurpfile bundled "$ROOT/Config/RoutingResources/notices.json" '
+  . as $report |
+  all($bundled[0].components[];
+    . as $required | any($report.components[]; . == $required))
+  and all($bundled[0].licenses[];
+    . as $required | any($report.licenses[];
+      .id == $required.id and .name == $required.name and .text == $required.text
+      and (($required.components - .components) | length == 0)))
+' "$REPORT" >/dev/null || {
+  echo "Bundled routing component or complete notice is missing from $REPORT" >&2
+  exit 1
+}
 
 if jq -er '.components[].license' "$REPORT" |
   grep -Eiq '(^|[^[:alpha:]])(GPL|AGPL|LGPL|MPL)([^[:alpha:]]|$)'; then
@@ -61,6 +78,8 @@ case "$MODE" in
     packaged="$app/Contents/Resources/ThirdPartyLicenses.json"
     test -f "$packaged"
     cmp -s "$REPORT" "$packaged"
+    "$ROOT/scripts/verify_bundled_routing_resources.sh" \
+      "$app/Contents/Resources/RoutingResources"
     test ! -e "$app/Contents/Resources/StoreThirdPartyLicenses.json"
     test ! -e "$app/Contents/Resources/DirectThirdPartyLicenses.json"
     ;;

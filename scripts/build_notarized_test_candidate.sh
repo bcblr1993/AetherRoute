@@ -92,6 +92,7 @@ strings "$ROOT/Core/Artifacts/macos-arm64/libclashrs-direct.a" \
 # candidate. Re-verify it after rebuilding both archives so stale evidence can
 # never enter the signing and notarization stages.
 "$ROOT/scripts/verify_protocol_matrix.sh"
+"$ROOT/scripts/generate_licenses.sh"
 "$ROOT/scripts/verify_licenses.sh" source
 "$ROOT/scripts/bootstrap.sh"
 if [ -n "$NOTARY_KEYCHAIN" ]; then
@@ -411,6 +412,7 @@ done
 PRODUCTS_DIRECTORY=$(dirname -- "$APP")
 "$ROOT/scripts/verify_product_metadata.sh" built "$PRODUCTS_DIRECTORY"
 "$ROOT/scripts/verify_transparent_proxy_metadata.sh" built "$PRODUCTS_DIRECTORY"
+"$ROOT/scripts/verify_licenses.sh" built "$PRODUCTS_DIRECTORY"
 
 MACH_O_MANIFEST="$TEMPORARY/mach-o-files.txt"
 find "$APP" -type f -exec file {} \; \

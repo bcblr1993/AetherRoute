@@ -6,7 +6,7 @@ umask 077
 # network request, elevated command, or VM is started by this test.
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 TEMP=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-acceptance-regressions.XXXXXX")
-trap 'rm -rf "$TEMP"' EXIT HUP INT TERM
+trap 'find "$TEMP" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 MOCK_BIN="$TEMP/bin"
 MOCK_ROOT="$TEMP/fixture"
 mkdir -p "$MOCK_BIN" "$MOCK_ROOT/live" "$MOCK_ROOT/home/Library/Logs/DiagnosticReports"

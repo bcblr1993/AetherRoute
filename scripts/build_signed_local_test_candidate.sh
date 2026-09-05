@@ -72,6 +72,9 @@ strings "$ROOT/Core/Artifacts/macos-arm64/libclashrs-direct.a" \
   echo "local signed candidate Packet core is missing privacy-safe diagnostics" >&2
   exit 1
 }
+# Bind the packaged notices to these rebuilt QA archives and bundled data.
+"$ROOT/scripts/generate_licenses.sh"
+"$ROOT/scripts/verify_licenses.sh" source
 "$ROOT/scripts/bootstrap.sh"
 
 TEMPORARY=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-signed-local.XXXXXX")
@@ -248,6 +251,7 @@ verify_grant "$TRANSPARENT" app-proxy-provider-systemextension
 
 "$ROOT/scripts/verify_product_metadata.sh" built "$(dirname -- "$APP")"
 "$ROOT/scripts/verify_transparent_proxy_metadata.sh" built "$(dirname -- "$APP")"
+"$ROOT/scripts/verify_licenses.sh" built "$(dirname -- "$APP")"
 
 MACH_O_MANIFEST="$TEMPORARY/mach-o-files.txt"
 find "$APP" -type f -exec file {} \; \
@@ -327,4 +331,3 @@ chmod 644 "$OUTPUT_DIRECTORY"/*
 
 echo "Developer ID signed local QA candidate passed: $OUTPUT_DIRECTORY/$ARTIFACT_NAME.zip"
 echo "Production and cross-machine distribution remain blocked until notarization and release gates pass."
-
