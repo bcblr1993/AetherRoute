@@ -715,7 +715,7 @@ private struct DNSMetricCard: View {
                     )
                     .accessibilityHidden(true)
                 Text(title)
-                    .font(.subheadline.weight(.medium))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
