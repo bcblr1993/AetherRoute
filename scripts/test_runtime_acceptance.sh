@@ -4,8 +4,9 @@ umask 077
 
 # Runtime acceptance matrix for an installed AetherRoute build.
 #
-# Answers one question: on THIS machine, with THIS build, does every runtime
-# feature actually work? It only observes — it never installs, never changes
+# Checks the current connected state of THIS installed candidate. A successful
+# result is a bounded runtime smoke check, not a lifecycle or release gate.
+# It only observes — it never installs, never changes
 # the routing mode, and never connects or disconnects. Whoever runs it decides
 # what state the tunnel is in; the script reports what that state can do.
 #
@@ -14,16 +15,20 @@ umask 077
 # entry point can supply, so an "acceptance script" that tried to connect would
 # either be lying or would need a back door into a shipping VPN.
 #
-# Exit status is the number of failed checks, so CI can gate on it.
+# Exit status is the number of failed checks, so CI can gate on it. An inactive
+# or unobservable provider cannot pass. Privileged socket observation is opt-in
+# for the designated test VM; it never prompts for a password.
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 APP=${AETHERROUTE_APP_PATH:-/Applications/AetherRoute.app}
 EXPECTED_BUILD=${1:-}
 REPORT=${2:-}
+PRIVILEGED_OBSERVATION=${AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION:-NO}
 
 usage() {
   echo "usage: $0 [expected-build-number] [/absolute/report-path]" >&2
   echo "  AETHERROUTE_APP_PATH overrides the app location." >&2
+  echo "  AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=YES permits sudo -n lsof on the test VM." >&2
 }
 
 case "$REPORT" in
@@ -40,6 +45,52 @@ fi
 PASS=0
 FAIL=0
 SKIP=0
+build=unknown
+
+# Ignore ~/.curlrc as well as every conventional proxy environment variable.
+# Explicit loopback tests must not silently bypass their proxy through NO_PROXY.
+clean_curl() {
+  env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u NO_PROXY \
+    -u http_proxy -u https_proxy -u all_proxy -u no_proxy \
+    curl -q "$@"
+}
+
+listener_pids() {
+  # macOS exposes root-owned socket PIDs through verbose netstat even when
+  # unprivileged lsof cannot see them. Resolve the PID column by its header:
+  # recent versions use process:pid, older versions use separate pid/epid.
+  socket_owners=$(netstat -anv -p tcp 2>/dev/null | awk -v port="$1" '
+    /^Proto / {
+      gsub(/Local Address/, "Local-Address")
+      gsub(/Foreign Address/, "Foreign-Address")
+      for (i=1; i<=NF; i++) if ($i=="process:pid" || $i=="pid") pid_column=i
+      next
+    }
+    /^tcp/ && ($4=="127.0.0.1." port || $4=="*." port) && $6=="LISTEN" {
+      if (!pid_column) {unverified=1; next}
+      pid=$pid_column
+      sub(/^.*:/, "", pid)
+      if (pid !~ /^[1-9][0-9]*$/) {unverified=1; next}
+      print pid
+    }
+    END {if (unverified) print "unverified"}
+  ' | sort -u)
+  if [ -n "$socket_owners" ] \
+    && ! printf '%s\n' "$socket_owners" | grep -qx unverified; then
+    printf '%s\n' "$socket_owners"
+    return 0
+  fi
+  if [ "$PRIVILEGED_OBSERVATION" = YES ]; then
+    sudo -n lsof -nP -a -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null
+  else
+    # A partly visible table could hide a second owner's socket. Ordinary lsof
+    # cannot resolve that ambiguity for root-owned providers.
+    if printf '%s\n' "$socket_owners" | grep -qx unverified; then
+      return 1
+    fi
+    lsof -nP -a -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null
+  fi | sort -u
+}
 
 emit() {
   printf '%s\n' "$1"
@@ -128,13 +179,25 @@ emit ""
 emit "system extensions"
 extlist=$(systemextensionsctl list 2>/dev/null || true)
 for ext in tunnel transparent-proxy; do
-  line=$(printf '%s\n' "$extlist" \
-    | grep "com.aetherroute.desktop.$ext" \
-    | grep -v 'waiting to uninstall' | head -1 || true)
+  lines=$(printf '%s\n' "$extlist" \
+    | awk -v id="com.aetherroute.desktop.$ext" '
+        /waiting to uninstall/ {next}
+        {for (i=1; i<=NF; i++) if ($i==id) {print; break}}
+      ')
+  count=$(printf '%s\n' "$lines" | awk 'NF {n++} END {print n+0}')
+  if [ "$count" -ne 1 ]; then
+    check "$ext activated" "$count registrations; expected exactly one" fail
+    continue
+  fi
+  line=$lines
   case "$line" in
     *"activated enabled"*)
-      v=$(printf '%s\n' "$line" | sed -n 's/.*(1\.0\.0\/\([0-9]*\)).*/\1/p')
-      check "$ext activated" "${v:-unknown}" pass ;;
+      v=$(printf '%s\n' "$line" | sed -n 's/.*([^/]*\/\([0-9][0-9]*\)).*/\1/p')
+      if [ -n "$v" ] && [ "$v" = "$build" ]; then
+        check "$ext activated" "$v" pass
+      else
+        check "$ext activated" "${v:-unknown}, expected installed build $build" fail
+      fi ;;
     "") check "$ext activated" "not present" fail ;;
     *) check "$ext activated" "present but not enabled" fail ;;
   esac
@@ -149,29 +212,77 @@ emit "tunnel state"
 # judging it by the routing table reports a working tunnel as disconnected.
 PREFS_DOMAIN="$HOME/Library/Containers/com.aetherroute.desktop/Data/Library/Preferences/com.aetherroute.desktop"
 ENGINE=$(defaults read "$PREFS_DOMAIN" AetherRoute.NetworkEngineMode 2>/dev/null || echo unknown)
-ROUTING=$(defaults read "$PREFS_DOMAIN" defaultRoutingMode 2>/dev/null || echo rule)
-check "network engine" "$ENGINE" pass
-check "routing mode" "$ROUTING" pass
+ROUTING=$(defaults read "$PREFS_DOMAIN" defaultRoutingMode 2>/dev/null || echo unknown)
+case "$ENGINE" in
+  tun|transparent) check "network engine" "$ENGINE" pass ;;
+  *) check "network engine" "$ENGINE" fail ;;
+esac
+case "$ROUTING" in
+  rule|global|direct) check "routing mode" "$ROUTING" pass ;;
+  *) check "routing mode" "$ROUTING" fail ;;
+esac
 
 status=$(scutil --nc status AetherRoute 2>/dev/null | head -1 || echo "no configuration")
-route_if=$(netstat -rn -f inet | awk '/^default/ {print $NF; exit}')
+route_if=$(route -n get default 2>/dev/null | awk '/interface:/ {print $2; exit}')
+CONNECTED=no
+PROVIDER_PID=
+PROVIDER_BINARY=
+PROVIDER_START=
+PROVIDER_VERIFIED=no
+case "$ENGINE" in
+  transparent) PROVIDER_ID=com.aetherroute.desktop.transparent-proxy ;;
+  *) PROVIDER_ID=com.aetherroute.desktop.tunnel ;;
+esac
+provider_pids=$(pgrep -x "$PROVIDER_ID" 2>/dev/null || true)
+provider_count=$(printf '%s\n' "$provider_pids" | awk 'NF {n++} END {print n+0}')
+if [ "$provider_count" -eq 1 ]; then
+  PROVIDER_PID=$provider_pids
+  PROVIDER_BINARY=$(ps -p "$PROVIDER_PID" -o comm= | sed 's/^[[:space:]]*//')
+  bundled_binary="$APP/Contents/Library/SystemExtensions/$PROVIDER_ID.systemextension/Contents/MacOS/$PROVIDER_ID"
+  if [ -f "$PROVIDER_BINARY" ] && [ -f "$bundled_binary" ] \
+    && cmp -s "$PROVIDER_BINARY" "$bundled_binary"; then
+    PROVIDER_VERIFIED=yes
+    check "running provider candidate" "PID $PROVIDER_PID matches installed executable" pass
+  else
+    check "running provider candidate" "PID $PROVIDER_PID executable differs or cannot be verified" fail
+  fi
+  PROVIDER_START=$(LC_ALL=C ps -p "$PROVIDER_PID" -o lstart= | sed 's/^[[:space:]]*//')
+else
+  check "running provider candidate" "$provider_count processes; expected exactly one" fail
+fi
 
 case "$ENGINE" in
   transparent)
-    if pgrep -f com.aetherroute.desktop.transparent-proxy >/dev/null 2>&1; then
-      check "transparent proxy running" "extension process alive" pass
+    # A provider process may survive a stop request. Require the latest lifecycle
+    # event from this exact process lifetime, rather than pgrep or old log output.
+    provider_started=$(LC_ALL=C date -j -f '%a %b %e %T %Y' \
+      "$PROVIDER_START" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || true)
+    lifecycle=
+    if [ "$PROVIDER_VERIFIED" = yes ] && [ -n "$provider_started" ]; then
+      lifecycle=$(log show --start "$provider_started" --style compact --info \
+        --predicate "processIdentifier == $PROVIDER_PID AND (eventMessage CONTAINS \"stage=startProxy\" OR eventMessage CONTAINS \"stage=stopProxy\")" \
+        2>/dev/null | grep -E 'stage=(startProxy|stopProxy) (requested|success|failed)' | tail -1 || true)
+    fi
+    if printf '%s\n' "$lifecycle" | grep -q 'stage=startProxy success'; then
+      check "transparent proxy ready" "current provider completed startup" pass
       CONNECTED=yes
     else
-      check "transparent proxy running" "extension not running" fail
-      CONNECTED=no
+      check "transparent proxy ready" "current startup success cannot be verified" fail
     fi
-    check "IPv4 default route" "$route_if (unchanged by design)" pass ;;
+    check "IPv4 default route" "${route_if:-unavailable} (transparent engine creates no route)" \
+      "$([ -n "$route_if" ] && echo pass || echo fail)" ;;
   *)
     check "VPN configuration" "$status" \
-      "$([ "$status" = "no configuration" ] && echo fail || echo pass)"
-    check "IPv4 default route" "$route_if" pass
-    CONNECTED=$(printf '%s\n' "$route_if" | grep -q '^utun' && echo yes || echo no) ;;
+      "$([ "$status" = Connected ] && echo pass || echo fail)"
+    check "IPv4 default route" "${route_if:-unavailable}" \
+      "$(printf '%s\n' "$route_if" | grep -q '^utun' && echo pass || echo fail)"
+    if [ "$status" = Connected ] && [ "$PROVIDER_VERIFIED" = yes ] \
+      && printf '%s\n' "$route_if" | grep -q '^utun'; then
+      CONNECTED=yes
+    fi ;;
 esac
+check "active candidate connection" "$CONNECTED" \
+  "$([ "$CONNECTED" = yes ] && echo pass || echo fail)"
 
 # The IPv6 regression: the tunnel used to claim an IPv6 default route even
 # when its outbound could not carry IPv6, black-holing every AAAA connection.
@@ -226,48 +337,41 @@ case "$ENGINE:$proxy_json" in
   *:*'"isEnabled":true'*)
     http_port=$(printf '%s' "$proxy_json" | sed -n 's/.*"httpPort":\([0-9]*\).*/\1/p')
     socks_port=$(printf '%s' "$proxy_json" | sed -n 's/.*"socksPort":\([0-9]*\).*/\1/p')
+    http_owned=no
     for spec in "HTTP:http://127.0.0.1:$http_port" \
                 "SOCKS5:socks5h://127.0.0.1:$socks_port"; do
       name=${spec%%:*}
       proxy=${spec#*:}
       port=${proxy##*:}
-      # The listener belongs to the Network Extension, which runs as root, so
-      # lsof shows nothing to an ordinary user. netstat sees every socket
-      # regardless of owner and is the only reliable presence test here; lsof
-      # is kept purely to name the owner when it happens to be visible.
-      if netstat -an -p tcp 2>/dev/null | grep LISTEN \
-        | grep -q "127\.0\.0\.1\.$port "; then
-        owner=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null \
-          | awk 'NR>1 {print $1; exit}')
-        owner=${owner:-root-owned}
-      else
-        owner=""
+      case "$port" in
+        ''|*[!0-9]*) check "$name port" "invalid configured port" fail; continue ;;
+      esac
+      if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        check "$name port" "invalid configured port" fail
+        continue
       fi
-
-      # While the tunnel is down AetherRoute holds no listener, so anything
-      # answering here belongs to another proxy. Reporting that as a pass is
-      # how a port clash (Clash, Surge, ...) hides until the tunnel starts and
-      # silently fails to bind.
+      owner_pids=$(listener_pids "$port" || true)
       if [ "$CONNECTED" != yes ]; then
-        if [ -n "$owner" ]; then
-          check "$name port :$port" \
-            "held by $owner while tunnel is down — will block bind" fail
-        else
-          check "$name port :$port" "free (tunnel down)" pass
-        fi
+        check "$name proxy :$port" "candidate is not connected" fail
         continue
       fi
-
-      if [ -z "$owner" ]; then
-        check "$name proxy :$port" "not listening" fail
+      # No visible owner is inconclusive, never proof that a socket belongs to
+      # a root Network Extension. Every listener on this port must be our PID.
+      if [ -z "$owner_pids" ]; then
+        check "$name proxy :$port" "listener ownership unavailable; use privileged observation on the test VM" fail
         continue
       fi
-      code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -x "$proxy" \
-        http://cp.cloudflare.com/generate_204 2>/dev/null || echo 000)
+      if [ "$owner_pids" != "$PROVIDER_PID" ]; then
+        check "$name proxy :$port" "listener is not exclusively owned by candidate provider PID $PROVIDER_PID" fail
+        continue
+      fi
+      [ "$name" != HTTP ] || http_owned=yes
+      code=$(clean_curl --noproxy '' -s -o /dev/null -w '%{http_code}' --max-time 15 -x "$proxy" \
+        http://cp.cloudflare.com/generate_204 2>/dev/null) || code=000
       if [ "$code" = 204 ]; then
-        check "$name proxy :$port" "answered 204 ($owner)" pass
+        check "$name proxy :$port" "answered 204 (candidate PID $PROVIDER_PID)" pass
       else
-        check "$name proxy :$port" "listening ($owner) but returned $code" fail
+        check "$name proxy :$port" "candidate listener returned $code" fail
       fi
     done
 
@@ -275,9 +379,12 @@ case "$ENGINE:$proxy_json" in
     # points both HTTP and SOCKS at the primary port. When that port spoke only
     # HTTP, SOCKS clients failed instantly — browsers broke while curl over the
     # HTTP proxy stayed green, so the fault never showed up in testing.
-    mixed=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-      -x "socks5h://127.0.0.1:$http_port" \
-      http://cp.cloudflare.com/generate_204 2>/dev/null || echo 000)
+    mixed=unverified
+    if [ "$http_owned" = yes ]; then
+      mixed=$(clean_curl --noproxy '' -s -o /dev/null -w '%{http_code}' --max-time 15 \
+        -x "socks5h://127.0.0.1:$http_port" \
+        http://cp.cloudflare.com/generate_204 2>/dev/null) || mixed=000
+    fi
     if [ "$mixed" = 204 ]; then
       check "primary port speaks SOCKS too" "mixed listener on :$http_port" pass
     else
@@ -299,13 +406,13 @@ probe() {
   url=$2
   expect=$3
   needs_proxy=${4:-no}
-  out=$(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
-    -u http_proxy -u https_proxy -u all_proxy \
-    curl -s -o /dev/null -w '%{http_code} %{time_total}' --max-time 20 "$url" \
-    2>/dev/null || echo "000 timeout")
+  out=$(clean_curl --proxy '' -s -o /dev/null -w '%{http_code} %{time_total}' --max-time 20 "$url" \
+    2>/dev/null) || out="000 timeout"
   code=${out%% *}
   secs=${out##* }
-  if printf '%s\n' "$expect" | grep -qw "$code"; then
+  if [ "$CONNECTED" != yes ]; then
+    check "$label" "HTTP $code (candidate not connected)" skip
+  elif printf '%s\n' "$expect" | grep -qw "$code"; then
     check "$label" "HTTP $code in ${secs}s" pass
   elif [ "$needs_proxy" = yes ] && [ "$ROUTING" = direct ]; then
     check "$label" "HTTP $code (direct mode bypasses nodes)" skip
@@ -318,10 +425,12 @@ probe "captive portal probe" http://cp.cloudflare.com/generate_204 "204"
 probe "anthropic reachable"  https://api.anthropic.com/v1/messages "405 403 401" yes
 probe "china site direct"    https://www.baidu.com/ "200"
 
-egress=$(env -u HTTPS_PROXY -u https_proxy curl -s --max-time 20 \
+egress=$(clean_curl --proxy '' -s --max-time 20 \
   https://api.ipify.org 2>/dev/null || true)
-if [ -n "$egress" ]; then
-  check "egress address" "$egress" pass
+if [ "$CONNECTED" != yes ]; then
+  check "egress address" "candidate not connected" skip
+elif printf '%s\n' "$egress" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$|^[0-9A-Fa-f]*:[0-9A-Fa-f:]+$'; then
+  check "observed egress address" "$egress (connectivity only; not node attribution)" pass
 elif [ "$ROUTING" = direct ]; then
   # Direct mode deliberately bypasses every node, so the request leaves from
   # the local network. Whether that reaches the internet says nothing about
@@ -336,15 +445,19 @@ fi
 # apps, because Happy Eyeballs waited on a route that never answered. This is
 # a property of the tunnel's routing, so it is only meaningful when the tunnel
 # is actually routing — direct mode measures the host network instead.
-v6=$(curl -s -o /dev/null -w '%{time_total}' --max-time 12 -6 \
-  https://ipv6.google.com/ 2>/dev/null || echo 99)
+v6_exit=0
+v6=$(clean_curl --proxy '' -s -o /dev/null -w '%{time_total}' --max-time 12 -6 \
+  https://ipv6.google.com/ 2>/dev/null) || v6_exit=$?
 v6_secs=$(printf '%s\n' "$v6" | cut -d. -f1)
-if [ "$ROUTING" = direct ]; then
+case "$v6_secs" in ''|*[!0-9]*) v6_secs=99 ;; esac
+if [ "$CONNECTED" != yes ]; then
+  check "IPv6 avoids long stalls" "candidate not connected" skip
+elif [ "$ROUTING" = direct ]; then
   check "IPv6 fails fast" "${v6}s (direct mode — host network)" skip
-elif [ "$v6_secs" -lt 8 ]; then
-  check "IPv6 fails fast" "${v6}s" pass
+elif [ "$v6_secs" -lt 8 ] && { [ "$v6_exit" -eq 0 ] || [ "$v6_exit" -eq 6 ] || [ "$v6_exit" -eq 7 ]; }; then
+  check "IPv6 avoids long stalls" "${v6}s (curl exit $v6_exit)" pass
 else
-  check "IPv6 fails fast" "${v6}s — Happy Eyeballs will stall" fail
+  check "IPv6 avoids long stalls" "${v6}s (curl exit $v6_exit)" fail
 fi
 emit ""
 
@@ -363,6 +476,30 @@ errors=$(log show --last 10m \
   --style compact 2>/dev/null | grep -cE '^\S+ \S+ E ' || true)
 check "error-level log lines (10m)" "${errors:-0}" \
   "$([ "${errors:-0}" -eq 0 ] && echo pass || echo skip)"
+
+# Prevent an old provider's successful probes from surviving a stop/restart
+# during this report. Recheck the same process lifetime and live VPN state.
+final_pids=$(pgrep -x "$PROVIDER_ID" 2>/dev/null || true)
+final_start=
+if [ -n "$PROVIDER_PID" ]; then
+  final_start=$(LC_ALL=C ps -p "$PROVIDER_PID" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//')
+fi
+if [ "$CONNECTED" = yes ] && [ "$final_pids" = "$PROVIDER_PID" ] \
+  && [ -n "$PROVIDER_START" ] && [ "$final_start" = "$PROVIDER_START" ]; then
+  if [ "$ENGINE" = transparent ]; then
+    final_event=$(log show --start "$provider_started" --style compact --info \
+      --predicate "processIdentifier == $PROVIDER_PID AND (eventMessage CONTAINS \"stage=startProxy\" OR eventMessage CONTAINS \"stage=stopProxy\")" \
+      2>/dev/null | grep -E 'stage=(startProxy|stopProxy) (requested|success|failed)' | tail -1 || true)
+    continuous=$(printf '%s\n' "$final_event" | grep -q 'stage=startProxy success' && echo yes || echo no)
+  else
+    final_status=$(scutil --nc status AetherRoute 2>/dev/null | head -1 || true)
+    continuous=$([ "$final_status" = Connected ] && echo yes || echo no)
+  fi
+else
+  continuous=no
+fi
+check "provider survived all probes" "$continuous" \
+  "$([ "$continuous" = yes ] && echo pass || echo fail)"
 emit ""
 
 emit "summary: $PASS passed, $FAIL failed, $SKIP skipped"
