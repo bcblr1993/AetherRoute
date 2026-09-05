@@ -871,15 +871,17 @@ final class TunnelManager: ObservableObject {
             let context: ConnectionFailureContext
             if (error as? ActiveProfileStoreError) == .noActiveProfile {
                 context = .missingProfile
-            } else if error is RoutingResourceError {
+            } else if error is RoutingResourceError
+                        || error is BundledRoutingResourceError
+                        || (error as? ActiveProfileStoreError)
+                            == .appGroupUnavailable
+                        || error is ProfileKeyStoreError
+                        || error is KeychainAccessGroupResolutionError {
                 context = .configuration
             } else {
                 context = .provider
             }
-            recordFailure(
-                localizedConnectionError(error),
-                context: context
-            )
+            recordFailure(error, context: context)
         }
     }
 
@@ -4563,7 +4565,7 @@ final class TunnelManager: ObservableObject {
         cancelConnectionWatchdog()
         cancelDisconnectionWatchdog()
         failureContext = context
-        state = .failed(error.localizedDescription)
+        state = .failed(localizedConnectionError(error).localizedDescription)
     }
 
     /// A provider that never reaches a terminal Network Extension state must
@@ -4715,6 +4717,53 @@ final class TunnelManager: ObservableObject {
     }
 
     private func localizedConnectionError(_ error: Error) -> Error {
+        if error is BundledRoutingResourceError {
+            return LocalizedConnectionError(
+                message: AppLocalization.string(
+                    "The routing databases included with this app could not be verified. Reinstall AetherRoute and try again."
+                )
+            )
+        }
+        if (error as? ActiveProfileStoreError) == .appGroupUnavailable {
+            return LocalizedConnectionError(
+                message: AppLocalization.string(
+                    "AetherRoute could not access its shared storage. Quit and reopen the app, then try again. If the problem continues, export diagnostics."
+                )
+            )
+        }
+        if let keyError = error as? ProfileKeyStoreError {
+            let message: String
+            switch keyError {
+            case .keyNotFound:
+                message = AppLocalization.string(
+                    "The encryption key for saved profiles is unavailable. Export a report from Settings > Diagnostics for troubleshooting."
+                )
+            case .invalidKeyLength:
+                message = AppLocalization.string(
+                    "The profile encryption key is invalid. Export a report from Settings > Diagnostics for troubleshooting."
+                )
+            case .randomGenerationFailed:
+                message = AppLocalization.string(
+                    "A profile encryption key could not be created. Quit and reopen AetherRoute, then try again. If the problem continues, export diagnostics."
+                )
+            case .securityError:
+                message = AppLocalization.string(
+                    "AetherRoute could not access the profile encryption key in Keychain. Quit and reopen the app, then try again. If the problem continues, export diagnostics."
+                )
+            }
+            return LocalizedConnectionError(message: message)
+        }
+        if let accessGroupError = error as? KeychainAccessGroupResolutionError {
+            switch accessGroupError {
+            case .missingInfoValue, .emptyValue, .unresolvedBuildSetting,
+                 .unexpectedSuffix, .invalidValue:
+                return LocalizedConnectionError(
+                    message: AppLocalization.string(
+                        "AetherRoute's Keychain access configuration is invalid. Reinstall AetherRoute and try again."
+                    )
+                )
+            }
+        }
         guard let resourceError = error as? RoutingResourceError else {
             return error
         }

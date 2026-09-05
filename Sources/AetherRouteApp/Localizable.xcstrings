@@ -211,6 +211,16 @@
         }
       }
     },
+    "A profile encryption key could not be created. Quit and reopen AetherRoute, then try again. If the problem continues, export diagnostics.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法创建配置加密密钥。请退出并重新打开 AetherRoute 后重试；若仍失败，请导出诊断。"
+          }
+        }
+      }
+    },
     "AAAA responses are allowed by this profile.": {
       "localizations": {
         "zh-Hans": {
@@ -498,6 +508,26 @@
         }
       }
     },
+    "AetherRoute could not access its shared storage. Quit and reopen the app, then try again. If the problem continues, export diagnostics.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法访问 AetherRoute 的共享存储。请退出并重新打开应用后重试；若仍失败，请导出诊断。"
+          }
+        }
+      }
+    },
+    "AetherRoute could not access the profile encryption key in Keychain. Quit and reopen the app, then try again. If the problem continues, export diagnostics.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法访问钥匙串中的配置加密密钥。请退出并重新打开 AetherRoute 后重试；若仍失败，请导出诊断。"
+          }
+        }
+      }
+    },
     "AetherRoute could not confirm a healthy connection. Retry once, then review the active profile.": {
       "localizations": {
         "zh-Hans": {
@@ -644,6 +674,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "在你同意前，AetherRoute 不会创建或保存网络扩展配置、导入或下载配置，也不会连接。"
+          }
+        }
+      }
+    },
+    "AetherRoute's Keychain access configuration is invalid. Reinstall AetherRoute and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute 的钥匙串访问配置无效。请重新安装 AetherRoute 后重试。"
           }
         }
       }
@@ -6670,6 +6710,16 @@
         }
       }
     },
+    "The encryption key for saved profiles is unavailable. Export a report from Settings > Diagnostics for troubleshooting.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存配置的加密密钥不可用。请在“设置 > 诊断”中导出诊断报告以排查问题。"
+          }
+        }
+      }
+    },
     "The executable profile key ‘%@’ is not allowed.": {
       "localizations": {
         "zh-Hans": {
@@ -6980,6 +7030,16 @@
         }
       }
     },
+    "The profile encryption key is invalid. Export a report from Settings > Diagnostics for troubleshooting.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置加密密钥无效。请在“设置 > 诊断”中导出诊断报告以排查问题。"
+          }
+        }
+      }
+    },
     "The profile is empty.": {
       "localizations": {
         "zh-Hans": {
@@ -7036,6 +7096,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前配置使用的模式需要协议核心验证。"
+          }
+        }
+      }
+    },
+    "The routing databases included with this app could not be verified. Reinstall AetherRoute and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用内置的路由规则库未通过校验。请重新安装 AetherRoute 后重试。"
           }
         }
       }
