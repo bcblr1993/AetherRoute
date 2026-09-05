@@ -150,6 +150,26 @@ validate_candidate_source_manifest() {
   current_ui_sha=$(sha256 "$ROOT/Tests/AetherRouteUITests/AetherRouteUITests.swift")
   test "$frozen_ui_sha" = "$current_ui_sha" \
     || fail "current UI test differs from the frozen candidate source"
+  # A lifecycle test may depend on additional Swift helpers. Bind the full
+  # test-source set, so editing or adding a helper cannot reuse an older frozen
+  # candidate merely because its original test entry point is unchanged.
+  frozen_ui_sources=$(awk '
+    $2 ~ /^Tests\/AetherRouteUITests\// {
+      if (NF != 2 || $2 ~ /(^|\/)\.\.(\/|$)/) exit 1
+      print
+    }
+  ' "$CANDIDATE_SOURCE_MANIFEST") || fail "unsafe UI source manifest entry"
+  current_ui_sources=$(
+    cd "$ROOT" || exit 1
+    test -z "$(find Tests/AetherRouteUITests -type l -print)" || exit 1
+    find Tests/AetherRouteUITests -type f -print | LC_ALL=C sort | while IFS= read -r file; do
+      test ! -L "$file" || exit 1
+      printf '%s\n' "$file" | grep -Eq '^Tests/AetherRouteUITests/[A-Za-z0-9_./-]+$' || exit 1
+      printf '%s  %s\n' "$(sha256 "$file")" "$file"
+    done
+  ) || fail "UI source set cannot be read safely"
+  test -n "$frozen_ui_sources" && test "$frozen_ui_sources" = "$current_ui_sources" \
+    || fail "current UI source set differs from the frozen candidate source"
   CANDIDATE_SOURCE_MANIFEST_FILE_SHA256=$(sha256 "$CANDIDATE_SOURCE_MANIFEST")
 }
 
