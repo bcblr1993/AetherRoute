@@ -30,6 +30,7 @@ trap cleanup EXIT HUP INT TERM
 "$ROOT/scripts/test_bundled_routing_license_coverage.sh"
 "$ROOT/scripts/test_runtime_acceptance_regressions.sh"
 "$ROOT/scripts/test_vm_acceptance_priming.sh"
+"$ROOT/scripts/test_vm_matrix_lifecycle.sh"
 "$ROOT/scripts/test_isolated_soak_process_cleanup.sh"
 sh "$ROOT/Tests/ConnectionRows/run.sh"
 sh "$ROOT/Tests/SystemExtensionActivation/run.sh"

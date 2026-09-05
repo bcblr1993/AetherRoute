@@ -163,6 +163,7 @@ fi
 log "installing $(basename "$CANDIDATE")"
 send "$CANDIDATE" "$REMOTE_WORK/candidate.zip"
 send "$ROOT/scripts/test_runtime_acceptance.sh" "$REMOTE_WORK/test_runtime_acceptance.sh"
+send "$ROOT/scripts/vm_matrix_lifecycle.sh" "$REMOTE_WORK/vm_matrix_lifecycle.sh"
 actual_sha=$(vm "shasum -a 256 '$REMOTE_WORK/candidate.zip'" | awk '{print $1}')
 test "$actual_sha" = "$candidate_sha" || { echo "VM candidate checksum mismatch" >&2; exit 1; }
 vm "set -e
@@ -315,6 +316,15 @@ if ! vm "sh '$REMOTE_WORK/prime-extensions.sh' '$BUILD'" \
 fi
 cat "$REPORT_DIR/extension-priming.txt"
 
+RUN_STAGE=network-baseline
+if ! vm "sh '$REMOTE_WORK/vm_matrix_lifecycle.sh' baseline '$BUILD' '$REMOTE_WORK/network-baseline.txt'" \
+  >"$REPORT_DIR/network-baseline.txt" 2>&1; then
+  cat "$REPORT_DIR/network-baseline.txt" >&2
+  echo 'cannot establish a disconnected network baseline; no configuration was scored' >&2
+  exit 1
+fi
+cat "$REPORT_DIR/network-baseline.txt"
+
 RUN_STAGE=matrix
 TOTAL_FAIL=0
 SUMMARY=""
@@ -327,18 +337,6 @@ for engine in $ENGINES; do
 
     vm "set -e
       PREF=\$HOME/Library/Containers/com.aetherroute.desktop/Data/Library/Preferences/com.aetherroute.desktop
-      osascript -e 'tell application \"AetherRoute\" to quit' 2>/dev/null || true
-      for i in \$(seq 1 30); do pgrep -x AetherRoute >/dev/null || break; sleep 1; done
-      if pgrep -x AetherRoute >/dev/null; then
-        echo 'app did not quit cleanly between modes' >&2; exit 1
-      fi
-      for i in \$(seq 1 30); do
-        pgrep -f '/com[.]aetherroute[.]desktop[.](tunnel|transparent-proxy)[.]systemextension/Contents/MacOS/' >/dev/null || break
-        sleep 1
-      done
-      if pgrep -f '/com[.]aetherroute[.]desktop[.](tunnel|transparent-proxy)[.]systemextension/Contents/MacOS/' >/dev/null; then
-        echo 'provider did not stop between modes' >&2; exit 1
-      fi
       defaults write \"\$PREF\" AetherRoute.NetworkEngineMode -string $engine
       defaults write \"\$PREF\" defaultRoutingMode -string $routing
       JSON='{\"version\":1,\"isEnabled\":true,\"httpPort\":7890,\"socksPort\":7891}'
@@ -348,15 +346,12 @@ for engine in $ENGINES; do
       test \"\$(defaults read \"\$PREF\" defaultRoutingMode)\" = $routing
       open -a /Applications/AetherRoute.app --env AETHERROUTE_QA_AUTOCONNECT=1"
 
-    # Wait for whichever signal this engine actually produces.
+    # A resident transparent provider may already be stopped. Require current
+    # candidate startup evidence rather than counting an idle process as ready.
     readiness_failed=0
     vm "for i in \$(seq 1 30); do
           sleep 5
-          if [ '$engine' = transparent ]; then
-            pgrep -f com.aetherroute.desktop.transparent-proxy >/dev/null && exit 0
-          else
-            [ \"\$(scutil --nc status AetherRoute 2>/dev/null | head -1)\" = Connected ] && exit 0
-          fi
+          sh '$REMOTE_WORK/vm_matrix_lifecycle.sh' ready '$BUILD' '$engine' && exit 0
         done
         exit 1" \
       && log "connected unattended" \
@@ -387,6 +382,18 @@ for engine in $ENGINES; do
   $(printf '%-22s %s' "$label" \
       "$([ "$failures" -eq 0 ] && echo 'all checks passed' \
         || echo "$failures failed")")"
+
+    # Check every session's actual teardown, including the final mode. A
+    # failure stops the matrix before preferences or another session change.
+    RUN_STAGE=quit-$engine-$routing
+    if ! vm "sh '$REMOTE_WORK/vm_matrix_lifecycle.sh' quit '$BUILD' '$REMOTE_WORK/network-baseline.txt' '$engine'" \
+      >"$REPORT_DIR/quit-$engine-$routing.txt" 2>&1; then
+      cat "$REPORT_DIR/quit-$engine-$routing.txt" >&2
+      echo "quit verification failed for $label; refusing the next mode" >&2
+      exit 1
+    fi
+    cat "$REPORT_DIR/quit-$engine-$routing.txt"
+    RUN_STAGE=matrix
   done
 done
 

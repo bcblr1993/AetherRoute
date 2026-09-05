@@ -21,6 +21,7 @@ fixture = temporary / 'fixture'
 (fixture / 'scripts').mkdir(parents=True)
 driver = fixture / 'scripts/test_vm_acceptance_matrix.sh'
 shutil.copy2(root / 'scripts/test_vm_acceptance_matrix.sh', driver)
+shutil.copy2(root / 'scripts/vm_matrix_lifecycle.sh', fixture / 'scripts/vm_matrix_lifecycle.sh')
 (fixture / 'scripts/test_runtime_acceptance.sh').write_text('#!/bin/sh\nexit 99\n')
 candidate = temporary / 'candidate.zip'
 with zipfile.ZipFile(candidate, 'w') as archive:
@@ -59,6 +60,18 @@ elif name=='ssh':
     elif cmd.startswith('grep -aq "qaAutomation autoConnect"'): pass
     elif cmd.startswith('sh ') and 'prime-extensions.sh' in cmd:
         raise SystemExit(subprocess.run(['sh',str(base/'remote/prime-extensions.sh'),'2026090501'],env=os.environ).returncode)
+    elif cmd.startswith('sh ') and 'vm_matrix_lifecycle.sh' in cmd:
+        if ' baseline ' in cmd:
+            event('baseline')
+            if state['case']=='baseline-fails': raise SystemExit(1)
+        elif ' quit ' in cmd:
+            assert state['app']
+            event('quit-verified')
+            if state['case']=='quit-fails': raise SystemExit(1)
+            state['app']=False
+            # An idle provider remains resident across the mode change.
+            state['provider']=True; save()
+        else: raise SystemExit('unexpected lifecycle operation')
     elif cmd.startswith('for path in /tmp/candidate.zip'): pass
     elif cmd.startswith("find '/tmp/aetherroute-vm-matrix."):
         for child in (base/'remote').iterdir(): child.unlink()
@@ -134,6 +147,8 @@ for case, original, should_pass in [
     ('duplicate', 'transparent', False),
     ('regresses', 'transparent', False),
     ('restore-fails', 'transparent', False),
+    ('baseline-fails', 'transparent', False),
+    ('quit-fails', 'transparent', False),
 ]:
     state_root = temporary / case
     (state_root / 'remote').mkdir(parents=True)
@@ -145,7 +160,7 @@ for case, original, should_pass in [
     (state_root / 'state.json').write_text(json.dumps(state))
     env = dict(os.environ, PATH=str(mock_bin)+os.pathsep+os.environ['PATH'],
                HOME=str(state_root/'home'), MOCK_STATE_ROOT=str(state_root),
-               AETHERROUTE_MATRIX_ENGINES='tun', AETHERROUTE_MATRIX_ROUTING='rule')
+               AETHERROUTE_MATRIX_ENGINES='tun', AETHERROUTE_MATRIX_ROUTING='rule global')
     args=[str(driver),str(candidate),'mock-vm']
     if case!='stale': args.append(str(state_root/'report'))
     completed = subprocess.run(args, env=env, capture_output=True, text=True, timeout=30)
@@ -156,13 +171,18 @@ for case, original, should_pass in [
     prepares=[e for e in events if e['kind']=='prepare']
     assert [e['engine'] for e in prepares]==['tun','transparent'], (case,events)
     assert all(e['autoConnect'] is False for e in prepares)
-    if should_pass:
-        assert sum(e['kind']=='score' for e in events)==1
+    if should_pass or case=='quit-fails':
+        assert sum(e['kind']=='score' for e in events)==(2 if should_pass else 1)
         scoring=next(i for i,e in enumerate(events) if e['kind']=='scoring-setup')
         prepared=max(i for i,e in enumerate(events[:scoring]) if e['kind']=='prepare')
         restoration=[e for e in events[prepared+1:scoring] if e['kind'] in ('engine-write','engine-delete')]
         assert restoration==([{'kind':'engine-write','value':original}] if original is not None
                              else [{'kind':'engine-delete'}]), (case,restoration)
+        lifecycle=[e['kind'] for e in events if e['kind'] in ('baseline','scoring-setup','score','quit-verified')]
+        expected=['baseline','scoring-setup','score','quit-verified']
+        if should_pass: expected+=['scoring-setup','score','quit-verified']
+        assert lifecycle==expected, (case,lifecycle)
+        if should_pass: assert not final['app'] and final['provider']
     else:
         assert not any(e['kind'] in ('score','scoring-setup','connect','other-preference-write') for e in events)
         assert final.get('engine')==original
@@ -175,10 +195,12 @@ for case, original, should_pass in [
     else: report=state_root/'report'
     assert report.is_dir() and (report/'extension-priming.txt').is_file()
     result=(report/'result.txt').read_text()
-    assert ('stage=matrix' if should_pass else 'stage=extension-priming') in result
+    stage=('matrix' if should_pass else 'network-baseline' if case=='baseline-fails'
+           else 'quit-tun-rule' if case=='quit-fails' else 'extension-priming')
+    assert 'stage='+stage in result
     assert ('exit_status=0' in result)==should_pass
     subprocess.run(['shasum','-a','256','-c','SHA256SUMS'],cwd=report,check=True,capture_output=True)
     assert not list((state_root/'remote').iterdir())
     print('PASS: '+case)
-print('VM extension priming regressions passed: two-engine prepare, strict registrations, restoration, failed-score exclusion and persistent evidence.')
+print('VM extension priming regressions passed: two-engine prepare, strict registrations, restoration, failed-score exclusion, verified mode teardown and persistent evidence.')
 PY
