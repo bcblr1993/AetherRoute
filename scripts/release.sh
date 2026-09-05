@@ -55,7 +55,7 @@ done
 license_service_url=${AETHERROUTE_LICENSE_SERVICE_URL:-}
 update_manifest_url=${AETHERROUTE_UPDATE_MANIFEST_URL:-}
 distribution_public_key=${AETHERROUTE_DISTRIBUTION_PUBLIC_KEY:-}
-distribution_mode=${AETHERROUTE_DISTRIBUTION_MODE:-licensed}
+distribution_mode=${AETHERROUTE_DISTRIBUTION_MODE:-free}
 soak_evidence_directory=${AETHERROUTE_SOAK_EVIDENCE_DIRECTORY:-}
 signed_ne_evidence_directory=${AETHERROUTE_SIGNED_NE_EVIDENCE_DIRECTORY:-}
 distribution_product_id=${AETHERROUTE_DISTRIBUTION_PRODUCT_ID:-$(

@@ -30,15 +30,19 @@ expect_rejection free 'invalid product' '' '' ''
 
 TEMP=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-free-release-test.XXXXXX")
 trap 'find "$TEMP" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
-set +e
-output=$(env -u AETHERROUTE_LICENSE_SERVICE_URL -u AETHERROUTE_UPDATE_MANIFEST_URL \
-  -u AETHERROUTE_DISTRIBUTION_PUBLIC_KEY -u AETHERROUTE_SOAK_EVIDENCE_DIRECTORY \
-  AETHERROUTE_DISTRIBUTION_MODE=free \
-  "$ROOT/scripts/release.sh" "$ROOT/Config/Signing.example.json" test-notary \
-  1.0.0 100 "$TEMP" 2>&1)
-status=$?
-set -e
-test "$status" -eq 64
-printf '%s\n' "$output" \
-  | grep -F 'stable release requires AETHERROUTE_SOAK_EVIDENCE_DIRECTORY' >/dev/null
+expect_free_release_stability_gate() {
+  set +e
+  output=$(env -u AETHERROUTE_LICENSE_SERVICE_URL -u AETHERROUTE_UPDATE_MANIFEST_URL \
+    -u AETHERROUTE_DISTRIBUTION_PUBLIC_KEY -u AETHERROUTE_SOAK_EVIDENCE_DIRECTORY \
+    "$@" \
+    "$ROOT/scripts/release.sh" "$ROOT/Config/Signing.example.json" test-notary \
+    1.0.0 100 "$TEMP" 2>&1)
+  status=$?
+  set -e
+  test "$status" -eq 64
+  printf '%s\n' "$output" \
+    | grep -F 'stable release requires AETHERROUTE_SOAK_EVIDENCE_DIRECTORY' >/dev/null
+}
+expect_free_release_stability_gate -u AETHERROUTE_DISTRIBUTION_MODE
+expect_free_release_stability_gate AETHERROUTE_DISTRIBUTION_MODE=free
 echo "Free and licensed distribution mode tests passed; free releases retain stability gates."
