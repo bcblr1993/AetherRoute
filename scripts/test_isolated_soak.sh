@@ -74,16 +74,88 @@ fi
 TEMP=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-isolated-soak.XXXXXX")
 CURRENT_PID=
 CAFFEINATE_PID=
-cleanup() {
-  if [ -n "$CURRENT_PID" ] && kill -0 "$CURRENT_PID" 2>/dev/null; then
-    kill -TERM "$CURRENT_PID" 2>/dev/null || true
+FLOW_BINARY=
+PACKET_BINARY=
+
+# BEGIN owned round cleanup
+round_process_descendants() (
+  # A subshell gives every recursive invocation its own loop variable.
+  for child_pid in $(pgrep -P "$1" 2>/dev/null || true); do
+    round_process_descendants "$child_pid"
+    printf '%s\n' "$child_pid"
+  done
+)
+
+stop_current_round() {
+  # CURRENT_PID is /usr/bin/time, not the harness. Killing only that wrapper
+  # leaves its child running. Capture descendants before terminating the parent,
+  # and also find an exact harness executable if a wrapper already exited.
+  round_stop_pids=$(
+    if [ -n "$CURRENT_PID" ]; then
+      round_process_descendants "$CURRENT_PID"
+      printf '%s\n' "$CURRENT_PID"
+    fi
+    for owned_binary in "$FLOW_BINARY" "$PACKET_BINARY"; do
+      [ -n "$owned_binary" ] || continue
+      for candidate_pid in $(pgrep -f "$owned_binary" 2>/dev/null || true); do
+        executable=$(ps -p "$candidate_pid" -o comm= 2>/dev/null | sed 's/^[[:space:]]*//')
+        if [ "$executable" = "$owned_binary" ]; then
+          round_process_descendants "$candidate_pid"
+          printf '%s\n' "$candidate_pid"
+        fi
+      done
+    done
+  )
+  round_stop_pids=$(printf '%s\n' "$round_stop_pids" | awk 'NF && !seen[$0]++')
+  for round_stop_pid in $round_stop_pids; do
+    kill -TERM "$round_stop_pid" 2>/dev/null || true
+  done
+  round_stop_attempt=0
+  while [ "$round_stop_attempt" -lt 50 ]; do
+    round_still_alive=no
+    for round_stop_pid in $round_stop_pids; do
+      if kill -0 "$round_stop_pid" 2>/dev/null; then round_still_alive=yes; fi
+    done
+    [ "$round_still_alive" = yes ] || break
+    round_stop_attempt=$((round_stop_attempt + 1))
+    sleep 0.1
+  done
+  for round_stop_pid in $round_stop_pids; do
+    if kill -0 "$round_stop_pid" 2>/dev/null; then
+      kill -KILL "$round_stop_pid" 2>/dev/null || true
+    fi
+  done
+  if [ -n "$CURRENT_PID" ]; then
     wait "$CURRENT_PID" 2>/dev/null || true
   fi
+  CURRENT_PID=
+  round_stop_attempt=0
+  while [ "$round_stop_attempt" -lt 50 ]; do
+    round_still_alive=no
+    for round_stop_pid in $round_stop_pids; do
+      if kill -0 "$round_stop_pid" 2>/dev/null; then round_still_alive=yes; fi
+    done
+    [ "$round_still_alive" = yes ] || return 0
+    round_stop_attempt=$((round_stop_attempt + 1))
+    sleep 0.1
+  done
+  echo "Could not confirm termination of an owned soak process" >&2
+  return 1
+}
+# END owned round cleanup
+
+cleanup() {
+  round_cleanup_status=0
+  stop_current_round || round_cleanup_status=$?
   if [ -n "$CAFFEINATE_PID" ] && kill -0 "$CAFFEINATE_PID" 2>/dev/null; then
     kill -TERM "$CAFFEINATE_PID" 2>/dev/null || true
     wait "$CAFFEINATE_PID" 2>/dev/null || true
   fi
-  find "$TEMP" -depth -delete 2>/dev/null || true
+  if [ "$round_cleanup_status" -eq 0 ]; then
+    find "$TEMP" -depth -delete 2>/dev/null || true
+  else
+    echo "Preserving soak runtime directory for unresolved process cleanup: $TEMP" >&2
+  fi
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -196,17 +268,7 @@ run_with_watchdog() {
   while kill -0 "$CURRENT_PID" 2>/dev/null; do
     now=$(date +%s)
     if [ $((now - started)) -ge "$ROUND_TIMEOUT" ]; then
-      kill -TERM "$CURRENT_PID" 2>/dev/null || true
-      attempt=0
-      while kill -0 "$CURRENT_PID" 2>/dev/null && [ "$attempt" -lt 50 ]; do
-        attempt=$((attempt + 1))
-        sleep 0.1
-      done
-      if kill -0 "$CURRENT_PID" 2>/dev/null; then
-        kill -KILL "$CURRENT_PID" 2>/dev/null || true
-      fi
-      wait "$CURRENT_PID" 2>/dev/null || true
-      CURRENT_PID=
+      stop_current_round || true
       cp "$log" "$OUTPUT/failure-$engine-round-$round.log"
       echo "$engine round $round exceeded ${ROUND_TIMEOUT}s" >&2
       return 124
