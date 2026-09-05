@@ -151,7 +151,7 @@ struct ContentView: View {
             guard let rawValue = notification.object as? String,
                   let section = AppSection(rawValue: rawValue)
             else { return }
-            selectedSection = section
+            selectSection(section)
         }
         .onOpenURL { url in
             tunnel.handleExternalURL(url)
@@ -205,7 +205,7 @@ struct ContentView: View {
             if let requestedSection = ProcessInfo.processInfo.environment[
                 "AETHERROUTE_UI_REVIEW_SECTION"
             ].flatMap(AppSection.init(rawValue:)) {
-                selectedSection = requestedSection
+                selectSection(requestedSection)
             }
             if let link = ProcessInfo.processInfo.environment[
                 "AETHERROUTE_UI_REVIEW_EXTERNAL_SUBSCRIPTION"
@@ -333,7 +333,7 @@ struct ContentView: View {
                 .padding(.horizontal, AetherVisual.s3)
                 .padding(.bottom, AetherVisual.s2)
 
-            List(selection: $selectedSection) {
+            List(selection: sectionSelection) {
                 Section {
                     ForEach(AppSection.allCases) { section in
                         NavigationLink(value: section) {
@@ -416,6 +416,23 @@ struct ContentView: View {
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
+    private var sectionSelection: Binding<AppSection?> {
+        Binding(
+            get: { selectedSection },
+            set: { selectSection($0) }
+        )
+    }
+
+    private func selectSection(_ section: AppSection?) {
+        guard section != selectedSection else { return }
+        // Start before the state mutation: onChange runs after SwiftUI has
+        // already begun updating the hierarchy and misses part of the work.
+        if let section {
+            UIResponsivenessProbe.begin("main.\(section.rawValue)")
+        }
+        selectedSection = section
+    }
+
     private var activeProfileStatus: String {
         let requiredResources = tunnel.requiredRoutingResources
         if !requiredResources.isEmpty {
@@ -449,8 +466,7 @@ struct ContentView: View {
                 switch section {
                 case .overview:
                     OverviewView {
-                        UIResponsivenessProbe.begin("main.profiles")
-                        selectedSection = .profiles
+                        selectSection(.profiles)
                     }
                 case .proxies:
                     ProxiesView()

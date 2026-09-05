@@ -304,11 +304,13 @@ final class AetherRouteUITests: XCTestCase {
         ]
         for language in ["en", "zh-Hans"] {
             for action in requiredActions {
-                XCTAssertTrue(
-                    samples.contains {
-                        $0.language == language && $0.action == action
-                    },
-                    "Missing responsiveness sample for \(language) \(action)."
+                let actionSamples = samples.filter {
+                    $0.language == language && $0.action == action
+                }
+                XCTAssertGreaterThanOrEqual(
+                    actionSamples.count,
+                    action.hasPrefix("main.") ? cycles * 2 : cycles,
+                    "Missing pointer or keyboard responsiveness samples for \(language) \(action)."
                 )
             }
         }
@@ -2380,6 +2382,25 @@ final class AetherRouteUITests: XCTestCase {
                 app.descendants(matching: .any)[destination.pageIdentifier]
                     .waitForExistence(timeout: 2),
                 "Navigation did not render \(destination.pageIdentifier)."
+            )
+        }
+        // Menu commands take a separate notification path from the sidebar's
+        // selection binding. Both must start the same application-side probe.
+        let shortcuts: [String: String] = [
+            "overview-page": "1", "proxies-page": "2",
+            "connections-page": "3", "profiles-page": "4",
+            "rules-page": "5", "dns-page": "6",
+        ]
+        for destination in destinations {
+            guard let shortcut = shortcuts[destination.pageIdentifier] else {
+                XCTFail("Missing navigation shortcut for \(destination.pageIdentifier).")
+                continue
+            }
+            app.typeKey(shortcut, modifierFlags: .command)
+            XCTAssertTrue(
+                app.descendants(matching: .any)[destination.pageIdentifier]
+                    .waitForExistence(timeout: 2),
+                "Keyboard navigation did not render \(destination.pageIdentifier)."
             )
         }
     }

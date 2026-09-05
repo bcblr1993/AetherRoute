@@ -12,6 +12,7 @@ struct ConnectionsView: View {
     @State private var sort: ConnectionSort = .traffic
 
     var body: some View {
+        let rows = connectionRows
         VStack(spacing: 0) {
             SessionBar(telemetry: telemetry)
                 .environmentObject(tunnel)
@@ -21,11 +22,11 @@ struct ConnectionsView: View {
             if telemetry.snapshot.connections.isEmpty {
                 emptyState
             } else {
-                connectionList
+                connectionList(rows: rows)
             }
 
             HStack {
-                Text(footerText)
+                Text(footerText(visibleCount: rows.count))
                 Spacer()
                 Text("Only connections visible on this Mac are counted, and nothing is reported anywhere.")
             }
@@ -55,7 +56,7 @@ struct ConnectionsView: View {
         .padding(AetherVisual.s6)
     }
 
-    private var connectionList: some View {
+    private func connectionList(rows: [ConnectionTableItem]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: AetherVisual.s2) {
                 Picker("Filter", selection: $filter) {
@@ -91,7 +92,7 @@ struct ConnectionsView: View {
             .padding(.horizontal, AetherVisual.s4)
             .padding(.vertical, AetherVisual.s2)
 
-            Table(connectionRows) {
+            Table(rows) {
                 TableColumn("Destination") { row in
                     ConnectionDestinationCell(connection: row.connection)
                 }
@@ -120,32 +121,28 @@ struct ConnectionsView: View {
     }
 
     private var connectionRows: [ConnectionTableItem] {
-        visibleConnections.enumerated().map { offset, connection in
-            ConnectionTableItem(offset: offset, connection: connection)
-        }
-    }
-
-    private var visibleConnections: [ConnectionTelemetry] {
-        telemetry.snapshot.connections
+        ConnectionTableItem.identify(telemetry.snapshot.connections)
             .filter {
-                ConnectionOutlet(proxyChain: $0.proxyChain).matches(filter)
+                ConnectionOutlet(proxyChain: $0.connection.proxyChain).matches(filter)
             }
             .sorted { lhs, rhs in
                 switch sort {
                 case .traffic:
-                    return lhs.downloadTotal + lhs.uploadTotal
-                        > rhs.downloadTotal + rhs.uploadTotal
+                    return lhs.connection.downloadTotal + lhs.connection.uploadTotal
+                        > rhs.connection.downloadTotal + rhs.connection.uploadTotal
                 case .destination:
-                    return lhs.destination.localizedStandardCompare(rhs.destination)
+                    return lhs.connection.destination.localizedStandardCompare(
+                        rhs.connection.destination
+                    )
                         == .orderedAscending
                 }
             }
     }
 
-    private var footerText: String {
+    private func footerText(visibleCount: Int) -> String {
         String.localizedStringWithFormat(
             AppLocalization.string("Showing %lld of %lld connections"),
-            Int64(visibleConnections.count),
+            Int64(visibleCount),
             Int64(telemetry.snapshot.connections.count)
         )
     }
@@ -308,15 +305,6 @@ private struct SessionBar: View {
         case .failed: .red
         case .disconnected: .secondary
         }
-    }
-}
-
-private struct ConnectionTableItem: Identifiable {
-    let offset: Int
-    let connection: ConnectionTelemetry
-
-    var id: String {
-        "\(offset)-\(connection.startedAtUnixMilliseconds)-\(connection.destination)-\(connection.destinationPort)"
     }
 }
 
