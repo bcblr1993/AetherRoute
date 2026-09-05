@@ -168,12 +168,13 @@ AETHERROUTE_SIGNED_NE_EVIDENCE_DIRECTORY=/absolute/path/to/signed-ne-evidence \
 ```
 
 For the free edition, leave the license URL, update URL, and distribution
-public key unset. `release.sh` defaults to `licensed` for compatibility, so
-the explicit `AETHERROUTE_DISTRIBUTION_MODE=free` above is required.
+public key unset. `release.sh` defaults to `free`, matching the app project.
+The explicit mode above documents the edition being packaged.
 Free and licensed releases run the same signing, notarization, source,
 stability, installed-runtime, and production-promotion gates.
 
-The optional licensed release environment must also provide
+The optional licensed release environment must explicitly set
+`AETHERROUTE_DISTRIBUTION_MODE=licensed` and provide
 `AETHERROUTE_LICENSE_SERVICE_URL`, `AETHERROUTE_UPDATE_MANIFEST_URL`, and the
 base64 raw 32-byte Ed25519 public key in
 `AETHERROUTE_DISTRIBUTION_PUBLIC_KEY`. It must also provide an absolute
