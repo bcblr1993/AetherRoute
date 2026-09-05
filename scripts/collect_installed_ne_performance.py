@@ -174,19 +174,22 @@ class NetTopObservation:
         row = next(csv.reader([line]))
         if "bytes_in" in row and "bytes_out" in row:
             self.header = row
+            self.owner = False  # Each sample must identify its process again.
             return
         if self.header is None or len(row) < len(self.header):
+            self.owner = False
             return
         offset = min(self.header.index("bytes_in"), self.header.index("bytes_out"))
         label = " ".join(row[:offset]).strip()
-        if re.search(r"(?:[.:])" + str(self.pid) + r"$", label):
-            self.owner = True
+        flow = re.fullmatch(r"(tcp|udp)[46]?\s+\S+<->\S+", label)
+        if flow is None:
+            self.owner = re.fullmatch(r"[^<>]+[.:]" + str(self.pid), label) is not None
             return
-        if "tcp" not in label.lower():
-            if label and not re.fullmatch(r"[0-9:. ]+", label):
-                self.owner = False
+        # UDP is another child flow of the current process, not a process row.
+        # Classify flows first so a remote port can never be mistaken for a PID.
+        if flow.group(1) != "tcp":
             return
-        if not self.owner or "<->" not in label:
+        if not self.owner:
             return
         remote = label.split("<->", 1)[1].strip()
         if remote not in (f"{self.address}:{self.port}", f"{self.address}.{self.port}"):

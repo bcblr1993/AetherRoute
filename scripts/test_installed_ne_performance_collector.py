@@ -62,6 +62,48 @@ class CollectorTests(unittest.TestCase):
         observed.feed("tcp4 192.0.2.2:9999<->192.0.2.1:4568,9999,9999,\n")
         self.assertFalse(observed.observed.is_set())
 
+    def testActualPilotUDPRowDoesNotHideFollowingOwnedTCPFlow(self):
+        # Unmodified relevant rows from pilot-tun-4's real nettop CSV. Other
+        # remote TCP tuples are omitted; no transfer bytes are manufactured.
+        lines = [",bytes_in,bytes_out,", "com.aetherroute.8874,11954,12763,",
+                 "udp4 *:*<->*:*,,,",
+                 "tcp4 192.168.64.9:49251<->192.168.64.1:62117,1915,724,"]
+        observed = collector.NetTopObservation(8874, "192.168.64.1", 62117, "download")
+        for line in lines + lines:
+            observed.feed(line)
+        self.assertTrue(observed.observed.is_set())
+        self.assertEqual(list(observed.flows.values()), [[1915, 1915]])
+        with self.assertRaisesRegex(collector.Incomplete, "provider-flow-bytes-insufficient"):
+            observed.proof(1, {}, {})
+
+    def testUDPFlowCannotReassignADifferentProcessToProvider(self):
+        observed = self.observation()
+        observed.feed("tcp-worker.124,0,0,")
+        observed.feed("udp4 *:*<->*:*,,,")
+        # A remote port equal to the provider PID is still a flow, not a PID.
+        observed.feed("tcp4 192.0.2.2:9999<->192.0.2.1:123,2,2,")
+        observed.feed("tcp4 192.0.2.2:9999<->192.0.2.1:4567,9999,9999,")
+        self.assertFalse(observed.observed.is_set())
+
+    def testNewCSVHeaderRequiresFreshProcessOwnership(self):
+        observed = self.observation()
+        observed.feed(",bytes_in,bytes_out,")
+        observed.feed("udp6 *:*<->*:*,,,")
+        observed.feed("tcp4 192.0.2.2:9999<->192.0.2.1:4567,9999,9999,")
+        self.assertFalse(observed.observed.is_set())
+        observed.feed("com.aetherroute.123,0,0,")
+        observed.feed("udp6 *:*<->*:*,,,")
+        observed.feed("tcp4 192.0.2.2:9999<->192.0.2.1:4567,9,9,")
+        self.assertTrue(observed.observed.is_set())
+
+    def testMalformedOrUnknownRowCannotCarryPreviousOwnership(self):
+        for line in ["other.124", "", "unknown protocol,0,0,"]:
+            with self.subTest(line=line):
+                observed = self.observation()
+                observed.feed(line)
+                observed.feed("tcp4 192.0.2.2:9999<->192.0.2.1:4567,9999,9999,")
+                self.assertFalse(observed.observed.is_set())
+
     def testOwnedFlowRequiresMonotonicSufficientBytesAndUniqueTuple(self):
         observed = self.observation()
         label = "tcp4 192.0.2.2:9999<->192.0.2.1:4567"
