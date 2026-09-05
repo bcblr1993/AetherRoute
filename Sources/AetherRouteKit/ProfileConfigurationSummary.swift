@@ -1,3 +1,4 @@
+import CoreFoundation
 import Foundation
 
 public struct ProfileConfigurationSummary: Equatable, Sendable {
@@ -314,6 +315,7 @@ private struct Parser {
     }
 
     private let lines: [String]
+    private let jsonObject: [String: Any]?
     private var section: Section?
     private var itemIndent: Int?
     private var itemFieldIndent: Int?
@@ -342,7 +344,19 @@ private struct Parser {
     private var allowsIPv6 = false
 
     init(yaml: String) {
-        lines = yaml.components(separatedBy: .newlines)
+        // A complete JSON mapping is also a valid profile. Decode it before
+        // the line-oriented YAML projection so compact and pretty JSON have
+        // the same summary and recursion exclusions. Import validation still
+        // owns the size/cancellation checks; the core owns semantic validation.
+        if yaml.first(where: { !$0.isWhitespace }) == "{",
+           let object = try? JSONSerialization.jsonObject(with: Data(yaml.utf8))
+                as? [String: Any] {
+            jsonObject = object
+            lines = []
+        } else {
+            jsonObject = nil
+            lines = yaml.components(separatedBy: .newlines)
+        }
     }
 
     mutating func parse() -> ProfileConfigurationSummary {
@@ -356,6 +370,10 @@ private struct Parser {
     }
 
     private mutating func parseDocument() {
+        if let jsonObject {
+            parseJSONDocument(jsonObject)
+            return
+        }
         for rawLine in lines {
             let line = Self.removingComment(from: rawLine)
             guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -406,6 +424,99 @@ private struct Parser {
 
         finishPendingItem()
         finishPendingProvider()
+    }
+
+    private mutating func parseJSONDocument(_ object: [String: Any]) {
+        if let value = Self.jsonScalar(object["ipv6"]) {
+            allowsIPv6 = Self.boolean(value) ?? false
+        }
+        if let fields = object["dns"] as? [String: Any] {
+            dns.isPresent = true
+            for (key, value) in fields {
+                // A policy may name one resolver or a list. Only transport
+                // categories and entry counts survive this projection.
+                if key == "nameserver-policy",
+                   let policies = value as? [String: Any] {
+                    dns.nameserverPolicyCount = policies.count
+                    for resolvers in policies.values {
+                        for resolver in Self.jsonStrings(resolvers) {
+                            recordDNSTransport(resolver)
+                        }
+                    }
+                } else if !(value is NSNull),
+                          let data = try? JSONSerialization.data(
+                            withJSONObject: value,
+                            options: [.fragmentsAllowed, .withoutEscapingSlashes]
+                          ),
+                          let field = String(data: data, encoding: .utf8) {
+                    parseDNSRootField(key: key, value: field)
+                }
+            }
+        }
+        for destination in [Section.proxies, .proxyGroups] {
+            section = destination
+            for fields in object[destination.rawValue] as? [[String: Any]] ?? [] {
+                item = Item(
+                    name: Self.jsonString(fields["name"]),
+                    type: Self.jsonString(fields["type"])
+                )
+                if destination == .proxies {
+                    item?.server = Self.jsonString(fields["server"])
+                    item?.port = Self.jsonPort(fields["port"])
+                } else {
+                    item?.members = Self.jsonStrings(fields["proxies"])
+                        + Self.jsonStrings(fields["use"])
+                }
+                finishPendingItem()
+            }
+        }
+        for destination in [Section.proxyProviders, .ruleProviders] {
+            section = destination
+            let fields = object[destination.rawValue] as? [String: Any] ?? [:]
+            // JSON object member order is not semantic. Keep provider IDs
+            // deterministic without changing ordered proxy/group/rule arrays.
+            for name in fields.keys.sorted() {
+                guard let values = fields[name] as? [String: Any] else { continue }
+                provider = Item(
+                    name: String(name.prefix(160)),
+                    type: Self.jsonString(values["type"])
+                )
+                finishPendingProvider()
+            }
+        }
+        for rule in object["rules"] as? [String] ?? [] {
+            appendRule(rule)
+        }
+    }
+
+    private static func jsonString(_ value: Any?) -> String {
+        guard let string = value as? String else { return "" }
+        return String(string.prefix(160))
+    }
+
+    private static func jsonStrings(_ value: Any?) -> [String] {
+        let strings = value as? [String] ?? (value as? String).map { [$0] } ?? []
+        return strings.filter { !$0.isEmpty }.map { String($0.prefix(160)) }
+    }
+
+    private static func jsonScalar(_ value: Any?) -> String? {
+        guard let value, value is String || value is NSNumber,
+              let data = try? JSONSerialization.data(
+                withJSONObject: value,
+                options: [.fragmentsAllowed, .withoutEscapingSlashes]
+              ) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private static func jsonPort(_ value: Any?) -> String {
+        if let string = value as? String { return scalar(string) }
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID(),
+              !["f", "d"].contains(String(cString: number.objCType))
+        else { return "" }
+        // NSNumber.stringValue erases the decimal part of 443.0. Reject its
+        // floating representation first, just as UInt16 does for YAML text.
+        return number.stringValue
     }
 
     private var summary: ProfileConfigurationSummary {

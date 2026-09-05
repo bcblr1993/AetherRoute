@@ -2,6 +2,193 @@ import AetherRouteKit
 import XCTest
 
 final class ProfileConfigurationSummaryTests: XCTestCase {
+    func testCompleteJSONMatchesBlockYAMLForSummaryAndActualUpstreams() throws {
+        let json = #"""
+        {
+          "ipv6": true,
+          "dns": {
+            "enable": true, "ipv6": false, "use-hosts": false,
+            "respect-rules": true, "enhanced-mode": "fake-ip",
+            "fake-ip-range": "198.18.0.1/16", "fake-ip-filter": ["*.private.invalid"],
+            "nameserver": ["https://sentinel-credential@resolver.invalid/dns-query", "tls://1.1.1.1:853"],
+            "fallback": ["tcp://9.9.9.9:53"], "default-nameserver": ["8.8.8.8"],
+            "proxy-server-nameserver": ["dhcp://en0"],
+            "nameserver-policy": {"*.corp.invalid": "udp://192.0.2.53"},
+            "listen": {"udp": "127.0.0.1:5353"}, "fallback-filter": {"geoip": true},
+            "edns-client-subnet": {"ipv4": "192.0.2.0/24"}
+          },
+          "proxies": [
+            {"name": "Edge, \"\u6771\" #1", "type": "socks5", "server": "edge.invalid", "port": 443, "password": "sentinel-credential",
+             "transport-options": {"type": "must-not-replace", "server": "nested.invalid", "port": 1234}},
+            {"name": "IPv6", "type": "vless", "server": "2001:db8::8", "port": "8443"},
+            {"name": "DIRECT", "type": "direct"}
+          ],
+          "proxy-groups": [{"name": "Manual", "type": "select", "proxies": ["Edge, \"\u6771\" #1", "IPv6", "DIRECT"], "use": ["Remote"]}],
+          "proxy-providers": {"Remote": {"type": "http", "url": "https://sentinel-credential@provider.invalid/sub"}},
+          "rule-providers": {"Private": {"type": "file", "path": "./private.yaml"}},
+          "rules": ["AND,((DST-PORT,62116),(IP-CIDR,203.0.113.123/32)),Manual", "GEOIP,CN,DIRECT,no-resolve", "GEOSITE,private,DIRECT", "MATCH,DIRECT"]
+        }
+        """#
+        let yaml = """
+        ipv6: true
+        dns:
+          enable: true
+          ipv6: false
+          use-hosts: false
+          respect-rules: true
+          enhanced-mode: fake-ip
+          fake-ip-range: 198.18.0.1/16
+          fake-ip-filter: ['*.private.invalid']
+          nameserver: [https://sentinel-credential@resolver.invalid/dns-query, tls://1.1.1.1:853]
+          fallback: [tcp://9.9.9.9:53]
+          default-nameserver: [8.8.8.8]
+          proxy-server-nameserver: [dhcp://en0]
+          nameserver-policy: {'*.corp.invalid': udp://192.0.2.53}
+          listen: {udp: 127.0.0.1:5353}
+          fallback-filter: {geoip: true}
+          edns-client-subnet: {ipv4: 192.0.2.0/24}
+        proxies:
+          - name: 'Edge, "東" #1'
+            type: socks5
+            server: edge.invalid
+            port: 443
+            password: sentinel-credential
+            transport-options:
+              type: must-not-replace
+              server: nested.invalid
+              port: 1234
+          - {name: IPv6, type: vless, server: '2001:db8::8', port: '8443'}
+          - {name: DIRECT, type: direct}
+        proxy-groups:
+          - name: Manual
+            type: select
+            proxies: ['Edge, "東" #1', IPv6, DIRECT]
+            use: [Remote]
+        proxy-providers:
+          Remote: {type: http, url: 'https://sentinel-credential@provider.invalid/sub'}
+        rule-providers:
+          Private: {type: file, path: ./private.yaml}
+        rules:
+          - AND,((DST-PORT,62116),(IP-CIDR,203.0.113.123/32)),Manual
+          - GEOIP,CN,DIRECT,no-resolve
+          - GEOSITE,private,DIRECT
+          - MATCH,DIRECT
+        """
+        let object = try JSONSerialization.jsonObject(with: Data(json.utf8))
+        let compact = try XCTUnwrap(String(
+            data: JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+            encoding: .utf8
+        ))
+        let expected = ProfileConfigurationInspector.inspect(yaml: yaml)
+        for document in [json, compact] {
+            try ProfileImportValidator.validate(data: Data(document.utf8))
+            let summary = ProfileConfigurationInspector.inspect(yaml: document)
+            XCTAssertEqual(summary, expected)
+            XCTAssertEqual(summary.proxyCount, 3)
+            XCTAssertEqual(summary.ruleCount, 4)
+            XCTAssertEqual(summary.proxyGroups.first?.memberCount, 4)
+            XCTAssertTrue(summary.allowsIPv6)
+            XCTAssertFalse(summary.dns.allowsIPv6)
+            XCTAssertTrue(summary.requiresCountryMMDB)
+            XCTAssertTrue(summary.requiresGeoSiteDatabase)
+            XCTAssertEqual(summary.proxies.first?.name, "Edge, \"東\" #1")
+            XCTAssertEqual(
+                ProfileUpstreamEndpointInspector.inspect(yaml: document),
+                [
+                    ProfileUpstreamEndpoint(host: "edge.invalid", port: 443),
+                    ProfileUpstreamEndpoint(host: "2001:db8::8", port: 8443),
+                ]
+            )
+            for secret in ["sentinel-credential", "resolver.invalid", "private.invalid", "provider.invalid", "edge.invalid", "nested.invalid"] {
+                XCTAssertFalse(String(describing: summary).contains(secret))
+            }
+        }
+    }
+
+    func testJSONUpstreamsRejectBooleanFloatingOutOfRangeAndNestedPorts() {
+        let json = #"""
+        {"proxies": [
+          {"name":"Valid", "type":"socks5", "server":"valid.invalid", "port":443},
+          {"name":"Valid string", "type":"socks5", "server":"string.invalid", "port":"8443"},
+          {"server":"bool.invalid", "port":true},
+          {"server":"false.invalid", "port":false},
+          {"server":"decimal.invalid", "port":443.0},
+          {"server":"fraction.invalid", "port":443.5},
+          {"server":"exponent.invalid", "port":4.43e2},
+          {"server":"zero.invalid", "port":0},
+          {"server":"negative.invalid", "port":-1},
+          {"server":"overflow.invalid", "port":65536},
+          {"server":"string-decimal.invalid", "port":"443.0"},
+          {"server":"null.invalid", "port":null},
+          {"server":"outer.invalid", "ws-opts":{"server":"nested.invalid", "port":443}},
+          {"server":"nested-port.invalid", "port":{"value":443}}
+        ], "proxy-groups":[{"name":"Group", "server":"group.invalid", "port":443}],
+           "proxy-providers":{"Remote":{"server":"provider.invalid", "port":443}},
+           "dns":{"nameserver":["https://resolver.invalid/query"]}}
+        """#
+        XCTAssertEqual(
+            ProfileUpstreamEndpointInspector.inspect(yaml: json),
+            [
+                ProfileUpstreamEndpoint(host: "valid.invalid", port: 443),
+                ProfileUpstreamEndpoint(host: "string.invalid", port: 8443),
+            ]
+        )
+        XCTAssertFalse(ProfileConfigurationInspector.inspect(yaml: json).allowsIPv6)
+    }
+
+    func testJSONDNSPolicyResolverListsAndEmptyOptionalFields() {
+        let json = #"""
+        {"dns":{"enable":true, "ipv6":true, "enhanced-mode":"redir-host",
+          "nameserver":[], "listen":null, "fallback-filter":{}, "edns-client-subnet":null,
+          "nameserver-policy":{"private.invalid":["tls://1.1.1.1", "https://resolver.invalid/query"], "local.invalid":"dhcp://en0"}},
+         "proxies":[], "rules":["MATCH,DIRECT"]}
+        """#
+        let summary = ProfileConfigurationInspector.inspect(yaml: json)
+        XCTAssertFalse(summary.allowsIPv6)
+        XCTAssertEqual(summary.dns, DNSConfigurationSummary(
+            isPresent: true,
+            isEnabled: true,
+            allowsIPv6: true,
+            mode: .redirHost,
+            nameserverPolicyCount: 2,
+            upstreamTransports: [.dnsOverTLS, .dnsOverHTTPS, .dhcp]
+        ))
+        XCTAssertFalse(summary.requiresCountryMMDB)
+        XCTAssertFalse(summary.requiresGeoSiteDatabase)
+    }
+
+    func testJSONRetainsCountsAndResourceRequirementsBeyondProjectionBounds() throws {
+        let total = 650
+        let document: [String: Any] = [
+            "proxies": (0..<total).map { ["name": "Node \($0)", "type": "socks5", "server": "edge\($0).invalid", "port": "443"] },
+            "proxy-groups": (0..<total).map { ["name": "Group \($0)", "type": "select", "proxies": $0 == 0 ? (0..<total).map { "Node \($0)" } : ["DIRECT"]] as [String: Any] },
+            "proxy-providers": Dictionary(uniqueKeysWithValues: (0..<total).map { ("p\($0)", ["type": "http"]) }),
+            "rule-providers": Dictionary(uniqueKeysWithValues: (0..<total).map { ("r\($0)", ["type": "file"]) }),
+            "rules": (0..<total).map { "DOMAIN,host\($0).invalid,DIRECT" }
+                + ["AND,((NETWORK,TCP),(GEOIP,CN)),DIRECT", "GEOSITE,private,DIRECT"],
+        ]
+        let json = try XCTUnwrap(String(
+            data: JSONSerialization.data(withJSONObject: document), encoding: .utf8
+        ))
+        let summary = ProfileConfigurationInspector.inspect(yaml: json)
+        XCTAssertEqual(summary.proxyCount, total)
+        XCTAssertEqual(summary.proxyGroupCount, total)
+        XCTAssertEqual(summary.proxyProviderCount, total)
+        XCTAssertEqual(summary.ruleProviderCount, total)
+        XCTAssertEqual(summary.ruleCount, total + 2)
+        let limit = ProfileConfigurationInspector.maximumDisplayedItemsPerSection
+        XCTAssertEqual(summary.proxies.count, limit)
+        XCTAssertEqual(summary.proxyGroups.count, limit)
+        XCTAssertEqual(summary.proxyProviders.count, limit)
+        XCTAssertEqual(summary.ruleProviders.count, limit)
+        XCTAssertEqual(summary.rules.count, limit)
+        XCTAssertEqual(summary.proxyGroups.first?.memberCount, total)
+        XCTAssertEqual(summary.proxyGroups.first?.members.count, limit)
+        XCTAssertEqual(ProfileUpstreamEndpointInspector.inspect(yaml: json).count, limit)
+        XCTAssertTrue(summary.requiresCountryMMDB)
+        XCTAssertTrue(summary.requiresGeoSiteDatabase)
+    }
+
     func testUpstreamEndpointInspectorReadsBlockAndFlowProxyEntriesOnly() {
         let yaml = """
         proxies:
