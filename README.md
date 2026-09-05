@@ -15,6 +15,11 @@ Network Extension providers are written in Swift 6 with SwiftUI, AppKit, and
 Apple's public APIs. It is a clean, native implementation of the user
 experience expected from ClashX.
 
+The first public edition is free and uses your own subscriptions or nodes.
+Routing data and the protocol core ship in the app: import a profile and
+connect without a separate rule-file download. See the
+[中文快速使用说明](Docs/QuickStart.zh-CN.md).
+
 The project deliberately does not copy code from the archived AGPL ClashX
 repository. Complex proxy protocols are implemented in a pinned, audited
 Apache-2.0 ClashRS fork that is statically linked into the extension. Rust is
