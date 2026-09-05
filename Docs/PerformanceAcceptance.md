@@ -27,6 +27,13 @@ remains pending calibration and blocks production promotion. The isolated
 1,024 MiB/s core floor above stays mandatory; copying it into an installed
 TUN/Transparent result does not supply end-to-end evidence.
 
+The long-stability runner must accumulate at least 24 hours of measured round
+runtime. Preparation, bookkeeping gaps and final source verification do not
+earn runtime credit. Consecutive Flow/Packet intervals must not overlap or have
+more than one second of recording gap; the existing total-duration cap still
+applies. A short successful smoke only validates the runner and is not release
+soak evidence.
+
 ## Measurement rules
 
 - Use a Release arm64 build for CPU, memory, throughput, and latency numbers.

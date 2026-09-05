@@ -65,10 +65,11 @@ Automated checks cover focusability, enabled state, selected state, stable
 loading labels, accessibility audit, and page landmarks. Manual review covers
 hover/pressed motion, visual hierarchy, truncation, and VoiceOver reading order.
 
-Current status: product/UI source revision `5fed9829…` has a reviewed 30-image
-matrix in `outputs/aetherroute-ui-review-v40-final`. Subsequent changes are
-limited to release-test configuration and documentation, but the matrix remains
-revision-bound and must be recaptured after the final source freeze. It covers all six primary pages,
+Historical evidence: product/UI source revision `5fed9829…` has a reviewed
+30-image matrix in `outputs/aetherroute-ui-review-v40-final`. Later product
+changes include the free edition, automatic bundled routing resources and
+sidebar readability fixes. That earlier matrix does not approve these changes;
+the matrix must be recaptured after the final source freeze. It covers all six primary pages,
 all seven Settings pages, privacy onboarding, both traffic engines, the
 minimum window with expanded text, English/Simplified Chinese, and light/dark
 appearance. Each screenshot, its corresponding application runtime log, and
