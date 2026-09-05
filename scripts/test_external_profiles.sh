@@ -40,8 +40,23 @@ index=1
 for profile in "$@"; do
   ruby -r yaml -e '
     source, destination = ARGV
+    syntax = Psych.parse_stream(File.read(source))
+    pending = [syntax]
+    until pending.empty?
+      node = pending.pop
+      pending.concat(node.children || [])
+      # Psych implicitly treats plain :value scalars as Ruby symbols, while
+      # Clash YAML treats them as strings (for example a :9095 listen address).
+      # Preserve that string through the safe loader without permitting Ruby
+      # classes or changing explicitly tagged values.
+      next unless node.is_a?(Psych::Nodes::Scalar) && node.tag.nil? &&
+        node.plain && node.value.start_with?(":")
+      node.plain = false
+      node.quoted = true
+      node.style = Psych::Nodes::Scalar::DOUBLE_QUOTED
+    end
     data = YAML.safe_load(
-      File.read(source),
+      syntax.yaml,
       permitted_classes: [],
       permitted_symbols: [],
       aliases: true
