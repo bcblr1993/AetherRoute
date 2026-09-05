@@ -270,6 +270,13 @@ private struct Parser {
         var members: [String] = []
     }
 
+    private struct PendingRule {
+        let indent: Int
+        var value: String
+        var quote: Character?
+        var emptyLines = 0
+    }
+
     private struct DNSBuilder {
         var isPresent = false
         var isEnabled = false
@@ -327,6 +334,7 @@ private struct Parser {
     private var dns = DNSBuilder()
     private var dnsFieldIndent: Int?
     private var dnsNestedField: String?
+    private var pendingRule: PendingRule?
 
     private var proxies: [ProxyConfigurationSummary] = []
     private var upstreamEndpoints: [ProfileUpstreamEndpoint] = []
@@ -355,7 +363,10 @@ private struct Parser {
             lines = []
         } else {
             jsonObject = nil
-            lines = yaml.components(separatedBy: .newlines)
+            // CRLF is one YAML line break, not an empty paragraph between
+            // content lines in a folded scalar.
+            lines = yaml.replacingOccurrences(of: "\r\n", with: "\n")
+                .components(separatedBy: .newlines)
         }
     }
 
@@ -375,12 +386,42 @@ private struct Parser {
             return
         }
         for rawLine in lines {
+            let indent = Self.leadingSpaceCount(in: rawLine)
+            if var pending = pendingRule {
+                // Release the stored value before appending, so a long
+                // wrapped scalar does not copy its entire prefix per line.
+                pendingRule = nil
+                if rawLine.trimmingCharacters(in: .whitespaces).isEmpty {
+                    pending.emptyLines += 1
+                    pendingRule = pending
+                    continue
+                }
+                if indent > pending.indent {
+                    let continuation = Self.removingComment(
+                        from: rawLine,
+                        quote: &pending.quote
+                    ).trimmingCharacters(in: .whitespaces)
+                    guard !continuation.isEmpty else {
+                        pendingRule = pending
+                        continue
+                    }
+                    // YAML flow scalars fold adjacent content lines to a
+                    // space; empty lines retain paragraph line feeds. Keep
+                    // quote state so a quoted continuation can contain '#'.
+                    pending.value += pending.emptyLines == 0
+                        ? " " : String(repeating: "\n", count: pending.emptyLines)
+                    pending.value += continuation
+                    pending.emptyLines = 0
+                    pendingRule = pending
+                    continue
+                }
+                appendRule(pending.value)
+            }
             let line = Self.removingComment(from: rawLine)
             guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 continue
             }
 
-            let indent = Self.leadingSpaceCount(in: line)
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             if indent == 0,
@@ -416,12 +457,13 @@ private struct Parser {
             case .proxyProviders, .ruleProviders:
                 parseProvider(line: trimmed, indent: indent)
             case .rules:
-                parseRule(line: trimmed)
+                parseRule(line: trimmed, indent: indent)
             case nil:
                 continue
             }
         }
 
+        finishPendingRule()
         finishPendingItem()
         finishPendingProvider()
     }
@@ -573,15 +615,17 @@ private struct Parser {
             return
         }
 
-        guard indent > rootIndent, let nestedField = dnsNestedField else {
-            return
-        }
-        if line.hasPrefix("-") {
+        guard let nestedField = dnsNestedField else { return }
+        // A YAML block sequence may align its '-' with the mapping key.
+        // Sibling keys above already replace the pending field, so these
+        // entries cannot leak into the preceding DNS list.
+        if indent >= rootIndent, line.hasPrefix("-") {
             let value = String(line.dropFirst())
                 .trimmingCharacters(in: .whitespaces)
             appendDNSListValue(value, field: nestedField)
             return
         }
+        guard indent > rootIndent else { return }
         guard let (_, value) = Self.keyValue(in: line) else { return }
         switch nestedField {
         case "nameserver-policy":
@@ -877,9 +921,20 @@ private struct Parser {
         )
     }
 
-    private mutating func parseRule(line: String) {
+    private mutating func parseRule(line: String, indent: Int) {
         guard line.hasPrefix("-") else { return }
-        appendRule(String(line.dropFirst()).trimmingCharacters(in: .whitespaces))
+        var quote: Character?
+        let value = Self.removingComment(
+            from: String(line.dropFirst()), quote: &quote
+        ).trimmingCharacters(in: .whitespaces)
+        guard !value.isEmpty else { return }
+        pendingRule = PendingRule(indent: indent, value: value, quote: quote)
+    }
+
+    private mutating func finishPendingRule() {
+        guard let pending = pendingRule else { return }
+        pendingRule = nil
+        appendRule(pending.value)
     }
 
     private mutating func appendRule(_ rawValue: String) {
@@ -1059,8 +1114,15 @@ private struct Parser {
     }
 
     private static func removingComment(from line: String) -> String {
-        let characters = Array(line)
         var quote: Character?
+        return removingComment(from: line, quote: &quote)
+    }
+
+    private static func removingComment(
+        from line: String,
+        quote: inout Character?
+    ) -> String {
+        let characters = Array(line)
         var escaped = false
         for index in characters.indices {
             let character = characters[index]

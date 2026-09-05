@@ -2,6 +2,147 @@ import AetherRouteKit
 import XCTest
 
 final class ProfileConfigurationSummaryTests: XCTestCase {
+    func testFoldedRuleLineEndingsDoNotCreateExtraParagraphs() {
+        let lines = [
+            "rules:",
+            "  - DOMAIN,example.invalid,Selected",
+            "    group",
+            "  - DOMAIN,second.invalid,First",
+            "",
+            "    second",
+        ]
+        for separator in ["\n", "\r\n", "\r"] {
+            let summary = ProfileConfigurationInspector.inspect(yaml: lines.joined(separator: separator))
+            XCTAssertEqual(summary.rules.map(\.target), ["Selected group", "First\nsecond"])
+        }
+    }
+
+    func testExportedIPv4AndIPv6FoldedYAMLMatchesJSON() throws {
+        for (ipv6, criterion) in [(false, "IP-CIDR,203.0.113.123/32"), (true, "IP-CIDR6,2001:db8::123/128")] {
+            let name = "Controlled test node with a long display name"
+            let rule = "AND,((DST-PORT,62116),(\(criterion))),\(name)"
+            let object: [String: Any] = [
+                "ipv6": ipv6,
+                "dns": ["enable": true, "nameserver": ["https://sentinel@resolver.invalid/dns-query"]],
+                "proxies": [["name": name, "type": "socks5", "server": "node.invalid", "port": 62117]],
+                "rules": [rule, "MATCH,DIRECT"],
+            ]
+            let json = try XCTUnwrap(String(data: JSONSerialization.data(withJSONObject: object), encoding: .utf8))
+            let yaml = """
+            ipv6: \(ipv6)
+            dns:
+              enable: true
+              nameserver:
+              - https://sentinel@resolver.invalid/dns-query
+            proxies:
+            - name: \(name)
+              type: socks5
+              server: node.invalid
+              port: 62117
+            rules:
+            - AND,((DST-PORT,62116),(\(criterion))),Controlled test node with a
+              long display name
+            - MATCH,DIRECT
+            """
+            let summary = ProfileConfigurationInspector.inspect(yaml: yaml)
+            XCTAssertEqual(summary, ProfileConfigurationInspector.inspect(yaml: json))
+            XCTAssertEqual(summary.rules.first?.target, name)
+            XCTAssertEqual(summary.dns.nameserverCount, 1)
+            XCTAssertEqual(summary.allowsIPv6, ipv6)
+            XCTAssertFalse(summary.requiresCountryMMDB)
+            XCTAssertFalse(summary.requiresGeoSiteDatabase)
+            XCTAssertEqual(ProfileUpstreamEndpointInspector.inspect(yaml: yaml), ProfileUpstreamEndpointInspector.inspect(yaml: json))
+            for hidden in ["sentinel", "resolver.invalid", "node.invalid"] {
+                XCTAssertFalse(String(describing: summary).contains(hidden))
+            }
+        }
+    }
+
+    func testIndentlessDNSListsStopAtSiblingFieldsAndSections() {
+        let summary = ProfileConfigurationInspector.inspect(yaml: """
+        dns:
+          nameserver:
+          - https://sentinel@resolver.invalid/dns-query
+          - tls://1.1.1.1
+          fallback:
+            - tcp://9.9.9.9
+          fake-ip-filter:
+          - '*.private.invalid'
+          default-nameserver:
+          - 8.8.8.8
+          proxy-server-nameserver:
+          - dhcp://en0
+          nameserver-policy:
+            private.invalid: udp://192.0.2.53
+          enable: false
+          ipv6: true
+        rules:
+        - MATCH,DIRECT
+        proxies:
+        - {name: Direct, type: direct}
+        """)
+        XCTAssertEqual(summary.dns.nameserverCount, 2)
+        XCTAssertEqual(summary.dns.fallbackCount, 1)
+        XCTAssertEqual(summary.dns.fakeIPFilterCount, 1)
+        XCTAssertEqual(summary.dns.defaultNameserverCount, 1)
+        XCTAssertEqual(summary.dns.proxyNameserverCount, 1)
+        XCTAssertEqual(summary.dns.nameserverPolicyCount, 1)
+        XCTAssertEqual(summary.dns.upstreamTransports, [.udp, .tcp, .dnsOverTLS, .dnsOverHTTPS, .dhcp])
+        XCTAssertFalse(summary.dns.isEnabled)
+        XCTAssertTrue(summary.dns.allowsIPv6)
+        XCTAssertEqual(summary.ruleCount, 1)
+        XCTAssertEqual(summary.proxyCount, 1)
+        for hidden in ["sentinel", "resolver.invalid", "private.invalid", "192.0.2.53"] {
+            XCTAssertFalse(String(describing: summary).contains(hidden))
+        }
+    }
+
+    func testFoldedQuotedRulesKeepCommentsInsideQuotesAndStopAtNextRule() {
+        let summary = ProfileConfigurationInspector.inspect(yaml: """
+        rules:
+          - 'DOMAIN,example.invalid,Selected
+            #1 group' # ordinary comment
+          - "DOMAIN,second.invalid,Another
+            #2 group"
+          - MATCH,DIRECT
+        dns:
+          enable: true
+          nameserver: [1.1.1.1]
+        """)
+        XCTAssertEqual(summary.rules.map(\.target), ["Selected #1 group", "Another #2 group", "DIRECT"])
+        XCTAssertEqual(summary.rules.map(\.kind), ["DOMAIN", "DOMAIN", "MATCH"])
+        XCTAssertEqual(summary.ruleCount, 3)
+        XCTAssertTrue(summary.dns.isEnabled)
+        XCTAssertEqual(summary.dns.nameserverCount, 1)
+    }
+
+    func testFoldedRulesPreserveParagraphsAndResourceDetectionBeyondDisplayLimit() {
+        let ordinary = (0..<600).map { "  - DOMAIN,host\($0).invalid,DIRECT" }.joined(separator: "\n")
+        let summary = ProfileConfigurationInspector.inspect(yaml: """
+        rules:
+          - DOMAIN,example.invalid,First
+
+            second
+          - DOMAIN,comment.invalid,Selected
+            group
+            # a comment must not become rule text
+        \(ordinary)
+          - AND,((NETWORK,TCP),
+            (GEOIP,CN)),DIRECT
+          - AND,((NETWORK,TCP),
+            (GEOSITE,private)),DIRECT
+        proxies:
+          - {name: Direct, type: direct}
+        """)
+        XCTAssertEqual(summary.rules[0].target, "First\nsecond")
+        XCTAssertEqual(summary.rules[1].target, "Selected group")
+        XCTAssertEqual(summary.ruleCount, 604)
+        XCTAssertEqual(summary.rules.count, 500)
+        XCTAssertTrue(summary.requiresCountryMMDB)
+        XCTAssertTrue(summary.requiresGeoSiteDatabase)
+        XCTAssertEqual(summary.proxyCount, 1)
+    }
+
     func testCompleteJSONMatchesBlockYAMLForSummaryAndActualUpstreams() throws {
         let json = #"""
         {
