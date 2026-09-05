@@ -14,6 +14,7 @@ python3 "$ROOT/scripts/repository_worktree_snapshot.py" "$ROOT" \
   >"$AUDIT_TEMP/before.json"
 "$ROOT/scripts/test_repository_worktree_snapshot.sh"
 "$ROOT/scripts/test_ui_design_token_guards.sh"
+"$ROOT/scripts/test_external_profile_sanitizer.sh"
 
 # Syntax-check every script with the interpreter it actually declares.
 # Checking a zsh script with `sh -n` reports its valid zsh constructs as

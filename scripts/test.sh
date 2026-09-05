@@ -12,6 +12,7 @@ trap cleanup EXIT HUP INT TERM
 "$ROOT/scripts/bootstrap.sh"
 "$ROOT/scripts/test_signing_overrides.sh"
 "$ROOT/scripts/test_temporary_cleanup_guards.sh"
+"$ROOT/scripts/test_external_profile_sanitizer.sh"
 "$ROOT/scripts/test_signed_network_extension_guards.sh"
 "$ROOT/scripts/test_app_termination_signal_guard.sh"
 "$ROOT/scripts/test_signed_local_candidate_pipeline.sh"
