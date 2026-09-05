@@ -4723,6 +4723,18 @@ final class TunnelManager: ObservableObject {
                 ),
                 kind.fileName
             )
+        case .writeFailed:
+            message = AppLocalization.string(
+                "Routing rules could not be saved. Check available disk space and try again."
+            )
+        case .temporaryCleanupFailed:
+            message = AppLocalization.string(
+                "Temporary routing rule files could not be cleaned up. Check available disk space and try again."
+            )
+        case .rollbackFailed:
+            message = AppLocalization.string(
+                "The routing rule update could not be restored. Recovery files were kept. Export diagnostics if retrying does not help."
+            )
         default:
             message = AppLocalization.string(
                 "Routing resources could not be prepared securely. Review them in Profiles before connecting."

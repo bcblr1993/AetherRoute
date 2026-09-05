@@ -284,28 +284,6 @@ public struct RoutingResourceStore: Sendable {
             fileManager: fileManager
         )
         try preparePrivateDirectory(resourceDirectory, fileManager: fileManager)
-        // Every writer, including user imports and bundled fallbacks, holds the
-        // same per-store file lock while checking and replacing the data/record
-        // pair. A delayed download can then compare against exactly the record
-        // it started with instead of overwriting a newer user choice.
-        let lock = try acquireCommitLock()
-        defer {
-            flock(lock, LOCK_UN)
-            Darwin.close(lock)
-        }
-        if let expectedRecord {
-            guard expectedRecord.kind == kind,
-                  let current = try? loadVerifiedRecord(for: kind, fileManager: fileManager),
-                  current == expectedRecord else {
-                throw RoutingResourceError.superseded(kind)
-            }
-        }
-        if preservingUsableResource,
-           let current = try? loadVerifiedRecord(for: kind, fileManager: fileManager),
-           let status = try? Self.status(for: current, now: .now),
-           status.isUsableForConnection {
-            throw RoutingResourceError.superseded(kind)
-        }
         let normalizedInstallDate = Date(
             timeIntervalSince1970: installedAt.timeIntervalSince1970
                 .rounded(.down)
@@ -330,24 +308,141 @@ public struct RoutingResourceStore: Sendable {
             throw RoutingResourceError.metadataEncodingFailed(kind)
         }
 
-        try writeProtected(
-            data,
-            to: resourceURL(for: kind),
-            fileManager: fileManager
+        // Finish both writes, file protection and validation without changing
+        // the live pair. Staging shares the resource filesystem so committing
+        // and restoring backups need no second copy of a large database.
+        let stagingDirectory = resourceDirectory.appendingPathComponent(
+            ".staging-\(UUID().uuidString)", isDirectory: true
         )
-        try writeProtected(
-            metadata,
-            to: metadataURL(for: kind),
-            fileManager: fileManager
-        )
-        let committed = try loadVerifiedRecord(
-            for: kind,
-            fileManager: fileManager
-        )
-        guard committed == record else {
-            throw RoutingResourceError.metadataMismatch(kind)
+        guard Darwin.mkdir(stagingDirectory.path, 0o700) == 0 else {
+            throw RoutingResourceError.writeFailed
         }
-        return record
+        let stagedData = stagingDirectory.appendingPathComponent(kind.fileName)
+        let stagedMetadata = stagingDirectory.appendingPathComponent(
+            metadataURL(for: kind).lastPathComponent
+        )
+        let committed: RoutingResourceRecord
+        do {
+            try preparePrivateDirectory(stagingDirectory, fileManager: fileManager)
+            try writeProtected(data, to: stagedData, fileManager: fileManager)
+            try writeProtected(metadata, to: stagedMetadata, fileManager: fileManager)
+            let prepared = try loadVerifiedResource(
+                for: kind, fileManager: fileManager, directory: stagingDirectory
+            )
+            guard prepared.record == record else {
+                throw RoutingResourceError.metadataMismatch(kind)
+            }
+            committed = try commitPreparedResource(
+                record, stagedData: stagedData, stagedMetadata: stagedMetadata,
+                stagingDirectory: stagingDirectory, fileManager: fileManager,
+                replacing: expectedRecord, preservingUsableResource: preservingUsableResource
+            )
+        } catch {
+            // A failed rollback must keep its remaining original files for
+            // recovery. Other failures leave the live pair untouched/restored.
+            if error as? RoutingResourceError == .rollbackFailed { throw error }
+            try removeStagingDirectory(stagingDirectory, fileManager: fileManager)
+            throw error
+        }
+        try removeStagingDirectory(stagingDirectory, fileManager: fileManager)
+        return committed
+    }
+
+    private func commitPreparedResource(
+        _ record: RoutingResourceRecord,
+        stagedData: URL,
+        stagedMetadata: URL,
+        stagingDirectory: URL,
+        fileManager: FileManager,
+        replacing expectedRecord: RoutingResourceRecord?,
+        preservingUsableResource: Bool
+    ) throws -> RoutingResourceRecord {
+        // Every reader/writer uses this lock. CAS runs after staging so a user
+        // import that completed during preparation always wins over old work.
+        let lock = try acquireCommitLock()
+        defer {
+            flock(lock, LOCK_UN)
+            Darwin.close(lock)
+        }
+        try Task.checkCancellation()
+        let kind = record.kind
+        let previous = try? loadVerifiedRecord(for: kind, fileManager: fileManager)
+        if let expectedRecord {
+            guard expectedRecord.kind == kind, previous == expectedRecord else {
+                throw RoutingResourceError.superseded(kind)
+            }
+        }
+        if preservingUsableResource, let previous,
+           let status = try? Self.status(for: previous, now: .now),
+           status.isUsableForConnection {
+            throw RoutingResourceError.superseded(kind)
+        }
+
+        let destinations = [resourceURL(for: kind), metadataURL(for: kind)]
+        let sources = [stagedData, stagedMetadata]
+        let backups = ["previous-data", "previous-metadata"].map {
+            stagingDirectory.appendingPathComponent($0)
+        }
+        var hadOriginal = [Bool]()
+        for (destination, backup) in zip(destinations, backups) {
+            let exists = try pathExists(destination)
+            hadOriginal.append(exists)
+            if exists {
+                try rejectSymlinkOrNonRegularFile(destination)
+                do {
+                    // Hard links retain the exact old bytes without allocating
+                    // another database. All links exist before any live unlink.
+                    try fileManager.linkItem(at: destination, to: backup)
+                } catch {
+                    throw RoutingResourceError.writeFailed
+                }
+            }
+        }
+
+        do {
+            for index in destinations.indices {
+                if hadOriginal[index] {
+                    try fileManager.removeItem(at: destinations[index])
+                }
+                // Both paths are on the same filesystem. The live path can be
+                // briefly absent here, but readers hold the shared store lock.
+                try fileManager.moveItem(at: sources[index], to: destinations[index])
+            }
+            let committed = try loadVerifiedRecord(for: kind, fileManager: fileManager)
+            guard committed == record else {
+                throw RoutingResourceError.metadataMismatch(kind)
+            }
+            return committed
+        } catch {
+            var restored = true
+            for index in destinations.indices {
+                if hadOriginal[index] {
+                    // rename replaces a partially installed new file without
+                    // requiring free space to copy the original database back.
+                    if Darwin.rename(backups[index].path, destinations[index].path) != 0 {
+                        restored = false
+                    }
+                } else if Darwin.unlink(destinations[index].path) != 0, errno != ENOENT {
+                    restored = false
+                }
+            }
+            if let previous,
+               (try? loadVerifiedRecord(for: kind, fileManager: fileManager)) != previous {
+                restored = false
+            }
+            guard restored else { throw RoutingResourceError.rollbackFailed }
+            throw (error as? RoutingResourceError) ?? RoutingResourceError.writeFailed
+        }
+    }
+
+    private func removeStagingDirectory(_ directory: URL, fileManager: FileManager) throws {
+        do {
+            try fileManager.removeItem(at: directory)
+        } catch {
+            // A completed commit or rollback remains valid. Surface cleanup
+            // failure rather than silently accumulating backup databases.
+            throw RoutingResourceError.temporaryCleanupFailed
+        }
     }
 
     private func withResourceReadLock<T>(
@@ -426,13 +521,16 @@ public struct RoutingResourceStore: Sendable {
         try loadVerifiedResource(for: kind, fileManager: fileManager).record
     }
 
-    // The caller owns the store lock for the complete record/data read.
+    // The caller owns the store lock, or supplies its own private staging
+    // directory that has not been published to any other reader/writer.
     private func loadVerifiedResource(
         for kind: RoutingResourceKind,
-        fileManager: FileManager
+        fileManager: FileManager,
+        directory: URL? = nil
     ) throws -> (record: RoutingResourceRecord, data: Data) {
-        let assetURL = resourceURL(for: kind)
-        let metadataURL = metadataURL(for: kind)
+        let assetURL = directory?.appendingPathComponent(kind.fileName) ?? resourceURL(for: kind)
+        let metadataURL = directory?.appendingPathComponent(metadataURL(for: kind).lastPathComponent)
+            ?? metadataURL(for: kind)
         guard fileManager.fileExists(atPath: assetURL.path),
               fileManager.fileExists(atPath: metadataURL.path) else {
             throw RoutingResourceError.missing(kind)
@@ -911,6 +1009,8 @@ public enum RoutingResourceError: LocalizedError, Equatable, Sendable {
     case metadataTooLarge(RoutingResourceKind)
     case metadataMismatch(RoutingResourceKind)
     case writeFailed
+    case rollbackFailed
+    case temporaryCleanupFailed
     case invalidRemoteURL
     case insecureRedirect
     case invalidHTTPResponse
@@ -946,6 +1046,10 @@ public enum RoutingResourceError: LocalizedError, Equatable, Sendable {
             "The saved metadata for \(kind.fileName) is invalid."
         case .writeFailed:
             "The routing database could not be saved securely."
+        case .rollbackFailed:
+            "The routing database update could not be rolled back. The remaining original files were kept for recovery."
+        case .temporaryCleanupFailed:
+            "Temporary routing-database update files could not be removed. Free disk space and try again."
         case .invalidRemoteURL, .insecureRedirect:
             "Routing databases must be downloaded through a valid HTTPS address."
         case .invalidHTTPResponse:

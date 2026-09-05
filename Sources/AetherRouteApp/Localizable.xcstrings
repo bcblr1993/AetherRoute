@@ -5388,6 +5388,17 @@
         }
       }
     },
+    "Routing rules could not be saved. Check available disk space and try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存分流规则，请检查磁盘剩余空间后重试。"
+          }
+        }
+      }
+    },
     "Routing rules need attention. Try preparing them again.": {
       "localizations": {
         "zh-Hans": {
@@ -6178,6 +6189,17 @@
         }
       }
     },
+    "Temporary routing rule files could not be cleaned up. Check available disk space and try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法清理分流规则的临时文件，请检查磁盘剩余空间后重试。"
+          }
+        }
+      }
+    },
     "Test all": {
       "localizations": {
         "zh-Hans": {
@@ -6824,6 +6846,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "路由模式正在切换，请稍后再试。"
+          }
+        }
+      }
+    },
+    "The routing rule update could not be restored. Recovery files were kept. Export diagnostics if retrying does not help.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分流规则更新无法恢复，已保留恢复文件。如果重试后仍有问题，请导出诊断信息。"
           }
         }
       }

@@ -276,9 +276,9 @@ private final class PausingRoutingResourceFileManager: FileManager, @unchecked S
         super.init()
     }
 
-    override func setAttributes(_ attributes: [FileAttributeKey: Any], ofItemAtPath path: String) throws {
-        try super.setAttributes(attributes, ofItemAtPath: path)
-        guard path == resourcePath else { return }
+    override func moveItem(at source: URL, to destination: URL) throws {
+        try super.moveItem(at: source, to: destination)
+        guard destination.path == resourcePath else { return }
         didReplaceData.signal()
         guard allowMetadataWrite.wait(timeout: .now() + 20) == .success else {
             throw CocoaError(.fileWriteUnknown)
