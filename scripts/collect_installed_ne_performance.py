@@ -264,6 +264,11 @@ class Collector:
         if phase == "baseline":
             url = urlsplit(self.args.peer_data_url)
             result += ["--resolve", f"{url.hostname}:{url.port or 443}:{self.args.baseline_address}"]
+        elif phase == "candidate" and getattr(self.args, "candidate_address", None):
+            # Resolve only this payload request. The logical test destination
+            # must still traverse the provider; TLS keeps the original hostname.
+            url = urlsplit(self.args.peer_data_url)
+            result += ["--resolve", f"{url.hostname}:{url.port or 443}:{self.args.candidate_address}"]
         return result
 
     def request(self, url, phase=None, data=None):
@@ -652,6 +657,7 @@ def main(argv=None):
     parser.add_argument("--peer-control-url")
     parser.add_argument("--peer-data-url")
     parser.add_argument("--baseline-address")
+    parser.add_argument("--candidate-address", help="Optional private/test IPv4 destination for the .test payload hostname; no system DNS change")
     parser.add_argument("--node-address")
     parser.add_argument("--node-port", type=int)
     parser.add_argument("--peer-token-file", type=Path)
@@ -673,6 +679,12 @@ def main(argv=None):
             address = ipaddress.ip_address(value)
             require(address.version == 4 and address.is_private and not address.is_loopback and not address.is_unspecified,
                     "controlled-lan-address-required")
+        if args.candidate_address:
+            address = ipaddress.ip_address(args.candidate_address)
+            require(address.version == 4 and address.is_private and not address.is_loopback
+                    and not address.is_unspecified and not address.is_multicast
+                    and args.candidate_address not in (args.baseline_address, args.node_address, "255.255.255.255"),
+                    "controlled-target-IP-required")
         control, data = urlsplit(args.peer_control_url), urlsplit(args.peer_data_url)
         require(all(url.scheme == "https" and not url.username and not url.password and url.path in ("", "/")
                     and not url.query and not url.fragment for url in (control, data)), "controlled-https-base-url-required")

@@ -30,6 +30,14 @@ confirms each disconnected or connected engine phase in the signed app; the
 collector independently checks that state and does not activate the app itself.
 Cancellation records an incomplete result and requires network restoration.
 
+If the `.test` payload hostname has no test DNS record, pass
+`--candidate-address` with a private or documentation IPv4 destination captured
+by the profile's rules. It must differ from the baseline and node addresses.
+This affects only candidate payload requests through curl's `--resolve`;
+the HTTPS hostname, certificate verification and provider-flow/relay-receipt
+checks remain required. Baseline and control requests retain their original
+destinations, and no system DNS or hosts file is changed.
+
 The validator requires every file named in `collectorSources` to exist and
 match its recorded SHA-256. A new helper must be added to that committed list;
 a missing or changed collector cannot satisfy the gate. Collection runs on the

@@ -182,6 +182,21 @@ class CollectorTests(unittest.TestCase):
                 self.assertEqual(collector.main(args), 78)
             self.assertIn("same-controlled-peer-topology-required", json.loads((output / "performance.json").read_bytes())["blockingReasons"])
 
+    def testExplicitTargetRejectsLoopbackPublicAndBypassAddressesBeforeCommands(self):
+        for address in ("127.0.0.1", "0.0.0.0", "1.1.1.1", "::1", "224.0.0.1", "255.255.255.255", "192.168.50.2"):
+            with self.subTest(address=address), tempfile.TemporaryDirectory(prefix="aether-ne-target-test-") as temp:
+                output = Path(temp) / "evidence"
+                args = ["/abs/candidate.dmg", "/abs/candidate.json", str(output), "--authorize-network",
+                        "--designated-test-host", collector.socket.gethostname(), "--peer-control-url", "https://192.168.50.2:8443",
+                        "--peer-data-url", "https://sample.test:8443", "--baseline-address", "192.168.50.2",
+                        "--node-address", "192.168.50.2", "--candidate-address", address, "--node-port", "4567",
+                        "--peer-token-file", "/abs/token", "--ca-certificate", "/abs/ca.pem"]
+                with patch.object(collector.platform, "system", return_value="Darwin"), patch.object(collector.platform, "machine", return_value="arm64"), \
+                        patch.object(collector.subprocess, "run", side_effect=AssertionError("unexpected command")):
+                    self.assertEqual(collector.main(args), 78)
+                self.assertEqual(json.loads((output / "performance.json").read_bytes())["blockingReasons"],
+                                 ["controlled-target-IP-required"])
+
     def testObserverWaitFailureStillClosesItsPipeAndReportsIncomplete(self):
         observed = self.observation()
         from unittest.mock import Mock
@@ -349,7 +364,8 @@ class HTTPSPeerIntegrationTests(unittest.TestCase):
                 lan, relay = servers
                 args = SimpleNamespace(peer_token_file=token, ca_certificate=certificate,
                                        peer_control_url=f"https://127.0.0.1:{lan.server_port}",
-                                       peer_data_url=f"https://sample.test:{lan.server_port}", baseline_address="127.0.0.1")
+                                       peer_data_url=f"https://sample.test:{lan.server_port}", baseline_address="127.0.0.1",
+                                       candidate_address="127.0.0.2")
                 client = collector.Collector(args, directory)
                 client.verify_peer()
                 client.peer_mode("baseline")
@@ -388,8 +404,13 @@ class HTTPSPeerIntegrationTests(unittest.TestCase):
                 with self.assertRaises(collector.Incomplete):
                     client.request(args.peer_data_url + "/v1/latency?id=" + request_id, "baseline")
                 args.peer_data_url = f"https://sample.test:{relay.server_port}"
-                body, _ = client.request(args.peer_data_url + "/v1/latency?id=" + request_id, "baseline")
+                args.candidate_address = "127.0.0.1"  # Local protocol fixture, not an accepted CLI NE target.
+                body, _ = client.request(args.peer_data_url + "/v1/latency?id=" + request_id, "candidate")
                 self.assertEqual(body["accessPath"], "relay")
+                args.peer_data_url = f"https://wrong-hostname.test:{relay.server_port}"
+                with self.assertRaises(collector.Incomplete):
+                    client.request(args.peer_data_url + "/v1/latency?id=" + request_id, "candidate")
+                args.peer_data_url = f"https://sample.test:{relay.server_port}"
                 client.header.write_text("Authorization: Bearer wrong\n")
                 with self.assertRaises(collector.Incomplete):
                     client.request(args.peer_control_url + "/v1/info")
