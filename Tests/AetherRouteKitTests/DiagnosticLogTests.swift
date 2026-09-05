@@ -69,6 +69,50 @@ final class DiagnosticLogTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(count, 1)
     }
 
+    func testLifecycleWithDebugOffDoesNotCreateALocalLog() throws {
+        let logs = directory.appendingPathComponent("off", isDirectory: true)
+        let sink = RotatingLogSink(configuration: .init(directoryURL: logs, baseName: "lifecycle"))
+        let log = DiagnosticLog(category: "test", sink: sink, levelProvider: { .off })
+
+        log.lifecycle("stage=startProxy requested")
+        log.lifecycle("stage=startProxy success")
+        log.lifecycle("stage=stopProxy requested")
+        log.lifecycle("stage=stopProxy success")
+        let flushed = expectation(description: "lifecycle flushed")
+        sink.flush { flushed.fulfill() }
+        wait(for: [flushed], timeout: 5)
+
+        XCTAssertEqual(sink.statistics().written, 0)
+        XCTAssertEqual(sink.statistics().dropped, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: logs.path))
+    }
+
+    func testStandardLifecycleWritesOnlyFixedMilestonesToLocalLog() throws {
+        let sink = RotatingLogSink(configuration: .init(directoryURL: directory, baseName: "lifecycle"))
+        let log = DiagnosticLog(
+            category: "test", sink: sink, levelProvider: { .standard },
+            timestamp: { Date(timeIntervalSince1970: 0) }
+        )
+
+        log.lifecycle("stage=startProxy requested")
+        log.lifecycle("stage=startProxy success")
+        log.verbose("per-flow detail must remain suppressed")
+        log.lifecycle("stage=stopProxy requested")
+        log.lifecycle("stage=stopProxy success")
+        let flushed = expectation(description: "lifecycle flushed")
+        sink.flush { flushed.fulfill() }
+        wait(for: [flushed], timeout: 5)
+
+        let text = try String(contentsOf: sink.currentFileURL, encoding: .utf8)
+        XCTAssertEqual(text.split(separator: "\n").map(String.init), [
+            "1970-01-01T00:00:00.000Z L [test] stage=startProxy requested",
+            "1970-01-01T00:00:00.000Z L [test] stage=startProxy success",
+            "1970-01-01T00:00:00.000Z L [test] stage=stopProxy requested",
+            "1970-01-01T00:00:00.000Z L [test] stage=stopProxy success",
+        ])
+        XCTAssertEqual(sink.statistics().written, 4)
+    }
+
     // MARK: - Rotation and bounds
 
     func testRotationKeepsDiskUseBounded() throws {

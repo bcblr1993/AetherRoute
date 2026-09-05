@@ -93,7 +93,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         options: [String: Any]? = nil,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        Self.runtimeLog.aggregate("stage=startProxy requested")
+        Self.runtimeLog.lifecycle("stage=startProxy requested")
         let completion = ProxyStartCompletion(completionHandler)
         let snapshot: ProviderLaunchSnapshot
         let bypassPlan: BypassNetworkSettingsPlan
@@ -223,8 +223,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     )
                 } else {
                     DiagnosticFlowOpenObserver.shared.attach(Self.aggregator)
-                Self.aggregator.start()
-                    Self.runtimeLog.aggregate("stage=startProxy success")
+                    Self.aggregator.start()
+                    Self.runtimeLog.lifecycle("stage=startProxy success")
                 }
                 completion.call(error)
             }
@@ -235,9 +235,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         with reason: NEProviderStopReason,
         completionHandler: @escaping () -> Void
     ) {
-        Self.runtimeLog.aggregate(
-            "stage=stopProxy requested reason=\(reason.rawValue)"
-        )
+        Self.runtimeLog.lifecycle("stage=stopProxy requested")
         let completion = ProxyStopCompletion(completionHandler)
         runtimeController.stop {
             // NETransparentProxyProvider accepts only
@@ -247,7 +245,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             // failure. The system owns removal after this completion returns.
             DiagnosticFlowOpenObserver.shared.detach()
             Self.aggregator.stop()
-            Self.runtimeLog.aggregate("stage=stopProxy success")
+            Self.runtimeLog.lifecycle("stage=stopProxy success")
             completion.call()
         }
     }

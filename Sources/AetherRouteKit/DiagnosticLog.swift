@@ -4,12 +4,15 @@ import OSLog
 
 /// Gated diagnostic logging for the connection hot path.
 ///
-/// Every call site takes an `@autoclosure` message. When the active level does
-/// not admit that record the closure is never evaluated, so the interpolation,
+/// Hot-path call sites take an `@autoclosure` message. When the active level
+/// does not admit that record the closure is never evaluated, so interpolation,
 /// the `os_log` store write, and the file append all disappear. This is the
 /// difference between a diagnostic switch and a permanent tax: an ungated
 /// `logger.notice("… \(value)")` still formats its argument even when nobody
 /// will ever read it.
+///
+/// Fixed lifecycle milestones and failures remain visible in `os_log` even
+/// when debug mode is off. They occur only at connection boundaries.
 ///
 /// The level is shared through the App Group so the host app and both Network
 /// Extensions agree without an IPC round trip. Each process re-reads it when
@@ -46,11 +49,22 @@ public final class DiagnosticLog: @unchecked Sendable {
         emit(message(), marker: "V")
     }
 
-    /// Aggregate counters and lifecycle milestones. Cheap at any traffic
-    /// volume because it does not scale with flow count.
+    /// Aggregate counters and optional diagnostic milestones. Cheap at any
+    /// traffic volume because it does not scale with flow count.
     public func aggregate(_ message: @autoclosure () -> String) {
         guard levelProvider().recordsAggregates else { return }
         emit(message(), marker: "A")
+    }
+
+    /// Fixed connection boundaries are always observable, even when debug
+    /// logging is off or the provider runs in a different App Group context.
+    /// StaticString excludes runtime interpolation of profiles, addresses or
+    /// credentials. Call only at start/stop boundaries, never for each flow.
+    public func lifecycle(_ milestone: StaticString) {
+        let text = String(describing: milestone)
+        logger.notice("\(text, privacy: .public)")
+        guard levelProvider().recordsAggregates else { return }
+        sink?.append(line(text, marker: "L"))
     }
 
     /// Always recorded to `os_log`; additionally written to the rotating file

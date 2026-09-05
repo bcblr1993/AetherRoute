@@ -8,8 +8,9 @@ import Foundation
 /// per second under ordinary browsing, which is acceptable for a bounded
 /// investigation and unacceptable as a permanent default.
 public enum DiagnosticLogLevel: Int, Codable, Sendable, CaseIterable {
-    /// Debug mode off. Only pre-existing `os_log` error records survive, and
-    /// no gated call site evaluates its message at all.
+    /// Debug mode off. Errors and fixed connection lifecycle records remain
+    /// visible in `os_log`; no gated hot-path call evaluates its message and
+    /// nothing is written to the local diagnostic file.
     case off = 0
     /// Debug mode on. Errors plus periodic aggregate counters. Cheap enough to
     /// leave enabled indefinitely: cost is independent of traffic volume.
