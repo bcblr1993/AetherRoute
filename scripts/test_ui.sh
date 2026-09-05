@@ -395,5 +395,12 @@ if [ "$test_status" -ne 0 ]; then
     --path "$RESULT_BUNDLE" 2>/dev/null || true
   exit 1
 fi
+# xcodebuild can exit successfully when an only-testing selector matches no
+# tests. Require an actual passing XCTest case before reporting UI success.
+if ! grep -Eq "Test Case .* passed \([0-9]" "$TEST_ROOT/xcodebuild.log"; then
+  echo "UI test selection produced no passing test cases; refusing an empty or skipped-only run." >&2
+  tail -40 "$TEST_ROOT/xcodebuild.log" >&2
+  exit 1
+fi
 tail -16 "$TEST_ROOT/xcodebuild.log"
 printf 'UI tests passed; compact temporary products are retained for a bounded quiet period, then deleted automatically.\n'
