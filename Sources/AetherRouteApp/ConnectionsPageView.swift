@@ -224,11 +224,12 @@ private struct SessionBar: View {
             }
 
             if !tunnel.isConnected {
-                Button("Connect") {
-                    Task { await tunnel.setEnabled(true) }
+                Button(tunnel.primaryActionTitle) {
+                    Task { await tunnel.setEnabled(!tunnel.isEnabled) }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(tunnel.isTransitioning)
+                .disabled(!tunnel.canPerformPrimaryAction)
+                .accessibilityIdentifier("connections-primary-action")
             }
         }
         .padding(.horizontal, AetherVisual.pageHorizontalPadding)

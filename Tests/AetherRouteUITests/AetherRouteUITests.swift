@@ -376,6 +376,13 @@ final class AetherRouteUITests: XCTestCase {
             XCTAssertTrue(button.exists)
             XCTAssertEqual(button.label, item.title)
             XCTAssertEqual(button.isEnabled, item.enabled)
+            if item.state != "connected" {
+                app.buttons["Connections"].click()
+                let connectionsButton = app.buttons["connections-primary-action"]
+                XCTAssertTrue(connectionsButton.waitForExistence(timeout: 2))
+                XCTAssertEqual(connectionsButton.label, item.title)
+                XCTAssertEqual(connectionsButton.isEnabled, item.enabled)
+            }
             app.terminate()
         }
     }
@@ -498,7 +505,13 @@ final class AetherRouteUITests: XCTestCase {
 
         app.buttons["Profiles"].click()
         XCTAssertTrue(app.staticTexts["No active profile"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["add-subscription"].isHittable)
         XCTAssertTrue(app.buttons["Import Profile…"].isHittable)
+        app.buttons["Connections"].click()
+        let connectionsButton = app.buttons["connections-primary-action"]
+        XCTAssertTrue(connectionsButton.waitForExistence(timeout: 2))
+        XCTAssertEqual(connectionsButton.label, "Connect")
+        XCTAssertFalse(connectionsButton.isEnabled)
         app.buttons["Proxies"].click()
         XCTAssertTrue(
             app.staticTexts["No proxies yet"].waitForExistence(timeout: 2)
@@ -619,11 +632,7 @@ final class AetherRouteUITests: XCTestCase {
         app.buttons["Profiles"].click()
         XCTAssertTrue(app.staticTexts["profiles.example"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.buttons["Check for Updates"].isHittable)
-        let moreMenu = app.descendants(matching: .any)["profiles-more-menu"]
-        XCTAssertTrue(moreMenu.isHittable)
-        moreMenu.click()
-        XCTAssertTrue(app.menuItems["Add Subscription…"].isHittable)
-        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(app.buttons["add-subscription"].isHittable)
     }
 
     func testProfileLibraryActionsCompleteThroughAsyncUIPaths() {
@@ -702,7 +711,10 @@ final class AetherRouteUITests: XCTestCase {
 
         XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
         app.buttons["Profiles"].click()
-        let addNode = app.buttons["Add Node…"]
+        let moreMenu = app.descendants(matching: .any)["profiles-more-menu"]
+        XCTAssertTrue(moreMenu.waitForExistence(timeout: 2))
+        moreMenu.click()
+        let addNode = app.menuItems["Add Node…"]
         XCTAssertTrue(addNode.waitForExistence(timeout: 2))
         XCTAssertTrue(addNode.isHittable)
         addNode.click()
@@ -742,7 +754,8 @@ final class AetherRouteUITests: XCTestCase {
 
         XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
         app.buttons["Profiles"].click()
-        app.buttons["Add Node…"].click()
+        app.descendants(matching: .any)["profiles-more-menu"].click()
+        app.menuItems["Add Node…"].click()
 
         let name = app.textFields["manual-node-name"]
         let server = app.textFields["manual-node-server"]
@@ -827,10 +840,10 @@ final class AetherRouteUITests: XCTestCase {
 
         XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
         app.buttons["Profiles"].click()
-        let moreMenu = app.descendants(matching: .any)["profiles-more-menu"]
-        XCTAssertTrue(moreMenu.waitForExistence(timeout: 2))
-        moreMenu.click()
-        app.menuItems["Add Subscription…"].click()
+        let addSubscription = app.buttons["add-subscription"]
+        XCTAssertTrue(addSubscription.waitForExistence(timeout: 2))
+        XCTAssertTrue(addSubscription.isHittable)
+        addSubscription.click()
 
         XCTAssertTrue(app.textFields["subscription-url-field"].waitForExistence(timeout: 2))
         XCTAssertTrue(

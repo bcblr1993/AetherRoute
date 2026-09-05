@@ -46,30 +46,6 @@ struct SupportDiagnosticsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                diagnosticSection(
-                    title: "Included",
-                    symbol: "checkmark.circle.fill",
-                    tint: .green,
-                    items: [
-                        "App, build, macOS, and Apple silicon version",
-                        "Connection, engine, and routing state",
-                        "Profile item counts and aggregate traffic totals",
-                        "Fixed aggregate provider error counters when available",
-                        "Up to 128 fixed lifecycle event codes",
-                    ]
-                )
-
-                diagnosticSection(
-                    title: "Always omitted",
-                    symbol: "minus.circle",
-                    tint: .secondary,
-                    items: [
-                        "Profile names, YAML, subscription URLs, and credentials",
-                        "Source and destination addresses",
-                        "Rule payloads, proxy chains, and account identifiers",
-                    ]
-                )
-
                 HStack {
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
                         Text("JSON · AR1")
@@ -95,8 +71,6 @@ struct SupportDiagnosticsView: View {
                 .padding(AetherVisual.s4)
                 .aetherPanel()
 
-                debugLoggingSection
-
                 if let statusMessage {
                     Label(
                         statusMessage,
@@ -108,6 +82,32 @@ struct SupportDiagnosticsView: View {
                     .foregroundStyle(statusIsError ? .red : .green)
                     .accessibilityIdentifier("diagnostics-status")
                 }
+
+                debugLoggingSection
+
+                diagnosticSection(
+                    title: "Included",
+                    symbol: "checkmark.circle.fill",
+                    tint: .green,
+                    items: [
+                        "App, build, macOS, and Apple silicon version",
+                        "Connection, engine, and routing state",
+                        "Profile item counts and aggregate traffic totals",
+                        "Fixed aggregate provider error counters when available",
+                        "Up to 128 fixed lifecycle event codes",
+                    ]
+                )
+
+                diagnosticSection(
+                    title: "Always omitted",
+                    symbol: "minus.circle",
+                    tint: .secondary,
+                    items: [
+                        "Profile names, YAML, subscription URLs, and credentials",
+                        "Source and destination addresses",
+                        "Rule payloads, proxy chains, and account identifiers",
+                    ]
+                )
             }
             .padding(.horizontal, AetherVisual.pageHorizontalPadding)
             .padding(.top, AetherVisual.pageTopPadding)

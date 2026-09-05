@@ -1411,25 +1411,28 @@ private struct ProfilesView: View {
                     Divider()
 
                     HStack(spacing: AetherVisual.s2) {
-                        Button("Add Node…", systemImage: "plus") {
+                        Button("Add Subscription…", systemImage: "link.badge.plus") {
                             tunnel.clearProfileMessage()
-                            isManualNodeEditorPresented = true
+                            subscriptionURL = ""
+                            isSubscriptionEditorPresented = true
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(!tunnel.canModifyProfiles)
+                        .accessibilityIdentifier("add-subscription")
 
                         Button("Import Profile…", systemImage: "square.and.arrow.down") {
                             tunnel.clearProfileMessage()
                             presentFileImporter(.profile)
                         }
+                        .buttonStyle(.bordered)
                         .disabled(!tunnel.canModifyProfiles)
 
                         Menu("More", systemImage: "ellipsis.circle") {
-                            Button("Add Subscription…", systemImage: "link.badge.plus") {
+                            Button("Add Node…", systemImage: "plus") {
                                 tunnel.clearProfileMessage()
-                                subscriptionURL = ""
-                                isSubscriptionEditorPresented = true
+                                isManualNodeEditorPresented = true
                             }
+                            Divider()
                             Button("Export Portable Archive…", systemImage: "square.and.arrow.up") {
                                 tunnel.clearProfileMessage()
                                 isExportPasswordPresented = true
