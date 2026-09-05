@@ -96,19 +96,15 @@ final class RoutingResourceStoreTests: XCTestCase {
             ),
             .stale(record)
         )
-        XCTAssertThrowsError(
+        XCTAssertNoThrow(
             try store.prepareRuntimeResources(
                 for: "rules:\n  - GEOIP,CN,DIRECT",
                 now: installedAt.addingTimeInterval(
                     RoutingResourceStore.maximumResourceAge + 1
                 )
             )
-        ) {
-            XCTAssertEqual(
-                $0 as? RoutingResourceError,
-                .stale(.countryMMDB, installedAt: record.installedAt)
-            )
-        }
+        )
+        XCTAssertTrue(RoutingResourceStatus.stale(record).isUsableForConnection)
     }
 
     func testMissingCorruptAndFutureDatedResourcesFailClosed() throws {

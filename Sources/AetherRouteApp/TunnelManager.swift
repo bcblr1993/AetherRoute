@@ -308,6 +308,10 @@ final class TunnelManager: ObservableObject {
     private var automaticRouteFailureCounts: [String: Int] = [:]
     private var profileImportTask: Task<Void, Never>?
     private var routingResourceStatusTask: Task<Void, Never>?
+    private var routingResourceRefreshTask: Task<Void, Never>?
+    private var lastAutomaticResourceRefreshAttempt: Date?
+    private let bundledResourceDirectoryURL = Bundle.main.resourceURL?
+        .appendingPathComponent("RoutingResources", isDirectory: true)
     private var connectionWatchdogTask: Task<Void, Never>?
     private var disconnectionWatchdogTask: Task<Void, Never>?
     private var connectionReadinessTask: Task<Void, Never>?
@@ -718,6 +722,7 @@ final class TunnelManager: ObservableObject {
         }
         let requestedMode = routingMode
         var launchSnapshot: ProviderLaunchSnapshot?
+        var launchPayload: Data?
 
         do {
             if enabled, activeProfile == nil {
@@ -725,14 +730,22 @@ final class TunnelManager: ObservableObject {
             }
             if enabled, let activeProfile {
                 Self.runtimeLogger.info("stage=prepareRuntimeResources begin")
+                isUpdatingRoutingResources = true
+                defer { isUpdatingRoutingResources = false }
                 let profileYAML = activeProfile.yaml
                 let storeFactory = routingResourceStoreFactory
                 let downloadClient = routingResourceDownloadClient
+                let bundleDirectory = bundledResourceDirectoryURL
+                let requestedBypassPolicy = bypassPolicy
+                let requestedDNSPolicy = dnsRuntimePolicy
                 let launchInput = try await Task.detached(
                     priority: .userInitiated
                 ) {
                     let store = try storeFactory()
-                    let installedResources = try await downloadClient
+                    let bundled = try BundledRoutingResources(
+                        directoryURL: bundleDirectory
+                    ).installMissingResources(for: profileYAML, in: store)
+                    let downloaded = try await downloadClient
                         .ensureRequiredResources(
                             for: profileYAML,
                             in: store
@@ -748,12 +761,18 @@ final class TunnelManager: ObservableObject {
                                 yaml: profileYAML
                             )
                         )
+                    let snapshot = try ProviderLaunchSnapshot(
+                        profileYAML: profileYAML,
+                        routingMode: requestedMode,
+                        bypassPolicy: requestedBypassPolicy,
+                        dnsPolicy: requestedDNSPolicy,
+                        proxySelections: initialSelections,
+                        routingResources: try store.launchResourceSnapshot(for: profileYAML)
+                    )
                     return (
-                        initialSelections,
-                        try store.launchResourceSnapshot(
-                            for: profileYAML
-                        ),
-                        installedResources
+                        snapshot,
+                        try ProviderLaunchSnapshotCodec.encodedPayload(for: snapshot),
+                        bundled.union(downloaded)
                     )
                 }.value
                 guard let requestID,
@@ -765,19 +784,13 @@ final class TunnelManager: ObservableObject {
                 }
                 if !launchInput.2.isEmpty {
                     routingResourceMessage = AppLocalization.string(
-                        "Routing resources were downloaded and verified."
+                        "Routing rules are ready."
                     )
                     routingResourceMessageIsError = false
                     refreshRoutingResourceStatuses()
                 }
-                launchSnapshot = try ProviderLaunchSnapshot(
-                    profileYAML: profileYAML,
-                    routingMode: requestedMode,
-                    bypassPolicy: bypassPolicy,
-                    dnsPolicy: dnsRuntimePolicy,
-                    proxySelections: launchInput.0,
-                    routingResources: launchInput.1
-                )
+                launchSnapshot = launchInput.0
+                launchPayload = launchInput.1
                 Self.runtimeLogger.info("stage=prepareRuntimeResources success")
             }
             Self.runtimeLogger.info("stage=requireManager begin")
@@ -809,14 +822,14 @@ final class TunnelManager: ObservableObject {
                 Self.runtimeLogger.info("stage=persistProviderConfiguration success")
                 beginConnectionWatchdog()
                 Self.runtimeLogger.info("stage=startVPNTunnel begin")
-                guard let launchSnapshot,
+                guard let launchSnapshot, let launchPayload,
                       let session = manager.connection
                         as? NETunnelProviderSession else {
                     throw TunnelManagerError.providerSessionUnavailable
                 }
-                let options = try ProviderLaunchSnapshotCodec.startOptions(
-                    for: launchSnapshot
-                )
+                let options: [String: NSObject] = [
+                    ProviderLaunchSnapshotCodec.startOptionsKey: launchPayload as NSData
+                ]
                 Self.runtimeLogger.info(
                     "stage=startVPNTunnel launchSnapshotReady mode=\(launchSnapshot.routingMode.rawValue, privacy: .public) selections=\(launchSnapshot.proxySelections.count, privacy: .public) resources=\(launchSnapshot.routingResources.count, privacy: .public)"
                 )
@@ -906,6 +919,68 @@ final class TunnelManager: ObservableObject {
                         ($0, .invalid(.writeFailed))
                     }
                 )
+            }
+        }
+    }
+
+    /// The primary retry follows the same offline-first path as Connect.
+    /// Explicit remote refresh and manual file import remain advanced actions.
+    func prepareRequiredRoutingResources() async {
+        guard ensurePrivacyConsent(), canModifyProfiles,
+              !isUpdatingRoutingResources, !isUIReviewMode,
+              let profileYAML = activeProfile?.yaml else { return }
+        isUpdatingRoutingResources = true
+        routingResourceMessage = nil
+        routingResourceMessageIsError = false
+        defer { isUpdatingRoutingResources = false }
+        let storeFactory = routingResourceStoreFactory
+        let downloadClient = routingResourceDownloadClient
+        let bundleDirectory = bundledResourceDirectoryURL
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                let store = try storeFactory()
+                try BundledRoutingResources(directoryURL: bundleDirectory)
+                    .installMissingResources(for: profileYAML, in: store)
+                try await downloadClient.ensureRequiredResources(for: profileYAML, in: store)
+            }.value
+            routingResourceMessage = AppLocalization.string("Routing rules are ready.")
+        } catch {
+            routingResourceMessage = localizedRoutingResourceOperationError(error)
+            routingResourceMessageIsError = true
+        }
+        refreshRoutingResourceStatuses()
+    }
+
+    private func refreshOlderRoutingResourcesAfterConnection() {
+        guard !isUIReviewMode, hasAcceptedPrivacyDisclosure,
+              routingResourceRefreshTask == nil,
+              lastAutomaticResourceRefreshAttempt.map({ Date.now.timeIntervalSince($0) >= 86_400 }) ?? true,
+              let profileYAML = activeProfile?.yaml else { return }
+        lastAutomaticResourceRefreshAttempt = .now
+        let storeFactory = routingResourceStoreFactory
+        let downloadClient = routingResourceDownloadClient
+        routingResourceRefreshTask = Task { [weak self] in
+            defer { self?.routingResourceRefreshTask = nil }
+            do {
+                try await Task.detached(priority: .utility) {
+                    let store = try storeFactory()
+                    let required = ProfileConfigurationInspector.inspect(yaml: profileYAML)
+                        .requiredRoutingResources
+                    for kind in required {
+                        guard case let .stale(record) = store.status(for: kind),
+                              record.origin != .userProvided else { continue }
+                        try Task.checkCancellation()
+                        try await downloadClient.downloadAndInstall(
+                            .maintainedDefault(for: kind), into: store,
+                            replacing: record
+                        )
+                    }
+                }.value
+                self?.refreshRoutingResourceStatuses()
+            } catch {
+                // An update failure never tears down a working connection or
+                // removes the checksum-verified offline baseline.
+                Self.runtimeLogger.info("stage=routingResourceRefresh deferred")
             }
         }
     }
@@ -1271,6 +1346,7 @@ final class TunnelManager: ObservableObject {
         isUpdatingRoutingMode = true
         routingModeMessage = nil
         defer { isUpdatingRoutingMode = false }
+        let connectionID = providerConnectionID
         let previousMode = sessionRoutingMode ?? routingMode
         let client: ProxySelectionProviderClient? = isUIReviewMode
             ? nil
@@ -1278,7 +1354,7 @@ final class TunnelManager: ObservableObject {
                 guard let self else {
                     throw TunnelManagerError.providerSessionUnavailable
                 }
-                return try await self.sendProviderMessage(data)
+                return try await self.sendProviderMessage(data, for: connectionID)
             }
         do {
             let applied: RoutingMode
@@ -1290,9 +1366,8 @@ final class TunnelManager: ObservableObject {
                 }
                 applied = try await client.setRoutingMode(mode)
             }
-            guard state == .connected else {
-                throw TunnelManagerError.providerSessionUnavailable
-            }
+            guard state == .connected, providerConnectionID == connectionID
+            else { return }
             routingMode = applied
             sessionRoutingMode = applied
             routingModeMessage = AppLocalization.string(
@@ -1303,12 +1378,16 @@ final class TunnelManager: ObservableObject {
                 "stage=routingMode hotSwitch success mode=\(applied.rawValue, privacy: .public)"
             )
         } catch {
+            guard state == .connected, providerConnectionID == connectionID
+            else { return }
             let switchError = error
             if let client, state == .connected {
                 do {
                     let restored = try await client.setRoutingMode(
                         previousMode
                     )
+                    guard state == .connected, providerConnectionID == connectionID
+                    else { return }
                     guard restored == previousMode else {
                         throw TunnelManagerError.providerSelectorUnavailable
                     }
@@ -1561,11 +1640,16 @@ final class TunnelManager: ObservableObject {
             return
         }
         proxySelectionRequests.insert(groupName)
+        let connectionID = providerConnectionID
         Self.runtimeLogger.debug(
             "stage=proxySelection request operation=\(requestedMember == nil ? "snapshot" : "select", privacy: .public)"
         )
         proxySelectionMessages[groupName] = nil
-        defer { proxySelectionRequests.remove(groupName) }
+        defer {
+            if providerConnectionID == connectionID {
+                proxySelectionRequests.remove(groupName)
+            }
+        }
 
         do {
             let snapshot: ProxySelectionState
@@ -1579,7 +1663,7 @@ final class TunnelManager: ObservableObject {
                     guard let self else {
                         throw TunnelManagerError.providerSessionUnavailable
                     }
-                    return try await self.sendProviderMessage(data)
+                    return try await self.sendProviderMessage(data, for: connectionID)
                 }
                 if let requestedMember {
                     let previous = try await client.snapshot(group: groupName)
@@ -1633,6 +1717,8 @@ final class TunnelManager: ObservableObject {
                 }
             }
 
+            guard state == .connected, providerConnectionID == connectionID
+            else { return }
             proxySelections[groupName] = snapshot
             if let selectedMember = snapshot.selectedMember,
                let summary = activeProfileSummary {
@@ -1680,6 +1766,8 @@ final class TunnelManager: ObservableObject {
                 )
             }
         } catch {
+            guard state == .connected, providerConnectionID == connectionID
+            else { return }
             Self.runtimeLogger.error(
                 "stage=proxySelection failed error=\(String(reflecting: error), privacy: .public)"
             )
@@ -1696,7 +1784,8 @@ final class TunnelManager: ObservableObject {
         case .privacyConsentRequired, .loading, .connecting, .connected,
              .disconnecting: false
         }
-        guard mayEdit, let profileYAML = activeProfile?.yaml else { return }
+        guard mayEdit, canModifyProfiles,
+              let profileYAML = activeProfile?.yaml else { return }
         proxySelectionRequests.insert(group.name)
         proxySelectionMessages[group.name] = nil
         defer { proxySelectionRequests.remove(group.name) }
@@ -1793,6 +1882,16 @@ final class TunnelManager: ObservableObject {
 
     private func sendProviderMessage(
         _ data: Data,
+        for connectionID: UUID?
+    ) async throws -> Data {
+        guard state == .connected, providerConnectionID == connectionID else {
+            throw TunnelManagerError.providerSessionUnavailable
+        }
+        return try await sendProviderMessage(data)
+    }
+
+    private func sendProviderMessage(
+        _ data: Data,
         timeout: Duration = .seconds(5)
     ) async throws -> Data {
         guard state == .connected
@@ -1805,6 +1904,7 @@ final class TunnelManager: ObservableObject {
         Self.runtimeLogger.debug(
             "stage=providerMessage hostSend begin bytes=\(data.count, privacy: .public)"
         )
+        let connectionID = providerConnectionID
         do {
             let response = try await withCheckedThrowingContinuation {
                 (continuation: CheckedContinuation<Data, Error>) in
@@ -1817,6 +1917,11 @@ final class TunnelManager: ObservableObject {
                     reply.fail(error)
                 }
                 reply.startTimeout(after: timeout)
+            }
+            guard providerConnectionID == connectionID,
+                  manager?.connection === session,
+                  session.status == .connected else {
+                throw TunnelManagerError.providerSessionUnavailable
             }
             Self.runtimeLogger.debug(
                 "stage=providerMessage hostSend success bytes=\(response.count, privacy: .public)"
@@ -3161,7 +3266,12 @@ final class TunnelManager: ObservableObject {
             && !isTransitioning
             && !isImportingProfile
             && !isUpdatingProfiles
+            && !isUpdatingRoutingResources
             && !isUpdatingBypassPolicy
+            && !isUpdatingDNSRuntimePolicy
+            && !isUpdatingRoutingMode
+            && !isSwitchingNetworkEngine
+            && proxySelectionRequests.isEmpty
 #endif
     }
 
@@ -3185,6 +3295,7 @@ final class TunnelManager: ObservableObject {
             && !isSwitchingNetworkEngine
             && !isImportingProfile
             && !isUpdatingProfiles
+            && !isSavingConnectionConfiguration
     }
 
     var canChangeNetworkEngine: Bool {
@@ -3197,6 +3308,8 @@ final class TunnelManager: ObservableObject {
             && !isSwitchingNetworkEngine
             && !isImportingProfile
             && !isUpdatingProfiles
+            && !isUpdatingRoutingMode
+            && !isSavingConnectionConfiguration
     }
 
     var canActivateProfile: Bool {
@@ -3212,6 +3325,8 @@ final class TunnelManager: ObservableObject {
             && !isUpdatingProfiles
             && !isUpdatingBypassPolicy
             && !isTransferringProfiles
+            && !isUpdatingRoutingMode
+            && !isSavingConnectionConfiguration
     }
 
     var canModifyProfiles: Bool {
@@ -3223,6 +3338,14 @@ final class TunnelManager: ObservableObject {
             && !isUpdatingProfiles
             && !isUpdatingBypassPolicy
             && !isTransferringProfiles
+            && !isUpdatingRoutingMode
+            && !isSwitchingNetworkEngine
+            && !isSavingConnectionConfiguration
+    }
+
+    private var isSavingConnectionConfiguration: Bool {
+        isUpdatingRoutingResources || isUpdatingDNSRuntimePolicy
+            || isUpdatingBypassPolicy || !proxySelectionRequests.isEmpty
     }
 
     var canModifyBypassPolicy: Bool {
@@ -3299,7 +3422,8 @@ final class TunnelManager: ObservableObject {
         case .disconnected:
             AppLocalization.string("Traffic is using the normal network path")
         case .connecting:
-            AppLocalization.string("Verifying the network extension")
+            AppLocalization.string(isUpdatingRoutingResources
+                ? "Preparing routing rules…" : "Verifying the network extension")
         case .connected where isAutomaticRouteRecovering:
             AppLocalization.string(
                 "The tunnel remains active while AetherRoute retries the fastest available node."
@@ -3623,6 +3747,11 @@ final class TunnelManager: ObservableObject {
             providerConnectionID = UUID()
             readinessVerifiedConnectionID = nil
         } else if status != .connected {
+            if providerConnectionID != nil {
+                // Requests belong to one connected generation. Reasserting
+                // invalidates them too, even without a full disconnect.
+                proxySelectionRequests = []
+            }
             providerConnectionID = nil
             readinessVerifiedConnectionID = nil
         }
@@ -3716,6 +3845,7 @@ final class TunnelManager: ObservableObject {
             isVerifyingReadiness: requiresReadiness || isVerifyingProxyReadiness
         )
         if status == .connected {
+            refreshOlderRoutingResourcesAfterConnection()
             cancelConnectionWatchdog()
         }
         switch state {
@@ -4215,6 +4345,9 @@ final class TunnelManager: ObservableObject {
 
     private func resetConnectionReadiness() {
         cancelConnectionReadiness()
+        if providerConnectionID != nil {
+            proxySelectionRequests = []
+        }
         providerConnectionID = nil
         readinessVerifiedConnectionID = nil
         readinessFailureStopPending = false

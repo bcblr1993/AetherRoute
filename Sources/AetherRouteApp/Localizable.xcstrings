@@ -438,6 +438,16 @@
         }
       }
     },
+    "Advanced": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高级选项"
+          }
+        }
+      }
+    },
     "AetherRoute": {
       "localizations": {
         "zh-Hans": {
@@ -518,6 +528,16 @@
         }
       }
     },
+    "AetherRoute is free to use. Import your own proxy configuration to get started.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute 可免费使用，导入你自己的代理配置即可开始。"
+          }
+        }
+      }
+    },
     "AetherRoute is preparing the local extension configuration.": {
       "localizations": {
         "zh-Hans": {
@@ -544,6 +564,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "AetherRoute 需要处理"
+          }
+        }
+      }
+    },
+    "AetherRoute prepares routing rules automatically when you connect.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接时由 AetherRoute 自动准备，无需手动操作。"
           }
         }
       }
@@ -874,6 +904,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "构建信息"
+          }
+        }
+      }
+    },
+    "Bundled rules use DB-IP Lite and V2Fly data. Country rule updates may use MaxMind data through Loyalsoldier. See Open-Source Software for sources and licenses.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内置规则使用 DB-IP Lite 和 V2Fly 数据，国家规则更新可能使用 Loyalsoldier 提供的 MaxMind 数据。来源与许可可在“开源软件”中查看。"
           }
         }
       }
@@ -2345,6 +2385,16 @@
         }
       }
     },
+    "Free Edition": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免费版"
+          }
+        }
+      }
+    },
     "General": {
       "localizations": {
         "zh-Hans": {
@@ -3402,6 +3452,16 @@
         }
       }
     },
+    "No activation required": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无需激活"
+          }
+        }
+      }
+    },
     "No active connections": {
       "localizations": {
         "zh-Hans": {
@@ -4068,6 +4128,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在准备"
+          }
+        }
+      }
+    },
+    "Preparing routing rules…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing routing rules…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备分流规则…"
           }
         }
       }
@@ -4942,6 +5018,16 @@
         }
       }
     },
+    "Resource files are integrity-checked. Country.mmdb is MaxMind-derived through Loyalsoldier; GeoSite.dat is provided by V2Fly. Their upstream licenses apply.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "资源文件均经过完整性校验。Country.mmdb 由 Loyalsoldier 基于 MaxMind 数据提供，GeoSite.dat 由 V2Fly 提供，分别适用其上游许可。"
+          }
+        }
+      }
+    },
     "Restoring the normal network path": {
       "localizations": {
         "zh-Hans": {
@@ -5266,12 +5352,48 @@
         }
       }
     },
+    "Routing rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分流规则"
+          }
+        }
+      }
+    },
+    "Routing rules are ready.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Routing rules are ready."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分流规则已就绪。"
+          }
+        }
+      }
+    },
     "Routing rules content": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "路由规则内容"
+          }
+        }
+      }
+    },
+    "Routing rules need attention. Try preparing them again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分流规则准备失败，请重试。"
           }
         }
       }
@@ -7073,6 +7195,16 @@
         }
       }
     },
+    "This edition does not contact a licensing service. Install a newer signed DMG to update; your saved configurations are kept.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本无需连接授权服务。安装新版签名 DMG 即可更新，已保存的配置会保留。"
+          }
+        }
+      }
+    },
     "This group is chosen by the protocol core from its own latency tests, so it cannot be set by hand. Expand a manual group to choose a node.": {
       "localizations": {
         "zh-Hans": {
@@ -7380,6 +7512,16 @@
         }
       }
     },
+    "Update recommended · %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可用 · 建议更新 · %@"
+          }
+        }
+      }
+    },
     "Update required · %@": {
       "localizations": {
         "zh-Hans": {
@@ -7670,22 +7812,22 @@
         }
       }
     },
-    "When you connect, traffic and DNS queries may be sent to the proxy and DNS services in the profile you chose. Subscription updates contact the selected provider. If a release configures licensing, AetherRoute refreshes only its signed device receipt with the owner's HTTPS license service after you accept this disclosure. These services may observe your IP address. Review and trust a provider before importing it.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接后，流量和 DNS 查询可能会发送到所选配置中的代理与 DNS 服务。订阅更新会联系所选提供方。如果正式版本配置了授权服务，AetherRoute 只会在你接受本说明后，向作者的 HTTPS 授权服务刷新已签名的设备回执。这些服务可能看到你的 IP 地址。导入前请确认服务提供方可信。"
-          }
-        }
-      }
-    },
     "When you connect, traffic and DNS queries may be sent to the proxy and DNS services in the profile you chose. Those providers may observe connection metadata or unencrypted content. Review and trust a profile before importing it.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "连接后，流量和 DNS 查询可能会发送到所选配置中的代理与 DNS 服务。这些服务提供方可能看到连接元数据或未加密内容。导入前请确认配置来源可信。"
+          }
+        }
+      }
+    },
+    "When you connect, traffic and DNS queries may be sent to the proxy and DNS services in your profile. Subscription updates contact your provider; routing rule updates contact public data sources after connection. These services may observe your IP address. Review and trust a provider before importing it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接后，流量和 DNS 查询可能发送至配置中的代理和 DNS 服务。订阅更新会联系你的服务商；路由规则会在连接后从公开数据源更新。这些服务可能看到你的 IP 地址，请仅导入你信任的配置。"
           }
         }
       }

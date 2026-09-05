@@ -33,6 +33,8 @@ public extension ProfileConfigurationSummary {
 }
 
 public enum RoutingResourceOrigin: String, Codable, Equatable, Sendable {
+    /// Public data distributed with the signed app (DB-IP Lite and V2Fly).
+    case bundled
     case verifiedDownload
     case userProvided
 }
@@ -68,6 +70,18 @@ public enum RoutingResourceStatus: Equatable, Sendable {
     case ready(RoutingResourceRecord)
     case stale(RoutingResourceRecord)
     case invalid(RoutingResourceError)
+
+    public var isUsableForConnection: Bool {
+        switch self {
+        case .ready: true
+        case let .stale(record):
+            // The maintained Country download currently uses MaxMind data.
+            // Retain its expiry policy; our DB-IP bundle and the MIT GeoSite
+            // list can remain available while a refresh is attempted.
+            record.kind != .countryMMDB || record.origin != .verifiedDownload
+        case .missing, .invalid: false
+        }
+    }
 }
 
 public struct RoutingResourceStore: Sendable {
@@ -103,7 +117,8 @@ public struct RoutingResourceStore: Sendable {
         kind: RoutingResourceKind,
         expectedSHA256: String,
         installedAt: Date = .now,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        replacing expectedRecord: RoutingResourceRecord? = nil
     ) throws -> RoutingResourceRecord {
         guard Self.isLowercaseSHA256(expectedSHA256) else {
             throw RoutingResourceError.invalidExpectedSHA256
@@ -118,7 +133,31 @@ public struct RoutingResourceStore: Sendable {
             digest: digest,
             installedAt: installedAt,
             origin: .verifiedDownload,
-            fileManager: fileManager
+            fileManager: fileManager,
+            replacing: expectedRecord
+        )
+    }
+
+    @discardableResult
+    public func installBundled(
+        data: Data,
+        kind: RoutingResourceKind,
+        expectedSHA256: String,
+        installedAt: Date = .now,
+        fileManager: FileManager = .default,
+        preservingUsableResource: Bool = false
+    ) throws -> RoutingResourceRecord {
+        guard Self.isLowercaseSHA256(expectedSHA256) else {
+            throw RoutingResourceError.invalidExpectedSHA256
+        }
+        let digest = try Self.validate(data: data, kind: kind)
+        guard digest == expectedSHA256 else {
+            throw RoutingResourceError.checksumMismatch(kind)
+        }
+        return try commit(
+            data: data, kind: kind, digest: digest, installedAt: installedAt,
+            origin: .bundled, fileManager: fileManager,
+            preservingUsableResource: preservingUsableResource
         )
     }
 
@@ -146,18 +185,10 @@ public struct RoutingResourceStore: Sendable {
         fileManager: FileManager = .default
     ) -> RoutingResourceStatus {
         do {
-            let record = try loadVerifiedRecord(
-                for: kind,
-                fileManager: fileManager
-            )
-            let age = now.timeIntervalSince(record.installedAt)
-            guard age >= -Self.clockSkewTolerance else {
-                return .invalid(.metadataDateInFuture(kind))
+            return try withResourceReadLock(for: [kind], fileManager: fileManager) {
+                let record = try loadVerifiedRecord(for: kind, fileManager: fileManager)
+                return try Self.status(for: record, now: now)
             }
-            if age > Self.maximumResourceAge {
-                return .stale(record)
-            }
-            return .ready(record)
         } catch let error as RoutingResourceError {
             if error == .missing(kind) { return .missing }
             return .invalid(error)
@@ -175,32 +206,10 @@ public struct RoutingResourceStore: Sendable {
         now: Date = .now,
         fileManager: FileManager = .default
     ) throws -> Set<RoutingResourceKind> {
-        let requirements = ProfileConfigurationInspector
-            .inspect(yaml: profileYAML)
-            .requiredRoutingResources
-        guard !requirements.isEmpty else { return [] }
-
-        var verifiedData = [RoutingResourceKind: Data]()
-        for kind in requirements {
-            switch status(for: kind, now: now, fileManager: fileManager) {
-            case .missing:
-                throw RoutingResourceError.missing(kind)
-            case let .stale(record):
-                throw RoutingResourceError.stale(
-                    kind,
-                    installedAt: record.installedAt
-                )
-            case let .invalid(error):
-                throw error
-            case .ready:
-                let data = try Data(
-                    contentsOf: resourceURL(for: kind),
-                    options: [.mappedIfSafe]
-                )
-                _ = try Self.validate(data: data, kind: kind)
-                verifiedData[kind] = data
-            }
-        }
+        let verifiedData = try launchResourceSnapshot(
+            for: profileYAML, now: now, fileManager: fileManager
+        )
+        guard !verifiedData.isEmpty else { return [] }
 
         let runtimeRoot = applicationSupportDirectory.appendingPathComponent(
             "Runtime",
@@ -229,7 +238,7 @@ public struct RoutingResourceStore: Sendable {
                 )
             }
         }
-        return requirements
+        return Set(verifiedData.keys)
     }
 
     /// Returns the exact verified public routing databases needed by one
@@ -244,28 +253,20 @@ public struct RoutingResourceStore: Sendable {
         let requirements = ProfileConfigurationInspector
             .inspect(yaml: profileYAML)
             .requiredRoutingResources
-        var snapshot = [RoutingResourceKind: Data]()
-        for kind in requirements {
-            switch status(for: kind, now: now, fileManager: fileManager) {
-            case .missing:
-                throw RoutingResourceError.missing(kind)
-            case let .stale(record):
-                throw RoutingResourceError.stale(
-                    kind,
-                    installedAt: record.installedAt
-                )
-            case let .invalid(error):
-                throw error
-            case .ready:
-                let data = try Data(
-                    contentsOf: resourceURL(for: kind),
-                    options: [.mappedIfSafe]
-                )
-                _ = try Self.validate(data: data, kind: kind)
-                snapshot[kind] = data
+        return try withResourceReadLock(for: requirements, fileManager: fileManager) {
+            var snapshot = [RoutingResourceKind: Data]()
+            for kind in requirements {
+                let resource = try loadVerifiedResource(for: kind, fileManager: fileManager)
+                let status = try Self.status(for: resource.record, now: now)
+                guard status.isUsableForConnection else {
+                    throw RoutingResourceError.stale(kind, installedAt: resource.record.installedAt)
+                }
+                // Return the same bytes that were checked against the record,
+                // rather than reopening the asset after releasing its lock.
+                snapshot[kind] = resource.data
             }
+            return snapshot
         }
-        return snapshot
     }
 
     private func commit(
@@ -274,13 +275,37 @@ public struct RoutingResourceStore: Sendable {
         digest: String,
         installedAt: Date,
         origin: RoutingResourceOrigin,
-        fileManager: FileManager
+        fileManager: FileManager,
+        replacing expectedRecord: RoutingResourceRecord? = nil,
+        preservingUsableResource: Bool = false
     ) throws -> RoutingResourceRecord {
         try preparePrivateDirectory(
             applicationSupportDirectory,
             fileManager: fileManager
         )
         try preparePrivateDirectory(resourceDirectory, fileManager: fileManager)
+        // Every writer, including user imports and bundled fallbacks, holds the
+        // same per-store file lock while checking and replacing the data/record
+        // pair. A delayed download can then compare against exactly the record
+        // it started with instead of overwriting a newer user choice.
+        let lock = try acquireCommitLock()
+        defer {
+            flock(lock, LOCK_UN)
+            Darwin.close(lock)
+        }
+        if let expectedRecord {
+            guard expectedRecord.kind == kind,
+                  let current = try? loadVerifiedRecord(for: kind, fileManager: fileManager),
+                  current == expectedRecord else {
+                throw RoutingResourceError.superseded(kind)
+            }
+        }
+        if preservingUsableResource,
+           let current = try? loadVerifiedRecord(for: kind, fileManager: fileManager),
+           let status = try? Self.status(for: current, now: .now),
+           status.isUsableForConnection {
+            throw RoutingResourceError.superseded(kind)
+        }
         let normalizedInstallDate = Date(
             timeIntervalSince1970: installedAt.timeIntervalSince1970
                 .rounded(.down)
@@ -325,10 +350,87 @@ public struct RoutingResourceStore: Sendable {
         return record
     }
 
+    private func withResourceReadLock<T>(
+        for kinds: Set<RoutingResourceKind>,
+        fileManager: FileManager,
+        _ body: () throws -> T
+    ) throws -> T {
+        guard let first = RoutingResourceKind.allCases.first(where: kinds.contains) else {
+            return try body()
+        }
+        for directory in [applicationSupportDirectory, resourceDirectory] {
+            guard try pathExists(directory) else { throw RoutingResourceError.missing(first) }
+            try rejectSymlinkOrNonDirectory(directory)
+        }
+        let lockURL = resourceDirectory.appendingPathComponent(".commit.lock")
+        if try !pathExists(lockURL) {
+            // Missing reads must not create a directory or a lock file. Only
+            // a complete legacy store needs its first coordination lock.
+            for kind in RoutingResourceKind.allCases where kinds.contains(kind) {
+                guard fileManager.fileExists(atPath: resourceURL(for: kind).path),
+                      fileManager.fileExists(atPath: metadataURL(for: kind).path) else {
+                    throw RoutingResourceError.missing(kind)
+                }
+            }
+        }
+        let lock = try acquireCommitLock(shared: true)
+        defer {
+            flock(lock, LOCK_UN)
+            Darwin.close(lock)
+        }
+        return try body()
+    }
+
+    private static func status(for record: RoutingResourceRecord, now: Date) throws -> RoutingResourceStatus {
+        let age = now.timeIntervalSince(record.installedAt)
+        guard age >= -clockSkewTolerance else {
+            throw RoutingResourceError.metadataDateInFuture(record.kind)
+        }
+        return age > maximumResourceAge ? .stale(record) : .ready(record)
+    }
+
+    private func acquireCommitLock(shared: Bool = false) throws -> Int32 {
+        let url = resourceDirectory.appendingPathComponent(".commit.lock")
+        let commonFlags = O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
+        var descriptor = Darwin.open(
+            url.path,
+            commonFlags | (shared ? O_RDONLY : O_CREAT | O_RDWR),
+            0o600
+        )
+        if shared, descriptor < 0, errno == ENOENT {
+            // Existing versions predate the lock file. O_CREAT without
+            // truncation also safely joins a writer creating it concurrently.
+            descriptor = Darwin.open(url.path, commonFlags | O_CREAT | O_RDWR, 0o600)
+        }
+        guard descriptor >= 0 else { throw RoutingResourceError.unsafeResourceFile }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0,
+              info.st_mode & S_IFMT == S_IFREG,
+              info.st_nlink == 1,
+              shared || fchmod(descriptor, 0o600) == 0 else {
+            Darwin.close(descriptor)
+            throw RoutingResourceError.unsafeResourceFile
+        }
+        while flock(descriptor, shared ? LOCK_SH : LOCK_EX) != 0 {
+            if errno == EINTR { continue }
+            Darwin.close(descriptor)
+            throw RoutingResourceError.writeFailed
+        }
+        return descriptor
+    }
+
     private func loadVerifiedRecord(
         for kind: RoutingResourceKind,
         fileManager: FileManager
     ) throws -> RoutingResourceRecord {
+        try loadVerifiedResource(for: kind, fileManager: fileManager).record
+    }
+
+    // The caller owns the store lock for the complete record/data read.
+    private func loadVerifiedResource(
+        for kind: RoutingResourceKind,
+        fileManager: FileManager
+    ) throws -> (record: RoutingResourceRecord, data: Data) {
         let assetURL = resourceURL(for: kind)
         let metadataURL = metadataURL(for: kind)
         guard fileManager.fileExists(atPath: assetURL.path),
@@ -367,7 +469,7 @@ public struct RoutingResourceStore: Sendable {
         guard record.byteCount == data.count, record.sha256 == digest else {
             throw RoutingResourceError.metadataMismatch(kind)
         }
-        return record
+        return (record, data)
     }
 
     private func resourceURL(for kind: RoutingResourceKind) -> URL {
@@ -680,8 +782,10 @@ public struct RoutingResourceDownloadClient: Sendable {
     public func downloadAndInstall(
         _ descriptor: RoutingResourceRemoteDescriptor,
         into store: RoutingResourceStore,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        replacing expectedRecord: RoutingResourceRecord? = nil
     ) async throws -> RoutingResourceRecord {
+        try Task.checkCancellation()
         let checksumResponse = try await transport(
             descriptor.checksumURL,
             4 * 1_024
@@ -689,6 +793,7 @@ public struct RoutingResourceDownloadClient: Sendable {
         try Self.validate(response: checksumResponse, maximumBytes: 4 * 1_024)
         let expectedSHA256 = try Self.parseChecksum(checksumResponse.data)
 
+        try Task.checkCancellation()
         let resourceResponse = try await transport(
             descriptor.resourceURL,
             descriptor.kind.maximumBytes
@@ -697,19 +802,20 @@ public struct RoutingResourceDownloadClient: Sendable {
             response: resourceResponse,
             maximumBytes: descriptor.kind.maximumBytes
         )
+        try Task.checkCancellation()
         return try store.installVerified(
             data: resourceResponse.data,
             kind: descriptor.kind,
             expectedSHA256: expectedSHA256,
             installedAt: now(),
-            fileManager: fileManager
+            fileManager: fileManager,
+            replacing: expectedRecord
         )
     }
 
     /// Makes every public routing database referenced by one profile ready for
-    /// launch. A ready, checksum-verified resource is left untouched; missing,
-    /// stale, or invalid resources are replaced from the maintained HTTPS
-    /// source and verified before either embedded core can see them.
+    /// launch. Usable checksum-verified resources stay available; refreshes of
+    /// older public resources happen separately from connection startup.
     @discardableResult
     public func ensureRequiredResources(
         for profileYAML: String,
@@ -723,11 +829,11 @@ public struct RoutingResourceDownloadClient: Sendable {
         var installed = Set<RoutingResourceKind>()
 
         for kind in RoutingResourceKind.allCases where required.contains(kind) {
-            if case .ready = store.status(
+            if store.status(
                 for: kind,
                 now: statusDate,
                 fileManager: fileManager
-            ) {
+            ).isUsableForConnection {
                 continue
             }
             try Task.checkCancellation()
@@ -793,6 +899,7 @@ public enum RoutingResourceError: LocalizedError, Equatable, Sendable {
     case unsafeResourceFile
     case invalidExpectedSHA256
     case checksumMismatch(RoutingResourceKind)
+    case superseded(RoutingResourceKind)
     case resourceTooSmall(RoutingResourceKind, Int)
     case resourceTooLarge(RoutingResourceKind, Int)
     case invalidResourceFormat(RoutingResourceKind)
@@ -821,6 +928,8 @@ public enum RoutingResourceError: LocalizedError, Equatable, Sendable {
             "The routing-resource checksum is invalid."
         case let .checksumMismatch(kind):
             "The downloaded \(kind.fileName) file failed its checksum."
+        case let .superseded(kind):
+            "The saved \(kind.fileName) changed while the update was running. The newer resource was kept."
         case let .resourceTooSmall(kind, _),
              let .resourceTooLarge(kind, _),
              let .invalidResourceFormat(kind):

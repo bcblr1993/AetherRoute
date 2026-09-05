@@ -57,7 +57,17 @@ jq -S \
   "$TEMP/transparent-proxy.json" "$TEMP/packet-tunnel.json" \
   > "$TEMP/ThirdPartyLicenses.json"
 
-mv -f "$TEMP/ThirdPartyLicenses.json" \
+# Public routing databases are data assets with their own notices. Merge them
+# deterministically so the app's existing license browser covers the bundle.
+jq -S -s '
+  .[0] as $runtime | .[1] as $data |
+  $runtime + {
+    components: (($runtime.components + $data.components) | sort_by([.name, .version, .repository])),
+    licenses: (($runtime.licenses + $data.licenses) | sort_by([.id, .name, .text]))
+  }
+' "$TEMP/ThirdPartyLicenses.json" "$ROOT/Config/RoutingResources/notices.json" \
+  >"$TEMP/CombinedLicenses.json"
+mv -f "$TEMP/CombinedLicenses.json" \
   "$DESTINATION/ThirdPartyLicenses.json"
 
 jq -e '.schemaVersion == 1 and (.components | length > 0) and (.licenses | length > 0)' \

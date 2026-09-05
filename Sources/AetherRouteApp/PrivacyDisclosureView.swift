@@ -105,9 +105,9 @@ struct PrivacyDisclosureView: View {
                 Text("Your selected services receive traffic")
                     .font(.headline)
                     .accessibilityValue(
-                        Text("When you connect, traffic and DNS queries may be sent to the proxy and DNS services in the profile you chose. Subscription updates contact the selected provider. If a release configures licensing, AetherRoute refreshes only its signed device receipt with the owner's HTTPS license service after you accept this disclosure. These services may observe your IP address. Review and trust a provider before importing it.")
+                        Text("When you connect, traffic and DNS queries may be sent to the proxy and DNS services in your profile. Subscription updates contact your provider; routing rule updates contact public data sources after connection. These services may observe your IP address. Review and trust a provider before importing it.")
                     )
-                Text("When you connect, traffic and DNS queries may be sent to the proxy and DNS services in the profile you chose. Subscription updates contact the selected provider. If a release configures licensing, AetherRoute refreshes only its signed device receipt with the owner's HTTPS license service after you accept this disclosure. These services may observe your IP address. Review and trust a provider before importing it.")
+                Text("When you connect, traffic and DNS queries may be sent to the proxy and DNS services in your profile. Subscription updates contact your provider; routing rule updates contact public data sources after connection. These services may observe your IP address. Review and trust a provider before importing it.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "resources": [
+    {
+      "kind": "countryMMDB",
+      "fileName": "Country.mmdb",
+      "sha256": "d284ae2e7427fe33d83465e1506b2b21aae47eb8a9b099f8f4dac6a98c99f041",
+      "byteCount": 8340464,
+      "sourceURL": "https://download.db-ip.com/free/dbip-country-lite-2026-09.mmdb.gz",
+      "sourceLicense": "CC-BY-4.0",
+      "attribution": "IP Geolocation by DB-IP (https://db-ip.com)",
+      "licenseFile": "DB-IP-CC-BY-4.0.txt",
+      "noticeFile": "NOTICE.txt",
+      "component": "db-ip-country-lite@2026-09"
+    },
+    {
+      "kind": "geoSite",
+      "fileName": "GeoSite.dat",
+      "sha256": "f82f26c015f9726c763d96a5f658e5b31b285dc094a985e718051e421f350ed6",
+      "byteCount": 2288435,
+      "sourceURL": "https://github.com/v2fly/domain-list-community/releases/download/20260904020013/dlc.dat",
+      "sourceLicense": "MIT",
+      "attribution": "Copyright (c) 2018-2019 V2Ray",
+      "licenseFile": "V2Fly-MIT.txt",
+      "noticeFile": "NOTICE.txt",
+      "component": "v2fly-domain-list-community-data@20260904020013"
+    }
+  ],
+  "packagedAt": "2026-09-05T08:46:24Z"
+}

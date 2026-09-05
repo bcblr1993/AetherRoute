@@ -89,6 +89,14 @@ public enum ProviderLaunchSnapshotCodec {
     public static func startOptions(
         for snapshot: ProviderLaunchSnapshot
     ) throws -> [String: NSObject] {
+        [startOptionsKey: try encodedPayload(for: snapshot) as NSData]
+    }
+
+    /// Encode and compress away from the main actor, then wrap the Sendable
+    /// payload in NetworkExtension's options dictionary immediately before use.
+    public static func encodedPayload(
+        for snapshot: ProviderLaunchSnapshot
+    ) throws -> Data {
         try snapshot.validate()
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
@@ -101,7 +109,7 @@ public enum ProviderLaunchSnapshotCodec {
         guard compressed.count <= maximumCompressedBytes else {
             throw ProviderLaunchSnapshotError.payloadTooLarge(compressed.count)
         }
-        return [startOptionsKey: compressed as NSData]
+        return compressed
     }
 
     public static func decode(

@@ -434,21 +434,8 @@ struct ContentView: View {
     }
 
     private var activeProfileStatus: String {
-        let requiredResources = tunnel.requiredRoutingResources
-        if !requiredResources.isEmpty {
-            let statuses = requiredResources.compactMap {
-                tunnel.routingResourceStatuses[$0]
-            }
-            if statuses.count != requiredResources.count {
-                return AppLocalization.string("Checking resources")
-            }
-            let allReady = statuses.allSatisfy {
-                if case .ready = $0 { return true }
-                return false
-            }
-            if !allReady {
-                return AppLocalization.string("Routing resources required")
-            }
+        if tunnel.isUpdatingRoutingResources {
+            return AppLocalization.string("Preparing routing rules…")
         }
         return switch tunnel.state {
         case .connecting: AppLocalization.string("Starting")
@@ -1710,71 +1697,64 @@ private struct RoutingResourcesCard: View {
     @EnvironmentObject private var tunnel: TunnelManager
     let importResource: (RoutingResourceKind) -> Void
 
+    @State private var showsAdvanced = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: AetherVisual.s4) {
-                Image(systemName: "map.fill")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 42, height: 42)
-                    .background(
-                        Color.blue.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius)
-                    )
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            HStack(alignment: .center, spacing: AetherVisual.s3) {
+                Image(systemName: resourcesAreReady ? "checkmark.shield" : "map")
+                    .font(.title3)
+                    .foregroundStyle(resourcesAreReady ? Color.teal : Color.accentColor)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    Text("Routing Resources")
+                    Text("Routing rules")
                         .font(.headline)
-                    Text(
-                        "The active profile uses GEOIP or GEOSITE rules. Required databases must pass integrity checks before connection."
-                    )
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text(summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("routing-rules-summary")
                 }
                 Spacer(minLength: 0)
-            }
-            .padding(AetherVisual.s5)
 
-            Divider()
-                .padding(.horizontal, AetherVisual.s5)
-
-            ForEach(
-                Array(tunnel.requiredRoutingResources.enumerated()),
-                id: \.element
-            ) { index, kind in
-                resourceRow(kind)
-                if index < tunnel.requiredRoutingResources.count - 1 {
-                    Divider()
-                        .padding(.leading, AetherVisual.tableContentIndent)
-                        .padding(.trailing, AetherVisual.s5)
+                if tunnel.isUpdatingRoutingResources {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Preparing routing rules…")
+                } else if tunnel.routingResourceMessageIsError {
+                    Button("Retry") {
+                        Task { await tunnel.prepareRequiredRoutingResources() }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!tunnel.canModifyProfiles)
+                    .accessibilityIdentifier("retry-routing-rules")
                 }
             }
 
-            Divider()
-                .padding(.horizontal, AetherVisual.s5)
+            DisclosureGroup("Advanced", isExpanded: $showsAdvanced) {
+                VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                    ForEach(tunnel.requiredRoutingResources, id: \.self) { kind in
+                        resourceRow(kind)
+                    }
 
-            VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                if let message = tunnel.routingResourceMessage {
-                    Label(
-                        message,
-                        systemImage: tunnel.routingResourceMessageIsError
-                            ? "exclamationmark.triangle.fill"
-                            : "checkmark.circle.fill"
-                    )
-                    .font(.callout)
-                    .foregroundStyle(
-                        tunnel.routingResourceMessageIsError
-                            ? Color.red : Color.green
-                    )
-                    .fixedSize(horizontal: false, vertical: true)
-                }
+                    if let message = tunnel.routingResourceMessage {
+                        Label(
+                            message,
+                            systemImage: tunnel.routingResourceMessageIsError
+                                ? "exclamationmark.triangle.fill"
+                                : "checkmark.circle.fill"
+                        )
+                        .font(.callout)
+                        .foregroundStyle(
+                            tunnel.routingResourceMessageIsError
+                                ? Color.red : Color.secondary
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
 
-                HStack(spacing: AetherVisual.s3) {
                     Button {
-                        Task {
-                            await tunnel.downloadRequiredRoutingResources()
-                        }
+                        Task { await tunnel.downloadRequiredRoutingResources() }
                     } label: {
                         AetherProgressButtonLabel(
                             "Download & Verify",
@@ -1788,18 +1768,38 @@ private struct RoutingResourcesCard: View {
                             || tunnel.isUpdatingRoutingResources
                     )
 
-                    Text(
-                        "Downloads are user-initiated over HTTPS and checksum-verified. Country.mmdb is MaxMind-derived through Loyalsoldier; GeoSite.dat is provided by V2Fly. Their upstream licenses apply."
-                    )
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text("Bundled rules use DB-IP Lite and V2Fly data. Country rule updates may use MaxMind data through Loyalsoldier. See Open-Source Software for sources and licenses.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .padding(.top, AetherVisual.s3)
             }
-            .padding(AetherVisual.s5)
+            .accessibilityIdentifier("routing-rules-advanced")
         }
+        .padding(AetherVisual.s4)
         .aetherPanel()
         .accessibilityIdentifier("routing-resources-card")
+    }
+
+    private var resourcesAreReady: Bool {
+        tunnel.requiredRoutingResources.allSatisfy { kind in
+            tunnel.routingResourceStatuses[kind]?.isUsableForConnection == true
+        }
+    }
+
+    private var summary: String {
+        if tunnel.isUpdatingRoutingResources {
+            return AppLocalization.string("Preparing routing rules…")
+        }
+        if tunnel.routingResourceMessageIsError {
+            return AppLocalization.string("Routing rules need attention. Try preparing them again.")
+        }
+        return AppLocalization.string(
+            resourcesAreReady
+                ? "Routing rules are ready."
+                : "AetherRoute prepares routing rules automatically when you connect."
+        )
     }
 
     private func resourceRow(_ kind: RoutingResourceKind) -> some View {
@@ -1855,7 +1855,11 @@ private struct RoutingResourcesCard: View {
             )
         case let .stale(record):
             return String.localizedStringWithFormat(
-                AppLocalization.string("Update required · %@"),
+                AppLocalization.string(
+                    status.isUsableForConnection
+                        ? "Update recommended · %@"
+                        : "Update required · %@"
+                ),
                 AppLocalization.date(
                     record.installedAt,
                     date: .abbreviated,

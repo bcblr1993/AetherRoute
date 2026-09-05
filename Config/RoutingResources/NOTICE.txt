@@ -1,0 +1,23 @@
+AetherRoute bundled routing data notices
+
+DB-IP Lite Country database — September 2026
+IP Geolocation by DB-IP (https://db-ip.com)
+Copyright (c) 2026 DB-IP.com
+Source: https://db-ip.com/db/download/ip-to-country-lite
+Downloaded file: https://download.db-ip.com/free/dbip-country-lite-2026-09.mmdb.gz
+License: Creative Commons Attribution 4.0 International (CC-BY-4.0)
+License URL: https://creativecommons.org/licenses/by/4.0/
+Changes: decompressed and renamed to Country.mmdb for application compatibility.
+The database contents were not edited. DB-IP does not endorse AetherRoute.
+This data is supplied without warranties under the license below.
+Full license text: DB-IP-CC-BY-4.0.txt
+
+V2Fly domain-list-community data — release 20260904020013
+Copyright (c) 2018-2019 V2Ray
+Source: https://github.com/v2fly/domain-list-community
+Downloaded file: https://github.com/v2fly/domain-list-community/releases/download/20260904020013/dlc.dat
+License: MIT
+License source: https://raw.githubusercontent.com/v2fly/domain-list-community/20260904020013/LICENSE
+Changes: dlc.dat was renamed to GeoSite.dat for application compatibility.
+The compiled domain-list data was not edited. No data-generator executable or source is included in this resource collection.
+Full license text: V2Fly-MIT.txt

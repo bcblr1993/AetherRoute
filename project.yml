@@ -252,6 +252,9 @@ targets:
         buildPhase: resources
       - path: Config/Licenses/ThirdPartyLicenses.json
         buildPhase: resources
+      - path: Config/RoutingResources
+        type: folder
+        buildPhase: resources
     info:
       path: Config/App-Info.plist
       properties:
