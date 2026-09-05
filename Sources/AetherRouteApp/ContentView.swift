@@ -782,6 +782,7 @@ private struct ConnectionHero: View {
             .controlSize(.large)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("extension-approval-controls")
     }
 
