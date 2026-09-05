@@ -34,6 +34,92 @@ collector = load("ne_collector", ROOT / "scripts/collect_installed_ne_performanc
 peer = load("ne_peer", ROOT / "scripts/installed_ne_performance_peer.py")
 
 
+class ProviderProcessQueryTests(unittest.TestCase):
+    def client(self):
+        client = collector.Collector.__new__(collector.Collector)
+        client.providers = {"transparent": {"bundleID": "com.example.test.transparent-proxy",
+                            "installedExecutableSHA256": "a" * 64, "teamID": "TESTTEAM01",
+                            "installedCDHash": "b" * 40}}
+        return client
+
+    def query_result(self, code, stdout=b"", stderr=b""):
+        # Obtain real child exit/stdout/stderr, without querying or signalling
+        # any installed provider. Only the pgrep command boundary is replaced.
+        script = "import sys;sys.stdout.buffer.write(%r);sys.stderr.buffer.write(%r);sys.exit(%d)" % (stdout, stderr, code)
+        return subprocess.run([sys.executable, "-B", "-c", script], capture_output=True, timeout=5)
+
+    def rejected(self, result):
+        for method in ("transparent_event", "lifetime"):
+            client = self.client()
+            def command(argv, **kwargs):
+                self.assertEqual(argv, ["/usr/bin/pgrep", "-x", client.providers["transparent"]["bundleID"]])
+                return result
+            with self.subTest(method=method), patch.object(collector.subprocess, "run", side_effect=command), \
+                    self.assertRaises(collector.Incomplete):
+                client.transparent_event() if method == "transparent_event" else client.lifetime("transparent")
+
+    def testCleanNoMatchIsStoppedButCannotSupplyALifetime(self):
+        result = self.query_result(1)
+        with patch.object(collector.subprocess, "run", return_value=result):
+            self.assertEqual(self.client().transparent_event(), "stopped")
+            with self.assertRaisesRegex(collector.Incomplete, "provider-process-not-unique"):
+                self.client().lifetime("transparent")
+
+    def testQueryErrorsCannotBecomeStoppedOrLive(self):
+        for code, stdout, stderr in [(2, b"", b""), (3, b"", b""), (7, b"123\n", b""),
+                                      (2, b"", b"controlled query error\n")]:
+            with self.subTest(code=code, stdout=stdout, stderr=stderr):
+                self.rejected(self.query_result(code, stdout, stderr))
+
+    def testNonemptyErrorStreamFailsEvenOnSuccessfulPIDQuery(self):
+        for stderr in (b"controlled warning\n", b"\n", b" "):
+            with self.subTest(stderr=stderr):
+                self.rejected(self.query_result(0, b"123\n", stderr))
+
+    def testNoMatchRequiresBothStreamsExactlyEmpty(self):
+        for stdout, stderr in [(b"123\n", b""), (b"\n", b""), (b"", b"warning\n"), (b"", b" ")]:
+            with self.subTest(stdout=stdout, stderr=stderr):
+                self.rejected(self.query_result(1, stdout, stderr))
+
+    def testEmptyMalformedReservedAndMultiplePIDsFail(self):
+        for stdout in (b"", b"\n", b"0\n", b"1\n", b"-4\n", b"12 34\n", b"12\n34\n", b"pid\n",
+                       b"2147483648\n", b"99999999999999999999\n", "１２３\n".encode()):
+            with self.subTest(stdout=stdout):
+                self.rejected(self.query_result(0, stdout))
+
+    def testSinglePIDPreservesLifetimeAndLifecycleStates(self):
+        client = self.client()
+        process = self.query_result(0, b"123\n")
+        for event, expected in [("stage=startProxy success", "connected"),
+                                ("stage=stopProxy success", "stopped"),
+                                ("stage=startProxy requested", "transitioning")]:
+            def command(argv, **kwargs):
+                if argv[0] == "/usr/bin/pgrep": return process
+                if argv[0] == "/bin/ps":
+                    text = "/owned/provider" if argv[-1] == "comm=" else "Sun Sep  6 00:36:45 2026"
+                    return subprocess.CompletedProcess(argv, 0, (text + "\n").encode(), b"")
+                self.assertEqual(argv[:2], ["/usr/bin/log", "show"])
+                return subprocess.CompletedProcess(argv, 0, event.encode(), b"")
+            with self.subTest(event=event), patch.object(collector, "run", side_effect=command), \
+                    patch.object(collector, "sha_file", return_value="a" * 64), \
+                    patch.object(client, "signature", return_value=("TESTTEAM01", "b" * 40)):
+                life = client.lifetime("transparent")
+                self.assertEqual(life["providerPID"], 123)
+                self.assertEqual(life["providerBundleID"], client.providers["transparent"]["bundleID"])
+                self.assertEqual(client.transparent_event(), expected)
+
+    def testDisconnectedNCDoesNotHideFailedTransparentQuery(self):
+        result = self.query_result(3)
+        def command(argv, **kwargs):
+            if argv[0] == "/usr/sbin/scutil":
+                return subprocess.CompletedProcess(argv, 0, b"Disconnected\n", b"")
+            self.assertEqual(argv[0], "/usr/bin/pgrep")
+            return result
+        with patch.object(collector.subprocess, "run", side_effect=command), \
+                self.assertRaisesRegex(collector.Incomplete, "provider-process-query-failed"):
+            self.client().state(None)
+
+
 class CollectorTests(unittest.TestCase):
     def testCurlTLSOrMalformedMetricsCannotPass(self):
         for line in ["NE_METRIC:200|32|0|10.1|0|60|0", "NE_METRIC:000|0|0|12|0|0|0", "NE_METRIC:nan", "bad"]:

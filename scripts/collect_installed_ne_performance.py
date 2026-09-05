@@ -404,11 +404,24 @@ class Collector:
                                       "archivedExecutableSHA256": hashes[0], "installedExecutableSHA256": hashes[1]}
         require(self.providers["tun"]["teamID"] == self.providers["transparent"]["teamID"], "provider-team-mismatch")
 
+    def provider_pid(self, engine):
+        result = run(["/usr/bin/pgrep", "-x", self.providers[engine]["bundleID"]], allow_failure=True)
+        require(not result.stderr, "provider-process-query-failed")
+        if result.returncode == 1:
+            require(not result.stdout, "provider-process-query-failed")
+            return None
+        require(result.returncode == 0, "provider-process-query-failed")
+        pids = result.stdout.split()
+        require(len(pids) == 1 and re.fullmatch(rb"[0-9]{1,10}", pids[0]) is not None,
+                "provider-process-not-unique")
+        pid = int(pids[0])
+        require(1 < pid <= 2147483647, "provider-process-invalid")
+        return pid
+
     def lifetime(self, engine):
         expected = self.providers[engine]
-        pids = run(["/usr/bin/pgrep", "-x", expected["bundleID"]], allow_failure=True).stdout.decode().split()
-        require(len(pids) == 1 and pids[0].isdigit(), "provider-process-not-unique")
-        pid = int(pids[0])
+        pid = self.provider_pid(engine)
+        require(pid is not None, "provider-process-not-unique")
         path = run(["/bin/ps", "-p", str(pid), "-o", "comm="]).stdout.decode().strip()
         require(sha_file(path) == expected["installedExecutableSHA256"], "running-provider-executable-differs")
         require(self.signature(path) == (expected["teamID"], expected["installedCDHash"]), "running-provider-signature-differs")
@@ -418,9 +431,7 @@ class Collector:
                 "providerBundleID": expected["bundleID"], "providerCDHash": expected["installedCDHash"]}
 
     def transparent_event(self):
-        bundle = self.providers["transparent"]["bundleID"]
-        pids = run(["/usr/bin/pgrep", "-x", bundle], allow_failure=True).stdout.decode().split()
-        if not pids:
+        if self.provider_pid("transparent") is None:
             return "stopped"
         life = self.lifetime("transparent")
         predicate = f'processIdentifier == {life["providerPID"]} AND (eventMessage CONTAINS "stage=startProxy" OR eventMessage CONTAINS "stage=stopProxy")'
