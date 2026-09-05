@@ -2176,6 +2176,14 @@ final class TunnelManager: ObservableObject {
     }
 
     private func installReviewTelemetry() {
+        let reviewNow = Date.now.timeIntervalSince1970
+#if DEBUG || AETHERROUTE_UI_RESPONSIVENESS || AETHERROUTE_DEVELOPMENT_PREVIEW
+        let useInvalidTimestamps = ProcessInfo.processInfo.environment[
+            "AETHERROUTE_UI_REVIEW_CONNECTION_TIMESTAMPS"
+        ] == "invalid"
+#else
+        let useInvalidTimestamps = false
+#endif
         telemetryViewModel.update(NetworkTelemetrySnapshot(
             uploadBytesPerSecond: 384_000,
             downloadBytesPerSecond: 2_480_000,
@@ -2189,7 +2197,9 @@ final class TunnelManager: ObservableObject {
                     destinationPort: 443,
                     uploadTotal: 148_000,
                     downloadTotal: 2_840_000,
-                    startedAtUnixMilliseconds: 1_775_003_420_000,
+                    startedAtUnixMilliseconds: useInvalidTimestamps
+                        ? 0
+                        : UInt64(max(0, reviewNow - 140) * 1_000),
                     rule: "DomainSuffix",
                     rulePayload: "apple.com",
                     proxyChain: "Balanced → Singapore Edge"
@@ -2200,7 +2210,9 @@ final class TunnelManager: ObservableObject {
                     destinationPort: 53,
                     uploadTotal: 1_240,
                     downloadTotal: 2_880,
-                    startedAtUnixMilliseconds: 1_775_003_550_000,
+                    startedAtUnixMilliseconds: UInt64(
+                        max(0, reviewNow + (useInvalidTimestamps ? 86_400 : -10)) * 1_000
+                    ),
                     rule: "Match",
                     rulePayload: "",
                     proxyChain: "DIRECT"

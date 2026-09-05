@@ -9,46 +9,51 @@ struct RulesView: View {
             if let summary = tunnel.activeProfileSummary {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: AetherVisual.s5) {
-                        HStack(spacing: AetherVisual.s5) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                                    .fill(Color.indigo.opacity(0.10))
-                                Image(systemName: "list.number")
-                                    .font(.system(size: 25, weight: .medium))
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                            .frame(width: 58, height: 58)
-                            .accessibilityHidden(true)
-
-                            VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                                Text("Ordered routing policy")
-                                    .font(.title3.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                Text("Rules are evaluated from top to bottom by the protocol core.")
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(.primary)
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing, spacing: AetherVisual.s2) {
-                                Text(verbatim: String(summary.ruleCount))
-                                    .font(.title2.weight(.semibold))
-                                    .monospacedDigit()
-                                    .foregroundStyle(.primary)
-                                Text("explicit rules")
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(.primary)
-                            }
-                            Divider()
-                                .frame(height: 34)
+                        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+                            HStack(spacing: AetherVisual.s5) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                                        .fill(Color.indigo.opacity(0.10))
+                                    Image(systemName: "list.number")
+                                        .font(.system(size: 25, weight: .medium))
+                                        .foregroundStyle(Color.accentColor)
+                                }
+                                .frame(width: 58, height: 58)
                                 .accessibilityHidden(true)
-                            StatePill(
-                                title: String.localizedStringWithFormat(
-                                    AppLocalization.string("Selected: %@"),
-                                    tunnel.routingMode.localizedTitle
-                                ),
-                                color: .indigo,
-                                symbol: "arrow.triangle.branch"
-                            )
+
+                                VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                                    Text("Ordered routing policy")
+                                        .font(.title3.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                    Text("Rules are evaluated from top to bottom by the protocol core.")
+                                        .font(.body)
+                                        .foregroundStyle(.primary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+
+                            HStack(spacing: AetherVisual.s4) {
+                                HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
+                                    Text(verbatim: String(summary.ruleCount))
+                                        .font(.title2.weight(.semibold))
+                                        .monospacedDigit()
+                                        .foregroundStyle(.primary)
+                                    Text("explicit rules")
+                                        .font(.body)
+                                        .foregroundStyle(.primary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                Spacer(minLength: AetherVisual.s2)
+                                StatePill(
+                                    title: String.localizedStringWithFormat(
+                                        AppLocalization.string("Selected: %@"),
+                                        tunnel.routingMode.localizedTitle
+                                    ),
+                                    color: .indigo,
+                                    symbol: "arrow.triangle.branch"
+                                )
+                            }
                         }
                         .padding(AetherVisual.s5)
                         .featureCard()
@@ -712,7 +717,7 @@ private struct DNSMetricCard: View {
                 Text(title)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
             HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
@@ -751,23 +756,28 @@ private struct DNSSettingRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(title)
-                    .font(.subheadline.weight(.medium))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
                 Text(detail)
-                    .font(.subheadline.weight(.medium))
+                    .font(.body)
                     .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 14)
             Text(value)
-                .font(.subheadline.weight(.semibold))
+                .font(.body.weight(.medium))
                 .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, AetherVisual.s3)
                 .padding(.vertical, AetherVisual.s2)
                 .background(tint.opacity(0.09), in: Capsule())
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s3)
-        .accessibilityElement(children: .combine)
+        // Keep the heading, explanation and value individually readable.
+        // The visible heading introduces the group without repeating it as
+        // an additional spoken label on the container.
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -939,9 +949,9 @@ private struct RuleRow: View {
                     .font(.subheadline.monospaced().weight(.medium))
                 if let criteria = rule.criteria {
                     Text(criteria)
-                        .font(.subheadline.weight(.medium))
+                        .font(.body)
                         .foregroundStyle(.primary)
-                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text("Any remaining traffic")
                         .font(.subheadline.weight(.medium))
@@ -978,7 +988,7 @@ private struct StatePill: View {
             Image(systemName: symbol)
                 .foregroundStyle(color)
         }
-            .font(.subheadline.weight(.semibold))
+            .font(.body.weight(.medium))
             .padding(.horizontal, AetherVisual.s3)
             .padding(.vertical, AetherVisual.s2)
             .background(

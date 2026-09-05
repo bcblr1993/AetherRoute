@@ -82,5 +82,43 @@ if test -s "$TEMP_DIR/missing.keys"; then
   fail "source contains keys absent from the catalog"
 fi
 
+# xcstringstool does not recognize our AppLocalization wrapper. Check its
+# direct string literals as well; dynamic keys and interpolation still belong
+# to the native extraction path rather than guessed catalog entries.
+python3 - "$ROOT/Sources" "$CATALOG" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+catalog = json.loads(pathlib.Path(sys.argv[2]).read_text())["strings"]
+literal_call = re.compile(
+    r'AppLocalization\.string\(\s*("(?:[^"\\\r\n]|\\.)*")\s*\)'
+)
+missing = []
+checked = set()
+for source in sorted(pathlib.Path(sys.argv[1]).rglob("*.swift")):
+    for match in literal_call.finditer(source.read_text()):
+        literal = match.group(1)
+        if r"\(" in literal:
+            continue
+        # Swift's extra single-line escapes, followed by the JSON-compatible
+        # quote, backslash, newline and tab escapes.
+        literal = re.sub(
+            r"\\u\{([0-9a-fA-F]{1,8})\}",
+            lambda match: json.dumps(chr(int(match.group(1), 16)))[1:-1],
+            literal,
+        ).replace(r"\0", r"\u0000")
+        key = json.loads(literal)
+        checked.add(key)
+        if key not in catalog:
+            line = source.read_text()[:match.start()].count("\n") + 1
+            missing.append(f"{source}:{line}: missing AppLocalization key: {key}")
+if missing:
+    print("\n".join(missing), file=sys.stderr)
+    sys.exit(1)
+print(f"AppLocalization direct literals verified: {len(checked)} keys")
+PY
+
 count=$(jq '.strings | length' "$CATALOG")
 printf 'Localization catalog verified: %s keys, en + zh-Hans\n' "$count"

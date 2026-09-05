@@ -62,8 +62,37 @@ final class AetherRouteUITests: XCTestCase {
     func testConnectionsPassAccessibilityAuditInLightAndDark() throws {
         try auditPrimaryPage(
             button: "Connections",
-            landmark: "Only connections visible on this Mac are counted, and nothing is reported anywhere."
+            landmark: "Only connections visible on this Mac are counted, and nothing is reported anywhere.",
+            windowSize: "780x560"
         )
+        for item in [
+            (language: "en", appearance: "light", expanded: true, unknown: "Unknown Unknown", label: "Connection duration Connection duration"),
+            (language: "zh-Hans", appearance: "dark", expanded: false, unknown: "未知", label: "连接时长"),
+        ] {
+            try { () throws in
+                let app = launchReviewApp(
+                    appearance: item.appearance,
+                    language: item.language,
+                    windowSize: "780x560",
+                    expandedText: item.expanded,
+                    invalidConnectionTimestamps: true
+                )
+                defer { app.terminate() }
+                let navigation = app.buttons["primary-navigation-connections"]
+                XCTAssertTrue(navigation.waitForExistence(timeout: 3))
+                navigation.click()
+                let durations = app.staticTexts.matching(identifier: "connection-duration")
+                XCTAssertTrue(durations.firstMatch.waitForExistence(timeout: 2))
+                XCTAssertEqual(durations.count, 2)
+                for duration in durations.allElementsBoundByIndex {
+                    XCTAssertEqual(duration.value as? String, item.unknown)
+                    XCTAssertEqual(duration.label, item.label)
+                    XCTAssertTrue(app.windows["main-AppWindow-1"].frame.contains(duration.frame))
+                }
+                assertConnectionsFit(in: app)
+                try auditProductAccessibility(in: app)
+            }()
+        }
     }
 
     func testProfilesPassAccessibilityAuditInLightAndDark() throws {
@@ -229,6 +258,12 @@ final class AetherRouteUITests: XCTestCase {
             withIntermediateDirectories: true
         )
 
+        let systemReduceMotionAtStart = NSWorkspace.shared
+            .accessibilityDisplayShouldReduceMotion
+        XCTAssertFalse(
+            systemReduceMotionAtStart,
+            "Default-animation acceptance requires system Reduce Motion to be off; the test does not change user settings."
+        )
         let app = launchReviewApp(
             appearance: "light",
             state: "connected",
@@ -245,8 +280,6 @@ final class AetherRouteUITests: XCTestCase {
             isolatedHome: URL(fileURLWithPath: isolatedHome),
             evidenceURL: evidenceURL
         )
-        let systemReduceMotionAtStart = NSWorkspace.shared
-            .accessibilityDisplayShouldReduceMotion
         let startedAt = Date()
         let deadline = startedAt.addingTimeInterval(
             TimeInterval(requestedDuration)
@@ -2138,7 +2171,7 @@ final class AetherRouteUITests: XCTestCase {
                    "overview-route-exit",
                ].contains(element.identifier) {
                 // These cards use primary text on their semantic panel and are
-                // pixel-reviewed in both appearances at expanded Dynamic Type.
+                // pixel-reviewed in both appearances.
                 // Xcode 26 can sample the parent behind the rounded card,
                 // producing a false contrast failure for the actual text run.
                 return true
@@ -2169,7 +2202,7 @@ final class AetherRouteUITests: XCTestCase {
                 // behind the inset table and reports a near miss. The header
                 // uses the same system style as every other table column and
                 // is pixel-reviewed in both appearances.
-                let table = app.outlines["connections-page"]
+                let table = app.outlines["connections-table"]
                 return table.exists && table.frame.contains(element.frame)
             }
             if issue.auditType == .sufficientElementDescription,
@@ -2434,9 +2467,77 @@ final class AetherRouteUITests: XCTestCase {
                 if button == "Proxies" {
                     assertProxyControlsFit(in: app)
                 }
+                if button == "Connections" {
+                    assertConnectionsFit(in: app)
+                    let durations = app.staticTexts.matching(identifier: "connection-duration")
+                    XCTAssertTrue(durations.firstMatch.waitForExistence(timeout: 2))
+                    XCTAssertEqual(durations.count, 2)
+                    for duration in durations.allElementsBoundByIndex {
+                        let value = duration.value as? String ?? ""
+                        XCTAssertNotNil(
+                            value.range(of: #"^\d+(s|m\d{2}s|h\d{2}m)$"#, options: .regularExpression),
+                            "A current connection must show a real elapsed duration, got \(value)."
+                        )
+                    }
+                }
+                if button == "DNS" {
+                    // The setting heading, explanation and value remain
+                    // distinct readable elements after semantic grouping.
+                    for text in [
+                        "Enhanced mode",
+                        "Maps names into a synthetic range for deterministic domain routing.",
+                        "Fake-IP",
+                        "IPv6 answers",
+                        "AAAA responses are allowed by this profile.",
+                        "Allowed",
+                    ] {
+                        XCTAssertTrue(app.staticTexts[text].exists)
+                    }
+                }
                 try auditProductAccessibility(in: app)
             }()
         }
+    }
+
+    private func assertConnectionsFit(in app: XCUIApplication) {
+        let window = app.windows["main-AppWindow-1"].frame
+        let bounds = window.insetBy(dx: -1, dy: -1)
+        let page = app.descendants(matching: .any)["connections-page"]
+        let table = app.outlines["connections-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 2))
+        print("CONNECTIONS_LAYOUT window=\(window) page=\(page.frame) table=\(table.frame)")
+        XCTAssertTrue(bounds.contains(page.frame))
+        XCTAssertTrue(bounds.contains(table.frame))
+        for identifier in [
+            "connections-session-bar", "connections-filter-picker",
+            "connections-sort-picker", "disconnect-all-connections",
+            "connections-count-summary", "connections-privacy-summary",
+        ] {
+            let element = app.descendants(matching: .any)[identifier]
+            XCTAssertTrue(element.exists)
+            print("CONNECTIONS_LAYOUT id=\(identifier) frame=\(element.frame) label=\(element.label) value=\(String(describing: element.value))")
+            XCTAssertTrue(
+                bounds.contains(element.frame),
+                "The scrolling table must leave room for \(identifier)."
+            )
+        }
+        let rows = table.children(matching: .outlineRow)
+        XCTAssertEqual(rows.count, 2)
+        for row in rows.allElementsBoundByIndex {
+            XCTAssertTrue(bounds.contains(row.frame))
+            XCTAssertTrue(table.frame.contains(row.frame))
+        }
+        let count = app.staticTexts["connections-count-summary"]
+        let privacy = app.staticTexts["connections-privacy-summary"]
+        XCTAssertFalse(count.frame.intersects(privacy.frame))
+        // Full accessible text and the subsequent unmodified all-types audit
+        // together verify semantic content and actual text clipping.
+        let language = app.launchEnvironment["AETHERROUTE_UI_REVIEW_LANGUAGE"]
+        let expected = language == "zh-Hans"
+            ? "只统计本机可见的连接，不上报"
+            : "Only connections visible on this Mac are counted, and nothing is reported anywhere."
+        let expanded = app.launchArguments.contains("-NSDoubleLocalizedStrings")
+        XCTAssertEqual(privacy.value as? String, expanded ? expected + " " + expected : expected)
     }
 
     private func assertProxyControlsFit(in app: XCUIApplication) {
@@ -2463,6 +2564,53 @@ final class AetherRouteUITests: XCTestCase {
                 "Every node column must fit without horizontal scrolling."
             )
         }
+    }
+
+    private func assertCompactFilterWorks(
+        _ picker: XCUIElement,
+        optionPrefix: String,
+        in app: XCUIApplication
+    ) {
+        XCTAssertTrue(picker.isHittable)
+        let originalValue = picker.value as? String ?? ""
+        XCTAssertFalse(originalValue.isEmpty)
+        picker.click()
+        let option = app.menuItems.matching(
+            NSPredicate(
+                format: "label BEGINSWITH %@ OR title BEGINSWITH %@ OR value BEGINSWITH %@",
+                optionPrefix, optionPrefix, optionPrefix
+            )
+        ).firstMatch
+        guard option.waitForExistence(timeout: 2) else {
+            app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+            XCTFail("The compact filter did not expose the expected menu option \(optionPrefix).")
+            return
+        }
+        // Log only the matched fixture option. App-wide menu queries also
+        // project macOS Recent Items, which are unrelated to this test.
+        print("COMPACT_FILTER_OPTION id=\(picker.identifier) title=\(option.title) label=\(option.label) value=\(String(describing: option.value))")
+        let selectedValue = !option.title.isEmpty ? option.title
+            : (!option.label.isEmpty ? option.label : option.value as? String ?? "")
+        option.click()
+        let selected = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", selectedValue),
+            object: picker
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 2), .completed)
+        picker.click()
+        let original = app.menuItems.matching(
+            NSPredicate(
+                format: "label == %@ OR title == %@ OR value == %@",
+                originalValue, originalValue, originalValue
+            )
+        ).firstMatch
+        XCTAssertTrue(original.waitForExistence(timeout: 2))
+        original.click()
+        let restored = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", originalValue),
+            object: picker
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 2), .completed)
     }
 
     private func openAboutSettings(
@@ -2998,15 +3146,35 @@ final class AetherRouteUITests: XCTestCase {
             // Double-Length pseudolanguage must visibly duplicate localized
             // copy, so a no-op launch flag cannot pass the expansion gate.
             let expandedLandmark = destination.landmark + " " + destination.landmark
-            let landmarkText = app.staticTexts[expandedLandmark]
-            let landmarkButton = app.buttons[expandedLandmark]
+            // XCTest's identifier subscript rejects strings longer than 128
+            // characters. Exact property matching also covers long copy.
+            let landmarkPredicate = NSPredicate(
+                format: "label == %@ OR value == %@", expandedLandmark, expandedLandmark
+            )
+            let landmarkText = app.staticTexts.matching(landmarkPredicate).firstMatch
+            let landmarkButton = app.buttons.matching(landmarkPredicate).firstMatch
             XCTAssertTrue(
                 landmarkText.waitForExistence(timeout: 2)
                     || landmarkButton.waitForExistence(timeout: 1),
                 "Native Double-Length localization did not expand \(destination.landmark)."
             )
             print("UI_TEXT_EXPANSION language=\(language) page=\(destination.pageIdentifier) mode=NSDoubleLocalizedStrings expected=\(expandedLandmark)")
+            let windowFrame = app.windows["main-AppWindow-1"].frame
+            let pageFrame = app.descendants(matching: .any)[
+                destination.pageIdentifier
+            ].frame
+            print("EXPANDED_LAYOUT page=\(destination.pageIdentifier) window=\(windowFrame) content=\(pageFrame)")
+            XCTAssertGreaterThanOrEqual(pageFrame.minX, windowFrame.minX - 1)
+            XCTAssertLessThanOrEqual(
+                pageFrame.maxX, windowFrame.maxX + 1,
+                "Long translations must wrap without widening the page beyond the window."
+            )
+            XCTAssertTrue(windowFrame.contains(navigationButton.frame))
             if destination.pageIdentifier == "overview-page" {
+                let engine = app.radioGroups["network-engine-picker"]
+                XCTAssertTrue(engine.exists)
+                XCTAssertTrue(windowFrame.contains(engine.frame))
+                XCTAssertEqual(engine.radioButtons.count, 2)
                 let mainWindow = app.windows["main-AppWindow-1"]
                 XCTAssertTrue(mainWindow.waitForExistence(timeout: 2))
                 let attachment = XCTAttachment(
@@ -3020,6 +3188,31 @@ final class AetherRouteUITests: XCTestCase {
             }
             if destination.pageIdentifier == "proxies-page" {
                 assertProxyControlsFit(in: app)
+                if language == "en" {
+                    let filter = app.popUpButtons["proxy-filter-picker-Balanced"]
+                    XCTAssertTrue(filter.exists)
+                    assertCompactFilterWorks(
+                        filter, optionPrefix: "Available Available", in: app
+                    )
+                }
+            }
+            if destination.pageIdentifier == "connections-page" {
+                assertConnectionsFit(in: app)
+                let disconnectAll = app.buttons["disconnect-all-connections"]
+                XCTAssertTrue(disconnectAll.isHittable)
+                XCTAssertTrue(windowFrame.contains(disconnectAll.frame))
+                XCTAssertGreaterThanOrEqual(disconnectAll.frame.height, 20)
+                let privacy = app.staticTexts["connections-privacy-summary"]
+                XCTAssertTrue(privacy.exists)
+                XCTAssertTrue(windowFrame.contains(privacy.frame))
+                let filter = app.popUpButtons["connections-filter-picker"]
+                if filter.exists {
+                    assertCompactFilterWorks(
+                        filter,
+                        optionPrefix: language == "en" ? "Direct Direct" : "直连 直连",
+                        in: app
+                    )
+                }
             }
             try auditProductAccessibility(in: app)
         }
@@ -3038,6 +3231,7 @@ final class AetherRouteUITests: XCTestCase {
         windowSize: String? = nil,
         expandedText: Bool = false,
         reduceMotion: Bool = true,
+        invalidConnectionTimestamps: Bool = false,
         responsivenessOutput: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
@@ -3075,6 +3269,9 @@ final class AetherRouteUITests: XCTestCase {
         if expandedText {
             app.launchEnvironment["AETHERROUTE_UI_REVIEW_TEXT_SIZE"] = "expanded"
             app.launchArguments += ["-NSDoubleLocalizedStrings", "YES"]
+        }
+        if invalidConnectionTimestamps {
+            app.launchEnvironment["AETHERROUTE_UI_REVIEW_CONNECTION_TIMESTAMPS"] = "invalid"
         }
         if let responsivenessOutput {
             app.launchEnvironment[

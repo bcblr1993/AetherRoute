@@ -25,18 +25,35 @@ struct ConnectionsView: View {
                 connectionList(rows: rows)
             }
 
-            HStack {
-                Text(footerText(visibleCount: rows.count))
-                Spacer()
-                Text("Only connections visible on this Mac are counted, and nothing is reported anywhere.")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: AetherVisual.s3) {
+                    footerContents(visibleCount: rows.count)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                    footerContents(visibleCount: rows.count)
+                }
             }
-                .font(.subheadline.weight(.medium))
+                .layoutPriority(1)
+                .font(.body)
                 .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, AetherVisual.s4)
-                .frame(height: 24)
+                .padding(.vertical, AetherVisual.s2)
                 .overlay(alignment: .top) { Divider() }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Connections")
         .accessibilityIdentifier("connections-page")
+    }
+
+    @ViewBuilder
+    private func footerContents(visibleCount: Int) -> some View {
+        Text(footerText(visibleCount: visibleCount))
+            .accessibilityIdentifier("connections-count-summary")
+        Text("Only connections visible on this Mac are counted, and nothing is reported anywhere.")
+            .accessibilityIdentifier("connections-privacy-summary")
     }
 
     /// The empty state explains what will appear here once connected, which
@@ -58,37 +75,25 @@ struct ConnectionsView: View {
 
     private func connectionList(rows: [ConnectionTableItem]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: AetherVisual.s2) {
-                Picker("Filter", selection: $filter) {
-                    ForEach(ConnectionOutletFilter.allCases) { option in
-                        Text(label(for: option)).tag(option)
-                    }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: AetherVisual.s2) {
+                    segmentedFilter
+                    connectionActions
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: 330)
+                .fixedSize(horizontal: true, vertical: false)
 
-                Spacer(minLength: AetherVisual.s2)
-
-                Picker("Sort", selection: $sort) {
-                    ForEach(ConnectionSort.allCases) { option in
-                        Text(option.localizedTitle).tag(option)
+                VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                    ViewThatFits(in: .horizontal) {
+                        segmentedFilter
+                        filterPicker.pickerStyle(.menu)
                     }
-                }
-                .labelsHidden()
-                .accessibilityIdentifier("connections-sort-picker")
-                .frame(width: 112)
-
-                if tunnel.isConnected {
-                    Button("Disconnect all") {
-                        Task { await tunnel.setEnabled(false) }
+                    HStack {
+                        Spacer(minLength: 0)
+                        connectionActions
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
-                    .disabled(tunnel.isTransitioning)
-                    .accessibilityIdentifier("disconnect-all-connections")
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, AetherVisual.s4)
             .padding(.vertical, AetherVisual.s2)
 
@@ -118,6 +123,45 @@ struct ConnectionsView: View {
             .accessibilityIdentifier("connections-table")
             .scrollIndicators(.hidden, axes: .horizontal)
         }
+    }
+
+    private var filterPicker: some View {
+        Picker("Filter", selection: $filter) {
+            ForEach(ConnectionOutletFilter.allCases) { option in
+                Text(label(for: option)).tag(option)
+            }
+        }
+        .labelsHidden()
+        .accessibilityIdentifier("connections-filter-picker")
+    }
+
+    private var segmentedFilter: some View {
+        filterPicker
+            .pickerStyle(.segmented)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var connectionActions: some View {
+        HStack(spacing: AetherVisual.s2) {
+            Picker("Sort", selection: $sort) {
+                ForEach(ConnectionSort.allCases) { option in
+                    Text(option.localizedTitle).tag(option)
+                }
+            }
+            .labelsHidden()
+            .accessibilityIdentifier("connections-sort-picker")
+            .frame(width: 112)
+
+            if tunnel.isConnected {
+                Button("Disconnect all") {
+                    Task { await tunnel.setEnabled(false) }
+                }
+                .buttonStyle(.bordered)
+                .disabled(tunnel.isTransitioning)
+                .accessibilityIdentifier("disconnect-all-connections")
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var connectionRows: [ConnectionTableItem] {
@@ -326,7 +370,7 @@ private struct ConnectionDestinationCell: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(connection.transport == .tcp ? "TCP" : "UDP")
-                    .font(.subheadline.monospaced().weight(.medium))
+                    .font(.body.monospaced())
                     .foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -406,18 +450,30 @@ private struct ConnectionDurationCell: View {
     let connection: ConnectionTelemetry
 
     var body: some View {
-        Text(duration)
+        let elapsed = duration
+        let text = elapsed ?? AppLocalization.string("Unknown")
+        Text(text)
             .font(.body.monospacedDigit().weight(.medium))
             .foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+            .multilineTextAlignment(.trailing)
             .frame(maxWidth: .infinity, alignment: .trailing)
+            .accessibilityIdentifier("connection-duration")
+            .accessibilityLabel(Text("Connection duration"))
+            .accessibilityValue(text)
+            .accessibilityHint(Text(
+                elapsed == nil
+                    ? AppLocalization.string("The connection start time is unavailable.")
+                    : ""
+            ))
     }
 
-    private var duration: String {
+    private var duration: String? {
         let started = Double(connection.startedAtUnixMilliseconds) / 1_000
         let elapsed = Int(Date.now.timeIntervalSince1970 - started)
         // A stale or malformed provider timestamp must not turn into a
         // multi-thousand-hour duration in the table.
-        guard elapsed >= 0, elapsed <= 31 * 24 * 3_600 else { return "—" }
+        guard elapsed >= 0, elapsed <= 31 * 24 * 3_600 else { return nil }
         if elapsed >= 3_600 {
             return String(format: "%dh%02dm", elapsed / 3_600, (elapsed % 3_600) / 60)
         }

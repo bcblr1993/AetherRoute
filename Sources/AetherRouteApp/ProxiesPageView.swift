@@ -280,45 +280,17 @@ private struct ProxyGroupDisclosure: View {
 
     private var selectableContent: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            HStack(spacing: AetherVisual.s3) {
-                Text("Selection mode")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Picker(
-                    selection: Binding(
-                        get: { isAutomaticSelectionMode },
-                        set: { isAutomatic in
-                            Task {
-                                await tunnel.setProxySelectionAutomatic(
-                                    group: group.name,
-                                    isAutomatic: isAutomatic
-                                )
-                            }
-                        }
-                    )
-                ) {
-                    Text("Manual").tag(false)
-                    Text("Automatic").tag(true)
-                } label: {
-                    EmptyView()
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: AetherVisual.s3) {
+                    selectionControl
+                    selectionExplanation
                 }
-                .pickerStyle(.segmented)
-                .accessibilityLabel(Text("Selection mode"))
-                .frame(width: 190)
-                .disabled(tunnel.proxySelectionRequests.contains(group.name))
-                .accessibilityIdentifier(
-                    "proxy-selection-mode-\(group.name)"
-                )
-                Spacer()
-                Text(
-                    isAutomaticSelectionMode
-                        ? "Retries the fastest available node"
-                        : "Keeps the selected node pinned"
-                )
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary)
-                .lineLimit(nil)
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: true, vertical: false)
+
+                VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                    selectionControl
+                    selectionExplanation
+                }
             }
 
             ViewThatFits(in: .horizontal) {
@@ -330,7 +302,10 @@ private struct ProxyGroupDisclosure: View {
                 .fixedSize(horizontal: true, vertical: false)
 
                 VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                    memberFilter
+                    ViewThatFits(in: .horizontal) {
+                        memberFilter
+                        memberFilterPicker.pickerStyle(.menu)
+                    }
                     HStack {
                         Spacer(minLength: 0)
                         memberActions
@@ -373,15 +348,79 @@ private struct ProxyGroupDisclosure: View {
         }
     }
 
+    private var selectionControl: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: AetherVisual.s3) {
+                selectionLabel
+                selectionPicker
+            }
+            .fixedSize(horizontal: true, vertical: false)
+
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                selectionLabel
+                selectionPicker
+            }
+        }
+    }
+
+    private var selectionLabel: some View {
+        Text("Selection mode")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+    }
+
+    private var selectionPicker: some View {
+        Picker(
+            selection: Binding(
+                get: { isAutomaticSelectionMode },
+                set: { isAutomatic in
+                    Task {
+                        await tunnel.setProxySelectionAutomatic(
+                            group: group.name,
+                            isAutomatic: isAutomatic
+                        )
+                    }
+                }
+            )
+        ) {
+            Text("Manual").tag(false)
+            Text("Automatic").tag(true)
+        } label: {
+            EmptyView()
+        }
+        .pickerStyle(.segmented)
+        .accessibilityLabel(Text("Selection mode"))
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(minWidth: 190, alignment: .leading)
+        .disabled(tunnel.proxySelectionRequests.contains(group.name))
+        .accessibilityIdentifier("proxy-selection-mode-\(group.name)")
+    }
+
+    private var selectionExplanation: some View {
+        Text(
+            isAutomaticSelectionMode
+                ? "Retries the fastest available node"
+                : "Keeps the selected node pinned"
+        )
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(.primary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
     private var memberFilter: some View {
+        memberFilterPicker
+            .pickerStyle(.segmented)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var memberFilterPicker: some View {
         Picker("Filter", selection: $filter) {
             ForEach(ProxyNodeFilter.allCases) { option in
                 Text(label(for: option)).tag(option)
             }
         }
-        .pickerStyle(.segmented)
         .labelsHidden()
-        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityIdentifier("proxy-filter-picker-\(group.name)")
     }
 
     private var memberActions: some View {

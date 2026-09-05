@@ -1009,8 +1009,9 @@ private struct ConnectionControlBar: View {
     ) -> some View {
         HStack(spacing: AetherVisual.s2) {
             Text(title)
-                .font(.caption)
+                .font(.body.weight(.medium))
                 .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(width: 92, alignment: .leading)
             control()
         }
@@ -1051,7 +1052,9 @@ private struct NetworkEngineSegmentedControl: NSViewRepresentable {
         }
         control.selectedSegment = modes.firstIndex(of: selection) ?? -1
         control.isEnabled = isEnabled
-        control.segmentDistribution = .fillEqually
+        // The engine names have very different lengths. Equal segments waste
+        // the short TUN segment's space and overflow with longer translations.
+        control.segmentDistribution = .fillProportionally
         control.setContentHuggingPriority(.defaultLow, for: .horizontal)
         control.setAccessibilityIdentifier("network-engine-picker")
         control.setAccessibilityLabel(AppLocalization.string("Network engine"))
@@ -1500,13 +1503,14 @@ private struct ProfilesView: View {
                                         Int64(tunnel.profiles.count)
                                     )
                                 )
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(.secondary)
+                                .font(.body)
+                                .foregroundStyle(.primary)
                             }
                             Spacer()
                             Label("Encrypted on this Mac", systemImage: "lock.fill")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
+                                .font(.body)
+                                .foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(.horizontal, AetherVisual.s5)
                         .padding(.vertical, AetherVisual.s4)
@@ -1552,11 +1556,11 @@ private struct ProfilesView: View {
                 }
 
                 VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                    Label("Safe import", systemImage: "checkmark.shield")
+                    Label("Supported formats", systemImage: "doc.text")
                         .font(.headline)
-                    Text("YAML profiles are size-limited, UTF-8 checked, and rejected when they request scripts, plug-ins, commands, or downloadable external UI. The protocol engine performs a second parse before the network extension can report ready.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    Text("Supports Clash-compatible YAML/JSON profiles, HTTPS subscriptions, and common node links.")
+                        .font(.body)
+                        .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(AetherVisual.s5)
@@ -1636,7 +1640,7 @@ private struct ProfilesView: View {
     private var profileDetail: String {
         guard let profile = tunnel.activeProfile else {
             return AppLocalization.string(
-                "Add a node or import a YAML profile to enable the network extension."
+                "Add a subscription, add a node, or import a Clash-compatible YAML/JSON profile to get started."
             )
         }
         return String.localizedStringWithFormat(
@@ -1708,8 +1712,8 @@ private struct RoutingResourcesCard: View {
                     Text("Routing rules")
                         .font(.headline)
                     Text(summary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(.body)
+                        .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("routing-rules-summary")
                 }

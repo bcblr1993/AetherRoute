@@ -391,12 +391,12 @@
         }
       }
     },
-    "Add a node or import a YAML profile to enable the network extension.": {
+    "Add a subscription, add a node, or import a Clash-compatible YAML/JSON profile to get started.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "添加节点或导入 YAML 配置以启用网络扩展。"
+            "value": "添加订阅、添加节点，或导入 Clash 兼容的 YAML/JSON 配置即可开始使用。"
           }
         }
       }
@@ -738,6 +738,16 @@
         }
       }
     },
+    "Another network extension request is already pending. Wait a moment, then try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另一个网络扩展请求正在等待处理。请稍候再试。"
+          }
+        }
+      }
+    },
     "Any remaining traffic": {
       "localizations": {
         "zh-Hans": {
@@ -774,6 +784,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "应用语言"
+          }
+        }
+      }
+    },
+    "Approve the AetherRoute network extension to continue.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请批准 AetherRoute 网络扩展以继续。"
           }
         }
       }
@@ -1371,6 +1391,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "连接控制已锁定"
+          }
+        }
+      }
+    },
+    "Connection duration": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接时长"
           }
         }
       }
@@ -2815,6 +2845,16 @@
         }
       }
     },
+    "In no group": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未加入任何组"
+          }
+        }
+      }
+    },
     "In use": {
       "localizations": {
         "zh-Hans": {
@@ -3292,6 +3332,16 @@
         }
       }
     },
+    "Move AetherRoute to the Applications folder, reopen it, and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请将 AetherRoute 移到“应用程序”文件夹，重新打开后再试。"
+          }
+        }
+      }
+    },
     "Move Node Down": {
       "localizations": {
         "zh-Hans": {
@@ -3418,6 +3468,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "网络引擎已更新。"
+          }
+        }
+      }
+    },
+    "Network extension installation was canceled. Retry when you are ready.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络扩展安装已取消。准备好后可以重试。"
           }
         }
       }
@@ -4068,6 +4128,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "对端公钥"
+          }
+        }
+      }
+    },
+    "Pending core check": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待核心检查"
           }
         }
       }
@@ -5519,16 +5589,6 @@
         }
       }
     },
-    "Safe import": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "安全导入"
-          }
-        }
-      }
-    },
     "Salamander obfuscation": {
       "localizations": {
         "zh-Hans": {
@@ -6079,6 +6139,26 @@
         }
       }
     },
+    "Supported formats": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支持的格式"
+          }
+        }
+      }
+    },
+    "Supports Clash-compatible YAML/JSON profiles, HTTPS subscriptions, and common node links.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支持 Clash 兼容的 YAML/JSON 配置、HTTPS 订阅和常见节点链接。"
+          }
+        }
+      }
+    },
     "Switch to TUN to use the local proxy.": {
       "localizations": {
         "zh-Hans": {
@@ -6230,6 +6310,16 @@
         }
       }
     },
+    "Testing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在测试"
+          }
+        }
+      }
+    },
     "Testing latency…": {
       "localizations": {
         "zh-Hans": {
@@ -6346,6 +6436,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "连接正忙或尚未就绪。"
+          }
+        }
+      }
+    },
+    "The connection start time is unavailable.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接开始时间不可用。"
           }
         }
       }
@@ -6580,6 +6680,16 @@
         }
       }
     },
+    "The network extension could not be installed. Retry once, then open Diagnostics if the problem continues.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法安装网络扩展。请重试一次；如果问题仍然存在，请打开“诊断”查看详情。"
+          }
+        }
+      }
+    },
     "The network extension did not answer the proxy selection request in time.": {
       "localizations": {
         "zh-Hans": {
@@ -6600,12 +6710,32 @@
         }
       }
     },
+    "The network extension installation is already in progress.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络扩展正在安装，请稍候。"
+          }
+        }
+      }
+    },
     "The network extension reports ready": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "网络扩展已报告就绪"
+          }
+        }
+      }
+    },
+    "The network extension returned an unknown installation result.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络扩展返回了未知的安装结果。"
           }
         }
       }
@@ -6636,6 +6766,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "网络扩展在报告就绪前停止。请先重试一次，再检查当前配置。"
+          }
+        }
+      }
+    },
+    "The network extension was installed and will be available after this Mac restarts.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络扩展已安装，重新启动这台 Mac 后即可使用。"
           }
         }
       }
@@ -7218,6 +7358,16 @@
         }
       }
     },
+    "This AetherRoute package is incomplete. Download a fresh official copy and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 AetherRoute 安装包不完整。请从官方渠道重新下载后再试。"
+          }
+        }
+      }
+    },
     "This Mac": {
       "localizations": {
         "zh-Hans": {
@@ -7234,6 +7384,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "自动策略组已就绪，将在连接时选择最快的可用节点。"
+          }
+        }
+      }
+    },
+    "This build does not have the required Network Extension permission. Install the signed official release.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本缺少所需的网络扩展权限。请安装已签名的官方发行版。"
+          }
+        }
+      }
+    },
+    "This copy of AetherRoute is damaged or incorrectly signed. Download a fresh official copy and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 AetherRoute 副本已损坏或签名无效。请从官方渠道重新下载后再试。"
           }
         }
       }
@@ -7515,12 +7685,32 @@
         }
       }
     },
+    "Unknown": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知"
+          }
+        }
+      }
+    },
     "Unknown network extension status": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "未知的网络扩展状态"
+          }
+        }
+      }
+    },
+    "Unsupported": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不支持"
           }
         }
       }
@@ -7875,16 +8065,6 @@
         }
       }
     },
-    "YAML profiles are size-limited, UTF-8 checked, and rejected when they request scripts, plug-ins, commands, or downloadable external UI. The protocol engine performs a second parse before the network extension can report ready.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "YAML 配置会经过大小限制和 UTF-8 检查；包含脚本、插件、命令或可下载外部界面的配置会被拒绝。网络扩展报告就绪前，协议核心还会进行第二次解析。"
-          }
-        }
-      }
-    },
     "You are already online. AetherRoute is measuring the selected route in the background.": {
       "extractionState": "manual",
       "localizations": {
@@ -8025,6 +8205,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "条显式规则"
+          }
+        }
+      }
+    },
+    "macOS or your organization blocked this network extension. Review Network Extensions in System Settings or contact your administrator.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 或你的组织阻止了此网络扩展。请在“系统设置”中查看“网络扩展”，或联系管理员。"
           }
         }
       }
