@@ -53,7 +53,10 @@ final class AetherRouteUITests: XCTestCase {
     }
 
     func testProxiesPassAccessibilityAuditInLightAndDark() throws {
-        try auditPrimaryPage(button: "Proxies", landmark: "Proxy groups")
+        try auditPrimaryPage(
+            button: "Proxies", landmark: "Proxy groups",
+            windowSize: "780x560"
+        )
     }
 
     func testConnectionsPassAccessibilityAuditInLightAndDark() throws {
@@ -2391,11 +2394,14 @@ final class AetherRouteUITests: XCTestCase {
 
     private func auditPrimaryPage(
         button: String,
-        landmark: String
+        landmark: String,
+        windowSize: String? = nil
     ) throws {
         for appearance in ["light", "dark"] {
             try { () throws in
-                let app = launchReviewApp(appearance: appearance)
+                let app = launchReviewApp(
+                    appearance: appearance, windowSize: windowSize
+                )
                 defer { app.terminate() }
 
                 XCTAssertTrue(
@@ -2412,8 +2418,37 @@ final class AetherRouteUITests: XCTestCase {
                     app.staticTexts[landmark].waitForExistence(timeout: 2)
                         || app.buttons[landmark].waitForExistence(timeout: 1)
                 )
+                if button == "Proxies" {
+                    assertProxyControlsFit(in: app)
+                }
                 try auditProductAccessibility(in: app)
             }()
+        }
+    }
+
+    private func assertProxyControlsFit(in app: XCUIApplication) {
+        let windowFrame = app.windows["main-AppWindow-1"].frame
+        let latencyButton = app.buttons["proxy-test-latency-Balanced"]
+        XCTAssertTrue(latencyButton.waitForExistence(timeout: 2))
+        XCTAssertTrue(latencyButton.isHittable)
+        XCTAssertGreaterThanOrEqual(
+            latencyButton.frame.width, 72,
+            "The latency action must retain its label and native hit area."
+        )
+        XCTAssertTrue(windowFrame.contains(latencyButton.frame))
+
+        let table = app.outlines["proxy-node-inventory-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 2))
+        let columns = table.children(matching: .tableColumn)
+        XCTAssertEqual(columns.count, 4)
+        print("PROXIES_LAYOUT window=\(windowFrame) latency=\(latencyButton.frame) table=\(table.frame)")
+        for column in columns.allElementsBoundByIndex {
+            print("PROXIES_LAYOUT column=\(column.frame)")
+            XCTAssertGreaterThanOrEqual(column.frame.minX, table.frame.minX - 1)
+            XCTAssertLessThanOrEqual(
+                column.frame.maxX, table.frame.maxX + 1,
+                "Every node column must fit without horizontal scrolling."
+            )
         }
     }
 
@@ -2958,6 +2993,9 @@ final class AetherRouteUITests: XCTestCase {
                     : "expanded-overview-zh-light"
                 attachment.lifetime = .keepAlways
                 add(attachment)
+            }
+            if destination.pageIdentifier == "proxies-page" {
+                assertProxyControlsFit(in: app)
             }
             try auditProductAccessibility(in: app)
         }

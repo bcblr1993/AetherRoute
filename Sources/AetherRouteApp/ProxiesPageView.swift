@@ -315,39 +315,25 @@ private struct ProxyGroupDisclosure: View {
                 )
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack(spacing: AetherVisual.s2) {
-                Picker("Filter", selection: $filter) {
-                    ForEach(ProxyNodeFilter.allCases) { option in
-                        Text(label(for: option)).tag(option)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: AetherVisual.s2) {
+                    memberFilter
+                    Spacer(minLength: AetherVisual.s2)
+                    memberActions
+                }
+                .fixedSize(horizontal: true, vertical: false)
+
+                VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                    memberFilter
+                    HStack {
+                        Spacer(minLength: 0)
+                        memberActions
                     }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: 340)
-
-                Spacer(minLength: AetherVisual.s2)
-
-                Picker("Sort", selection: $sort) {
-                    ForEach(ProxyNodeSort.allCases) { option in
-                        Text(option.localizedTitle).tag(option)
-                    }
-                }
-                .labelsHidden()
-                .accessibilityIdentifier("proxy-sort-picker")
-                .frame(width: 108)
-
-                Button {
-                    Task { await tunnel.testProxyLatency(group: group.name) }
-                } label: {
-                    AetherProgressButtonLabel(
-                        "Test latency",
-                        isWorking: isTesting
-                    )
-                }
-                .buttonStyle(.bordered)
-                .disabled(!tunnel.isConnected || isTesting)
             }
 
             if !tunnel.isConnected {
@@ -383,6 +369,44 @@ private struct ProxyGroupDisclosure: View {
                 .foregroundStyle(.primary)
             }
         }
+    }
+
+    private var memberFilter: some View {
+        Picker("Filter", selection: $filter) {
+            ForEach(ProxyNodeFilter.allCases) { option in
+                Text(label(for: option)).tag(option)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var memberActions: some View {
+        HStack(spacing: AetherVisual.s2) {
+            Picker("Sort", selection: $sort) {
+                ForEach(ProxyNodeSort.allCases) { option in
+                    Text(option.localizedTitle).tag(option)
+                }
+            }
+            .labelsHidden()
+            .accessibilityIdentifier("proxy-sort-picker")
+            .frame(width: 108)
+
+            Button {
+                Task { await tunnel.testProxyLatency(group: group.name) }
+            } label: {
+                AetherProgressButtonLabel(
+                    "Test latency",
+                    isWorking: isTesting
+                )
+            }
+            .buttonStyle(.bordered)
+            .fixedSize(horizontal: true, vertical: false)
+            .disabled(!tunnel.isConnected || isTesting)
+            .accessibilityIdentifier("proxy-test-latency-\(group.name)")
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var memberList: some View {
@@ -650,20 +674,25 @@ private struct ProxyNodeInventory: View {
                             .font(.subheadline)
                             .strikethrough(!proxy.recognition.isSelectable)
                             .lineLimit(1)
+                            .help(proxy.name)
                     }
+                    .width(min: 84, ideal: 100)
                     TableColumn("Protocol") { proxy in
                         Text(proxy.protocolName.uppercased())
                             .font(.subheadline.monospaced().weight(.semibold))
                             .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .help(proxy.protocolName.uppercased())
                     }
-                    .width(92)
+                    .width(min: 68, ideal: 80, max: 92)
                     TableColumn("In groups") { proxy in
                         Text(membership(of: proxy.name))
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
+                            .help(membership(of: proxy.name))
                     }
-                    .width(min: 120, ideal: 148, max: 170)
+                    .width(min: 80, ideal: 104, max: 170)
                     TableColumn("Core status") { proxy in
                         Label(
                             proxy.recognition.localizedTitle,
@@ -672,8 +701,10 @@ private struct ProxyNodeInventory: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.primary)
                         .labelStyle(.titleAndIcon)
+                        .lineLimit(1)
+                        .help(proxy.recognition.localizedTitle)
                     }
-                    .width(min: 104, ideal: 118, max: 132)
+                    .width(min: 100, ideal: 104, max: 132)
                 }
                 .tableStyle(.inset(alternatesRowBackgrounds: false))
                 .accessibilityLabel("Proxy nodes")
