@@ -234,9 +234,28 @@ extract_safe_screenshots() {
     "$SCREENSHOT_OUTPUT"
 }
 
+# Xcode forwards custom test-runner environment only with TEST_RUNNER_.
+# HOME alone does not isolate cfprefsd: UI review also uses a separate bundle
+# identifier, leaving the installed product's preferences and extensions alone.
+export TEST_RUNNER_AETHERROUTE_UI_TEST_ISOLATED_HOME="$ISOLATED_HOME"
+export TEST_RUNNER_AETHERROUTE_RUN_UI_RESPONSIVENESS="${AETHERROUTE_RUN_UI_RESPONSIVENESS:-NO}"
+export TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_EVIDENCE="${AETHERROUTE_UI_RESPONSIVENESS_EVIDENCE:-}"
+export TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_SECONDS="${AETHERROUTE_UI_RESPONSIVENESS_SECONDS:-1800}"
+export TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_SMOKE="${AETHERROUTE_UI_RESPONSIVENESS_SMOKE:-NO}"
+export TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_MAX_P95_MS="${AETHERROUTE_UI_RESPONSIVENESS_MAX_P95_MS:-120}"
+export TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_HANGS="${AETHERROUTE_UI_RESPONSIVENESS_HANGS:-NO}"
+
 mkdir -p "$ISOLATED_HOME/tmp" "$RUN_DIRECTORY"
 copy_test_workspace
 "$ROOT/scripts/bootstrap.sh"
+
+# XcodeGen resolves embedded extension filenames when generating the project.
+# Generate the review namespace before compilation so those product references
+# match the reviewed app's bundle settings as well.
+sed 's/^    AETHERROUTE_BUNDLE_ID: com.aetherroute.desktop$/    AETHERROUTE_BUNDLE_ID: com.aetherroute.desktop.ui-review/' \
+  "$ROOT/project.yml" >"$ROOT/project-ui-review.yml"
+"$ROOT/.tools/xcodegen/xcodegen/bin/xcodegen" generate \
+  --spec "$ROOT/project-ui-review.yml" --project "$ROOT"
 
 set -- xcodebuild build-for-testing \
   -project "$ROOT/AetherRoute.xcodeproj" \
@@ -245,6 +264,7 @@ set -- xcodebuild build-for-testing \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$DERIVED_DATA" \
   AETHERROUTE_ALLOW_ISOLATED_RELEASE_TEST_BUILD=YES \
+  AETHERROUTE_BUNDLE_ID=com.aetherroute.desktop.ui-review \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGNING_ALLOWED=YES \
   CODE_SIGNING_REQUIRED=YES \
@@ -273,6 +293,11 @@ fi
 
 RUNNER_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRouteUITests-Runner.app"
 PRODUCT_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/AetherRoute.app"
+review_bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PRODUCT_APP/Contents/Info.plist")
+if [ "$review_bundle_id" != com.aetherroute.desktop.ui-review ]; then
+  echo "UI review must use its isolated application identifier; no app was launched." >&2
+  exit 1
+fi
 for application in "$RUNNER_APP" "$PRODUCT_APP"; do
   codesign --verify --deep --strict "$application"
   codesign -dv --verbose=4 "$application" 2>&1 \
@@ -289,6 +314,7 @@ set -- xcodebuild test-without-building \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$DERIVED_DATA" \
   AETHERROUTE_ALLOW_ISOLATED_RELEASE_TEST_BUILD=YES \
+  AETHERROUTE_BUNDLE_ID=com.aetherroute.desktop.ui-review \
   -resultBundlePath "$RESULT_BUNDLE" \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGNING_ALLOWED=YES \

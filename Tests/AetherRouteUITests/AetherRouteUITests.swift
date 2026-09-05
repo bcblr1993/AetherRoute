@@ -3343,13 +3343,20 @@ final class AetherRouteUITests: XCTestCase {
                 "AETHERROUTE_UI_RESPONSIVENESS_APP_OUTPUT"
             ] = responsivenessOutput
         }
-        if let isolatedHome = ProcessInfo.processInfo.environment[
+        guard let isolatedHome = ProcessInfo.processInfo.environment[
             "AETHERROUTE_UI_TEST_ISOLATED_HOME"
-        ] {
-            app.launchEnvironment["HOME"] = isolatedHome
-            app.launchEnvironment["CFFIXED_USER_HOME"] = isolatedHome
-            app.launchEnvironment["TMPDIR"] = isolatedHome + "/tmp"
+        ], URL(fileURLWithPath: isolatedHome).lastPathComponent == "Home",
+           URL(fileURLWithPath: isolatedHome).deletingLastPathComponent()
+                .lastPathComponent.hasPrefix("aetherroute-ui-tests."),
+           Bundle.main.bundleIdentifier == "com.aetherroute.desktop.ui-review.ui-tests.xctrunner"
+        else {
+            XCTFail("UI review requires its isolated runner and test HOME; no product app was launched.")
+            return app
         }
+        app.launchEnvironment["AETHERROUTE_UI_TEST_ISOLATED_HOME"] = isolatedHome
+        app.launchEnvironment["HOME"] = isolatedHome
+        app.launchEnvironment["CFFIXED_USER_HOME"] = isolatedHome
+        app.launchEnvironment["TMPDIR"] = isolatedHome + "/tmp"
         app.launchArguments += [
             "-AppleLanguages", "(\(language))",
             "-AppleLocale", language == "zh-Hans" ? "zh_CN" : "en_US",
