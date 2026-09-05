@@ -12,9 +12,13 @@ struct IndependentDistributionView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: AetherVisual.s5) {
                 header
-                licenseCard
-                updateCard
-                privacyFooter
+                if distribution.isFreeDistribution {
+                    freeEditionCard
+                } else {
+                    licenseCard
+                    updateCard
+                    privacyFooter
+                }
             }
             .padding(.horizontal, AetherVisual.pageHorizontalPadding)
             .padding(.top, AetherVisual.pageTopPadding)
@@ -28,13 +32,27 @@ struct IndependentDistributionView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s1) {
-            Text("License & Updates")
+            Text(AppLocalization.string(distribution.isFreeDistribution ? "Free Edition" : "License & Updates"))
                 .font(.title2.weight(.semibold))
-            Text("AetherRoute verifies signed license receipts and update manifests without storing your activation key.")
+            Text(AppLocalization.string(distribution.isFreeDistribution
+                 ? "AetherRoute is free to use. Import your own proxy configuration to get started."
+                 : "AetherRoute verifies signed license receipts and update manifests without storing your activation key."))
                 .font(.caption)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var freeEditionCard: some View {
+        distributionCard {
+            Label("No activation required", systemImage: "checkmark.seal.fill")
+                .font(.headline)
+                .foregroundStyle(.green)
+            Text("This edition does not contact a licensing service. Install a newer signed DMG to update; your saved configurations are kept.")
+                .font(.body)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityIdentifier("free-edition-status")
     }
 
     private var licenseCard: some View {

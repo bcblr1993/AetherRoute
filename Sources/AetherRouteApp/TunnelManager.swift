@@ -3314,7 +3314,7 @@ final class TunnelManager: ObservableObject {
 
     private var distributionConnectionAccessDetail: String {
         switch distributionConnectionAccess {
-        case .unrestrictedDevelopment, .authorized:
+        case .free, .unrestrictedDevelopment, .authorized:
             AppLocalization.string("Traffic is using the normal network path")
         case .activationRequired:
             AppLocalization.string("Activate AetherRoute in Settings > Account before connecting.")

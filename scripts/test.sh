@@ -26,6 +26,7 @@ trap cleanup EXIT HUP INT TERM
 "$ROOT/scripts/validation/test_correlate_vm_host_network_1434.sh"
 "$ROOT/scripts/test_core_reproducibility_guards.sh"
 "$ROOT/scripts/test_release_pipeline.sh"
+"$ROOT/scripts/test_distribution_modes.sh"
 "$ROOT/scripts/test_release_soak_evidence.sh"
 "$ROOT/scripts/test_remote_arm64_guards.sh"
 "$ROOT/scripts/test_soak_result_verifier.sh"

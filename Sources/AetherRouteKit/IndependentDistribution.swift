@@ -2,6 +2,61 @@ import CryptoKit
 @preconcurrency import Foundation
 import Security
 
+public enum IndependentDistributionMode: String, Equatable, Sendable {
+    case free
+    case licensed
+    case development
+}
+
+/// Free access is an explicit property of the signed product. An incomplete
+/// licensed build must never silently become an unlocked application.
+public struct IndependentDistributionPolicy: Equatable, Sendable {
+    public let mode: IndependentDistributionMode
+    public let configuration: IndependentDistributionConfiguration?
+
+    public init(
+        mode rawMode: String?,
+        releaseChannel: String,
+        productID: String?,
+        licenseServiceURL: String?,
+        updateManifestURL: String?,
+        signingPublicKeyBase64: String?
+    ) throws {
+        let hasServices = licenseServiceURL != nil
+            || updateManifestURL != nil || signingPublicKeyBase64 != nil
+        switch rawMode {
+        case "free":
+            guard !hasServices else {
+                throw IndependentDistributionError.invalidServiceURL
+            }
+            mode = .free
+            configuration = nil
+        case nil where ["development", "beta"].contains(releaseChannel) && !hasServices:
+            // Compatibility for older isolated development/QA fixtures only.
+            mode = .development
+            configuration = nil
+        case "licensed", nil:
+            guard let productID,
+                  let licenseServiceURL,
+                  let licenseURL = URL(string: licenseServiceURL),
+                  let updateManifestURL,
+                  let updateURL = URL(string: updateManifestURL),
+                  let signingPublicKeyBase64 else {
+                throw IndependentDistributionError.invalidServiceURL
+            }
+            mode = .licensed
+            configuration = try IndependentDistributionConfiguration(
+                productID: productID,
+                licenseServiceURL: licenseURL,
+                updateManifestURL: updateURL,
+                signingPublicKeyBase64: signingPublicKeyBase64
+            )
+        default:
+            throw IndependentDistributionError.invalidServiceURL
+        }
+    }
+}
+
 public struct IndependentDistributionConfiguration: Equatable, Sendable {
     public static let maximumResponseBytes = 64 * 1_024
     public static let maximumSignedPayloadBytes = 32 * 1_024
@@ -126,6 +181,7 @@ public enum LicenseEntitlementState: String, Codable, Equatable, Sendable {
 /// owner's service is temporarily unreachable; a signed restriction or an
 /// unverifiable local receipt still fails closed for new connections.
 public enum DistributionConnectionAccess: Equatable, Sendable {
+    case free
     case unrestrictedDevelopment
     case activationRequired
     case authorized
@@ -134,7 +190,7 @@ public enum DistributionConnectionAccess: Equatable, Sendable {
 
     public var permitsNewConnection: Bool {
         switch self {
-        case .unrestrictedDevelopment, .authorized:
+        case .free, .unrestrictedDevelopment, .authorized:
             true
         case .activationRequired, .restricted, .verificationUnavailable:
             false

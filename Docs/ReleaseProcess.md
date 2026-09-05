@@ -4,6 +4,12 @@ AetherRoute uses Semantic Versioning tags. Development snapshots use tags such
 as `v0.1.0-alpha.1`; beta builds use `v0.1.0-beta.1`; production releases use
 `vMAJOR.MINOR.PATCH` without a prerelease suffix.
 
+The first public release is a free independent DMG for macOS 15 or newer on
+Apple Silicon. Users supply their own proxy profiles. Set
+`AETHERROUTE_DISTRIBUTION_MODE=free` explicitly for the stable release pipeline;
+do not embed licensing/update service URLs or an update key. Free access does
+not relax runtime, stability, signing, or clean-machine installation gates.
+
 ## Pull request and source freeze
 
 1. Merge a focused pull request to `main` using squash merge.
@@ -25,8 +31,9 @@ as `v0.1.0-alpha.1`; beta builds use `v0.1.0-beta.1`; production releases use
    cycles, leak/recovery behavior, performance, UI responsiveness, and a clean
    second Mac.
 4. Promote only the exact verified DMG with `scripts/promote_candidate.sh`.
-5. Publish `AetherRoute-<version>-arm64.dmg`, its SHA-256 checksum, release
-   notes, and the signed update manifest. Never replace an asset for an
+5. Publish `AetherRoute-<version>-arm64.dmg`, its SHA-256 checksum and release
+   notes. Licensed editions also publish their signed update manifest; the
+   free first edition uses manual DMG updates. Never replace an asset for an
    existing tag; publish a new patch or prerelease version.
 
 The repository may publish a source-only prerelease while production signing

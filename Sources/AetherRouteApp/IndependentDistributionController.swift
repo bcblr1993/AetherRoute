@@ -22,7 +22,8 @@ final class IndependentDistributionController: ObservableObject {
     @Published private(set) var licenseState: LicenseState = .notConfigured
     @Published private(set) var updateState: UpdateState = .notConfigured
     @Published private(set) var connectionAccess:
-        DistributionConnectionAccess = .unrestrictedDevelopment
+        DistributionConnectionAccess = .verificationUnavailable
+    private(set) var distributionMode: IndependentDistributionMode = .licensed
     @Published private(set) var licenseMessage: String?
     @Published private(set) var isActivating = false
     @Published private(set) var isCheckingForUpdates = false
@@ -50,9 +51,13 @@ final class IndependentDistributionController: ObservableObject {
         ) as? String ?? "0"
 
         do {
-            guard let configuration = try Self.configuration(bundle: bundle)
+            let policy = try Self.policy(bundle: bundle)
+            distributionMode = policy.mode
+            guard let configuration = policy.configuration
             else {
                 client = nil
+                connectionAccess = policy.mode == .free
+                    ? .free : .unrestrictedDevelopment
                 return
             }
             client = try IndependentDistributionClient.live(
@@ -71,6 +76,7 @@ final class IndependentDistributionController: ObservableObject {
     }
 
     var isConfigured: Bool { client != nil }
+    var isFreeDistribution: Bool { distributionMode == .free }
 
     func loadLocalReceipt() {
         guard !hasLoaded else { return }
@@ -232,9 +238,9 @@ final class IndependentDistributionController: ObservableObject {
         }
     }
 
-    private static func configuration(
+    private static func policy(
         bundle: Bundle
-    ) throws -> IndependentDistributionConfiguration? {
+    ) throws -> IndependentDistributionPolicy {
         func value(_ key: String) -> String? {
             guard let raw = bundle.object(forInfoDictionaryKey: key) as? String
             else { return nil }
@@ -245,25 +251,13 @@ final class IndependentDistributionController: ObservableObject {
             return value
         }
 
-        let license = value("AetherRouteLicenseServiceURL")
-        let updates = value("AetherRouteUpdateManifestURL")
-        let publicKey = value("AetherRouteDistributionSigningPublicKey")
-        guard license != nil || updates != nil || publicKey != nil else {
-            return nil
-        }
-        guard let productID = value("AetherRouteDistributionProductIdentifier"),
-              let license,
-              let licenseURL = URL(string: license),
-              let updates,
-              let updateURL = URL(string: updates),
-              let publicKey else {
-            throw IndependentDistributionError.invalidServiceURL
-        }
-        return try IndependentDistributionConfiguration(
-            productID: productID,
-            licenseServiceURL: licenseURL,
-            updateManifestURL: updateURL,
-            signingPublicKeyBase64: publicKey
+        return try IndependentDistributionPolicy(
+            mode: value("AetherRouteDistributionMode"),
+            releaseChannel: value("AetherRouteReleaseChannel") ?? "stable",
+            productID: value("AetherRouteDistributionProductIdentifier"),
+            licenseServiceURL: value("AetherRouteLicenseServiceURL"),
+            updateManifestURL: value("AetherRouteUpdateManifestURL"),
+            signingPublicKeyBase64: value("AetherRouteDistributionSigningPublicKey")
         )
     }
 

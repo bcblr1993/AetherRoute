@@ -11,6 +11,60 @@ final class IndependentDistributionTests: XCTestCase {
     private let updateURL = URL(string: "https://updates.example/stable.json")!
     private let deviceID = "11111111-2222-3333-4444-555555555555"
 
+    func testFreeStablePolicyNeedsNoLicenseService() throws {
+        let policy = try IndependentDistributionPolicy(
+            mode: "free", releaseChannel: "stable", productID: productID,
+            licenseServiceURL: nil, updateManifestURL: nil,
+            signingPublicKeyBase64: nil
+        )
+        XCTAssertEqual(policy.mode, .free)
+        XCTAssertNil(policy.configuration)
+        XCTAssertTrue(DistributionConnectionAccess.free.permitsNewConnection)
+    }
+
+    func testMissingOrUnknownStableModeCannotUnlockLicensedProduct() {
+        for mode in [nil, "licensed", "development", "FREE", ""] as [String?] {
+            XCTAssertThrowsError(try IndependentDistributionPolicy(
+                mode: mode, releaseChannel: "stable", productID: productID,
+                licenseServiceURL: nil, updateManifestURL: nil,
+                signingPublicKeyBase64: nil
+            ))
+        }
+        for value in 0..<3 {
+            XCTAssertThrowsError(try IndependentDistributionPolicy(
+                mode: "free", releaseChannel: "stable", productID: productID,
+                licenseServiceURL: value == 0 ? licenseURL.absoluteString : nil,
+                updateManifestURL: value == 1 ? updateURL.absoluteString : nil,
+                signingPublicKeyBase64: value == 2 ? "unexpected-key" : nil
+            ))
+        }
+        XCTAssertThrowsError(try IndependentDistributionPolicy(
+            mode: nil, releaseChannel: "unknown", productID: productID,
+            licenseServiceURL: nil, updateManifestURL: nil,
+            signingPublicKeyBase64: nil
+        ))
+    }
+
+    func testLicensedPolicyKeepsReceiptGateAndValidatesServices() throws {
+        let key = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation
+        for mode in [nil, "licensed"] as [String?] {
+            let policy = try IndependentDistributionPolicy(
+                mode: mode, releaseChannel: "stable", productID: productID,
+                licenseServiceURL: licenseURL.absoluteString,
+                updateManifestURL: updateURL.absoluteString,
+                signingPublicKeyBase64: key.base64EncodedString()
+            )
+            XCTAssertEqual(policy.mode, .licensed)
+            XCTAssertNotNil(policy.configuration)
+        }
+        XCTAssertFalse(DistributionConnectionAccess.activationRequired.permitsNewConnection)
+        XCTAssertThrowsError(try IndependentDistributionPolicy(
+            mode: "licensed", releaseChannel: "development", productID: productID,
+            licenseServiceURL: nil, updateManifestURL: nil,
+            signingPublicKeyBase64: nil
+        ))
+    }
+
     func testConnectionAccessFailsClosedOutsideDevelopmentAndActiveReceipt() {
         XCTAssertTrue(
             DistributionConnectionAccess.unrestrictedDevelopment

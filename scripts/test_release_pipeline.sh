@@ -17,7 +17,8 @@ fi
 TEMP=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-release-pipeline-test.XXXXXX")
 trap 'find "$TEMP" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 set +e
-missing_soak_output=$(AETHERROUTE_LICENSE_SERVICE_URL=https://license.example \
+missing_soak_output=$(AETHERROUTE_DISTRIBUTION_MODE=licensed \
+  AETHERROUTE_LICENSE_SERVICE_URL=https://license.example \
   AETHERROUTE_UPDATE_MANIFEST_URL=https://updates.example/manifest.json \
   AETHERROUTE_DISTRIBUTION_PUBLIC_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
   "$SCRIPT" "$ROOT/Config/Signing.example.json" test-notary-profile \
@@ -35,7 +36,8 @@ printf '%s\n' "$missing_soak_output" \
   exit 1
 }
 set +e
-missing_signed_output=$(AETHERROUTE_LICENSE_SERVICE_URL=https://license.example \
+missing_signed_output=$(AETHERROUTE_DISTRIBUTION_MODE=licensed \
+  AETHERROUTE_LICENSE_SERVICE_URL=https://license.example \
   AETHERROUTE_UPDATE_MANIFEST_URL=https://updates.example/manifest.json \
   AETHERROUTE_DISTRIBUTION_PUBLIC_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
   AETHERROUTE_SOAK_EVIDENCE_DIRECTORY=/nonexistent/soak-evidence \

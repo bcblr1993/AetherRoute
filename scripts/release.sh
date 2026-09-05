@@ -55,20 +55,16 @@ done
 license_service_url=${AETHERROUTE_LICENSE_SERVICE_URL:-}
 update_manifest_url=${AETHERROUTE_UPDATE_MANIFEST_URL:-}
 distribution_public_key=${AETHERROUTE_DISTRIBUTION_PUBLIC_KEY:-}
+distribution_mode=${AETHERROUTE_DISTRIBUTION_MODE:-licensed}
 soak_evidence_directory=${AETHERROUTE_SOAK_EVIDENCE_DIRECTORY:-}
 signed_ne_evidence_directory=${AETHERROUTE_SIGNED_NE_EVIDENCE_DIRECTORY:-}
-test -n "$license_service_url" || {
-  echo "stable release requires AETHERROUTE_LICENSE_SERVICE_URL" >&2
-  exit 64
-}
-test -n "$update_manifest_url" || {
-  echo "stable release requires AETHERROUTE_UPDATE_MANIFEST_URL" >&2
-  exit 64
-}
-test -n "$distribution_public_key" || {
-  echo "stable release requires AETHERROUTE_DISTRIBUTION_PUBLIC_KEY" >&2
-  exit 64
-}
+distribution_product_id=${AETHERROUTE_DISTRIBUTION_PRODUCT_ID:-$(
+  jq -r '.profiles[] | select(.role == "direct-host") | .bundleID' \
+    "$SIGNING_CONFIG"
+)}
+"$ROOT/scripts/verify_distribution_configuration.sh" \
+  "$distribution_mode" "$distribution_product_id" \
+  "$license_service_url" "$update_manifest_url" "$distribution_public_key"
 test -n "$soak_evidence_directory" || {
   echo "stable release requires AETHERROUTE_SOAK_EVIDENCE_DIRECTORY" >&2
   exit 64
@@ -85,33 +81,11 @@ case "$signed_ne_evidence_directory" in
   /*) ;;
   *) echo "AETHERROUTE_SIGNED_NE_EVIDENCE_DIRECTORY must be absolute" >&2; exit 64 ;;
 esac
-for service_url in "$license_service_url" "$update_manifest_url"; do
-  case "$service_url" in
-    https://?*) ;;
-    *) echo "distribution services must use HTTPS" >&2; exit 64 ;;
-  esac
-  if printf '%s\n' "$service_url" | grep -Eq '[@#[:space:]]'; then
-    echo "distribution service URL contains credentials, fragment, or whitespace" >&2
-    exit 64
-  fi
-done
-decoded_key_bytes=$(printf '%s' "$distribution_public_key" \
-  | base64 -D 2>/dev/null | wc -c | tr -d ' ')
-test "$decoded_key_bytes" -eq 32 || {
-  echo "AETHERROUTE_DISTRIBUTION_PUBLIC_KEY must be a base64 Ed25519 public key" >&2
-  exit 64
-}
-distribution_product_id=${AETHERROUTE_DISTRIBUTION_PRODUCT_ID:-$(
-  jq -r '.profiles[] | select(.role == "direct-host") | .bundleID' \
-    "$SIGNING_CONFIG"
-)}
-printf '%s\n' "$distribution_product_id" \
-  | grep -Eq '^[A-Za-z0-9][A-Za-z0-9.-]{2,127}$' || {
-  echo "stable release requires a valid distribution product identifier" >&2
-  exit 64
-}
-update_signing_public_key_sha256=$(printf '%s' "$distribution_public_key" \
-  | base64 -D | shasum -a 256 | awk '{print $1}')
+update_signing_public_key_sha256=
+if [ "$distribution_mode" = licensed ]; then
+  update_signing_public_key_sha256=$(printf '%s' "$distribution_public_key" \
+    | base64 -D | shasum -a 256 | awk '{print $1}')
+fi
 
 git -C "$ROOT" diff --quiet -- || {
   echo "stable release requires a clean source tree" >&2
@@ -282,6 +256,7 @@ printf '%s\n' "$release_timestamp" \
   printf 'AETHERROUTE_RELEASE_TIMESTAMP = %s\n' "$release_timestamp"
   printf 'AETHERROUTE_DISTRIBUTION_PRODUCT_ID = %s\n' \
     "$distribution_product_id"
+  printf 'AETHERROUTE_DISTRIBUTION_MODE = %s\n' "$distribution_mode"
   printf 'AETHERROUTE_LICENSE_SERVICE_URL = %s\n' "$license_service_url"
   printf 'AETHERROUTE_UPDATE_MANIFEST_URL = %s\n' "$update_manifest_url"
   printf 'AETHERROUTE_DISTRIBUTION_PUBLIC_KEY = %s\n' \
@@ -463,6 +438,7 @@ jq -n \
   --arg gitCommit "$git_commit" \
   --arg sourceManifestSHA256 "$source_manifest_sha256" \
   --arg updateSigningPublicKeySHA256 "$update_signing_public_key_sha256" \
+  --arg distributionMode "$distribution_mode" \
   --arg sha256 "$dmg_sha256" \
   --arg appNotarySubmissionID "$app_submission_id" \
   --arg dmgNotarySubmissionID "$dmg_submission_id" \
@@ -481,7 +457,9 @@ jq -n \
     source: {gitCommit: $gitCommit,
       manifestSHA256: $sourceManifestSHA256},
     distribution: {
-      updateSigningPublicKeySHA256: $updateSigningPublicKeySHA256},
+      mode: $distributionMode,
+      updateSigningPublicKeySHA256:
+        (if $distributionMode == "free" then null else $updateSigningPublicKeySHA256 end)},
     dmg: {sha256: $sha256, bytes: $bytes},
     notarization: {status: "Accepted",
       submissionID: $dmgNotarySubmissionID,

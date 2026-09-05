@@ -37,7 +37,11 @@ jq -e '
   .architecture == "arm64" and
   (.source.gitCommit | test("^[0-9a-f]{40}$")) and
   (.source.manifestSHA256 | test("^[0-9a-f]{64}$")) and
-  (.distribution.updateSigningPublicKeySHA256 | test("^[0-9a-f]{64}$")) and
+  (if .distribution.mode == "free" then
+     .distribution.updateSigningPublicKeySHA256 == null
+   elif (.distribution.mode // "licensed") == "licensed" then
+     (.distribution.updateSigningPublicKeySHA256 | test("^[0-9a-f]{64}$"))
+   else false end) and
   (.dmg.sha256 | test("^[0-9a-f]{64}$")) and
   (.dmg.bytes | type == "number" and . > 0) and
   .notarization.status == "Accepted" and

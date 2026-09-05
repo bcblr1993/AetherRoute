@@ -4,6 +4,16 @@ AetherRoute is distributed as a notarized DMG outside the Mac App Store. No
 Store target, Store receipt, App Store Connect upload, or Store provisioning
 profile is part of the product.
 
+The first public edition is free and accepts the user's own proxy profiles.
+Its signed metadata explicitly sets `AetherRouteDistributionMode=free`.
+It requires no account, activation, license server, or update server; upgrades
+use a newer signed DMG and preserve the user's saved configurations. Free
+builds reject embedded licensing/update service settings, so accidentally
+mixed configuration cannot silently change the product's access policy.
+The optional `licensed` mode retains signature and receipt verification and
+refuses incomplete service configuration. Missing mode metadata does not
+unlock a stable licensed build.
+
 The `signedReceipt` terms used by the licensing client refer only to
 AetherRoute's owner-operated Ed25519 license envelope; they do not use Apple's
 Store receipt APIs. App Sandbox remains enabled because it is a deliberate
@@ -108,6 +118,7 @@ App Store, App Store Connect, Store receipt, or Store provisioning workflow is
 used. Then run:
 
 ```sh
+AETHERROUTE_DISTRIBUTION_MODE=free \
 AETHERROUTE_SOAK_EVIDENCE_DIRECTORY=/absolute/path/to/completed-soak-evidence \
 AETHERROUTE_SIGNED_NE_EVIDENCE_DIRECTORY=/absolute/path/to/signed-ne-evidence \
 ./scripts/release.sh \
@@ -118,7 +129,13 @@ AETHERROUTE_SIGNED_NE_EVIDENCE_DIRECTORY=/absolute/path/to/signed-ne-evidence \
   /absolute/path/to/release-output
 ```
 
-The stable release environment must also provide
+For the free edition, leave the license URL, update URL, and distribution
+public key unset. `release.sh` defaults to `licensed` for compatibility, so
+the explicit `AETHERROUTE_DISTRIBUTION_MODE=free` above is required.
+Free and licensed releases run the same signing, notarization, source,
+stability, installed-runtime, and production-promotion gates.
+
+The optional licensed release environment must also provide
 `AETHERROUTE_LICENSE_SERVICE_URL`, `AETHERROUTE_UPDATE_MANIFEST_URL`, and the
 base64 raw 32-byte Ed25519 public key in
 `AETHERROUTE_DISTRIBUTION_PUBLIC_KEY`. It must also provide an absolute
@@ -172,6 +189,8 @@ After those tests create privacy-safe `metadata.txt`, `result.txt`, and
   /absolute/production-approval-output
 ```
 
+Promotion accepts explicit free candidates without an update verification key;
+licensed candidates continue to require its exact SHA-256.
 Promotion rechecks the DMG hash, code signature, stapled ticket, Gatekeeper,
 and post-install evidence. The evidence requires both engines, IPv4/IPv6/DNS
 leak and recovery matrices, connected CPU/RSS, throughput/latency, and UI

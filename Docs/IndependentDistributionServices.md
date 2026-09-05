@@ -1,5 +1,10 @@
 # Independent license and update services
 
+The first public edition uses explicit `free` distribution and does not call
+these services. Its signed DMG has no activation requirement. The following
+contract applies only to optional `licensed` builds; it is retained so those
+builds continue to fail closed if their configuration or receipts are invalid.
+
 AetherRoute's independent build uses two owner-operated HTTPS endpoints and
 one embedded Ed25519 public key. The matching private key remains outside the
 application, repository, build logs, DMG, and diagnostics.
@@ -10,10 +15,11 @@ format, for example `2026-08-01T08:00:00Z`.
 
 ## Release configuration
 
-Stable builds require these inputs:
+Licensed builds require these inputs:
 
 | Input | Meaning |
 | --- | --- |
+| `AETHERROUTE_DISTRIBUTION_MODE` | `licensed`; free releases set `free` and leave all service inputs empty |
 | `AETHERROUTE_DISTRIBUTION_PRODUCT_ID` | Stable product identifier; defaults to the signed host bundle identifier |
 | `AETHERROUTE_LICENSE_SERVICE_URL` | Exact HTTPS endpoint for activate, refresh, and deactivate requests |
 | `AETHERROUTE_UPDATE_MANIFEST_URL` | Exact HTTPS URL of the current signed update envelope |

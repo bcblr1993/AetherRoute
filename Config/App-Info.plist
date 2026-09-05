@@ -10,6 +10,8 @@
 	<string>ChenYanNan</string>
 	<key>AetherRouteDistributionProductIdentifier</key>
 	<string>$(AETHERROUTE_DISTRIBUTION_PRODUCT_ID)</string>
+	<key>AetherRouteDistributionMode</key>
+	<string>$(AETHERROUTE_DISTRIBUTION_MODE)</string>
 	<key>AetherRouteDistributionSigningPublicKey</key>
 	<string>$(AETHERROUTE_DISTRIBUTION_PUBLIC_KEY)</string>
 	<key>AetherRouteKeychainAccessGroup</key>

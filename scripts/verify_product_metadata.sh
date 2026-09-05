@@ -45,6 +45,7 @@ verify_distribution_metadata() {
   license_url=$(plist_value "$info" AetherRouteLicenseServiceURL)
   update_url=$(plist_value "$info" AetherRouteUpdateManifestURL)
   public_key=$(plist_value "$info" AetherRouteDistributionSigningPublicKey)
+  distribution_mode=$(plist_value "$info" AetherRouteDistributionMode 2>/dev/null || true)
 
   if [ "$product" = '$(AETHERROUTE_DISTRIBUTION_PRODUCT_ID)' ] && \
      [ "$license_url" = '$(AETHERROUTE_LICENSE_SERVICE_URL)' ] && \
@@ -52,25 +53,14 @@ verify_distribution_metadata() {
      [ "$public_key" = '$(AETHERROUTE_DISTRIBUTION_PUBLIC_KEY)' ]; then
     return
   fi
-  if [ -z "$license_url$update_url$public_key" ]; then
-    test "$channel" != stable || \
-      fail "stable release is missing license/update configuration"
+  if [ -z "$distribution_mode$license_url$update_url$public_key" ] \
+    && [ "$channel" != stable ]; then
     return
   fi
-  test -n "$product" || fail "distribution product identifier is empty"
-  for url in "$license_url" "$update_url"; do
-    case "$url" in
-      https://?*) ;;
-      *) fail "distribution services must use HTTPS" ;;
-    esac
-    if printf '%s\n' "$url" | grep -Eq '[@#[:space:]]'; then
-      fail "distribution service URL contains credentials, fragment, or whitespace"
-    fi
-  done
-  decoded_key_bytes=$(printf '%s' "$public_key" \
-    | base64 -D 2>/dev/null | wc -c | tr -d ' ')
-  test "$decoded_key_bytes" -eq 32 || \
-    fail "distribution signing public key must decode to 32 bytes"
+  "$ROOT/scripts/verify_distribution_configuration.sh" \
+    "${distribution_mode:-licensed}" "$product" \
+    "$license_url" "$update_url" "$public_key" \
+    || fail "invalid distribution mode or service configuration"
 }
 
 verify_source() {
