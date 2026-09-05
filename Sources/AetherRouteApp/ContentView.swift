@@ -319,9 +319,6 @@ struct ContentView: View {
                         .font(.headline.weight(.semibold))
                         .tracking(-0.15)
                         .foregroundStyle(.primary)
-                    Text("Private routing")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.primary)
                 }
                 Spacer()
             }
@@ -381,10 +378,10 @@ struct ContentView: View {
                                     ? AppLocalization.string("Import required")
                                     : activeProfileStatus
                             )
-                            .font(.caption)
+                            .font(.subheadline.weight(.medium))
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.primary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .layoutPriority(1)
