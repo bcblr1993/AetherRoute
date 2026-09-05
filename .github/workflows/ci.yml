@@ -30,5 +30,9 @@ jobs:
         with:
           go-version-file: Services/DistributionService/go.mod
           cache-dependency-path: Services/DistributionService/go.mod
+      - name: Install repository check dependencies
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install ripgrep
       - name: Run repository checks
         run: ./scripts/test_repository_ci.sh
