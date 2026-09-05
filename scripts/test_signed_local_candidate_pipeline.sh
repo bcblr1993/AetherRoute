@@ -16,10 +16,12 @@ fi
 for required in \
   'scripts/signing_preflight.sh' \
   'scripts/verify_developer_id_private_key_access.sh' \
-  "AETHERROUTE_CORE_FEATURES='aether-flow-only,aether-diagnostics'" \
-  "AETHERROUTE_DIRECT_CORE_FEATURES='aether-embedded,aether-diagnostics'" \
-  "grep -F 'aether_flow stage='" \
-  "grep -F 'aether_packet stage='" \
+  'AETHERROUTE_TEST_CORE_VARIANT:-diagnostics' \
+  'scripts/test_candidate_core.sh" build "$CORE_VARIANT"' \
+  'scripts/test_candidate_core.sh" built "$CORE_VARIANT" "$APP"' \
+  'scripts/test_candidate_core.sh" bind "$CORE_VARIANT" "$SOURCE_BEFORE" "$CORE_METADATA"' \
+  'core:$core' \
+  'diagnosticsIncluded:$core.diagnosticsIncluded' \
   'scripts/generate_licenses.sh' \
   'scripts/verify_licenses.sh" source' \
   'scripts/verify_licenses.sh" built' \
@@ -44,11 +46,8 @@ do
   }
 done
 
-flow_build_line=$(grep -nF \
-  "AETHERROUTE_CORE_FEATURES='aether-flow-only,aether-diagnostics'" \
-  "$SCRIPT" | cut -d: -f1)
-packet_build_line=$(grep -nF \
-  "AETHERROUTE_DIRECT_CORE_FEATURES='aether-embedded,aether-diagnostics'" \
+core_build_line=$(grep -nF \
+  'scripts/test_candidate_core.sh" build "$CORE_VARIANT"' \
   "$SCRIPT" | cut -d: -f1)
 license_generation_line=$(grep -nF \
   '"$ROOT/scripts/generate_licenses.sh"' "$SCRIPT" | cut -d: -f1)
@@ -60,8 +59,7 @@ license_built_line=$(grep -nF \
 signature_line=$(grep -nF \
   'codesign --verify --deep --strict' "$SCRIPT" | cut -d: -f1)
 package_line=$(grep -nF 'ditto -c -k --keepParent' "$SCRIPT" | cut -d: -f1)
-if [ "$flow_build_line" -ge "$license_generation_line" ] \
-  || [ "$packet_build_line" -ge "$license_generation_line" ] \
+if [ "$core_build_line" -ge "$license_generation_line" ] \
   || [ "$license_generation_line" -ge "$license_source_line" ] \
   || [ "$license_source_line" -ge "$bootstrap_line" ] \
   || [ "$signature_line" -ge "$license_built_line" ] \
@@ -69,6 +67,8 @@ if [ "$flow_build_line" -ge "$license_generation_line" ] \
   echo "QA notices must follow both core builds and be verified before packaging" >&2
   exit 1
 fi
+
+"$ROOT/scripts/test_candidate_core_variants.sh"
 
 KEY_GUARD="$ROOT/scripts/verify_developer_id_private_key_access.sh"
 sh -n "$KEY_GUARD"

@@ -57,6 +57,44 @@ agreement with the generated Xcode target settings. The generated override is
 mode 600 and contains no certificate fingerprint, profile path, password, or
 notary credential.
 
+## Test candidate core variants
+
+Both `build_signed_local_test_candidate.sh` and
+`build_notarized_test_candidate.sh` accept
+`AETHERROUTE_TEST_CORE_VARIANT=normal|diagnostics`. The default remains
+`diagnostics` for investigation. Use `normal` when collecting signed-runtime
+evidence that must remain valid for the normal production archives:
+
+```sh
+AETHERROUTE_TEST_CORE_VARIANT=normal \
+./scripts/build_notarized_test_candidate.sh \
+  /absolute/path/to/Signing.json notary-keychain-profile \
+  1.0.0 1001 /absolute/new/normal-core-test-candidate
+```
+
+Every variant first builds the fixed normal Flow and Packet features, rejects
+diagnostic markers, and verifies both archive hashes against the current
+protocol evidence. Normal retains those archives. Diagnostics then rebuilds
+with its diagnostic features and requires the expected markers. No protocol
+hash or source-manifest guard is skipped or rewritten to accept a different
+variant. Notices are regenerated for the actual archives and checked in the
+source and signed app.
+
+The schema-1 candidate manifest adds `core.variant`, actual Flow/Packet archive
+hashes and features, and `core.protocolReference` with the verified normal
+archive hashes and protocol-evidence hash. `safety.diagnosticsIncluded` remains
+explicit. Normal requires `matchesCandidateArtifacts=true`; diagnostics
+requires `false`. The core metadata is checked against the frozen source
+manifest, and normal candidates reject diagnostic markers in every packaged
+Mach-O. Normal artifact names end in `-Normal-Core` before their extension.
+
+Collect release evidence with a normal candidate after the source and notices
+are frozen. A diagnostic candidate's source manifest and actual archive hashes
+cannot serve as normal release evidence. Rebuilding another variant or editing
+source invalidates that binding. A normal test candidate is still a test
+artifact: production uses `release.sh`, followed by exact-DMG post-install
+verification and `promote_candidate.sh`.
+
 ## Signed Network Extension lifecycle gate
 
 This test starts and stops real providers. Run it only on the designated test
@@ -147,8 +185,9 @@ RSS/FD limits, at most 1 MiB/hour post-warm-up RSS growth, no new exact-core
 crash/hang/spin report, and no orphan process at either harness path.
 It must also provide `AETHERROUTE_SIGNED_NE_EVIDENCE_DIRECTORY` from the exact
 current source tree. That evidence must cover at least three TUN and three
-Transparent Proxy connect/readiness/canary/disconnect cycles under an Apple
-Development signature, while retaining neither the canary URL nor raw
+Transparent Proxy connect/readiness/canary/disconnect cycles using an Apple
+Development-signed XCTest runner against the Developer ID candidate, while
+retaining neither the canary URL nor raw
 `.xcresult` data.
 The optional
 `AETHERROUTE_DISTRIBUTION_PRODUCT_ID` defaults to the signed host bundle ID.

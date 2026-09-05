@@ -9,6 +9,10 @@ VERSION=${3:-}
 BUILD_NUMBER=${4:-}
 OUTPUT_DIRECTORY=${5:-}
 NOTARY_KEYCHAIN=${AETHERROUTE_NOTARY_KEYCHAIN:-}
+CORE_VARIANT=${AETHERROUTE_TEST_CORE_VARIANT:-diagnostics}
+case "$CORE_VARIANT" in normal|diagnostics) ;; *)
+  echo 'AETHERROUTE_TEST_CORE_VARIANT must be normal or diagnostics' >&2; exit 64 ;;
+esac
 
 usage() {
   echo "usage: $0 /absolute/Signing.json notary-profile version build-number /absolute/new-output-directory" >&2
@@ -71,27 +75,9 @@ SIGNING_CONFIG_SHA256=$(shasum -a 256 "$SIGNING_CONFIG" | awk '{print $1}')
 IDENTITY=$(jq -r '.developerIDIdentitySHA1 | ascii_upcase' "$SIGNING_CONFIG")
 "$ROOT/scripts/verify_developer_id_private_key_access.sh" "$IDENTITY"
 
-# Notarized beta candidates are the only builds used for live Network
-# Extension diagnosis. Include bounded, numeric-only flow stages here while
-# leaving the production release script on the diagnostics-free default.
-AETHERROUTE_CORE_FEATURES='aether-flow-only,aether-diagnostics' \
-  "$ROOT/scripts/build_core.sh" >/dev/null
-AETHERROUTE_DIRECT_CORE_FEATURES='aether-embedded,aether-diagnostics' \
-  "$ROOT/scripts/build_direct_core.sh" >/dev/null
-strings "$ROOT/Core/Artifacts/macos-arm64/libclashrs.a" \
-  | grep -F 'aether_flow stage=' >/dev/null || {
-  echo "notarized test candidate core is missing privacy-safe flow diagnostics" >&2
-  exit 1
-}
-strings "$ROOT/Core/Artifacts/macos-arm64/libclashrs-direct.a" \
-  | grep -F 'aether_packet stage=' >/dev/null || {
-  echo "notarized test candidate Packet core is missing privacy-safe diagnostics" >&2
-  exit 1
-}
-# The protocol evidence binds the exact Rust archives embedded in the
-# candidate. Re-verify it after rebuilding both archives so stale evidence can
-# never enter the signing and notarization stages.
-"$ROOT/scripts/verify_protocol_matrix.sh"
+# The shared policy first verifies the normal protocol archives. Normal keeps
+# those bytes; diagnostics records its distinct actual archive hashes.
+CORE_METADATA=$("$ROOT/scripts/test_candidate_core.sh" build "$CORE_VARIANT")
 "$ROOT/scripts/generate_licenses.sh"
 "$ROOT/scripts/verify_licenses.sh" source
 "$ROOT/scripts/bootstrap.sh"
@@ -291,6 +277,7 @@ SOURCE_AFTER="$TEMPORARY/source-after.txt"
 NETWORK_BEFORE="$TEMPORARY/network-before.txt"
 NETWORK_AFTER="$TEMPORARY/network-after.txt"
 "$ROOT/scripts/source_manifest.sh" >"$SOURCE_BEFORE"
+"$ROOT/scripts/test_candidate_core.sh" bind "$CORE_VARIANT" "$SOURCE_BEFORE" "$CORE_METADATA"
 network_snapshot >"$NETWORK_BEFORE"
 SOURCE_SHA256=$(awk '$1 == "MANIFEST_SHA256" {print $2}' "$SOURCE_BEFORE")
 RELEASE_TIMESTAMP=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
@@ -393,10 +380,7 @@ TRANSPARENT="$APP/Contents/Library/SystemExtensions/$TRANSPARENT_BUNDLE.systemex
 test -d "$APP" && test -d "$PACKET" && test -d "$TRANSPARENT"
 FLOW_BRIDGE="$TRANSPARENT/Contents/Frameworks/AetherRouteFlowCoreBridge.framework/Versions/Current/AetherRouteFlowCoreBridge"
 test -x "$FLOW_BRIDGE"
-strings "$FLOW_BRIDGE" | grep -F 'aether_flow stage=' >/dev/null || {
-  echo "notarized test candidate dropped privacy-safe flow diagnostics" >&2
-  exit 1
-}
+"$ROOT/scripts/test_candidate_core.sh" built "$CORE_VARIANT" "$APP"
 test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")" \
   = "$HOST_BUNDLE"
 test "$(plutil -extract CFBundleVersion raw -o - "$APP/Contents/Info.plist")" \
@@ -457,10 +441,12 @@ ln -s /Applications "$STAGE/Applications"
 printf '%s\n' \
   'AetherRoute notarized test candidate.' \
   'This build is for signed cross-machine verification and is not production-approved.' \
+  "Core variant: $CORE_VARIANT. See the manifest for actual and protocol-reference hashes." \
   >"$TEMPORARY/README.txt"
 cp "$TEMPORARY/README.txt" "$STAGE/测试版本说明.txt"
 
 ARTIFACT_NAME="AetherRoute-$VERSION-build-$BUILD_NUMBER-arm64-Notarized-Test"
+if [ "$CORE_VARIANT" = normal ]; then ARTIFACT_NAME="$ARTIFACT_NAME-Normal-Core"; fi
 DMG="$TEMPORARY/$ARTIFACT_NAME.dmg"
 create_finalized_dmg \
   "$DMG" \
@@ -537,6 +523,7 @@ jq -n \
   --arg createdAt "$RELEASE_TIMESTAMP" \
   --arg architecture arm64 \
   --arg sourceManifestSHA256 "$SOURCE_SHA256" \
+  --argjson core "$CORE_METADATA" \
   --arg signingConfigurationSHA256 "$SIGNING_CONFIG_SHA256" \
   --arg hostBundleID "$HOST_BUNDLE" \
   --arg appCDHash "$APP_CDHASH" \
@@ -555,7 +542,8 @@ jq -n \
     product: $product, author: $author, version: $version, build: $build,
     createdAt: $createdAt, architecture: $architecture,
     safety: {productionApproved: false, networkActivatedDuringBuild: false,
-      systemNetworkState: "unchanged", diagnosticsIncluded: true},
+      systemNetworkState: "unchanged", diagnosticsIncluded:$core.diagnosticsIncluded},
+    core:$core,
     sourceManifestSHA256: $sourceManifestSHA256,
     signing: {configurationSHA256: $signingConfigurationSHA256,
       app: {bundleID: $hostBundleID, cdhash: $appCDHash,

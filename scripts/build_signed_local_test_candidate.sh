@@ -7,6 +7,10 @@ SIGNING_CONFIG=${1:-}
 VERSION=${2:-}
 BUILD_NUMBER=${3:-}
 OUTPUT_DIRECTORY=${4:-}
+CORE_VARIANT=${AETHERROUTE_TEST_CORE_VARIANT:-diagnostics}
+case "$CORE_VARIANT" in normal|diagnostics) ;; *)
+  echo 'AETHERROUTE_TEST_CORE_VARIANT must be normal or diagnostics' >&2; exit 64 ;;
+esac
 
 usage() {
   echo "usage: $0 /absolute/Signing.json version build-number /absolute/new-output-directory" >&2
@@ -56,22 +60,9 @@ done
 IDENTITY=$(jq -r '.developerIDIdentitySHA1 | ascii_upcase' "$SIGNING_CONFIG")
 "$ROOT/scripts/verify_developer_id_private_key_access.sh" "$IDENTITY"
 
-# Local QA candidates deliberately include privacy-safe numeric flow stages.
-# Production release scripts retain the diagnostics-free default feature set.
-AETHERROUTE_CORE_FEATURES='aether-flow-only,aether-diagnostics' \
-  "$ROOT/scripts/build_core.sh" >/dev/null
-AETHERROUTE_DIRECT_CORE_FEATURES='aether-embedded,aether-diagnostics' \
-  "$ROOT/scripts/build_direct_core.sh" >/dev/null
-strings "$ROOT/Core/Artifacts/macos-arm64/libclashrs.a" \
-  | grep -F 'aether_flow stage=' >/dev/null || {
-  echo "local signed candidate core is missing privacy-safe flow diagnostics" >&2
-  exit 1
-}
-strings "$ROOT/Core/Artifacts/macos-arm64/libclashrs-direct.a" \
-  | grep -F 'aether_packet stage=' >/dev/null || {
-  echo "local signed candidate Packet core is missing privacy-safe diagnostics" >&2
-  exit 1
-}
+# Normal candidates keep the exact production protocol archives. Diagnostics
+# candidates record their distinct actual bytes and verified normal reference.
+CORE_METADATA=$("$ROOT/scripts/test_candidate_core.sh" build "$CORE_VARIANT")
 # Bind the packaged notices to these rebuilt QA archives and bundled data.
 "$ROOT/scripts/generate_licenses.sh"
 "$ROOT/scripts/verify_licenses.sh" source
@@ -102,6 +93,7 @@ SOURCE_AFTER="$TEMPORARY/source-after.txt"
 NETWORK_BEFORE="$TEMPORARY/network-before.txt"
 NETWORK_AFTER="$TEMPORARY/network-after.txt"
 "$ROOT/scripts/source_manifest.sh" >"$SOURCE_BEFORE"
+"$ROOT/scripts/test_candidate_core.sh" bind "$CORE_VARIANT" "$SOURCE_BEFORE" "$CORE_METADATA"
 network_snapshot >"$NETWORK_BEFORE"
 SOURCE_SHA256=$(awk '$1 == "MANIFEST_SHA256" {print $2}' "$SOURCE_BEFORE")
 CREATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
@@ -177,10 +169,7 @@ TRANSPARENT="$APP/Contents/Library/SystemExtensions/$TRANSPARENT_BUNDLE.systemex
 test -d "$APP" && test -d "$PACKET" && test -d "$TRANSPARENT"
 FLOW_BRIDGE="$TRANSPARENT/Contents/Frameworks/AetherRouteFlowCoreBridge.framework/Versions/Current/AetherRouteFlowCoreBridge"
 test -x "$FLOW_BRIDGE"
-strings "$FLOW_BRIDGE" | grep -F 'aether_flow stage=' >/dev/null || {
-  echo "local signed candidate dropped privacy-safe flow diagnostics" >&2
-  exit 1
-}
+"$ROOT/scripts/test_candidate_core.sh" built "$CORE_VARIANT" "$APP"
 test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")" \
   = "$HOST_BUNDLE"
 test "$(plutil -extract CFBundleShortVersionString raw -o - \
@@ -277,6 +266,7 @@ cmp -s "$NETWORK_BEFORE" "$NETWORK_AFTER" || {
 }
 
 ARTIFACT_NAME="AetherRoute-$VERSION-build-$BUILD_NUMBER-arm64-Signed-Local-QA"
+if [ "$CORE_VARIANT" = normal ]; then ARTIFACT_NAME="$ARTIFACT_NAME-Normal-Core"; fi
 ZIP="$TEMPORARY/$ARTIFACT_NAME.zip"
 ditto -c -k --keepParent "$APP" "$ZIP"
 ZIP_SHA256=$(shasum -a 256 "$ZIP" | awk '{print $1}')
@@ -296,6 +286,7 @@ jq -n \
   --arg createdAt "$CREATED_AT" \
   --arg architecture arm64 \
   --arg sourceManifestSHA256 "$SOURCE_SHA256" \
+  --argjson core "$CORE_METADATA" \
   --arg applicationCDHash "$(printf '%s' "$APP_CDHASH" | tr '[:upper:]' '[:lower:]')" \
   --arg zipSHA256 "$ZIP_SHA256" \
   --argjson zipBytes "$ZIP_BYTES" \
@@ -303,7 +294,9 @@ jq -n \
     product: $product, author: $author, version: $version, build: $build,
     createdAt: $createdAt, architecture: $architecture,
     safety: {productionApproved: false, crossMachineApproved: false,
-      networkActivatedDuringBuild: false, systemNetworkState: "unchanged"},
+      networkActivatedDuringBuild: false, systemNetworkState: "unchanged",
+      diagnosticsIncluded:$core.diagnosticsIncluded},
+    core:$core,
     sourceManifestSHA256: $sourceManifestSHA256,
     application: {cdHash: $applicationCDHash,
       signingAuthority: "Developer ID Application", notarized: false},
@@ -314,6 +307,7 @@ printf '%s\n' \
   'AetherRoute Developer ID signed local QA candidate.' \
   'It is not notarized, not approved for cross-machine distribution, and cannot be promoted to production.' \
   'Use only on this development Mac for real Transparent Proxy and TUN validation.' \
+  "Core variant: $CORE_VARIANT. See the manifest for actual and protocol-reference hashes." \
   >"$TEMPORARY/README.txt"
 
 mkdir "$OUTPUT_DIRECTORY"

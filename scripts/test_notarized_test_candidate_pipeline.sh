@@ -34,11 +34,11 @@ for required in \
   'scripts/signing_preflight.sh' \
   'scripts/verify_developer_id_private_key_access.sh' \
   'scripts/generate_signing_overrides.sh' \
-  "AETHERROUTE_CORE_FEATURES='aether-flow-only,aether-diagnostics'" \
-  "AETHERROUTE_DIRECT_CORE_FEATURES='aether-embedded,aether-diagnostics'" \
-  "grep -F 'aether_flow stage='" \
-  "grep -F 'aether_packet stage='" \
-  'scripts/verify_protocol_matrix.sh' \
+  'AETHERROUTE_TEST_CORE_VARIANT:-diagnostics' \
+  'scripts/test_candidate_core.sh" build "$CORE_VARIANT"' \
+  'scripts/test_candidate_core.sh" built "$CORE_VARIANT" "$APP"' \
+  'scripts/test_candidate_core.sh" bind "$CORE_VARIANT" "$SOURCE_BEFORE" "$CORE_METADATA"' \
+  'core:$core' \
   'scripts/generate_licenses.sh' \
   'scripts/verify_licenses.sh" source' \
   'scripts/verify_licenses.sh" built' \
@@ -83,7 +83,7 @@ for required in \
   'transparentProxy: {bundleID: $transparentBundleID' \
   'appTicketStapled: true, dmgTicketStapled: true' \
   'productionApproved: false' \
-  'diagnosticsIncluded: true' \
+  'diagnosticsIncluded:$core.diagnosticsIncluded' \
   'networkActivatedDuringBuild: false' \
   'system network state changed while building' \
   'source changed while building' \
@@ -97,14 +97,9 @@ do
   }
 done
 
-flow_build_line=$(grep -nF \
-  "AETHERROUTE_CORE_FEATURES='aether-flow-only,aether-diagnostics'" \
+core_build_line=$(grep -nF \
+  'scripts/test_candidate_core.sh" build "$CORE_VARIANT"' \
   "$SCRIPT" | cut -d: -f1)
-packet_build_line=$(grep -nF \
-  "AETHERROUTE_DIRECT_CORE_FEATURES='aether-embedded,aether-diagnostics'" \
-  "$SCRIPT" | cut -d: -f1)
-protocol_gate_line=$(grep -nF \
-  '"$ROOT/scripts/verify_protocol_matrix.sh"' "$SCRIPT" | cut -d: -f1)
 license_generation_line=$(grep -nF \
   '"$ROOT/scripts/generate_licenses.sh"' "$SCRIPT" | cut -d: -f1)
 license_gate_line=$(grep -nF \
@@ -116,9 +111,7 @@ signature_line=$(grep -nF \
   'codesign --verify --deep --strict --verbose=2 "$bundle"' "$SCRIPT" | cut -d: -f1)
 package_line=$(grep -nF 'ditto "$APP" "$APP_NOTARY_STAGE/AetherRoute.app"' \
   "$SCRIPT" | cut -d: -f1)
-if [ "$flow_build_line" -ge "$protocol_gate_line" ] \
-  || [ "$packet_build_line" -ge "$protocol_gate_line" ] \
-  || [ "$protocol_gate_line" -ge "$license_generation_line" ] \
+if [ "$core_build_line" -ge "$license_generation_line" ] \
   || [ "$license_generation_line" -ge "$license_gate_line" ] \
   || [ "$license_gate_line" -ge "$bootstrap_line" ] \
   || [ "$signature_line" -ge "$license_built_line" ] \
