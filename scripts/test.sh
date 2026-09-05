@@ -32,6 +32,7 @@ trap cleanup EXIT HUP INT TERM
 "$ROOT/scripts/test_isolated_soak_process_cleanup.sh"
 sh "$ROOT/Tests/ConnectionRows/run.sh"
 sh "$ROOT/Tests/SystemExtensionActivation/run.sh"
+sh "$ROOT/Tests/WindowVisibility/run.sh"
 "$ROOT/scripts/test_release_soak_evidence.sh"
 "$ROOT/scripts/test_remote_arm64_guards.sh"
 "$ROOT/scripts/test_soak_result_verifier.sh"

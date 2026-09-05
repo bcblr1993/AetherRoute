@@ -123,6 +123,7 @@ final class WindowChromeView: NSView {
     private var expectedTitle = ""
     private var showsWindowTitle = true
     private weak var observedWindow: NSWindow?
+    private let visibilityCoordinator = WindowVisibilityCoordinator()
 
     func update(title: String, showsTitle: Bool) {
         expectedTitle = title
@@ -134,6 +135,7 @@ final class WindowChromeView: NSView {
         super.viewDidMoveToWindow()
         stopObservingWindow()
         observedWindow = window
+        visibilityCoordinator.observe(window)
         window?.addObserver(
             self,
             forKeyPath: "title",
@@ -156,6 +158,7 @@ final class WindowChromeView: NSView {
         Task { @MainActor [weak self] in
             await Task.yield()
             self?.applyWindowChrome()
+            self?.visibilityCoordinator.recoverIfNeeded()
         }
     }
 
@@ -214,6 +217,7 @@ final class WindowChromeView: NSView {
     }
 
     private func stopObservingWindow() {
+        visibilityCoordinator.stopObserving()
         NotificationCenter.default.removeObserver(self)
         observedWindow?.removeObserver(
             self,
