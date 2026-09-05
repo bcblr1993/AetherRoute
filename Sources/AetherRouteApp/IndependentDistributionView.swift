@@ -45,9 +45,14 @@ struct IndependentDistributionView: View {
 
     private var freeEditionCard: some View {
         distributionCard {
-            Label("No activation required", systemImage: "checkmark.seal.fill")
-                .font(.headline)
-                .foregroundStyle(.green)
+            Label {
+                Text("No activation required")
+            } icon: {
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(.green)
+            }
+            .font(.headline)
+            .foregroundStyle(.primary)
             Text("This edition does not contact a licensing service. Install a newer signed DMG to update; your saved configurations are kept.")
                 .font(.body)
                 .fixedSize(horizontal: false, vertical: true)

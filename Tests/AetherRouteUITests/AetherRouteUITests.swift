@@ -1,3 +1,4 @@
+import AppKit
 import CryptoKit
 import Dispatch
 import Foundation
@@ -235,6 +236,11 @@ final class AetherRouteUITests: XCTestCase {
         defer { app.terminate() }
         XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
 
+        let hangsRecording = try prepareHangsRecordingIfRequested(
+            app: app,
+            isolatedHome: URL(fileURLWithPath: isolatedHome),
+            evidenceURL: evidenceURL
+        )
         let startedAt = Date()
         let deadline = startedAt.addingTimeInterval(
             TimeInterval(requestedDuration)
@@ -350,6 +356,9 @@ final class AetherRouteUITests: XCTestCase {
         try Data(result.utf8).write(
             to: evidenceURL.appendingPathComponent("result.txt"),
             options: .withoutOverwriting
+        )
+        try finishHangsRecording(
+            hangsRecording, startedAt: startedAt, endedAt: Date()
         )
         XCTAssertLessThanOrEqual(
             p95Milliseconds,
@@ -700,6 +709,45 @@ final class AetherRouteUITests: XCTestCase {
             app.staticTexts["Profile removed."].waitForExistence(timeout: 2)
         )
         XCTAssertFalse(app.staticTexts["Office · Automatic"].exists)
+    }
+
+    func testRoutingRulesKeepManualResourceSetupInAdvancedOptions() {
+        for (language, profilesTitle, explanation, advancedTitle) in [
+            ("en", "Profiles", "AetherRoute prepares routing rules automatically when you connect.", "Advanced"),
+            ("zh-Hans", "配置", "连接时由 AetherRoute 自动准备，无需手动操作。", "高级选项"),
+        ] {
+            let app = launchReviewApp(
+                appearance: "light", state: "disconnected",
+                language: language, windowSize: "780x560"
+            )
+            XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+            app.buttons[profilesTitle].click()
+            XCTAssertTrue(app.staticTexts[explanation].waitForExistence(timeout: 2))
+            XCTAssertFalse(app.staticTexts["Country.mmdb"].exists)
+            XCTAssertFalse(app.staticTexts["GeoSite.dat"].exists)
+
+            let attachment = XCTAttachment(
+                screenshot: app.windows["main-AppWindow-1"].screenshot()
+            )
+            attachment.name = language == "en"
+                ? "routing-rules-en-light" : "routing-rules-zh-light"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+
+            let advanced = app.buttons["routing-rules-advanced"]
+            XCTAssertTrue(advanced.waitForExistence(timeout: 2))
+            XCTAssertEqual(advanced.label, advancedTitle)
+            XCTAssertTrue(advanced.isHittable)
+            advanced.click()
+            let country = app.staticTexts["Country.mmdb"]
+            let geosite = app.staticTexts["GeoSite.dat"]
+            XCTAssertTrue(country.waitForExistence(timeout: 2))
+            XCTAssertTrue(geosite.exists)
+            advanced.click()
+            XCTAssertTrue(country.waitForNonExistence(timeout: 2))
+            XCTAssertTrue(geosite.waitForNonExistence(timeout: 2))
+            app.terminate()
+        }
     }
 
     func testManualNodeEditorExposesNativeProtocolSpecificFields() {
@@ -1329,21 +1377,21 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["尚未发布"].exists)
     }
 
-    func testIndependentDistributionSettingsAreLocalizedAndFailClosed() throws {
+    func testFreeDistributionSettingsAreLocalizedAndRequireNoActivation() throws {
         let cases = [
             (
                 language: "en",
                 tab: "Account",
-                heading: "License & Updates",
-                license: "License service not configured",
-                updates: "Update service not configured"
+                heading: "Free Edition",
+                activation: "No activation required",
+                updates: "This edition does not contact a licensing service. Install a newer signed DMG to update; your saved configurations are kept."
             ),
             (
                 language: "zh-Hans",
                 tab: "账户",
-                heading: "授权与更新",
-                license: "尚未配置授权服务",
-                updates: "尚未配置更新服务"
+                heading: "免费版",
+                activation: "无需激活",
+                updates: "此版本无需连接授权服务。安装新版签名 DMG 即可更新，已保存的配置会保留。"
             ),
         ]
 
@@ -1361,13 +1409,13 @@ final class AetherRouteUITests: XCTestCase {
                 XCTAssertTrue(
                     app.staticTexts[item.heading].waitForExistence(timeout: 3)
                 )
-                XCTAssertTrue(app.staticTexts[item.license].exists)
+                XCTAssertTrue(app.staticTexts[item.activation].exists)
                 XCTAssertTrue(app.staticTexts[item.updates].exists)
                 XCTAssertFalse(
                     app.secureTextFields["license-key-field"].exists
                 )
                 XCTAssertFalse(
-                    app.buttons["check-for-updates-button"].isEnabled
+                    app.buttons["check-for-updates-button"].exists
                 )
                 try auditProductAccessibility(in: app)
 
@@ -2491,6 +2539,125 @@ final class AetherRouteUITests: XCTestCase {
         return rows
     }
 
+    private struct HangsRecording {
+        let directory: URL
+        let token: String
+        let processID: pid_t
+        let tracePath: String
+    }
+
+    /// The external Instruments controller must acknowledge that recording is
+    /// active before the measured navigation interval begins. All control
+    /// files stay in the disposable test home; ordinary UI tests skip this.
+    private func prepareHangsRecordingIfRequested(
+        app: XCUIApplication,
+        isolatedHome: URL,
+        evidenceURL: URL
+    ) throws -> HangsRecording? {
+        guard ProcessInfo.processInfo.environment[
+            "AETHERROUTE_UI_RESPONSIVENESS_HANGS"
+        ] == "YES" else { return nil }
+
+        let home = isolatedHome.standardizedFileURL.resolvingSymlinksInPath()
+        guard home.lastPathComponent == "Home",
+              home.deletingLastPathComponent().lastPathComponent
+                .hasPrefix("aetherroute-ui-tests.") else {
+            throw hangsRecordingError("Hangs control files require the disposable UI test home.")
+        }
+        let expectedApp = home.deletingLastPathComponent()
+            .appendingPathComponent("DerivedData/Build/Products/Release/AetherRoute.app")
+            .resolvingSymlinksInPath()
+        guard app.state == .runningForeground,
+              let bundleIdentifier = Bundle(url: expectedApp)?.bundleIdentifier else {
+            throw hangsRecordingError("The isolated Release app is not in the foreground.")
+        }
+        let processes = NSRunningApplication.runningApplications(
+            withBundleIdentifier: bundleIdentifier
+        ).filter { $0.bundleURL?.resolvingSymlinksInPath() == expectedApp }
+        guard processes.count == 1, let process = processes.first else {
+            throw hangsRecordingError("The exact isolated Release app is not running.")
+        }
+        let recording = HangsRecording(
+            directory: home,
+            token: UUID().uuidString,
+            processID: process.processIdentifier,
+            tracePath: evidenceURL.standardizedFileURL.resolvingSymlinksInPath()
+                .appendingPathComponent("hangs.trace").path
+        )
+        try writeHangsControl(
+            recording,
+            name: "ready",
+            fields: ["app_path": expectedApp.path]
+        )
+        try waitForHangsAcknowledgement(recording, name: "recording")
+        return recording
+    }
+
+    private func finishHangsRecording(
+        _ recording: HangsRecording?,
+        startedAt: Date,
+        endedAt: Date
+    ) throws {
+        guard let recording else { return }
+        try writeHangsControl(recording, name: "complete", fields: [
+            "started_at": startedAt.timeIntervalSince1970,
+            "ended_at": endedAt.timeIntervalSince1970,
+        ])
+        try waitForHangsAcknowledgement(recording, name: "sealed")
+    }
+
+    private func writeHangsControl(
+        _ recording: HangsRecording,
+        name: String,
+        fields: [String: Any]
+    ) throws {
+        var payload = fields
+        payload["schema"] = 1
+        payload["token"] = recording.token
+        payload["pid"] = recording.processID
+        payload["trace_path"] = recording.tracePath
+        payload["stage"] = name
+        let data = try JSONSerialization.data(withJSONObject: payload, options: .sortedKeys)
+        try data.write(
+            to: recording.directory.appendingPathComponent("ui-hangs-\(name).json"),
+            options: .withoutOverwriting
+        )
+    }
+
+    private func waitForHangsAcknowledgement(
+        _ recording: HangsRecording,
+        name: String
+    ) throws {
+        let response = recording.directory
+            .appendingPathComponent("ui-hangs-\(name).json")
+        let available = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                FileManager.default.fileExists(atPath: response.path)
+            },
+            object: nil
+        )
+        guard XCTWaiter.wait(for: [available], timeout: 45) == .completed else {
+            throw hangsRecordingError("Instruments did not acknowledge \(name) within 45 seconds.")
+        }
+        let data = try Data(contentsOf: response)
+        guard data.count <= 65_536,
+              let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              payload["schema"] as? Int == 1,
+              payload["token"] as? String == recording.token,
+              payload["pid"] as? Int32 == recording.processID,
+              payload["trace_path"] as? String == recording.tracePath,
+              payload["stage"] as? String == name,
+              payload["status"] as? String == "ok" else {
+            throw hangsRecordingError("Invalid Instruments \(name) acknowledgement.")
+        }
+    }
+
+    private func hangsRecordingError(_ message: String) -> NSError {
+        NSError(domain: "AetherRouteUIHangs", code: 1, userInfo: [
+            NSLocalizedDescriptionKey: message,
+        ])
+    }
+
     private func openSettings(
         in app: XCUIApplication,
         tabLabel: String
@@ -2536,7 +2703,9 @@ final class AetherRouteUITests: XCTestCase {
             case "privacy": "privacy-consent-accepted"
             case "bypass": "bypass-rule-field"
             case "diagnostics": "export-diagnostics"
-            case "account": "independent-distribution-view"
+            // The free edition's short ScrollView does not expose its outer
+            // identifier in AX. Wait for the visible localized page heading.
+            case "account": tabLabel == "账户" ? "免费版" : "Free Edition"
             case "licenses": "third-party-licenses-view"
             case "about": "about-page-content"
             default: ""

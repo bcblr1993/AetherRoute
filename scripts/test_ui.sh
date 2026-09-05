@@ -174,6 +174,8 @@ extract_safe_screenshots() {
         or (.suggestedHumanReadableName | startswith("language-about-zh"))
         or (.suggestedHumanReadableName | startswith("expanded-overview-en-dark"))
         or (.suggestedHumanReadableName | startswith("expanded-overview-zh-light"))
+        or (.suggestedHumanReadableName | startswith("routing-rules-en-light"))
+        or (.suggestedHumanReadableName | startswith("routing-rules-zh-light"))
       )
     | [.exportedFileName, .suggestedHumanReadableName] | @tsv
   ' "$ATTACHMENTS/manifest.json" |
@@ -195,6 +197,14 @@ extract_safe_screenshots() {
         cp "$ATTACHMENTS/$exported" \
           "$SCREENSHOT_OUTPUT/expanded-overview-zh-light.png"
         ;;
+      routing-rules-en-light*)
+        cp "$ATTACHMENTS/$exported" \
+          "$SCREENSHOT_OUTPUT/routing-rules-en-light.png"
+        ;;
+      routing-rules-zh-light*)
+        cp "$ATTACHMENTS/$exported" \
+          "$SCREENSHOT_OUTPUT/routing-rules-zh-light.png"
+        ;;
     esac
   done
   screenshot_count=$(
@@ -202,7 +212,10 @@ extract_safe_screenshots() {
   )
   expected_screenshot_count=0
   case "$ONLY_TEST" in
-    "") expected_screenshot_count=4 ;;
+    "") expected_screenshot_count=6 ;;
+    *testRoutingRulesKeepManualResourceSetupInAdvancedOptions*)
+      expected_screenshot_count=2
+      ;;
     *testExpandedTextRemainsUsableAcross*) expected_screenshot_count=1 ;;
     *testApplicationLanguageChangesImmediatelyWithoutRelaunch*)
       expected_screenshot_count=2
