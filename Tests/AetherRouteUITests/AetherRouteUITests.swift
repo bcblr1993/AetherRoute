@@ -1547,29 +1547,57 @@ final class AetherRouteUITests: XCTestCase {
             XCTFail("AETHERROUTE_SIGNED_NE_ENGINE must be tun or transparent")
             return
         }
-        guard let probeURLString = environment[
-            "AETHERROUTE_SIGNED_PROBE_URL"
-        ], let probeURL = URL(string: probeURLString),
-              probeURL.scheme == "https",
-              let probeHost = probeURL.host,
-              probeHost.contains("."),
-              probeHost.unicodeScalars.contains(where: {
-                  CharacterSet.letters.contains($0)
-              }),
-              probeURL.user == nil,
-              probeURL.password == nil,
-              probeURL.query == nil,
-              probeURL.fragment == nil,
-              let expectedProbeSHA256 = environment[
-                "AETHERROUTE_SIGNED_PROBE_SHA256"
-              ],
-              expectedProbeSHA256.range(
-                of: "^[0-9a-f]{64}$",
-                options: .regularExpression
-              ) != nil else {
-            XCTFail(
-                "Configure a credential-free owner HTTPS canary hostname and lowercase response SHA-256."
-            )
+        let lifecycleProbe: SignedLifecycleProbe
+        switch environment["AETHERROUTE_SIGNED_PROBE_KIND"] ?? "public-https" {
+        case "controlled-relay-v1":
+            guard environment["AETHERROUTE_SIGNED_PROBE_URL"] == nil,
+                  environment["AETHERROUTE_SIGNED_PROBE_SHA256"] == nil,
+                  let path = environment["AETHERROUTE_SIGNED_PROBE_BINDINGS"],
+                  let bindingsSHA = environment["AETHERROUTE_SIGNED_PROBE_BINDINGS_SHA256"],
+                  let runID = environment["AETHERROUTE_SIGNED_NE_RUN_ID"],
+                  let candidateSHA = environment["AETHERROUTE_SIGNED_NE_CANDIDATE_MANIFEST_SHA256"],
+                  let probeEngine = SignedNEProbeEngine(rawValue: engine) else {
+                XCTFail("Configure one explicit controlled probe with pinned cycle bindings.")
+                return
+            }
+            do {
+                lifecycleProbe = .controlled(try await SignedNEProbe.loadCycleBindingsAsync(
+                    path: path, sha256: bindingsSHA, runID: runID,
+                    candidateSHA256: candidateSHA, engine: probeEngine, cycles: cycles
+                ))
+            } catch {
+                XCTFail("Controlled probe cycle bindings are invalid or changed.")
+                return
+            }
+        case "public-https":
+            guard let probeURLString = environment[
+                "AETHERROUTE_SIGNED_PROBE_URL"
+            ], let probeURL = URL(string: probeURLString),
+                  probeURL.scheme == "https",
+                  let probeHost = probeURL.host,
+                  probeHost.contains("."),
+                  probeHost.unicodeScalars.contains(where: {
+                      CharacterSet.letters.contains($0)
+                  }),
+                  probeURL.user == nil,
+                  probeURL.password == nil,
+                  probeURL.query == nil,
+                  probeURL.fragment == nil,
+                  let expectedProbeSHA256 = environment[
+                    "AETHERROUTE_SIGNED_PROBE_SHA256"
+                  ],
+                  expectedProbeSHA256.range(
+                    of: "^[0-9a-f]{64}$",
+                    options: .regularExpression
+                  ) != nil else {
+                XCTFail(
+                    "Configure a credential-free owner HTTPS canary hostname and lowercase response SHA-256."
+                )
+                return
+            }
+            lifecycleProbe = .publicHTTPS(url: probeURL, expectedSHA256: expectedProbeSHA256)
+        default:
+            XCTFail("Unknown signed probe kind; no fallback is permitted.")
             return
         }
 
@@ -1676,16 +1704,15 @@ final class AetherRouteUITests: XCTestCase {
             XCTFail("Signed DNS baseline gate failed: \(error.localizedDescription)")
             return
         }
-        let probeMatchedBeforeConnection = await signedProbeMatchesExpected(
-            url: probeURL,
-            expectedSHA256: expectedProbeSHA256
-        )
-        XCTAssertFalse(
-            probeMatchedBeforeConnection,
-            "The proxy-only canary response was reachable before \(engineLabel) connected."
-        )
-
         for cycle in 1...cycles {
+            let probeMatchedBeforeConnection = await signedLifecycleProbeMatches(
+                lifecycleProbe, cycle: cycle, phase: .before
+            )
+            XCTAssertFalse(
+                probeMatchedBeforeConnection,
+                "The proxy-only canary response was reachable before \(engineLabel) connected in cycle \(cycle)."
+            )
+
             primary.click()
             switch waitForConnectionStart(
                 on: primary,
@@ -1744,9 +1771,8 @@ final class AetherRouteUITests: XCTestCase {
                 )
                 return
             }
-            let probeMatchedWhileConnected = await signedProbeMatchesExpected(
-                url: probeURL,
-                expectedSHA256: expectedProbeSHA256
+            let probeMatchedWhileConnected = await signedLifecycleProbeMatches(
+                lifecycleProbe, cycle: cycle, phase: .connected
             )
             XCTAssertTrue(
                 probeMatchedWhileConnected,
@@ -1780,14 +1806,45 @@ final class AetherRouteUITests: XCTestCase {
                 )
                 return
             }
-            let probeMatchedAfterDisconnect = await signedProbeMatchesExpected(
-                url: probeURL,
-                expectedSHA256: expectedProbeSHA256
+            let probeMatchedAfterDisconnect = await signedLifecycleProbeMatches(
+                lifecycleProbe, cycle: cycle, phase: .after
             )
             XCTAssertFalse(
                 probeMatchedAfterDisconnect,
                 "The proxy-only canary response remained reachable after \(engineLabel) disconnected in cycle \(cycle)."
             )
+        }
+    }
+
+    private enum SignedLifecycleProbe {
+        case publicHTTPS(url: URL, expectedSHA256: String)
+        case controlled([SignedNEProbe])
+    }
+
+    private func signedLifecycleProbeMatches(
+        _ probe: SignedLifecycleProbe,
+        cycle: Int,
+        phase: SignedNEProbePhase
+    ) async -> Bool {
+        switch probe {
+        case let .publicHTTPS(url, expectedSHA256):
+            return await signedProbeMatchesExpected(url: url, expectedSHA256: expectedSHA256)
+        case let .controlled(probes):
+            guard probes.indices.contains(cycle - 1) else {
+                XCTFail("Controlled probe cycle is missing.")
+                return phase != .connected
+            }
+            do {
+                let receipt = try await probes[cycle - 1].forPhase(phase).run()
+                // The receipt contains hashes and bounded observations only;
+                // private URLs, authorization headers and request nonces stay
+                // in the task-owned input files outside the product App.
+                print("AETHERROUTE_SIGNED_CONTROLLED_PHASE " + String(decoding: receipt.encoded, as: UTF8.self))
+                return receipt.outcome == "matched"
+            } catch {
+                XCTFail("Controlled HTTPS probe failed validation or execution in cycle \(cycle).")
+                return phase != .connected
+            }
         }
     }
 

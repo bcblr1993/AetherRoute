@@ -18,6 +18,9 @@ usage:
   signed_ne_prebuilt_runner.sh prepare ZIP ZIP_SHA256 SIGNING_JSON CANDIDATE_JSON CANDIDATE_SOURCE_MANIFEST EXPECTED_APP_CDHASH DESTINATION ENGINE --
   signed_ne_prebuilt_runner.sh run EFFECTIVE_XCTESTRUN EFFECTIVE_SHA256 SIGNING_JSON ENGINE RESULT_BUNDLE --
 
+prepare selects public-https by default; controlled-relay-v1 requires an explicit
+AETHERROUTE_SIGNED_PROBE_KIND and pinned private cycle bindings. Mixed modes are
+rejected. Controlled dispatch does not add Tart transport or a recovery lease.
 prepare reads the same credential-free AETHERROUTE_SIGNED_* values used by
 test_signed_network_extension.sh and writes a verified effective_xctestrun path
 plus artifact hashes to stdout. run surrounds the exact command below with the
@@ -300,6 +303,192 @@ package_runner() {
   cleanup_package
 }
 
+# These input checks mirror the signed Swift runner's fixed controlled contract.
+# They inspect bytes only; prepare never executes a probe or its Python runtime.
+probe_private_directory() {
+  pd_path=$1
+  test -d "$pd_path" && test ! -L "$pd_path" \
+    && test "$(CDPATH= cd -- "$pd_path" && pwd -P)" = "$pd_path" \
+    && test "$(stat -f '%u:%Lp' "$pd_path")" = "$(id -u):700" \
+    || fail "controlled probe directory is not private and physical"
+}
+
+probe_regular_file() {
+  pf_path=$1 pf_limit=$2 pf_private=$3
+  require_absolute_file "$pf_path" "controlled probe input"
+  test "$(CDPATH= cd -- "$(dirname -- "$pf_path")" && pwd -P)/$(basename -- "$pf_path")" = "$pf_path" \
+    || fail "controlled probe input has a nonphysical parent"
+  pf_size=$(stat -f '%z' "$pf_path")
+  test "$pf_size" -gt 0 && test "$pf_size" -le "$pf_limit" \
+    || fail "controlled probe input size is invalid"
+  pf_owner=$(stat -f '%u' "$pf_path") pf_mode=$(stat -f '%Lp' "$pf_path")
+  if [ "$pf_private" = yes ]; then
+    test "$pf_owner:$pf_mode:$(stat -f '%l' "$pf_path")" = "$(id -u):600:1" \
+      || fail "controlled probe input is not a private regular file"
+  else
+    test "$pf_owner" = 0 || test "$pf_owner" = "$(id -u)" \
+      || fail "controlled probe executable owner is invalid"
+    test $((0$pf_mode & 022)) -eq 0 \
+      || fail "controlled probe executable is writable by others"
+  fi
+}
+
+probe_canonical_json() {
+  pc_path=$1
+  # jq compact/sorted bytes must exactly match the private input, without LF.
+  # This also rejects duplicate keys and float spellings before field checks.
+  pc_canonical_sha=$(jq -S -jc . "$pc_path" 2>/dev/null | shasum -a 256 | awk '{print $1}')
+  test "$pc_canonical_sha" = "$(sha256 "$pc_path")" \
+    || fail "controlled probe JSON is not canonical"
+}
+
+validate_python_runtime_record() {
+  pr_record="$pc_session/python-runtime.json"
+  probe_regular_file "$pr_record" 8192 yes
+  test "$(sha256 "$pr_record")" = "$(jq -r '.runtimeRecordSHA256' "$PROBE_BINDINGS")" \
+    || fail "controlled runtime record changed"
+  probe_canonical_json "$pr_record"
+  jq -e --arg python "$pc_python" '
+    def hex($n): type == "string" and length == $n and test("^[0-9a-f]{" + ($n|tostring) + "}$");
+    (keys|sort) == (["schema","policy","requirement","pythonPath","pythonSHA256","pythonCDHash","pythonVersion","frameworkPath","frameworkSHA256","frameworkCDHash","resourcesSHA256"]|sort) and
+    (.schema|type == "number" and tostring == "1") and .policy == "apple-python-framework-v1" and
+    .requirement == "identifier \"com.apple.python3\" and anchor apple" and .pythonPath == $python and
+    (.pythonPath|type == "string" and length <= 4096 and test("^/[^\\r\\n]*Python3\\.framework/Versions/3\\.(9|1[0-4])/bin/python3\\.(9|1[0-4])$")) and
+    ([.pythonSHA256,.frameworkSHA256,.resourcesSHA256]|all(.[];hex(64))) and
+    ([.pythonCDHash,.frameworkCDHash]|all(.[];hex(40)))
+  ' "$pr_record" >/dev/null 2>&1 || fail "controlled runtime source policy is invalid"
+  pr_version=$(basename -- "$(dirname -- "$(dirname -- "$pc_python")")")
+  test "$(basename -- "$pc_python")" = "python$pr_version" || fail "controlled runtime version path differs"
+  pr_framework=$(dirname -- "$(dirname -- "$(dirname -- "$(dirname -- "$pc_python")")")")
+  test "$(basename -- "$pr_framework")" = Python3.framework \
+    && test "$pr_framework" = "$(jq -r '.frameworkPath' "$pr_record")" \
+    && test "$(CDPATH= cd -- "$pr_framework" && pwd -P)" = "$pr_framework" \
+    || fail "controlled runtime framework path differs"
+  pr_root="$pr_framework/Versions/$pr_version"
+  test "$(CDPATH= cd -- "$pr_framework/Versions/Current" && pwd -P)" = "$pr_root" \
+    && test "$(CDPATH= cd -- "$pr_framework/Resources" && pwd -P)" = "$pr_root/Resources" \
+    && test "$(readlink "$pr_framework/Python3")" = 'Versions/Current/Python3' \
+    || fail "controlled runtime active framework differs"
+  probe_regular_file "$pc_python" 8388608 no
+  probe_regular_file "$pr_root/Python3" 67108864 no
+  probe_regular_file "$pr_root/_CodeSignature/CodeResources" 67108864 no
+  test -x "$pc_python" || fail "controlled runtime is not executable"
+  # Use system codesign, never a PATH-provided signing stub or helper. The fixed
+  # Apple requirement verifies source, not merely consistency with a JSON hash.
+  /usr/bin/codesign --verify --strict --all-architectures -R '=identifier "com.apple.python3" and anchor apple' "$pc_python" >/dev/null 2>&1 \
+    && /usr/bin/codesign --verify --strict --all-architectures --deep -R '=identifier "com.apple.python3" and anchor apple' "$pr_framework" >/dev/null 2>&1 \
+    || fail "controlled runtime does not satisfy Apple source policy"
+  pr_python_cd=$(/usr/bin/codesign -d --verbose=4 "$pc_python" 2>&1 | sed -n 's/^CDHash=//p')
+  pr_framework_cd=$(/usr/bin/codesign -d --verbose=4 "$pr_framework" 2>&1 | sed -n 's/^CDHash=//p')
+  pr_signed_version=$(/usr/bin/plutil -extract CFBundleShortVersionString raw -o - "$pr_root/Resources/Info.plist")
+  pr_minor_pattern=$(printf '%s' "$pr_version" | sed 's/\./\\./g')
+  printf '%s\n' "$pr_signed_version" | grep -Eq "^$pr_minor_pattern\.[0-9]+$" \
+    || fail "controlled runtime signed version differs"
+  test "$pr_signed_version" = "$(jq -r '.pythonVersion' "$pr_record")" \
+    && test "$pr_python_cd" = "$(jq -r '.pythonCDHash' "$pr_record")" \
+    && test "$pr_framework_cd" = "$(jq -r '.frameworkCDHash' "$pr_record")" \
+    && test "$(sha256 "$pc_python")" = "$(jq -r '.pythonSHA256' "$pr_record")" \
+    && test "$(sha256 "$pr_root/Python3")" = "$(jq -r '.frameworkSHA256' "$pr_record")" \
+    && test "$(sha256 "$pr_root/_CodeSignature/CodeResources")" = "$(jq -r '.resourcesSHA256' "$pr_record")" \
+    || fail "controlled runtime identity changed"
+}
+
+validate_controlled_probe() {
+  test "$CYCLES" -ge 3 || fail "controlled probes require at least three cycles"
+  test "${#PROBE_RUN_ID}" -eq 32 || fail "controlled probe run ID is invalid"
+  printf '%s\n' "$PROBE_RUN_ID" | grep -Eq '^[0-9a-f]{32}$' \
+    || fail "controlled probe run ID is invalid"
+  for pc_hash in "$PROBE_BINDINGS_SHA" "$PROBE_CANDIDATE_SHA"; do
+    test "${#pc_hash}" -eq 64 || fail "controlled probe binding hash is invalid"
+    printf '%s\n' "$pc_hash" | grep -Eq '^[0-9a-f]{64}$' \
+      || fail "controlled probe binding hash is invalid"
+  done
+  test "$PROBE_CANDIDATE_SHA" = "$CANDIDATE_MANIFEST_SHA256" \
+    || fail "controlled probe candidate differs from the verified candidate"
+  pc_session="/private/tmp/aether-ne-session.$PROBE_RUN_ID"
+  test "$PROBE_BINDINGS" = "$pc_session/cycle-bindings.json" \
+    || fail "controlled probe bindings path is invalid"
+  probe_private_directory "$pc_session"
+  probe_regular_file "$PROBE_BINDINGS" 32768 yes
+  test "$(sha256 "$PROBE_BINDINGS")" = "$PROBE_BINDINGS_SHA" \
+    || fail "controlled probe bindings changed"
+  probe_canonical_json "$PROBE_BINDINGS"
+  jq -e --arg run "$PROBE_RUN_ID" --arg engine "$ENGINE" --argjson cycles "$CYCLES" \
+    --arg candidate "$CANDIDATE_MANIFEST_SHA256" --arg helper "$pc_session/controlled_probe.py" '
+    def hex($n): type == "string" and length == $n and test("^[0-9a-f]{" + ($n|tostring) + "}$");
+    (keys | sort) == (["schema","runID","engine","cycles","candidateManifestSHA256","pythonPath","helperPath","runtimeRecordSHA256","bindings"] | sort) and
+    (.schema|type == "number" and tostring == "1") and .runID == $run and .engine == $engine and .cycles == $cycles and (.cycles|tostring|test("^[0-9]+$")) and
+    .candidateManifestSHA256 == $candidate and .helperPath == $helper and
+    (.pythonPath|type == "string" and startswith("/") and length <= 4096) and
+    (.runtimeRecordSHA256|hex(64)) and
+    (.bindings | type == "array" and length == $cycles) and
+    ([.bindings[].cycle] == [range(1; $cycles+1)]) and
+    all(.bindings[];
+      (.cycle|type == "number" and (tostring|test("^[0-9]+$"))) and
+      (keys | sort) == (["cycle","stagePath","planSHA256","requestIdentitySHA256","peerIdentitySHA256","expectedResponseSHA256"] | sort) and
+      (.stagePath | type == "string" and test("^/private/tmp/aether-ne-probe\\.[0-9a-f]{32}$")) and
+      ([.planSHA256,.requestIdentitySHA256,.peerIdentitySHA256,.expectedResponseSHA256] | all(.[]; hex(64)))) and
+    ([.bindings[].stagePath] | unique | length == $cycles) and
+    ([.bindings[].planSHA256] | unique | length == $cycles) and
+    ([.bindings[].requestIdentitySHA256] | unique | length == $cycles) and
+    ([.bindings[].expectedResponseSHA256] | unique | length == $cycles) and
+    ([.bindings[].peerIdentitySHA256] | unique | length == 1)
+  ' "$PROBE_BINDINGS" >/dev/null 2>&1 || fail "controlled cycle bindings are invalid"
+  pc_helper="$pc_session/controlled_probe.py"
+  pc_python=$(jq -r '.pythonPath' "$PROBE_BINDINGS")
+  probe_regular_file "$pc_helper" 131072 no
+  test "$(sha256 "$pc_helper")" = 43f5329a0bb50dda0ccca42b5c96f5709d0d3720950989109e49cd26bf64489a \
+    || fail "controlled probe helper changed"
+  validate_python_runtime_record
+  pc_cycle=1
+  while [ "$pc_cycle" -le "$CYCLES" ]; do
+    pc_stage=$(jq -r --argjson i "$((pc_cycle-1))" '.bindings[$i].stagePath' "$PROBE_BINDINGS")
+    probe_private_directory "$pc_stage"
+    pc_plan="$pc_stage/plan.json"
+    probe_regular_file "$pc_plan" 8192 yes
+    test "$(sha256 "$pc_plan")" = "$(jq -r --argjson i "$((pc_cycle-1))" '.bindings[$i].planSHA256' "$PROBE_BINDINGS")" \
+      || fail "controlled cycle plan changed"
+    probe_canonical_json "$pc_plan"
+    jq -e --arg run "$PROBE_RUN_ID" --arg engine "$ENGINE" --argjson cycle "$pc_cycle" \
+      --arg candidate "$CANDIDATE_MANIFEST_SHA256" '
+      def hex($n): type == "string" and length == $n and test("^[0-9a-f]{" + ($n|tostring) + "}$");
+      def address:
+        type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$") and
+        (split(".") | all(.[]; (tonumber|floor) == tonumber and (tonumber >= 0 and tonumber <= 255)) and
+         (map(tonumber|tostring)|join(".")) == join("."));
+      def privateIP:
+        address and ((split(".")|map(tonumber)) as $b |
+        ($b[0] == 10 and $b != [10,0,0,0] and $b != [10,255,255,255]) or
+        ($b[0] == 172 and $b[1] >= 16 and $b[1] <= 31 and $b != [172,16,0,0] and $b != [172,31,255,255]) or
+        ($b[0:2] == [192,168] and $b != [192,168,0,0] and $b != [192,168,255,255]));
+      def testIP:
+        address and ((split(".")|map(tonumber)) as $b |
+        ([192,0,2] == $b[0:3] or [198,51,100] == $b[0:3] or [203,0,113] == $b[0:3]) and $b[3] >= 1 and $b[3] <= 254);
+      (keys | sort) == (["schemaVersion","runID","engine","cycle","candidateManifestSHA256","peerID","peerSourceSHA256","hostname","port","controlAddress","dataAddress","requestID","token","certificateSHA256"] | sort) and
+      (.schemaVersion|type == "number" and tostring == "1") and .runID == $run and .engine == $engine and .cycle == $cycle and (.cycle|tostring|test("^[0-9]+$")) and
+      .candidateManifestSHA256 == $candidate and .hostname == "aether-performance.test" and
+      (.port | type == "number" and (tostring|test("^[0-9]+$")) and . == floor and . >= 1024 and . <= 65535) and
+      (.requestID|hex(32)) and ([.peerID,.peerSourceSHA256,.certificateSHA256] | all(.[]; hex(64))) and
+      (.token|type == "string" and test("^[A-Za-z0-9_-]{32,128}\\z")) and
+      (.controlAddress|privateIP) and (.dataAddress|testIP)
+    ' "$pc_plan" >/dev/null 2>&1 || fail "controlled cycle plan is invalid"
+    for pc_field in request peer response; do
+      case "$pc_field" in
+        request) pc_filter='.requestID'; pc_key=requestIdentitySHA256 ;;
+        peer) pc_filter='.peerID'; pc_key=peerIdentitySHA256 ;;
+        response) pc_filter='{requestID:.requestID,peerID:.peerID,accessPath:"relay"}'; pc_key=expectedResponseSHA256 ;;
+      esac
+      pc_actual=$(jq -jc "$pc_filter" "$pc_plan" | shasum -a 256 | awk '{print $1}')
+      test "$pc_actual" = "$(jq -r --argjson i "$((pc_cycle-1))" --arg key "$pc_key" '.bindings[$i][$key]' "$PROBE_BINDINGS")" \
+        || fail "controlled cycle identity is not bound to its plan"
+    done
+    probe_regular_file "$pc_stage/server-cert.pem" 65536 yes
+    test "$(sha256 "$pc_stage/server-cert.pem")" = "$(jq -r '.certificateSHA256' "$pc_plan")" \
+      || fail "controlled cycle certificate changed"
+    pc_cycle=$((pc_cycle+1))
+  done
+}
+
 validate_prepare_environment() {
   ENGINE=$1
   case "$ENGINE" in tun|transparent) ;; *) fail "engine must be tun or transparent" ;; esac
@@ -307,22 +496,98 @@ validate_prepare_environment() {
   case "$CYCLES" in ''|*[!0-9]*) fail "AETHERROUTE_SIGNED_NE_CYCLES must be an integer" ;; esac
   test "$CYCLES" -ge 1 && test "$CYCLES" -le 20 \
     || fail "AETHERROUTE_SIGNED_NE_CYCLES must be between 1 and 20"
-  PROBE_URL=${AETHERROUTE_SIGNED_PROBE_URL:-}
-  PROBE_SHA=${AETHERROUTE_SIGNED_PROBE_SHA256:-}
-  DNS_PROBE=${AETHERROUTE_SIGNED_DNS_PROBE_SCRIPT:-}
-  DNS_SHA=${AETHERROUTE_SIGNED_DNS_PROBE_SHA256:-}
+  PROBE_KIND=${AETHERROUTE_SIGNED_PROBE_KIND-public-https}
+  PROBE_URL=${AETHERROUTE_SIGNED_PROBE_URL:-} PROBE_SHA=${AETHERROUTE_SIGNED_PROBE_SHA256:-}
+  PROBE_BINDINGS=${AETHERROUTE_SIGNED_PROBE_BINDINGS:-} PROBE_BINDINGS_SHA=${AETHERROUTE_SIGNED_PROBE_BINDINGS_SHA256:-}
+  PROBE_RUN_ID=${AETHERROUTE_SIGNED_NE_RUN_ID:-} PROBE_CANDIDATE_SHA=${AETHERROUTE_SIGNED_NE_CANDIDATE_MANIFEST_SHA256:-}
+  case "$PROBE_KIND" in
+    public-https)
+      for pc_key in AETHERROUTE_SIGNED_PROBE_BINDINGS AETHERROUTE_SIGNED_PROBE_BINDINGS_SHA256 AETHERROUTE_SIGNED_NE_RUN_ID AETHERROUTE_SIGNED_NE_CANDIDATE_MANIFEST_SHA256; do
+        if printenv "$pc_key" >/dev/null; then fail "public probe contains controlled configuration"; fi
+      done
+      case "$PROBE_URL" in https://*.*/*) ;; *) fail "signed probe URL is invalid" ;; esac
+      printf '%s' "$PROBE_URL" | grep -Eq '[@?#[:space:]]' \
+        && fail "signed probe URL contains a credential, query, fragment, or whitespace"
+      printf '%s\n' "$PROBE_SHA" | grep -Eq '^[0-9a-f]{64}$' || fail "signed probe SHA-256 is invalid"
+      ;;
+    controlled-relay-v1)
+      for pc_key in AETHERROUTE_SIGNED_PROBE_URL AETHERROUTE_SIGNED_PROBE_SHA256; do
+        if printenv "$pc_key" >/dev/null; then fail "controlled probe contains public configuration"; fi
+      done
+      validate_controlled_probe
+      ;;
+    *) fail "unknown signed probe kind" ;;
+  esac
+  DNS_PROBE=${AETHERROUTE_SIGNED_DNS_PROBE_SCRIPT:-} DNS_SHA=${AETHERROUTE_SIGNED_DNS_PROBE_SHA256:-}
   BYPASS_CIDRS=${AETHERROUTE_SIGNED_NE_BYPASS_CIDRS:-}
-  case "$PROBE_URL" in https://*.*/*) ;; *) fail "signed probe URL is invalid" ;; esac
-  printf '%s' "$PROBE_URL" | grep -Eq '[@?#[:space:]]' \
-    && fail "signed probe URL contains a credential, query, fragment, or whitespace"
-  for value in "$PROBE_SHA" "$DNS_SHA"; do
-    printf '%s\n' "$value" | grep -Eq '^[0-9a-f]{64}$' \
-      || fail "signed probe SHA-256 is invalid"
-  done
+  printf '%s\n' "$DNS_SHA" | grep -Eq '^[0-9a-f]{64}$' || fail "signed DNS probe SHA-256 is invalid"
   require_absolute_file "$DNS_PROBE" "signed DNS probe"
   test -x "$DNS_PROBE" || fail "signed DNS probe is not executable"
   test "$(sha256 "$DNS_PROBE")" = "$DNS_SHA" || fail "signed DNS probe hash mismatch"
 }
+
+probe_environment_keys() {
+  printf '%s\n' AETHERROUTE_SIGNED_PROBE_KIND AETHERROUTE_SIGNED_PROBE_URL AETHERROUTE_SIGNED_PROBE_SHA256 \
+    AETHERROUTE_SIGNED_PROBE_BINDINGS AETHERROUTE_SIGNED_PROBE_BINDINGS_SHA256 \
+    AETHERROUTE_SIGNED_NE_RUN_ID AETHERROUTE_SIGNED_NE_CANDIDATE_MANIFEST_SHA256
+}
+
+expected_probe_environment() {
+  jq -S -cn --arg kind "$PROBE_KIND" --arg url "$PROBE_URL" --arg sha "$PROBE_SHA" \
+    --arg bindings "$PROBE_BINDINGS" --arg bindingsSHA "$PROBE_BINDINGS_SHA" \
+    --arg run "$PROBE_RUN_ID" --arg candidate "$PROBE_CANDIDATE_SHA" '
+    {AETHERROUTE_SIGNED_PROBE_KIND:$kind} +
+    (if $kind == "public-https" then {AETHERROUTE_SIGNED_PROBE_URL:$url,AETHERROUTE_SIGNED_PROBE_SHA256:$sha}
+     else {AETHERROUTE_SIGNED_PROBE_BINDINGS:$bindings,AETHERROUTE_SIGNED_PROBE_BINDINGS_SHA256:$bindingsSHA,
+           AETHERROUTE_SIGNED_NE_RUN_ID:$run,AETHERROUTE_SIGNED_NE_CANDIDATE_MANIFEST_SHA256:$candidate} end)'
+}
+
+inject_probe_environment() {
+  pe_file=$1
+  pe_expected=$(expected_probe_environment)
+  for pe_key in $(printf '%s\n' "$pe_expected" | jq -r 'keys[]'); do
+    pe_value=$(printf '%s\n' "$pe_expected" | jq -r --arg key "$pe_key" '.[$key]')
+    inject_environment_value "$pe_file" "$pe_key" "$pe_value"
+  done
+}
+
+verify_probe_environment() {
+  pe_file=$1
+  pe_expected=$(expected_probe_environment)
+  for pe_dictionary in EnvironmentVariables TestingEnvironmentVariables; do
+    pe_actual=$(plutil -extract "$UI_TARGET.$pe_dictionary" json -o - "$pe_file" | jq -S -c '
+      with_entries(select(.key | startswith("AETHERROUTE_SIGNED_PROBE_") or
+        . == "AETHERROUTE_SIGNED_NE_RUN_ID" or . == "AETHERROUTE_SIGNED_NE_CANDIDATE_MANIFEST_SHA256"))') \
+      || fail "effective xctestrun probe environment is unreadable"
+    test "$pe_actual" = "$pe_expected" || fail "effective xctestrun probe dispatch mismatch"
+    test "$(plutil -extract "$UI_TARGET.$pe_dictionary.AETHERROUTE_SIGNED_NE_CYCLES" raw -o - "$pe_file")" = "$CYCLES" \
+      || fail "effective xctestrun probe cycle count mismatch"
+    test "$(plutil -extract "$UI_TARGET.$pe_dictionary.AETHERROUTE_SIGNED_NE_ENGINE" raw -o - "$pe_file")" = "$ENGINE" \
+      || fail "effective xctestrun probe engine mismatch"
+  done
+  pe_app=$(plutil -extract "$UI_TARGET.UITargetAppEnvironmentVariables" json -o - "$pe_file") \
+    || fail "effective xctestrun target environment is unreadable"
+  printf '%s\n' "$pe_app" | jq -e 'type == "object" and (keys | all(.[];
+    (startswith("AETHERROUTE_SIGNED_") or . == "AETHERROUTE_RUN_SIGNED_NE_TEST") | not))' >/dev/null \
+    || fail "probe configuration escaped into the target App"
+}
+
+validate_effective_probe_environment() (
+  pe_effective=$1 pe_engine=$2 pe_manifest=$3
+  # Use the hash-bound xctestrun, not ambient shell values, for replay checks.
+  for pe_key in $(probe_environment_keys) AETHERROUTE_SIGNED_NE_CYCLES AETHERROUTE_SIGNED_DNS_PROBE_SCRIPT AETHERROUTE_SIGNED_DNS_PROBE_SHA256; do
+    unset "$pe_key"
+    if pe_value=$(plutil -extract "$UI_TARGET.EnvironmentVariables.$pe_key" raw -o - "$pe_effective" 2>/dev/null); then
+      export "$pe_key=$pe_value"
+    fi
+  done
+  require_absolute_file "$pe_manifest" "prepared manifest"
+  CANDIDATE_MANIFEST_SHA256=$(jq -er '.candidateManifestSHA256 | select(type == "string" and test("^[0-9a-f]{64}$"))' "$pe_manifest") \
+    || fail "prepared candidate binding is invalid"
+  validate_prepare_environment "$pe_engine"
+  verify_probe_environment "$pe_effective"
+)
+
 
 validate_archive_listing() {
   zip_file=$1
@@ -543,14 +808,19 @@ prepare_runner() {
   effective="$payload/Products/AetherRoute-$engine-effective.xctestrun"
   cp "$original" "$effective"
   plutil -replace "$UI_TARGET.UITargetAppPath" -string "$INSTALLED_APP" "$effective"
-  plutil -replace "$UI_TARGET.DependentProductPaths.$dependency_index" \
-    -string "$INSTALLED_APP" "$effective"
+  # Replacing an array index with plutil can insert and retain the old entry.
+  # Replace the complete array, preserving every unrelated dependency exactly.
+  effective_dependencies=$(plutil -extract "$UI_TARGET.DependentProductPaths" json -o - "$original" \
+    | jq -c --argjson index "$dependency_index" --arg app "$INSTALLED_APP" '.[$index] = $app') \
+    || fail "xctestrun dependencies are unreadable"
+  plutil -replace "$UI_TARGET.DependentProductPaths" -json "$effective_dependencies" "$effective"
+  test "$(plutil -extract "$UI_TARGET.DependentProductPaths" json -o - "$effective" | jq -c .)" = "$effective_dependencies" \
+    || fail "effective xctestrun app dependency binding failed"
   inject_environment_value "$effective" AETHERROUTE_RUN_SIGNED_NE_TEST YES
   inject_environment_value "$effective" AETHERROUTE_SIGNED_NE_PRODUCT independent
   inject_environment_value "$effective" AETHERROUTE_SIGNED_NE_ENGINE "$engine"
   inject_environment_value "$effective" AETHERROUTE_SIGNED_NE_CYCLES "$CYCLES"
-  inject_environment_value "$effective" AETHERROUTE_SIGNED_PROBE_URL "$PROBE_URL"
-  inject_environment_value "$effective" AETHERROUTE_SIGNED_PROBE_SHA256 "$PROBE_SHA"
+  inject_probe_environment "$effective"
   inject_environment_value "$effective" AETHERROUTE_SIGNED_DNS_PROBE_SCRIPT "$DNS_PROBE"
   inject_environment_value "$effective" AETHERROUTE_SIGNED_DNS_PROBE_SHA256 "$DNS_SHA"
   inject_environment_value "$effective" AETHERROUTE_SIGNED_NE_BYPASS_CIDRS "$BYPASS_CIDRS"
@@ -562,6 +832,8 @@ prepare_runner() {
   test "$(plutil -extract "$UI_TARGET.TestHostPath" raw -o - "$effective")" \
     = '__TESTROOT__/Debug/AetherRouteUITests-Runner.app' \
     || fail "effective xctestrun changed the runner host"
+
+  verify_probe_environment "$effective"
 
   chmod 500 "$payload/Products/Debug/AetherRouteUITests-Runner.app"
   chmod 400 "$original" "$effective" "$manifest" \
@@ -634,6 +906,8 @@ run_prepared_runner() {
     test "$(plutil -extract "$UI_TARGET.$dictionary.AETHERROUTE_SIGNED_NE_HOST_BUNDLE_ID" raw -o - "$effective")" = "$EXPECTED_HOST_BUNDLE" \
       || fail "effective xctestrun host bundle binding mismatch"
   done
+
+  validate_effective_probe_environment "$effective" "$engine" "$payload/manifest.json"
 
   if [ "${AETHERROUTE_ALLOW_REAL_NETWORK_TEST:-}" != YES ]; then
     fail "run requires AETHERROUTE_ALLOW_REAL_NETWORK_TEST=YES"
