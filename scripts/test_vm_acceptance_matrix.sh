@@ -56,24 +56,48 @@ if [ -n "$REPORT_DIR" ]; then
     exit 1
   }
   mkdir -m 700 -p "$REPORT_DIR"
+else
+  # Reports survive a failed prepare even when the caller omits this argument.
+  mkdir -m 700 -p "$ROOT/outputs/vm-acceptance"
+  REPORT_DIR=$(mktemp -d "$ROOT/outputs/vm-acceptance/matrix.XXXXXXXX")
 fi
+
+log() { printf '%s\n' "$*"; }
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-vm-matrix.XXXXXX")
+REMOTE_WORK=""
+RUN_STAGE=preflight
+cleanup() {
+  exit_status=$?
+  trap - EXIT HUP INT TERM
+  if [ -n "$REMOTE_WORK" ]; then
+    if ! vm "find '$REMOTE_WORK' -depth -delete" \
+      >"$REPORT_DIR/cleanup.txt" 2>&1; then
+      echo "VM staging cleanup failed; see $REPORT_DIR/cleanup.txt" >&2
+      exit_status=1
+    fi
+  fi
+  find "$WORK" -depth -delete 2>/dev/null || true
+  if [ ! -f "$REPORT_DIR/result.txt" ]; then
+    printf 'build=%s\n' "${BUILD:-unknown}" >"$REPORT_DIR/result.txt"
+  fi
+  printf 'stage=%s\nexit_status=%s\n' "$RUN_STAGE" "$exit_status" \
+    >>"$REPORT_DIR/result.txt"
+  (cd "$REPORT_DIR" && shasum -a 256 ./*.txt >SHA256SUMS)
+  log "reports: $REPORT_DIR"
+  exit "$exit_status"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+log "reports: $REPORT_DIR"
 
 command -v tart >/dev/null || { echo "tart is required" >&2; exit 69; }
 test -f "$ROOT/scripts/test_runtime_acceptance.sh" \
   || { echo "acceptance script is missing" >&2; exit 66; }
 
-log() { printf '%s\n' "$*"; }
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-vm-matrix.XXXXXX")
-REMOTE_WORK=""
-cleanup() {
-  if [ -n "$REMOTE_WORK" ]; then
-    vm "find '$REMOTE_WORK' -depth -delete" >/dev/null 2>&1 || true
-  fi
-  find "$WORK" -depth -delete 2>/dev/null || true
-}
-trap cleanup EXIT HUP INT TERM
-
 # ------------------------------------------------------------------- boot ---
+RUN_STAGE=boot
 state=$(tart list 2>/dev/null | awk -v v="$VM" '$2 == v {print $NF}')
 test -n "$state" || { echo "unknown VM: $VM" >&2; exit 66; }
 if [ "$state" != running ]; then
@@ -112,6 +136,7 @@ send() {
 }
 
 # ---------------------------------------------------------------- install ---
+RUN_STAGE=install
 # Delete only this harness's old staging files before uploading another copy.
 # Keep app data and prior reports. A failed/partial run cannot accumulate ZIPs.
 vm 'for path in /tmp/candidate.zip /tmp/candidate-extract; do
@@ -171,6 +196,126 @@ vm 'grep -aq "qaAutomation autoConnect" \
   exit 1
 }
 
+# prepare() activates only the selected engine. Prime both registrations before
+# any scored run so its checks cannot observe the other engine's old build.
+# This helper owns only the temporary engine preference; every exit restores
+# its original value (including an originally absent key).
+RUN_STAGE=extension-priming
+cat >"$WORK/prime-extensions.sh" <<'PRIME'
+#!/bin/sh
+set -eu
+BUILD=$1
+PREF=$HOME/Library/Containers/com.aetherroute.desktop/Data/Library/Preferences/com.aetherroute.desktop
+KEY=AetherRoute.NetworkEngineMode
+original_present=0
+if original_engine=$(defaults read "$PREF" "$KEY" 2>/dev/null); then
+  case "$original_engine" in tun|transparent) ;; *)
+    echo 'priming refused an unexpected original engine preference' >&2; exit 1 ;;
+  esac
+  original_present=1
+fi
+
+stop_app() {
+  osascript -e 'tell application "AetherRoute" to quit' 2>/dev/null || true
+  attempt=0
+  while pgrep -x AetherRoute >/dev/null; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 30 ]; then
+      echo 'prepare app did not quit cleanly' >&2
+      return 1
+    fi
+    sleep 1
+  done
+}
+
+restore_engine() {
+  status=$?
+  trap - EXIT HUP INT TERM
+  if ! stop_app; then status=1; fi
+  if [ "$original_present" -eq 1 ]; then
+    if ! defaults write "$PREF" "$KEY" -string "$original_engine" \
+      || [ "$(defaults read "$PREF" "$KEY" 2>/dev/null || true)" != "$original_engine" ]; then
+      echo 'priming engine preference restoration failed' >&2
+      status=1
+    else
+      printf 'priming engine preference restored: %s\n' "$original_engine"
+    fi
+  else
+    defaults delete "$PREF" "$KEY" >/dev/null 2>&1 || true
+    if defaults read "$PREF" "$KEY" >/dev/null 2>&1; then
+      echo 'priming engine preference removal failed' >&2
+      status=1
+    else
+      echo 'priming engine preference restored: absent'
+    fi
+  fi
+  printf 'priming exit_status=%s\n' "$status"
+  exit "$status"
+}
+trap restore_engine EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+extension_ready() {
+  identifier=$1
+  rows=$(printf '%s\n' "$extension_state" | awk -v id="$identifier" '
+    /waiting to uninstall/ {next}
+    {for (i=1; i<=NF; i++) if ($i==id) {print; break}}')
+  count=$(printf '%s\n' "$rows" | awk 'NF {n++} END {print n+0}')
+  [ "$count" -eq 1 ] || return 1
+  case "$rows" in *'[activated enabled]'*) ;; *) return 1 ;; esac
+  version=$(printf '%s\n' "$rows" | sed -n 's/.*([^/]*\/\([0-9][0-9]*\)).*/\1/p')
+  [ "$version" = "$BUILD" ]
+}
+
+for engine in tun transparent; do
+  stop_app
+  defaults write "$PREF" "$KEY" -string "$engine"
+  test "$(defaults read "$PREF" "$KEY")" = "$engine"
+  printf 'priming prepare engine=%s expected_build=%s auto_connect=0\n' "$engine" "$BUILD"
+  open -a /Applications/AetherRoute.app --env AETHERROUTE_QA_AUTOCONNECT=0
+  case "$engine" in
+    tun) identifier=com.aetherroute.desktop.tunnel ;;
+    transparent) identifier=com.aetherroute.desktop.transparent-proxy ;;
+  esac
+  ready=0
+  attempt=0
+  while [ "$attempt" -lt 30 ]; do
+    extension_state=$(systemextensionsctl list)
+    if extension_ready "$identifier"; then ready=1; break; fi
+    attempt=$((attempt + 1))
+    sleep 2
+  done
+  printf '%s\n' "$extension_state"
+  test "$ready" -eq 1 || {
+    printf 'priming failed: %s must have exactly one activated enabled registration at build %s\n' \
+      "$identifier" "$BUILD" >&2
+    exit 1
+  }
+  printf 'priming ready: %s build=%s\n' "$identifier" "$BUILD"
+done
+stop_app
+extension_state=$(systemextensionsctl list)
+printf 'priming final registrations:\n%s\n' "$extension_state"
+for identifier in com.aetherroute.desktop.tunnel com.aetherroute.desktop.transparent-proxy; do
+  extension_ready "$identifier" || {
+    printf 'priming final verification failed: %s build=%s\n' "$identifier" "$BUILD" >&2
+    exit 1
+  }
+done
+echo 'priming both extensions verified before scoring'
+PRIME
+send "$WORK/prime-extensions.sh" "$REMOTE_WORK/prime-extensions.sh"
+if ! vm "sh '$REMOTE_WORK/prime-extensions.sh' '$BUILD'" \
+  >"$REPORT_DIR/extension-priming.txt" 2>&1; then
+  cat "$REPORT_DIR/extension-priming.txt" >&2
+  echo "extension priming failed; no configuration was scored" >&2
+  exit 1
+fi
+cat "$REPORT_DIR/extension-priming.txt"
+
+RUN_STAGE=matrix
 TOTAL_FAIL=0
 SUMMARY=""
 
@@ -253,10 +398,8 @@ if [ "$TOTAL_FAIL" -eq 0 ]; then
 else
   log "$TOTAL_FAIL checks failed across the matrix."
 fi
-[ -n "$REPORT_DIR" ] && log "reports: $REPORT_DIR"
 if [ -n "$REPORT_DIR" ]; then
   printf 'build=%s\nfailed_checks=%s\n' "$BUILD" "$TOTAL_FAIL" >"$REPORT_DIR/result.txt"
-  (cd "$REPORT_DIR" && shasum -a 256 ./*.txt >SHA256SUMS)
 fi
 # Shell statuses wrap at 256. Never turn a large failure count into success.
 test "$TOTAL_FAIL" -eq 0
