@@ -401,6 +401,23 @@
         }
       }
     },
+    "Additional SOCKS5-only port": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Additional SOCKS5-only port"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "额外的纯 SOCKS5 端口"
+          }
+        }
+      }
+    },
     "Address": {
       "localizations": {
         "zh-Hans": {
@@ -3184,6 +3201,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "最大 64 KiB，分享前请先检查文件内容。"
+          }
+        }
+      }
+    },
+    "Mixed proxy (HTTP and SOCKS5)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mixed proxy (HTTP and SOCKS5)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "混合代理（HTTP 与 SOCKS5）"
           }
         }
       }

@@ -269,7 +269,21 @@ case "$ENGINE:$proxy_json" in
       else
         check "$name proxy :$port" "listening ($owner) but returned $code" fail
       fi
-    done ;;
+    done
+
+    # macOS stores one host:port per protocol, and every Clash-derived setup
+    # points both HTTP and SOCKS at the primary port. When that port spoke only
+    # HTTP, SOCKS clients failed instantly — browsers broke while curl over the
+    # HTTP proxy stayed green, so the fault never showed up in testing.
+    mixed=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+      -x "socks5h://127.0.0.1:$http_port" \
+      http://cp.cloudflare.com/generate_204 2>/dev/null || echo 000)
+    if [ "$mixed" = 204 ]; then
+      check "primary port speaks SOCKS too" "mixed listener on :$http_port" pass
+    else
+      check "primary port speaks SOCKS too" \
+        "SOCKS to :$http_port returned $mixed — Clash-style system proxy will break" fail
+    fi ;;
   *:) check "local proxy" "no preferences found" skip ;;
   *)  check "local proxy" "disabled in settings" skip ;;
 esac

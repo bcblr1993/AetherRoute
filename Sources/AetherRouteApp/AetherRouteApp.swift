@@ -949,7 +949,7 @@ private struct SettingsView: View {
             )
             .accessibilityIdentifier("local-proxy-toggle")
 
-            LabeledContent("HTTP proxy") {
+            LabeledContent("Mixed proxy (HTTP and SOCKS5)") {
                 HStack(spacing: AetherVisual.s3) {
                     Text(
                         verbatim:
@@ -969,7 +969,7 @@ private struct SettingsView: View {
             }
             .disabled(!canEditLocalProxyPorts)
 
-            LabeledContent("SOCKS5 proxy") {
+            LabeledContent("Additional SOCKS5-only port") {
                 HStack(spacing: AetherVisual.s3) {
                     Text(
                         verbatim:
