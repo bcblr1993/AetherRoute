@@ -1758,7 +1758,7 @@ private struct RoutingResourcesCard: View {
                     Text("Routing rules")
                         .font(.headline)
                     Text(summary)
-                        .font(.body)
+                        .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("routing-rules-summary")
