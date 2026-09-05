@@ -74,7 +74,7 @@ test "$dmg_sha256" = "$(jq -r '.dmg.sha256' "$CANDIDATE_MANIFEST")" || {
 }
 manifest_sha256=$(shasum -a 256 "$CANDIDATE_MANIFEST" | awk '{print $1}')
 "$ROOT/scripts/verify_postinstall_evidence.sh" \
-  "$POSTINSTALL_EVIDENCE" "$dmg_sha256" "$manifest_sha256"
+  "$POSTINSTALL_EVIDENCE" "$dmg_sha256" "$manifest_sha256" "$CANDIDATE_MANIFEST"
 
 codesign --verify --verbose=2 "$DMG"
 xcrun stapler validate "$DMG"

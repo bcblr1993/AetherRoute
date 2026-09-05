@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "status": "pending-calibration",
+  "surface": "installed-network-extension",
+  "collectorSources": [
+    "scripts/collect_installed_ne_performance.sh",
+    "scripts/collect_installed_ne_performance.py",
+    "scripts/installed_ne_performance_peer.py"
+  ],
+  "pairsPerDirection": 5,
+  "minimumSampleDurationNanoseconds": 10000000000,
+  "latencySamplesPerMeasurement": 200,
+  "minimumThroughputRatioBasisPoints": null,
+  "maximumAddedP95LatencyMicroseconds": null,
+  "maximumBaselineSpreadBasisPoints": null,
+  "calibrationEvidenceSHA256": null
+}

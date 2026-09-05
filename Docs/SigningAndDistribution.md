@@ -217,8 +217,9 @@ passes installed Developer ID TUN/Transparent Proxy, IPv4/IPv6/DNS leak,
 sleep/wake, path-change, crash recovery, and clean-machine install/upgrade/
 rollback gates.
 
-After those tests create privacy-safe `metadata.txt`, `result.txt`, and
-`SHA256SUMS`, validate and promote the exact candidate without uploading it:
+After those tests create privacy-safe `metadata.txt`, `result.txt`,
+`SHA256SUMS`, and the bound `installed-ne-performance` evidence directory,
+validate and promote the exact candidate without uploading it:
 
 ```sh
 ./scripts/promote_candidate.sh \
@@ -239,6 +240,14 @@ upload files or mutate the owner's update service.
 Both signed-runtime and post-install evidence verifiers use strict directory
 allowlists and reject extra logs, xcresult bundles, packet captures, URLs,
 endpoints, tokens, or password-like values.
+
+Installed throughput and latency use the controlled paired-measurement
+contract in `InstalledNEPerformanceEvidence.md`; the isolated core's mandatory
+1,024 MiB/s floor is not an installed-provider or Internet bandwidth budget.
+The installed policy is currently pending calibration, which blocks promotion.
+Two hand-entered throughput numbers cannot satisfy this gate. The collector,
+candidate/provider identities, actual transferred bytes, timing samples and
+reviewed budget must all be bound and validated.
 
 Passing static pipeline tests proves only that the script has the expected
 fail-closed gates. A production release is not proven until the exact artifact
