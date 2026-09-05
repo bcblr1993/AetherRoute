@@ -140,7 +140,14 @@ case "$command_name" in
     fi
     case "$*" in
       *api.ipify.org*) printf '198.51.100.9' ;;
-      *ipv6.google.com*) printf '0.012345'; exit "${MOCK_IPV6_EXIT:-0}" ;;
+      *ipv6.google.com*)
+        case "${MOCK_IPV6_EXIT:-0}" in
+          6 | 7) metrics='0.012345|0.001|0.000000|0.000000||000|0' ;;
+          0) metrics='0.012345|0.001|0.002|0.010|2001:db8::1|200|0' ;;
+          *) metrics='0.012345|0.001|0.002|0.000000|2001:db8::1|000|1' ;;
+        esac
+        printf '%s' "${MOCK_IPV6_METRICS-$metrics}"
+        exit "${MOCK_IPV6_EXIT:-0}" ;;
       *api.anthropic.com*) printf '401 0.010' ;;
       *baidu.com*) printf '200 0.010' ;;
       *'%{http_code} %{time_total}'*) printf '204 0.010' ;;
@@ -205,5 +212,29 @@ run_case invisible-transparent-state fail 'current startup success cannot be ver
 run_case provider-restarted fail '[FAIL] provider survived all probes' MOCK_RESTART=YES
 run_case tunnel-disconnected-after-probes fail '[FAIL] provider survived all probes' MOCK_DISCONNECT_DURING_PROBES=YES
 run_case fast-ipv6-unavailable pass '0.012345s (curl exit 7)' MOCK_IPV6_EXIT=7
-run_case ipv6-tls-error fail '0.012345s (curl exit 60)' MOCK_IPV6_EXIT=60
+run_case ipv6-tls-error fail '[FAIL] IPv6 probe HTTPS' MOCK_IPV6_EXIT=60
+run_case ipv6-tls-handshake-error fail '[FAIL] IPv6 probe HTTPS' MOCK_IPV6_EXIT=35
+run_case mapped-ipv4-https-success pass '[SKIP] native IPv6 HTTPS coverage' \
+  MOCK_IPV6_METRICS='1.108754|0.007851|0.008693|1.000399|::ffff:198.18.0.24|200|0'
+run_case mapped-ipv4-tls-error fail '[FAIL] IPv6 probe HTTPS' MOCK_IPV6_EXIT=35 \
+  MOCK_IPV6_METRICS='2.539455|0.003111|0.004254|0.000000|::ffff:198.18.0.23|000|1'
+run_case expanded-mapped-ipv4 pass '[SKIP] native IPv6 HTTPS coverage' \
+  MOCK_IPV6_METRICS='0.012345|0.001|0.002|0.010|0:0:0:0:0:FFFF:c612:18|200|0'
+run_case slow-ipv6-response fail '[FAIL] IPv6 probe completion time' \
+  MOCK_IPV6_METRICS='8.000000|0.001|0.002|7.999|2001:db8::1|200|0'
+run_case ipv6-timeout fail '[FAIL] IPv6 probe completion time' MOCK_IPV6_EXIT=28 \
+  MOCK_IPV6_METRICS='12.001000|0.001|0.000000|0.000000||000|0'
+run_case invalid-ipv6-metrics fail 'invalid curl metrics' MOCK_IPV6_METRICS='bad response'
+run_case ipv6-success-without-tls fail '[FAIL] IPv6 probe HTTPS' \
+  MOCK_IPV6_METRICS='0.012345|0.001|0.002|0.000000|2001:db8::1|200|0'
+
+# A fast handshake error has completed promptly, but is still an acceptance
+# failure. A successful mapped connection must not claim native IPv6 coverage.
+for name in mapped-ipv4-tls-error ipv6-tls-handshake-error; do
+  grep -F '[PASS] IPv6 probe completion time' "$TEMP/$name.txt" >/dev/null
+  grep -F '[SKIP] native IPv6 HTTPS coverage' "$TEMP/$name.txt" >/dev/null
+done
+grep -F '[PASS] native IPv6 HTTPS coverage' "$TEMP/healthy-tun.txt" >/dev/null
+grep -F '[SKIP] IPv6 probe HTTPS' "$TEMP/fast-ipv6-unavailable.txt" >/dev/null
+grep -F '[SKIP] native IPv6 HTTPS coverage' "$TEMP/fast-ipv6-unavailable.txt" >/dev/null
 printf 'Runtime acceptance regressions passed: %s cases\n' "$CASES"

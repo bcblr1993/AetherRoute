@@ -441,23 +441,70 @@ else
     "$([ "$CONNECTED" = yes ] && echo fail || echo skip)"
 fi
 
-# IPv6 must fail fast rather than hang: a black hole is what broke Electron
-# apps, because Happy Eyeballs waited on a route that never answered. This is
-# a property of the tunnel's routing, so it is only meaningful when the tunnel
-# is actually routing — direct mode measures the host network instead.
+# Keep completion time, HTTPS health, and native IPv6 coverage separate. On
+# macOS, curl -6 can still connect to an IPv4-mapped address from fake-IP DNS;
+# that path does not exercise native IPv6. A fast TLS failure is not a stall,
+# but must still fail HTTPS acceptance. Direct mode measures the host network.
 v6_exit=0
-v6=$(clean_curl --proxy '' -s -o /dev/null -w '%{time_total}' --max-time 12 -6 \
+v6=$(clean_curl --proxy '' -s -o /dev/null \
+  -w '%{time_total}|%{time_namelookup}|%{time_connect}|%{time_appconnect}|%{remote_ip}|%{http_code}|%{ssl_verify_result}' \
+  --max-time 12 -6 \
   https://ipv6.google.com/ 2>/dev/null) || v6_exit=$?
-v6_secs=$(printf '%s\n' "$v6" | cut -d. -f1)
-case "$v6_secs" in ''|*[!0-9]*) v6_secs=99 ;; esac
+v6_valid=$(printf '%s\n' "$v6" | awk -F '|' '
+  NR == 1 && NF == 7 {
+    valid=1
+    for (i=1; i<=4; i++) if ($i !~ /^[0-9]+([.][0-9]+)?$/) valid=0
+    if ($6 !~ /^[0-9][0-9][0-9]$/ || $7 !~ /^[0-9]+$/) valid=0
+  }
+  END {if (NR == 1 && valid) print "yes"}')
 if [ "$CONNECTED" != yes ]; then
-  check "IPv6 avoids long stalls" "candidate not connected" skip
+  check "IPv6 probe completion time" "candidate not connected" skip
+  check "IPv6 probe HTTPS" "candidate not connected" skip
+  check "native IPv6 HTTPS coverage" "candidate not connected" skip
 elif [ "$ROUTING" = direct ]; then
-  check "IPv6 fails fast" "${v6}s (direct mode — host network)" skip
-elif [ "$v6_secs" -lt 8 ] && { [ "$v6_exit" -eq 0 ] || [ "$v6_exit" -eq 6 ] || [ "$v6_exit" -eq 7 ]; }; then
-  check "IPv6 avoids long stalls" "${v6}s (curl exit $v6_exit)" pass
+  check "IPv6 probe completion time" "direct mode — host network" skip
+  check "IPv6 probe HTTPS" "direct mode — host network" skip
+  check "native IPv6 HTTPS coverage" "direct mode — host network" skip
+elif [ "$v6_valid" != yes ]; then
+  check "IPv6 probe completion time" "invalid curl metrics (exit $v6_exit)" fail
+  check "IPv6 probe HTTPS" "response cannot be verified" fail
+  check "native IPv6 HTTPS coverage" "address family cannot be verified" skip
 else
-  check "IPv6 avoids long stalls" "${v6}s (curl exit $v6_exit)" fail
+  IFS='|' read -r v6_total v6_dns v6_tcp v6_tls v6_remote v6_http v6_verify <<METRICS
+$v6
+METRICS
+  v6_family=unavailable
+  v6_remote_lower=$(printf '%s' "$v6_remote" | tr '[:upper:]' '[:lower:]')
+  case "$v6_remote_lower" in
+    ::ffff:* | 0:0:0:0:0:ffff:* | *:*.*) v6_family=IPv4-mapped ;;
+    *:*) v6_family=native-IPv6 ;;
+    ?*) v6_family=IPv4 ;;
+  esac
+  emit "  probe: ipv6.google.com; remote=${v6_remote:-none}; family=$v6_family; DNS=${v6_dns}s; TCP=${v6_tcp}s; TLS=${v6_tls}s; HTTP=$v6_http; verify=$v6_verify"
+  v6_fast=$(awk -v total="$v6_total" 'BEGIN {print (total < 8 ? "yes" : "no")}')
+  check "IPv6 probe completion time" "${v6_total}s (curl exit $v6_exit)" \
+    "$([ "$v6_fast" = yes ] && echo pass || echo fail)"
+  v6_https=no
+  if [ "$v6_exit" -eq 0 ] && [ "$v6_verify" -eq 0 ] \
+    && awk -v tcp="$v6_tcp" -v tls="$v6_tls" -v code="$v6_http" \
+      'BEGIN {exit !(tcp > 0 && tls > 0 && code >= 100 && code <= 599)}' \
+    && [ "$v6_family" != unavailable ]; then
+    v6_https=yes
+    check "IPv6 probe HTTPS" "HTTP $v6_http; TLS completed in ${v6_tls}s" pass
+  elif { [ "$v6_exit" -eq 6 ] || [ "$v6_exit" -eq 7 ]; } \
+    && awk -v tcp="$v6_tcp" -v tls="$v6_tls" -v code="$v6_http" \
+      'BEGIN {exit !(tcp == 0 && tls == 0 && code == 0)}'; then
+    check "IPv6 probe HTTPS" "endpoint unavailable (curl exit $v6_exit); HTTPS untested" skip
+  else
+    check "IPv6 probe HTTPS" "HTTP $v6_http; curl exit $v6_exit; TLS=${v6_tls}s; verify=$v6_verify" fail
+  fi
+  if [ "$v6_family" = native-IPv6 ] && [ "$v6_https" = yes ]; then
+    check "native IPv6 HTTPS coverage" "verified native IPv6 response" pass
+  elif [ "$v6_family" = IPv4-mapped ] || [ "$v6_family" = IPv4 ]; then
+    check "native IPv6 HTTPS coverage" "$v6_family transport; native IPv6 untested" skip
+  else
+    check "native IPv6 HTTPS coverage" "no verified native IPv6 HTTPS response" skip
+  fi
 fi
 emit ""
 
