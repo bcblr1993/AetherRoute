@@ -788,6 +788,16 @@
         }
       }
     },
+    "Approval needed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要批准"
+          }
+        }
+      }
+    },
     "Approve the AetherRoute network extension to continue.": {
       "localizations": {
         "zh-Hans": {
@@ -1074,6 +1084,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法打开订阅链接"
+          }
+        }
+      }
+    },
+    "Check Again": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新检查"
           }
         }
       }
@@ -2825,6 +2845,16 @@
         }
       }
     },
+    "In System Settings, open General > Login Items & Extensions > Network Extensions, then enable AetherRoute. This window will update after approval.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在“系统设置”中打开“通用 > 登录项与扩展 > 网络扩展”，然后启用 AetherRoute。批准后，此窗口会自动更新。"
+          }
+        }
+      }
+    },
     "In Use": {
       "localizations": {
         "zh-Hans": {
@@ -3958,6 +3988,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开便携档案"
+          }
+        }
+      }
+    },
+    "Open System Settings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开系统设置"
+          }
+        }
+      }
+    },
+    "Open System Settings to allow the network extension.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开系统设置，允许 AetherRoute 网络扩展。"
           }
         }
       }
@@ -8041,6 +8091,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在恢复正常网络路径，请稍候。"
+          }
+        }
+      }
+    },
+    "Waiting for approval": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待批准"
           }
         }
       }

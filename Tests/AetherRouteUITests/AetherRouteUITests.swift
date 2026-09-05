@@ -424,7 +424,7 @@ final class AetherRouteUITests: XCTestCase {
             (state: "connected", title: "Disconnect", enabled: true),
             (state: "disconnecting", title: "Disconnecting", enabled: false),
             (state: "failed", title: "Retry", enabled: true),
-            (state: "extension-approval", title: "Retry", enabled: false),
+            (state: "extension-approval", title: "Waiting for approval", enabled: false),
         ]
 
         for item in cases {
@@ -442,6 +442,41 @@ final class AetherRouteUITests: XCTestCase {
                 XCTAssertEqual(connectionsButton.isEnabled, item.enabled)
             }
             app.terminate()
+        }
+
+        // Approval takes precedence over missing-profile recovery on first run.
+        // The recheck entry uses the production helper; review mode prevents
+        // any request to the real system extension manager.
+        for language in ["en", "zh-Hans"] {
+            for profileEmpty in [false, true] {
+                let app = launchReviewApp(
+                    appearance: "light", state: "extension-approval",
+                    profileEmpty: profileEmpty, language: language
+                )
+                XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+                let primary = app.buttons["primary-connection-button"]
+                XCTAssertEqual(primary.label, language == "en"
+                    ? "Waiting for approval" : "等待批准")
+                XCTAssertFalse(primary.isEnabled)
+                let settings = app.buttons["extension-approval-open-settings"]
+                let recheck = app.buttons["extension-approval-recheck"]
+                XCTAssertTrue(settings.waitForExistence(timeout: 2))
+                XCTAssertTrue(settings.isEnabled)
+                XCTAssertEqual(settings.label, language == "en"
+                    ? "Open System Settings" : "打开系统设置")
+                XCTAssertTrue(recheck.isEnabled)
+                XCTAssertFalse(app.otherElements["connection-recovery-card"].exists)
+                XCTAssertFalse(app.buttons["recovery-reviewProfiles"].exists)
+                XCTAssertFalse(app.buttons["recovery-retry"].exists)
+                recheck.click()
+                XCTAssertTrue(settings.exists)
+                XCTAssertFalse(primary.isEnabled)
+                let attachment = XCTAttachment(screenshot: app.screenshot())
+                attachment.name = "extension-approval-\(language)-\(profileEmpty ? "empty" : "configured")"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                app.terminate()
+            }
         }
     }
 

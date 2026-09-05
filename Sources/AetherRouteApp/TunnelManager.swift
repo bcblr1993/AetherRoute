@@ -397,7 +397,15 @@ final class TunnelManager: ObservableObject {
             installReviewBypassPolicy()
             if startsWithEmptyReviewProfile
                 || environment["AETHERROUTE_UI_REVIEW_PROFILE"] == "none" {
-                state = .disconnected
+                if reviewState == "extension-approval" {
+                    systemExtensionApprovalRequired = true
+                    failureContext = .configuration
+                    state = .failed(AppLocalization.string(
+                        "Approve the AetherRoute network extension to continue."
+                    ))
+                } else {
+                    state = .disconnected
+                }
                 connectedSince = nil
                 return
             }
@@ -3386,6 +3394,9 @@ final class TunnelManager: ObservableObject {
     }
 
     var primaryActionTitle: String {
+        if systemExtensionApprovalRequired {
+            return AppLocalization.string("Waiting for approval")
+        }
         if isConnectionPreviewOnly, !isEnabled {
             return AppLocalization.string("Preview only")
         }
@@ -3403,7 +3414,10 @@ final class TunnelManager: ObservableObject {
     }
 
     var statusTitle: String {
-        switch state {
+        if systemExtensionApprovalRequired {
+            return AppLocalization.string("Waiting for approval")
+        }
+        return switch state {
         case .privacyConsentRequired: AppLocalization.string("Privacy review required")
         case .loading: AppLocalization.string("Preparing")
         case .disconnected where !distributionConnectionAccess.permitsNewConnection:
@@ -3419,6 +3433,11 @@ final class TunnelManager: ObservableObject {
     }
 
     var statusDetail: String {
+        if systemExtensionApprovalRequired {
+            return AppLocalization.string(
+                "Approve the AetherRoute network extension to continue."
+            )
+        }
         if isConnectionPreviewOnly, !isEnabled {
             return AppLocalization.string(
                 "This preview can import and inspect profiles, but it cannot enable system routing."
@@ -3468,7 +3487,8 @@ final class TunnelManager: ObservableObject {
     }
 
     var recoveryPlan: ConnectionRecoveryPlan? {
-        guard case .failed = state else { return nil }
+        guard !systemExtensionApprovalRequired,
+              case .failed = state else { return nil }
         let context = activeProfile == nil
             ? ConnectionFailureContext.missingProfile
             : failureContext ?? .unknown

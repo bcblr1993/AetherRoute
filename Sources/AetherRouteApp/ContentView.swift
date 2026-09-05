@@ -499,6 +499,11 @@ private struct ConnectionToolbarButton: View {
     }
 
     private var primaryActionHint: String {
+        if tunnel.systemExtensionApprovalRequired {
+            return AppLocalization.string(
+                "Approve the AetherRoute network extension to continue."
+            )
+        }
         if tunnel.isConnectionPreviewOnly {
             return AppLocalization.string(
                 "This preview can import and inspect profiles, but it cannot enable system routing."
@@ -733,7 +738,9 @@ private struct ConnectionHero: View {
                 ConnectionToolbarButton()
                     .environmentObject(tunnel)
             }
-            if tunnel.state == .connecting {
+            if tunnel.systemExtensionApprovalRequired {
+                approvalControls
+            } else if tunnel.state == .connecting {
                 ConnectionProgressStages()
             }
         }
@@ -744,6 +751,38 @@ private struct ConnectionHero: View {
             effectiveReduceMotion ? nil : .smooth(duration: 0.34),
             value: tunnel.state
         )
+    }
+
+    private var approvalControls: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            Text("In System Settings, open General > Login Items & Extensions > Network Extensions, then enable AetherRoute. This window will update after approval.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: AetherVisual.s3) {
+                Button {
+                    if let settings = NSWorkspace.shared.urlForApplication(
+                        withBundleIdentifier: "com.apple.systempreferences"
+                    ) {
+                        NSWorkspace.shared.open(settings)
+                    }
+                } label: {
+                    Label("Open System Settings", systemImage: "gearshape")
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("extension-approval-open-settings")
+                Button {
+                    Task { await tunnel.recheckSystemExtensionApproval() }
+                } label: {
+                    Label("Check Again", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("extension-approval-recheck")
+            }
+            .controlSize(.large)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("extension-approval-controls")
     }
 
     private var effectiveReduceMotion: Bool {
@@ -790,7 +829,10 @@ private struct ConnectionHero: View {
     }
 
     private var stateBadgeTitle: String {
-        switch tunnel.state {
+        if tunnel.systemExtensionApprovalRequired {
+            return AppLocalization.string("Approval needed")
+        }
+        return switch tunnel.state {
         case .privacyConsentRequired: AppLocalization.string("Privacy")
         case .loading: AppLocalization.string("Preparing")
         case .disconnected: AppLocalization.string("Standby")
@@ -808,7 +850,10 @@ private struct ConnectionHero: View {
     }
 
     private var nextStep: String {
-        switch tunnel.state {
+        if tunnel.systemExtensionApprovalRequired {
+            return AppLocalization.string("Open System Settings to allow the network extension.")
+        }
+        return switch tunnel.state {
         case .privacyConsentRequired:
             AppLocalization.string("Review the privacy disclosure to unlock connection controls.")
         case .loading:
@@ -833,7 +878,8 @@ private struct ConnectionHero: View {
     }
 
     private var nextStepSymbol: String {
-        switch tunnel.state {
+        if tunnel.systemExtensionApprovalRequired { return "hand.raised.fill" }
+        return switch tunnel.state {
         case .connected where tunnel.isAutomaticRouteRecovering:
             "arrow.triangle.2.circlepath"
         case .connected: "checkmark.circle.fill"
