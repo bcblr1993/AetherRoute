@@ -6,21 +6,25 @@ WEB="$ROOT/Services/WebDistribution"
 DMG=${1:-}
 CANDIDATE_MANIFEST=${2:-}
 PRODUCTION_MANIFEST=${3:-}
-UPDATE_ENVELOPE=${4:-}
-SITE_SOURCE=${5:-}
-OUTPUT=${6:-}
+# Free releases omit the update envelope argument entirely. The legacy six-
+# argument form remains available only for licensed releases.
+case "$#" in
+  5) UPDATE_ENVELOPE=; SITE_SOURCE=$4; OUTPUT=$5 ;;
+  6) UPDATE_ENVELOPE=$4; SITE_SOURCE=$5; OUTPUT=$6 ;;
+  *) UPDATE_ENVELOPE=; SITE_SOURCE=; OUTPUT= ;;
+esac
 
 usage() {
-  echo "usage: $0 /absolute/AetherRoute-version-arm64.dmg /absolute/AetherRoute-version-arm64.candidate.json /absolute/AetherRoute-version-arm64.production.json /absolute/current.update.json /absolute/site-source /absolute/new-output-directory" >&2
+  echo "usage: $0 /absolute/release.dmg /absolute/release.candidate.json /absolute/release.production.json [/absolute/current.update.json] /absolute/site-source /absolute/new-output-directory" >&2
+  echo "       omit current.update.json for free; supply it for licensed" >&2
 }
 
 for path in "$DMG" "$CANDIDATE_MANIFEST" "$PRODUCTION_MANIFEST" \
-  "$UPDATE_ENVELOPE" "$SITE_SOURCE" "$OUTPUT"
+  "$SITE_SOURCE" "$OUTPUT"
 do
   case "$path" in /*) ;; *) usage; exit 64 ;; esac
 done
-for file in "$DMG" "$CANDIDATE_MANIFEST" "$PRODUCTION_MANIFEST" \
-  "$UPDATE_ENVELOPE"
+for file in "$DMG" "$CANDIDATE_MANIFEST" "$PRODUCTION_MANIFEST"
 do
   test -f "$file" && test ! -L "$file" || {
     echo "stable distribution input is missing or a symlink: $file" >&2
@@ -52,10 +56,6 @@ for command in awk base64 cmp ditto git head jq shasum sort stat xcrun; do
 done
 
 public_key_base64=${AETHERROUTE_DISTRIBUTION_PUBLIC_KEY:-}
-test -n "$public_key_base64" || {
-  echo "stable distribution preparation requires AETHERROUTE_DISTRIBUTION_PUBLIC_KEY" >&2
-  exit 64
-}
 
 jq -e '
   .schemaVersion == 1 and
@@ -69,7 +69,12 @@ jq -e '
   .architecture == "arm64" and
   (.source.gitCommit | test("^[0-9a-f]{40}$")) and
   (.source.manifestSHA256 | test("^[0-9a-f]{64}$")) and
-  (.distribution.updateSigningPublicKeySHA256 | test("^[0-9a-f]{64}$")) and
+  (.distribution | type == "object") and
+  (if .distribution.mode == "free" then
+     .distribution.updateSigningPublicKeySHA256 == null
+   elif (.distribution.mode == "licensed" or (.distribution | has("mode") | not)) then
+     (.distribution.updateSigningPublicKeySHA256 | test("^[0-9a-f]{64}$"))
+   else false end) and
   (.dmg.sha256 | test("^[0-9a-f]{64}$")) and
   (.dmg.bytes | type == "number" and . > 0 and floor == .) and
   .notarization.status == "Accepted" and
@@ -85,6 +90,30 @@ jq -e '
   echo "production manifest is incomplete or not approved" >&2
   exit 1
 }
+
+# Absent mode is the historical licensed manifest shape, never a free fallback.
+distribution_mode=$(jq -r 'if (.distribution | has("mode")) then .distribution.mode else "licensed" end' "$PRODUCTION_MANIFEST")
+case "$distribution_mode" in
+  free)
+    test -z "$UPDATE_ENVELOPE$public_key_base64" || {
+      echo "free distribution must not supply an update envelope or signing public key" >&2
+      exit 64
+    }
+    expected_update_status=404
+    ;;
+  licensed)
+    case "$UPDATE_ENVELOPE" in /*) ;; *) usage; exit 64 ;; esac
+    test -f "$UPDATE_ENVELOPE" && test ! -L "$UPDATE_ENVELOPE" || {
+      echo "licensed update envelope is missing or a symlink" >&2
+      exit 1
+    }
+    test -n "$public_key_base64" || {
+      echo "stable distribution preparation requires AETHERROUTE_DISTRIBUTION_PUBLIC_KEY" >&2
+      exit 64
+    }
+    expected_update_status=200
+    ;;
+esac
 
 version=$(jq -r '.version' "$PRODUCTION_MANIFEST")
 build=$(jq -r '.build' "$PRODUCTION_MANIFEST")
@@ -164,50 +193,52 @@ test "$current_source_manifest" = \
   exit 1
 }
 
-public_key="$temporary/public-key.raw"
-printf '%s' "$public_key_base64" | base64 -D >"$public_key" 2>/dev/null || {
-  echo "AETHERROUTE_DISTRIBUTION_PUBLIC_KEY is not valid base64" >&2
-  exit 64
-}
-test "$(stat -f '%z' "$public_key")" -eq 32 || {
-  echo "AETHERROUTE_DISTRIBUTION_PUBLIC_KEY must contain 32 raw bytes" >&2
-  exit 64
-}
-public_key_sha=$(shasum -a 256 "$public_key" | awk '{print $1}')
-test "$public_key_sha" = \
-  "$(jq -r '.distribution.updateSigningPublicKeySHA256' "$PRODUCTION_MANIFEST")" || {
-  echo "update verification key differs from the key embedded in the stable build" >&2
-  exit 1
-}
-verified_update="$temporary/verified-update.json"
-xcrun swift "$ROOT/scripts/distribution_envelope_tool.swift" verify \
-  "$public_key" "$UPDATE_ENVELOPE" "$verified_update" >/dev/null
-
 download_url="https://downloads.baizhiedu.xin/releases/$version/$artifact_name"
 release_notes_url="https://aetherroute.baizhiedu.xin/releases/$version/"
-jq -e \
-  --arg productID "$product_id" \
-  --arg version "$version" \
-  --argjson build "$build" \
-  --arg publishedAt "$approved_at" \
-  --arg minimumSystemVersion "$minimum_system_version" \
-  --arg downloadURL "$download_url" \
-  --arg sha256 "$expected_dmg_sha" \
-  --arg releaseNotesURL "$release_notes_url" '
-    .schemaVersion == 1 and
-    .productID == $productID and
-    .version == $version and
-    .build == $build and
-    .publishedAt == $publishedAt and
-    .minimumSystemVersion == $minimumSystemVersion and
-    .architecture == "arm64" and
-    .downloadURL == $downloadURL and
-    .sha256 == $sha256 and
-    .releaseNotesURL == $releaseNotesURL
-  ' "$verified_update" >/dev/null || {
-  echo "signed update envelope does not describe the exact stable release" >&2
-  exit 1
-}
+if [ "$distribution_mode" = licensed ]; then
+  public_key="$temporary/public-key.raw"
+  printf '%s' "$public_key_base64" | base64 -D >"$public_key" 2>/dev/null || {
+    echo "AETHERROUTE_DISTRIBUTION_PUBLIC_KEY is not valid base64" >&2
+    exit 64
+  }
+  test "$(stat -f '%z' "$public_key")" -eq 32 || {
+    echo "AETHERROUTE_DISTRIBUTION_PUBLIC_KEY must contain 32 raw bytes" >&2
+    exit 64
+  }
+  public_key_sha=$(shasum -a 256 "$public_key" | awk '{print $1}')
+  test "$public_key_sha" = \
+    "$(jq -r '.distribution.updateSigningPublicKeySHA256' "$PRODUCTION_MANIFEST")" || {
+    echo "update verification key differs from the key embedded in the stable build" >&2
+    exit 1
+  }
+  verified_update="$temporary/verified-update.json"
+  xcrun swift "$ROOT/scripts/distribution_envelope_tool.swift" verify \
+    "$public_key" "$UPDATE_ENVELOPE" "$verified_update" >/dev/null
+
+  jq -e \
+    --arg productID "$product_id" \
+    --arg version "$version" \
+    --argjson build "$build" \
+    --arg publishedAt "$approved_at" \
+    --arg minimumSystemVersion "$minimum_system_version" \
+    --arg downloadURL "$download_url" \
+    --arg sha256 "$expected_dmg_sha" \
+    --arg releaseNotesURL "$release_notes_url" '
+      .schemaVersion == 1 and
+      .productID == $productID and
+      .version == $version and
+      .build == $build and
+      .publishedAt == $publishedAt and
+      .minimumSystemVersion == $minimumSystemVersion and
+      .architecture == "arm64" and
+      .downloadURL == $downloadURL and
+      .sha256 == $sha256 and
+      .releaseNotesURL == $releaseNotesURL
+    ' "$verified_update" >/dev/null || {
+    echo "signed update envelope does not describe the exact stable release" >&2
+    exit 1
+  }
+fi
 
 for required in index.html releases/index.html assets/site.css assets/site.js; do
   test -s "$SITE_SOURCE/$required" || {
@@ -233,7 +264,9 @@ cp "$CANDIDATE_MANIFEST" \
   "$payload/downloads/releases/$version/$candidate_name"
 cp "$PRODUCTION_MANIFEST" \
   "$payload/downloads/releases/$version/$production_name"
-cp "$UPDATE_ENVELOPE" "$payload/updates/current.update.json"
+if [ "$distribution_mode" = licensed ]; then
+  cp "$UPDATE_ENVELOPE" "$payload/updates/current.update.json"
+fi
 (
   cd "$payload/downloads/releases/$version"
   shasum -a 256 "$artifact_name" "$candidate_name" "$production_name" \
@@ -337,9 +370,13 @@ jq -n \
   --arg artifactName "$artifact_name" \
   --arg channel "releases/$version" \
   --arg sha256 "$expected_dmg_sha" \
+  --arg distributionMode "$distribution_mode" \
+  --argjson updateHTTPStatus "$expected_update_status" \
   '{schemaVersion: 1, releaseID: $releaseID, version: $version,
     build: $build, artifactName: $artifactName, channel: $channel,
-    sha256: $sha256, updateHTTPStatus: 200}' >"$stage/metadata.json"
+    sha256: $sha256, distributionMode: $distributionMode,
+    updateEndpointPresent: ($distributionMode == "licensed"),
+    updateHTTPStatus: $updateHTTPStatus}' >"$stage/metadata.json"
 find "$stage" -type d -exec chmod 755 {} +
 find "$stage" -type f -exec chmod 644 {} +
 mv "$stage" "$OUTPUT"

@@ -92,6 +92,8 @@ AETHERROUTE_DISTRIBUTION_PUBLIC_KEY="$public_key_base64" \
 test "$(jq -r '.releaseID' "$output/metadata.json")" = \
   stable-1.0.0-build-100
 test "$(jq -r '.updateHTTPStatus' "$output/metadata.json")" = 200
+jq -e '.distributionMode == "licensed" and .updateEndpointPresent == true' \
+  "$output/metadata.json" >/dev/null
 test -s "$output/payload/downloads/releases/1.0.0/$(
   basename "$dmg"
 )"
@@ -165,5 +167,130 @@ if AETHERROUTE_DISTRIBUTION_PUBLIC_KEY="$public_key_base64" \
 fi
 test ! -e "$temporary/symlink-output"
 
-echo "Stable distribution payload tests passed."
+# Exercise the actual preparer with both new explicit modes and legacy licensed
+# manifests. These are synthetic evidence fixtures, never real release approval.
+write_approval() {
+  input=$1
+  target=$2
+  input_sha=$(shasum -a 256 "$input" | awk '{print $1}')
+  jq --arg candidateSHA "$input_sha" '
+    .releaseStatus = "production-approved" |
+    .promotion = {schema: 1, approvedAt: "2026-08-07T09:00:00Z",
+      candidateManifestSHA256: $candidateSHA,
+      postInstallEvidenceSHA256: ("c" * 64), exactDMGSHA256: .dmg.sha256}
+  ' "$input" >"$target"
+}
+expect_rejection() {
+  label=$1
+  reason=$2
+  shift 2
+  if "$@" >"$temporary/rejection.log" 2>&1; then
+    echo "distribution payload unexpectedly accepted: $label" >&2
+    exit 1
+  fi
+  grep -F "$reason" "$temporary/rejection.log" >/dev/null || {
+    echo "distribution payload failed at an unrelated guard: $label" >&2
+    cat "$temporary/rejection.log" >&2
+    exit 1
+  }
+  echo "Rejected expected invalid payload: $label"
+}
 
+mkdir "$temporary/explicit-licensed" "$temporary/free"
+licensed_candidate="$temporary/explicit-licensed/$(basename "$candidate")"
+licensed_production="$temporary/explicit-licensed/$(basename "$production")"
+jq '.distribution.mode = "licensed"' "$candidate" >"$licensed_candidate"
+write_approval "$licensed_candidate" "$licensed_production"
+AETHERROUTE_DISTRIBUTION_PUBLIC_KEY="$public_key_base64" \
+  "$PREPARER" "$dmg" "$licensed_candidate" "$licensed_production" \
+  "$update" "$site" "$temporary/explicit-licensed-output" >/dev/null
+jq -e '.distributionMode == "licensed" and .updateEndpointPresent == true and .updateHTTPStatus == 200' \
+  "$temporary/explicit-licensed-output/metadata.json" >/dev/null
+cmp -s "$update" "$temporary/explicit-licensed-output/payload/updates/current.update.json"
+expect_rejection licensed-without-key 'requires AETHERROUTE_DISTRIBUTION_PUBLIC_KEY' \
+  env -u AETHERROUTE_DISTRIBUTION_PUBLIC_KEY "$PREPARER" "$dmg" \
+  "$licensed_candidate" "$licensed_production" "$update" "$site" "$temporary/missing-key-output"
+expect_rejection licensed-without-envelope 'omit current.update.json for free; supply it for licensed' \
+  env AETHERROUTE_DISTRIBUTION_PUBLIC_KEY="$public_key_base64" "$PREPARER" "$dmg" \
+  "$licensed_candidate" "$licensed_production" "$site" "$temporary/missing-envelope-output"
+
+free_candidate="$temporary/free/$(basename "$candidate")"
+free_production="$temporary/free/$(basename "$production")"
+jq '.distribution = {mode: "free", updateSigningPublicKeySHA256: null}' \
+  "$candidate" >"$free_candidate"
+write_approval "$free_candidate" "$free_production"
+env -u AETHERROUTE_DISTRIBUTION_PUBLIC_KEY "$PREPARER" "$dmg" \
+  "$free_candidate" "$free_production" "$site" "$temporary/free-output" >/dev/null
+jq -e '.distributionMode == "free" and .updateEndpointPresent == false and .updateHTTPStatus == 404' \
+  "$temporary/free-output/metadata.json" >/dev/null
+test -d "$temporary/free-output/payload/updates"
+test -z "$(find "$temporary/free-output/payload/updates" -type f -print)"
+(
+  cd "$temporary/free-output/payload/downloads/releases/1.0.0"
+  shasum -a 256 -c SHA256SUMS >/dev/null
+  cmp -s "$dmg" "$(basename "$dmg")"
+  cmp -s "$free_candidate" "$(basename "$candidate")"
+  cmp -s "$free_production" "$(basename "$production")"
+)
+expect_rejection free-with-envelope 'free distribution must not supply' \
+  env -u AETHERROUTE_DISTRIBUTION_PUBLIC_KEY "$PREPARER" "$dmg" \
+  "$free_candidate" "$free_production" "$update" "$site" "$temporary/free-envelope-output"
+expect_rejection free-with-key 'free distribution must not supply' \
+  env AETHERROUTE_DISTRIBUTION_PUBLIC_KEY="$public_key_base64" "$PREPARER" "$dmg" \
+  "$free_candidate" "$free_production" "$site" "$temporary/free-key-output"
+expect_rejection free-without-production 'stable distribution input is missing' \
+  env -u AETHERROUTE_DISTRIBUTION_PUBLIC_KEY "$PREPARER" "$dmg" \
+  "$free_candidate" "$temporary/absent.production.json" "$site" "$temporary/free-missing-production-output"
+
+# Modify candidate + approval together so deeper guards, not just the exact
+# manifest comparison, have to reject each bad source/DMG/signing claim.
+for label in mode-null mode-false mode-unknown nonnull-key no-mode-null-key unapproved \
+  notarization soak signed-runtime product source-commit source-manifest dmg-hash dmg-bytes
+do
+  case "$label" in
+    mode-null) expression='.distribution.mode = null'; reason='production manifest is incomplete' ;;
+    mode-false) expression='.distribution.mode = false'; reason='production manifest is incomplete' ;;
+    mode-unknown) expression='.distribution.mode = "development"'; reason='production manifest is incomplete' ;;
+    nonnull-key) expression='.distribution.updateSigningPublicKeySHA256 = ("a" * 64)'; reason='production manifest is incomplete' ;;
+    no-mode-null-key) expression='del(.distribution.mode)'; reason='production manifest is incomplete' ;;
+    unapproved) expression='.'; reason='production manifest is incomplete' ;;
+    notarization) expression='.notarization.status = "Rejected"'; reason='production manifest is incomplete' ;;
+    soak) expression='del(.stability)'; reason='production manifest is incomplete' ;;
+    signed-runtime) expression='.signedRuntime.engines = ["tun"]'; reason='production manifest is incomplete' ;;
+    product) expression='.productID = "com.example.wrong"'; reason='production manifest is incomplete' ;;
+    source-commit) expression='.source.gitCommit = ("0" * 40)'; reason='current Git commit' ;;
+    source-manifest) expression='.source.manifestSHA256 = ("0" * 64)'; reason='current source manifest' ;;
+    dmg-hash) expression='.dmg.sha256 = ("0" * 64)'; reason='stable DMG SHA-256' ;;
+    dmg-bytes) expression='.dmg.bytes += 1'; reason='stable DMG byte count' ;;
+  esac
+  folder="$temporary/negative-$label"
+  mkdir "$folder"
+  bad_candidate="$folder/$(basename "$candidate")"
+  bad_production="$folder/$(basename "$production")"
+  jq "$expression" "$free_candidate" >"$bad_candidate"
+  write_approval "$bad_candidate" "$bad_production"
+  if [ "$label" = unapproved ]; then cp "$bad_candidate" "$bad_production"; fi
+  expect_rejection "$label" "$reason" env -u AETHERROUTE_DISTRIBUTION_PUBLIC_KEY \
+    "$PREPARER" "$dmg" "$bad_candidate" "$bad_production" "$site" "$folder/output"
+  test ! -e "$folder/output"
+done
+
+mkdir "$temporary/free-wrong-candidate"
+jq '.author = "changed"' "$free_candidate" \
+  >"$temporary/free-wrong-candidate/$(basename "$candidate")"
+expect_rejection free-exact-candidate 'production manifest does not preserve the exact candidate' \
+  env -u AETHERROUTE_DISTRIBUTION_PUBLIC_KEY "$PREPARER" "$dmg" \
+  "$temporary/free-wrong-candidate/$(basename "$candidate")" "$free_production" \
+  "$site" "$temporary/free-wrong-candidate/output"
+expect_rejection free-site-symlink 'site source must not contain symbolic links' \
+  env -u AETHERROUTE_DISTRIBUTION_PUBLIC_KEY "$PREPARER" "$dmg" \
+  "$free_candidate" "$free_production" "$temporary/symlink-site/public" "$temporary/free-symlink-output"
+expect_rejection free-refuse-overwrite 'refusing to overwrite distribution payload' \
+  env -u AETHERROUTE_DISTRIBUTION_PUBLIC_KEY "$PREPARER" "$dmg" \
+  "$free_candidate" "$free_production" "$site" "$temporary/free-output"
+
+echo "Stable distribution payload tests passed: legacy and explicit licensed, free, and strict invalid evidence."
+
+
+
+python3 -B "$ROOT/scripts/test_distribution_web_deploy_modes.py"

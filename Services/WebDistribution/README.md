@@ -7,7 +7,8 @@ hosts:
 - `aetherroute.baizhiedu.xin`: product, release, privacy, support, and license
   pages;
 - `downloads.baizhiedu.xin`: immutable notarized DMGs and checksums;
-- `updates.baizhiedu.xin`: the exact no-redirect `/v1/update` signed envelope.
+- `updates.baizhiedu.xin`: the no-redirect `/v1/update` endpoint for optional
+  licensed builds; free releases leave it empty and verify an HTTP 404.
 
 The Nginx service is non-root, read-only, has no published host port, emits no
 access log, and is reachable only through the existing Traefik `proxy` overlay
@@ -29,36 +30,46 @@ different:
   /absolute/notarized-preview-directory web-preview-unique-id
 ```
 
-A stable deployment accepts only the complete, exact release chain. The public
-key is the same non-secret Ed25519 key embedded in the signed application:
+A stable deployment accepts only the complete, exact release chain. The first
+public edition is free and does not require an update envelope or an update
+signing key:
 
 ```sh
-AETHERROUTE_DISTRIBUTION_PUBLIC_KEY='base64-public-key' \
 ./scripts/deploy_distribution_web.sh \
   chenyn@www.baizhiedu.xin stable \
   /absolute/AetherRoute-1.0.0-arm64.dmg \
   /absolute/AetherRoute-1.0.0-arm64.candidate.json \
-  /absolute/AetherRoute-1.0.0-arm64.production.json \
-  /absolute/current.update.json
+  /absolute/AetherRoute-1.0.0-arm64.production.json
 ```
 
+The production and candidate manifests must both identify `free` distribution.
+Do not set `AETHERROUTE_DISTRIBUTION_PUBLIC_KEY` or pass an update envelope for
+this edition. Users update by installing a newer signed DMG; their saved
+profiles remain available.
+
+Optional licensed releases use the same command with an additional absolute
+path to `current.update.json`, and require `AETHERROUTE_DISTRIBUTION_PUBLIC_KEY`
+to contain the non-secret Ed25519 key embedded in that signed application.
+
 Stable preparation verifies the production approval against the byte-for-byte
-candidate manifest, frozen Git commit, complete source manifest, DMG hash and
-byte count, product ID, update-signing key, and decoded signed update payload.
-It then generates the stable home page, release history entry, versioned
-release notes, immutable download directory, checksums, and no-cache update
-endpoint in a temporary directory. The checked-in website remains a truthful
-preview until this exact production chain exists.
+candidate manifest, frozen Git commit, complete source manifest, DMG hash,
+byte count and product ID. Licensed releases also validate the update-signing
+key and decoded signed update payload. It then generates the stable home page, release history entry, versioned
+release notes, immutable download directory and checksums in a temporary
+directory. Only licensed releases include a no-cache update envelope. The
+checked-in website remains a truthful preview until this exact production
+chain exists.
 
 The replacement Swarm task must become healthy and the public verifier must
-download the complete DMG, match SHA-256, and verify the live Ed25519 update
-envelope before `current` is changed. A failed public verification rolls the
-service back and leaves the previous pointer active. An operator-initiated
+download the complete DMG and match SHA-256 before `current` is changed. It
+also verifies an empty update endpoint (HTTP 404) for free releases or the live
+Ed25519 update envelope (HTTP 200) for licensed releases. A failed public
+verification rolls the service back and leaves the previous pointer active. An operator-initiated
 rollback uses `scripts/rollback_distribution_web.sh`, which resolves the
 immutable `PREVIOUS` pointer, validates that release, waits for a healthy
 replacement, and only then changes `current`.
 
 The current public package is clearly labeled as a technical preview. Never
 rename it to Stable or publish `current.update.json` until the exact production
-DMG has passed every gate in `Docs/ReleaseGates.md` and the envelope was signed
-from that final DMG.
+DMG has passed every gate in `Docs/ReleaseGates.md`. A licensed update envelope
+must additionally be signed from that final DMG.

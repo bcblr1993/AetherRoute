@@ -10,7 +10,7 @@ IMAGE_TAG=nginx:1.28.3-alpine
 
 usage() {
   echo "usage: $0 user@host preview /absolute/notarized-preview-directory unique-release-id" >&2
-  echo "   or: $0 user@host stable /absolute/release.dmg /absolute/release.candidate.json /absolute/release.production.json /absolute/current.update.json" >&2
+  echo "   or: $0 user@host stable /absolute/release.dmg /absolute/release.candidate.json /absolute/release.production.json [/absolute/current.update.json]" >&2
 }
 
 test -n "$HOST" && test -n "$MODE" || {
@@ -47,20 +47,41 @@ case "$MODE" in
     CANDIDATE_MANIFEST=${4:-}
     PRODUCTION_MANIFEST=${5:-}
     UPDATE_ENVELOPE=${6:-}
-    for path in "$DMG" "$CANDIDATE_MANIFEST" "$PRODUCTION_MANIFEST" \
-      "$UPDATE_ENVELOPE"
+    for path in "$DMG" "$CANDIDATE_MANIFEST" "$PRODUCTION_MANIFEST"
     do
       case "$path" in /*) ;; *) usage; exit 64 ;; esac
     done
     prepared="$temporary/prepared"
-    "$ROOT/scripts/prepare_distribution_web_payload.sh" \
-      "$DMG" "$CANDIDATE_MANIFEST" "$PRODUCTION_MANIFEST" \
-      "$UPDATE_ENVELOPE" "$WEB/public" "$prepared"
+    if [ -n "$UPDATE_ENVELOPE" ]; then
+      "$ROOT/scripts/prepare_distribution_web_payload.sh" \
+        "$DMG" "$CANDIDATE_MANIFEST" "$PRODUCTION_MANIFEST" \
+        "$UPDATE_ENVELOPE" "$WEB/public" "$prepared"
+    else
+      "$ROOT/scripts/prepare_distribution_web_payload.sh" \
+        "$DMG" "$CANDIDATE_MANIFEST" "$PRODUCTION_MANIFEST" \
+        "$WEB/public" "$prepared"
+    fi
     RELEASE_ID=$(jq -r '.releaseID' "$prepared/metadata.json")
     actual_sha=$(jq -r '.sha256' "$prepared/metadata.json")
     artifact_name=$(jq -r '.artifactName' "$prepared/metadata.json")
     channel=$(jq -r '.channel' "$prepared/metadata.json")
-    expected_update_status=200
+    # Require metadata consistent with the already-validated production mode.
+    distribution_mode=$(jq -r 'if (.distribution | has("mode")) then .distribution.mode else "licensed" end' "$PRODUCTION_MANIFEST")
+    jq -e --arg mode "$distribution_mode" '
+      .distributionMode == $mode and
+      (if .distributionMode == "free" then
+        .updateEndpointPresent == false and .updateHTTPStatus == 404
+      elif .distributionMode == "licensed" then
+        .updateEndpointPresent == true and .updateHTTPStatus == 200
+      else false end)
+    ' "$prepared/metadata.json" >/dev/null
+    if [ "$distribution_mode" = free ]; then
+      test ! -e "$prepared/payload/updates/current.update.json"
+      test ! -L "$prepared/payload/updates/current.update.json"
+    else
+      test -s "$prepared/payload/updates/current.update.json"
+    fi
+    expected_update_status=$(jq -r '.updateHTTPStatus' "$prepared/metadata.json")
     mv "$prepared/payload" "$temporary/payload"
     mv "$prepared/docker-stack.yml" "$temporary/docker-stack.yml"
     ;;
