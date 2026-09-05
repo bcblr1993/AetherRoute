@@ -402,7 +402,7 @@ private struct ConnectionRuleCell: View {
 
     var body: some View {
         Text(ruleText)
-            .font(.caption.weight(.medium))
+            .font(.body.weight(.medium))
             .foregroundStyle(.primary)
             .lineLimit(1)
     }
@@ -419,7 +419,7 @@ private struct ConnectionOutletCell: View {
 
     var body: some View {
         Label(outlet.localizedTitle, systemImage: outletSymbol)
-            .font(.caption.weight(.medium))
+            .font(.body.weight(.semibold))
             .foregroundStyle(.primary)
             .lineLimit(1)
     }
