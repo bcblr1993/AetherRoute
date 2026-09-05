@@ -111,6 +111,16 @@
         }
       }
     },
+    "%lld group": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 组"
+          }
+        }
+      }
+    },
     "%lld groups": {
       "localizations": {
         "zh-Hans": {

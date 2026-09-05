@@ -720,10 +720,9 @@ private struct DNSMetricCard: View {
                     .font(.title3.monospacedDigit().weight(.semibold))
                     .foregroundStyle(.primary)
                 Text(detail)
-                    .font(.subheadline.weight(.medium))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(AetherVisual.s4)
@@ -931,7 +930,7 @@ private struct RuleRow: View {
     var body: some View {
         HStack(spacing: AetherVisual.s4) {
             Text(verbatim: String(rule.order))
-                .font(.subheadline.monospacedDigit().weight(.semibold))
+                .font(.body.monospacedDigit().weight(.semibold))
                 .foregroundStyle(.primary)
                 .frame(width: 30, height: 30)
                 .background(Color.secondary.opacity(0.08), in: Circle())

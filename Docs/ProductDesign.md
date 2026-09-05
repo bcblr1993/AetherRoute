@@ -121,10 +121,13 @@ state and must never call Network Extension APIs.
   System, Simplified Chinese, and English. The visible interface changes
   immediately without a relaunch. About shows `陈艳男` in Chinese and
   `ChenYanNan` in English.
-- Before localization is declared complete, migrate the existing localization
-  keys to `Localizable.xcstrings` without renaming them. The release gate rejects
-  stale or untranslated keys, then exercises Xcode pseudolocalization and 30%
-  text expansion at 780 x 560 points in every primary view.
+- Product copy is stored in `Localizable.xcstrings`. Before localization is
+  declared complete, the release gate rejects stale or untranslated keys,
+  then exercises Xcode pseudolocalization and 30%
+  text expansion at 780 x 560 points in every primary view. The current isolated
+  tests use Apple's native Double-Length pseudolanguage (100 percent expansion)
+  and require duplicated visible landmarks; a macOS Dynamic Type environment
+  value alone does not prove expanded layout.
 - Visual and accessibility evidence is language-specific. Capture all primary
   views and runtime states in English and Simplified Chinese, and run the
   accessibility audit under each language rather than inferring one locale from

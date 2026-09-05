@@ -781,7 +781,7 @@ private struct ConnectionHero: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityHidden(true)
                 Label(nextStep, systemImage: nextStepSymbol)
-                    .font(.caption)
+                    .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1386,7 +1386,7 @@ private struct ProfilesView: View {
                                         ?? AppLocalization.string("No active profile")
                                 )
                             Text(profileDetail)
-                                .font(.subheadline)
+                                .font(.body.weight(.medium))
                                 .foregroundStyle(.primary)
                         }
                         Spacer(minLength: 0)

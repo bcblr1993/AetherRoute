@@ -61,6 +61,13 @@ secondary actions use `bordered`; destructive actions use a destructive role.
 
 For every release candidate, capture English and Simplified Chinese in light
 and dark appearance, then repeat the minimum-window and expanded-text cases.
+Expanded-text runs use `-NSDoubleLocalizedStrings YES` in the isolated process,
+which duplicates localized copy (100 percent length expansion, stricter than
+the 30 percent minimum). Tests verify the duplicated page landmarks. The
+previous Dynamic Type flag alone had no sizing effect on macOS, so older
+captures made only with that flag establish minimum-window layout, not text
+expansion. See [Apple's Dynamic Type platform behavior](https://developer.apple.com/documentation/swiftui/environmentvalues/dynamictypesize)
+and [native pseudolanguage testing](https://developer.apple.com/documentation/xcode/preparing-your-interface-for-localization).
 Automated checks cover focusability, enabled state, selected state, stable
 loading labels, accessibility audit, and page landmarks. Manual review covers
 hover/pressed motion, visual hierarchy, truncation, and VoiceOver reading order.
@@ -71,7 +78,7 @@ changes include the free edition, automatic bundled routing resources and
 sidebar readability fixes. That earlier matrix does not approve these changes;
 the matrix must be recaptured after the final source freeze. It covers all six primary pages,
 all seven Settings pages, privacy onboarding, both traffic engines, the
-minimum window with expanded text, English/Simplified Chinese, and light/dark
+minimum window (its old expansion flag was ineffective on macOS), English/Simplified Chinese, and light/dark
 appearance. Each screenshot, its corresponding application runtime log, and
 the complete source manifest are SHA-256 bound; the runner also rejects source
 changes during capture. The capture gate rejects crash/assert/precondition messages and

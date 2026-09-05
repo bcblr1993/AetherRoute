@@ -38,8 +38,12 @@ The Debug-only `AETHERROUTE_UI_REVIEW` mode supplies deterministic sample state
 without loading or saving NetworkExtension preferences.
 `AETHERROUTE_UI_REVIEW_APPEARANCE` can force `light` or `dark` for deterministic
 appearance review. `AETHERROUTE_UI_REVIEW_WINDOW` sets a deterministic point
-size, `AETHERROUTE_UI_REVIEW_REDUCE_MOTION=1` removes review animation, and
-`AETHERROUTE_UI_REVIEW_TEXT_SIZE=expanded` provides an expansion fixture. The
+size and `AETHERROUTE_UI_REVIEW_REDUCE_MOTION=1` removes review animation.
+Expanded-text tests and captures additionally launch the isolated app with
+`-NSDoubleLocalizedStrings YES`: Apple's native Double-Length pseudolanguage
+duplicates localized copy (100 percent text-length expansion). The older
+`AETHERROUTE_UI_REVIEW_TEXT_SIZE=expanded` Dynamic Type environment alone does
+not enlarge text on macOS and is not expansion evidence. The
 `AetherRouteUIReview` scheme contains only the app and its UI tests as explicit
 scheme entries. Xcode may compile the embedded provider as an app dependency,
 but review mode never loads or launches it. All review branches are excluded
@@ -94,8 +98,10 @@ administration decision.
 English is the development language and `zh-Hans` is supported for the core
 experience. Interface copy uses localization resources, while imported profile
 names, hostnames, proxy names, rule tokens, and protocol identifiers remain
-verbatim user or engine data. The current `Localizable.strings` file is an
-incremental translation resource; before declaring localization complete it
-must be migrated key-for-key to a String Catalog and pass untranslated/stale-key
-validation, pseudolocalization, and 30% text-expansion review at the 780 x 560
-minimum window in light and dark appearances.
+verbatim user or engine data. Product copy uses `Localizable.xcstrings` with
+English source keys and Simplified Chinese translations. Before declaring
+localization complete it must pass untranslated/stale-key validation,
+pseudolocalization, and at least 30% text-expansion review at the
+780 x 560 minimum window in light and dark appearances. The isolated runner
+uses the stricter native Double-Length mode and asserts visibly duplicated
+page landmarks. It does not change the product's default font sizes.

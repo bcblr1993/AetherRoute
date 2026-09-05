@@ -103,7 +103,9 @@ struct ProxiesView: View {
                     .foregroundStyle(.primary)
                 Text(
                     String.localizedStringWithFormat(
-                        AppLocalization.string("%lld groups"),
+                        groups.count == 1
+                            ? AppLocalization.string("%lld group")
+                            : AppLocalization.string("%lld groups"),
                         Int64(groups.count)
                     )
                 )
@@ -671,7 +673,8 @@ private struct ProxyNodeInventory: View {
                 Table(visibleProxies) {
                     TableColumn("Name") { proxy in
                         Text(proxy.name)
-                            .font(.subheadline)
+                            .font(.body)
+                            .foregroundStyle(.primary)
                             .strikethrough(!proxy.recognition.isSelectable)
                             .lineLimit(1)
                             .help(proxy.name)

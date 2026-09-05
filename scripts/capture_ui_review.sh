@@ -142,6 +142,11 @@ capture() {
   settings_tab=${10}
   png="$OUTPUT/$name.png"
   log="$OUTPUT/$name.log"
+  if [ "$text_size" = expanded ]; then
+    printf '%s\n' 'UI_REVIEW_LOCALIZATION mode=NSDoubleLocalizedStrings requested-text-length-expansion=100-percent' >"$log"
+  else
+    printf '%s\n' 'UI_REVIEW_LOCALIZATION mode=standard' >"$log"
+  fi
 
   if [ "$language" = zh-Hans ]; then
     locale=zh_CN
@@ -151,6 +156,12 @@ capture() {
 
   (
     cd "$TEMP/Run"
+    # Dynamic Type does not resize macOS text. Use Apple's native 100-percent
+    # text-length expansion only for this isolated review process.
+    set --
+    if [ "$text_size" = expanded ]; then
+      set -- -NSDoubleLocalizedStrings YES
+    fi
     exec env \
       HOME="$TEMP/Home" \
       CFFIXED_USER_HOME="$TEMP/Home" \
@@ -170,7 +181,8 @@ capture() {
         -AppleLocale "$locale" \
         -ApplePersistenceIgnoreState YES \
         -NSQuitAlwaysKeepsWindows NO \
-        >"$log" 2>&1
+        "$@" \
+        >>"$log" 2>&1
   ) &
   CURRENT_PID=$!
 

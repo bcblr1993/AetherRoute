@@ -234,6 +234,7 @@ final class AetherRouteUITests: XCTestCase {
             state: "connected",
             language: "en",
             windowSize: "940x640",
+            reduceMotion: false,
             responsivenessOutput: appSamplesURL.path
         )
         defer { app.terminate() }
@@ -244,6 +245,8 @@ final class AetherRouteUITests: XCTestCase {
             isolatedHome: URL(fileURLWithPath: isolatedHome),
             evidenceURL: evidenceURL
         )
+        let systemReduceMotionAtStart = NSWorkspace.shared
+            .accessibilityDisplayShouldReduceMotion
         let startedAt = Date()
         let deadline = startedAt.addingTimeInterval(
             TimeInterval(requestedDuration)
@@ -332,6 +335,8 @@ final class AetherRouteUITests: XCTestCase {
         let p95Milliseconds = sortedDurations[percentileIndex]
         let maximumMilliseconds = sortedDurations.last ?? 0
         let elapsedSeconds = Int(Date().timeIntervalSince(startedAt))
+        let systemReduceMotionAtEnd = NSWorkspace.shared
+            .accessibilityDisplayShouldReduceMotion
 
         let retainedSamplesURL = evidenceURL.appendingPathComponent(
             "navigation-samples.csv"
@@ -354,6 +359,9 @@ final class AetherRouteUITests: XCTestCase {
         main_pages=6
         settings_pages=7
         network_extension=disabled
+        review_reduce_motion=false
+        system_reduce_motion_start=\(systemReduceMotionAtStart)
+        system_reduce_motion_end=\(systemReduceMotionAtEnd)
         \n
         """
         try Data(result.utf8).write(
@@ -362,6 +370,11 @@ final class AetherRouteUITests: XCTestCase {
         )
         try finishHangsRecording(
             hangsRecording, startedAt: startedAt, endedAt: Date()
+        )
+        XCTAssertEqual(
+            systemReduceMotionAtStart,
+            systemReduceMotionAtEnd,
+            "The system Reduce Motion setting changed during measurement."
         )
         XCTAssertLessThanOrEqual(
             p95Milliseconds,
@@ -601,7 +614,7 @@ final class AetherRouteUITests: XCTestCase {
             destinations: [
                 ("概览", "流量路由已启用", "overview-page"),
                 ("代理", "策略组", "proxies-page"),
-                ("连接", "当前会话", "connections-page"),
+                ("连接", "只统计本机可见的连接，不上报", "connections-page"),
                 ("配置", "导入配置…", "profiles-page"),
                 ("规则", "匹配顺序", "rules-page"),
                 ("DNS", "DNS 与 Fake-IP", "dns-page"),
@@ -2961,7 +2974,10 @@ final class AetherRouteUITests: XCTestCase {
 
         for destination in destinations {
             app.activate()
-            let navigationButton = app.buttons[destination.button]
+            let section = destination.pageIdentifier.replacingOccurrences(
+                of: "-page", with: ""
+            )
+            let navigationButton = app.buttons["primary-navigation-\(section)"]
             XCTAssertTrue(navigationButton.waitForExistence(timeout: 2))
             let hittable = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "hittable == true"),
@@ -2978,10 +2994,18 @@ final class AetherRouteUITests: XCTestCase {
                 ].waitForExistence(timeout: 5),
                 "Navigation did not reach \(destination.pageIdentifier)."
             )
+            // macOS ignores SwiftUI Dynamic Type size. Apple's native
+            // Double-Length pseudolanguage must visibly duplicate localized
+            // copy, so a no-op launch flag cannot pass the expansion gate.
+            let expandedLandmark = destination.landmark + " " + destination.landmark
+            let landmarkText = app.staticTexts[expandedLandmark]
+            let landmarkButton = app.buttons[expandedLandmark]
             XCTAssertTrue(
-                app.staticTexts[destination.landmark].waitForExistence(timeout: 2)
-                    || app.buttons[destination.landmark].waitForExistence(timeout: 1)
+                landmarkText.waitForExistence(timeout: 2)
+                    || landmarkButton.waitForExistence(timeout: 1),
+                "Native Double-Length localization did not expand \(destination.landmark)."
             )
+            print("UI_TEXT_EXPANSION language=\(language) page=\(destination.pageIdentifier) mode=NSDoubleLocalizedStrings expected=\(expandedLandmark)")
             if destination.pageIdentifier == "overview-page" {
                 let mainWindow = app.windows["main-AppWindow-1"]
                 XCTAssertTrue(mainWindow.waitForExistence(timeout: 2))
@@ -3013,12 +3037,14 @@ final class AetherRouteUITests: XCTestCase {
         language: String = "en",
         windowSize: String? = nil,
         expandedText: Bool = false,
+        reduceMotion: Bool = true,
         responsivenessOutput: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["AETHERROUTE_UI_REVIEW"] = state
         app.launchEnvironment["AETHERROUTE_UI_REVIEW_APPEARANCE"] = appearance
-        app.launchEnvironment["AETHERROUTE_UI_REVIEW_REDUCE_MOTION"] = "1"
+        app.launchEnvironment["AETHERROUTE_UI_REVIEW_REDUCE_MOTION"] =
+            reduceMotion ? "1" : "0"
         app.launchEnvironment[
             "AETHERROUTE_UI_REVIEW_WINDOW_POSITION"
         ] = "top-left"
@@ -3048,6 +3074,7 @@ final class AetherRouteUITests: XCTestCase {
         }
         if expandedText {
             app.launchEnvironment["AETHERROUTE_UI_REVIEW_TEXT_SIZE"] = "expanded"
+            app.launchArguments += ["-NSDoubleLocalizedStrings", "YES"]
         }
         if let responsivenessOutput {
             app.launchEnvironment[

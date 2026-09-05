@@ -215,11 +215,13 @@ private struct SessionBar: View {
                 Divider().frame(height: 20)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Outlet")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
                     Text(outlet)
-                        .font(.caption.weight(.medium))
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
+                        .help(outlet)
                 }
             }
 
@@ -394,7 +396,8 @@ private struct ConnectionTrafficCell: View {
             Text(verbatim: "↓ \(formattedBytes(connection.downloadTotal))")
             Text(verbatim: "↑ \(formattedBytes(connection.uploadTotal))")
         }
-        .font(.caption.monospacedDigit())
+        .font(.body.monospacedDigit())
+        .foregroundStyle(.primary)
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
@@ -404,7 +407,7 @@ private struct ConnectionDurationCell: View {
 
     var body: some View {
         Text(duration)
-            .font(.caption.monospacedDigit().weight(.medium))
+            .font(.body.monospacedDigit().weight(.medium))
             .foregroundStyle(.primary)
             .frame(maxWidth: .infinity, alignment: .trailing)
     }
