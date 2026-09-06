@@ -8,7 +8,7 @@ enum SignedNELeaseError: String, Error, LocalizedError {
 }
 
 struct SignedNELease: Sendable {
-    static let helperSHA256 = "463cf85dbbf165a11378ad3ae3c41c754a42f730bc3247ea86c05923be47bac3"
+    static let helperSHA256 = "02f066b79bf86608122c08e0ae73c3253c626df354e52bc4ed880fab4b09a3a9"
     private static let prefix = "AETHERROUTE_SIGNED_NE_LEASE_"
     struct Configuration: Sendable {
         let stage: String, run: String, epoch: String, candidate: String, specInputs: String, python: String, runtime: String
