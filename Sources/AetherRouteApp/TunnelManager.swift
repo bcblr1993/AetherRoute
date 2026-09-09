@@ -3377,7 +3377,7 @@ final class TunnelManager: ObservableObject {
     var canModifyDNSRuntimePolicy: Bool {
         canModifyProfiles
             && !isUpdatingDNSRuntimePolicy
-            && activeProfileSummary?.dns.isEnabled == true
+            && activeProfile != nil
     }
 
     var canModifyLocalProxySettings: Bool {

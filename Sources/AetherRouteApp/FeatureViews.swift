@@ -136,7 +136,12 @@ struct DNSView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: AetherVisual.s5) {
                         header(summary.dns)
-                        if summary.dns.isPresent {
+                        if usesAutomaticTUNDNS(summary.dns) {
+#if AETHERROUTE_INDEPENDENT
+                            automaticTUNDNSContent(summary.dns)
+                            tunRuntimePolicyContent(summary.dns)
+#endif
+                        } else if summary.dns.isPresent {
                             configuredContent(summary.dns)
                         } else {
                             systemResolverContent
@@ -388,6 +393,40 @@ struct DNSView: View {
     }
 
 #if AETHERROUTE_INDEPENDENT
+    private func automaticTUNDNSContent(
+        _ dns: DNSConfigurationSummary
+    ) -> some View {
+        let mode = tunnel.dnsRuntimePolicy
+            .effectivePacketTunnelResolutionMode(for: dns)
+        let allowsIPv6 = tunnel.dnsRuntimePolicy
+            .effectivePacketTunnelAllowsIPv6(
+                for: dns,
+                profileAllowsIPv6: tunnel.activeProfileSummary?.allowsIPv6 == true
+            )
+        return FeatureSection(title: "Automatic TUN DNS", symbol: "network") {
+            VStack(spacing: 0) {
+                DNSSettingRow(
+                    title: "Enhanced mode",
+                    detail: modeDetail(mode),
+                    value: modeTitle(mode),
+                    symbol: modeSymbol(mode),
+                    tint: modeColor(mode)
+                )
+                Divider().padding(.leading, AetherVisual.wideListIndent)
+                DNSSettingRow(
+                    title: "IPv6 answers",
+                    detail: "IPv6 answers follow the selected TUN policy.",
+                    value: allowsIPv6
+                        ? AppLocalization.string("On")
+                        : AppLocalization.string("Off"),
+                    symbol: "6.circle",
+                    tint: allowsIPv6 ? .teal : .secondary
+                )
+            }
+            .featureCard()
+        }
+    }
+
     private func tunRuntimePolicyContent(
         _ dns: DNSConfigurationSummary
     ) -> some View {
@@ -576,6 +615,14 @@ struct DNSView: View {
     }
 #endif
 
+    private func usesAutomaticTUNDNS(_ dns: DNSConfigurationSummary) -> Bool {
+#if AETHERROUTE_INDEPENDENT
+        tunnel.networkEngineMode == .tun && !dns.isEnabled
+#else
+        false
+#endif
+    }
+
     private var systemResolverContent: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
             Label("System resolver", systemImage: "macbook.and.iphone")
@@ -595,16 +642,31 @@ struct DNSView: View {
     }
 
     private func headerColor(_ dns: DNSConfigurationSummary) -> Color {
+        if usesAutomaticTUNDNS(dns) {
+            return modeColor(
+                tunnel.dnsRuntimePolicy.effectivePacketTunnelResolutionMode(for: dns)
+            )
+        }
         guard dns.isPresent else { return .secondary }
         return dns.isEnabled ? modeColor(dns.mode) : .orange
     }
 
     private func headerSymbol(_ dns: DNSConfigurationSummary) -> String {
+        if usesAutomaticTUNDNS(dns) {
+            return modeSymbol(
+                tunnel.dnsRuntimePolicy.effectivePacketTunnelResolutionMode(for: dns)
+            )
+        }
         guard dns.isPresent else { return "macbook.and.iphone" }
         return dns.isEnabled ? modeSymbol(dns.mode) : "pause.circle.fill"
     }
 
     private func statusTitle(_ dns: DNSConfigurationSummary) -> String {
+        if usesAutomaticTUNDNS(dns) {
+            return modeTitle(
+                tunnel.dnsRuntimePolicy.effectivePacketTunnelResolutionMode(for: dns)
+            )
+        }
         guard dns.isPresent else { return AppLocalization.string("System resolver") }
         return dns.isEnabled
             ? AppLocalization.string("Profile DNS on")
@@ -612,6 +674,9 @@ struct DNSView: View {
     }
 
     private func headerDetail(_ dns: DNSConfigurationSummary) -> LocalizedStringKey {
+        if usesAutomaticTUNDNS(dns) {
+            return "TUN manages DNS automatically when the profile has no enabled DNS section. Review or adjust its policy below."
+        }
         guard dns.isPresent else {
             return "This profile does not define a custom DNS section."
         }

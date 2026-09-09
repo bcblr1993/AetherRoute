@@ -37,7 +37,9 @@ public struct DNSRuntimePolicy: Codable, Equatable, Sendable {
         self == .inherited
     }
 
-    /// Conservative first-run behavior for Packet Tunnel profiles. Normal DNS
+    /// Conservative first-run behavior for Packet Tunnel profiles, including
+    /// missing or disabled DNS sections that the core enables as Normal DNS.
+    /// Normal DNS
     /// exposes macOS to poisoned or split-horizon upstream answers before the
     /// rule engine can preserve the original hostname. Fake-IP keeps the name
     /// bound to the packet so the selected proxy can resolve it on the intended
@@ -48,7 +50,10 @@ public struct DNSRuntimePolicy: Codable, Equatable, Sendable {
         for dns: DNSConfigurationSummary
     ) -> DNSRuntimePolicy {
         guard dns.isEnabled else {
-            return .inherited
+            return DNSRuntimePolicy(
+                resolutionMode: .fakeIP,
+                ipv6: .disabled
+            )
         }
         switch dns.mode {
         case .normal:
@@ -60,6 +65,31 @@ public struct DNSRuntimePolicy: Codable, Equatable, Sendable {
             return DNSRuntimePolicy(ipv6: .disabled)
         case .fakeIP, .redirHost, .unsupported:
             return .inherited
+        }
+    }
+
+    /// Mirrors the core's Packet Tunnel resolver setup before runtime overrides.
+    /// Missing or disabled DNS starts as Normal, even if a disabled section
+    /// names another mode. Explicitly inheriting the profile keeps that choice.
+    public func effectivePacketTunnelResolutionMode(
+        for dns: DNSConfigurationSummary
+    ) -> DNSResolutionMode {
+        switch resolutionMode {
+        case .inherit: dns.isEnabled ? dns.mode : .normal
+        case .normal: .normal
+        case .fakeIP: .fakeIP
+        case .redirHost: .redirHost
+        }
+    }
+
+    public func effectivePacketTunnelAllowsIPv6(
+        for dns: DNSConfigurationSummary,
+        profileAllowsIPv6: Bool
+    ) -> Bool {
+        switch ipv6 {
+        case .inherit: profileAllowsIPv6 && dns.allowsIPv6
+        case .disabled: false
+        case .enabled: true
         }
     }
 }

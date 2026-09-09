@@ -898,6 +898,16 @@
         }
       }
     },
+    "Automatic TUN DNS": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TUN 自动 DNS"
+          }
+        }
+      }
+    },
     "Automation": {
       "localizations": {
         "zh-Hans": {
@@ -2701,6 +2711,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "IPv6 响应"
+          }
+        }
+      }
+    },
+    "IPv6 answers follow the selected TUN policy.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IPv6 应答遵循当前选择的 TUN 策略。"
           }
         }
       }
@@ -6355,6 +6375,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "TUN 会在系统路由层应用 IPv4 和 IPv6 CIDR 排除。域名规则保持加密，并在选择透明代理时生效。"
+          }
+        }
+      }
+    },
+    "TUN manages DNS automatically when the profile has no enabled DNS section. Review or adjust its policy below.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置未启用 DNS 时，TUN 会自动管理 DNS。你可以在下方查看或调整策略。"
           }
         }
       }
