@@ -119,6 +119,10 @@ func TestArtifactCommandsRejectUnsafePathsAndMetadata(t *testing.T) {
 	if err := os.Mkdir(publicDirectory, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Establish the rejected permissions even when the test runner uses umask 077.
+	if err := os.Chmod(publicDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := runGeneratePepper([]string{"-output", filepath.Join(publicDirectory, "pepper.raw")}); err == nil {
 		t.Fatal("non-private parent directory was accepted")
 	}
