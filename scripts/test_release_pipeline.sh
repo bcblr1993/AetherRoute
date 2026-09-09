@@ -94,6 +94,9 @@ for required in \
   'appTicketStapled: true, dmgTicketStapled: true' \
   'spctl --assess --type open' \
   'hdiutil create' \
+  'create_finalized_dmg()' \
+  'hdiutil verify "$finalized"' \
+  'hdiutil detach "$attached_root"' \
   'get-task-allow' \
   'release bundle contains non-arm64 Mach-O' \
   'release bundle architecture inventory is unexpectedly small' \
@@ -109,6 +112,79 @@ do
     exit 1
   }
 done
+
+# Exercise the same finalizer already used by notarized test candidates. Model
+# the macOS write-once device deleting its owned path during detach: the final
+# independent copy must remain readable before any signing or upload occurs.
+awk '/^create_finalized_dmg\(\) \{/ {copy=1} copy {print}
+     copy && /^}$/ {exit}' "$SCRIPT" >"$TEMP/release-dmg-finalizer.sh"
+awk '/^create_finalized_dmg\(\) \{/ {copy=1} copy {print}
+     copy && /^}$/ {exit}' "$ROOT/scripts/build_notarized_test_candidate.sh" \
+  >"$TEMP/test-candidate-dmg-finalizer.sh"
+test -s "$TEMP/release-dmg-finalizer.sh"
+cmp -s "$TEMP/release-dmg-finalizer.sh" "$TEMP/test-candidate-dmg-finalizer.sh" || {
+  echo "release DMG finalization differs from the verified test-candidate path" >&2
+  exit 1
+}
+test "$(grep -Fc 'create_finalized_dmg \' "$SCRIPT")" -eq 2 || {
+  echo "both app-notary and final release images must use DMG finalization" >&2
+  exit 1
+}
+(
+  . "$TEMP/release-dmg-finalizer.sh"
+  printf 'completed image bytes\n' >"$TEMP/expected-image"
+  hdiutil() {
+    case "$1" in
+      create)
+        for fixture_argument in "$@"; do fixture_image=$fixture_argument; done
+        test "$fixture_image" = "$fixture_write_once" || return 1
+        cp "$TEMP/expected-image" "$fixture_image"
+        ;;
+      verify)
+        test "$2" = "$fixture_final" || return 1
+        cmp -s "$2" "$TEMP/expected-image"
+        ;;
+      info)
+        jq -n --arg image "$fixture_write_once" \
+          --arg alias "$(realpath "$fixture_write_once")" --arg mode "$fixture_mode" '
+          {images: (if $mode == "detached" then [] else [{
+            "image-path": $image,
+            "image-alias": $alias,
+            "system-entities": ([
+              {"content-hint": "GUID_partition_scheme", "dev-entry": "/dev/disk900001"}
+            ] + (if $mode == "ambiguous" then [
+              {"content-hint": "GUID_partition_scheme", "dev-entry": "/dev/disk900002"}
+            ] else [] end))
+          }] end)}'
+        ;;
+      detach)
+        test "$2" = /dev/disk900001 || return 1
+        rm "$fixture_write_once"
+        printf '%s\n' "$2" >"$TEMP/detached-device"
+        ;;
+      *) return 1 ;;
+    esac
+  }
+  for fixture_mode in attached detached; do
+    fixture_final="$TEMP/$fixture_mode.dmg"
+    fixture_write_once="$TEMP/$fixture_mode.write-once.dmg"
+    create_finalized_dmg "$fixture_final" 'Test Image' "$TEMP"
+    cmp -s "$fixture_final" "$TEMP/expected-image"
+  done
+  test ! -e "$TEMP/attached.write-once.dmg"
+  test "$(cat "$TEMP/detached-device")" = /dev/disk900001
+  fixture_mode=ambiguous
+  fixture_final="$TEMP/ambiguous.dmg"
+  fixture_write_once="$TEMP/ambiguous.write-once.dmg"
+  if (create_finalized_dmg "$fixture_final" 'Test Image' "$TEMP") \
+    >"$TEMP/ambiguous.log" 2>&1; then
+    echo "DMG finalization accepted multiple matching root devices" >&2
+    exit 1
+  fi
+  grep -F 'write-once DMG resolved to multiple root devices' \
+    "$TEMP/ambiguous.log" >/dev/null
+  test -f "$fixture_write_once"
+)
 grep -F 'scripts/test_large_import_performance.sh' \
   "$ROOT/scripts/test.sh" >/dev/null || {
     echo "release validation is missing the large import performance gate" >&2

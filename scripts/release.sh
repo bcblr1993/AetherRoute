@@ -44,7 +44,7 @@ if [ -n "$notary_keychain" ]; then
   }
 fi
 
-for command in codesign ditto file git hdiutil jq lipo plutil security \
+for command in codesign ditto file git hdiutil jq lipo plutil realpath security \
   shasum spctl syspolicy_check xcodebuild xcrun; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "release requires $command" >&2
@@ -168,6 +168,78 @@ submit_for_notarization() {
     jq '{id,status,message}' "$result_path" >&2
     exit 1
   }
+}
+
+# macOS 26 can return from `hdiutil create` while its write-once DiskImages
+# device still owns the destination. Passing that path directly to notarytool
+# can then block in open(2), and detaching the device removes the write-once
+# path. Always copy the completed bytes to an independent file, verify that
+# copy as UDIF, and only then detach the private work image.
+create_finalized_dmg() {
+  finalized=$1
+  volume_name=$2
+  source_directory=$3
+  case "$finalized" in
+    *.dmg) write_once="${finalized%.dmg}.write-once.dmg" ;;
+    *)
+      echo "finalized DMG path must end in .dmg" >&2
+      exit 1
+      ;;
+  esac
+  test ! -e "$finalized" || {
+    echo "refusing to overwrite finalized DMG: $finalized" >&2
+    exit 1
+  }
+  test ! -e "$write_once" || {
+    echo "refusing to overwrite write-once DMG: $write_once" >&2
+    exit 1
+  }
+
+  hdiutil create \
+    -volname "$volume_name" \
+    -srcfolder "$source_directory" \
+    -format UDZO \
+    -imagekey zlib-level=9 \
+    "$write_once" >/dev/null
+  test -f "$write_once" && test ! -L "$write_once" || {
+    echo "hdiutil did not produce a regular write-once DMG" >&2
+    exit 1
+  }
+  ditto "$write_once" "$finalized"
+  test -f "$finalized" && test ! -L "$finalized" || {
+    echo "finalized DMG copy is invalid" >&2
+    exit 1
+  }
+  hdiutil verify "$finalized" >/dev/null
+
+  canonical_write_once=$(realpath "$write_once")
+  attached_root=$(hdiutil info -plist \
+    | plutil -convert json -o - - \
+    | jq -r --arg raw "$write_once" --arg canonical "$canonical_write_once" '
+        .images[]
+        | select(
+            ((."image-path" // "") | gsub("//"; "/")) == $raw
+            or (."image-alias" // "") == $canonical
+          )
+        | ."system-entities"[]
+        | select(."content-hint" == "GUID_partition_scheme")
+        | ."dev-entry"
+      ')
+  case "$attached_root" in
+    '') ;;
+    /dev/disk[0-9]*)
+      test "$(printf '%s\n' "$attached_root" | wc -l | tr -d ' ')" -eq 1 || {
+        echo "write-once DMG resolved to multiple root devices" >&2
+        exit 1
+      }
+      hdiutil detach "$attached_root" >/dev/null
+      ;;
+    *)
+      echo "write-once DMG resolved to an invalid root device" >&2
+      exit 1
+      ;;
+  esac
+  hdiutil verify "$finalized" >/dev/null
 }
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-release.XXXXXX")
@@ -377,12 +449,10 @@ app_notary_archive="$temporary/AetherRoute-app-notarization.dmg"
 app_notary_result="$temporary/app-notary-result.json"
 mkdir -p "$app_notary_stage"
 ditto "$app" "$app_notary_stage/AetherRoute.app"
-hdiutil create \
-  -volname "AetherRoute App Notarization" \
-  -srcfolder "$app_notary_stage" \
-  -format UDZO \
-  -imagekey zlib-level=9 \
-  "$app_notary_archive" >/dev/null
+create_finalized_dmg \
+  "$app_notary_archive" \
+  "AetherRoute App Notarization" \
+  "$app_notary_stage"
 codesign --force --timestamp --sign "$identity" "$app_notary_archive"
 submit_for_notarization "$app_notary_archive" "$app_notary_result"
 app_submission_id=$(jq -r '.id' "$app_notary_result")
@@ -396,12 +466,10 @@ mkdir -p "$stage"
 ditto "$app" "$stage/AetherRoute.app"
 ln -s /Applications "$stage/Applications"
 unsigned_dmg="$temporary/$artifact_name.dmg"
-hdiutil create \
-  -volname "AetherRoute $VERSION" \
-  -srcfolder "$stage" \
-  -format UDZO \
-  -imagekey zlib-level=9 \
-  "$unsigned_dmg" >/dev/null
+create_finalized_dmg \
+  "$unsigned_dmg" \
+  "AetherRoute $VERSION" \
+  "$stage"
 codesign --force --timestamp --sign "$identity" "$unsigned_dmg"
 
 notary_result="$temporary/dmg-notary-result.json"
