@@ -28,6 +28,16 @@ public enum ConnectionQuality: Equatable, Sendable {
 /// stoppable: the extension is fail-closed, so keeping a dead tunnel alive
 /// blackholes every request instead of returning the user to direct access.
 public enum ConnectionQualityPolicy {
+    /// A quality notice belongs to the current connected session. An old
+    /// result, or a session without a measurement, must not imply verification.
+    public static func displayedQuality(
+        _ quality: ConnectionQuality,
+        isConnected: Bool
+    ) -> ConnectionQuality? {
+        guard isConnected, quality != .unknown else { return nil }
+        return quality
+    }
+
     /// What the host should do once a readiness probe resolves.
     public struct Outcome: Equatable, Sendable {
         public let quality: ConnectionQuality

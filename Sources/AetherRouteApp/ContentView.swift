@@ -597,7 +597,11 @@ private struct OverviewView: View {
             }
             .padding(.vertical, AetherVisual.s1)
             .aetherPanel()
-            SafetyNotice()
+            if let quality = ConnectionQualityPolicy.displayedQuality(
+                tunnel.connectionQuality, isConnected: tunnel.isConnected
+            ) {
+                SafetyNotice(quality: quality)
+            }
         }
         .frame(maxWidth: .infinity)
     }
@@ -2457,13 +2461,13 @@ private struct LiveTelemetryMetricValue: View {
 /// in doubt, so a slow node reads as "still working, looking for better"
 /// rather than as a failure.
 private struct SafetyNotice: View {
-    @EnvironmentObject private var tunnel: TunnelManager
+    let quality: ConnectionQuality
 
     var body: some View {
         HStack(alignment: .top, spacing: AetherVisual.s3) {
             Image(systemName: symbol)
                 .foregroundStyle(tint)
-                .symbolEffect(.pulse, isActive: tunnel.connectionQuality == .verifying)
+                .symbolEffect(.pulse, isActive: quality == .verifying)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(title)
@@ -2481,12 +2485,12 @@ private struct SafetyNotice: View {
         .padding(.vertical, AetherVisual.s2)
         .animation(
             AetherVisual.animation(AetherVisual.gentleSpring),
-            value: tunnel.connectionQuality
+            value: quality
         )
     }
 
     private var symbol: String {
-        switch tunnel.connectionQuality {
+        switch quality {
         case .unknown: "lock.shield"
         case .verifying: "gauge.with.dots.needle.bottom.50percent"
         case .verified: "checkmark.shield"
@@ -2495,7 +2499,7 @@ private struct SafetyNotice: View {
     }
 
     private var tint: Color {
-        switch tunnel.connectionQuality {
+        switch quality {
         case .unknown, .verifying: Color.accentColor
         case .verified: .green
         case .degraded: .orange
@@ -2503,7 +2507,7 @@ private struct SafetyNotice: View {
     }
 
     private var title: LocalizedStringKey {
-        switch tunnel.connectionQuality {
+        switch quality {
         case .unknown: "Verified connection status"
         case .verifying: "Checking route quality"
         case .verified: "Route verified"
@@ -2512,7 +2516,7 @@ private struct SafetyNotice: View {
     }
 
     private var detail: LocalizedStringKey {
-        switch tunnel.connectionQuality {
+        switch quality {
         case .unknown:
             "Traffic is routed as soon as the network extension installs its settings."
         case .verifying:

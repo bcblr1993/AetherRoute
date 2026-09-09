@@ -4003,6 +4003,7 @@ final class TunnelManager: ObservableObject {
 
     private func clearProxySelectionRuntimeState() {
         stopTelemetryPolling()
+        connectionQuality = .unknown
         automaticReadinessGroupNames = []
         automaticReadinessChildGroups = [:]
         automaticRouteFailureCounts = [:]
@@ -4290,9 +4291,7 @@ final class TunnelManager: ObservableObject {
         connectionReadinessTask?.cancel()
         connectionReadinessTask = nil
         isVerifyingProxyReadiness = false
-        if connectionQuality == .verifying {
-            connectionQuality = .unknown
-        }
+        connectionQuality = .unknown
     }
 
     private func verifyCurrentRouteDataPlane() async throws {

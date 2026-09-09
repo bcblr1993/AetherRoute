@@ -3,6 +3,37 @@ import Testing
 
 @Suite("Connection quality policy")
 struct ConnectionQualityPolicyTests {
+    @Test("a disconnected session never shows a previous route quality")
+    func disconnectedQualityIsHidden() {
+        for quality in [ConnectionQuality.unknown, .verifying, .verified, .degraded] {
+            #expect(
+                ConnectionQualityPolicy.displayedQuality(
+                    quality, isConnected: false
+                ) == nil
+            )
+        }
+    }
+
+    @Test("a new connection without a measurement does not claim verification")
+    func unmeasuredQualityIsHidden() {
+        #expect(
+            ConnectionQualityPolicy.displayedQuality(
+                .unknown, isConnected: true
+            ) == nil
+        )
+    }
+
+    @Test("a connected session keeps its current route quality notice")
+    func connectedQualityRemainsVisible() {
+        for quality in [ConnectionQuality.verifying, .verified, .degraded] {
+            #expect(
+                ConnectionQualityPolicy.displayedQuality(
+                    quality, isConnected: true
+                ) == quality
+            )
+        }
+    }
+
     @Test("readiness never disconnects a tunnel that is already up")
     func readinessNeverDisconnects() {
         for probeSucceeded in [true, false] {
