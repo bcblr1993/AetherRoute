@@ -9,7 +9,7 @@ PREVIEW_AUDIT_DIRECTORY=${5:-}
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
 usage() {
-  echo "usage: $0 expected-sha256 artifact-filename prerelease-or-releases/version [200|404|any] [absolute-preview-audit-directory]" >&2
+  echo "usage: $0 expected-sha256 artifact-filename prerelease[/build-number]-or-releases/version [200|404|any] [absolute-preview-audit-directory]" >&2
 }
 
 test -n "$EXPECTED_SHA" && test -n "$ARTIFACT_NAME" && test -n "$CHANNEL" || {
@@ -25,13 +25,13 @@ printf '%s\n' "$ARTIFACT_NAME" | grep -Eq '^AetherRoute-[0-9A-Za-z._-]+-arm64(-[
   exit 64
 }
 case "$EXPECTED_UPDATE_STATUS" in 200|404|any) ;; *) usage; exit 64 ;; esac
-printf '%s\n' "$CHANNEL" | grep -Eq '^(prerelease|releases/[0-9]+\.[0-9]+(\.[0-9]+)?)$' || {
+printf '%s\n' "$CHANNEL" | grep -Eq '^(prerelease(/build-[1-9][0-9]*)?|releases/[0-9]+\.[0-9]+(\.[0-9]+)?)$' || {
   echo "invalid distribution channel" >&2
   exit 64
 }
 if [ -n "$PREVIEW_AUDIT_DIRECTORY" ]; then
   case "$PREVIEW_AUDIT_DIRECTORY" in /*) ;; *) usage; exit 64 ;; esac
-  test "$CHANNEL" = prerelease || {
+  printf '%s\n' "$CHANNEL" | grep -Eq '^prerelease(/build-[1-9][0-9]*)?$' || {
     echo "an audit directory is valid only for the prerelease channel" >&2
     exit 64
   }
@@ -153,7 +153,7 @@ if [ -n "$PREVIEW_AUDIT_DIRECTORY" ]; then
   mkdir "$audit"
   cp "$temporary/artifact.dmg" "$audit/$ARTIFACT_NAME"
   for name in \
-    AetherRoute-0.1.0-build-2026080703-arm64-Notarized-Test.json \
+    "${ARTIFACT_NAME%.dmg}.json" \
     source-manifest.txt README.txt SHA256SUMS
   do
     local_file="$PREVIEW_AUDIT_DIRECTORY/$name"
@@ -171,6 +171,25 @@ if [ -n "$PREVIEW_AUDIT_DIRECTORY" ]; then
   done
   (cd "$audit" && shasum -a 256 -c SHA256SUMS)
 fi
+if [ -n "$PREVIEW_AUDIT_DIRECTORY" ] && [ "$CHANNEL" != prerelease ]; then
+  preview_manifest="$audit/${ARTIFACT_NAME%.dmg}.json"
+  version=$(jq -er '.version' "$preview_manifest")
+  build=$(jq -er '.build' "$preview_manifest")
+  printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$'
+  printf '%s\n' "$build" | grep -Eq '^[1-9][0-9]*$'
+  test "$CHANNEL" = "prerelease/build-$build" || {
+    echo "preview channel differs from the audited build" >&2
+    exit 1
+  }
+  notes_path="/releases/$version-beta-$build/"
+  curl --noproxy '*' --silent --show-error --fail \
+    --output "$temporary/home.html" "$site/"
+  curl --noproxy '*' --silent --show-error --fail \
+    --output "$temporary/notes.html" "$site$notes_path"
+  grep -F "href=\"$artifact_url\"" "$temporary/home.html" >/dev/null
+  grep -F "href=\"$notes_path\"" "$temporary/home.html" >/dev/null
+  grep -F "$EXPECTED_SHA" "$temporary/notes.html" >/dev/null
+  grep -F 'Beta' "$temporary/notes.html" >/dev/null
+fi
 
 echo "Public web distribution verified: sha256=$actual_sha update_http=$update_code"
-

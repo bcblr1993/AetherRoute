@@ -24,6 +24,26 @@ an omitted download. Public verification downloads the complete audit set,
 compares it with the local candidate, and rolls back if any file is absent or
 different:
 
+Preview preparation reads the selected candidate's version, build, size and
+SHA-256 instead of relying on a fixed release name. It accepts exactly five
+audited files from a normal-core, non-diagnostic notarized test candidate.
+The exact DMG and mounted app must pass signing and stapler validation; app
+and extension versions, CDHashes and executable hashes must match the manifest.
+The signed app must explicitly use free distribution and contain no licensing,
+automatic-update or update-signing-key configuration. The preparer never launches
+the app or activates a Network Extension.
+
+Each preview publishes its five files at `/prerelease/build-<build>/`, so
+immutable caching cannot reuse a previous build's `SHA256SUMS` or audit files.
+The generated homepage and `/releases/<version>-beta-<build>/` notes bind to that
+exact directory and remain labeled Beta with `productionApproved: false`.
+Historical notes retain their original facts but omit obsolete preview download
+links. The verifier keeps compatibility with the old flat `/prerelease/` audit
+path; new deployments always use the build-specific directory. When a candidate
+folder also contains personal usage notes, copy only the original five audited
+files to a new input folder and verify their checksums; do not modify the frozen
+candidate or its checksum file.
+
 ```sh
 ./scripts/deploy_distribution_web.sh \
   chenyn@www.baizhiedu.xin preview \

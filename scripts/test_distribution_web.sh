@@ -30,6 +30,7 @@ for required in \
   "$WEB/nginx.conf" \
   "$WEB/docker-stack.yml" \
   "$WEB/templates/stable-release.html" \
+  "$WEB/templates/preview-release.html" \
   "$PUBLIC/index.html" \
   "$PUBLIC/404.html" \
   "$PUBLIC/privacy/index.html" \
@@ -56,7 +57,7 @@ do
   }
 done
 
-rg -F '当前 0.1.0 技术预览真实界面' "$PUBLIC/index.html" >/dev/null
+rg -F '历史 0.1.0 技术预览界面，仅作功能示意' "$PUBLIC/index.html" >/dev/null
 rg -F 'Not a concept render.' "$PUBLIC/index.html" >/dev/null
 test "$(rg -c 'data-localized-image' "$PUBLIC/index.html")" -eq 3 || {
   echo "homepage must expose exactly three localized product screenshots" >&2

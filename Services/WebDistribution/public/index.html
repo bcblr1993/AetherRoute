@@ -51,7 +51,7 @@
           <noscript><img class="product-screenshot" src="/assets/aetherroute-overview-zh.png" width="1800" height="1215" alt="AetherRoute 中文深色模式真实概览界面"></noscript>
           <figcaption><span class="live-dot" aria-hidden="true"></span>
             <!-- AETHERROUTE_SCREENSHOT_VERSION_BEGIN -->
-            <span data-lang="zh">当前 0.1.0 技术预览真实界面</span><span data-lang="en">Real interface from the current 0.1.0 preview</span>
+            <span data-lang="zh">历史 0.1.0 技术预览界面，仅作功能示意</span><span data-lang="en">Earlier 0.1.0 preview interface, shown for reference</span>
             <!-- AETHERROUTE_SCREENSHOT_VERSION_END -->
           </figcaption>
         </figure>
@@ -63,7 +63,7 @@
         <div class="section-heading wide">
           <span class="status-pill"><span data-lang="zh">所见即所得</span><span data-lang="en">The real product</span></span>
           <h2 id="product-tour-title"><span data-lang="zh">不是概念图，<br>是正在运行的 AetherRoute。</span><span data-lang="en">Not a concept render.<br>This is AetherRoute running.</span></h2>
-          <p><span data-lang="zh">官网中的产品画面直接来自当前 macOS 构建。应用完整支持简体中文和英文，并适配浅色、深色外观；窗口、侧边栏、控件和状态反馈均使用原生 SwiftUI 与 AppKit 实现。</span><span data-lang="en">Every product image on this site comes directly from the current macOS build. The app supports Simplified Chinese and English, light and dark appearances, with native SwiftUI and AppKit windows, sidebars, controls, and state feedback.</span></p>
+          <p><span data-lang="zh">以下产品画面来自早期 0.1.0 技术预览，当前 Beta 的布局和操作可能有所调整。应用完整支持简体中文和英文，并适配浅色、深色外观；窗口、侧边栏、控件和状态反馈均使用原生 SwiftUI 与 AppKit 实现。</span><span data-lang="en">The images below are from the earlier 0.1.0 preview. The current beta may have different layouts and controls. The app supports Simplified Chinese and English, light and dark appearances, with native SwiftUI and AppKit windows, sidebars, controls, and state feedback.</span></p>
         </div>
         <div class="tour-grid">
           <figure class="screen-card">
@@ -95,7 +95,7 @@
         <div class="grid capability-grid">
           <article class="card"><div class="card-icon" aria-hidden="true">⌁</div><h3><span data-lang="zh">透明代理与 TUN</span><span data-lang="en">Transparent Proxy + TUN</span></h3><p><span data-lang="zh">按应用连接流或整个虚拟网络接口接管流量，支持规则、全局与直连路由。</span><span data-lang="en">Route app flows or a complete virtual interface with Rule, Global, and Direct modes.</span></p></article>
           <article class="card"><div class="card-icon" aria-hidden="true">◇</div><h3><span data-lang="zh">加密配置</span><span data-lang="en">Encrypted profiles</span></h3><p><span data-lang="zh">配置目录使用 AES-GCM 加密，密钥保存在数据保护钥匙串；订阅和导入均经过边界校验。</span><span data-lang="en">AES-GCM profile storage backed by the Data Protection Keychain, with bounded subscription and import validation.</span></p></article>
-          <article class="card"><div class="card-icon" aria-hidden="true">↗</div><h3><span data-lang="zh">独立、安全更新</span><span data-lang="en">Independent, verified updates</span></h3><p><span data-lang="zh">Developer ID 签名和 Apple 公证，更新清单使用 Ed25519 签名，DMG 下载后再次验证 SHA-256。</span><span data-lang="en">Developer ID signing and Apple notarization, Ed25519-signed manifests, and SHA-256 verification for downloaded DMGs.</span></p></article>
+          <article class="card"><div class="card-icon" aria-hidden="true">↗</div><h3><span data-lang="zh">可信安装，自由使用</span><span data-lang="en">Verified installation, free to use</span></h3><p><span data-lang="zh">Developer ID 签名和 Apple 公证，公开提供 DMG 校验值。免费版无需账号或付费激活，通过官网下载新版本手动更新。</span><span data-lang="en">Developer ID signing, Apple notarization, and published DMG checksums. No account or paid activation; update manually from this website.</span></p></article>
           <article class="card"><div class="card-icon alternate" aria-hidden="true">⇣</div><h3><span data-lang="zh">兼容真实订阅</span><span data-lang="en">Practical subscription import</span></h3><p><span data-lang="zh">支持 URL 订阅、本地配置与原生节点编辑。导入过程逐条校验，保留可用节点并给出结构化错误摘要。</span><span data-lang="en">Import URL subscriptions and local configs, or edit native nodes. Entries are validated individually so usable nodes survive with a structured error summary.</span></p></article>
           <article class="card"><div class="card-icon alternate" aria-hidden="true">⌘</div><h3><span data-lang="zh">原生、清晰、可访问</span><span data-lang="en">Native, clear, accessible</span></h3><p><span data-lang="zh">遵循 macOS 导航、键盘焦点、减少动态效果和系统外观约定；状态、错误和恢复操作始终出现在明确位置。</span><span data-lang="en">Follows macOS navigation, keyboard focus, Reduce Motion, and appearance conventions, with status, errors, and recovery actions kept in predictable places.</span></p></article>
           <article class="card"><div class="card-icon alternate" aria-hidden="true">◉</div><h3><span data-lang="zh">资源边界与故障关闭</span><span data-lang="en">Bounded resources, fail closed</span></h3><p><span data-lang="zh">导入、延迟测试和连接任务具有大小、并发与超时限制；协议核心未就绪时不会把界面伪装成已连接。</span><span data-lang="en">Imports, latency checks, and connection work are bounded by size, concurrency, and timeouts. The UI never claims a connection before the protocol core is ready.</span></p></article>
@@ -125,6 +125,6 @@
     <!-- AETHERROUTE_RELEASE_PANEL_END -->
   </main>
 
-  <footer class="site-footer"><div class="shell footer-grid"><div><strong>AetherRoute</strong><br><span data-lang="zh">由陈艳男创建和维护。</span><span data-lang="en">Created and maintained by ChenYanNan.</span><br>© 2026 ChenYanNan.</div><div class="footer-links"><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可协议</span><span data-lang="en">License</span></a><a href="/support/"><span data-lang="zh">支持</span><span data-lang="en">Support</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub</a></div></div></footer>
+  <footer class="site-footer"><div class="shell footer-grid"><div><strong>AetherRoute</strong><br><span data-lang="zh">由陈艳男创建和维护。</span><span data-lang="en">Created and maintained by ChenYanNan.</span><br>© 2026 ChenYanNan.</div><div class="footer-links"><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可协议</span><span data-lang="en">License</span></a><a href="/support/"><span data-lang="zh">支持</span><span data-lang="en">Support</span></a></div></div></footer>
 </body>
 </html>

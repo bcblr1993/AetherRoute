@@ -291,6 +291,182 @@ expect_rejection free-refuse-overwrite 'refusing to overwrite distribution paylo
 
 echo "Stable distribution payload tests passed: legacy and explicit licensed, free, and strict invalid evidence."
 
+# Preview fixtures exercise real plist, executable SHA and published checksums.
+# Only macOS signing/mount services are mocked; no preparer bypass is enabled.
+PREVIEW_PREPARER="$ROOT/scripts/prepare_distribution_web_preview_payload.sh"
+sh -n "$PREVIEW_PREPARER"
+preview_root="$temporary/preview"
+preview_candidate="$preview_root/candidate"
+preview_tools="$preview_root/tools"
+preview_app="$preview_root/mounted-app/AetherRoute.app"
+preview_version=1.0.0
+preview_build=2026090901
+preview_stem="AetherRoute-$preview_version-build-$preview_build-arm64-Notarized-Test-Normal-Core"
+mkdir -p "$preview_candidate" "$preview_tools" "$preview_app/Contents/MacOS"
+printf 'normal-core-preview-DMG-fixture' >"$preview_candidate/$preview_stem.dmg"
+printf 'MANIFEST_SHA256 %064d\n' 0 >"$preview_candidate/source-manifest.txt"
+printf 'Synthetic free beta fixture; not a signed release.\n' >"$preview_candidate/README.txt"
+
+for role in app packetTunnel transparentProxy; do
+  case "$role" in
+    app) bundle_id=com.aetherroute.desktop; bundle="$preview_app" ;;
+    packetTunnel) bundle_id=com.aetherroute.desktop.tunnel
+      bundle="$preview_app/Contents/Library/SystemExtensions/$bundle_id.systemextension" ;;
+    transparentProxy) bundle_id=com.aetherroute.desktop.transparent-proxy
+      bundle="$preview_app/Contents/Library/SystemExtensions/$bundle_id.systemextension" ;;
+  esac
+  mkdir -p "$bundle/Contents/MacOS"
+  printf 'synthetic executable: %s\n' "$role" >"$bundle/Contents/MacOS/$bundle_id"
+  chmod 755 "$bundle/Contents/MacOS/$bundle_id"
+  plist="$bundle/Contents/Info.plist"
+  plutil -create xml1 "$plist"
+  plutil -insert CFBundleIdentifier -string "$bundle_id" "$plist"
+  plutil -insert CFBundleExecutable -string "$bundle_id" "$plist"
+  plutil -insert CFBundleShortVersionString -string "$preview_version" "$plist"
+  plutil -insert CFBundleVersion -string "$preview_build" "$plist"
+done
+preview_plist="$preview_app/Contents/Info.plist"
+plutil -insert AetherRouteDistributionMode -string free "$preview_plist"
+plutil -insert LSMinimumSystemVersion -string 15.0 "$preview_plist"
+
+cat >"$preview_tools/codesign" <<'MOCK'
+#!/bin/sh
+set -eu
+case "$1" in
+  --verify) exit 0 ;;
+  -dv)
+    printf '%s\n' 'Authority=Developer ID Application: Test Fixture' \
+      'CDHash=cccccccccccccccccccccccccccccccccccccccc' >&2 ;;
+  *) echo 'unexpected codesign fixture invocation' >&2; exit 1 ;;
+esac
+MOCK
+cat >"$preview_tools/xcrun" <<'MOCK'
+#!/bin/sh
+set -eu
+test "$1" = stapler && test "$2" = validate
+MOCK
+cat >"$preview_tools/hdiutil" <<'MOCK'
+#!/bin/sh
+set -eu
+case "$1" in
+  attach)
+    shift
+    mount_point=
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = -mountpoint ]; then shift; mount_point=$1; fi
+      shift
+    done
+    test -n "$mount_point"
+    ditto "$AETHERROUTE_TEST_PREVIEW_APP" "$mount_point/AetherRoute.app" ;;
+  detach) test -d "$2/AetherRoute.app" ;;
+  *) echo 'unexpected hdiutil fixture invocation' >&2; exit 1 ;;
+esac
+MOCK
+chmod 755 "$preview_tools/codesign" "$preview_tools/xcrun" "$preview_tools/hdiutil"
+preview_sha=$(shasum -a 256 "$preview_candidate/$preview_stem.dmg" | awk '{print $1}')
+preview_bytes=$(stat -f '%z' "$preview_candidate/$preview_stem.dmg")
+preview_app_sha=$(shasum -a 256 "$preview_app/Contents/MacOS/com.aetherroute.desktop" | awk '{print $1}')
+preview_tun_sha=$(shasum -a 256 "$preview_app/Contents/Library/SystemExtensions/com.aetherroute.desktop.tunnel.systemextension/Contents/MacOS/com.aetherroute.desktop.tunnel" | awk '{print $1}')
+preview_tp_sha=$(shasum -a 256 "$preview_app/Contents/Library/SystemExtensions/com.aetherroute.desktop.transparent-proxy.systemextension/Contents/MacOS/com.aetherroute.desktop.transparent-proxy" | awk '{print $1}')
+jq -n --arg version "$preview_version" --arg build "$preview_build" \
+  --arg sha "$preview_sha" --argjson bytes "$preview_bytes" \
+  --arg appSHA "$preview_app_sha" --arg tunSHA "$preview_tun_sha" --arg tpSHA "$preview_tp_sha" '
+  {
+    schemaVersion: 1, releaseStatus: "notarized-test-candidate",
+    product: "AetherRoute", author: "陈艳男 (ChenYanNan)",
+    version: $version, build: $build, createdAt: "2026-09-09T01:00:00Z",
+    architecture: "arm64", sourceManifestSHA256: ("0" * 64),
+    safety: {productionApproved: false, networkActivatedDuringBuild: false,
+      systemNetworkState: "unchanged", diagnosticsIncluded: false},
+    core: {variant: "normal", diagnosticsIncluded: false,
+      protocolReference: {matchesCandidateArtifacts: true}},
+    dmg: {sha256: $sha, bytes: $bytes},
+    notarization: {status: "Accepted", appTicketStapled: true, dmgTicketStapled: true,
+      submissionID: "00000000-0000-0000-0000-000000000000"},
+    signing: {
+      app: {bundleID: "com.aetherroute.desktop", cdhash: ("c" * 40), executableSHA256: $appSHA},
+      packetTunnel: {bundleID: "com.aetherroute.desktop.tunnel", cdhash: ("c" * 40), executableSHA256: $tunSHA},
+      transparentProxy: {bundleID: "com.aetherroute.desktop.transparent-proxy", cdhash: ("c" * 40), executableSHA256: $tpSHA}
+    }
+  }' >"$preview_candidate/$preview_stem.json"
+preview_checksums() {
+  (cd "$1" && shasum -a 256 "$preview_stem.dmg" "$preview_stem.json" \
+    source-manifest.txt README.txt >SHA256SUMS)
+}
+run_preview() {
+  env PATH="$preview_tools:$PATH" AETHERROUTE_TEST_PREVIEW_APP="$preview_app" \
+    "$PREVIEW_PREPARER" "$@"
+}
+preview_checksums "$preview_candidate"
+preview_output="$preview_root/output"
+run_preview "$preview_candidate" "$site" "$preview_output" >/dev/null
+jq -e --arg sha "$preview_sha" --arg artifact "$preview_stem.dmg" '
+  .version == "1.0.0" and .build == 2026090901 and
+  .distributionMode == "free" and .productionApproved == false and
+  .releaseStatus == "notarized-test-candidate" and .channel == "prerelease/build-2026090901" and
+  .artifactName == $artifact and .sha256 == $sha and
+  .updateHTTPStatus == 404 and .publishedFiles == 5
+' "$preview_output/metadata.json" >/dev/null
+preview_notes="$preview_output/payload/site/releases/1.0.0-beta-2026090901/index.html"
+test -s "$preview_notes"
+for page in "$preview_output/payload/site/index.html" \
+  "$preview_output/payload/site/releases/index.html" "$preview_notes"; do
+  rg -F '1.0.0' "$page" >/dev/null
+  rg -F '2026090901' "$page" >/dev/null
+done
+rg -F "https://downloads.baizhiedu.xin/prerelease/build-2026090901/$preview_stem.dmg" \
+  "$preview_output/payload/site/index.html" >/dev/null
+rg -F '/releases/1.0.0-beta-2026090901/' \
+  "$preview_output/payload/site/index.html" >/dev/null
+rg -F "$preview_sha" "$preview_notes" >/dev/null
+rg -F 'https://downloads.baizhiedu.xin/prerelease/build-2026090901/SHA256SUMS' \
+  "$preview_notes" >/dev/null
+if rg -F 'https://downloads.baizhiedu.xin/prerelease/SHA256SUMS' "$preview_notes" >/dev/null; then
+  echo "preview notes still use a shared checksum URL" >&2
+  exit 1
+fi
+find "$preview_output/payload/site/releases" -name index.html -type f | while IFS= read -r page; do
+  test "$page" != "$preview_notes" || continue
+  if rg -F 'https://downloads.baizhiedu.xin/prerelease/' "$page" >/dev/null; then
+    echo "historical release still links to a preview download: $page" >&2
+    exit 1
+  fi
+done
+test "$(find "$preview_output/payload/downloads/prerelease" -type f | wc -l | tr -d ' ')" -eq 5
+(cd "$preview_output/payload/downloads/prerelease/build-2026090901" && shasum -a 256 -c SHA256SUMS >/dev/null)
+test -d "$preview_output/payload/updates"
+test -z "$(find "$preview_output/payload/updates" -type f -print)"
+for label in diagnostics filename-build checksum; do
+  folder="$preview_root/$label"
+  ditto "$preview_candidate" "$folder"
+  case "$label" in
+    diagnostics)
+      jq '.core.diagnosticsIncluded = true' "$folder/$preview_stem.json" >"$preview_root/changed.json"
+      mv "$preview_root/changed.json" "$folder/$preview_stem.json"
+      preview_checksums "$folder"
+      reason='preview manifest does not describe the exact notarized test candidate' ;;
+    filename-build)
+      jq '.build = "2026090902"' "$folder/$preview_stem.json" >"$preview_root/changed.json"
+      mv "$preview_root/changed.json" "$folder/$preview_stem.json"
+      preview_checksums "$folder"
+      reason='preview filename differs from its manifest version or build' ;;
+    checksum)
+      printf 'tampered\n' >>"$folder/README.txt"
+      reason='README.txt: FAILED' ;;
+  esac
+  expect_rejection "preview-$label" "$reason" run_preview "$folder" "$site" "$preview_root/$label-output"
+  test ! -e "$preview_root/$label-output"
+done
+plutil -replace AetherRouteDistributionMode -string licensed "$preview_plist"
+expect_rejection preview-nonfree 'public preview app must explicitly use free distribution' \
+  run_preview "$preview_candidate" "$site" "$preview_root/nonfree-output"
+test ! -e "$preview_root/nonfree-output"
+plutil -replace AetherRouteDistributionMode -string free "$preview_plist"
+plutil -insert AetherRouteDistributionSigningPublicKey -string fixture-key "$preview_plist"
+expect_rejection preview-free-with-signing-key 'free preview must not embed licensing or update-service configuration' \
+  run_preview "$preview_candidate" "$site" "$preview_root/free-key-output"
+test ! -e "$preview_root/free-key-output"
+echo "Preview distribution payload tests passed: dynamic free beta and strict invalid evidence."
 
 
 python3 -B "$ROOT/scripts/test_distribution_web_deploy_modes.py"
