@@ -388,7 +388,17 @@ test "$(plutil -extract CFBundleVersion raw -o - "$APP/Contents/Info.plist")" \
 
 SPARKLE_FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 if [ -d "$SPARKLE_FRAMEWORK" ]; then
-  find "$SPARKLE_FRAMEWORK" -name "*.xpc" -o -name "Autoupdate.app" | while read -r helper; do
+  find "$SPARKLE_FRAMEWORK" -type f | while read -r binary_file; do
+    if file "$binary_file" | grep -q "Mach-O"; then
+      archs=$(lipo -archs "$binary_file")
+      if echo "$archs" | grep -q "x86_64"; then
+        lipo -thin arm64 "$binary_file" -output "$binary_file.thin"
+        mv "$binary_file.thin" "$binary_file"
+      fi
+    fi
+  done
+
+  find "$SPARKLE_FRAMEWORK" -name "*.xpc" -o -name "Updater.app" -o -name "Autoupdate" | while read -r helper; do
     codesign -f -s "$IDENTITY" -o runtime --timestamp "$helper"
   done
   codesign -f -s "$IDENTITY" -o runtime --timestamp "$SPARKLE_FRAMEWORK"
