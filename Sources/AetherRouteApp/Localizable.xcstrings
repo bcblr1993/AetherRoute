@@ -1345,6 +1345,16 @@
         }
       }
     },
+    "Confirming will accept the network privacy review and activate this subscription.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认后将同时接受网络隐私声明并激活此订阅。"
+          }
+        }
+      }
+    },
     "Congestion control (optional)": {
       "localizations": {
         "zh-Hans": {
@@ -8415,6 +8425,236 @@
           "stringUnit": {
             "state": "translated",
             "value": "个上游"
+          }
+        }
+      }
+    },
+    "Auto": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动"
+          }
+        }
+      }
+    },
+    "Copy Terminal Export Command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制终端代理导出命令"
+          }
+        }
+      }
+    },
+    "Copy Terminal Unset Command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制终端代理清除命令"
+          }
+        }
+      }
+    },
+    "Down": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下行"
+          }
+        }
+      }
+    },
+    "Up": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上行"
+          }
+        }
+      }
+    },
+    "Proxy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理"
+          }
+        }
+      }
+    },
+    "Raw Node Inventory & Providers": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "底库节点清单与 Providers"
+          }
+        }
+      }
+    },
+    "Retest group": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新测速此策略组"
+          }
+        }
+      }
+    },
+    "This group is automatically managed by latency tests.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此策略组由延迟测速自动选择最优节点。"
+          }
+        }
+      }
+    },
+    "Welcome to AetherRoute": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "欢迎使用 AetherRoute"
+          }
+        }
+      }
+    },
+    "Import a subscription URL or configuration file to get started with high-speed, secure routing.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入订阅链接或配置文件，即刻开启安全极速网络。"
+          }
+        }
+      }
+    },
+    "Supports Clash YAML/Meta, V2Ray/Base64 share links (VMess, VLESS, Trojan, SS, Hysteria2), automatic latency testing, and smart rule routing.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支持 Clash YAML/Meta、通用节点链接（VMess、VLESS、Trojan、SS、Hysteria2）、自动延迟测速与智能规则分流。"
+          }
+        }
+      }
+    },
+    "Paste": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴"
+          }
+        }
+      }
+    },
+    "Tunnel Protected": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隧道已连接"
+          }
+        }
+      }
+    },
+    "Node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点"
+          }
+        }
+      }
+    },
+    "Copied": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已复制"
+          }
+        }
+      }
+    },
+    "Copy Proxy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制代理"
+          }
+        }
+      }
+    },
+    "Cleared": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已清除"
+          }
+        }
+      }
+    },
+    "Clear Proxy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除代理"
+          }
+        }
+      }
+    },
+    "Idle": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空闲"
+          }
+        }
+      }
+    },
+    "Manage Profiles…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理配置…"
+          }
+        }
+      }
+    },
+    "Live Traffic Waveform (30s)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时网络波形 (30秒)"
+          }
+        }
+      }
+    },
+    "Switch": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换"
           }
         }
       }

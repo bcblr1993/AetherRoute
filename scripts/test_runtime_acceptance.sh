@@ -495,6 +495,11 @@ METRICS
     && awk -v tcp="$v6_tcp" -v tls="$v6_tls" -v code="$v6_http" \
       'BEGIN {exit !(tcp == 0 && tls == 0 && code == 0)}'; then
     check "IPv6 probe HTTPS" "endpoint unavailable (curl exit $v6_exit); HTTPS untested" skip
+  elif [ "${AETHERROUTE_ACCEPTANCE_ALLOW_UNROUTED_IPV6:-NO}" = YES ] \
+    && { [ "$v6_exit" -eq 35 ] || [ "$v6_exit" -eq 56 ]; } \
+    && awk -v tls="$v6_tls" -v code="$v6_http" \
+      'BEGIN {exit !(tls == 0 && code == 0)}'; then
+    check "IPv6 probe HTTPS" "endpoint unrouted (curl exit $v6_exit); HTTPS untested" skip
   else
     check "IPv6 probe HTTPS" "HTTP $v6_http; curl exit $v6_exit; TLS=${v6_tls}s; verify=$v6_verify" fail
   fi

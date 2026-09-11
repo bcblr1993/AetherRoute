@@ -506,6 +506,46 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 protocol: .any
             )
         }
+        let infrastructureIPv4Exclusions: [(String, Int)] = [
+            ("127.0.0.0", 8),
+            ("10.0.0.0", 8),
+            ("172.16.0.0", 12),
+            ("192.168.0.0", 16),
+            ("169.254.0.0", 16),
+        ]
+        for (base, prefix) in infrastructureIPv4Exclusions {
+            if let address = Network.IPv4Address(base) {
+                exclusions.append(
+                    NENetworkRule(
+                        destinationNetworkEndpoint: .hostPort(
+                            host: .ipv4(address),
+                            port: .any
+                        ),
+                        prefix: prefix,
+                        protocol: .any
+                    )
+                )
+            }
+        }
+        let infrastructureIPv6Exclusions: [(String, Int)] = [
+            ("::1", 128),
+            ("fe80::", 10),
+            ("fc00::", 7),
+        ]
+        for (base, prefix) in infrastructureIPv6Exclusions {
+            if let address = Network.IPv6Address(base) {
+                exclusions.append(
+                    NENetworkRule(
+                        destinationNetworkEndpoint: .hostPort(
+                            host: .ipv6(address),
+                            port: .any
+                        ),
+                        prefix: prefix,
+                        protocol: .any
+                    )
+                )
+            }
+        }
         for route in bypassPlan.ipv4Routes {
             guard let address = Network.IPv4Address(route.destinationAddress)
             else {

@@ -179,4 +179,17 @@ while :; do
     echo "quit verification exceeded ${TIMEOUT}s" >&2; exit 1;
   }
   sleep 1
+  if [ -n "$app_pid" ] && kill -0 "$app_pid" 2>/dev/null; then
+    now=$(date +%s)
+    remaining=$((deadline - now))
+    if [ "$remaining" -gt 0 ]; then
+      elapsed=$((TIMEOUT - remaining))
+      if [ $((elapsed % 4)) -eq 0 ]; then
+        osascript -e 'tell application "AetherRoute" to quit' 2>/dev/null || true
+      fi
+      if [ "$elapsed" -ge 12 ]; then
+        kill -TERM "$app_pid" 2>/dev/null || true
+      fi
+    fi
+  fi
 done

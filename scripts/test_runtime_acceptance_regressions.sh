@@ -218,6 +218,9 @@ run_case mapped-ipv4-https-success pass '[SKIP] native IPv6 HTTPS coverage' \
   MOCK_IPV6_METRICS='1.108754|0.007851|0.008693|1.000399|::ffff:198.18.0.24|200|0'
 run_case mapped-ipv4-tls-error fail '[FAIL] IPv6 probe HTTPS' MOCK_IPV6_EXIT=35 \
   MOCK_IPV6_METRICS='2.539455|0.003111|0.004254|0.000000|::ffff:198.18.0.23|000|1'
+run_case mapped-ipv4-unrouted-tls pass '[SKIP] IPv6 probe HTTPS' MOCK_IPV6_EXIT=35 \
+  AETHERROUTE_ACCEPTANCE_ALLOW_UNROUTED_IPV6=YES \
+  MOCK_IPV6_METRICS='2.539455|0.003111|0.004254|0.000000|::ffff:198.18.0.23|000|1'
 run_case expanded-mapped-ipv4 pass '[SKIP] native IPv6 HTTPS coverage' \
   MOCK_IPV6_METRICS='0.012345|0.001|0.002|0.010|0:0:0:0:0:FFFF:c612:18|200|0'
 run_case slow-ipv6-response fail '[FAIL] IPv6 probe completion time' \

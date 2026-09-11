@@ -229,17 +229,18 @@ private struct SessionBar: View {
     var body: some View {
         HStack(spacing: AetherVisual.s4) {
             HStack(spacing: AetherVisual.s2) {
-                Image(systemName: stateSymbol)
-                    .font(.caption)
-                    .foregroundStyle(stateTint)
-                    .accessibilityHidden(true)
+                AetherStatusBeacon(
+                    isConnected: tunnel.isConnected,
+                    isConnecting: tunnel.state == .connecting,
+                    size: 7
+                )
                 Text(tunnel.statusTitle)
-                    .font(.body.weight(.medium))
+                    .font(.body.weight(.semibold))
                     .lineLimit(1)
             }
 
             if !tunnel.isConnected {
-                Text("Traffic is using the normal network path")
+                Text(AppLocalization.string("Traffic is using the normal network path"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -252,21 +253,23 @@ private struct SessionBar: View {
                     .accessibilityLabel("Elapsed")
             }
 
-            Divider().frame(height: 20)
+            Divider().frame(height: 18).opacity(0.4)
 
             rate(symbol: "arrow.down", value: downloadText)
+                .foregroundStyle(Color.cyan)
                 .accessibilityIdentifier("connections-download-title")
             rate(symbol: "arrow.up", value: uploadText)
+                .foregroundStyle(Color.purple)
                 .accessibilityIdentifier("connections-upload-title")
 
             Spacer(minLength: AetherVisual.s3)
 
             if let outlet {
-                Divider().frame(height: 20)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Outlet")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
+                Divider().frame(height: 18).opacity(0.4)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(AppLocalization.string("Outlet"))
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundStyle(.secondary)
                     Text(outlet)
                         .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
@@ -280,6 +283,7 @@ private struct SessionBar: View {
                     Task { await tunnel.setEnabled(!tunnel.isEnabled) }
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.small)
                 .disabled(!tunnel.canPerformPrimaryAction)
                 .accessibilityIdentifier("connections-primary-action")
             }
@@ -287,12 +291,12 @@ private struct SessionBar: View {
         .padding(.horizontal, AetherVisual.pageHorizontalPadding)
         .frame(height: 44)
         .background(
-            Color(nsColor: .controlBackgroundColor),
+            Material.ultraThinMaterial,
             in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
         )
         .overlay {
             RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 0.5)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("connections-session-bar")

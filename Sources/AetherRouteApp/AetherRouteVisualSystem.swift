@@ -52,8 +52,8 @@ enum AetherVisual {
     static let contentMaxWidth: CGFloat = 704
     static let formMaxWidth: CGFloat = 704
     static let sidebarWidth: CGFloat = 236
-    static let windowWidth: CGFloat = 940
-    static let windowHeight: CGFloat = 640
+    static let windowWidth: CGFloat = 960
+    static let windowHeight: CGFloat = 680
     static let popoverWidth: CGFloat = 330
     /// Sheet content follows the final dialog handoff rather than the page
     /// spacing grid.
@@ -80,15 +80,37 @@ enum AetherVisual {
     }
 }
 
-/// The adopted channel mark: two arcs forming a tunnel, with the route arrow
-/// passing through and out. It is authored on the same grid and stroke weight
-/// as the shipped app icon, so the sidebar, settings and status surfaces stay
-/// in register with the icon in the Dock.
+/// The adopted Scheme A (以太跃迁 · 蓝宝石晶体环) emblem. It renders the
+/// luminous sapphire crystal mobius ring with forward portal energy arrow.
 struct AetherRouteGlyph: View {
     var isActive = false
     var isOnColor = false
 
     var body: some View {
+        Group {
+            if let image = NSImage(named: "AetherSapphireEmblem") {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else if let resourceUrl = Bundle.main.url(forResource: "AetherSapphireEmblem", withExtension: "png"),
+                      let image = NSImage(contentsOf: resourceUrl) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                legacyGlyph
+            }
+        }
+        .opacity(isOnColor ? 1.0 : (isActive ? 1.0 : 0.88))
+        .shadow(
+            color: isActive ? glowColor.opacity(0.38) : .clear,
+            radius: 8
+        )
+        .aspectRatio(1, contentMode: .fit)
+        .accessibilityHidden(true)
+    }
+
+    private var legacyGlyph: some View {
         GeometryReader { proxy in
             let side = min(proxy.size.width, proxy.size.height)
             let strokeWidth = max(1.4, side * Self.strokeUnits / Self.gridSide)
@@ -97,8 +119,6 @@ struct AetherRouteGlyph: View {
                 channelArc(side: side, rightSide: false)
                     .stroke(markStyle, style: channelStroke(strokeWidth))
 
-                // The far wall of the channel is held back so the two arcs read
-                // as one tunnel seen in perspective rather than as a ring.
                 channelArc(side: side, rightSide: true)
                     .stroke(markStyle, style: channelStroke(strokeWidth))
                     .opacity(0.45)
@@ -108,17 +128,9 @@ struct AetherRouteGlyph: View {
             }
             .frame(width: side, height: side)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .shadow(
-                color: isActive ? glowColor.opacity(0.28) : .clear,
-                radius: side * 0.055
-            )
         }
-        .aspectRatio(1, contentMode: .fit)
-        .accessibilityHidden(true)
     }
 
-    // The mark is authored on the same 96-unit grid as the app icon, so the
-    // sidebar and the icon in the Dock stay in register.
     private static let gridSide: CGFloat = 96
     private static let strokeUnits: CGFloat = 13
     private static let arcTop: CGFloat = 14
@@ -136,8 +148,6 @@ struct AetherRouteGlyph: View {
                 Self.gridSide / 2,
                 side: side
             )
-            // Half-sweep measured from the bulge direction out to the chord,
-            // which picks the minor arc the icon specification calls for.
             let sweep = atan2(halfChord, offset)
             let through: CGFloat = rightSide ? 0 : .pi
             path.addRelativeArc(
@@ -182,7 +192,6 @@ struct AetherRouteGlyph: View {
         isOnColor ? .white : AetherVisual.portalLight
     }
 
-    /// Maps a point on the 96-unit design grid into the glyph's square box.
     private func point(
         _ x: CGFloat,
         _ y: CGFloat,
@@ -200,57 +209,37 @@ struct AetherRouteBrandTile: View {
     var isActive = false
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.255, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            AetherVisual.portalLight,
-                            AetherVisual.portalMid,
-                            AetherVisual.portalDark,
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            // The highlight has to be painted *into* the tile shape. As a bare
-            // RadialGradient it filled the square frame instead, so the part
-            // outside the rounded corner showed up as a pale square nub against
-            // the window background.
-            RoundedRectangle(cornerRadius: size * 0.255, style: .continuous)
-                .fill(
-                    RadialGradient(
-                        colors: [Color.white.opacity(0.30), Color.clear],
-                        center: UnitPoint(x: 0.24, y: 0.16),
-                        startRadius: 0,
-                        endRadius: size * 0.68
-                    )
-                )
-            // 664 graphic safe area inside an 824 tile, matching the exported
-            // icon exactly so the sidebar mark and the Dock icon register.
-            AetherRouteGlyph(isActive: isActive, isOnColor: true)
-                .padding(size * 0.097)
+        Group {
+            if let image = NSImage(named: "AetherSapphireEmblem") {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else if let resourceUrl = Bundle.main.url(forResource: "AetherSapphireEmblem", withExtension: "png"),
+                      let image = NSImage(contentsOf: resourceUrl) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else if let image = NSImage(named: "AppIcon") {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            }
         }
         .frame(width: size, height: size)
-        .overlay {
-            RoundedRectangle(cornerRadius: size * 0.255, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.42), Color.white.opacity(0.08)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: max(0.55, size * 0.014)
-                )
-        }
-        .shadow(color: AetherVisual.portalDark.opacity(0.20), radius: size * 0.10, y: size * 0.045)
+        .shadow(
+            color: AetherVisual.portalLight.opacity(isActive ? 0.35 : 0.12),
+            radius: isActive ? size * 0.25 : size * 0.08
+        )
         .accessibilityLabel("AetherRoute")
     }
 }
 
-/// A state-bearing rendition of the brand mark for connection surfaces. It
-/// keeps status semantic (color plus label) and avoids repeating the app icon
-/// as decoration inside the main window.
+/// A state-bearing rendition of the brand mark for connection surfaces.
+/// Employs Scheme A: Sapphire crystal mobius ring with radial refraction halo.
 struct AetherRouteStatusLens: View {
     @Environment(\.colorScheme) private var colorScheme
 
@@ -259,38 +248,43 @@ struct AetherRouteStatusLens: View {
 
     var body: some View {
         ZStack {
+            // Ambient outer glow matching Scheme A
             Circle()
                 .fill(
-                    LinearGradient(
+                    RadialGradient(
                         colors: [
-                            AetherVisual.portalLight.opacity(colorScheme == .dark ? 0.16 : 0.11),
-                            AetherVisual.portalMid.opacity(colorScheme == .dark ? 0.10 : 0.055),
+                            AetherVisual.portalLight.opacity(isActive ? 0.30 : (colorScheme == .dark ? 0.16 : 0.09)),
+                            AetherVisual.portalMid.opacity(isActive ? 0.16 : (colorScheme == .dark ? 0.08 : 0.04)),
+                            Color.clear
                         ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        center: .center,
+                        startRadius: size * 0.15,
+                        endRadius: size * 0.52
                     )
                 )
 
+            // Precision refractive ring
             Circle()
                 .stroke(
                     LinearGradient(
                         colors: [
-                            AetherVisual.portalLight.opacity(isActive ? 0.42 : 0.20),
-                            AetherVisual.portalDark.opacity(isActive ? 0.22 : 0.10),
+                            AetherVisual.portalLight.opacity(isActive ? 0.55 : 0.22),
+                            AetherVisual.portalDark.opacity(isActive ? 0.28 : 0.10),
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: 0.75
+                    lineWidth: 1.0
                 )
 
+            // Sapphire crystal ring emblem
             AetherRouteGlyph(isActive: isActive)
-                .padding(size * 0.17)
+                .padding(size * 0.06)
         }
         .frame(width: size, height: size)
         .shadow(
-            color: AetherVisual.portalLight.opacity(isActive ? 0.13 : 0.035),
-            radius: isActive ? 12 : 5
+            color: AetherVisual.portalLight.opacity(isActive ? 0.36 : 0.08),
+            radius: isActive ? 14 : 5
         )
         .accessibilityHidden(true)
     }
@@ -393,4 +387,530 @@ extension View {
     func aetherHeroPanel() -> some View {
         modifier(AetherHeroPanelModifier())
     }
+
+    func aetherModernCard(
+        isSelected: Bool = false,
+        cornerRadius: CGFloat = 10,
+        isHovered: Bool = false
+    ) -> some View {
+        modifier(
+            AetherModernCardModifier(
+                isSelected: isSelected,
+                cornerRadius: cornerRadius,
+                isHovered: isHovered
+            )
+        )
+    }
 }
+
+private struct AetherModernCardModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    let isSelected: Bool
+    let cornerRadius: CGFloat
+    let isHovered: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(cardFill)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(borderColor, lineWidth: isSelected ? 1.5 : (isHovered ? 1.0 : 0.5))
+            }
+            .shadow(
+                color: isSelected
+                    ? Color.accentColor.opacity(colorScheme == .dark ? 0.35 : 0.22)
+                    : (isHovered ? Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08) : Color.clear),
+                radius: isSelected ? 6 : 4,
+                y: isSelected ? 2 : 1
+            )
+    }
+
+    private var cardFill: Color {
+        if isSelected {
+            return Color.accentColor.opacity(colorScheme == .dark ? 0.12 : 0.07)
+        }
+        if isHovered {
+            return Color(nsColor: .controlBackgroundColor).opacity(0.95)
+        }
+        return Color(nsColor: .controlBackgroundColor).opacity(0.65)
+    }
+
+    private var borderColor: Color {
+        if isSelected {
+            return Color.accentColor
+        }
+        if isHovered {
+            return Color.accentColor.opacity(0.45)
+        }
+        return Color(nsColor: .separatorColor).opacity(0.6)
+    }
+}
+
+/// 协议微章组件：展示 SS, VMess, VLESS, Trojan, Hysteria2 等协议类型
+struct AetherProtocolBadge: View {
+    let type: String
+
+    var body: some View {
+        Text(displayType)
+            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+            .foregroundStyle(badgeColor)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2.5)
+            .background(badgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+    }
+
+    private var displayType: String {
+        let trimmed = type.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if trimmed.isEmpty { return "PROXY" }
+        if trimmed == "HYSTERIA2" || trimmed == "HYSTERIA" { return "HY2" }
+        if trimmed == "SHADOWSOCKS" { return "SS" }
+        return trimmed
+    }
+
+    private var badgeColor: Color {
+        switch displayType {
+        case "SS", "SHADOWSOCKS": return .purple
+        case "VMESS": return .blue
+        case "VLESS": return .cyan
+        case "TROJAN": return .pink
+        case "HYSTERIA", "HYSTERIA2", "HY2": return .orange
+        case "TUIC": return .indigo
+        case "WIREGUARD", "WG": return .teal
+        case "SOCKS5", "HTTP": return .gray
+        case "DIRECT": return .green
+        case "REJECT": return .red
+        default: return .secondary
+        }
+    }
+}
+
+/// 现代测速延迟胶囊
+struct AetherLatencyPill: View {
+    let latency: Int?
+    var isTesting: Bool = false
+    var onTap: (() -> Void)? = nil
+
+    var body: some View {
+        Button {
+            onTap?()
+        } label: {
+            HStack(spacing: 3.5) {
+                if isTesting {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .scaleEffect(0.65)
+                        .frame(width: 9, height: 9)
+                } else if let ms = latency, ms > 0 {
+                    Circle()
+                        .fill(pillColor)
+                        .frame(width: 5, height: 5)
+                }
+
+                Text(displayText)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(pillColor)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(pillColor.opacity(0.12), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(pillColor.opacity(0.25), lineWidth: 0.5)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(isTesting || onTap == nil)
+    }
+
+    private var displayText: String {
+        if isTesting { return AppLocalization.string("Testing") }
+        guard let latency, latency > 0 else { return AppLocalization.string("Timeout") }
+        return "\(latency) ms"
+    }
+
+    private var pillColor: Color {
+        if isTesting { return .secondary }
+        guard let latency, latency > 0 else { return Color.secondary.opacity(0.7) }
+        if latency < 180 { return Color(red: 0.20, green: 0.76, blue: 0.40) } // 翡翠绿
+        if latency < 450 { return Color(red: 0.18, green: 0.65, blue: 0.95) } // 科技蓝
+        if latency < 1200 { return Color(red: 0.95, green: 0.62, blue: 0.18) } // 琥珀橙
+        return Color(red: 0.90, green: 0.38, blue: 0.35) // 柔和珊瑚红
+    }
+}
+
+/// 现代节点晶核图标：优先匹配真实地域旗帜，未识别时呈现高质感协议几何微晶
+public struct AetherNodeIcon: View {
+    let name: String
+    let protocolName: String
+    var size: CGFloat = 28
+
+    public init(name: String, protocolName: String, size: CGFloat = 28) {
+        self.name = name
+        self.protocolName = protocolName
+        self.size = size
+    }
+
+    public var body: some View {
+        let flagInfo = AetherRegionFlag.flagAndRegion(from: name)
+
+        if flagInfo.flag != "🌐" {
+            // 真实匹配到的国家/地区旗帜
+            ZStack {
+                RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
+                            .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
+                    }
+                Text(flagInfo.flag)
+                    .font(.system(size: size * 0.55))
+            }
+            .frame(width: size, height: size)
+        } else {
+            // 通用/未知地域：呈现高质感协议专用科技晶核图标
+            let config = iconConfig
+            ZStack {
+                RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [config.color.opacity(0.24), config.color.opacity(0.08)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
+                            .stroke(config.color.opacity(0.4), lineWidth: 0.5)
+                    }
+
+                Image(systemName: config.symbol)
+                    .font(.system(size: size * 0.44, weight: .semibold))
+                    .foregroundStyle(config.color)
+            }
+            .frame(width: size, height: size)
+        }
+    }
+
+    private var iconConfig: (symbol: String, color: Color) {
+        let upperName = name.uppercased()
+        let upperProto = protocolName.uppercased()
+
+        if upperProto.contains("HY2") || upperProto.contains("HYSTERIA") || upperName.contains("HY2") || upperName.contains("HYSTERIA") {
+            return ("bolt.fill", Color.orange)
+        }
+        if upperProto.contains("VLESS") || upperName.contains("VLESS") {
+            return ("shield.checkered", Color.cyan)
+        }
+        if upperProto.contains("VMESS") || upperName.contains("VMESS") {
+            return ("cube.fill", Color.blue)
+        }
+        if upperProto.contains("TROJAN") || upperName.contains("TROJAN") {
+            return ("lock.shield.fill", Color.pink)
+        }
+        if upperProto.contains("DIRECT") || upperName.contains("DIRECT") {
+            return ("arrow.trianglehead.branch", Color.green)
+        }
+        if upperProto.contains("SS") || upperProto.contains("SHADOWSOCKS") || upperName.contains("SS") {
+            return ("paperplane.fill", Color.purple)
+        }
+        if upperProto.contains("WIREGUARD") || upperProto.contains("WG") {
+            return ("shield.lefthalf.filled", Color.teal)
+        }
+        return ("point.3.filled.connected.trianglepath.dotted", Color.accentColor)
+    }
+}
+
+// MARK: - Aether Design System 2.0 核心基础组件
+
+public enum AetherElevation {
+    case flat
+    case raised
+    case interactive
+}
+
+/// 统一的高质感卡片容器：支持分层材质、自适应微边框、Hover 浮动微动效与投影
+public struct AetherSurface<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    var elevation: AetherElevation = .raised
+    var isSelected: Bool = false
+    var cornerRadius: CGFloat = 12
+    var isHovered: Bool = false
+    @ViewBuilder var content: () -> Content
+
+    public init(
+        elevation: AetherElevation = .raised,
+        isSelected: Bool = false,
+        cornerRadius: CGFloat = 12,
+        isHovered: Bool = false,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.elevation = elevation
+        self.isSelected = isSelected
+        self.cornerRadius = cornerRadius
+        self.isHovered = isHovered
+        self.content = content
+    }
+
+    public var body: some View {
+        content()
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(backgroundFill)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(borderStroke, lineWidth: isSelected ? 1.5 : (isHovered ? 1.0 : 0.5))
+            }
+            .shadow(
+                color: shadowColor,
+                radius: isSelected ? 8 : (isHovered ? 6 : (elevation == .raised ? 4 : 0)),
+                y: isSelected ? 3 : (isHovered ? 2 : (elevation == .raised ? 1 : 0))
+            )
+    }
+
+    private var backgroundFill: AnyShapeStyle {
+        if isSelected {
+            return AnyShapeStyle(Color.accentColor.opacity(colorScheme == .dark ? 0.14 : 0.08))
+        }
+        switch elevation {
+        case .flat:
+            return AnyShapeStyle(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.5 : 0.65))
+        case .raised:
+            return AnyShapeStyle(Material.ultraThinMaterial)
+        case .interactive:
+            if isHovered {
+                return AnyShapeStyle(Color(nsColor: .controlBackgroundColor).opacity(0.92))
+            }
+            return AnyShapeStyle(Color(nsColor: .controlBackgroundColor).opacity(0.65))
+        }
+    }
+
+    private var borderStroke: Color {
+        if isSelected {
+            return Color.accentColor
+        }
+        if isHovered {
+            return Color.accentColor.opacity(0.4)
+        }
+        return Color(nsColor: .separatorColor).opacity(colorScheme == .dark ? 0.45 : 0.3)
+    }
+
+    private var shadowColor: Color {
+        if isSelected {
+            return Color.accentColor.opacity(colorScheme == .dark ? 0.35 : 0.2)
+        }
+        if isHovered {
+            return Color.black.opacity(colorScheme == .dark ? 0.28 : 0.08)
+        }
+        if elevation == .raised {
+            return Color.black.opacity(colorScheme == .dark ? 0.18 : 0.04)
+        }
+        return Color.clear
+    }
+}
+
+/// 现代网络状态呼吸信标：展示连通性、呼吸发光动画与微环形指示
+public struct AetherStatusBeacon: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let isConnected: Bool
+    let isConnecting: Bool
+    var size: CGFloat = 10
+
+    @State private var isPulsing: Bool = false
+
+    public init(isConnected: Bool, isConnecting: Bool = false, size: CGFloat = 10) {
+        self.isConnected = isConnected
+        self.isConnecting = isConnecting
+        self.size = size
+    }
+
+    public var body: some View {
+        ZStack {
+            if isConnected {
+                Circle()
+                    .fill(Color.green.opacity(isPulsing ? 0.25 : 0.45))
+                    .frame(width: size * 2.0, height: size * 2.0)
+                    .scaleEffect(isPulsing ? 1.25 : 0.95)
+                    .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true), value: isPulsing)
+            } else if isConnecting {
+                Circle()
+                    .stroke(Color.orange.opacity(0.5), lineWidth: 1.5)
+                    .frame(width: size * 1.8, height: size * 1.8)
+                    .rotationEffect(.degrees(isPulsing ? 360 : 0))
+                    .animation(.linear(duration: 1.5).repeatForever(autoreverses: false), value: isPulsing)
+            }
+
+            Circle()
+                .fill(statusColor)
+                .frame(width: size, height: size)
+                .shadow(color: statusColor.opacity(0.5), radius: isConnected ? 4 : 1)
+        }
+        .frame(width: size * 2.2, height: size * 2.2)
+        .onAppear {
+            if isConnected || isConnecting {
+                isPulsing = true
+            }
+        }
+        .onChange(of: isConnected) { _, newValue in
+            isPulsing = newValue
+        }
+        .onChange(of: isConnecting) { _, newValue in
+            if newValue { isPulsing = true }
+        }
+    }
+
+    private var statusColor: Color {
+        if isConnected { return .green }
+        if isConnecting { return .orange }
+        return .secondary.opacity(0.6)
+    }
+}
+
+/// 智能国旗与地域解析器
+public enum AetherRegionFlag {
+    public static func flagAndRegion(from name: String) -> (flag: String, region: String) {
+        let upper = name.uppercased()
+        if upper.contains("HK") || upper.contains("HONG KONG") || name.contains("香港") {
+            return ("🇭🇰", "HK")
+        }
+        if upper.contains("JP") || upper.contains("JAPAN") || upper.contains("TOKYO") || name.contains("日本") || name.contains("东京") {
+            return ("🇯🇵", "JP")
+        }
+        if upper.contains("US") || upper.contains("USA") || upper.contains("UNITED STATES") || name.contains("美国") || name.contains("硅谷") {
+            return ("🇺🇸", "US")
+        }
+        if upper.contains("SG") || upper.contains("SINGAPORE") || name.contains("新加坡") || name.contains("狮城") {
+            return ("🇸🇬", "SG")
+        }
+        if upper.contains("TW") || upper.contains("TAIWAN") || name.contains("台湾") {
+            return ("🇹🇼", "TW")
+        }
+        if upper.contains("KR") || upper.contains("KOREA") || upper.contains("SEOUL") || name.contains("韩国") || name.contains("首尔") {
+            return ("🇰🇷", "KR")
+        }
+        if upper.contains("GB") || upper.contains("UK") || upper.contains("LONDON") || name.contains("英国") || name.contains("伦敦") {
+            return ("🇬🇧", "UK")
+        }
+        if upper.contains("DE") || upper.contains("GERMANY") || upper.contains("FRANKFURT") || name.contains("德国") || name.contains("法兰克福") {
+            return ("🇩🇪", "DE")
+        }
+        if upper.contains("FR") || upper.contains("FRANCE") || name.contains("法国") {
+            return ("🇫🇷", "FR")
+        }
+        if upper.contains("CA") || upper.contains("CANADA") || name.contains("加拿大") {
+            return ("🇨🇦", "CA")
+        }
+        if upper.contains("AU") || upper.contains("AUSTRALIA") || name.contains("澳大利亚") || name.contains("悉尼") {
+            return ("🇦🇺", "AU")
+        }
+        return ("🌐", "GLOBAL")
+    }
+}
+
+/// 实时上下行迷你双波形走势图 (30秒平滑动态波形图)
+public struct AetherTrafficMiniGraph: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let downloadSamples: [Double]
+    let uploadSamples: [Double]
+    var height: CGFloat = 46
+
+    public init(downloadSamples: [Double], uploadSamples: [Double], height: CGFloat = 46) {
+        self.downloadSamples = downloadSamples
+        self.uploadSamples = uploadSamples
+        self.height = height
+    }
+
+    public var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let actualHeight = proxy.size.height
+            let maxVal = max(
+                (downloadSamples + uploadSamples).max() ?? 1024,
+                1024
+            )
+
+            ZStack {
+                // 背景微弱参考虚线
+                VStack {
+                    Divider().opacity(0.15)
+                    Spacer()
+                    Divider().opacity(0.15)
+                }
+
+                // 下行面积波形 (青蓝渐变)
+                if downloadSamples.count > 1 {
+                    waveformPath(samples: downloadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.cyan.opacity(0.35), Color.cyan.opacity(0.02)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+
+                    waveformLine(samples: downloadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                        .stroke(Color.cyan, lineWidth: 1.5)
+                }
+
+                // 上行面积波形 (紫粉渐变)
+                if uploadSamples.count > 1 {
+                    waveformPath(samples: uploadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.purple.opacity(0.25), Color.purple.opacity(0.01)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+
+                    waveformLine(samples: uploadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                        .stroke(Color.purple.opacity(0.8), lineWidth: 1.2)
+                }
+            }
+        }
+        .frame(height: height)
+        .accessibilityHidden(true)
+    }
+
+    private func waveformPath(samples: [Double], width: CGFloat, height: CGFloat, maxVal: Double) -> Path {
+        var path = Path()
+        guard samples.count > 1 else { return path }
+        let step = width / CGFloat(samples.count - 1)
+
+        path.move(to: CGPoint(x: 0, y: height))
+        for (i, val) in samples.enumerated() {
+            let normalizedY = height - CGFloat(val / maxVal) * (height - 4)
+            let x = CGFloat(i) * step
+            if i == 0 {
+                path.addLine(to: CGPoint(x: x, y: normalizedY))
+            } else {
+                path.addLine(to: CGPoint(x: x, y: normalizedY))
+            }
+        }
+        path.addLine(to: CGPoint(x: width, y: height))
+        path.closeSubpath()
+        return path
+    }
+
+    private func waveformLine(samples: [Double], width: CGFloat, height: CGFloat, maxVal: Double) -> Path {
+        var path = Path()
+        guard samples.count > 1 else { return path }
+        let step = width / CGFloat(samples.count - 1)
+
+        for (i, val) in samples.enumerated() {
+            let normalizedY = height - CGFloat(val / maxVal) * (height - 4)
+            let x = CGFloat(i) * step
+            if i == 0 {
+                path.move(to: CGPoint(x: x, y: normalizedY))
+            } else {
+                path.addLine(to: CGPoint(x: x, y: normalizedY))
+            }
+        }
+        return path
+    }
+}
+
+

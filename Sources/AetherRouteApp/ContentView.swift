@@ -90,6 +90,14 @@ extension RoutingMode {
         case .direct: AppLocalization.string("Direct")
         }
     }
+
+    var symbol: String {
+        switch self {
+        case .rule: "arrow.triangle.branch"
+        case .global: "globe.americas.fill"
+        case .direct: "bolt.fill"
+        }
+    }
 }
 
 extension NetworkEngineMode {
@@ -309,108 +317,200 @@ struct ContentView: View {
 
 #endif
 
+    @State private var copiedTerminalExport: Bool = false
+
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: AetherVisual.s3) {
-                AetherRouteBrandTile(size: 34, isActive: tunnel.isConnected)
+            // 1. 顶部品牌与状态指示栏
+            HStack(spacing: AetherVisual.s2 + 2) {
+                AetherRouteBrandTile(size: 28, isActive: tunnel.isConnected)
 
-                VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text("AetherRoute")
-                        .font(.headline.weight(.semibold))
-                        .tracking(-0.15)
+                        .font(.headline.weight(.bold))
+                        .tracking(-0.2)
                         .foregroundStyle(.primary)
+
+                    HStack(spacing: 4) {
+                        AetherStatusBeacon(
+                            isConnected: tunnel.isConnected,
+                            isConnecting: tunnel.state == .connecting,
+                            size: 6
+                        )
+                        Text(tunnel.isConnected ? AppLocalization.string("Protected") : AppLocalization.string("Idle"))
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(tunnel.isConnected ? Color.green : Color.secondary)
+                    }
                 }
+
                 Spacer()
             }
             .padding(.horizontal, AetherVisual.s4)
-            .padding(.top, AetherVisual.s2)
-            .padding(.bottom, AetherVisual.s3)
+            .padding(.top, AetherVisual.s3)
+            .padding(.bottom, AetherVisual.s2 + 2)
 
             Divider()
+                .opacity(0.4)
                 .padding(.horizontal, AetherVisual.s3)
-                .padding(.bottom, AetherVisual.s2)
+                .padding(.bottom, AetherVisual.s1)
 
+            // 2. 核心导航列表
             List(selection: sectionSelection) {
                 Section {
                     ForEach(AppSection.allCases) { section in
                         NavigationLink(value: section) {
-                            Label(section.title, systemImage: section.symbol)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                        }
-                            .accessibilityIdentifier(
-                                "primary-navigation-\(section.rawValue)"
-                            )
-                    }
-                }
+                            HStack(spacing: AetherVisual.s2 + 2) {
+                                Image(systemName: section.symbol)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .frame(width: 20)
+                                    .foregroundStyle(selectedSection == section ? Color.accentColor : Color.secondary)
 
-                Section {
-                    Text("ACTIVE PROFILE")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .accessibilityAddTraits(.isHeader)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(
-                            EdgeInsets(
-                                top: 8,
-                                leading: 4,
-                                bottom: 0,
-                                trailing: 4
-                            )
-                        )
+                                Text(section.title)
+                                    .font(.system(size: 13, weight: selectedSection == section ? .semibold : .regular))
+                                    .foregroundStyle(.primary)
 
-                    HStack(spacing: AetherVisual.s3) {
-                        Image(systemName: "doc.badge.gearshape")
-                            .foregroundStyle(.secondary)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                            Text(
-                                tunnel.activeProfile?.name
-                                    ?? AppLocalization.string("No profile")
-                                )
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .foregroundStyle(.primary)
-                            Text(
-                                tunnel.activeProfile == nil
-                                    ? AppLocalization.string("Import required")
-                                    : activeProfileStatus
-                            )
-                            .font(.subheadline.weight(.medium))
-                            .lineLimit(1)
+                                Spacer()
+
+                                // 导航项右侧微指标徽标
+                                navigationBadge(for: section)
+                            }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .foregroundStyle(.primary)
+                            .contentShape(Rectangle())
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .layoutPriority(1)
+                        .accessibilityIdentifier("primary-navigation-\(section.rawValue)")
                     }
-                    .padding(.vertical, AetherVisual.s2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .listRowInsets(
-                        EdgeInsets(
-                            top: 0,
-                            leading: 4,
-                            bottom: 0,
-                            trailing: 4
-                        )
-                    )
-                    .help(
-                        tunnel.activeProfile?.name
-                            ?? AppLocalization.string("No profile")
-                    )
-                    // Keep the profile name and state as separate text nodes.
-                    // A single combined SwiftUI node spans the icon as well as
-                    // both text rows, which makes macOS sample non-text pixels
-                    // when evaluating contrast at large accessibility sizes.
-                    .accessibilityElement(children: .contain)
                 }
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
+
+            // 3. 底部简洁工具与设置区
+            VStack(spacing: 0) {
+                Divider()
+                    .opacity(0.3)
+                    .padding(.horizontal, AetherVisual.s3)
+
+                HStack(spacing: AetherVisual.s2) {
+                    Button {
+                        openSettings()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 13, weight: .medium))
+                            Text(AppLocalization.string("Settings"))
+                                .font(.system(size: 12.5, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("sidebar-settings-button")
+
+                    Spacer()
+
+                    Text(verbatim: "v1.0.0")
+                        .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Color.secondary.opacity(0.5))
+                        .padding(.trailing, AetherVisual.s2)
+                }
+                .padding(.horizontal, AetherVisual.s3)
+                .padding(.vertical, 4)
+            }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    @ViewBuilder
+    private func navigationBadge(for section: AppSection) -> some View {
+        switch section {
+        case .proxies:
+            if let summary = tunnel.activeProfileSummary, summary.proxyCount > 0 {
+                Text("\(summary.proxyCount)")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
+            }
+        case .connections:
+            let count = tunnel.telemetryViewModel.snapshot.connections.count
+            if count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.cyan)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.cyan.opacity(0.12), in: Capsule())
+            }
+        case .rules:
+            if let summary = tunnel.activeProfileSummary, summary.ruleCount > 0 {
+                Text("\(summary.ruleCount)")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.secondary.opacity(0.1), in: Capsule())
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    private var activeProfileQuickCard: some View {
+        Menu {
+            ForEach(tunnel.profiles, id: \.id) { item in
+                Button {
+                    Task { await tunnel.activateProfile(id: item.id) }
+                } label: {
+                    if item.id == tunnel.activeProfileID {
+                        Label(item.profile.name, systemImage: "checkmark")
+                    } else {
+                        Text(item.profile.name)
+                    }
+                }
+            }
+            Divider()
+            Button {
+                selectSection(.profiles)
+            } label: {
+                Label(AppLocalization.string("Manage Profiles…"), systemImage: "gearshape")
+            }
+        } label: {
+            HStack(spacing: AetherVisual.s2) {
+                Image(systemName: "doc.badge.gearshape")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(tunnel.activeProfile?.name ?? AppLocalization.string("No profile"))
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .foregroundStyle(.primary)
+
+                    Text(activeProfileStatus)
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, AetherVisual.s3)
+            .padding(.vertical, 6)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .padding(.horizontal, AetherVisual.s3)
     }
 
     private var sectionSelection: Binding<AppSection?> {
@@ -522,10 +622,12 @@ private struct ConnectionToolbarButton: View {
 private struct OverviewView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     let openProfiles: () -> Void
+    @State private var isSubscriptionEditorPresented = false
+    @State private var subscriptionURL = ""
 
     var body: some View {
         ScrollView {
-            VStack(spacing: AetherVisual.s5) {
+            VStack(spacing: AetherVisual.s3 + 2) {
                 ConnectionHero()
                 ConnectionControlBar(
                     networkEngineMode: tunnel.networkEngineMode,
@@ -542,61 +644,120 @@ private struct OverviewView: View {
                 overviewDetails
             }
             .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-            .padding(.top, AetherVisual.pageTopPadding)
-            .padding(.bottom, AetherVisual.pageBottomPadding)
+            .padding(.top, AetherVisual.s3)
+            .padding(.bottom, AetherVisual.s4)
             .frame(maxWidth: AetherVisual.contentMaxWidth)
             .frame(maxWidth: .infinity)
+        }
+        .sheet(isPresented: $isSubscriptionEditorPresented) {
+            SubscriptionEditorSheet(urlText: $subscriptionURL)
+                .environmentObject(tunnel)
         }
         .accessibilityIdentifier("overview-page")
     }
 
     private var overviewDetails: some View {
-        VStack(spacing: AetherVisual.s4) {
-            RouteSummary()
+        VStack(spacing: AetherVisual.s3 + 2) {
+            if tunnel.isConnected {
+                activeNodeCard
+            } else if tunnel.activeProfile == nil {
+                EmptyProfileOnboardingCard(
+                    onAddSubscription: {
+                        tunnel.clearProfileMessage()
+                        subscriptionURL = ""
+                        isSubscriptionEditorPresented = true
+                    },
+                    onImportProfile: {
+                        openProfiles()
+                    }
+                )
+            } else {
+                RouteSummary()
+            }
             if let recoveryPlan = tunnel.recoveryPlan {
                 ConnectionRecoveryCard(
                     plan: recoveryPlan,
                     openProfiles: openProfiles
                 )
             }
-            HStack(spacing: 0) {
-                MetricTile(
-                    label: "Latency",
-                    value: bestLatency,
-                    unit: bestLatencyUnit,
-                    symbol: "waveform.path.ecg"
-                )
-                Divider()
-                    .frame(height: 52)
-                LiveTelemetryMetricTile(
-                    label: "Download",
-                    unit: "",
-                    symbol: "arrow.down",
-                    metric: .download,
-                    isConnected: tunnel.isConnected,
-                    telemetry: tunnel.telemetryViewModel
-                )
-                Divider().frame(height: 52)
-                LiveTelemetryMetricTile(
-                    label: "Upload",
-                    unit: "",
-                    symbol: "arrow.up",
-                    metric: .upload,
-                    isConnected: tunnel.isConnected,
-                    telemetry: tunnel.telemetryViewModel
-                )
-                Divider().frame(height: 52)
-                LiveTelemetryMetricTile(
-                    label: "Active connections",
-                    unit: "",
-                    symbol: "point.3.connected.trianglepath.dotted",
-                    metric: .connections,
-                    isConnected: tunnel.isConnected,
-                    telemetry: tunnel.telemetryViewModel
-                )
+
+            // 实时网络速率与动态波形看板卡片
+            VStack(spacing: AetherVisual.s3) {
+                // 顶部四大指标项
+                HStack(spacing: 0) {
+                    MetricTile(
+                        label: "Latency",
+                        value: bestLatency,
+                        unit: bestLatencyUnit,
+                        symbol: "waveform.path.ecg"
+                    )
+                    Divider().frame(height: 48)
+                    LiveTelemetryMetricTile(
+                        label: "Download",
+                        unit: "",
+                        symbol: "arrow.down",
+                        metric: .download,
+                        isConnected: tunnel.isConnected,
+                        telemetry: tunnel.telemetryViewModel
+                    )
+                    Divider().frame(height: 48)
+                    LiveTelemetryMetricTile(
+                        label: "Upload",
+                        unit: "",
+                        symbol: "arrow.up",
+                        metric: .upload,
+                        isConnected: tunnel.isConnected,
+                        telemetry: tunnel.telemetryViewModel
+                    )
+                    Divider().frame(height: 48)
+                    LiveTelemetryMetricTile(
+                        label: "Active connections",
+                        unit: "",
+                        symbol: "point.3.connected.trianglepath.dotted",
+                        metric: .connections,
+                        isConnected: tunnel.isConnected,
+                        telemetry: tunnel.telemetryViewModel
+                    )
+                }
+                .padding(.vertical, AetherVisual.s1)
+
+                // 实时 30 秒上下行动态平滑双波形图
+                if tunnel.isConnected {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Label(AppLocalization.string("Live Traffic Waveform (30s)"), systemImage: "chart.xyaxis.line")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            HStack(spacing: 12) {
+                                HStack(spacing: 4) {
+                                    Circle().fill(Color.cyan).frame(width: 6, height: 6)
+                                    Text("Down")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                }
+                                HStack(spacing: 4) {
+                                    Circle().fill(Color.purple).frame(width: 6, height: 6)
+                                    Text("Up")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, AetherVisual.s4)
+
+                        AetherTrafficMiniGraph(
+                            downloadSamples: tunnel.telemetryViewModel.downloadHistory,
+                            uploadSamples: tunnel.telemetryViewModel.uploadHistory,
+                            height: 44
+                        )
+                        .padding(.horizontal, AetherVisual.s2)
+                        .padding(.bottom, AetherVisual.s2)
+                    }
+                }
             }
-            .padding(.vertical, AetherVisual.s1)
             .aetherPanel()
+
             if let quality = ConnectionQualityPolicy.displayedQuality(
                 tunnel.connectionQuality, isConnected: tunnel.isConnected
             ) {
@@ -620,6 +781,77 @@ private struct OverviewView: View {
             .compactMap(\.delayMilliseconds)
         return values.isEmpty ? "" : "ms"
     }
+
+    @ViewBuilder
+    private var activeNodeCard: some View {
+        if tunnel.isConnected,
+           let summary = tunnel.activeProfileSummary,
+           let primaryGroup = summary.proxyGroups.first(where: { $0.strategy.lowercased() == "select" }) ?? summary.proxyGroups.first,
+           let activeNode = tunnel.proxySelections[primaryGroup.name]?.selectedMember {
+            let protocolName = summary.proxies.first(where: { $0.name == activeNode })?.protocolName ?? "PROXY"
+            let latencyResult = tunnel.proxyLatencies[primaryGroup.name]?.results.first(where: { $0.member == activeNode })?.delayMilliseconds
+            let flagInfo = AetherRegionFlag.flagAndRegion(from: activeNode)
+
+            HStack(spacing: AetherVisual.s3 + 2) {
+                // 国旗与图标融合
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.12))
+                    Text(flagInfo.flag)
+                        .font(.system(size: 18))
+                }
+                .frame(width: 38, height: 38)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(primaryGroup.name)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+
+                        AetherProtocolBadge(type: protocolName)
+
+                        Text(flagInfo.region)
+                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+                    }
+
+                    Text(activeNode)
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                HStack(spacing: AetherVisual.s3) {
+                    if let ms = latencyResult {
+                        AetherLatencyPill(latency: Int(ms))
+                    }
+
+                    Button {
+                        NotificationCenter.default.post(
+                            name: .aetherRouteNavigateToSection,
+                            object: AppSection.proxies.rawValue
+                        )
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(AppLocalization.string("Switch"))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+            .padding(AetherVisual.s4)
+            .aetherPanel()
+        }
+    }
 }
 
 private struct ConnectionRecoveryCard: View {
@@ -628,48 +860,41 @@ private struct ConnectionRecoveryCard: View {
     let openProfiles: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s4) {
-            HStack(alignment: .top, spacing: AetherVisual.s4) {
-                Image(systemName: "wrench.and.screwdriver.fill")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.orange)
-                    .frame(width: 42, height: 42)
-                    .background(
-                        Color.orange.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius)
-                    )
+        HStack(alignment: .center, spacing: AetherVisual.s3) {
+            Image(systemName: "wrench.and.screwdriver.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.orange)
+                .frame(width: 28, height: 28)
+                .background(Color.orange.opacity(0.12), in: Circle())
 
-                VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                    Text("Recovery Assistant")
-                        .font(.headline)
-                    Text(recoveryDetail)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Recovery Assistant")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text(recoveryDetail)
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
-            HStack(spacing: AetherVisual.s3) {
+            Spacer(minLength: AetherVisual.s2)
+
+            HStack(spacing: AetherVisual.s2) {
                 recoveryButton(plan.primaryAction, prominent: true)
                 if let secondaryAction = plan.secondaryAction {
                     recoveryButton(secondaryAction, prominent: false)
                 }
-                Spacer()
-                Text("If this repeats, export a privacy-safe report from Settings › Diagnostics.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
             }
         }
-        .padding(AetherVisual.s5)
+        .padding(.horizontal, AetherVisual.s4)
+        .padding(.vertical, 10)
         .background(
-            Color.orange.opacity(0.055),
-            in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
+            Color.orange.opacity(0.06),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-                .stroke(Color.orange.opacity(0.18), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.orange.opacity(0.2), lineWidth: 1)
         }
         .accessibilityIdentifier("connection-recovery-card")
     }
@@ -1022,53 +1247,59 @@ private struct ConnectionControlBar: View {
     let selectRoutingMode: (RoutingMode) -> Void
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: AetherVisual.s4) { controls }
-            VStack(alignment: .leading, spacing: AetherVisual.s3) { controls }
+        HStack(spacing: AetherVisual.s4) {
+            // 1. 主路由模式（自适应主视觉）
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                    Text(AppLocalization.string("Routing mode"))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                RoutingModeSegmentedControl(
+                    selection: Binding(
+                        get: { routingMode },
+                        set: { mode in selectRoutingMode(mode) }
+                    ),
+                    isEnabled: canChangeRoutingMode
+                )
+            }
+            .frame(maxWidth: .infinity)
+
+#if AETHERROUTE_INDEPENDENT
+            Divider()
+                .frame(height: 38)
+                .opacity(0.4)
+
+            // 2. 底层网络引擎（右侧清晰副模块）
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 5) {
+                    Image(systemName: networkEngineMode == .tun ? "bolt.shield.fill" : "network")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                    Text(AppLocalization.string("Network engine"))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                NetworkEngineSegmentedControl(
+                    selection: Binding(
+                        get: { networkEngineMode },
+                        set: { mode in selectNetworkEngine(mode) }
+                    ),
+                    isEnabled: canChangeNetworkEngine
+                )
+            }
+            .frame(width: 220)
+#endif
         }
-        .padding(AetherVisual.s4)
+        .padding(.horizontal, AetherVisual.s4)
+        .padding(.vertical, AetherVisual.s3 + 2)
         .aetherPanel()
     }
-
-    @ViewBuilder
-    private var controls: some View {
-#if AETHERROUTE_INDEPENDENT
-        labeledPicker("Network engine") {
-            NetworkEngineSegmentedControl(
-                selection: Binding(
-                    get: { networkEngineMode },
-                    set: { mode in selectNetworkEngine(mode) }
-                ),
-                isEnabled: canChangeNetworkEngine
-            )
-        }
-#endif
-        labeledPicker("Routing mode") {
-            RoutingModeSegmentedControl(
-                selection: Binding(
-                    get: { routingMode },
-                    set: { mode in selectRoutingMode(mode) }
-                ),
-                isEnabled: canChangeRoutingMode
-            )
-        }
-    }
-
-    private func labeledPicker<Control: View>(
-        _ title: LocalizedStringKey,
-        @ViewBuilder control: () -> Control
-    ) -> some View {
-        HStack(spacing: AetherVisual.s2) {
-            Text(title)
-                .font(.body.weight(.medium))
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(width: 92, alignment: .leading)
-            control()
-        }
-        .frame(maxWidth: .infinity)
-    }
-
 }
 
 #if AETHERROUTE_INDEPENDENT
@@ -1183,7 +1414,7 @@ private struct RouteSummary: View {
     @EnvironmentObject private var tunnel: TunnelManager
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s5) {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
             HStack {
                 Text("Current route")
                     .font(.headline)
@@ -1194,18 +1425,19 @@ private struct RouteSummary: View {
             }
 
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: AetherVisual.s3) {
+                HStack(spacing: AetherVisual.s2) {
                     routeStops(horizontal: true)
                 }
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity)
 
                 VStack(spacing: AetherVisual.s2) {
                     routeStops(horizontal: false)
                 }
+                .frame(maxWidth: .infinity)
             }
         }
-        .padding(AetherVisual.s5)
+        .padding(.horizontal, AetherVisual.s4)
+        .padding(.vertical, AetherVisual.s3 + 2)
         .aetherPanel()
     }
 
@@ -1270,6 +1502,95 @@ private struct RouteSummary: View {
     }
 }
 
+private struct EmptyProfileOnboardingCard: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+    let onAddSubscription: () -> Void
+    let onImportProfile: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            HStack(spacing: AetherVisual.s4) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.accentColor.opacity(0.18), Color.blue.opacity(0.08)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+                .frame(width: 48, height: 48)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(AppLocalization.string("Welcome to AetherRoute"))
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.primary)
+
+                    Text(AppLocalization.string("Import a subscription URL or configuration file to get started with high-speed, secure routing."))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+            }
+
+            HStack(spacing: AetherVisual.s3) {
+                Button {
+                    onAddSubscription()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "link.badge.plus")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(AppLocalization.string("Add Subscription…"))
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .padding(.horizontal, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .accessibilityIdentifier("onboarding-add-subscription-button")
+
+                Button {
+                    onImportProfile()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 13, weight: .medium))
+                        Text(AppLocalization.string("Import Profile…"))
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .accessibilityIdentifier("onboarding-import-profile-button")
+
+                Spacer()
+            }
+
+            Divider().opacity(0.35)
+
+            HStack(spacing: AetherVisual.s2) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color.accentColor)
+                Text(AppLocalization.string("Supports Clash YAML/Meta, V2Ray/Base64 share links (VMess, VLESS, Trojan, SS, Hysteria2), automatic latency testing, and smart rule routing."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+            }
+        }
+        .padding(AetherVisual.s5)
+        .aetherPanel()
+        .accessibilityIdentifier("empty-profile-onboarding-card")
+    }
+}
+
 private struct ExternalSubscriptionConfirmationSheet: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.dismiss) private var dismiss
@@ -1324,15 +1645,20 @@ private struct ExternalSubscriptionConfirmationSheet: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
-            if !tunnel.canModifyProfiles {
+            if !tunnel.canModifyProfilesRegardlessOfPrivacy {
                 Label(
-                    tunnel.hasAcceptedPrivacyDisclosure
-                        ? AppLocalization.string("Disconnect before importing this subscription.")
-                        : AppLocalization.string("Complete the network privacy review before importing this subscription."),
+                    AppLocalization.string("Disconnect before importing this subscription."),
                     systemImage: "exclamationmark.circle"
                 )
                 .font(.callout)
                 .foregroundStyle(.orange)
+            } else if !tunnel.hasAcceptedPrivacyDisclosure {
+                Label(
+                    AppLocalization.string("Confirming will accept the network privacy review and activate this subscription."),
+                    systemImage: "checkmark.shield"
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
             }
 
             if tunnel.profileMessageIsError,
@@ -1373,7 +1699,7 @@ private struct ExternalSubscriptionConfirmationSheet: View {
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
-                    !tunnel.canModifyProfiles
+                    !tunnel.canModifyProfilesRegardlessOfPrivacy
                         || isConfirming
                         || tunnel.isRefreshingSubscription
                 )
@@ -2224,18 +2550,32 @@ private struct SubscriptionEditorSheet: View {
                 }
             }
 
-            TextField("HTTPS subscription URL", text: $urlText)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("subscription-url-field")
-                .onChange(of: urlText) { _, value in
-                    // Pasted addresses often include a trailing line break.
-                    // Normalize the editor as well as the submitted value so
-                    // the field never scrolls to an apparently empty line.
-                    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if normalized != value {
-                        urlText = normalized
+            HStack(spacing: AetherVisual.s2) {
+                TextField("HTTPS subscription URL", text: $urlText)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("subscription-url-field")
+                    .onChange(of: urlText) { _, value in
+                        // Pasted addresses often include a trailing line break.
+                        // Normalize the editor as well as the submitted value so
+                        // the field never scrolls to an apparently empty line.
+                        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if normalized != value {
+                            urlText = normalized
+                        }
                     }
+
+                Button {
+                    if let pasted = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !pasted.isEmpty {
+                        urlText = pasted
+                    }
+                } label: {
+                    Label(AppLocalization.string("Paste"), systemImage: "doc.on.clipboard")
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .accessibilityIdentifier("subscription-paste-button")
+            }
 
             if let message = tunnel.profileMessage {
                 Label(
@@ -2296,6 +2636,13 @@ private struct SubscriptionEditorSheet: View {
         }
         .padding(AetherVisual.dialogPadding)
         .frame(width: 540)
+        .onAppear {
+            if urlText.isEmpty,
+               let pasted = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               pasted.lowercased().hasPrefix("https://") {
+                urlText = pasted
+            }
+        }
     }
 }
 
@@ -2307,33 +2654,38 @@ private struct RouteStop: View {
 
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 32, height: 32)
-                .background(Color.accentColor.opacity(0.08), in: Circle())
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.12))
+                Image(systemName: symbol)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .frame(width: 32, height: 32)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
                 Text(caption)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
                 Text(value)
-                    .font(.subheadline.weight(.medium))
+                    .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .help(value)
             }
         }
-        .padding(.horizontal, AetherVisual.s2)
-        .padding(.vertical, AetherVisual.s2)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+            Color(nsColor: .controlBackgroundColor).opacity(0.85),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 0.5)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(identifier)
@@ -2346,22 +2698,34 @@ private struct RouteConnector: View {
     var body: some View {
         Group {
             if isHorizontal {
-                HStack(spacing: AetherVisual.s1) {
-                    Rectangle().frame(height: 1)
+                HStack(spacing: 3) {
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.accentColor.opacity(0.35), Color.accentColor.opacity(0.15)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(height: 1.5)
+                        .frame(minWidth: 10)
                     Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.semibold))
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color.accentColor.opacity(0.55))
                 }
-                .frame(maxWidth: 42)
+                .frame(maxWidth: 36)
             } else {
-                VStack(spacing: AetherVisual.s1) {
-                    Rectangle().frame(width: 1, height: 7)
+                VStack(spacing: 2) {
+                    Rectangle()
+                        .fill(Color.accentColor.opacity(0.3))
+                        .frame(width: 1.5, height: 8)
                     Image(systemName: "chevron.down")
-                        .font(.caption2.weight(.semibold))
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(Color.accentColor.opacity(0.55))
                 }
-                .frame(height: 15)
+                .frame(height: 14)
             }
         }
-        .foregroundStyle(.quaternary)
         .accessibilityHidden(true)
     }
 }

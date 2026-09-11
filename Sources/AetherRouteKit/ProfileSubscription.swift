@@ -87,11 +87,11 @@ public enum ProfileSubscriptionUpdate: Equatable, Sendable {
 }
 
 public struct ProfileSubscriptionClient: Sendable {
-    /// Keeps AetherRoute identifiable while allowing subscription services
-    /// that select their YAML representation by client capability to return
-    /// the Clash-compatible profile surface we can validate and compile.
+    /// Keeps AetherRoute identifiable while ensuring modern subscription
+    /// services (such as Xboard, V2board, SSPanel) route to ClashMeta handlers
+    /// rather than legacy Clash handlers that filter out VLESS/Reality nodes.
     public static let userAgent =
-        "AetherRoute/1.0 (macOS; Apple Silicon; Clash-compatible YAML)"
+        "clash-verge/v2.5.2 (ClashMeta; AetherRoute/1.0)"
 
     public typealias Transport = @Sendable (
         ProfileSubscriptionHTTPRequest
@@ -108,68 +108,97 @@ public struct ProfileSubscriptionClient: Sendable {
         self.now = now
     }
 
-    public static func live() -> Self {
-        Self { request in
-            let delegate = HTTPSOnlyRedirectDelegate()
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.urlCache = nil
-            configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-            configuration.httpCookieAcceptPolicy = .never
-            configuration.httpShouldSetCookies = false
-            configuration.timeoutIntervalForRequest = 30
-            configuration.timeoutIntervalForResource = 60
-            configuration.waitsForConnectivity = false
+    private static func performTransportSession(
+        request: ProfileSubscriptionHTTPRequest,
+        bypassProxy: Bool
+    ) async throws -> ProfileSubscriptionHTTPResponse {
+        let delegate = HTTPSOnlyRedirectDelegate()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpShouldSetCookies = false
+        configuration.timeoutIntervalForRequest = bypassProxy ? 20 : 30
+        configuration.timeoutIntervalForResource = bypassProxy ? 30 : 60
+        configuration.waitsForConnectivity = false
+        if bypassProxy {
+            configuration.connectionProxyDictionary = [:]
+        }
 
-            let session = URLSession(
-                configuration: configuration,
-                delegate: delegate,
-                delegateQueue: nil
-            )
-            defer { session.finishTasksAndInvalidate() }
+        let session = URLSession(
+            configuration: configuration,
+            delegate: delegate,
+            delegateQueue: nil
+        )
+        defer { session.finishTasksAndInvalidate() }
 
-            var urlRequest = URLRequest(url: request.url)
-            urlRequest.httpMethod = "GET"
-            urlRequest.timeoutInterval = 30
-            for (name, value) in request.headers {
-                urlRequest.setValue(value, forHTTPHeaderField: name)
-            }
+        var urlRequest = URLRequest(url: request.url)
+        urlRequest.httpMethod = "GET"
+        urlRequest.timeoutInterval = bypassProxy ? 20 : 30
+        for (name, value) in request.headers {
+            urlRequest.setValue(value, forHTTPHeaderField: name)
+        }
 
-            let result: (Data, URLResponse)
-            do {
-                result = try await session.data(for: urlRequest)
-            } catch {
-                if let redirectError = delegate.redirectError {
-                    throw redirectError
-                }
-                throw error
-            }
+        let result: (Data, URLResponse)
+        do {
+            result = try await session.data(for: urlRequest)
+        } catch {
             if let redirectError = delegate.redirectError {
                 throw redirectError
             }
-            let (data, response) = result
-            guard let response = response as? HTTPURLResponse,
-                  let finalURL = response.url else {
-                throw ProfileSubscriptionError.invalidResponse
+            throw error
+        }
+        if let redirectError = delegate.redirectError {
+            throw redirectError
+        }
+        let (data, response) = result
+        guard let response = response as? HTTPURLResponse,
+              let finalURL = response.url else {
+            throw ProfileSubscriptionError.invalidResponse
+        }
+        let headers = response.allHeaderFields.reduce(
+            into: [String: String]()
+        ) { result, pair in
+            guard let name = pair.key as? String else { return }
+            result[name] = String(describing: pair.value)
+        }
+        return ProfileSubscriptionHTTPResponse(
+            data: data,
+            statusCode: response.statusCode,
+            finalURL: finalURL,
+            headers: headers
+        )
+    }
+
+    public static func live() -> Self {
+        Self { request in
+            // Mainstream clients (like Clash Verge) explicitly bypass system proxies (e.g. 127.0.0.1:7890)
+            // for subscription requests by default because airport panels detect proxy source IPs and
+            // degrade the response to a single fallback node.
+            // We first attempt a direct connection. If direct connection encounters a network connectivity
+            // failure (or an HTTP error status indicating geo-blocking), we seamlessly fall back to the
+            // system proxy.
+            do {
+                let directResponse = try await performTransportSession(request: request, bypassProxy: true)
+                if directResponse.statusCode < 400 {
+                    return directResponse
+                }
+                if let proxyResponse = try? await performTransportSession(request: request, bypassProxy: false),
+                   proxyResponse.statusCode < 400 {
+                    return proxyResponse
+                }
+                return directResponse
+            } catch {
+                if Task.isCancelled { throw error }
+                return try await performTransportSession(request: request, bypassProxy: false)
             }
-            let headers = response.allHeaderFields.reduce(
-                into: [String: String]()
-            ) { result, pair in
-                guard let name = pair.key as? String else { return }
-                result[name] = String(describing: pair.value)
-            }
-            return ProfileSubscriptionHTTPResponse(
-                data: data,
-                statusCode: response.statusCode,
-                finalURL: finalURL,
-                headers: headers
-            )
         }
     }
 
-    public func fetch(
-        _ subscription: ProfileSubscription
-    ) async throws -> ProfileSubscriptionUpdate {
-        try Self.validateSubscriptionURL(subscription.url)
+    private func performRequest(
+        for url: URL,
+        subscription: ProfileSubscription
+    ) async throws -> ProfileSubscriptionHTTPResponse {
         var headers = [
             "Accept": "application/yaml, application/x-yaml, text/yaml, text/plain, application/octet-stream;q=0.8, */*;q=0.5",
             "Cache-Control": "no-cache",
@@ -184,11 +213,22 @@ public struct ProfileSubscriptionClient: Sendable {
 
         let response = try await transport(
             ProfileSubscriptionHTTPRequest(
-                url: subscription.url,
+                url: url,
                 headers: headers
             )
         )
         try Self.validateSubscriptionURL(response.finalURL)
+        return response
+    }
+
+    public func fetch(
+        _ subscription: ProfileSubscription
+    ) async throws -> ProfileSubscriptionUpdate {
+        try Self.validateSubscriptionURL(subscription.url)
+        var response = try await performRequest(
+            for: subscription.url,
+            subscription: subscription
+        )
         let checkedAt = now()
 
         switch response.statusCode {
@@ -210,10 +250,33 @@ public struct ProfileSubscriptionClient: Sendable {
             guard response.data.count <= ProfileImportValidator.maximumProfileBytes else {
                 throw ProfileSubscriptionError.responseTooLarge(response.data.count)
             }
-            let normalized = try SubscriptionPayloadNormalizer
+            var normalized = try SubscriptionPayloadNormalizer
                 .normalizeWithReport(
                     response.data
                 )
+
+            // When an airport panel (such as Xboard or V2board) falls back to a single
+            // legacy node because of reverse proxy header stripping, attempt smart
+            // query negotiation with flag=meta to retrieve the full ClashMeta profile.
+            if let usable = normalized.report.usableNodeCount, usable <= 1,
+               let metaURL = Self.urlWithMetaFlag(subscription.url) {
+                if let fallbackResponse = try? await performRequest(
+                    for: metaURL,
+                    subscription: subscription
+                ),
+                fallbackResponse.statusCode == 200,
+                fallbackResponse.data.count <= ProfileImportValidator.maximumProfileBytes,
+                let fallbackNormalized = try? SubscriptionPayloadNormalizer.normalizeWithReport(
+                    fallbackResponse.data
+                ) {
+                    let fallbackUsable = fallbackNormalized.report.usableNodeCount
+                    if fallbackUsable == nil || (fallbackUsable ?? 0) > usable {
+                        response = fallbackResponse
+                        normalized = fallbackNormalized
+                    }
+                }
+            }
+
             return .updated(
                 data: normalized.data,
                 metadata: try refreshedMetadata(
@@ -227,6 +290,23 @@ public struct ProfileSubscriptionClient: Sendable {
         default:
             throw ProfileSubscriptionError.httpStatus(response.statusCode)
         }
+    }
+
+    public static func urlWithMetaFlag(_ url: URL) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        var items = components.queryItems ?? []
+        if items.contains(where: { $0.name.lowercased() == "flag" }) {
+            return nil
+        }
+        items.append(URLQueryItem(name: "flag", value: "meta"))
+        components.queryItems = items
+        guard let result = components.url,
+              (try? validateSubscriptionURL(result)) != nil else {
+            return nil
+        }
+        return result
     }
 
     public static func validateSubscriptionURL(_ url: URL) throws {

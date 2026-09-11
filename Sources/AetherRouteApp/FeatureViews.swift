@@ -1003,41 +1003,65 @@ private struct RuleRow: View {
     let rule: RuleConfigurationSummary
 
     var body: some View {
-        HStack(spacing: AetherVisual.s4) {
+        HStack(spacing: AetherVisual.s3) {
             Text(verbatim: String(rule.order))
-                .font(.body.monospacedDigit().weight(.semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 30, height: 30)
-                .background(Color.secondary.opacity(0.08), in: Circle())
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text(rule.kind)
-                    .font(.body.monospaced().weight(.semibold))
-                if let criteria = rule.criteria {
-                    Text(criteria)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("Any remaining traffic")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
+                .font(.caption.monospacedDigit().weight(.bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+                .background(Color.secondary.opacity(0.1), in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(rule.kind)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(ruleKindColor(rule.kind))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(ruleKindColor(rule.kind).opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+
+                    if let criteria = rule.criteria {
+                        Text(criteria)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    } else {
+                        Text(AppLocalization.string("Any remaining traffic"))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
-            Spacer(minLength: 14)
+
+            Spacer(minLength: 12)
+
             Image(systemName: "arrow.right")
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
+
             Text(rule.target)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.accentColor.opacity(0.1), in: Capsule())
                 .lineLimit(1)
                 .frame(maxWidth: 180, alignment: .trailing)
         }
-        .padding(AetherVisual.s4)
+        .padding(AetherVisual.s3 + 1)
         .featureCard()
         .accessibilityElement(children: .contain)
     }
 
+    private func ruleKindColor(_ kind: String) -> Color {
+        let upper = kind.uppercased()
+        if upper.contains("DOMAIN") { return .blue }
+        if upper.contains("IP") || upper.contains("CIDR") { return .orange }
+        if upper.contains("GEO") { return .purple }
+        if upper.contains("MATCH") { return .gray }
+        return .cyan
+    }
 }
 
 private struct StatePill: View {

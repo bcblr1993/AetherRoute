@@ -1,14 +1,14 @@
 import AetherRouteKit
 import SwiftUI
 
-/// The proxies page answers three different questions, in descending order of
-/// how often they are asked: which node am I on and what do I want instead,
-/// which imported nodes can the core actually use, and where did this batch of
-/// nodes come from. The groups stay collapsible so that a profile with hundreds
-/// of nodes still shows every group's current choice on one screen.
+/// 现代化的代理节点选择页面
+/// 对标 Clash Verge Rev 与 ClashX Pro，采用横向策略组 Tab 切换 + 自适应卡片网格/紧凑列表双视图。
 struct ProxiesView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var searchText = ""
+    @State private var selectedGroupId: Int?
+    @AppStorage("proxies-view-display-mode") private var isGridView: Bool = true
+    @State private var showAdvancedInventory: Bool = false
 
     var body: some View {
         Group {
@@ -26,39 +26,29 @@ struct ProxiesView: View {
         .accessibilityIdentifier("proxies-page")
     }
 
-    private func content(
-        summary: ProfileConfigurationSummary
-    ) -> some View {
+    private func content(summary: ProfileConfigurationSummary) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AetherVisual.s5) {
                 if !summary.proxyGroups.isEmpty {
-                    proxyGroupSection(summary.proxyGroups, proxies: summary.proxies)
-                }
+                    // 1. 顶部策略组水平 Tab 分段选择栏
+                    proxyGroupTabBar(groups: summary.proxyGroups)
 
-                if !summary.proxies.isEmpty {
-                    ProxyNodeInventory(
-                        proxies: summary.proxies,
-                        groups: summary.proxyGroups,
-                        searchText: searchText
-                    )
-                }
-
-                if !summary.proxyProviders.isEmpty {
-                    FeatureSection(title: "Providers", symbol: "shippingbox") {
-                        VStack(spacing: 0) {
-                            ForEach(summary.proxyProviders) { provider in
-                                ProviderRow(provider: provider)
-                                if provider.id != summary.proxyProviders.last?.id {
-                                    Divider().padding(
-                                        .leading,
-                                        AetherVisual.onboardingTopPadding
-                                    )
-                                }
-                            }
-                        }
-                        .featureCard()
+                    // 2. 当前选中策略组的节点网格/列表展示
+                    if let activeGroup = currentGroup(from: summary.proxyGroups) {
+                        ActiveProxyGroupView(
+                            group: activeGroup,
+                            protocols: Dictionary(
+                                uniqueKeysWithValues: summary.proxies.map { ($0.name, $0.protocolName) }
+                            ),
+                            searchText: searchText,
+                            isGridView: $isGridView
+                        )
+                        .id(activeGroup.name)
                     }
                 }
+
+                // 3. 辅助折叠区域：节点底库清单与 Providers（高级选项）
+                advancedInventorySection(summary: summary)
 
                 if summary.proxyCount == 0,
                    summary.proxyGroupCount == 0,
@@ -85,33 +75,34 @@ struct ProxiesView: View {
         )
     }
 
-    private func defaultExpandedGroupID(
-        _ groups: [ProxyGroupConfigurationSummary]
-    ) -> Int? {
-        groups.first { $0.strategy.lowercased() == "select" }?.id
-            ?? groups.first?.id
+    private func currentGroup(from groups: [ProxyGroupConfigurationSummary]) -> ProxyGroupConfigurationSummary? {
+        if let id = selectedGroupId, let found = groups.first(where: { $0.id == id }) {
+            return found
+        }
+        return defaultGroup(from: groups)
     }
 
-    private func proxyGroupSection(
-        _ groups: [ProxyGroupConfigurationSummary],
-        proxies: [ProxyConfigurationSummary]
-    ) -> some View {
+    private func defaultGroup(from groups: [ProxyGroupConfigurationSummary]) -> ProxyGroupConfigurationSummary? {
+        groups.first { $0.strategy.lowercased() == "select" } ?? groups.first
+    }
+
+    // MARK: - 顶部策略组胶囊 Tab 栏
+    private func proxyGroupTabBar(groups: [ProxyGroupConfigurationSummary]) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             HStack {
                 Text("Proxy groups")
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(.primary)
-                Text(
-                    String.localizedStringWithFormat(
-                        groups.count == 1
-                            ? AppLocalization.string("%lld group")
-                            : AppLocalization.string("%lld groups"),
-                        Int64(groups.count)
-                    )
-                )
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.primary)
+
+                Text("\(groups.count)")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
+
                 Spacer()
+
                 Button {
                     Task {
                         for group in groups where tunnel.isConnected {
@@ -122,212 +113,171 @@ struct ProxiesView: View {
                     Label("Test all", systemImage: "gauge.with.dots.needle.33percent")
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
                 .disabled(!tunnel.isConnected || !tunnel.proxyLatencyRequests.isEmpty)
                 .accessibilityIdentifier("test-all-proxy-groups")
             }
 
-            VStack(spacing: 0) {
-                ForEach(groups) { group in
-                    ProxyGroupDisclosure(
-                        group: group,
-                        protocols: Dictionary(
-                            uniqueKeysWithValues: proxies.map { ($0.name, $0.protocolName) }
-                        ),
-                        searchText: searchText,
-                        // Only the group you actually steer starts open. The
-                        // rest stay collapsed so a many-group profile still
-                        // fits on one screen.
-                        isExpandedByDefault: group.id == defaultExpandedGroupID(groups)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(groups) { group in
+                        let isSelected = (currentGroup(from: groups)?.id == group.id)
+                        let currentMember = tunnel.proxySelections[group.name]?.selectedMember
+
+                        Button {
+                            selectedGroupId = group.id
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: groupSymbol(group.strategy))
+                                    .font(.caption.weight(.semibold))
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    HStack(spacing: 4) {
+                                        Text(group.name)
+                                            .font(.subheadline.weight(isSelected ? .bold : .medium))
+                                            .lineLimit(1)
+                                        Text(group.strategy.uppercased())
+                                            .font(.system(size: 8, weight: .bold))
+                                            .padding(.horizontal, 3)
+                                            .padding(.vertical, 1)
+                                            .background(
+                                                (isSelected ? Color.white.opacity(0.25) : Color.secondary.opacity(0.15)),
+                                                in: RoundedRectangle(cornerRadius: 3)
+                                            )
+                                    }
+
+                                    if let currentMember {
+                                        Text(currentMember)
+                                            .font(.caption2)
+                                            .opacity(isSelected ? 0.9 : 0.6)
+                                            .lineLimit(1)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                            .background(
+                                isSelected
+                                    ? AnyShapeStyle(Color.accentColor)
+                                    : AnyShapeStyle(Color(nsColor: .controlBackgroundColor)),
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(
+                                        isSelected ? Color.clear : Color(nsColor: .separatorColor).opacity(0.5),
+                                        lineWidth: 0.5
+                                    )
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private func groupSymbol(_ strategy: String) -> String {
+        switch strategy.lowercased() {
+        case "select": return "square.stack.3d.up.fill"
+        case "url-test": return "bolt.horizontal.fill"
+        case "fallback": return "arrow.triangle.pull"
+        case "load-balance": return "scale.3d"
+        default: return "point.3.connected.trianglepath.dotted"
+        }
+    }
+
+    // MARK: - 高级节点底库与 Providers (折叠收起)
+    private func advancedInventorySection(summary: ProfileConfigurationSummary) -> some View {
+        DisclosureGroup(isExpanded: $showAdvancedInventory) {
+            VStack(alignment: .leading, spacing: AetherVisual.s4) {
+                if !summary.proxies.isEmpty {
+                    ProxyNodeInventory(
+                        proxies: summary.proxies,
+                        groups: summary.proxyGroups,
+                        searchText: searchText
                     )
-                    if group.id != groups.last?.id {
-                        Divider()
+                }
+
+                if !summary.proxyProviders.isEmpty {
+                    FeatureSection(title: "Providers", symbol: "shippingbox") {
+                        VStack(spacing: 0) {
+                            ForEach(summary.proxyProviders) { provider in
+                                ProviderRow(provider: provider)
+                                if provider.id != summary.proxyProviders.last?.id {
+                                    Divider().padding(.leading, AetherVisual.onboardingTopPadding)
+                                }
+                            }
+                        }
+                        .featureCard()
                     }
                 }
             }
-            .featureCard()
+            .padding(.top, AetherVisual.s3)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Raw Node Inventory & Providers")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(summary.proxyCount) endpoints")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
+        .padding(AetherVisual.s3)
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.5),
+            in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius)
+        )
     }
 }
 
-/// One collapsible group. Collapsed is the common case, so the closed row has
-/// to carry the current selection and its latency — collapsing must not mean
-/// hiding.
-private struct ProxyGroupDisclosure: View {
+// MARK: - 当前选中策略组视图
+private struct ActiveProxyGroupView: View {
     @EnvironmentObject private var tunnel: TunnelManager
-    @AppStorage private var isExpanded: Bool
     @State private var filter: ProxyNodeFilter = .all
     @State private var sort: ProxyNodeSort = .latency
-
     let group: ProxyGroupConfigurationSummary
     let protocols: [String: String]
     let searchText: String
+    @Binding var isGridView: Bool
 
     init(
         group: ProxyGroupConfigurationSummary,
         protocols: [String: String],
         searchText: String,
-        isExpandedByDefault: Bool
+        isGridView: Binding<Bool>
     ) {
         self.group = group
         self.protocols = protocols
         self.searchText = searchText
-        _isExpanded = AppStorage(
-            wrappedValue: isExpandedByDefault,
-            "proxy-group-expanded-\(group.name)"
-        )
+        self._isGridView = isGridView
     }
 
     var body: some View {
-        DisclosureGroup(isExpanded: effectiveExpansion) {
-            expandedContent
-                .padding(.horizontal, AetherVisual.s3)
-                .padding(.bottom, AetherVisual.s3)
-                .background(Color(nsColor: .windowBackgroundColor).opacity(0.55))
-        } label: {
-            collapsedSummary
-        }
-        .padding(.horizontal, AetherVisual.s3)
-        .frame(minHeight: 46)
-        .task(id: tunnel.isConnected) {
-            guard isManuallySelectable else { return }
-            await tunnel.refreshProxySelection(group: group.name)
-        }
-    }
-
-    /// A search hit forces the group open so results are never hidden behind a
-    /// collapsed row, without overwriting what the person chose manually.
-    private var effectiveExpansion: Binding<Bool> {
-        guard hasSearchMatch else { return $isExpanded }
-        return .constant(true)
-    }
-
-    private var hasSearchMatch: Bool {
-        guard !searchText.isEmpty else { return false }
-        return members.contains { $0.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    private var collapsedSummary: some View {
-        HStack(spacing: AetherVisual.s3) {
-            Image(systemName: groupSymbol)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 26, height: 26)
-                .background(
-                    Color.accentColor.opacity(0.08),
-                    in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius)
-                )
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text(group.name)
-                    .font(.body.weight(.medium))
-                    .lineLimit(1)
-                Text(
-                    String.localizedStringWithFormat(
-                        AppLocalization.string("%@ · %lld members"),
-                        group.strategy,
-                        Int64(group.memberCount)
-                    )
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            }
-
-            Spacer(minLength: AetherVisual.s3)
-
-            if let selected = selectedMember {
-                HStack(spacing: AetherVisual.s2) {
-                    Text(
-                        isAutomaticSelectionMode || !isManuallySelectable
-                            ? "Auto-selected"
-                            : "In use"
-                    )
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    ProxyLatencyBadge(
-                        status: status(for: selected),
-                        name: selected
-                    )
-                }
-            } else if !tunnel.isConnected {
-                Text("Not connected")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-    }
-
-    private var groupSymbol: String {
-        isManuallySelectable ? "square.stack.3d.up.fill" : "arrow.clockwise"
-    }
-
-    @ViewBuilder
-    private var expandedContent: some View {
-        if isManuallySelectable {
-            selectableContent
-        } else {
-            automaticContent
-        }
-
-        if let message = tunnel.proxySelectionMessages[group.name] {
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.red)
-                .padding(.top, AetherVisual.s2)
-        }
-    }
-
-    private var selectableContent: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: AetherVisual.s3) {
-                    selectionControl
-                    selectionExplanation
-                }
-                .fixedSize(horizontal: true, vertical: false)
+            // 1. 策略组模式与说明栏
+            groupModeHeader
 
-                VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                    selectionControl
-                    selectionExplanation
-                }
+            Divider()
+                .opacity(0.35)
+
+            // 2. 节点过滤与工具操作栏
+            nodeToolbar
+
+            if let message = tunnel.proxySelectionMessages[group.name] {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: AetherVisual.s2) {
-                    memberFilter
-                    Spacer(minLength: AetherVisual.s2)
-                    memberActions
-                }
-                .fixedSize(horizontal: true, vertical: false)
-
-                VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                    ViewThatFits(in: .horizontal) {
-                        memberFilter
-                        NativeFilterPicker(
-                            selection: $filter,
-                            options: ProxyNodeFilter.allCases,
-                            title: label(for:),
-                            accessibilityLabel: AppLocalization.string("Filter"),
-                            accessibilityIdentifier: "proxy-filter-picker-\(group.name)"
-                        )
-                    }
-                    HStack {
-                        Spacer(minLength: 0)
-                        memberActions
-                    }
-                }
-            }
-
-            if !tunnel.isConnected {
-                Label(
-                    "The selected node will be used on the next connection.",
-                    systemImage: "checkmark.circle"
-                )
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary)
-            }
-
+            // 3. 节点内容
             if visibleMembers.isEmpty {
                 FeatureEmptyState(
                     symbol: "line.3.horizontal.decrease.circle",
@@ -335,7 +285,11 @@ private struct ProxyGroupDisclosure: View {
                     detail: "Change the filter, or clear the search field."
                 )
             } else {
-                memberList
+                if isGridView {
+                    nodeGrid
+                } else {
+                    nodeList
+                }
 
                 HStack {
                     Text(
@@ -348,156 +302,235 @@ private struct ProxyGroupDisclosure: View {
                     Spacer()
                     Text(isTesting ? "Testing…" : "Latency results are local")
                 }
-                .font(.callout.weight(.medium))
-                .foregroundStyle(.primary)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
             }
+        }
+        .padding(AetherVisual.s4)
+        .aetherPanel()
+        .task(id: tunnel.isConnected) {
+            guard isManuallySelectable else { return }
+            await tunnel.refreshProxySelection(group: group.name)
         }
     }
 
-    private var selectionControl: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: AetherVisual.s3) {
-                selectionLabel
-                selectionPicker
-            }
-            .fixedSize(horizontal: true, vertical: false)
+    // MARK: - 策略组模式与状态信息顶栏
+    private var groupModeHeader: some View {
+        HStack(alignment: .center, spacing: AetherVisual.s3) {
+            if isManuallySelectable {
+                HStack(spacing: AetherVisual.s2) {
+                    Text("Selection mode")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
 
-            VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                selectionLabel
-                selectionPicker
-            }
-        }
-    }
-
-    private var selectionLabel: some View {
-        Text("Selection mode")
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.primary)
-    }
-
-    private var selectionPicker: some View {
-        Picker(
-            selection: Binding(
-                get: { isAutomaticSelectionMode },
-                set: { isAutomatic in
-                    Task {
-                        await tunnel.setProxySelectionAutomatic(
-                            group: group.name,
-                            isAutomatic: isAutomatic
+                    Picker(
+                        selection: Binding(
+                            get: { isAutomaticSelectionMode },
+                            set: { isAutomatic in
+                                Task {
+                                    await tunnel.setProxySelectionAutomatic(
+                                        group: group.name,
+                                        isAutomatic: isAutomatic
+                                    )
+                                }
+                            }
                         )
+                    ) {
+                        Text("Manual").tag(false)
+                        Text("Auto").tag(true)
+                    } label: {
+                        EmptyView()
                     }
+                    .pickerStyle(.segmented)
+                    .controlSize(.small)
+                    .frame(width: 120)
+                    .disabled(tunnel.proxySelectionRequests.contains(group.name))
+                    .accessibilityIdentifier("proxy-selection-mode-\(group.name)")
                 }
-            )
-        ) {
-            Text("Manual").tag(false)
-            Text("Automatic").tag(true)
-        } label: {
-            EmptyView()
-        }
-        .pickerStyle(.segmented)
-        .accessibilityLabel(Text("Selection mode"))
-        .fixedSize(horizontal: true, vertical: false)
-        .frame(minWidth: 190, alignment: .leading)
-        .disabled(tunnel.proxySelectionRequests.contains(group.name))
-        .accessibilityIdentifier("proxy-selection-mode-\(group.name)")
-    }
 
-    private var selectionExplanation: some View {
-        Text(
-            isAutomaticSelectionMode
-                ? "Retries the fastest available node"
-                : "Keeps the selected node pinned"
-        )
-        .font(.subheadline.weight(.medium))
-        .foregroundStyle(.primary)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var memberFilter: some View {
-        memberFilterPicker
-            .pickerStyle(.segmented)
-            .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private var memberFilterPicker: some View {
-        Picker("Filter", selection: $filter) {
-            ForEach(ProxyNodeFilter.allCases) { option in
-                Text(label(for: option)).tag(option)
-            }
-        }
-        .labelsHidden()
-        .accessibilityIdentifier("proxy-filter-picker-\(group.name)")
-    }
-
-    private var memberActions: some View {
-        HStack(spacing: AetherVisual.s2) {
-            Picker("Sort", selection: $sort) {
-                ForEach(ProxyNodeSort.allCases) { option in
-                    Text(option.localizedTitle).tag(option)
+                Text(
+                    isAutomaticSelectionMode
+                        ? "Retries the fastest available node"
+                        : "Keeps the selected node pinned"
+                )
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "bolt.horizontal.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.accentColor)
+                    Text(
+                        tunnel.isConnected
+                            ? "This group is automatically managed by latency tests."
+                            : "This automatic group is ready and will choose the fastest available node when you connect."
+                    )
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
                 }
             }
-            .labelsHidden()
-            .accessibilityIdentifier("proxy-sort-picker")
-            .frame(width: 108)
 
-            Button {
-                Task { await tunnel.testProxyLatency(group: group.name) }
-            } label: {
-                AetherProgressButtonLabel(
-                    "Test latency",
-                    isWorking: isTesting
+            Spacer()
+
+            if !tunnel.isConnected {
+                Label(
+                    "The selected node will be used on the next connection.",
+                    systemImage: "checkmark.circle"
+                )
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - 节点工具栏 (过滤 / 排序 / 测速 / 视图切换)
+    private var nodeToolbar: some View {
+        HStack(alignment: .center, spacing: AetherVisual.s3) {
+            // 左侧：轻量通透过滤 Tabs (宽屏 Pill Tabs，空间受限时自适应至原生 PopUpButton)
+            ViewThatFits(in: .horizontal) {
+                filterPills
+                    .fixedSize(horizontal: true, vertical: false)
+
+                NativeFilterPicker(
+                    selection: $filter,
+                    options: ProxyNodeFilter.allCases,
+                    title: label(for:),
+                    accessibilityLabel: AppLocalization.string("Filter"),
+                    accessibilityIdentifier: "proxy-filter-picker-\(group.name)"
                 )
             }
-            .buttonStyle(.bordered)
-            .fixedSize(horizontal: true, vertical: false)
-            .disabled(!tunnel.isConnected || isTesting)
-            .accessibilityIdentifier("proxy-test-latency-\(group.name)")
+
+            Spacer()
+
+            // 右侧：紧凑工具群组 (排序、测速、网格/列表视图切换)
+            HStack(spacing: AetherVisual.s2) {
+                Picker("Sort", selection: $sort) {
+                    ForEach(ProxyNodeSort.allCases) { option in
+                        Text(option.localizedTitle).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .labelsHidden()
+                .frame(width: 90)
+                .accessibilityIdentifier("proxy-sort-picker")
+
+                Button {
+                    Task { await tunnel.testProxyLatency(group: group.name) }
+                } label: {
+                    AetherProgressButtonLabel("Test latency", isWorking: isTesting)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!tunnel.isConnected || isTesting)
+                .accessibilityIdentifier("proxy-test-latency-\(group.name)")
+
+                Picker("", selection: $isGridView) {
+                    Image(systemName: "square.grid.2x2").tag(true)
+                    Image(systemName: "list.bullet").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .frame(width: 60)
+            }
         }
-        .fixedSize(horizontal: true, vertical: false)
     }
 
-    private var memberList: some View {
+    private var filterPills: some View {
+        HStack(spacing: 4) {
+            ForEach(ProxyNodeFilter.allCases) { option in
+                let isSelected = (filter == option)
+                let count = members.filter { option.accepts(status(for: $0)) && matchesSearch($0) }.count
+
+                Button {
+                    withAnimation(AetherVisual.quickFade) {
+                        filter = option
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(option.localizedTitle)
+                            .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
+                        Text("\(count)")
+                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            .padding(.horizontal, 4.5)
+                            .padding(.vertical, 1)
+                            .background(
+                                isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12),
+                                in: Capsule()
+                            )
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4.5)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .background(
+                        isSelected ? Color.accentColor.opacity(0.12) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.5),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+    }
+
+    // MARK: - 节点网格展示 (现代卡片布局)
+    private var nodeGrid: some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 270, maximum: 380), spacing: 12)],
+            spacing: 12
+        ) {
+            ForEach(visibleMembers, id: \.self) { member in
+                let isSelected = (member == selectedMember)
+                let isBusy = tunnel.proxySelectionRequests.contains(group.name)
+                let nodeStatus = status(for: member)
+                let proto = protocols[member] ?? "PROXY"
+
+                ProxyNodeModernCard(
+                    name: member,
+                    protocolName: proto,
+                    status: nodeStatus,
+                    isSelected: isSelected,
+                    isBusy: isBusy,
+                    canSelect: isManuallySelectable && !isAutomaticSelectionMode,
+                    onSelect: {
+                        Task {
+                            await tunnel.selectProxy(group: group.name, member: member)
+                        }
+                    },
+                    onTest: {
+                        Task {
+                            await tunnel.testProxyLatency(group: group.name)
+                        }
+                    }
+                )
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    // MARK: - 节点列表展示 (Table 兼容已有测试标识)
+    private var nodeList: some View {
         Table(memberRows) {
             TableColumn("Name") { row in
                 Button {
                     Task {
-                        await tunnel.selectProxy(
-                            group: group.name,
-                            member: row.member
-                        )
+                        await tunnel.selectProxy(group: group.name, member: row.member)
                     }
                 } label: {
                     Text(row.member)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(
-                    row.isBusy
-                        || !isManuallySelectable
-                        || isAutomaticSelectionMode
-                )
+                .disabled(row.isBusy || !isManuallySelectable || isAutomaticSelectionMode)
                 .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
-                .contextMenu {
-                    Button("Switch to this node") {
-                        Task {
-                            await tunnel.selectProxy(
-                                group: group.name,
-                                member: row.member
-                            )
-                        }
-                    }
-                    .disabled(
-                        !isManuallySelectable || isAutomaticSelectionMode
-                    )
-                    Button("Retest this group") {
-                        Task { await tunnel.testProxyLatency(group: group.name) }
-                    }
-                    .disabled(!tunnel.isConnected)
-                    Divider()
-                    Button("Copy node name") { copy(row.member) }
-                }
             }
             TableColumn("Protocol") { row in
                 Text(row.protocolName?.uppercased() ?? "—")
@@ -524,7 +557,7 @@ private struct ProxyGroupDisclosure: View {
         .accessibilityIdentifier("proxy-group-members-table")
         .scrollIndicators(.hidden, axes: .horizontal)
         .environment(\.defaultMinListRowHeight, 28)
-        .frame(height: min(CGFloat(memberRows.count * 28 + 34), 196))
+        .frame(height: min(CGFloat(memberRows.count * 28 + 34), 280))
     }
 
     private var memberRows: [ProxyMemberTableItem] {
@@ -541,32 +574,6 @@ private struct ProxyGroupDisclosure: View {
 
     private var isAutomaticSelectionMode: Bool {
         tunnel.automaticProxySelectionGroups.contains(group.name)
-    }
-
-    /// A url-test group is chosen by the core, so the expansion explains the
-    /// rule rather than offering a control that would be ignored.
-    private var automaticContent: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            Text(
-                tunnel.isConnected
-                    ? "This group is chosen by the protocol core from its own latency tests, so it cannot be set by hand. Expand a manual group to choose a node."
-                    : "This automatic group is ready and will choose the fastest available node when you connect."
-            )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            memberList
-
-            Button {
-                Task { await tunnel.testProxyLatency(group: group.name) }
-            } label: {
-                AetherProgressButtonLabel("Test latency", isWorking: isTesting)
-            }
-            .buttonStyle(.bordered)
-            .disabled(!tunnel.isConnected || isTesting)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func label(for option: ProxyNodeFilter) -> String {
@@ -602,20 +609,6 @@ private struct ProxyGroupDisclosure: View {
         }
     }
 
-    private enum ProxyNodeSort: String, CaseIterable, Identifiable {
-        case latency
-        case name
-
-        var id: Self { self }
-
-        var localizedTitle: String {
-            switch self {
-            case .latency: AppLocalization.string("By latency")
-            case .name: AppLocalization.string("By name")
-            }
-        }
-    }
-
     private func matchesSearch(_ member: String) -> Bool {
         searchText.isEmpty || member.localizedCaseInsensitiveContains(searchText)
     }
@@ -639,10 +632,159 @@ private struct ProxyGroupDisclosure: View {
             isTesting: isTesting
         )
     }
+}
 
-    private func copy(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
+// MARK: - 现代节点卡片组件 (对标 Clash Verge Rev & Surge 5 Mac)
+private struct ProxyNodeModernCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let name: String
+    let protocolName: String
+    let status: ProxyLatencyStatus
+    let isSelected: Bool
+    let isBusy: Bool
+    let canSelect: Bool
+    let onSelect: () -> Void
+    let onTest: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        let flagInfo = AetherRegionFlag.flagAndRegion(from: name)
+
+        Button {
+            if canSelect && !isBusy {
+                onSelect()
+            }
+        } label: {
+            HStack(spacing: 10) {
+                // 左侧 Accent Bar 指示 (仅在选中时点亮，未选中透明占位保持整齐对齐)
+                Capsule()
+                    .fill(isSelected ? Color.accentColor : Color.clear)
+                    .frame(width: 3.5, height: 34)
+
+                // 节点图标：匹配国旗或协议科技微晶
+                AetherNodeIcon(name: name, protocolName: protocolName, size: 28)
+
+                // 中间信息：节点名 (单行不折行) + 协议徽标与状态
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(name)
+                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                        .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.9))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(name)
+
+                    HStack(spacing: 6) {
+                        AetherProtocolBadge(type: protocolName)
+
+                        if isSelected {
+                            HStack(spacing: 3.5) {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 5, height: 5)
+                                Text(AppLocalization.string("Active"))
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Color.green)
+                            }
+                        } else {
+                            Text(flagInfo.region)
+                                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary.opacity(0.8))
+                        }
+                    }
+                }
+
+                Spacer(minLength: 4)
+
+                // 右侧延迟测速胶囊
+                AetherLatencyPill(
+                    latency: latencyMs,
+                    isTesting: status == .testing,
+                    onTap: onTest
+                )
+            }
+            .padding(.leading, 6)
+            .padding(.trailing, 10)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(name)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .disabled(!canSelect || isBusy)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(cardBackground)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(cardBorder, lineWidth: isSelected ? 1.0 : (isHovered ? 0.8 : 0.5))
+        }
+        .shadow(
+            color: isSelected
+                ? Color.accentColor.opacity(colorScheme == .dark ? 0.20 : 0.12)
+                : (isHovered ? Color.black.opacity(colorScheme == .dark ? 0.20 : 0.06) : Color.clear),
+            radius: isSelected ? 5 : 3,
+            y: isSelected ? 1.5 : 1
+        )
+        .animation(AetherVisual.gentleSpring, value: isHovered)
+        .animation(AetherVisual.gentleSpring, value: isSelected)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .contextMenu {
+            Button("Switch to this node") { onSelect() }
+                .disabled(!canSelect || isBusy)
+            Button("Retest group") { onTest() }
+            Divider()
+            Button("Copy node name") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(name, forType: .string)
+            }
+        }
+    }
+
+    private var cardBackground: Color {
+        if isSelected {
+            return Color.accentColor.opacity(colorScheme == .dark ? 0.12 : 0.07)
+        }
+        if isHovered {
+            return Color(nsColor: .controlBackgroundColor).opacity(0.95)
+        }
+        return Color(nsColor: .controlBackgroundColor).opacity(0.65)
+    }
+
+    private var cardBorder: Color {
+        if isSelected {
+            return Color.accentColor.opacity(colorScheme == .dark ? 0.6 : 0.45)
+        }
+        if isHovered {
+            return Color.accentColor.opacity(0.35)
+        }
+        return Color(nsColor: .separatorColor).opacity(colorScheme == .dark ? 0.45 : 0.25)
+    }
+
+    private var latencyMs: Int? {
+        if case let .responded(ms) = status {
+            return Int(ms)
+        }
+        return nil
+    }
+}
+
+// MARK: - 排序与状态模型
+private enum ProxyNodeSort: String, CaseIterable, Identifiable {
+    case latency
+    case name
+
+    var id: Self { self }
+
+    var localizedTitle: String {
+        switch self {
+        case .latency: AppLocalization.string("By latency")
+        case .name: AppLocalization.string("By name")
+        }
     }
 }
 
@@ -656,8 +798,6 @@ private struct ProxyMemberTableItem: Identifiable {
     var id: String { member }
 }
 
-/// The status dot plus its text. The text is what makes this readable without
-/// colour vision, so it is never dropped.
 private struct ProxyLatencyBadge: View {
     let status: ProxyLatencyStatus
     let name: String?
@@ -701,8 +841,6 @@ private struct ProxyLatencyBadge: View {
     }
 }
 
-/// The node inventory answers availability, not speed. A node the core rejects
-/// cannot be rescued by a faster measurement, so this table never shows latency.
 private struct ProxyNodeInventory: View {
     let proxies: [ProxyConfigurationSummary]
     let groups: [ProxyGroupConfigurationSummary]

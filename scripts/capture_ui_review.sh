@@ -62,7 +62,7 @@ trap 'exit 143' TERM
 copy_review_workspace() {
   mkdir -p "$ROOT"
   for item in \
-    .github .gitmodules .tools Artifacts/Validation CHANGELOG.md CONTRIBUTING.md \
+    .github .gitmodules .tools AetherRoute.xcodeproj Artifacts/Validation CHANGELOG.md CONTRIBUTING.md \
     Config Docs Licenses README.md SECURITY.md Services Sources Tests \
     project.yml scripts
   do
@@ -71,6 +71,10 @@ copy_review_workspace() {
   mkdir -p "$ROOT/Core"
   rsync -a --exclude '/Engine/target/' \
     "$REPOSITORY_ROOT/Core/" "$ROOT/Core/"
+  if [ -d "$REPOSITORY_ROOT/.git/modules/Core/Engine" ]; then
+    mkdir -p "$ROOT/.git/modules/Core"
+    rsync -a "$REPOSITORY_ROOT/.git/modules/Core/Engine" "$ROOT/.git/modules/Core/"
+  fi
 }
 
 "$REPOSITORY_ROOT/scripts/source_manifest.sh" \

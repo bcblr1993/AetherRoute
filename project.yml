@@ -246,6 +246,10 @@ targets:
         basedOnDependencyAnalysis: false
     sources:
       - path: Sources/AetherRouteApp
+        excludes:
+          - "AppIcon.icon"
+      - path: Config/App/AppIcon.icns
+        buildPhase: resources
       - path: Config/App/PrivacyInfo.xcprivacy
         buildPhase: resources
       - path: Config/App/en.lproj/AetherRouteSourceLanguage.strings

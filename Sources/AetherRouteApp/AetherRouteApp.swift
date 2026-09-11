@@ -394,6 +394,22 @@ struct AetherRouteApp: App {
                 )
                 .disabled(!tunnel.canCycleManualProxySelection)
             }
+
+            CommandMenu("Proxy") {
+                Button("Copy Terminal Export Command") {
+                    let command = "export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 all_proxy=socks5://127.0.0.1:7890"
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(command, forType: .string)
+                }
+                .keyboardShortcut("c", modifiers: [.command, .control])
+
+                Button("Copy Terminal Unset Command") {
+                    let command = "unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY"
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(command, forType: .string)
+                }
+                .keyboardShortcut("u", modifiers: [.command, .control])
+            }
         }
     }
 
@@ -419,6 +435,8 @@ private struct MenuBarContent: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @EnvironmentObject private var language: AppLanguageController
     @Environment(\.openWindow) private var openWindow
+    @State private var copiedTerminalCommand: Bool = false
+    @State private var clearedTerminalCommand: Bool = false
     let telemetry: NetworkTelemetryViewModel
 
     var body: some View {
@@ -435,60 +453,108 @@ private struct MenuBarContent: View {
 
     private var readyContent: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // 1. 顶部品牌与连接状态指示
             HStack(spacing: AetherVisual.s3) {
-                AetherRouteBrandTile(
-                    size: 38,
-                    isActive: tunnel.isConnected
-                )
+                AetherRouteBrandTile(size: 32, isActive: tunnel.isConnected)
 
-                VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    Text(tunnel.statusTitle)
-                        .font(.headline)
-                    Text(tunnel.statusDetail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 5) {
+                        Text("AetherRoute")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.primary)
+
+                        AetherStatusBeacon(
+                            isConnected: tunnel.isConnected,
+                            isConnecting: tunnel.state == .connecting,
+                            size: 6
+                        )
+                    }
+
+                    Text(tunnel.isConnected ? AppLocalization.string("Tunnel Protected") : tunnel.statusTitle)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(tunnel.isConnected ? Color.green : Color.secondary)
                         .lineLimit(1)
                 }
                 Spacer()
+
+                // 快捷主开关
+                Button {
+                    Task { await tunnel.setEnabled(!tunnel.isEnabled) }
+                } label: {
+                    Image(systemName: "power")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(tunnel.isConnected ? Color.green : Color.secondary)
+                        .padding(7)
+                        .background(
+                            (tunnel.isConnected ? Color.green.opacity(0.15) : Color.secondary.opacity(0.12)),
+                            in: Circle()
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!tunnel.canPerformPrimaryAction)
+                .help(tunnel.primaryActionTitle)
             }
-            .padding(AetherVisual.s4)
+            .padding(.horizontal, AetherVisual.s4)
+            .padding(.top, AetherVisual.s3 + 2)
+            .padding(.bottom, AetherVisual.s2 + 2)
 
-            Divider()
+            Divider().opacity(0.4)
 
+            // 2. 实时速率双胶囊
             if tunnel.isConnected {
-                HStack(spacing: AetherVisual.s4) {
-                    MenuLiveTrafficMetric(
-                        title: "Download",
-                        symbol: "arrow.down",
-                        metric: .download,
-                        telemetry: telemetry
-                    )
-                    MenuLiveTrafficMetric(
-                        title: "Upload",
-                        symbol: "arrow.up",
-                        metric: .upload,
-                        telemetry: telemetry
-                    )
-                    MenuLiveTrafficMetric(
-                        title: "Flows",
-                        symbol: "point.3.connected.trianglepath.dotted",
-                        metric: .connections,
-                        telemetry: telemetry
-                    )
+                HStack(spacing: 8) {
+                    // 下行
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color.cyan)
+                        Text(formatSpeed(telemetry.snapshot.downloadBytesPerSecond))
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.primary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+
+                    // 上行
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color.purple)
+                        Text(formatSpeed(telemetry.snapshot.uploadBytesPerSecond))
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.primary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+
+                    Spacer()
+
+                    // 连接数
+                    HStack(spacing: 3) {
+                        Image(systemName: "point.3.connected.trianglepath.dotted")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                        Text("\(telemetry.snapshot.connections.count)")
+                            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .padding(.horizontal, AetherVisual.s4)
-                .padding(.vertical, AetherVisual.s3)
+                .padding(.vertical, AetherVisual.s2 + 2)
 
-                Divider()
+                Divider().opacity(0.4)
             }
 
+            // 3. 核心控制与节点选择
             VStack(spacing: AetherVisual.s3) {
 #if AETHERROUTE_INDEPENDENT
                 HStack(spacing: AetherVisual.s2) {
-                    Text("Engine")
+                    Text(AppLocalization.string("Engine"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .frame(width: 58, alignment: .leading)
+                        .frame(width: 52, alignment: .leading)
                     Picker("Network engine", selection: networkEngineBinding) {
                         ForEach(NetworkEngineMode.allCases) { mode in
                             Text(mode.localizedTitleKey).tag(mode)
@@ -496,15 +562,16 @@ private struct MenuBarContent: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
+                    .controlSize(.small)
                     .disabled(!tunnel.canChangeNetworkEngine)
                 }
 #endif
 
                 HStack(spacing: AetherVisual.s2) {
-                    Text("Routing")
+                    Text(AppLocalization.string("Routing"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .frame(width: 58, alignment: .leading)
+                        .frame(width: 52, alignment: .leading)
                     Picker(
                         "Routing",
                         selection: Binding(
@@ -520,7 +587,105 @@ private struct MenuBarContent: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
+                    .controlSize(.small)
                     .disabled(!tunnel.canChangeRoutingMode)
+                }
+
+                if let summary = tunnel.activeProfileSummary,
+                   let primaryGroup = summary.proxyGroups.first(where: { $0.strategy.lowercased() == "select" }) ?? summary.proxyGroups.first {
+                    let currentMember = tunnel.proxySelections[primaryGroup.name]?.selectedMember ?? "Auto"
+                    let flagInfo = AetherRegionFlag.flagAndRegion(from: currentMember)
+
+                    HStack(spacing: AetherVisual.s2) {
+                        Text(AppLocalization.string("Node"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 52, alignment: .leading)
+
+                        Menu {
+                            let displayMembers = Array(primaryGroup.members.prefix(16))
+                            ForEach(displayMembers, id: \.self) { member in
+                                Button {
+                                    Task { await tunnel.selectProxy(group: primaryGroup.name, member: member) }
+                                } label: {
+                                    let itemFlag = AetherRegionFlag.flagAndRegion(from: member)
+                                    if member == currentMember {
+                                        Label("\(itemFlag.flag) \(member)", systemImage: "checkmark")
+                                    } else {
+                                        Text("\(itemFlag.flag) \(member)")
+                                    }
+                                }
+                            }
+                            if primaryGroup.members.count > 16 {
+                                Divider()
+                                Text("+\(primaryGroup.members.count - 16) more nodes")
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(flagInfo.flag)
+                                    .font(.system(size: 12))
+                                Text(currentMember)
+                                    .font(.system(size: 11.5, weight: .medium))
+                                    .lineLimit(1)
+                                Spacer()
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                        }
+                        .menuStyle(.borderlessButton)
+                    }
+                }
+
+                HStack(spacing: AetherVisual.s2) {
+                    Button {
+                        let command = "export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 all_proxy=socks5://127.0.0.1:7890"
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(command, forType: .string)
+                        copiedTerminalCommand = true
+                        Task {
+                            try? await Task.sleep(nanoseconds: 2_000_000_000)
+                            copiedTerminalCommand = false
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: copiedTerminalCommand ? "checkmark.circle.fill" : "terminal")
+                                .foregroundStyle(copiedTerminalCommand ? Color.green : Color.primary)
+                            Text(copiedTerminalCommand ? AppLocalization.string("Copied") : AppLocalization.string("Copy Proxy"))
+                                .lineLimit(1)
+                        }
+                        .font(.caption)
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("copy-terminal-proxy-button")
+
+                    Button {
+                        let command = "unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY"
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(command, forType: .string)
+                        clearedTerminalCommand = true
+                        Task {
+                            try? await Task.sleep(nanoseconds: 2_000_000_000)
+                            clearedTerminalCommand = false
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: clearedTerminalCommand ? "checkmark.circle.fill" : "terminal.fill")
+                                .foregroundStyle(clearedTerminalCommand ? Color.green : Color.primary)
+                            Text(clearedTerminalCommand ? AppLocalization.string("Cleared") : AppLocalization.string("Clear Proxy"))
+                                .lineLimit(1)
+                        }
+                        .font(.caption)
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("clear-terminal-proxy-button")
                 }
 
                 Button {
@@ -535,19 +700,28 @@ private struct MenuBarContent: View {
             }
             .padding(AetherVisual.s4)
 
-            Divider()
+            Divider().opacity(0.4)
 
             HStack {
-                Button("Open AetherRoute") {
+                Button(AppLocalization.string("Open AetherRoute")) {
                     openWindow(id: "main")
                     NSApplication.shared.activate()
                 }
                 Spacer()
-                Button("Quit") { NSApplication.shared.terminate(nil) }
+                Button(AppLocalization.string("Quit")) { NSApplication.shared.terminate(nil) }
             }
             .buttonStyle(.borderless)
-            .padding(AetherVisual.s3)
+            .font(.caption)
+            .padding(.horizontal, AetherVisual.s4)
+            .padding(.vertical, AetherVisual.s2 + 2)
         }
+    }
+
+    private func formatSpeed(_ bytesPerSecond: UInt64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useAll]
+        formatter.countStyle = .memory
+        return "\(formatter.string(fromByteCount: Int64(bytesPerSecond)))/s"
     }
 
 #if AETHERROUTE_INDEPENDENT

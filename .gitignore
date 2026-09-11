@@ -31,3 +31,6 @@ Services/DistributionService/private/
 Services/DistributionService/runtime/
 Services/DistributionService/*.raw
 Services/DistributionService/licenses*.json
+
+# Distribution build directories
+dist/AetherRoute-*-build-*

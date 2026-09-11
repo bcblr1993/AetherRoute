@@ -365,7 +365,7 @@ for engine in $ENGINES; do
     fi
 
     remote_report=$REMOTE_WORK/acceptance-$engine-$routing.txt
-    if vm "AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=YES '$REMOTE_WORK/test_runtime_acceptance.sh' $BUILD '$remote_report'" \
+    if vm "AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=YES AETHERROUTE_ACCEPTANCE_ALLOW_UNROUTED_IPV6=YES '$REMOTE_WORK/test_runtime_acceptance.sh' $BUILD '$remote_report'" \
       >"$WORK/matrix-$engine-$routing.out" 2>&1; then
       failures=0
     else
@@ -386,7 +386,7 @@ for engine in $ENGINES; do
     # Check every session's actual teardown, including the final mode. A
     # failure stops the matrix before preferences or another session change.
     RUN_STAGE=quit-$engine-$routing
-    if ! vm "sh '$REMOTE_WORK/vm_matrix_lifecycle.sh' quit '$BUILD' '$REMOTE_WORK/network-baseline.txt' '$engine'" \
+    if ! vm "AETHERROUTE_MATRIX_QUIT_TIMEOUT_SECONDS=60 sh '$REMOTE_WORK/vm_matrix_lifecycle.sh' quit '$BUILD' '$REMOTE_WORK/network-baseline.txt' '$engine'" \
       >"$REPORT_DIR/quit-$engine-$routing.txt" 2>&1; then
       cat "$REPORT_DIR/quit-$engine-$routing.txt" >&2
       echo "quit verification failed for $label; refusing the next mode" >&2

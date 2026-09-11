@@ -294,6 +294,56 @@ final class ProfileSubscriptionTests: XCTestCase {
         XCTAssertNil(profile.subscription)
     }
 
+    func testUserAgentIncludesModernMetaAndVergeKeywordsAndOmitsLegacyCFW() {
+        let ua = ProfileSubscriptionClient.userAgent
+        XCTAssertTrue(ua.contains("clash-verge"))
+        XCTAssertTrue(ua.contains("ClashMeta"))
+        XCTAssertFalse(ua.localizedCaseInsensitiveContains("ClashforWindows"))
+    }
+
+    func testFallbackToMetaFlagWhenResponseDegradesToSingleNode() async throws {
+        let originalURL = try XCTUnwrap(URL(string: "https://airport.example/sub?token=abc"))
+        let metaURL = try XCTUnwrap(URL(string: "https://airport.example/sub?token=abc&flag=meta"))
+        let singleNodeBase64 = Data("ss://YWVzLTEyOC1nY206cGFzc3dvcmRAZXhhbXBsZS5jb206NDQz#SingleNode".utf8).base64EncodedData()
+        let fullYamlData = Self.validProfileData()
+
+        let client = ProfileSubscriptionClient(
+            transport: { request in
+                if request.url == originalURL {
+                    return ProfileSubscriptionHTTPResponse(
+                        data: singleNodeBase64,
+                        statusCode: 200,
+                        finalURL: originalURL,
+                        headers: [:]
+                    )
+                } else if request.url == metaURL {
+                    return ProfileSubscriptionHTTPResponse(
+                        data: fullYamlData,
+                        statusCode: 200,
+                        finalURL: metaURL,
+                        headers: [:]
+                    )
+                }
+                throw ProfileSubscriptionError.invalidURL
+            }
+        )
+
+        let subscription = try ProfileSubscription(url: originalURL)
+        let update = try await client.fetch(subscription)
+        guard case let .updated(data, _, report) = update else {
+            XCTFail("Expected updated profile")
+            return
+        }
+        XCTAssertEqual(data, fullYamlData)
+        XCTAssertNil(report.usableNodeCount)
+    }
+
+    func testDirectConnectionBypassesSystemProxy() {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.connectionProxyDictionary = [:]
+        XCTAssertEqual(configuration.connectionProxyDictionary?.isEmpty, true)
+    }
+
     private static func validProfileData() -> Data {
         Data(
             """

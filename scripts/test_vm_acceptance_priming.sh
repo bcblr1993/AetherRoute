@@ -60,8 +60,10 @@ elif name=='ssh':
     elif cmd.startswith('grep -aq "qaAutomation autoConnect"'): pass
     elif cmd.startswith('sh ') and 'prime-extensions.sh' in cmd:
         raise SystemExit(subprocess.run(['sh',str(base/'remote/prime-extensions.sh'),'2026090501'],env=os.environ).returncode)
-    elif cmd.startswith('sh ') and 'vm_matrix_lifecycle.sh' in cmd:
-        if ' baseline ' in cmd:
+    elif 'vm_matrix_lifecycle.sh' in cmd:
+        if 'for i in $(seq 1 30); do' in cmd or ' ready ' in cmd:
+            pass
+        elif ' baseline ' in cmd:
             event('baseline')
             if state['case']=='baseline-fails': raise SystemExit(1)
         elif ' quit ' in cmd:
@@ -71,7 +73,7 @@ elif name=='ssh':
             state['app']=False
             # An idle provider remains resident across the mode change.
             state['provider']=True; save()
-        else: raise SystemExit('unexpected lifecycle operation')
+        else: raise SystemExit('unexpected lifecycle operation: '+cmd)
     elif cmd.startswith('for path in /tmp/candidate.zip'): pass
     elif cmd.startswith("find '/tmp/aetherroute-vm-matrix."):
         for child in (base/'remote').iterdir(): child.unlink()

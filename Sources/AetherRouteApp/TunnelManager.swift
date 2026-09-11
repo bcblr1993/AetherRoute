@@ -170,10 +170,22 @@ private enum ProductionStartupLoader {
 @MainActor
 final class NetworkTelemetryViewModel: ObservableObject {
     @Published private(set) var snapshot: NetworkTelemetrySnapshot = .empty
+    @Published private(set) var downloadHistory: [Double] = Array(repeating: 0, count: 30)
+    @Published private(set) var uploadHistory: [Double] = Array(repeating: 0, count: 30)
 
     func update(_ snapshot: NetworkTelemetrySnapshot) {
         guard snapshot != self.snapshot else { return }
         self.snapshot = snapshot
+
+        var down = downloadHistory
+        down.append(Double(snapshot.downloadBytesPerSecond))
+        if down.count > 30 { down.removeFirst() }
+        downloadHistory = down
+
+        var up = uploadHistory
+        up.append(Double(snapshot.uploadBytesPerSecond))
+        if up.count > 30 { up.removeFirst() }
+        uploadHistory = up
     }
 }
 
@@ -582,6 +594,7 @@ final class TunnelManager: ObservableObject {
                 )
             }
             systemExtensionApprovalRequired = false
+            await deactivateOpposingNetworkEngineManagers(for: networkEngineMode)
             installManager(try await loadOrCreateManager())
             observeConfigurationChanges()
             updateState()
@@ -612,6 +625,18 @@ final class TunnelManager: ObservableObject {
     /// Both gates are required. Neither is reachable from a shipped build.
     private func connectForQAAutomationIfRequested() async {
 #if AETHERROUTE_QA_AUTOMATION
+        if let localPath = qaAutomationEnvironment["AETHERROUTE_QA_PROFILE_PATH"], !localPath.isEmpty {
+            let fileURL = URL(fileURLWithPath: localPath)
+            Self.runtimeLogger.info(
+                "stage=qaAutomation localProfile requested path=\(localPath, privacy: .public)"
+            )
+            importProfile(from: fileURL)
+        } else if let subURL = qaAutomationEnvironment["AETHERROUTE_QA_SUBSCRIPTION_URL"], !subURL.isEmpty {
+            Self.runtimeLogger.info(
+                "stage=qaAutomation autoImport requested url=\(subURL, privacy: .public)"
+            )
+            _ = await addSubscription(urlText: subURL)
+        }
         guard qaAutomationEnvironment["AETHERROUTE_QA_AUTOCONNECT"] == "1",
               state == .disconnected else { return }
         Self.runtimeLogger.info(
@@ -2491,6 +2516,10 @@ final class TunnelManager: ObservableObject {
 
     func handleExternalURL(_ url: URL) {
         externalSubscriptionLinkError = nil
+        if url.isFileURL {
+            importProfile(from: url)
+            return
+        }
         do {
             pendingExternalSubscription = try ExternalSubscriptionLinkParser
                 .parse(url)
@@ -2570,6 +2599,9 @@ final class TunnelManager: ObservableObject {
         guard let request = pendingExternalSubscription,
               request.id == id else {
             return false
+        }
+        if !hasAcceptedPrivacyDisclosure {
+            await acceptPrivacyDisclosure()
         }
         guard await addSubscription(
             urlText: request.subscriptionURL.absoluteString
@@ -3353,7 +3385,11 @@ final class TunnelManager: ObservableObject {
 
     var canModifyProfiles: Bool {
         hasAcceptedPrivacyDisclosure
-            && !isEnabled
+            && canModifyProfilesRegardlessOfPrivacy
+    }
+
+    var canModifyProfilesRegardlessOfPrivacy: Bool {
+        !isEnabled
             && !isTransitioning
             && !isRefreshingSubscription
             && !isImportingProfile
@@ -3683,6 +3719,44 @@ final class TunnelManager: ObservableObject {
             throw TunnelManagerError.duplicateConfigurations
         }
         return matching.first
+    }
+
+    private func deactivateOpposingNetworkEngineManagers(
+        for activeMode: NetworkEngineMode
+    ) async {
+        do {
+            let opposingManagers: [NEVPNManager] = switch activeMode {
+            case .transparent:
+#if AETHERROUTE_INDEPENDENT
+                try await NETunnelProviderManager.loadAllFromPreferences().map { $0 }
+#else
+                []
+#endif
+#if AETHERROUTE_INDEPENDENT
+            case .tun:
+                try await NETransparentProxyManager.loadAllFromPreferences().map { $0 }
+#endif
+            }
+            for opposing in opposingManagers {
+                if opposing.connection.status != .disconnected && opposing.connection.status != .invalid {
+                    Self.runtimeLogger.info(
+                        "stage=deactivateOpposing stopVPNTunnel opposing=\(opposing.description, privacy: .public)"
+                    )
+                    opposing.connection.stopVPNTunnel()
+                }
+                if opposing.isEnabled {
+                    Self.runtimeLogger.info(
+                        "stage=deactivateOpposing disable opposing=\(opposing.description, privacy: .public)"
+                    )
+                    opposing.isEnabled = false
+                    try? await opposing.saveToPreferences()
+                }
+            }
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=deactivateOpposing failed reason=\(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     private func installManager(_ manager: NEVPNManager) {
