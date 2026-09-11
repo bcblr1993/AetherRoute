@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="AetherRoute 是面向 Apple 芯片 Mac 的原生私密路由客户端，支持透明代理、TUN、规则路由、订阅导入与现代代理协议，并采用 Developer ID 签名和 Apple 公证独立分发。">
-  <meta name="theme-color" content="#0874f8">
+  <meta name="theme-color" content="#0071e3">
   <meta property="og:type" content="website">
   <meta property="og:title" content="AetherRoute — 为 Mac 精心设计的私密路由">
-  <meta property="og:description" content="原生 Swift 界面、透明代理与 TUN、现代协议和严格的本地隐私边界。">
-  <meta property="og:image" content="https://aetherroute.baizhiedu.xin/assets/aetherroute-overview-zh.png">
+  <meta property="og:description" content="原生 Swift 6 界面、透明代理与 TUN 双引擎、现代协议和硬件级 Keychain 本地隐私边界。">
+  <meta property="og:image" content="https://aetherroute.pages.dev/assets/aetherroute-overview-zh.png">
   <title>AetherRoute — 为 Mac 精心设计的私密路由</title>
   <link rel="icon" href="/assets/aetherroute-mark.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/assets/favicon.png" type="image/png">
@@ -19,11 +19,16 @@
 </head>
 <body>
   <a class="skip-link" href="#content">Skip to content / 跳到正文</a>
+  
   <header class="site-header">
     <nav class="nav" aria-label="Primary navigation">
-      <a class="brand" href="/"><img src="/assets/aetherroute-mark.svg" alt=""><span>AetherRoute</span></a>
+      <a class="brand" href="/">
+        <img src="/assets/aetherroute-mark.png" alt="AetherRoute Logo" width="38" height="38">
+        <span>AetherRoute</span>
+      </a>
       <div class="nav-links">
-        <a href="#features"><span data-lang="zh">功能</span><span data-lang="en">Features</span></a>
+        <a href="#features"><span data-lang="zh">特性</span><span data-lang="en">Features</span></a>
+        <a href="#protocols"><span data-lang="zh">协议</span><span data-lang="en">Protocols</span></a>
         <a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a>
         <a href="/support/"><span data-lang="zh">支持</span><span data-lang="en">Support</span></a>
         <a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a>
@@ -69,18 +74,18 @@
         </div>
         <div class="tour-grid">
           <figure class="screen-card">
-            <div class="screen-media light-media">
+            <div class="screen-media dark-media">
               <img data-localized-image src="/assets/aetherroute-profiles-zh.png" data-src-zh="/assets/aetherroute-profiles-zh.png" data-src-en="/assets/aetherroute-profiles-en.png" data-alt-zh="AetherRoute 中文配置管理真实界面，包含添加节点、导入配置、添加订阅与加密配置库" data-alt-en="The real AetherRoute Profiles interface with node creation, config import, subscriptions, and encrypted profile storage" width="1500" height="1012" loading="lazy" alt="AetherRoute 中文配置管理真实界面，包含添加节点、导入配置、添加订阅与加密配置库">
               <noscript><img src="/assets/aetherroute-profiles-zh.png" width="1500" height="1012" loading="lazy" alt="AetherRoute 中文配置管理真实界面"></noscript>
             </div>
-            <figcaption><strong><span data-lang="zh">配置与订阅</span><span data-lang="en">Profiles and subscriptions</span></strong><span><span data-lang="zh">添加单个节点、导入本地 YAML 或订阅地址；无效节点会被隔离报告，不阻断其余有效节点导入。</span><span data-lang="en">Add individual nodes, import local YAML, or use a subscription URL. Invalid entries are isolated and reported without blocking valid nodes.</span></span></figcaption>
+            <figcaption><strong><span data-lang="zh">配置与订阅管理</span><span data-lang="en">Profiles and subscriptions</span></strong><span><span data-lang="zh">添加单个节点、导入本地 YAML 或订阅地址；无效节点会被隔离报告，不阻断其余有效节点导入。</span><span data-lang="en">Add individual nodes, import local YAML, or use a subscription URL. Invalid entries are isolated and reported without blocking valid nodes.</span></span></figcaption>
           </figure>
           <figure class="screen-card">
             <div class="screen-media dark-media">
               <img data-localized-image src="/assets/aetherroute-settings-zh.png" data-src-zh="/assets/aetherroute-settings-zh.png" data-src-en="/assets/aetherroute-settings-en.png" data-alt-zh="AetherRoute 中文设置真实界面，显示语言、TUN、规则路由和仅监听本机的 HTTP 与 SOCKS5 代理端口" data-alt-en="The real AetherRoute Settings interface showing language, network engine, routing mode, and loopback-only HTTP and SOCKS5 proxy ports" width="1500" height="1012" loading="lazy" alt="AetherRoute 中文设置真实界面，显示语言、TUN、规则路由和仅监听本机的 HTTP 与 SOCKS5 代理端口">
               <noscript><img src="/assets/aetherroute-settings-zh.png" width="1500" height="1012" loading="lazy" alt="AetherRoute 中文设置真实界面"></noscript>
             </div>
-            <figcaption><strong><span data-lang="zh">网络与语言设置</span><span data-lang="en">Network and language settings</span></strong><span><span data-lang="zh">在透明代理和 TUN 之间切换，选择规则、全局或直连模式；本地 HTTP 与 SOCKS5 端口只绑定 127.0.0.1，不自动改写 macOS 系统代理。</span><span data-lang="en">Switch between Transparent Proxy and TUN, then choose Rule, Global, or Direct routing. Local HTTP and SOCKS5 ports bind only to 127.0.0.1 and never rewrite the macOS system proxy automatically.</span></span></figcaption>
+            <figcaption><strong><span data-lang="zh">网络引擎与系统偏好</span><span data-lang="en">Network and language settings</span></strong><span><span data-lang="zh">在透明代理和 TUN 之间切换，选择规则、全局或直连模式；本地 HTTP 与 SOCKS5 端口只绑定 127.0.0.1，不自动改写 macOS 系统代理。</span><span data-lang="en">Switch between Transparent Proxy and TUN, then choose Rule, Global, or Direct routing. Local HTTP and SOCKS5 ports bind only to 127.0.0.1 and never rewrite the macOS system proxy automatically.</span></span></figcaption>
           </figure>
         </div>
         <p class="screenshot-disclosure"><span data-lang="zh">界面截图使用测试数据演示连接状态，不包含真实订阅、服务器地址、密钥或个人信息。</span><span data-lang="en">Screenshots use test data to demonstrate product states and contain no real subscriptions, server addresses, keys, or personal information.</span></p>
@@ -90,29 +95,69 @@
     <section class="section" id="features">
       <div class="shell">
         <div class="section-heading">
-          <span class="status-pill"><span data-lang="zh">macOS 原生体验</span><span data-lang="en">A native macOS experience</span></span>
-          <h2><span data-lang="zh">少一点干扰，<br>多一点掌控。</span><span data-lang="en">Less friction.<br>More control.</span></h2>
+          <span class="status-pill"><span data-lang="zh">macOS 原生架构</span><span data-lang="en">A native macOS experience</span></span>
+          <h2><span data-lang="zh">专为 Mac 打造，<br>少一点干扰，多一点掌控。</span><span data-lang="en">Built for Mac.<br>Less friction, more control.</span></h2>
           <p><span data-lang="zh">界面、生命周期、设置和网络扩展均使用 Apple 平台技术构建；协议核心被严格限制在数据平面内。</span><span data-lang="en">The interface, lifecycle, settings, and Network Extensions use Apple platform technologies. The protocol core remains strictly confined to the data plane.</span></p>
         </div>
         <div class="grid capability-grid">
-          <article class="card"><div class="card-icon" aria-hidden="true">⌁</div><h3><span data-lang="zh">透明代理与 TUN</span><span data-lang="en">Transparent Proxy + TUN</span></h3><p><span data-lang="zh">按应用连接流或整个虚拟网络接口接管流量，支持规则、全局与直连路由。</span><span data-lang="en">Route app flows or a complete virtual interface with Rule, Global, and Direct modes.</span></p></article>
-          <article class="card"><div class="card-icon" aria-hidden="true">◇</div><h3><span data-lang="zh">加密配置</span><span data-lang="en">Encrypted profiles</span></h3><p><span data-lang="zh">配置目录使用 AES-GCM 加密，密钥保存在数据保护钥匙串；订阅和导入均经过边界校验。</span><span data-lang="en">AES-GCM profile storage backed by the Data Protection Keychain, with bounded subscription and import validation.</span></p></article>
-          <article class="card"><div class="card-icon" aria-hidden="true">↗</div><h3><span data-lang="zh">可信安装，自由使用</span><span data-lang="en">Verified installation, free to use</span></h3><p><span data-lang="zh">Developer ID 签名和 Apple 公证，公开提供 DMG 校验值。免费版无需账号或付费激活，通过官网下载新版本手动更新。</span><span data-lang="en">Developer ID signing, Apple notarization, and published DMG checksums. No account or paid activation; update manually from this website.</span></p></article>
-          <article class="card"><div class="card-icon alternate" aria-hidden="true">⇣</div><h3><span data-lang="zh">兼容真实订阅</span><span data-lang="en">Practical subscription import</span></h3><p><span data-lang="zh">支持 URL 订阅、本地配置与原生节点编辑。导入过程逐条校验，保留可用节点并给出结构化错误摘要。</span><span data-lang="en">Import URL subscriptions and local configs, or edit native nodes. Entries are validated individually so usable nodes survive with a structured error summary.</span></p></article>
-          <article class="card"><div class="card-icon alternate" aria-hidden="true">⌘</div><h3><span data-lang="zh">原生、清晰、可访问</span><span data-lang="en">Native, clear, accessible</span></h3><p><span data-lang="zh">遵循 macOS 导航、键盘焦点、减少动态效果和系统外观约定；状态、错误和恢复操作始终出现在明确位置。</span><span data-lang="en">Follows macOS navigation, keyboard focus, Reduce Motion, and appearance conventions, with status, errors, and recovery actions kept in predictable places.</span></p></article>
-          <article class="card"><div class="card-icon alternate" aria-hidden="true">◉</div><h3><span data-lang="zh">资源边界与故障关闭</span><span data-lang="en">Bounded resources, fail closed</span></h3><p><span data-lang="zh">导入、延迟测试和连接任务具有大小、并发与超时限制；协议核心未就绪时不会把界面伪装成已连接。</span><span data-lang="en">Imports, latency checks, and connection work are bounded by size, concurrency, and timeouts. The UI never claims a connection before the protocol core is ready.</span></p></article>
+          <article class="card">
+            <div class="card-icon" aria-hidden="true">⌁</div>
+            <h3><span data-lang="zh">透明代理与 TUN 双引擎</span><span data-lang="en">Transparent Proxy + TUN</span></h3>
+            <p><span data-lang="zh">按应用连接流或整个虚拟网络接口无缝接管流量，全面支持规则分流、全局代理与直连模式。</span><span data-lang="en">Route app flows or a complete virtual interface with Rule, Global, and Direct modes.</span></p>
+          </article>
+          <article class="card">
+            <div class="card-icon" aria-hidden="true">◇</div>
+            <h3><span data-lang="zh">硬件级 Keychain 加密</span><span data-lang="en">Encrypted profiles</span></h3>
+            <p><span data-lang="zh">配置目录使用 AES-GCM 强加密，密钥受 Apple 数据保护钥匙串硬件守护，订阅安全隔离。</span><span data-lang="en">AES-GCM profile storage backed by the Data Protection Keychain, with bounded subscription and import validation.</span></p>
+          </article>
+          <article class="card">
+            <div class="card-icon" aria-hidden="true">↗</div>
+            <h3><span data-lang="zh">Apple 官方公证可信分发</span><span data-lang="en">Verified installation, free to use</span></h3>
+            <p><span data-lang="zh">Developer ID 签名与 Apple 公证装订，公开提供 DMG 哈希校验，无需账号或付费激活，完全掌控。</span><span data-lang="en">Developer ID signing, Apple notarization, and published DMG checksums. No account or paid activation; update manually from this website.</span></p>
+          </article>
+          <article class="card">
+            <div class="card-icon alternate" aria-hidden="true">⇣</div>
+            <h3><span data-lang="zh">兼容真实订阅与容错解析</span><span data-lang="en">Practical subscription import</span></h3>
+            <p><span data-lang="zh">支持多节点订阅 URL、本地配置与节点编辑；逐条校验容错，单个异常节点绝不阻断有效节点导入。</span><span data-lang="en">Import URL subscriptions and local configs, or edit native nodes. Entries are validated individually so usable nodes survive with a structured error summary.</span></p>
+          </article>
+          <article class="card">
+            <div class="card-icon alternate" aria-hidden="true">⌘</div>
+            <h3><span data-lang="zh">原生性能与无感占用</span><span data-lang="en">Native, clear, accessible</span></h3>
+            <p><span data-lang="zh">Swift 6 与 SwiftUI 原生渲染，严格适配深浅色与高刷，内存仅数十兆，彻底告别臃肿的 Electron 壳。</span><span data-lang="en">Follows macOS navigation, keyboard focus, Reduce Motion, and appearance conventions, with status, errors, and recovery actions kept in predictable places.</span></p>
+          </article>
+          <article class="card">
+            <div class="card-icon alternate" aria-hidden="true">◉</div>
+            <h3><span data-lang="zh">零系统侵入与故障关闭</span><span data-lang="en">Bounded resources, fail closed</span></h3>
+            <p><span data-lang="zh">不私自改写 macOS 系统代理，断开即完全恢复原生网络环境，杜绝断网与网络配置污染。</span><span data-lang="en">Imports, latency checks, and connection work are bounded by size, concurrency, and timeouts. The UI never claims a connection before the protocol core is ready.</span></p>
+          </article>
         </div>
       </div>
     </section>
 
-    <section class="section compact">
+    <section class="section compact" id="protocols">
       <div class="shell">
-        <div class="section-heading"><h2><span data-lang="zh">现代协议，一处管理。</span><span data-lang="en">Modern protocols. One home.</span></h2><p><span data-lang="zh">原生节点编辑与受限的 Clash 风格导入适配器，让迁移简单，同时不依赖其他客户端的配置格式。</span><span data-lang="en">Native node editing plus a bounded Clash-style import adapter makes migration straightforward without making another client's format the product contract.</span></p></div>
-        <div class="protocol-cloud" aria-label="Supported protocol families"><span>VLESS + REALITY</span><span>VMess</span><span>Hysteria2</span><span>TUIC</span><span>AnyTLS</span><span>Trojan</span><span>Shadowsocks</span><span>WireGuard</span><span>ShadowQUIC</span><span>SSH</span><span>HTTP</span><span>SOCKS5</span></div>
+        <div class="section-heading">
+          <h2><span data-lang="zh">现代协议，一处管理。</span><span data-lang="en">Modern protocols. One home.</span></h2>
+          <p><span data-lang="zh">原生节点编辑与受限的 Clash 风格导入适配器，让迁移简单，同时不依赖其他客户端的配置格式。</span><span data-lang="en">Native node editing plus a bounded Clash-style import adapter makes migration straightforward without making another client's format the product contract.</span></p>
+        </div>
+        <div class="protocol-cloud" aria-label="Supported protocol families">
+          <span>VLESS + REALITY</span>
+          <span>VMess</span>
+          <span>Hysteria2</span>
+          <span>TUIC</span>
+          <span>AnyTLS</span>
+          <span>Trojan</span>
+          <span>Shadowsocks</span>
+          <span>WireGuard</span>
+          <span>ShadowQUIC</span>
+          <span>SSH</span>
+          <span>HTTP</span>
+          <span>SOCKS5</span>
+        </div>
         <div class="fact-strip">
           <div><strong>12</strong><span><span data-lang="zh">类协议输入已纳入自动回归</span><span data-lang="en">protocol families covered by automated regression</span></span></div>
-          <div><strong>2</strong><span><span data-lang="zh">种 macOS 网络接管方式</span><span data-lang="en">native macOS traffic-capture engines</span></span></div>
-          <div><strong>0</strong><span><span data-lang="zh">默认写入系统代理的操作</span><span data-lang="en">automatic system-proxy rewrites by default</span></span></div>
+          <div><strong>2</strong><span><span data-lang="zh">种 macOS 原生网络接管机制</span><span data-lang="en">native macOS traffic-capture engines</span></span></div>
+          <div><strong>0</strong><span><span data-lang="zh">默认篡改系统代理的操作</span><span data-lang="en">automatic system-proxy rewrites by default</span></span></div>
         </div>
       </div>
     </section>
@@ -120,13 +165,33 @@
     <!-- AETHERROUTE_RELEASE_PANEL_BEGIN -->
     <section class="section">
       <div class="shell release-panel">
-        <div><span class="status-pill"><span data-lang="zh">稳定版 · 2026-09-11</span><span data-lang="en">Stable · 2026-09-11</span></span><h2>AetherRoute 1.0.0</h2><p><span data-lang="zh">已通过生产双引擎、泄漏与恢复、安装升级回滚、性能、UI 和长时间稳定性门禁。</span><span data-lang="en">Passed production dual-engine, leak and recovery, install/upgrade/rollback, performance, UI, and long-duration stability gates.</span></p></div>
-        <a class="button" href="/releases/1.0.0/"><span data-lang="zh">完整说明</span><span data-lang="en">Full notes</span> <span aria-hidden="true">→</span></a>
+        <div>
+          <span class="status-pill"><span data-lang="zh">稳定版 · 2026-09-11</span><span data-lang="en">Stable · 2026-09-11</span></span>
+          <h2>AetherRoute 1.0.0</h2>
+          <p><span data-lang="zh">已通过生产双引擎、泄漏与恢复、安装升级回滚、性能、UI 和长时间稳定性门禁。</span><span data-lang="en">Passed production dual-engine, leak and recovery, install/upgrade/rollback, performance, UI, and long-duration stability gates.</span></p>
+        </div>
+        <a class="button primary" href="/releases/1.0.0/"><span data-lang="zh">完整说明与下载</span><span data-lang="en">Full notes & download</span> <span aria-hidden="true">→</span></a>
       </div>
     </section>
     <!-- AETHERROUTE_RELEASE_PANEL_END -->
   </main>
 
-  <footer class="site-footer"><div class="shell footer-grid"><div><strong>AetherRoute</strong><br><span data-lang="zh">由陈艳男创建和维护。</span><span data-lang="en">Created and maintained by ChenYanNan.</span><br>© 2026 ChenYanNan.</div><div class="footer-links"><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可协议</span><span data-lang="en">License</span></a><a href="/support/"><span data-lang="zh">支持</span><span data-lang="en">Support</span></a></div></div></footer>
+  <footer class="site-footer">
+    <div class="shell footer-grid">
+      <div>
+        <strong style="color: var(--ink-primary); font-size: 15px;">AetherRoute</strong><br>
+        <span data-lang="zh" style="display:inline-block; margin-top: 6px;">面向 Apple Silicon Mac 的原生私密路由应用 · 由陈艳男创建和维护。</span>
+        <span data-lang="en" style="display:inline-block; margin-top: 6px;">Native private routing for Apple silicon Macs. Created and maintained by ChenYanNan.</span><br>
+        <span style="display:inline-block; margin-top: 6px;">© 2026 ChenYanNan. Released under MIT License.</span>
+      </div>
+      <div class="footer-links">
+        <a href="/releases/"><span data-lang="zh">版本历史</span><span data-lang="en">Releases</span></a>
+        <a href="/privacy/"><span data-lang="zh">隐私政策</span><span data-lang="en">Privacy</span></a>
+        <a href="/license/"><span data-lang="zh">许可协议</span><span data-lang="en">License</span></a>
+        <a href="/support/"><span data-lang="zh">技术支持</span><span data-lang="en">Support</span></a>
+        <a href="https://github.com/bcblr1993/AetherRoute" target="_blank" rel="noreferrer">GitHub</a>
+      </div>
+    </div>
+  </footer>
 </body>
 </html>

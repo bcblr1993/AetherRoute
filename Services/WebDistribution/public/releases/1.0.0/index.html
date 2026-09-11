@@ -1,10 +1,114 @@
-<!doctype html><html lang="zh-Hans" data-language="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="AetherRoute 1.0.0 稳定版本说明、下载与 SHA-256 校验信息。"><title>AetherRoute 1.0.0</title><link rel="icon" href="/assets/aetherroute-mark.svg" type="image/svg+xml"><link rel="alternate icon" href="/assets/favicon.png" type="image/png"><link rel="apple-touch-icon" href="/assets/aetherroute-mark.png"><link rel="stylesheet" href="/assets/site.css?v=20260807.07"><script src="/assets/site.js?v=20260807.07" defer></script></head><body>
-<a class="skip-link" href="#content">Skip to content / 跳到正文</a><header class="site-header"><nav class="nav"><a class="brand" href="/"><img src="/assets/aetherroute-mark.svg" alt=""><span>AetherRoute</span></a><div class="nav-links"><a href="/releases/"><span data-lang="zh">所有版本</span><span data-lang="en">All releases</span></a><a href="/support/"><span data-lang="zh">支持</span><span data-lang="en">Support</span></a></div><button class="language-button" type="button" data-language-toggle>EN</button></nav></header>
-<main id="content" class="shell"><div class="page-hero"><span class="eyebrow"><span data-lang="zh">生产稳定版</span><span data-lang="en">Production stable</span></span><h1>AetherRoute<br>1.0.0</h1><p>Build 2026091110 · 2026-09-11 · Apple silicon · macOS 15.0+</p><div class="hero-actions"><a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.0-build-2026091110/AetherRoute-1.0.0-build-2026091110-arm64-Notarized-Test.dmg"><span data-lang="zh">下载 DMG</span><span data-lang="en">Download DMG</span></a><a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.0-build-2026091110">GitHub Release</a></div></div>
-<article class="prose"><div class="notice"><strong><span data-lang="zh">可信分发：</span><span data-lang="en">Trusted distribution:</span></strong> <span data-lang="zh">此版本使用 Developer ID 签名，已经 Apple 公证并装订公证票据。下载文件可通过本页列出的 SHA-256 完整性校验。</span><span data-lang="en">This release is Developer ID signed, notarized by Apple, and stapled. The downloaded file is bound to the SHA-256 checksum shown below.</span></div>
-<section><h2><span data-lang="zh">版本亮点</span><span data-lang="en">Highlights</span></h2><ul><li><span data-lang="zh">原生 Swift 6 与 SwiftUI 现代化架构，严格适配 macOS 人机交互指南与原生深色外观。</span><span data-lang="en">Native Swift 6 and SwiftUI architecture strictly conforming to macOS HIG and dark appearance.</span></li><li><span data-lang="zh">透明代理（Transparent Proxy）与系统级 TUN 双引擎，支持规则分流、全局与直连模式。</span><span data-lang="en">Transparent Proxy and system TUN dual engines with Rule, Global, and Direct routing modes.</span></li><li><span data-lang="zh">支持 12 类现代网络协议（VLESS, VMess, Hysteria2, TUIC, Trojan, Shadowsocks, WireGuard 等），集成多节点订阅与故障隔离解析。</span><span data-lang="en">Support for 12 modern protocol families (VLESS, VMess, Hysteria2, TUIC, Trojan, Shadowsocks, WireGuard, etc.) with multi-node subscription and resilient parsing.</span></li><li><span data-lang="zh">数据保护钥匙串 Keychain AES-GCM 硬件级配置加密，零多余权限，不修改系统全局非必要设置。</span><span data-lang="en">Hardware-backed Keychain AES-GCM profile encryption, minimal permissions, zero unnecessary system modifications.</span></li><li><span data-lang="zh">原生 Sparkle 2 自动更新引擎，具备 Ed25519 签名与 SHA-256 双重验签机制。</span><span data-lang="en">Native Sparkle 2 updater with Ed25519 signature and SHA-256 dual verification.</span></li></ul></section>
-<section><h2><span data-lang="zh">系统要求</span><span data-lang="en">Requirements</span></h2><ul><li>Apple silicon (M1, M2, M3, M4 或更高芯片)</li><li>macOS 15.0 (Sequoia) 或更高版本</li><li><span data-lang="zh">首次开启连接时，macOS 系统设置会弹出提示以批准 AetherRoute 网络扩展组件。</span><span data-lang="en">macOS prompts for approval of the AetherRoute Network Extension component on first connection.</span></li></ul></section>
-<section><h2><span data-lang="zh">完整性</span><span data-lang="en">Integrity</span></h2><p><span data-lang="zh">下载后可在终端运行以下命令校验文件完整性：</span><span data-lang="en">After downloading, run this command in Terminal to verify integrity:</span></p><div class="checksum">shasum -a 256 AetherRoute-1.0.0-build-2026091110-arm64-Notarized-Test.dmg</div><p>SHA-256</p><div class="checksum">e9c411a54b8fd694583a94cfc49ead4d1d23057fd5251ec969eff3dcfc575065</div></section>
-<section><h2><span data-lang="zh">安全与验证</span><span data-lang="en">Verification status</span></h2><ul><li>Developer ID 强化运行时（Hardened Runtime）与安全时间戳：已验证</li><li>Apple Notarization 公证票据与装订：Accepted / Valid</li><li>macOS Gatekeeper 严格评估：Accepted</li><li>原生 arm64 架构 Mach-O 二进制纯净性：已通过</li><li><span data-lang="zh">双引擎数据平面、网络切换恢复与防泄漏测试：已通过</span><span data-lang="en">Dual-engine data plane, network roaming recovery, and leak prevention: passed</span></li></ul></section>
-<section><h2><span data-lang="zh">支持与文档</span><span data-lang="en">Support</span></h2><p><span data-lang="zh">若在网络扩展授权或节点导入中遇到问题，请随时参阅支持页面。</span><span data-lang="en">If you encounter issues during extension approval or profile import, refer to Support.</span></p><p><a class="button" href="/support/"><span data-lang="zh">打开支持</span><span data-lang="en">Open Support</span></a></p></section></article></main>
-<footer class="site-footer"><div class="shell footer-grid"><div><span data-lang="zh">由陈艳男创建和维护。</span><span data-lang="en">Created and maintained by ChenYanNan.</span><br>© 2026 ChenYanNan.</div><div class="footer-links"><a href="/releases/">Releases</a><a href="/privacy/">Privacy</a><a href="/support/">Support</a></div></div></footer></body></html>
+<!doctype html>
+<html lang="zh-Hans" data-language="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="AetherRoute 1.0.0 正式稳定版本说明、安装包下载与 SHA-256 校验和。">
+  <title>AetherRoute 1.0.0</title>
+  <link rel="icon" href="/assets/aetherroute-mark.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/assets/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/aetherroute-mark.png">
+  <link rel="stylesheet" href="/assets/site.css?v=20260807.07">
+  <script src="/assets/site.js?v=20260807.07" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content / 跳到正文</a>
+  
+  <header class="site-header">
+    <nav class="nav">
+      <a class="brand" href="/">
+        <img src="/assets/aetherroute-mark.png" alt="AetherRoute Logo" width="38" height="38">
+        <span>AetherRoute</span>
+      </a>
+      <div class="nav-links">
+        <a href="/"><span data-lang="zh">首页</span><span data-lang="en">Home</span></a>
+        <a href="/releases/"><span data-lang="zh">所有版本</span><span data-lang="en">All releases</span></a>
+        <a href="/support/"><span data-lang="zh">支持</span><span data-lang="en">Support</span></a>
+        <a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a>
+      </div>
+      <button class="language-button" type="button" data-language-toggle>EN</button>
+    </nav>
+  </header>
+
+  <main id="content" class="shell">
+    <div class="page-hero">
+      <span class="eyebrow"><span data-lang="zh">正式稳定版 · Apple 官方公证</span><span data-lang="en">Production stable · Apple notarized</span></span>
+      <h1>AetherRoute 1.0.0</h1>
+      <p>Build 2026091110 · 2026-09-11 · Apple silicon · macOS 15.0+</p>
+      <div class="hero-actions">
+        <a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.0-build-2026091110/AetherRoute-1.0.0-build-2026091110-arm64-Notarized-Test.dmg"><span data-lang="zh">下载 DMG 安装包</span><span data-lang="en">Download DMG</span> <span aria-hidden="true">↓</span></a>
+        <a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.0-build-2026091110" target="_blank" rel="noreferrer">GitHub Release</a>
+      </div>
+    </div>
+
+    <article class="prose">
+      <div class="notice">
+        <strong><span data-lang="zh">可信分发承诺：</span><span data-lang="en">Trusted distribution:</span></strong> 
+        <span data-lang="zh">此版本采用 Apple Developer ID 签名并已通过 Apple 公证装订。安装包仅提供经过编译安全强化的原生 arm64 架构二进制，不含第三方捆绑软件或追踪分析代码。</span>
+        <span data-lang="en">This release is Developer ID signed, notarized by Apple, and stapled. Contains strictly hardened native arm64 Mach-O binaries with zero third-party bundles or tracking analytics.</span>
+      </div>
+
+      <section>
+        <h2><span data-lang="zh">版本核心特性</span><span data-lang="en">Highlights</span></h2>
+        <ul>
+          <li><span data-lang="zh">原生 Swift 6 与 SwiftUI 现代化交互，遵循 macOS Sequoia 人机交互指南，完美适配原生深色模式。</span><span data-lang="en">Native Swift 6 and SwiftUI architecture strictly conforming to macOS HIG with seamless dark appearance integration.</span></li>
+          <li><span data-lang="zh">透明代理（Transparent Proxy / Network Extension）与系统级 TUN 双网络引擎，支持规则分流、全局代理与直连模式无缝切换。</span><span data-lang="en">Transparent Proxy and system TUN dual engines with Rule, Global, and Direct routing modes.</span></li>
+          <li><span data-lang="zh">全面支持 12 类现代网络协议（VLESS + REALITY, VMess, Hysteria2, TUIC, Trojan, Shadowsocks, WireGuard, ShadowQUIC 等）。</span><span data-lang="en">Support for 12 modern protocol families (VLESS, VMess, Hysteria2, TUIC, Trojan, Shadowsocks, WireGuard, etc.).</span></li>
+          <li><span data-lang="zh">配置与订阅库采用 Apple 数据保护钥匙串（Keychain）硬件级 AES-GCM 加密，零明文敏感数据外泄风险。</span><span data-lang="en">Hardware-backed Keychain AES-GCM profile encryption, minimal permissions, zero unnecessary system modifications.</span></li>
+          <li><span data-lang="zh">集成原生 Sparkle 2 自动升级引擎，具备 Ed25519 签名与哈希双重强校验。</span><span data-lang="en">Native Sparkle 2 updater with Ed25519 signature and SHA-256 dual verification.</span></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2><span data-lang="zh">系统要求</span><span data-lang="en">Requirements</span></h2>
+        <ul>
+          <li>Apple silicon (M1, M2, M3, M4 或后续系列 Mac)</li>
+          <li>macOS 15.0 (Sequoia) 或更高版本</li>
+          <li><span data-lang="zh">首次开启连接时，系统设置会弹出提示，请按指引允许 AetherRoute 网络扩展组件。无需关闭系统完整性保护（SIP）。</span><span data-lang="en">macOS prompts for approval of the AetherRoute Network Extension component on first connection. SIP remains fully enabled.</span></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2><span data-lang="zh">文件完整性校验</span><span data-lang="en">Integrity verification</span></h2>
+        <p><span data-lang="zh">下载完成后，您可在终端执行以下命令计算哈希以确保安装包未被篡改：</span><span data-lang="en">Verify file integrity by running the following command in Terminal:</span></p>
+        <div class="checksum">shasum -a 256 AetherRoute-1.0.0-build-2026091110-arm64-Notarized-Test.dmg</div>
+        <p style="font-weight: 600; margin-bottom: 6px;">SHA-256</p>
+        <div class="checksum">e9c411a54b8fd694583a94cfc49ead4d1d23057fd5251ec969eff3dcfc575065</div>
+      </section>
+
+      <section>
+        <h2><span data-lang="zh">安全与测试验证状态</span><span data-lang="en">Verification status</span></h2>
+        <ul>
+          <li>Developer ID 强化运行时（Hardened Runtime）与安全时间戳：已验证</li>
+          <li>Apple Notarization 公证票据与装订：Accepted / Valid</li>
+          <li>macOS Gatekeeper 严格安全评估：Accepted</li>
+          <li>双引擎流量转发、休眠唤醒恢复与 DNS 防泄漏门禁：全部通过</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2><span data-lang="zh">帮助与技术支持</span><span data-lang="en">Support</span></h2>
+        <p><span data-lang="zh">若您在首次批准网络扩展或导入订阅时遇到任何问题，欢迎查阅详细图文支持指引。</span><span data-lang="en">If you encounter issues during extension approval or profile import, refer to Support.</span></p>
+        <p><a class="button" href="/support/"><span data-lang="zh">查看支持中心</span><span data-lang="en">Open Support</span></a></p>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-grid">
+      <div>
+        <strong style="color: var(--ink-primary); font-size: 15px;">AetherRoute</strong><br>
+        <span data-lang="zh" style="display:inline-block; margin-top: 6px;">面向 Apple Silicon Mac 的原生私密路由应用 · 由陈艳男创建和维护。</span>
+        <span data-lang="en" style="display:inline-block; margin-top: 6px;">Native private routing for Apple silicon Macs. Created and maintained by ChenYanNan.</span><br>
+        <span style="display:inline-block; margin-top: 6px;">© 2026 ChenYanNan.</span>
+      </div>
+      <div class="footer-links">
+        <a href="/releases/"><span data-lang="zh">所有版本</span><span data-lang="en">Releases</span></a>
+        <a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a>
+        <a href="/support/"><span data-lang="zh">支持</span><span data-lang="en">Support</span></a>
+        <a href="https://github.com/bcblr1993/AetherRoute" target="_blank" rel="noreferrer">GitHub</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
