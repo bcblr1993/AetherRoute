@@ -43,6 +43,7 @@ else
     echo "Extracted entitlements contain unexpanded template variables: $(grep '\$(' "$ENTITLEMENTS")" >&2
     exit 1
   fi
+  codesign -f -s "$IDENTITY" -o runtime --timestamp "$SPARKLE"
   codesign -f -s "$IDENTITY" --entitlements "$ENTITLEMENTS" -o runtime --timestamp "$APP"
   rm -f "$ENTITLEMENTS"
   trap - EXIT HUP INT TERM
