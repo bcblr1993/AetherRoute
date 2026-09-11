@@ -1,0 +1,6 @@
+# Clean URL redirects for Cloudflare Pages
+/releases/0.1.0-preview    /releases/0.1.0-preview/    301
+/releases                  /releases/                  301
+/privacy                   /privacy/                   301
+/support                   /support/                   301
+/license                   /license/                   301

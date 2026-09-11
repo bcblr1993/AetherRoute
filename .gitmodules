@@ -1,3 +1,4 @@
 [submodule "Core/Engine"]
 	path = Core/Engine
 	url = https://github.com/bcblr1993/aetherroute-core.git
+	update = none
