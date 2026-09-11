@@ -34,7 +34,7 @@ final class TransparentProxyUpstreamEndpointResolverTests: XCTestCase {
         proxies:
           - name: Bad
             type: vless
-            server: secret.invalid
+            server: invalid..server
             port: 443
         """
 
@@ -43,7 +43,7 @@ final class TransparentProxyUpstreamEndpointResolverTests: XCTestCase {
                 profileYAML: yaml
             )
         ) { error in
-            XCTAssertFalse(String(reflecting: error).contains("secret.invalid"))
+            XCTAssertFalse(String(reflecting: error).contains("invalid..server"))
         }
     }
 }

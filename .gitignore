@@ -34,3 +34,7 @@ Services/DistributionService/licenses*.json
 
 # Distribution build directories
 dist/AetherRoute-*-build-*
+
+# Sparkle signing private key
+Config/sparkle_ed25519_priv.key
+

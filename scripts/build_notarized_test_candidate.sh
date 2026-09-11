@@ -386,6 +386,15 @@ test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")"
 test "$(plutil -extract CFBundleVersion raw -o - "$APP/Contents/Info.plist")" \
   = "$BUILD_NUMBER"
 
+SPARKLE_FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE_FRAMEWORK" ]; then
+  find "$SPARKLE_FRAMEWORK" -name "*.xpc" -o -name "Autoupdate.app" | while read -r helper; do
+    codesign -f -s "$IDENTITY" -o runtime --timestamp "$helper"
+  done
+  codesign -f -s "$IDENTITY" -o runtime --timestamp "$SPARKLE_FRAMEWORK"
+  codesign -f -s "$IDENTITY" --entitlements "$ROOT/Config/AetherRoute.DeveloperID.entitlements" -o runtime --timestamp "$APP"
+fi
+
 for bundle in "$APP" "$PACKET" "$TRANSPARENT"; do
   codesign --verify --deep --strict --verbose=2 "$bundle"
   codesign -dv --verbose=4 "$bundle" 2>&1 \

@@ -90,6 +90,16 @@
 	<string>AetherRoute accesses the local network only when you route traffic to a proxy, DNS server, or destination on your local network.</string>
 	<key>NSSystemExtensionUsageDescription</key>
 	<string>AetherRoute installs signed network extensions to provide transparent proxy and TUN routing.</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/bcblr1993/AetherRoute/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>hVgNMayXzdIN2G5V0aeepQYjD2moJQ/ANUy14lqMtEM=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

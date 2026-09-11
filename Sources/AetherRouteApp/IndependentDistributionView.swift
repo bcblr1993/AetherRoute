@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct IndependentDistributionView: View {
     @EnvironmentObject private var distribution:
         IndependentDistributionController
+    @ObservedObject private var sparkle = SparkleUpdaterController.shared
     @State private var licenseKey = ""
 
     var body: some View {
@@ -14,9 +15,10 @@ struct IndependentDistributionView: View {
                 header
                 if distribution.isFreeDistribution {
                     freeEditionCard
+                    sparkleUpdateCard
                 } else {
                     licenseCard
-                    updateCard
+                    sparkleUpdateCard
                     privacyFooter
                 }
             }
@@ -53,7 +55,7 @@ struct IndependentDistributionView: View {
             }
             .font(.headline)
             .foregroundStyle(.primary)
-            Text("This edition does not contact a licensing service. Install a newer signed DMG to update; your saved configurations are kept.")
+            Text(AppLocalization.string("This edition does not contact a licensing service. Software updates are checked and verified automatically."))
                 .font(.body)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -130,65 +132,66 @@ struct IndependentDistributionView: View {
         }
     }
 
-    private var updateCard: some View {
+    private var sparkleUpdateCard: some View {
         distributionCard {
             HStack(alignment: .top, spacing: AetherVisual.s4) {
-                statusIcon(symbol: updateSymbol, tint: updateTint)
+                statusIcon(symbol: "arrow.triangle.2.circlepath", tint: Color.accentColor)
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    Text("Software Updates")
+                    Text(AppLocalization.string("Software Updates"))
                         .font(.headline)
-                    Text(updateTitle)
+                    Text(currentVersionDescription)
                         .font(.subheadline.weight(.medium))
-                    Text(updateDetail)
+                    Text(lastCheckDescription)
                         .font(.caption)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
-                if case let .available(manifest) = distribution.updateState {
-                    Button {
-                        saveVerifiedUpdate(manifest)
-                    } label: {
-                        AetherProgressButtonLabel(
-                            "Download & Verify",
-                            isWorking: distribution.isDownloadingUpdate
-                        )
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(distribution.isDownloadingUpdate)
-                    .accessibilityIdentifier("download-update-button")
-                } else {
-                    Button {
-                        Task { await distribution.checkForUpdates() }
-                    } label: {
-                        AetherProgressButtonLabel(
-                            "Check Now",
-                            isWorking: distribution.isCheckingForUpdates
-                        )
-                    }
-                    .disabled(
-                        !distribution.isConfigured
-                            || distribution.isCheckingForUpdates
-                    )
-                    .accessibilityIdentifier("check-for-updates-button")
+                Button {
+                    sparkle.checkForUpdates()
+                } label: {
+                    Text(AppLocalization.string("Check Now"))
                 }
+                .buttonStyle(.bordered)
+                .disabled(!sparkle.canCheckForUpdates)
+                .accessibilityIdentifier("check-for-updates-button")
             }
-            if let message = distribution.updateDownloadMessage {
-                Label(
-                    message,
-                    systemImage: distribution.updateDownloadSucceeded
-                        ? "checkmark.shield.fill"
-                        : "exclamationmark.triangle.fill"
-                )
-                .font(.caption)
-                .foregroundStyle(
-                    distribution.updateDownloadSucceeded
-                        ? Color.green
-                        : Color.orange
-                )
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("update-download-message")
+
+            Divider().opacity(0.3)
+
+            Toggle(isOn: Binding(
+                get: { sparkle.automaticallyChecksForUpdates },
+                set: { sparkle.setAutomaticallyChecksForUpdates($0) }
+            )) {
+                Text(AppLocalization.string("Automatically check for updates"))
+                    .font(.subheadline)
             }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+        }
+    }
+
+    private var currentVersionDescription: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+        return String.localizedStringWithFormat(
+            AppLocalization.string("Version %@ (Build %@)"),
+            version,
+            build
+        )
+    }
+
+    private var lastCheckDescription: String {
+        if let lastDate = sparkle.lastUpdateCheckDate {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .full
+            let relative = formatter.localizedString(for: lastDate, relativeTo: Date())
+            return String.localizedStringWithFormat(
+                AppLocalization.string("Last checked %@. Updates are signed with Ed25519."),
+                relative
+            )
+        } else {
+            return AppLocalization.string("Automatic checks enabled. Updates are cryptographically signed with Ed25519.")
         }
     }
 

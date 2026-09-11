@@ -3,6 +3,10 @@ options:
   createIntermediateGroups: true
   deploymentTarget:
     macOS: "15.0"
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.4"
 settings:
   base:
     ARCHS: arm64
@@ -269,6 +273,11 @@ targets:
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSLocalNetworkUsageDescription: AetherRoute accesses the local network only when you route traffic to a proxy, DNS server, or destination on your local network.
         NSSystemExtensionUsageDescription: AetherRoute installs signed network extensions to provide transparent proxy and TUN routing.
+        SUEnableInstallerLauncherService: true
+        SUFeedURL: https://raw.githubusercontent.com/bcblr1993/AetherRoute/main/appcast.xml
+        SUPublicEDKey: hVgNMayXzdIN2G5V0aeepQYjD2moJQ/ANUy14lqMtEM=
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
         NSHumanReadableCopyright: Created by 陈艳男 (ChenYanNan)
         NSHighResolutionCapable: true
         AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)
@@ -312,6 +321,7 @@ targets:
         embed: true
       - target: AetherRoutePacketTunnel
         embed: true
+      - package: Sparkle
       - sdk: NetworkExtension.framework
       - sdk: SystemExtensions.framework
     settings:

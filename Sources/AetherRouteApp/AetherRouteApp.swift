@@ -358,6 +358,9 @@ struct AetherRouteApp: App {
         .windowResizability(.contentMinSize)
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesCommandButton()
+            }
             CommandMenu("Navigate") {
                 ForEach(AppSection.allCases) { section in
                     Button(section.title) {
@@ -702,12 +705,21 @@ private struct MenuBarContent: View {
 
             Divider().opacity(0.4)
 
-            HStack {
+            HStack(spacing: AetherVisual.s3) {
                 Button(AppLocalization.string("Open AetherRoute")) {
                     openWindow(id: "main")
                     NSApplication.shared.activate()
                 }
                 Spacer()
+                Button {
+                    SparkleUpdaterController.shared.checkForUpdates()
+                } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(.borderless)
+                .help(AppLocalization.string("Check for Updates…"))
+                .disabled(!SparkleUpdaterController.shared.canCheckForUpdates)
+
                 Button(AppLocalization.string("Quit")) { NSApplication.shared.terminate(nil) }
             }
             .buttonStyle(.borderless)
