@@ -910,6 +910,16 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    func reconnect() async {
+        guard isConnected else {
+            await setEnabled(true)
+            return
+        }
+        await setEnabled(false)
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        await setEnabled(true)
+    }
+
     var requiredRoutingResources: [RoutingResourceKind] {
         guard let summary = activeProfileSummary else { return [] }
         return RoutingResourceKind.allCases.filter {
@@ -2520,6 +2530,65 @@ final class TunnelManager: ObservableObject {
             importProfile(from: url)
             return
         }
+
+        let scheme = url.scheme?.lowercased() ?? ""
+        let host = (url.host ?? "").lowercased()
+
+        if scheme == "aetherroute" {
+            switch host {
+            case "connect":
+                Task {
+                    if !hasAcceptedPrivacyDisclosure {
+                        await acceptPrivacyDisclosure()
+                    }
+                    await setEnabled(true)
+                }
+                return
+            case "disconnect":
+                Task {
+                    await setEnabled(false)
+                }
+                return
+            case "toggle":
+                Task {
+                    if !hasAcceptedPrivacyDisclosure {
+                        await acceptPrivacyDisclosure()
+                    }
+                    await setEnabled(!isEnabled)
+                }
+                return
+            case "check-updates":
+                SparkleUpdaterController.shared.checkForUpdates()
+                return
+            case "navigate":
+                if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                   let sectionItem = components.queryItems?.first(where: { $0.name.lowercased() == "section" }),
+                   let section = sectionItem.value?.lowercased() {
+                    NotificationCenter.default.post(
+                        name: .aetherRouteNavigateToSection,
+                        object: section
+                    )
+                }
+                return
+            case "mode":
+                if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                   let modeItem = components.queryItems?.first(where: { $0.name.lowercased() == "mode" })?.value?.lowercased() {
+                    let targetMode: RoutingMode? = switch modeItem {
+                    case "rule": .rule
+                    case "global": .global
+                    case "direct": .direct
+                    default: nil
+                    }
+                    if let targetMode {
+                        Task { await setRoutingMode(targetMode) }
+                    }
+                }
+                return
+            default:
+                break
+            }
+        }
+
         do {
             pendingExternalSubscription = try ExternalSubscriptionLinkParser
                 .parse(url)

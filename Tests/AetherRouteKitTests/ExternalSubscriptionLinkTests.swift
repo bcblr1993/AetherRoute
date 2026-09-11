@@ -19,12 +19,34 @@ final class ExternalSubscriptionLinkTests: XCTestCase {
         )
     }
 
+    func testParsesClashAndCustomNameLinks() throws {
+        let clashURL = try XCTUnwrap(
+            URL(string: "clash://install-config?url=https%3A%2F%2Fprofiles.example%2Fconfig.yaml&name=My%20Airport")
+        )
+        let request1 = try ExternalSubscriptionLinkParser.parse(clashURL)
+        XCTAssertEqual(request1.providerHost, "profiles.example")
+        XCTAssertEqual(request1.subscriptionURL.absoluteString, "https://profiles.example/config.yaml")
+        XCTAssertEqual(request1.suggestedName, "My Airport")
+
+        let clashSub = try XCTUnwrap(
+            URL(string: "clash://install-sub?url=https%3A%2F%2Fprofiles.example%2Fconfig.yaml")
+        )
+        let request2 = try ExternalSubscriptionLinkParser.parse(clashSub)
+        XCTAssertEqual(request2.providerHost, "profiles.example")
+        XCTAssertNil(request2.suggestedName)
+
+        let aetherWithName = try XCTUnwrap(
+            URL(string: "aetherroute://subscribe?url=https%3A%2F%2Fprofiles.example%2Fconfig.yaml&name=FastRoute")
+        )
+        let request3 = try ExternalSubscriptionLinkParser.parse(aetherWithName)
+        XCTAssertEqual(request3.providerHost, "profiles.example")
+        XCTAssertEqual(request3.suggestedName, "FastRoute")
+    }
+
     func testAcceptsOnlyOneExactURLParameter() throws {
         for value in [
             "aetherroute://subscribe",
             "aetherroute://subscribe?url=",
-            "aetherroute://subscribe?URL=https%3A%2F%2Fexample.com%2Fa",
-            "aetherroute://subscribe?url=https%3A%2F%2Fexample.com%2Fa&name=Edge",
             "aetherroute://subscribe?url=https%3A%2F%2Fexample.com%2Fa&url=https%3A%2F%2Fexample.com%2Fb",
         ] {
             XCTAssertThrowsError(
@@ -89,7 +111,7 @@ final class ExternalSubscriptionLinkTests: XCTestCase {
 
     func testRejectsForeignScheme() throws {
         let incoming = try XCTUnwrap(
-            URL(string: "clash://subscribe?url=https%3A%2F%2Fexample.com%2Fa")
+            URL(string: "unknownscheme://subscribe?url=https%3A%2F%2Fexample.com%2Fa")
         )
         XCTAssertThrowsError(
             try ExternalSubscriptionLinkParser.parse(incoming)

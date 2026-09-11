@@ -20,6 +20,12 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
         installTerminationSignalSource()
     }
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            tunnel?.handleExternalURL(url)
+        }
+    }
+
     func applicationShouldTerminate(
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {
@@ -360,6 +366,49 @@ struct AetherRouteApp: App {
         .commands {
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesCommandButton()
+            }
+            CommandMenu(AppLocalization.string("Tunnel")) {
+                Button(tunnel.isConnected ? AppLocalization.string("Disconnect") : AppLocalization.string("Connect")) {
+                    Task {
+                        await tunnel.setEnabled(!tunnel.isConnected)
+                    }
+                }
+                .keyboardShortcut("k", modifiers: .command)
+
+                Button(AppLocalization.string("Reconnect")) {
+                    Task {
+                        await tunnel.reconnect()
+                    }
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(!tunnel.isConnected)
+
+                Divider()
+
+                Menu(AppLocalization.string("Routing Mode")) {
+                    Button(AppLocalization.string("Rule")) {
+                        Task { await tunnel.setRoutingMode(.rule) }
+                    }
+                    .keyboardShortcut("1", modifiers: [.command, .option])
+
+                    Button(AppLocalization.string("Global")) {
+                        Task { await tunnel.setRoutingMode(.global) }
+                    }
+                    .keyboardShortcut("2", modifiers: [.command, .option])
+
+                    Button(AppLocalization.string("Direct")) {
+                        Task { await tunnel.setRoutingMode(.direct) }
+                    }
+                    .keyboardShortcut("3", modifiers: [.command, .option])
+                }
+                .disabled(!tunnel.canChangeRoutingMode)
+
+                Divider()
+
+                Button(AppLocalization.string("Check for Updates…")) {
+                    SparkleUpdaterController.shared.checkForUpdates()
+                }
+                .keyboardShortcut("u", modifiers: [.command, .shift])
             }
             CommandMenu("Navigate") {
                 ForEach(AppSection.allCases) { section in

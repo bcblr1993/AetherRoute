@@ -315,6 +315,7 @@ targets:
             CFBundleTypeRole: Viewer
             CFBundleURLSchemes:
               - aetherroute
+              - clash
     dependencies:
       - target: AetherRouteKit
       - target: AetherRouteTransparentProxy

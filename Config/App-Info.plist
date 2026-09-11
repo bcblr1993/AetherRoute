@@ -73,6 +73,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>aetherroute</string>
+				<string>clash</string>
 			</array>
 		</dict>
 	</array>
