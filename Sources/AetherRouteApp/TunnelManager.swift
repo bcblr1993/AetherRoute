@@ -4521,6 +4521,8 @@ final class TunnelManager: ObservableObject {
             TimeInterval(TunnelStartupTimingPolicy
                 .automaticRouteCandidateProbeTimeoutSeconds) + 10
         configuration.waitsForConnectivity = false
+        configuration.httpMaximumConnectionsPerHost = 1
+        configuration.httpShouldSetCookies = false
         return URLSession(configuration: configuration)
     }()
 
@@ -4541,6 +4543,8 @@ final class TunnelManager: ObservableObject {
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = timeoutInterval
+        request.assumesHTTP3Capable = false
+        request.httpMethod = "GET"
         let (_, response) = try await Self.probeSession.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw TunnelManagerError.noResponsiveProxy

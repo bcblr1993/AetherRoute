@@ -38,3 +38,8 @@ dist/AetherRoute-*-build-*
 # Sparkle signing private key
 Config/sparkle_ed25519_priv.key
 
+# Python cache and diagnostics reports
+__pycache__/
+*.pyc
+reports/diagnostics/*.json
+
