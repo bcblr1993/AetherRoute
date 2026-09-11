@@ -187,6 +187,8 @@ expected_profile_for_bundle() {
   esac
 }
 
+"$ROOT/scripts/thin_sparkle_framework.sh" "$APP" "$IDENTITY"
+
 for bundle in "$APP" "$PACKET" "$TRANSPARENT"; do
   codesign --verify --deep --strict --verbose=2 "$bundle"
   codesign -dv --verbose=4 "$bundle" 2>&1 \

@@ -112,6 +112,7 @@ build_app() {
   product="$TEMP_DIR/DerivedData/Build/Products/Release/AetherRoute.app"
   test -d "$product"
   ditto "$product" "$destination"
+  "$ROOT/scripts/thin_sparkle_framework.sh" "$destination" -
   codesign --verify --deep --strict "$destination"
 }
 

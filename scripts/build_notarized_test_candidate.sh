@@ -386,24 +386,7 @@ test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")"
 test "$(plutil -extract CFBundleVersion raw -o - "$APP/Contents/Info.plist")" \
   = "$BUILD_NUMBER"
 
-SPARKLE_FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
-if [ -d "$SPARKLE_FRAMEWORK" ]; then
-  find "$SPARKLE_FRAMEWORK" -type f | while read -r binary_file; do
-    if file "$binary_file" | grep -q "Mach-O"; then
-      archs=$(lipo -archs "$binary_file")
-      if echo "$archs" | grep -q "x86_64"; then
-        lipo -thin arm64 "$binary_file" -output "$binary_file.thin"
-        mv "$binary_file.thin" "$binary_file"
-      fi
-    fi
-  done
-
-  find "$SPARKLE_FRAMEWORK" -name "*.xpc" -o -name "Updater.app" -o -name "Autoupdate" | while read -r helper; do
-    codesign -f -s "$IDENTITY" -o runtime --timestamp "$helper"
-  done
-  codesign -f -s "$IDENTITY" -o runtime --timestamp "$SPARKLE_FRAMEWORK"
-  codesign -f -s "$IDENTITY" --entitlements "$ROOT/Config/AetherRoute.DeveloperID.entitlements" -o runtime --timestamp "$APP"
-fi
+"$ROOT/scripts/thin_sparkle_framework.sh" "$APP" "$IDENTITY"
 
 for bundle in "$APP" "$PACKET" "$TRANSPARENT"; do
   codesign --verify --deep --strict --verbose=2 "$bundle"
