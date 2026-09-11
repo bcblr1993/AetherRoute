@@ -2272,9 +2272,9 @@ final class TunnelManager: ObservableObject {
             profileMessage = PrivacyConsentError.required.localizedDescription
             return
         }
-        guard canModifyProfiles else {
+        guard canImportOrAddProfile else {
             profileMessage = AppLocalization.string(
-                "Stop the secure connection before changing profiles."
+                "Wait for current profile operations to finish before importing."
             )
             profileMessageIsError = true
             return
@@ -2291,15 +2291,17 @@ final class TunnelManager: ObservableObject {
 
             do {
                 let store = try ProfileCatalogStore.applicationGroup()
+                let shouldActivate = !isEnabled || activeProfileID == nil
                 let catalog = try await ProfileFileImporter.importProfile(
                     from: url,
-                    into: store
+                    into: store,
+                    makeActive: shouldActivate
                 )
                 await applyProductionProfileCatalog(catalog)
                 diagnosticEvents.record(.profileImported)
-                profileMessage = AppLocalization.string(
-                    "Profile imported and activated."
-                )
+                profileMessage = shouldActivate
+                    ? AppLocalization.string("Profile imported and activated.")
+                    : AppLocalization.string("Profile imported into library.")
                 profileMessageIsError = false
             } catch is CancellationError {
                 profileMessage = AppLocalization.string("Profile import cancelled.")
@@ -2318,9 +2320,9 @@ final class TunnelManager: ObservableObject {
 
     @discardableResult
     func createNativeProfile(node: AetherNode) async -> Bool {
-        guard ensurePrivacyConsent(), canModifyProfiles else {
+        guard ensurePrivacyConsent(), canImportOrAddProfile else {
             profileMessage = AppLocalization.string(
-                "Stop the secure connection before changing profiles."
+                "Wait for current profile operations to finish before adding node."
             )
             profileMessageIsError = true
             return false
@@ -2333,6 +2335,7 @@ final class TunnelManager: ObservableObject {
                 AppLocalization.string("%@ · Manual"),
                 node.name
             )
+            let shouldActivate = !isEnabled || activeProfileID == nil
             if isUIReviewMode {
                 let yaml = try AetherNodeProfileCompiler.compile(node: node)
                 let managed = ManagedProfile(
@@ -2344,7 +2347,7 @@ final class TunnelManager: ObservableObject {
                 )
                 installReviewProfileCatalog(
                     ProfileCatalog(
-                        activeProfileID: managed.id,
+                        activeProfileID: shouldActivate ? managed.id : activeProfileID,
                         profiles: profiles + [managed]
                     )
                 )
@@ -2352,14 +2355,15 @@ final class TunnelManager: ObservableObject {
                 try await performProductionProfileCatalogOperation {
                     try ProfileCatalogStore.applicationGroup().addNative(
                         nodes: [node],
-                        suggestedName: profileName
+                        suggestedName: profileName,
+                        makeActive: shouldActivate
                     )
                 }
             }
             diagnosticEvents.record(.profileImported)
-            profileMessage = AppLocalization.string(
-                "Manual node created and activated."
-            )
+            profileMessage = shouldActivate
+                ? AppLocalization.string("Manual node created and activated.")
+                : AppLocalization.string("Manual node created in library.")
             profileMessageIsError = false
             return true
         } catch {
@@ -2426,9 +2430,9 @@ final class TunnelManager: ObservableObject {
     }
 
     func makePortableArchive(password: String) async -> Data? {
-        guard ensurePrivacyConsent(), canModifyProfiles else {
+        guard ensurePrivacyConsent(), !isTransferringProfiles, !profiles.isEmpty else {
             profileMessage = AppLocalization.string(
-                "Stop the secure connection before changing profiles."
+                "No profiles available to export."
             )
             profileMessageIsError = true
             return nil
@@ -2683,9 +2687,9 @@ final class TunnelManager: ObservableObject {
 
     @discardableResult
     func addSubscription(urlText: String) async -> Bool {
-        guard ensurePrivacyConsent(), canModifyProfiles else {
+        guard ensurePrivacyConsent(), canImportOrAddProfile else {
             profileMessage = AppLocalization.string(
-                "Stop the secure connection before changing profiles."
+                "Wait for current profile operations to finish before adding subscription."
             )
             profileMessageIsError = true
             return false
@@ -2703,6 +2707,7 @@ final class TunnelManager: ObservableObject {
             isRefreshingSubscription = true
             defer { isRefreshingSubscription = false }
 
+            let shouldActivate = !isEnabled || activeProfileID == nil
             switch try await subscriptionClient.fetch(subscription) {
             case let .updated(data, metadata, report):
                 let suggestedName = subscriptionDisplayName(for: url)
@@ -2711,14 +2716,16 @@ final class TunnelManager: ObservableObject {
                     try installPreviewSubscriptionProfile(
                         data: data,
                         suggestedName: suggestedName,
-                        subscription: metadata
+                        subscription: metadata,
+                        makeActive: shouldActivate
                     )
                 } else {
                     try await performProductionProfileCatalogOperation {
                         try ProfileCatalogStore.applicationGroup().addValidated(
                             data: data,
                             suggestedName: suggestedName,
-                            subscription: metadata
+                            subscription: metadata,
+                            makeActive: shouldActivate
                         )
                     }
                 }
@@ -2727,13 +2734,20 @@ final class TunnelManager: ObservableObject {
                     try ProfileCatalogStore.applicationGroup().addValidated(
                         data: data,
                         suggestedName: suggestedName,
-                        subscription: metadata
+                        subscription: metadata,
+                        makeActive: shouldActivate
                     )
                 }
 #endif
+                let baseMsg: String.LocalizationValue = shouldActivate
+                    ? "Subscription downloaded and activated."
+                    : "Subscription downloaded into library."
+                let partialMsg: String.LocalizationValue = shouldActivate
+                    ? "Subscription downloaded and activated. %lld usable nodes imported; %lld invalid nodes skipped."
+                    : "Subscription downloaded into library. %lld usable nodes imported; %lld invalid nodes skipped."
                 profileMessage = subscriptionSuccessMessage(
-                    base: "Subscription downloaded and activated.",
-                    partial: "Subscription downloaded and activated. %lld usable nodes imported; %lld invalid nodes skipped.",
+                    base: baseMsg,
+                    partial: partialMsg,
                     report: report
                 )
                 profileMessageIsError = false
@@ -2756,7 +2770,8 @@ final class TunnelManager: ObservableObject {
     private func installPreviewSubscriptionProfile(
         data: Data,
         suggestedName: String,
-        subscription: ProfileSubscription
+        subscription: ProfileSubscription,
+        makeActive: Bool = true
     ) throws {
         try ProfileImportValidator.validate(data: data)
         guard let yaml = String(data: data, encoding: .utf8) else {
@@ -2778,9 +2793,10 @@ final class TunnelManager: ObservableObject {
                 subscription: subscription
             )
         )
+        let shouldActivate = makeActive || profiles.isEmpty
         installReviewProfileCatalog(
             ProfileCatalog(
-                activeProfileID: managed.id,
+                activeProfileID: shouldActivate ? managed.id : activeProfileID,
                 profiles: profiles + [managed]
             )
         )
@@ -3468,6 +3484,19 @@ final class TunnelManager: ObservableObject {
             && !isUpdatingRoutingMode
             && !isSwitchingNetworkEngine
             && !isSavingConnectionConfiguration
+    }
+
+    var canImportOrAddProfile: Bool {
+        hasAcceptedPrivacyDisclosure
+            && canImportOrAddProfileRegardlessOfPrivacy
+    }
+
+    var canImportOrAddProfileRegardlessOfPrivacy: Bool {
+        !isTransitioning
+            && !isRefreshingSubscription
+            && !isImportingProfile
+            && !isUpdatingProfiles
+            && !isTransferringProfiles
     }
 
     private var isSavingConnectionConfiguration: Bool {

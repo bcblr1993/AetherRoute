@@ -94,11 +94,11 @@ struct ProxiesView: View {
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(.primary)
 
-                Text("\(groups.count)")
+                Text(verbatim: "\(groups.count)")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, AetherVisual.sCompact)
+                    .padding(.vertical, AetherVisual.sMicro)
                     .background(Color.secondary.opacity(0.12), in: Capsule())
 
                 Spacer()
@@ -119,7 +119,7 @@ struct ProxiesView: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: AetherVisual.s2) {
                     ForEach(groups) { group in
                         let isSelected = (currentGroup(from: groups)?.id == group.id)
                         let currentMember = tunnel.proxySelections[group.name]?.selectedMember
@@ -127,22 +127,22 @@ struct ProxiesView: View {
                         Button {
                             selectedGroupId = group.id
                         } label: {
-                            HStack(spacing: 6) {
+                            HStack(spacing: AetherVisual.sCompact) {
                                 Image(systemName: groupSymbol(group.strategy))
                                     .font(.caption.weight(.semibold))
 
-                                VStack(alignment: .leading, spacing: 1) {
-                                    HStack(spacing: 4) {
+                                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                                    HStack(spacing: AetherVisual.s1) {
                                         Text(group.name)
                                             .font(.subheadline.weight(isSelected ? .bold : .medium))
                                             .lineLimit(1)
                                         Text(group.strategy.uppercased())
                                             .font(.system(size: 8, weight: .bold))
-                                            .padding(.horizontal, 3)
-                                            .padding(.vertical, 1)
+                                            .padding(.horizontal, AetherVisual.sMicro)
+                                            .padding(.vertical, AetherVisual.sMicro)
                                             .background(
                                                 (isSelected ? Color.white.opacity(0.25) : Color.secondary.opacity(0.15)),
-                                                in: RoundedRectangle(cornerRadius: 3)
+                                                in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius)
                                             )
                                     }
 
@@ -154,17 +154,17 @@ struct ProxiesView: View {
                                     }
                                 }
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
+                            .padding(.horizontal, AetherVisual.s3)
+                            .padding(.vertical, AetherVisual.sCompact)
                             .foregroundStyle(isSelected ? Color.white : Color.primary)
                             .background(
                                 isSelected
                                     ? AnyShapeStyle(Color.accentColor)
                                     : AnyShapeStyle(Color(nsColor: .controlBackgroundColor)),
-                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                             )
                             .overlay {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                                     .stroke(
                                         isSelected ? Color.clear : Color(nsColor: .separatorColor).opacity(0.5),
                                         lineWidth: 0.5
@@ -174,7 +174,7 @@ struct ProxiesView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, AetherVisual.sMicro)
             }
         }
     }
@@ -217,7 +217,7 @@ struct ProxiesView: View {
             }
             .padding(.top, AetherVisual.s3)
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: AetherVisual.sCompact) {
                 Image(systemName: "slider.horizontal.3")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -225,7 +225,10 @@ struct ProxiesView: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("\(summary.proxyCount) endpoints")
+                HStack(spacing: AetherVisual.sMicro) {
+                    Text(verbatim: "\(summary.proxyCount)")
+                    Text("Endpoints")
+                }
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -357,7 +360,7 @@ private struct ActiveProxyGroupView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             } else {
-                HStack(spacing: 6) {
+                HStack(spacing: AetherVisual.sCompact) {
                     Image(systemName: "bolt.horizontal.circle.fill")
                         .font(.caption)
                         .foregroundStyle(Color.accentColor)
@@ -438,7 +441,7 @@ private struct ActiveProxyGroupView: View {
     }
 
     private var filterPills: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: AetherVisual.s1) {
             ForEach(ProxyNodeFilter.allCases) { option in
                 let isSelected = (filter == option)
                 let count = members.filter { option.accepts(status(for: $0)) && matchesSearch($0) }.count
@@ -448,42 +451,42 @@ private struct ActiveProxyGroupView: View {
                         filter = option
                     }
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: AetherVisual.sCompact) {
                         Text(option.localizedTitle)
                             .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
-                        Text("\(count)")
+                        Text(verbatim: "\(count)")
                             .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                            .padding(.horizontal, 4.5)
-                            .padding(.vertical, 1)
+                            .padding(.horizontal, AetherVisual.s1)
+                            .padding(.vertical, AetherVisual.sMicro)
                             .background(
                                 isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12),
                                 in: Capsule()
                             )
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4.5)
+                    .padding(.horizontal, AetherVisual.s2)
+                    .padding(.vertical, AetherVisual.s1)
                     .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
                     .background(
                         isSelected ? Color.accentColor.opacity(0.12) : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
                     )
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(2)
+        .padding(AetherVisual.sMicro)
         .background(
             Color(nsColor: .controlBackgroundColor).opacity(0.5),
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
         )
     }
 
     // MARK: - 节点网格展示 (现代卡片布局)
     private var nodeGrid: some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 270, maximum: 380), spacing: 12)],
-            spacing: 12
+            columns: [GridItem(.adaptive(minimum: 270, maximum: 380), spacing: AetherVisual.s3)],
+            spacing: AetherVisual.s3
         ) {
             ForEach(visibleMembers, id: \.self) { member in
                 let isSelected = (member == selectedMember)
@@ -511,7 +514,7 @@ private struct ActiveProxyGroupView: View {
                 )
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, AetherVisual.s1)
     }
 
     // MARK: - 节点列表展示 (Table 兼容已有测试标识)
@@ -656,7 +659,7 @@ private struct ProxyNodeModernCard: View {
                 onSelect()
             }
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: AetherVisual.sRow) {
                 // 左侧 Accent Bar 指示 (仅在选中时点亮，未选中透明占位保持整齐对齐)
                 Capsule()
                     .fill(isSelected ? Color.accentColor : Color.clear)
@@ -666,7 +669,7 @@ private struct ProxyNodeModernCard: View {
                 AetherNodeIcon(name: name, protocolName: protocolName, size: 28)
 
                 // 中间信息：节点名 (单行不折行) + 协议徽标与状态
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text(name)
                         .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
                         .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.9))
@@ -674,11 +677,11 @@ private struct ProxyNodeModernCard: View {
                         .truncationMode(.middle)
                         .help(name)
 
-                    HStack(spacing: 6) {
+                    HStack(spacing: AetherVisual.sCompact) {
                         AetherProtocolBadge(type: protocolName)
 
                         if isSelected {
-                            HStack(spacing: 3.5) {
+                            HStack(spacing: AetherVisual.sMicro) {
                                 Circle()
                                     .fill(Color.green)
                                     .frame(width: 5, height: 5)
@@ -694,7 +697,7 @@ private struct ProxyNodeModernCard: View {
                     }
                 }
 
-                Spacer(minLength: 4)
+                Spacer(minLength: AetherVisual.s1)
 
                 // 右侧延迟测速胶囊
                 AetherLatencyPill(
@@ -703,33 +706,34 @@ private struct ProxyNodeModernCard: View {
                     onTap: onTest
                 )
             }
-            .padding(.leading, 6)
-            .padding(.trailing, 10)
-            .padding(.vertical, 10)
+            .padding(.leading, AetherVisual.sCompact)
+            .padding(.trailing, AetherVisual.sRow)
+            .padding(.vertical, AetherVisual.sRow)
             .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(name)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .disabled(!canSelect || isBusy)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
                 .fill(cardBackground)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(cardBorder, lineWidth: isSelected ? 1.0 : (isHovered ? 0.8 : 0.5))
+            RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                .stroke(cardBorder, lineWidth: isSelected ? 1.2 : (isHovered ? 0.9 : 0.5))
         }
+        .scaleEffect(isHovered ? 1.008 : 1.0)
         .shadow(
             color: isSelected
-                ? Color.accentColor.opacity(colorScheme == .dark ? 0.20 : 0.12)
-                : (isHovered ? Color.black.opacity(colorScheme == .dark ? 0.20 : 0.06) : Color.clear),
-            radius: isSelected ? 5 : 3,
-            y: isSelected ? 1.5 : 1
+                ? Color.accentColor.opacity(colorScheme == .dark ? 0.25 : 0.15)
+                : (isHovered ? Color.black.opacity(colorScheme == .dark ? 0.20 : 0.08) : Color.clear),
+            radius: isSelected ? 6 : (isHovered ? 4 : 0),
+            y: isSelected ? 1.5 : (isHovered ? 1.5 : 0)
         )
-        .animation(AetherVisual.gentleSpring, value: isHovered)
-        .animation(AetherVisual.gentleSpring, value: isSelected)
+        .animation(.spring(response: 0.28, dampingFraction: 0.76), value: isHovered)
+        .animation(.spring(response: 0.32, dampingFraction: 0.72), value: isSelected)
         .onHover { hovering in
             isHovered = hovering
         }

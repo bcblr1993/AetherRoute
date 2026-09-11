@@ -7,11 +7,13 @@ import Foundation
 public enum ProfileFileImporter {
     public static func importProfile(
         from url: URL,
-        into store: ProfileCatalogStore
+        into store: ProfileCatalogStore,
+        makeActive: Bool = true
     ) async throws -> ProfileCatalog {
         try await importProfile(
             from: url,
             into: store,
+            makeActive: makeActive,
             loadData: { try Data(contentsOf: $0, options: [.mappedIfSafe]) }
         )
     }
@@ -19,6 +21,7 @@ public enum ProfileFileImporter {
     static func importProfile(
         from url: URL,
         into store: ProfileCatalogStore,
+        makeActive: Bool = true,
         loadData: @escaping @Sendable (URL) throws -> Data
     ) async throws -> ProfileCatalog {
         let worker = Task.detached(priority: .userInitiated) {
@@ -34,6 +37,7 @@ public enum ProfileFileImporter {
             return try store.addValidated(
                 data: data,
                 suggestedName: suggestedName,
+                makeActive: makeActive,
                 cancellationCheck: { try Task.checkCancellation() }
             )
         }

@@ -7,6 +7,8 @@
   "background_color": "#f5f7fb",
   "theme_color": "#0874f8",
   "icons": [
-    {"src": "/assets/aetherroute-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}
+    {"src": "/assets/aetherroute-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
+    {"src": "/assets/aetherroute-mark.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/assets/favicon.png", "sizes": "128x128", "type": "image/png", "purpose": "any"}
   ]
 }

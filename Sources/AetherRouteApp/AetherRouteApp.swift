@@ -509,8 +509,8 @@ private struct MenuBarContent: View {
             HStack(spacing: AetherVisual.s3) {
                 AetherRouteBrandTile(size: 32, isActive: tunnel.isConnected)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 5) {
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                    HStack(spacing: AetherVisual.sCompact) {
                         Text("AetherRoute")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(.primary)
@@ -536,7 +536,7 @@ private struct MenuBarContent: View {
                     Image(systemName: "power")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(tunnel.isConnected ? Color.green : Color.secondary)
-                        .padding(7)
+                        .padding(AetherVisual.sCompact)
                         .background(
                             (tunnel.isConnected ? Color.green.opacity(0.15) : Color.secondary.opacity(0.12)),
                             in: Circle()
@@ -547,16 +547,16 @@ private struct MenuBarContent: View {
                 .help(tunnel.primaryActionTitle)
             }
             .padding(.horizontal, AetherVisual.s4)
-            .padding(.top, AetherVisual.s3 + 2)
-            .padding(.bottom, AetherVisual.s2 + 2)
+            .padding(.top, AetherVisual.sRow)
+            .padding(.bottom, AetherVisual.sRow)
 
             Divider().opacity(0.4)
 
             // 2. 实时速率双胶囊
             if tunnel.isConnected {
-                HStack(spacing: 8) {
+                HStack(spacing: AetherVisual.s2) {
                     // 下行
-                    HStack(spacing: 4) {
+                    HStack(spacing: AetherVisual.s1) {
                         Image(systemName: "arrow.down")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(Color.cyan)
@@ -564,12 +564,12 @@ private struct MenuBarContent: View {
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                             .foregroundStyle(.primary)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                    .padding(.horizontal, AetherVisual.s2)
+                    .padding(.vertical, AetherVisual.s1)
+                    .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius))
 
                     // 上行
-                    HStack(spacing: 4) {
+                    HStack(spacing: AetherVisual.s1) {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(Color.purple)
@@ -577,24 +577,24 @@ private struct MenuBarContent: View {
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                             .foregroundStyle(.primary)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Color.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                    .padding(.horizontal, AetherVisual.s2)
+                    .padding(.vertical, AetherVisual.s1)
+                    .background(Color.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius))
 
                     Spacer()
 
                     // 连接数
-                    HStack(spacing: 3) {
+                    HStack(spacing: AetherVisual.sMicro) {
                         Image(systemName: "point.3.connected.trianglepath.dotted")
                             .font(.system(size: 9))
                             .foregroundStyle(.secondary)
-                        Text("\(telemetry.snapshot.connections.count)")
+                        Text(verbatim: "\(telemetry.snapshot.connections.count)")
                             .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.horizontal, AetherVisual.s4)
-                .padding(.vertical, AetherVisual.s2 + 2)
+                .padding(.vertical, AetherVisual.sRow)
 
                 Divider().opacity(0.4)
             }
@@ -662,18 +662,18 @@ private struct MenuBarContent: View {
                                 } label: {
                                     let itemFlag = AetherRegionFlag.flagAndRegion(from: member)
                                     if member == currentMember {
-                                        Label("\(itemFlag.flag) \(member)", systemImage: "checkmark")
+                                        Label(title: { Text(verbatim: "\(itemFlag.flag) \(member)") }, icon: { Image(systemName: "checkmark") })
                                     } else {
-                                        Text("\(itemFlag.flag) \(member)")
+                                        Text(verbatim: "\(itemFlag.flag) \(member)")
                                     }
                                 }
                             }
                             if primaryGroup.members.count > 16 {
                                 Divider()
-                                Text("+\(primaryGroup.members.count - 16) more nodes")
+                                Text(verbatim: "+\(primaryGroup.members.count - 16) more nodes")
                             }
                         } label: {
-                            HStack(spacing: 6) {
+                            HStack(spacing: AetherVisual.sCompact) {
                                 Text(flagInfo.flag)
                                     .font(.system(size: 12))
                                 Text(currentMember)
@@ -684,9 +684,9 @@ private struct MenuBarContent: View {
                                     .font(.system(size: 8, weight: .bold))
                                     .foregroundStyle(.secondary)
                             }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                            .padding(.horizontal, AetherVisual.s2)
+                            .padding(.vertical, AetherVisual.s1)
+                            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius))
                         }
                         .menuStyle(.borderlessButton)
                     }
@@ -703,7 +703,7 @@ private struct MenuBarContent: View {
                             copiedTerminalCommand = false
                         }
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: AetherVisual.s1) {
                             Image(systemName: copiedTerminalCommand ? "checkmark.circle.fill" : "terminal")
                                 .foregroundStyle(copiedTerminalCommand ? Color.green : Color.primary)
                             Text(copiedTerminalCommand ? AppLocalization.string("Copied") : AppLocalization.string("Copy Proxy"))
@@ -726,7 +726,7 @@ private struct MenuBarContent: View {
                             clearedTerminalCommand = false
                         }
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: AetherVisual.s1) {
                             Image(systemName: clearedTerminalCommand ? "checkmark.circle.fill" : "terminal.fill")
                                 .foregroundStyle(clearedTerminalCommand ? Color.green : Color.primary)
                             Text(clearedTerminalCommand ? AppLocalization.string("Cleared") : AppLocalization.string("Clear Proxy"))
@@ -774,7 +774,7 @@ private struct MenuBarContent: View {
             .buttonStyle(.borderless)
             .font(.caption)
             .padding(.horizontal, AetherVisual.s4)
-            .padding(.vertical, AetherVisual.s2 + 2)
+            .padding(.vertical, AetherVisual.sRow)
         }
     }
 

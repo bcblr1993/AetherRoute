@@ -110,15 +110,15 @@ struct ConnectionsView: View {
                 TableColumn("Matched rule") { row in
                     ConnectionRuleCell(connection: row.connection)
                 }
-                .width(min: 120, ideal: 150, max: 170)
+                .width(min: 150, ideal: 250, max: 400)
                 TableColumn("Outlet") { row in
                     ConnectionOutletCell(connection: row.connection)
                 }
-                .width(min: 92, ideal: 104, max: 120)
+                .width(min: 92, ideal: 110, max: 130)
                 TableColumn("Traffic") { row in
                     ConnectionTrafficCell(connection: row.connection)
                 }
-                .width(min: 82, ideal: 88, max: 96)
+                .width(min: 90, ideal: 105, max: 120)
                 TableColumn("Duration") { row in
                     ConnectionDurationCell(connection: row.connection)
                 }
@@ -159,11 +159,11 @@ struct ConnectionsView: View {
             .frame(width: 112)
 
             if tunnel.isConnected {
-                Button("Disconnect all") {
+                Button("Disconnect all", systemImage: "xmark.circle") {
                     Task { await tunnel.setEnabled(false) }
                 }
                 .buttonStyle(.bordered)
-                .disabled(tunnel.isTransitioning)
+                .disabled(tunnel.isTransitioning || telemetry.snapshot.connections.isEmpty)
                 .accessibilityIdentifier("disconnect-all-connections")
             }
         }
@@ -266,7 +266,7 @@ private struct SessionBar: View {
 
             if let outlet {
                 Divider().frame(height: 18).opacity(0.4)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     Text(AppLocalization.string("Outlet"))
                         .font(.system(size: 9.5, weight: .bold))
                         .foregroundStyle(.secondary)
@@ -409,6 +409,7 @@ private struct ConnectionRuleCell: View {
             .font(.body.weight(.medium))
             .foregroundStyle(.primary)
             .lineLimit(1)
+            .help(ruleText)
     }
 
     private var ruleText: String {

@@ -11,15 +11,20 @@ enum AetherVisual {
     static let portalMid = Color(red: 0.039, green: 0.431, blue: 0.980)
     static let portalDark = Color(red: 0.035, green: 0.259, blue: 0.659)
     // Four-point spacing grid from the final design handoff.
+    static let sMicro: CGFloat = 2
     static let s1: CGFloat = 4
+    static let sCompact: CGFloat = 6
     static let s2: CGFloat = 8
+    static let sRow: CGFloat = 10
     static let s3: CGFloat = 12
     static let s4: CGFloat = 16
     static let s5: CGFloat = 20
     static let s6: CGFloat = 24
 
+    static let badgeRadius: CGFloat = 4
     static let controlRadius: CGFloat = 6
     static let insetRadius: CGFloat = 8
+    static let cardRadius: CGFloat = 10
     static let panelRadius: CGFloat = 12
 
     // MARK: - Motion
@@ -492,6 +497,7 @@ struct AetherLatencyPill: View {
     let latency: Int?
     var isTesting: Bool = false
     var onTap: (() -> Void)? = nil
+    @State private var isHovered = false
 
     var body: some View {
         Button {
@@ -507,21 +513,29 @@ struct AetherLatencyPill: View {
                     Circle()
                         .fill(pillColor)
                         .frame(width: 5, height: 5)
+                        .shadow(color: pillColor.opacity(0.4), radius: 2)
                 }
 
                 Text(displayText)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(pillColor)
             }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(pillColor.opacity(0.12), in: Capsule())
+            .padding(.horizontal, 7.5)
+            .padding(.vertical, 3.5)
+            .background(pillColor.opacity(isHovered ? 0.22 : 0.12), in: Capsule())
             .overlay {
                 Capsule()
-                    .stroke(pillColor.opacity(0.25), lineWidth: 0.5)
+                    .stroke(pillColor.opacity(isHovered ? 0.48 : 0.25), lineWidth: 0.5)
             }
+            .scaleEffect(isHovered && onTap != nil ? 1.04 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovered)
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            if onTap != nil && !isTesting {
+                isHovered = hovering
+            }
+        }
         .disabled(isTesting || onTap == nil)
     }
 
@@ -534,10 +548,10 @@ struct AetherLatencyPill: View {
     private var pillColor: Color {
         if isTesting { return .secondary }
         guard let latency, latency > 0 else { return Color.secondary.opacity(0.7) }
-        if latency < 180 { return Color(red: 0.20, green: 0.76, blue: 0.40) } // 翡翠绿
-        if latency < 450 { return Color(red: 0.18, green: 0.65, blue: 0.95) } // 科技蓝
-        if latency < 1200 { return Color(red: 0.95, green: 0.62, blue: 0.18) } // 琥珀橙
-        return Color(red: 0.90, green: 0.38, blue: 0.35) // 柔和珊瑚红
+        if latency < 200 { return Color(red: 0.20, green: 0.78, blue: 0.42) } // 翡翠绿 (高速)
+        if latency < 500 { return Color(red: 0.18, green: 0.68, blue: 0.98) } // 科技蓝 (良好)
+        if latency < 900 { return Color(red: 0.96, green: 0.64, blue: 0.18) } // 琥珀橙 (普通)
+        return Color(red: 0.94, green: 0.40, blue: 0.38) // 珊瑚红 (慢速)
     }
 }
 
@@ -833,41 +847,59 @@ public struct AetherTrafficMiniGraph: View {
             )
 
             ZStack {
-                // 背景微弱参考虚线
+                // 背景微弱参考网格线
                 VStack {
-                    Divider().opacity(0.15)
+                    Divider().opacity(0.12)
                     Spacer()
-                    Divider().opacity(0.15)
+                    Divider().opacity(0.08)
+                    Spacer()
+                    Divider().opacity(0.12)
                 }
 
-                // 下行面积波形 (青蓝渐变)
+                // 下行平滑面积波形 (青蓝霓虹渐变)
                 if downloadSamples.count > 1 {
-                    waveformPath(samples: downloadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                    smoothWaveformPath(samples: downloadSamples, width: width, height: actualHeight, maxVal: maxVal)
                         .fill(
                             LinearGradient(
-                                colors: [Color.cyan.opacity(0.35), Color.cyan.opacity(0.02)],
+                                colors: [Color.cyan.opacity(0.38), Color.cyan.opacity(0.08), Color.cyan.opacity(0.0)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
 
-                    waveformLine(samples: downloadSamples, width: width, height: actualHeight, maxVal: maxVal)
-                        .stroke(Color.cyan, lineWidth: 1.5)
+                    smoothWaveformLine(samples: downloadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.cyan.opacity(0.7), Color.cyan],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+                        )
+                        .shadow(color: Color.cyan.opacity(0.4), radius: 3, x: 0, y: 1)
                 }
 
-                // 上行面积波形 (紫粉渐变)
+                // 上行平滑面积波形 (紫粉霓虹渐变)
                 if uploadSamples.count > 1 {
-                    waveformPath(samples: uploadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                    smoothWaveformPath(samples: uploadSamples, width: width, height: actualHeight, maxVal: maxVal)
                         .fill(
                             LinearGradient(
-                                colors: [Color.purple.opacity(0.25), Color.purple.opacity(0.01)],
+                                colors: [Color.purple.opacity(0.30), Color.purple.opacity(0.06), Color.purple.opacity(0.0)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
 
-                    waveformLine(samples: uploadSamples, width: width, height: actualHeight, maxVal: maxVal)
-                        .stroke(Color.purple.opacity(0.8), lineWidth: 1.2)
+                    smoothWaveformLine(samples: uploadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.purple.opacity(0.6), Color.purple.opacity(0.95)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
+                        )
+                        .shadow(color: Color.purple.opacity(0.35), radius: 2.5, x: 0, y: 1)
                 }
             }
         }
@@ -875,39 +907,68 @@ public struct AetherTrafficMiniGraph: View {
         .accessibilityHidden(true)
     }
 
-    private func waveformPath(samples: [Double], width: CGFloat, height: CGFloat, maxVal: Double) -> Path {
-        var path = Path()
-        guard samples.count > 1 else { return path }
+    private func smoothPoints(samples: [Double], width: CGFloat, height: CGFloat, maxVal: Double) -> [CGPoint] {
+        guard samples.count > 1 else { return [] }
         let step = width / CGFloat(samples.count - 1)
+        return samples.enumerated().map { i, val in
+            let normalizedY = height - CGFloat(min(val / maxVal, 1.0)) * (height - 6) - 3
+            return CGPoint(x: CGFloat(i) * step, y: normalizedY)
+        }
+    }
+
+    private func smoothWaveformPath(samples: [Double], width: CGFloat, height: CGFloat, maxVal: Double) -> Path {
+        var path = Path()
+        let points = smoothPoints(samples: samples, width: width, height: height, maxVal: maxVal)
+        guard points.count > 1 else { return path }
 
         path.move(to: CGPoint(x: 0, y: height))
-        for (i, val) in samples.enumerated() {
-            let normalizedY = height - CGFloat(val / maxVal) * (height - 4)
-            let x = CGFloat(i) * step
-            if i == 0 {
-                path.addLine(to: CGPoint(x: x, y: normalizedY))
-            } else {
-                path.addLine(to: CGPoint(x: x, y: normalizedY))
-            }
+        path.addLine(to: points[0])
+
+        for i in 0..<(points.count - 1) {
+            let p0 = i > 0 ? points[i - 1] : points[i]
+            let p1 = points[i]
+            let p2 = points[i + 1]
+            let p3 = i + 2 < points.count ? points[i + 2] : p2
+
+            let tension: CGFloat = 0.35
+            let cp1 = CGPoint(
+                x: p1.x + (p2.x - p0.x) * tension,
+                y: p1.y + (p2.y - p0.y) * tension
+            )
+            let cp2 = CGPoint(
+                x: p2.x - (p3.x - p1.x) * tension,
+                y: p2.y - (p3.y - p1.y) * tension
+            )
+            path.addCurve(to: p2, control1: cp1, control2: cp2)
         }
+
         path.addLine(to: CGPoint(x: width, y: height))
         path.closeSubpath()
         return path
     }
 
-    private func waveformLine(samples: [Double], width: CGFloat, height: CGFloat, maxVal: Double) -> Path {
+    private func smoothWaveformLine(samples: [Double], width: CGFloat, height: CGFloat, maxVal: Double) -> Path {
         var path = Path()
-        guard samples.count > 1 else { return path }
-        let step = width / CGFloat(samples.count - 1)
+        let points = smoothPoints(samples: samples, width: width, height: height, maxVal: maxVal)
+        guard points.count > 1 else { return path }
 
-        for (i, val) in samples.enumerated() {
-            let normalizedY = height - CGFloat(val / maxVal) * (height - 4)
-            let x = CGFloat(i) * step
-            if i == 0 {
-                path.move(to: CGPoint(x: x, y: normalizedY))
-            } else {
-                path.addLine(to: CGPoint(x: x, y: normalizedY))
-            }
+        path.move(to: points[0])
+        for i in 0..<(points.count - 1) {
+            let p0 = i > 0 ? points[i - 1] : points[i]
+            let p1 = points[i]
+            let p2 = points[i + 1]
+            let p3 = i + 2 < points.count ? points[i + 2] : p2
+
+            let tension: CGFloat = 0.35
+            let cp1 = CGPoint(
+                x: p1.x + (p2.x - p0.x) * tension,
+                y: p1.y + (p2.y - p0.y) * tension
+            )
+            let cp2 = CGPoint(
+                x: p2.x - (p3.x - p1.x) * tension,
+                y: p2.y - (p3.y - p1.y) * tension
+            )
+            path.addCurve(to: p2, control1: cp1, control2: cp2)
         }
         return path
     }

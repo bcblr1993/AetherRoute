@@ -6079,6 +6079,16 @@
         }
       }
     },
+    "Search rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索规则"
+          }
+        }
+      }
+    },
     "Secure random data could not be generated.": {
       "localizations": {
         "zh-Hans": {
@@ -8745,6 +8755,96 @@
           "stringUnit": {
             "state": "translated",
             "value": "路由模式"
+          }
+        }
+      }
+    },
+    "The subscription will be downloaded and safely added to your profile library without interrupting your connection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅将被下载并安全添加到配置库中，不会中断当前连接。"
+          }
+        }
+      }
+    },
+    "Wait for current profile operations to finish before importing.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请等待当前配置操作完成后再导入。"
+          }
+        }
+      }
+    },
+    "Profile imported into library.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置已导入至配置库。"
+          }
+        }
+      }
+    },
+    "Wait for current profile operations to finish before adding node.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请等待当前配置操作完成后再添加节点。"
+          }
+        }
+      }
+    },
+    "Manual node created in library.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动节点已创建至配置库。"
+          }
+        }
+      }
+    },
+    "No profiles available to export.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可供导出的配置。"
+          }
+        }
+      }
+    },
+    "Wait for current profile operations to finish before adding subscription.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请等待当前配置操作完成后再添加订阅。"
+          }
+        }
+      }
+    },
+    "Subscription downloaded into library.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅已下载并保存至配置库。"
+          }
+        }
+      }
+    },
+    "Subscription downloaded into library. %lld usable nodes imported; %lld invalid nodes skipped.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅已下载并保存至配置库。已导入 %1$lld 个可用节点，跳过 %2$lld 个无效节点。"
           }
         }
       }

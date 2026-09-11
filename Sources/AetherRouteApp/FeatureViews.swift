@@ -1,33 +1,68 @@
 import AetherRouteKit
 import SwiftUI
 
+enum RuleKindFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case domain = "Domain"
+    case ip = "IP / CIDR"
+    case geo = "Geo"
+    case match = "Match"
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .all: AppLocalization.string("All")
+        case .domain: "DOMAIN"
+        case .ip: "IP-CIDR"
+        case .geo: "GEO"
+        case .match: "MATCH"
+        }
+    }
+
+    func accepts(_ kind: String) -> Bool {
+        let upper = kind.uppercased()
+        switch self {
+        case .all: return true
+        case .domain: return upper.contains("DOMAIN")
+        case .ip: return upper.contains("IP") || upper.contains("CIDR")
+        case .geo: return upper.contains("GEO")
+        case .match: return upper.contains("MATCH") || (!upper.contains("DOMAIN") && !upper.contains("IP") && !upper.contains("CIDR") && !upper.contains("GEO"))
+        }
+    }
+}
+
 struct RulesView: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    @State private var searchText = ""
+    @State private var selectedFilter: RuleKindFilter = .all
 
     var body: some View {
         Group {
             if let summary = tunnel.activeProfileSummary {
+                let displayedRules = filteredRules(from: summary.rules)
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: AetherVisual.s5) {
+                    LazyVStack(alignment: .leading, spacing: AetherVisual.s4) {
+                        // 1. 顶部规则概览 Hero 卡片
                         VStack(alignment: .leading, spacing: AetherVisual.s4) {
                             HStack(spacing: AetherVisual.s5) {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                                        .fill(Color.indigo.opacity(0.10))
+                                        .fill(Color.indigo.opacity(0.12))
                                     Image(systemName: "list.number")
-                                        .font(.system(size: 25, weight: .medium))
+                                        .font(.system(size: 24, weight: .semibold))
                                         .foregroundStyle(Color.accentColor)
                                 }
-                                .frame(width: 58, height: 58)
+                                .frame(width: 52, height: 52)
                                 .accessibilityHidden(true)
 
-                                VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                                     Text("Ordered routing policy")
-                                        .font(.title3.weight(.semibold))
+                                        .font(.title3.weight(.bold))
                                         .foregroundStyle(.primary)
                                     Text("Rules are evaluated from top to bottom by the protocol core.")
-                                        .font(.body.weight(.medium))
-                                        .foregroundStyle(.primary)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -36,12 +71,12 @@ struct RulesView: View {
                             HStack(spacing: AetherVisual.s4) {
                                 HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
                                     Text(verbatim: String(summary.ruleCount))
-                                        .font(.title2.weight(.semibold))
+                                        .font(.title2.weight(.bold))
                                         .monospacedDigit()
                                         .foregroundStyle(.primary)
                                     Text("explicit rules")
-                                        .font(.body)
-                                        .foregroundStyle(.primary)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 Spacer(minLength: AetherVisual.s2)
@@ -77,28 +112,100 @@ struct RulesView: View {
                             }
                         }
 
+                        // 2. 搜索与分类过滤工具栏
+                        if !summary.rules.isEmpty {
+                            VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                                HStack(spacing: AetherVisual.s2) {
+                                    // 过滤胶囊栏
+                                    HStack(spacing: AetherVisual.sMicro) {
+                                        ForEach(RuleKindFilter.allCases) { filter in
+                                            let isSelected = selectedFilter == filter
+                                            let count = summary.rules.filter { filter.accepts($0.kind) }.count
+                                            Button {
+                                                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                                                    selectedFilter = filter
+                                                }
+                                            } label: {
+                                                HStack(spacing: AetherVisual.s1) {
+                                                    Text(filter.localizedTitle)
+                                                        .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
+                                                    if filter != .all {
+                                                        Text(verbatim: "\(count)")
+                                                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                                                            .padding(.horizontal, AetherVisual.s1)
+                                                            .padding(.vertical, AetherVisual.sMicro)
+                                                            .background(
+                                                                isSelected ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12),
+                                                                in: Capsule()
+                                                            )
+                                                    }
+                                                }
+                                                .padding(.horizontal, AetherVisual.s2)
+                                                .padding(.vertical, AetherVisual.s1)
+                                                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                                                .background(
+                                                    isSelected ? Color.accentColor.opacity(0.12) : Color.clear,
+                                                    in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+                                                )
+                                                .contentShape(Rectangle())
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                    .padding(AetherVisual.sMicro)
+                                    .background(
+                                        Color(nsColor: .controlBackgroundColor).opacity(0.5),
+                                        in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                                    )
+
+                                    Spacer()
+
+                                    Text(
+                                        String.localizedStringWithFormat(
+                                            AppLocalization.string("Showing %lld of %lld items."),
+                                            Int64(displayedRules.count),
+                                            Int64(summary.rules.count)
+                                        )
+                                    )
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                }
+
+                                HStack {
+                                    Label("Evaluation order", systemImage: "arrow.down")
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                }
+                                .padding(.top, AetherVisual.s1)
+                            }
+                        }
+
                         if summary.rules.isEmpty {
                             FeatureEmptyState(
                                 symbol: "list.bullet.rectangle.portrait",
                                 title: "No explicit rules",
                                 detail: "The active profile contains no ordered rule entries. Its effective fallback is determined only after the protocol core validates and starts the profile."
                             )
+                        } else if displayedRules.isEmpty {
+                            FeatureEmptyState(
+                                symbol: "line.3.horizontal.decrease.circle",
+                                title: "No matching rules",
+                                detail: "Try adjusting the filter or clearing the search text."
+                            )
                         } else {
-                            VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                                Label("Evaluation order", systemImage: "arrow.down")
-                                    .font(.title3.weight(.bold))
-                                VStack(spacing: AetherVisual.s3) {
-                                    ForEach(summary.rules) { rule in
-                                        RuleRow(rule: rule)
-                                    }
+                            VStack(spacing: AetherVisual.sCompact) {
+                                ForEach(displayedRules) { rule in
+                                    RuleRow(rule: rule)
                                 }
-                                .accessibilityElement(children: .contain)
-                                .accessibilityLabel("Ordered routing rules")
                             }
+                            .accessibilityElement(children: .contain)
+                            .accessibilityLabel("Ordered routing rules")
+                            .animation(.spring(response: 0.32, dampingFraction: 0.82), value: displayedRules.count)
                         }
 
                         TruncationNotice(
-                            visibleCount: summary.rules.count,
+                            visibleCount: displayedRules.count,
                             totalCount: summary.ruleCount
                         )
                         TruncationNotice(
@@ -114,6 +221,11 @@ struct RulesView: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Routing rules content")
                 }
+                .searchable(
+                    text: $searchText,
+                    placement: .toolbar,
+                    prompt: Text("Search rules")
+                )
             } else {
                 FeatureEmptyState(
                     symbol: "list.bullet.rectangle.portrait",
@@ -123,6 +235,19 @@ struct RulesView: View {
             }
         }
         .accessibilityIdentifier("rules-page")
+    }
+
+    private func filteredRules(from rules: [RuleConfigurationSummary]) -> [RuleConfigurationSummary] {
+        rules.filter { rule in
+            let matchesKind = selectedFilter.accepts(rule.kind)
+            guard matchesKind else { return false }
+            if searchText.isEmpty { return true }
+            let text = searchText.lowercased()
+            if rule.kind.lowercased().contains(text) { return true }
+            if let criteria = rule.criteria, criteria.lowercased().contains(text) { return true }
+            if rule.target.lowercased().contains(text) { return true }
+            return false
+        }
     }
 }
 
@@ -989,69 +1114,125 @@ struct ProviderRow: View {
 }
 
 func formattedRate(_ bytes: UInt64) -> String {
-    "\(formattedBytes(bytes))/s"
+    if bytes < 1024 {
+        return "\(bytes) B/s"
+    } else if bytes < 1024 * 1024 {
+        let kb = Double(bytes) / 1024.0
+        return String(format: "%.1f KB/s", kb).replacingOccurrences(of: ".0 ", with: " ")
+    } else if bytes < 1024 * 1024 * 1024 {
+        let mb = Double(bytes) / (1024.0 * 1024.0)
+        return String(format: "%.1f MB/s", mb).replacingOccurrences(of: ".0 ", with: " ")
+    } else {
+        let gb = Double(bytes) / (1024.0 * 1024.0 * 1024.0)
+        return String(format: "%.2f GB/s", gb)
+    }
 }
 
 func formattedBytes(_ bytes: UInt64) -> String {
-    ByteCountFormatter.string(
-        fromByteCount: Int64(clamping: bytes),
-        countStyle: .file
-    )
+    if bytes < 1024 {
+        return "\(bytes) B"
+    } else if bytes < 1024 * 1024 {
+        let kb = Double(bytes) / 1024.0
+        return String(format: "%.1f KB", kb).replacingOccurrences(of: ".0 ", with: " ")
+    } else if bytes < 1024 * 1024 * 1024 {
+        let mb = Double(bytes) / (1024.0 * 1024.0)
+        return String(format: "%.1f MB", mb).replacingOccurrences(of: ".0 ", with: " ")
+    } else {
+        let gb = Double(bytes) / (1024.0 * 1024.0 * 1024.0)
+        return String(format: "%.2f GB", gb)
+    }
 }
 
 private struct RuleRow: View {
     let rule: RuleConfigurationSummary
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
             Text(verbatim: String(rule.order))
                 .font(.caption.monospacedDigit().weight(.bold))
                 .foregroundStyle(.secondary)
-                .frame(width: 28, height: 28)
+                .frame(width: 26, height: 26)
                 .background(Color.secondary.opacity(0.1), in: Circle())
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(rule.kind)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(ruleKindColor(rule.kind))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(ruleKindColor(rule.kind).opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+            HStack(spacing: AetherVisual.sCompact) {
+                Text(rule.kind)
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(ruleKindColor(rule.kind))
+                    .padding(.horizontal, AetherVisual.sCompact)
+                    .padding(.vertical, AetherVisual.sMicro)
+                    .background(ruleKindColor(rule.kind).opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
 
-                    if let criteria = rule.criteria {
-                        Text(criteria)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    } else {
-                        Text(AppLocalization.string("Any remaining traffic"))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
+                if let criteria = rule.criteria {
+                    Text(criteria)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(criteria)
+                } else {
+                    Text(AppLocalization.string("Any remaining traffic"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
                 }
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: AetherVisual.s3)
 
             Image(systemName: "arrow.right")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
 
-            Text(rule.target)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.accentColor.opacity(0.1), in: Capsule())
-                .lineLimit(1)
-                .frame(maxWidth: 180, alignment: .trailing)
+            HStack(spacing: AetherVisual.s1) {
+                if targetColor == .green {
+                    Image(systemName: "arrow.forward")
+                        .font(.system(size: 9.5, weight: .bold))
+                } else if targetColor == .red {
+                    Image(systemName: "hand.raised.fill")
+                        .font(.system(size: 9.5, weight: .bold))
+                } else {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 9.5, weight: .bold))
+                }
+
+                Text(rule.target)
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(targetColor)
+            .padding(.horizontal, AetherVisual.s2)
+            .padding(.vertical, AetherVisual.s1)
+            .background(targetColor.opacity(0.12), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(targetColor.opacity(0.25), lineWidth: 0.5)
+            }
+            .lineLimit(1)
+            .frame(maxWidth: 180, alignment: .trailing)
         }
-        .padding(AetherVisual.s3 + 1)
-        .featureCard()
+        .padding(.horizontal, AetherVisual.sRow)
+        .padding(.vertical, AetherVisual.sCompact)
+        .background(
+            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                .fill(isHovered ? Color(nsColor: .controlBackgroundColor).opacity(0.9) : Color(nsColor: .controlBackgroundColor).opacity(0.5))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                .stroke(isHovered ? Color.accentColor.opacity(0.3) : Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 0.5)
+        }
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
         .accessibilityElement(children: .contain)
+    }
+
+    private var targetColor: Color {
+        let upper = rule.target.uppercased()
+        if upper == "DIRECT" { return .green }
+        if upper == "REJECT" { return .red }
+        return Color.accentColor
     }
 
     private func ruleKindColor(_ kind: String) -> Color {
