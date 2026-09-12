@@ -6,13 +6,13 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.0 (Build 2026091201)</title>
-            <pubDate>Sat, 12 Sep 2026 11:38:20 +0800</pubDate>
-            <sparkle:version>2026091201</sparkle:version>
+            <title>Version 1.0.0 (Build 2026091202)</title>
+            <pubDate>Sat, 12 Sep 2026 18:42:37 +0800</pubDate>
+            <sparkle:version>2026091202</sparkle:version>
             <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
-<h2>AetherRoute 1.0.0 (Build 2026091201)</h2>
+<h2>AetherRoute 1.0.0 (Build 2026091202)</h2>
 <ul>
   <li>Hardened transparent proxy with loopback and RFC 1918 private subnet isolation.</li>
   <li>Enhanced subscription parsing with full Clash/Meta multi-node support.</li>
@@ -21,9 +21,9 @@
 </ul>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.0-build-2026091201/AetherRoute-1.0.0-build-2026091201-arm64-Notarized-Test.dmg"
-                sparkle:edSignature="J8ptgNfHz+lqr/Q6WJ26+cvcNK45I8AzfI96XfCrQrgzDSdUDd/Sq3gt+ZkH9A1ui0AiKIWX6ogWk4dnNg1FAg=="
-                length="27022416"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.0-build-2026091202/AetherRoute-1.0.0-build-2026091202-arm64-Notarized-Test.dmg"
+                sparkle:edSignature="LXU2krbBVYX0aQuA+F51iZBHztVBEWO8HcwCWFZMhcEfG5fEiY13SVox1RFCf/0PXFp+5wdO+PdjhKcJ11F4BQ=="
+                length="27029500"
                 type="application/octet-stream" />
         </item>
     </channel>
