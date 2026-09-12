@@ -266,10 +266,96 @@ def inspect_unified_logs(window_seconds: int = DEFAULT_WINDOW_SECONDS) -> Dict[s
     return log_summary
 
 
+def inspect_network_health(app_pid: Optional[int] = None) -> Dict[str, Any]:
+    """Probes DNS, dual routing paths, utun device, and TCP socket states."""
+    import socket
+
+    # 1. DNS
+    dns_res = {}
+    for host in ("www.google.com", "www.apple.com"):
+        t0 = time.time()
+        try:
+            infos = socket.getaddrinfo(host, 443, family=socket.AF_INET)
+            lat = (time.time() - t0) * 1000.0
+            ip = infos[0][4][0]
+            is_fake = ip.startswith("198.18.") or ip.startswith("198.19.")
+            dns_res[host] = {"ip": ip, "latency_ms": round(lat, 2), "is_fake_ip": is_fake, "ok": True}
+        except Exception as e:
+            dns_res[host] = {"ip": None, "latency_ms": -1.0, "is_fake_ip": False, "ok": False, "error": str(e)}
+
+    # 2. Dual-target HTTP probes
+    probes = {}
+    for name, url in (("proxy", "https://www.google.com"), ("direct", "https://www.apple.com")):
+        code, out, _ = run_command(["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}:%{time_total}", "--connect-timeout", "4", url])
+        if code == 0 and out:
+            parts = out.split(":")
+            try:
+                probes[name] = {"http_code": parts[0], "latency": round(float(parts[1]), 3)}
+            except Exception:
+                probes[name] = {"http_code": "000", "latency": -1.0}
+        else:
+            probes[name] = {"http_code": "000", "latency": -1.0}
+
+    # 3. UTUN Interface
+    utun_stats = None
+    c_if, out_if, _ = run_command(["ifconfig"])
+    if c_if == 0:
+        blocks = re.split(r"\n(?=[a-zA-Z0-9_]+:)", out_if)
+        utun_name = None
+        for b in blocks:
+            if "inet 198.18.0.1" in b or "198.18." in b:
+                utun_name = b.split(":")[0].strip()
+                break
+        if utun_name:
+            c_ns, out_ns, _ = run_command(["netstat", "-I", utun_name])
+            if c_ns == 0:
+                data_lines = [l for l in out_ns.splitlines() if l.strip() and not l.startswith("Name")]
+                if data_lines:
+                    p = data_lines[0].split()
+                    if len(p) >= 8:
+                        try:
+                            utun_stats = {
+                                "interface": utun_name,
+                                "mtu": int(p[1]),
+                                "ipkts": int(p[3]),
+                                "ierrs": int(p[4]),
+                                "opkts": int(p[5]),
+                                "oerrs": int(p[6]),
+                            }
+                        except Exception:
+                            pass
+
+    # 4. TCP Socket states
+    tcp_states = {"ESTABLISHED": 0, "CLOSE_WAIT": 0, "TIME_WAIT": 0, "SYN_SENT": 0, "LISTEN": 0}
+    c_tcp, out_tcp, _ = run_command(["netstat", "-an", "-p", "tcp"])
+    if c_tcp == 0:
+        for l in out_tcp.splitlines():
+            if l.startswith("tcp"):
+                parts = l.split()
+                if len(parts) >= 6:
+                    st = parts[5]
+                    tcp_states[st] = tcp_states.get(st, 0) + 1
+
+    app_close_wait = 0
+    if app_pid:
+        c_cw, out_cw, _ = run_command(["lsof", "-n", "-P", "-p", str(app_pid)])
+        if c_cw == 0 and out_cw:
+            app_close_wait = len([l for l in out_cw.splitlines() if "CLOSE_WAIT" in l])
+
+    return {
+        "dns": dns_res,
+        "probes": probes,
+        "utun": utun_stats,
+        "tcp_states": tcp_states,
+        "app_close_wait": app_close_wait,
+    }
+
+
 def evaluate_health(
     processes: List[Dict[str, Any]],
     crashes: List[Dict[str, Any]],
     logs: Dict[str, Any],
+    network: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Computes overall health score and specific actionable findings."""
     issues = []
@@ -332,6 +418,28 @@ def evaluate_health(
             f"Detected {logs['nw_unconnected_calls']} CFNetwork unconnected nw_connection error calls."
         )
 
+    if network:
+        utun = network.get("utun")
+        if utun and (utun.get("ierrs", 0) > 0 or utun.get("oerrs", 0) > 0):
+            if status != "CRITICAL":
+                status = "WARNING"
+            issues.append(f"Virtual TUN interface packet errors: ierrs={utun.get('ierrs')}, oerrs={utun.get('oerrs')}.")
+        tcp = network.get("tcp_states", {})
+        app_close_wait = network.get("app_close_wait", 0)
+        if app_close_wait > 5:
+            if status != "CRITICAL":
+                status = "WARNING"
+            issues.append(f"AetherRoute has {app_close_wait} unclosed CLOSE_WAIT sockets.")
+        elif tcp.get("CLOSE_WAIT", 0) > 200:
+            if status != "CRITICAL":
+                status = "WARNING"
+            issues.append(f"System-wide CLOSE_WAIT TCP sockets critically elevated: {tcp.get('CLOSE_WAIT')}.")
+        p_probe = network.get("probes", {}).get("proxy", {})
+        if p_probe.get("http_code") != "200":
+            if status != "CRITICAL":
+                status = "WARNING"
+            issues.append(f"Proxy connectivity probe failed: HTTP {p_probe.get('http_code')}.")
+
     if not issues:
         issues.append("All runtime health checks passed cleanly.")
 
@@ -351,7 +459,10 @@ def perform_health_check(
     processes = find_aetherroute_processes()
     crashes = scan_crashes(window_seconds=window_seconds)
     logs = inspect_unified_logs(window_seconds=window_seconds)
-    evaluation = evaluate_health(processes, crashes, logs)
+    app_procs = [p for p in processes if p["type"] == "app"]
+    app_pid = app_procs[0]["pid"] if app_procs else None
+    network = inspect_network_health(app_pid=app_pid)
+    evaluation = evaluate_health(processes, crashes, logs, network=network)
 
     report = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -361,6 +472,7 @@ def perform_health_check(
         "processes": processes,
         "crashes": crashes,
         "logs": logs,
+        "network": network,
     }
 
     if json_out_path:
@@ -384,6 +496,23 @@ def print_summary(report: Dict[str, Any]) -> None:
     print(f" AetherRoute Runtime Health Inspector [{report['timestamp']}]")
     print(f" Status: {color}{verdict}{reset}")
     print("=" * 68)
+
+    if "network" in report and report["network"]:
+        net = report["network"]
+        print("\n--- Data Plane & Network Performance ---")
+        p_pr = net.get("probes", {}).get("proxy", {})
+        d_pr = net.get("probes", {}).get("direct", {})
+        print(f"  [PROXY]  HTTP {p_pr.get('http_code', 'N/A')} ({p_pr.get('latency', -1.0):.3f}s) | [DIRECT] HTTP {d_pr.get('http_code', 'N/A')} ({d_pr.get('latency', -1.0):.3f}s)")
+        dns = net.get("dns", {})
+        g_dns = dns.get("www.google.com", {})
+        a_dns = dns.get("www.apple.com", {})
+        fake_str = f"Fake-IP: {g_dns.get('ip')}" if g_dns.get("is_fake_ip") else f"IP: {g_dns.get('ip')}"
+        print(f"  [DNS]    Google: {g_dns.get('latency_ms', -1):.1f}ms [{fake_str}] | Apple: {a_dns.get('latency_ms', -1):.1f}ms")
+        utun = net.get("utun")
+        if utun:
+            print(f"  [UTUN]   {utun.get('interface')} (MTU {utun.get('mtu')}) | Ipkts: {utun.get('ipkts')}, Opkts: {utun.get('opkts')}, Errors: in={utun.get('ierrs')}/out={utun.get('oerrs')}")
+        tcp = net.get("tcp_states", {})
+        print(f"  [TCP]    Established: {tcp.get('ESTABLISHED', 0)} | Close-Wait: {tcp.get('CLOSE_WAIT', 0)} | Time-Wait: {tcp.get('TIME_WAIT', 0)} | Syn-Sent: {tcp.get('SYN_SENT', 0)}")
 
     print("\n--- Running Processes ---")
     if not report["processes"]:

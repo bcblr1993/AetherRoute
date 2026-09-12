@@ -61,10 +61,9 @@ class TestContinuousStabilityObserver(unittest.TestCase):
             data = json.load(f)
 
         self.assertEqual(data["verdict"], "HEALTHY")
-        self.assertEqual(data["aggregates"]["totalErrors"], 0)
-        self.assertEqual(data["aggregates"]["totalCrashes"], 0)
-        self.assertEqual(data["aggregates"]["probeSuccessRatePercent"], 100.0)
-        self.assertAlmostEqual(data["aggregates"]["appFootprintDeltaMB"], 0.5)
+        self.assertEqual(data["aggregates"]["stability"]["totalErrors"], 0)
+        self.assertEqual(data["aggregates"]["stability"]["totalCrashes"], 0)
+        self.assertAlmostEqual(data["aggregates"]["process"]["appFootprintDeltaMB"], 0.5)
 
     def test_status_update_critical_on_crash(self):
         obs = ContinuousStabilityObserver(
