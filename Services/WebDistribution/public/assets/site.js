@@ -23,14 +23,14 @@
     "/license/": { zh: "软件许可 — AetherRoute", en: "Software License — AetherRoute" },
     "/404.html": { zh: "未找到 — AetherRoute", en: "Not Found — AetherRoute" }
   };
+
   let saved = null;
   try {
     saved = localStorage.getItem(key);
   } catch (_) {
     saved = null;
   }
-  const preferred = saved
-    || (navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en");
+  const preferred = saved || (navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en");
 
   function apply(language) {
     const value = language === "en" ? "en" : "zh";
@@ -49,6 +49,7 @@
       if (release) localizedTitle = `AetherRoute ${release[1]}`;
     }
     if (localizedTitle) document.title = localizedTitle;
+
     document.querySelectorAll("[data-localized-image]").forEach((image) => {
       const source = image.getAttribute(`data-src-${value}`);
       const alternative = image.getAttribute(`data-alt-${value}`);
@@ -57,6 +58,7 @@
       }
       if (alternative) image.setAttribute("alt", alternative);
     });
+
     document.querySelectorAll("[data-language-toggle]").forEach((button) => {
       button.textContent = value === "zh" ? "EN" : "中文";
       button.setAttribute(
@@ -69,6 +71,23 @@
   document.querySelectorAll("[data-language-toggle]").forEach((button) => {
     button.addEventListener("click", () => {
       apply(root.dataset.language === "zh" ? "en" : "zh");
+    });
+  });
+
+  // Checksum copy click helper
+  document.querySelectorAll(".checksum").forEach((block) => {
+    block.style.cursor = "pointer";
+    block.title = "Click to copy / 点击复制";
+    block.addEventListener("click", async () => {
+      const text = block.textContent.trim();
+      try {
+        await navigator.clipboard.writeText(text);
+        const originalBg = block.style.borderColor;
+        block.style.borderColor = "var(--emerald)";
+        setTimeout(() => {
+          block.style.borderColor = originalBg;
+        }, 1200);
+      } catch (_) {}
     });
   });
 

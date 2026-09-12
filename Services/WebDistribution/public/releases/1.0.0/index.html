@@ -2,9 +2,9 @@
 <html lang="zh-Hans" data-language="zh">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="AetherRoute 1.0.0 正式稳定版本说明、安装包下载与 SHA-256 校验和。">
-  <title>AetherRoute 1.0.0</title>
+  <title>AetherRoute 1.0.0 正式稳定版</title>
   <link rel="icon" href="/assets/aetherroute-mark.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/assets/favicon.png" type="image/png">
   <link rel="apple-touch-icon" href="/assets/aetherroute-mark.png">
@@ -15,9 +15,9 @@
   <a class="skip-link" href="#content">Skip to content / 跳到正文</a>
   
   <header class="site-header">
-    <nav class="nav">
+    <nav class="nav" aria-label="Primary navigation">
       <a class="brand" href="/">
-        <img src="/assets/aetherroute-mark.png" alt="AetherRoute Logo" width="38" height="38">
+        <img src="/assets/aetherroute-mark.svg" alt="AetherRoute Logo" width="32" height="32">
         <span>AetherRoute</span>
       </a>
       <div class="nav-links">
@@ -26,7 +26,7 @@
         <a href="/support/"><span data-lang="zh">支持</span><span data-lang="en">Support</span></a>
         <a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a>
       </div>
-      <button class="language-button" type="button" data-language-toggle>EN</button>
+      <button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button>
     </nav>
   </header>
 
@@ -53,7 +53,7 @@
         <ul>
           <li><span data-lang="zh">原生 Swift 6 与 SwiftUI 现代化交互，遵循 macOS Sequoia 人机交互指南，完美适配原生深色模式。</span><span data-lang="en">Native Swift 6 and SwiftUI architecture strictly conforming to macOS HIG with seamless dark appearance integration.</span></li>
           <li><span data-lang="zh">透明代理（Transparent Proxy / Network Extension）与系统级 TUN 双网络引擎，支持规则分流、全局代理与直连模式无缝切换。</span><span data-lang="en">Transparent Proxy and system TUN dual engines with Rule, Global, and Direct routing modes.</span></li>
-          <li><span data-lang="zh">全面支持 12 类现代网络协议（VLESS + REALITY, VMess, Hysteria2, TUIC, Trojan, Shadowsocks, WireGuard, ShadowQUIC 等）。</span><span data-lang="en">Support for 12 modern protocol families (VLESS, VMess, Hysteria2, TUIC, Trojan, Shadowsocks, WireGuard, etc.).</span></li>
+          <li><span data-lang="zh">全面支持 12 类现代网络协议（VLESS + REALITY, VMess, Hysteria2, TUIC v5, Trojan, Shadowsocks, WireGuard, ShadowQUIC 等）。</span><span data-lang="en">Support for 12 modern protocol families (VLESS, VMess, Hysteria2, TUIC, Trojan, Shadowsocks, WireGuard, etc.).</span></li>
           <li><span data-lang="zh">配置与订阅库采用 Apple 数据保护钥匙串（Keychain）硬件级 AES-GCM 加密，零明文敏感数据外泄风险。</span><span data-lang="en">Hardware-backed Keychain AES-GCM profile encryption, minimal permissions, zero unnecessary system modifications.</span></li>
           <li><span data-lang="zh">集成原生 Sparkle 2 自动升级引擎，具备 Ed25519 签名与哈希双重强校验。</span><span data-lang="en">Native Sparkle 2 updater with Ed25519 signature and SHA-256 dual verification.</span></li>
         </ul>
@@ -72,7 +72,7 @@
         <h2><span data-lang="zh">文件完整性校验</span><span data-lang="en">Integrity verification</span></h2>
         <p><span data-lang="zh">下载完成后，您可在终端执行以下命令计算哈希以确保安装包未被篡改：</span><span data-lang="en">Verify file integrity by running the following command in Terminal:</span></p>
         <div class="checksum">shasum -a 256 AetherRoute-1.0.0-build-2026091201-arm64-Notarized-Test.dmg</div>
-        <p style="font-weight: 600; margin-bottom: 6px;">SHA-256</p>
+        <p style="font-weight: 650; margin-bottom: 6px;">SHA-256</p>
         <div class="checksum">d5f81dc3ac9388f5f65a84cf4cc1ce79f6bc9088ecd49b4aca6c3b9525df4051</div>
       </section>
 
@@ -97,15 +97,15 @@
   <footer class="site-footer">
     <div class="shell footer-grid">
       <div>
-        <strong style="color: var(--ink-primary); font-size: 15px;">AetherRoute</strong><br>
-        <span data-lang="zh" style="display:inline-block; margin-top: 6px;">面向 Apple Silicon Mac 的原生私密路由应用 · 由编程不良人创建和维护。</span>
-        <span data-lang="en" style="display:inline-block; margin-top: 6px;">Native private routing for Apple silicon Macs. Created and maintained by BianChengBuLiangRen.</span><br>
-        <span style="display:inline-block; margin-top: 6px;">© 2026 BianChengBuLiangRen.</span>
+        <strong style="color: var(--ink-primary); font-size: 15px; font-weight: 700;">AetherRoute</strong><br>
+        <span data-lang="zh" style="display:inline-block; margin-top: 6px; color: var(--ink-secondary);">面向 Apple Silicon Mac 的原生私密路由应用 · 由编程不良人创建和维护。</span>
+        <span data-lang="en" style="display:inline-block; margin-top: 6px; color: var(--ink-secondary);">Native private routing for Apple silicon Macs. Created and maintained by BianChengBuLiangRen.</span><br>
+        <span style="display:inline-block; margin-top: 6px; color: var(--ink-tertiary); font-size: 13px;">© 2026 BianChengBuLiangRen. Released under MIT License.</span>
       </div>
       <div class="footer-links">
         <a href="/releases/"><span data-lang="zh">所有版本</span><span data-lang="en">Releases</span></a>
-        <a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a>
-        <a href="/support/"><span data-lang="zh">支持</span><span data-lang="en">Support</span></a>
+        <a href="/privacy/"><span data-lang="zh">隐私政策</span><span data-lang="en">Privacy</span></a>
+        <a href="/support/"><span data-lang="zh">技术支持</span><span data-lang="en">Support</span></a>
         <a href="https://github.com/bcblr1993/AetherRoute" target="_blank" rel="noreferrer">GitHub</a>
       </div>
     </div>

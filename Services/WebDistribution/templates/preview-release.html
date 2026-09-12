@@ -1,10 +1,107 @@
-<!doctype html><html lang="zh-Hans" data-language="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="AetherRoute @@VERSION@@ 免费 Beta：下载、安装指南、已知限制与校验信息。"><title>AetherRoute @@VERSION@@ Beta</title><link rel="icon" href="/assets/aetherroute-mark.svg" type="image/svg+xml"><link rel="alternate icon" href="/assets/favicon.png" type="image/png"><link rel="apple-touch-icon" href="/assets/aetherroute-mark.png"><link rel="stylesheet" href="/assets/site.css?v=20260912.01"><script src="/assets/site.js?v=20260912.01" defer></script></head><body>
-<a class="skip-link" href="#content">Skip to content / 跳到正文</a><header class="site-header"><nav class="nav"><a class="brand" href="/"><img src="/assets/aetherroute-mark.svg" alt=""><span>AetherRoute</span></a><div class="nav-links"><a href="/releases/"><span data-lang="zh">所有版本</span><span data-lang="en">All releases</span></a><a href="/support/"><span data-lang="zh">支持</span><span data-lang="en">Support</span></a></div><button class="language-button" type="button" data-language-toggle>EN</button></nav></header>
-<main id="content" class="shell"><div class="page-hero"><span class="eyebrow"><span data-lang="zh">免费 Beta 测试版 · Apple 公证</span><span data-lang="en">Free beta · Apple notarized</span></span><h1>AetherRoute<br>@@VERSION@@ Beta</h1><p>Build @@BUILD@@ · @@RELEASE_DATE@@ · Apple silicon · macOS @@MINIMUM_SYSTEM_VERSION@@+</p><div class="hero-actions"><a class="button primary" href="@@DMG_URL@@"><span data-lang="zh">下载免费测试版</span><span data-lang="en">Download free beta</span></a><a class="button" href="@@SHA256SUMS_URL@@">SHA256SUMS</a></div></div>
-<article class="prose"><div class="notice"><span data-lang="zh">这是免费测试版。核心功能无需注册、付费或在线授权；你需要自带订阅或节点。完整稳定性验证尚未完成，请保留现有配置备份与可用安装包。</span><span data-lang="en">This is a free beta. Core features require no account, payment, or online license. Bring your own subscription or nodes. Full stability validation is still in progress; retain a profile backup and a known-good installer.</span></div>
-<section><h2><span data-lang="zh">开始使用</span><span data-lang="en">Get started</span></h2><ol><li><span data-lang="zh">打开 DMG，将 AetherRoute 拖入“应用程序”，然后打开应用。</span><span data-lang="en">Open the DMG, drag AetherRoute into Applications, and launch it.</span></li><li><span data-lang="zh">导入你的订阅地址、节点或本地配置。所需路由资源随应用提供，无需另行准备数据库。</span><span data-lang="en">Import your subscription URL, nodes, or local configuration. Routing resources are bundled with the app; no separate database setup is needed.</span></li><li><span data-lang="zh">点击连接，按系统提示批准网络扩展，再回到应用继续。</span><span data-lang="en">Click Connect, approve the Network Extension when macOS asks, then return to the app.</span></li></ol><p><a href="/support/"><span data-lang="zh">查看网络扩展批准步骤</span><span data-lang="en">Network Extension approval guide</span></a></p></section>
-<section><h2><span data-lang="zh">本次提供</span><span data-lang="en">Included</span></h2><ul><li><span data-lang="zh">原生 macOS 界面，支持简体中文、英文和浅色、深色外观。</span><span data-lang="en">A native macOS interface in Simplified Chinese and English, with light and dark appearances.</span></li><li><span data-lang="zh">透明代理与 TUN，订阅、节点和本地配置导入。</span><span data-lang="en">Transparent Proxy and TUN, with subscription, node, and local configuration import.</span></li><li><span data-lang="zh">配置加密保存在本机；使用正常协议核心，安装包不包含调试诊断构建。</span><span data-lang="en">Encrypted profiles stored locally, with the normal protocol core and no diagnostic build.</span></li><li><span data-lang="zh">Developer ID 签名、Apple 公证和已装订公证票据。</span><span data-lang="en">Developer ID signing, Apple notarization, and stapled notarization tickets.</span></li></ul></section>
-<section><h2><span data-lang="zh">限制与更新</span><span data-lang="en">Limitations and updates</span></h2><p><span data-lang="zh">仅支持 Apple 芯片和 macOS @@MINIMUM_SYSTEM_VERSION@@ 或更高版本。测试版仍可能出现连接、兼容性或界面问题；睡眠唤醒、网络切换、IPv6/DNS 和长时间稳定性仍在持续验证。软件不提供订阅或代理服务。</span><span data-lang="en">Requires Apple silicon and macOS @@MINIMUM_SYSTEM_VERSION@@ or later. Connection, compatibility, or interface issues may remain. Sleep/wake, network changes, IPv6/DNS, and long-duration stability are still being validated. The app does not provide subscriptions or proxy service.</span></p><p><span data-lang="zh">本版通过官网下载新 DMG 手动更新，不依赖付费授权或自动更新服务。更新前请备份配置，退出旧版本后再替换应用。</span><span data-lang="en">Update manually by downloading a new DMG from this website. This edition does not depend on a paid licensing or automatic update service. Back up profiles and quit the previous version before replacing the app.</span></p></section>
-<section><h2><span data-lang="zh">下载校验</span><span data-lang="en">Download integrity</span></h2><p><span data-lang="zh">下载后可在终端核对以下 SHA-256：</span><span data-lang="en">After downloading, compare the SHA-256 in Terminal:</span></p><div class="checksum">shasum -a 256 @@ARTIFACT_NAME@@</div><div class="checksum">@@DMG_SHA256@@</div></section>
-<section><h2><span data-lang="zh">支持</span><span data-lang="en">Support</span></h2><p><span data-lang="zh">遇到安装或连接问题，请先查看支持页面；反馈时只提供版本号、macOS 版本和复现步骤，避免公开订阅、服务器地址或密钥。</span><span data-lang="en">For installation or connection issues, check Support first. Include the app version, macOS version, and reproduction steps in feedback; keep subscriptions, server addresses, and keys private.</span></p><p><a class="button" href="/support/"><span data-lang="zh">打开支持</span><span data-lang="en">Open Support</span></a></p></section></article></main>
-<footer class="site-footer"><div class="shell footer-grid"><div>© 2026 BianChengBuLiangRen.</div><div class="footer-links"><a href="/releases/">Releases</a><a href="/privacy/">Privacy</a><a href="/support/">Support</a></div></div></footer></body></html>
+<!doctype html>
+<html lang="zh-Hans" data-language="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AetherRoute @@VERSION@@ 免费 Beta：下载、安装指南、已知限制与校验信息。">
+  <title>AetherRoute @@VERSION@@ Beta</title>
+  <link rel="icon" href="/assets/aetherroute-mark.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/assets/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/aetherroute-mark.png">
+  <link rel="stylesheet" href="/assets/site.css?v=20260912.01">
+  <script src="/assets/site.js?v=20260912.01" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content / 跳到正文</a>
+  
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary navigation">
+      <a class="brand" href="/">
+        <img src="/assets/aetherroute-mark.svg" alt="AetherRoute Logo" width="32" height="32">
+        <span>AetherRoute</span>
+      </a>
+      <div class="nav-links">
+        <a href="/"><span data-lang="zh">首页</span><span data-lang="en">Home</span></a>
+        <a href="/releases/"><span data-lang="zh">所有版本</span><span data-lang="en">All releases</span></a>
+        <a href="/support/"><span data-lang="zh">支持</span><span data-lang="en">Support</span></a>
+        <a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a>
+      </div>
+      <button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button>
+    </nav>
+  </header>
+
+  <main id="content" class="shell">
+    <div class="page-hero">
+      <span class="eyebrow"><span data-lang="zh">免费 Beta 测试版 · Apple 公证</span><span data-lang="en">Free beta · Apple notarized</span></span>
+      <h1>AetherRoute<br>@@VERSION@@ Beta</h1>
+      <p>Build @@BUILD@@ · @@RELEASE_DATE@@ · Apple silicon · macOS @@MINIMUM_SYSTEM_VERSION@@+</p>
+      <div class="hero-actions">
+        <a class="button primary" href="@@DMG_URL@@"><span data-lang="zh">下载免费测试版</span><span data-lang="en">Download free beta</span> <span aria-hidden="true">↓</span></a>
+        <a class="button" href="@@SHA256SUMS_URL@@">SHA256SUMS</a>
+      </div>
+    </div>
+
+    <article class="prose">
+      <div class="notice">
+        <span data-lang="zh">这是免费测试版。核心功能无需注册、付费或在线授权；你需要自带订阅或节点。完整稳定性验证尚未完成，请保留现有配置备份与可用安装包。</span>
+        <span data-lang="en">This is a free beta. Core features require no account, payment, or online license. Bring your own subscription or nodes. Full stability validation is still in progress; retain a profile backup and a known-good installer.</span>
+      </div>
+
+      <section>
+        <h2><span data-lang="zh">开始使用</span><span data-lang="en">Get started</span></h2>
+        <ol>
+          <li><span data-lang="zh">打开 DMG，将 AetherRoute 拖入“应用程序”，然后打开应用。</span><span data-lang="en">Open the DMG, drag AetherRoute into Applications, and launch it.</span></li>
+          <li><span data-lang="zh">导入你的订阅地址、节点或本地配置。所需路由资源随应用提供，无需另行准备数据库。</span><span data-lang="en">Import your subscription URL, nodes, or local configuration. Routing resources are bundled with the app; no separate database setup is needed.</span></li>
+          <li><span data-lang="zh">点击连接，按系统提示批准网络扩展，再回到应用继续。无需关闭系统完整性保护（SIP）。</span><span data-lang="en">Click Connect, approve the Network Extension when macOS asks, then return to the app.</span></li>
+        </ol>
+        <p><a href="/support/"><span data-lang="zh">查看网络扩展批准步骤</span><span data-lang="en">Network Extension approval guide</span></a></p>
+      </section>
+
+      <section>
+        <h2><span data-lang="zh">本次提供</span><span data-lang="en">Included</span></h2>
+        <ul>
+          <li><span data-lang="zh">原生 macOS 界面，支持简体中文、英文和浅色、深色外观。</span><span data-lang="en">A native macOS interface in Simplified Chinese and English, with light and dark appearances.</span></li>
+          <li><span data-lang="zh">透明代理与 TUN，订阅、节点和本地配置导入。</span><span data-lang="en">Transparent Proxy and TUN, with subscription, node, and local configuration import.</span></li>
+          <li><span data-lang="zh">配置加密保存在本机；使用正常协议核心，安装包不包含调试诊断构建。</span><span data-lang="en">Encrypted profiles stored locally, with the normal protocol core and no diagnostic build.</span></li>
+          <li><span data-lang="zh">Developer ID 签名、Apple 公证和已装订公证票据。</span><span data-lang="en">Developer ID signing, Apple notarization, and stapled notarization tickets.</span></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2><span data-lang="zh">限制与更新</span><span data-lang="en">Limitations and updates</span></h2>
+        <p><span data-lang="zh">仅支持 Apple 芯片和 macOS @@MINIMUM_SYSTEM_VERSION@@ 或更高版本。测试版仍可能出现连接、兼容性或界面问题；睡眠唤醒、网络切换、IPv6/DNS 和长时间稳定性仍在持续验证。软件不提供订阅或代理服务。</span><span data-lang="en">Requires Apple silicon and macOS @@MINIMUM_SYSTEM_VERSION@@ or later. Connection, compatibility, or interface issues may remain. Sleep/wake, network changes, IPv6/DNS, and long-duration stability are still being validated. The app does not provide subscriptions or proxy service.</span></p>
+        <p><span data-lang="zh">本版通过官网下载新 DMG 手动更新，不依赖付费授权或自动更新服务。更新前请备份配置，退出旧版本后再替换应用。</span><span data-lang="en">Update manually by downloading a new DMG from this website. This edition does not depend on a paid licensing or automatic update service. Back up profiles and quit the previous version before replacing the app.</span></p>
+      </section>
+
+      <section>
+        <h2><span data-lang="zh">下载校验</span><span data-lang="en">Download integrity</span></h2>
+        <p><span data-lang="zh">下载后可在终端核对以下 SHA-256：</span><span data-lang="en">After downloading, compare the SHA-256 in Terminal:</span></p>
+        <div class="checksum">shasum -a 256 @@ARTIFACT_NAME@@</div>
+        <p style="font-weight: 650; margin-bottom: 6px;">SHA-256</p>
+        <div class="checksum">@@DMG_SHA256@@</div>
+      </section>
+
+      <section>
+        <h2><span data-lang="zh">支持</span><span data-lang="en">Support</span></h2>
+        <p><span data-lang="zh">遇到安装或连接问题，请先查看支持页面；反馈时只提供版本号、macOS 版本和复现步骤，避免公开订阅、服务器地址或密钥。</span><span data-lang="en">For installation or connection issues, check Support first. Include the app version, macOS version, and reproduction steps in feedback; keep subscriptions, server addresses, and keys private.</span></p>
+        <p><a class="button" href="/support/"><span data-lang="zh">打开支持中心</span><span data-lang="en">Open Support</span></a></p>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-grid">
+      <div>
+        <strong style="color: var(--ink-primary); font-size: 15px; font-weight: 700;">AetherRoute</strong><br>
+        <span style="display:inline-block; margin-top: 6px; color: var(--ink-secondary);">© 2026 BianChengBuLiangRen. Released under MIT License.</span>
+      </div>
+      <div class="footer-links">
+        <a href="/releases/"><span data-lang="zh">所有版本</span><span data-lang="en">Releases</span></a>
+        <a href="/privacy/"><span data-lang="zh">隐私政策</span><span data-lang="en">Privacy</span></a>
+        <a href="/support/"><span data-lang="zh">技术支持</span><span data-lang="en">Support</span></a>
+        <a href="https://github.com/bcblr1993/AetherRoute" target="_blank" rel="noreferrer">GitHub</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
