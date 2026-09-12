@@ -278,11 +278,11 @@ targets:
         SUPublicEDKey: hVgNMayXzdIN2G5V0aeepQYjD2moJQ/ANUy14lqMtEM=
         SUEnableAutomaticChecks: true
         SUScheduledCheckInterval: 86400
-        NSHumanReadableCopyright: Created by 陈艳男 (ChenYanNan)
+        NSHumanReadableCopyright: Created by 编程不良人 (BianChengBuLiangRen)
         NSHighResolutionCapable: true
         AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)
-        AetherRouteAuthorName: 陈艳男
-        AetherRouteAuthorRomanizedName: ChenYanNan
+        AetherRouteAuthorName: 编程不良人
+        AetherRouteAuthorRomanizedName: BianChengBuLiangRen
         AetherRouteReleaseChannel: $(AETHERROUTE_RELEASE_CHANNEL)
         AetherRouteReleaseTimestamp: $(AETHERROUTE_RELEASE_TIMESTAMP)
         AetherRouteDistributionProductIdentifier: $(AETHERROUTE_DISTRIBUTION_PRODUCT_ID)

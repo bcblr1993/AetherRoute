@@ -519,7 +519,7 @@ DMG_BYTES=$(stat -f '%z' "$DMG")
 MANIFEST="$TEMPORARY/$ARTIFACT_NAME.json"
 jq -n \
   --arg product AetherRoute \
-  --arg author '陈艳男 (ChenYanNan)' \
+  --arg author '编程不良人 (BianChengBuLiangRen)' \
   --arg version "$VERSION" \
   --arg build "$BUILD_NUMBER" \
   --arg createdAt "$RELEASE_TIMESTAMP" \

@@ -5,9 +5,9 @@
 	<key>AetherRouteAppGroup</key>
 	<string>$(AETHERROUTE_APP_GROUP)</string>
 	<key>AetherRouteAuthorName</key>
-	<string>陈艳男</string>
+	<string>编程不良人</string>
 	<key>AetherRouteAuthorRomanizedName</key>
-	<string>ChenYanNan</string>
+	<string>BianChengBuLiangRen</string>
 	<key>AetherRouteDistributionProductIdentifier</key>
 	<string>$(AETHERROUTE_DISTRIBUTION_PRODUCT_ID)</string>
 	<key>AetherRouteDistributionMode</key>
@@ -86,7 +86,7 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>Created by 陈艳男 (ChenYanNan)</string>
+	<string>Created by 编程不良人 (BianChengBuLiangRen)</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>AetherRoute accesses the local network only when you route traffic to a proxy, DNS server, or destination on your local network.</string>
 	<key>NSSystemExtensionUsageDescription</key>

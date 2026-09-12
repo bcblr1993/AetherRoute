@@ -6,11 +6,11 @@ struct AboutAetherRouteView: View {
 
     private let authorName = bundleText(
         for: "AetherRouteAuthorName",
-        fallback: "陈艳男"
+        fallback: "编程不良人"
     )
     private let authorRomanizedName = bundleText(
         for: "AetherRouteAuthorRomanizedName",
-        fallback: "ChenYanNan"
+        fallback: "BianChengBuLiangRen"
     )
     private let releaseChannel = bundleText(
         for: "AetherRouteReleaseChannel",

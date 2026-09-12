@@ -50,7 +50,7 @@ jq -n \
     schemaVersion: 1,
     releaseStatus: "notarized-candidate",
     product: "AetherRoute",
-    author: "陈艳男 (ChenYanNan)",
+    author: "编程不良人 (BianChengBuLiangRen)",
     productID: $productID,
     version: $version,
     build: 100,
@@ -373,7 +373,7 @@ jq -n --arg version "$preview_version" --arg build "$preview_build" \
   --arg appSHA "$preview_app_sha" --arg tunSHA "$preview_tun_sha" --arg tpSHA "$preview_tp_sha" '
   {
     schemaVersion: 1, releaseStatus: "notarized-test-candidate",
-    product: "AetherRoute", author: "陈艳男 (ChenYanNan)",
+    product: "AetherRoute", author: "编程不良人 (BianChengBuLiangRen)",
     version: $version, build: $build, createdAt: "2026-09-09T01:00:00Z",
     architecture: "arm64", sourceManifestSHA256: ("0" * 64),
     safety: {productionApproved: false, networkActivatedDuringBuild: false,

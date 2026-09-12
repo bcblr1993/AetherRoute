@@ -180,7 +180,7 @@ dmg_bytes=$(stat -f '%z' "$dmg")
 app_sha=$(shasum -a 256 "$app/Contents/MacOS/AetherRoute" | awk '{print $1}')
 jq -n \
   --arg product AetherRoute \
-  --arg author '陈艳男 (ChenYanNan)' \
+  --arg author '编程不良人 (BianChengBuLiangRen)' \
   --arg createdAt "$timestamp" \
   --arg architecture arm64 \
   --arg sourceManifestSHA256 "$source_sha" \

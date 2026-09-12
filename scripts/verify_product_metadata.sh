@@ -68,11 +68,11 @@ verify_source() {
   verify_release_metadata "$INFO"
   verify_distribution_metadata "$INFO"
   test "$(plist_value "$INFO" AetherRouteAuthorName)" = \
-    '陈艳男' || fail "author name is incorrect"
+    '编程不良人' || fail "author name is incorrect"
   test "$(plist_value "$INFO" AetherRouteAuthorRomanizedName)" = \
-    'ChenYanNan' || fail "romanized author name is incorrect"
+    'BianChengBuLiangRen' || fail "romanized author name is incorrect"
   test "$(plist_value "$INFO" NSHumanReadableCopyright)" = \
-    'Created by 陈艳男 (ChenYanNan)' || \
+    'Created by 编程不良人 (BianChengBuLiangRen)' || \
     fail "author attribution is incorrect"
   test -n "$(plist_value "$INFO" NSSystemExtensionUsageDescription)" || \
     fail "host System Extension usage description is empty"
@@ -181,11 +181,11 @@ verify_built() {
   test "$(plist_value "$app_info" CFBundleDisplayName)" = \
     'AetherRoute' || fail "independent-distribution display name is incorrect"
   test "$(plist_value "$app_info" AetherRouteAuthorName)" = \
-    '陈艳男' || fail "built Direct author name is incorrect"
+    '编程不良人' || fail "built Direct author name is incorrect"
   test "$(plist_value "$app_info" AetherRouteAuthorRomanizedName)" = \
-    'ChenYanNan' || fail "built Direct romanized author name is incorrect"
+    'BianChengBuLiangRen' || fail "built Direct romanized author name is incorrect"
   test "$(plist_value "$app_info" NSHumanReadableCopyright)" = \
-    'Created by 陈艳男 (ChenYanNan)' || \
+    'Created by 编程不良人 (BianChengBuLiangRen)' || \
     fail "built Direct author attribution is incorrect"
   test -n "$(plist_value "$app_info" NSSystemExtensionUsageDescription)" || \
     fail "built host System Extension usage description is empty"

@@ -1,6 +1,6 @@
 # AetherRoute
 
-Created and maintained by **陈艳男 (ChenYanNan)**.
+Created and maintained by **编程不良人 (BianChengBuLiangRen)**.
 
 > [!IMPORTANT]
 > AetherRoute is pre-release software. The current source and unsigned UI
@@ -216,8 +216,8 @@ those values. `AetherRouteReleaseChannel` accepts `development`, `beta`, or
 `stable`, and a non-empty `AetherRouteReleaseTimestamp` must be UTC RFC 3339.
 Stable builds are rejected when the timestamp is missing. Until a public date
 is approved, the product intentionally displays Development / Not released.
-The author credit is localized: Chinese shows 陈艳男 and other localizations
-show ChenYanNan, while both canonical forms remain in build metadata.
+The author credit is localized: Chinese shows 编程不良人 and other localizations
+show BianChengBuLiangRen, while both canonical forms remain in build metadata.
 
 ## Supported-protocol target
 

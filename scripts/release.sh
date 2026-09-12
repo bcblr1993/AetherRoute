@@ -496,7 +496,7 @@ dmg_sha256=$(shasum -a 256 "$unsigned_dmg" | awk '{print $1}')
 dmg_bytes=$(stat -f '%z' "$unsigned_dmg")
 jq -n \
   --arg product AetherRoute \
-  --arg author '陈艳男 (ChenYanNan)' \
+  --arg author '编程不良人 (BianChengBuLiangRen)' \
   --arg productID "$distribution_product_id" \
   --arg version "$VERSION" \
   --argjson build "$BUILD_NUMBER" \

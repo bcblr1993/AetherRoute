@@ -119,8 +119,8 @@ state and must never call Network Extension APIs.
   not translated.
 - General settings expose an explicit application-language picker with Follow
   System, Simplified Chinese, and English. The visible interface changes
-  immediately without a relaunch. About shows `陈艳男` in Chinese and
-  `ChenYanNan` in English.
+  immediately without a relaunch. About shows `编程不良人` in Chinese and
+  `BianChengBuLiangRen` in English.
 - Product copy is stored in `Localizable.xcstrings`. Before localization is
   declared complete, the release gate rejects stale or untranslated keys,
   then exercises Xcode pseudolocalization and 30%

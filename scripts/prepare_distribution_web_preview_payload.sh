@@ -85,7 +85,7 @@ jq -e \
     .schemaVersion == 1 and
     .releaseStatus == "notarized-test-candidate" and
     .product == "AetherRoute" and
-    .author == "陈艳男 (ChenYanNan)" and
+    .author == "编程不良人 (BianChengBuLiangRen)" and
     (.version | type == "string" and test("^[0-9]+\\.[0-9]+(\\.[0-9]+)?$")) and
     (.build | type == "string" and test("^[1-9][0-9]*$")) and
     (.createdAt | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and

@@ -206,11 +206,11 @@ verify_source() {
   test "$(plist_value "$APP_INFO" CFBundleVersion)" = \
     '$(CURRENT_PROJECT_VERSION)' || fail "host build number is not build-setting driven"
   test "$(plist_value "$APP_INFO" AetherRouteAuthorName)" = \
-    '陈艳男' || fail "host author name is incorrect"
+    '编程不良人' || fail "host author name is incorrect"
   test "$(plist_value "$APP_INFO" AetherRouteAuthorRomanizedName)" = \
-    'ChenYanNan' || fail "host romanized author name is incorrect"
+    'BianChengBuLiangRen' || fail "host romanized author name is incorrect"
   test "$(plist_value "$APP_INFO" NSHumanReadableCopyright)" = \
-    'Created by 陈艳男 (ChenYanNan)' || \
+    'Created by 编程不良人 (BianChengBuLiangRen)' || \
     fail "host author attribution is incorrect"
   test "$(plist_value "$EXTENSION_INFO" CFBundleVersion)" = \
     '$(CURRENT_PROJECT_VERSION)' || fail "extension build number is not build-setting driven"
@@ -331,11 +331,11 @@ verify_built_products() {
   test -n "$app_marketing_version" || fail "built host marketing version is empty"
   test -n "$app_build_number" || fail "built host build number is empty"
   test "$(plist_value "$app_built_info" AetherRouteAuthorName)" = \
-    '陈艳男' || fail "built host author name is incorrect"
+    '编程不良人' || fail "built host author name is incorrect"
   test "$(plist_value "$app_built_info" AetherRouteAuthorRomanizedName)" = \
-    'ChenYanNan' || fail "built host romanized author name is incorrect"
+    'BianChengBuLiangRen' || fail "built host romanized author name is incorrect"
   test "$(plist_value "$app_built_info" NSHumanReadableCopyright)" = \
-    'Created by 陈艳男 (ChenYanNan)' || \
+    'Created by 编程不良人 (BianChengBuLiangRen)' || \
     fail "built host author attribution is incorrect"
   test "$app_marketing_version" = "$transparent_marketing_version" || \
     fail "host and transparent extension marketing versions differ"

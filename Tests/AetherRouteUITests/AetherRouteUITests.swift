@@ -1224,9 +1224,9 @@ final class AetherRouteUITests: XCTestCase {
         add(settingsAttachment)
 
         selectSettingsTab("关于", in: settingsWindow, app: app)
-        XCTAssertTrue(app.staticTexts["陈艳男"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["编程不良人"].waitForExistence(timeout: 3))
         XCTAssertEqual(settingsWindow.title, "AetherRoute 设置")
-        XCTAssertFalse(app.staticTexts["ChenYanNan"].exists)
+        XCTAssertFalse(app.staticTexts["BianChengBuLiangRen"].exists)
         XCTAssertTrue(app.staticTexts["开发版本"].exists)
         XCTAssertTrue(app.staticTexts["尚未发布"].exists)
         XCTAssertFalse(app.staticTexts["Development"].exists)
@@ -1288,11 +1288,11 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["在此 Mac 上处理"].exists)
 
         selectSettingsTab("About", in: settingsWindow, app: app)
-        XCTAssertTrue(app.staticTexts["ChenYanNan"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["BianChengBuLiangRen"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Development"].exists)
         XCTAssertTrue(app.staticTexts["Not released"].exists)
         XCTAssertTrue(app.staticTexts["Version"].exists)
-        XCTAssertFalse(app.staticTexts["陈艳男"].exists)
+        XCTAssertFalse(app.staticTexts["编程不良人"].exists)
         XCTAssertFalse(app.staticTexts["开发版本"].exists)
 
         closeResponsiveSettings(in: app)
@@ -1315,10 +1315,10 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertEqual(settingsWindow.title, "AetherRoute 设置")
         XCTAssertTrue(app.staticTexts["应用语言"].waitForExistence(timeout: 3))
         selectSettingsTab("关于", in: settingsWindow, app: app)
-        XCTAssertTrue(app.staticTexts["陈艳男"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["编程不良人"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["开发版本"].exists)
         XCTAssertTrue(app.staticTexts["尚未发布"].exists)
-        XCTAssertFalse(app.staticTexts["ChenYanNan"].exists)
+        XCTAssertFalse(app.staticTexts["BianChengBuLiangRen"].exists)
         try auditProductAccessibility(in: app)
     }
 
@@ -1451,9 +1451,9 @@ final class AetherRouteUITests: XCTestCase {
         defer { app.terminate() }
 
         openAboutSettings(in: app, tabLabel: "About")
-
-        XCTAssertTrue(app.staticTexts["ChenYanNan"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.staticTexts["陈艳男"].exists)
+ 
+        XCTAssertTrue(app.staticTexts["BianChengBuLiangRen"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["编程不良人"].exists)
         XCTAssertTrue(app.staticTexts["Original design and native macOS development"].exists)
         XCTAssertTrue(app.staticTexts["about-version"].exists)
         XCTAssertTrue(app.staticTexts["about-release-version"].exists)
@@ -1474,8 +1474,8 @@ final class AetherRouteUITests: XCTestCase {
 
         openAboutSettings(in: app, tabLabel: "关于")
 
-        XCTAssertTrue(app.staticTexts["陈艳男"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.staticTexts["ChenYanNan"].exists)
+        XCTAssertTrue(app.staticTexts["编程不良人"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["BianChengBuLiangRen"].exists)
         XCTAssertTrue(app.staticTexts["开发版本"].exists)
         XCTAssertTrue(app.staticTexts["尚未发布"].exists)
     }
