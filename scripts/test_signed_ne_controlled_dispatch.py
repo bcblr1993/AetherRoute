@@ -17,10 +17,22 @@ SCRIPT = HERE / 'signed_ne_prebuilt_runner.sh'
 SOURCE = SCRIPT.read_text().split('\ncommand=${1:-}\n')[0]
 SWIFT = (HERE.parent / 'Tests/AetherRouteUITests/SignedNEProbe.swift').read_text()
 HELPER = HERE / 'validation/controlled_probe.py'
-RUNTIME_RAW = Path(os.environ['AETHERROUTE_OFFLINE_RUNTIME_RECORD']).read_bytes()
-PYTHON = json.loads(RUNTIME_RAW)['pythonPath']
-ARTIFACTS = Path(os.environ['AETHERROUTE_OFFLINE_ARTIFACTS'])
-CONSUMER = Path(os.environ['AETHERROUTE_OFFLINE_CONSUMER'])
+HAS_OFFLINE_RUNTIME = (
+    'AETHERROUTE_OFFLINE_RUNTIME_RECORD' in os.environ and
+    'AETHERROUTE_OFFLINE_ARTIFACTS' in os.environ and
+    'AETHERROUTE_OFFLINE_CONSUMER' in os.environ
+)
+
+if HAS_OFFLINE_RUNTIME:
+    RUNTIME_RAW = Path(os.environ['AETHERROUTE_OFFLINE_RUNTIME_RECORD']).read_bytes()
+    PYTHON = json.loads(RUNTIME_RAW)['pythonPath']
+    ARTIFACTS = Path(os.environ['AETHERROUTE_OFFLINE_ARTIFACTS'])
+    CONSUMER = Path(os.environ['AETHERROUTE_OFFLINE_CONSUMER'])
+else:
+    RUNTIME_RAW = b'{}'
+    PYTHON = 'python3'
+    ARTIFACTS = Path('/tmp')
+    CONSUMER = Path('/tmp')
 KIND = 'AETHERROUTE_SIGNED_PROBE_KIND'
 URL = 'AETHERROUTE_SIGNED_PROBE_URL'
 SHA = 'AETHERROUTE_SIGNED_PROBE_SHA256'
@@ -38,6 +50,7 @@ def private_file(path, raw):
     path.chmod(0o600)
 
 
+@unittest.skipUnless(HAS_OFFLINE_RUNTIME, "AetherRoute offline runtime environment not configured")
 class DispatchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
