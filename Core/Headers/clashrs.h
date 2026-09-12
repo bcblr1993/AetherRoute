@@ -179,6 +179,7 @@ int32_t clash_packet_selector_select_v1(
     size_t member_length
 );
 int32_t clash_packet_set_routing_mode_v1(int32_t routing_mode);
+int32_t clash_packet_reset_network_state_v1(void);
 int32_t clash_packet_selector_latency_v1(
     const uint8_t *group,
     size_t group_length,

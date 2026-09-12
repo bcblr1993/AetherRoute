@@ -1,4 +1,5 @@
 import AetherRouteKit
+import Network
 @preconcurrency import NetworkExtension
 import OSLog
 
@@ -13,6 +14,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         attributes: [],
         autoreleaseFrequency: .workItem
     )
+    private var lastAppliedSettings: NEPacketTunnelNetworkSettings?
+    private var pathMonitor: NWPathMonitor?
+    private let pathMonitorQueue = DispatchQueue(
+        label: "com.aetherroute.packet-provider.path",
+        qos: .utility
+    )
+    private let recoveryQueue = DispatchQueue(
+        label: "com.aetherroute.packet-provider.recovery",
+        qos: .userInitiated
+    )
+    private var recoveryWorkItem: DispatchWorkItem?
+    private var lastPathStatus: NWPath.Status = .requiresConnection
 
     override func startTunnel(
         options: [String: NSObject]? = nil,
@@ -79,7 +92,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 let settings = self.makeNetworkSettings(settingsPlan)
                 Self.runtimeLogger.info("stage=makeNetworkSettings success")
                 Self.runtimeLogger.info("stage=installNetworkSettings begin")
-                self.setTunnelNetworkSettings(settings) { settingsError in
+                self.setTunnelNetworkSettings(settings) { [weak self] settingsError in
+                    guard let self else {
+                        completion.call(settingsError)
+                        return
+                    }
                     if let settingsError {
                         Self.runtimeLogger.error(
                             "stage=installNetworkSettings failed error=\(String(reflecting: settingsError), privacy: .public)"
@@ -88,6 +105,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                         self.core.stop()
                     } else {
                         Self.runtimeLogger.info("stage=installNetworkSettings success")
+                        self.lastAppliedSettings = settings
+                        self.startPathMonitoring()
                     }
                     completion.call(settingsError)
                 }
@@ -110,9 +129,28 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         Self.runtimeLogger.info(
             "stage=stopTunnel requested reason=\(reason.rawValue, privacy: .public)"
         )
+        stopPathMonitoring()
+        recoveryQueue.sync {
+            recoveryWorkItem?.cancel()
+            recoveryWorkItem = nil
+        }
         core.stop()
         Self.runtimeLogger.info("stage=stopTunnel complete")
         completionHandler()
+    }
+
+    override func sleep(completionHandler: @escaping () -> Void) {
+        Self.runtimeLogger.info("stage=sleep requested")
+        recoveryQueue.async { [weak self] in
+            self?.recoveryWorkItem?.cancel()
+            self?.recoveryWorkItem = nil
+        }
+        completionHandler()
+    }
+
+    override func wake() {
+        Self.runtimeLogger.info("stage=wake requested")
+        scheduleNetworkRecovery(delay: 1.5, reason: "wake")
     }
 
     override func handleAppMessage(
@@ -157,6 +195,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     .diagnostics(diagnostics.snapshot())
                 case let .setRoutingMode(mode):
                     try applyRoutingMode(mode)
+                case .resetNetwork:
+                    try handleResetNetwork()
                 }
             } catch is ProxySelectionProviderMessageError {
                 response = .failure(.invalidRequest)
@@ -187,11 +227,88 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         }
     }
 
+    private func startPathMonitoring() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        pathMonitor = monitor
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard let self else { return }
+            Self.runtimeLogger.info(
+                "stage=pathUpdate status=\(String(describing: path.status), privacy: .public) isExpensive=\(path.isExpensive, privacy: .public)"
+            )
+            let previous = self.lastPathStatus
+            self.lastPathStatus = path.status
+            if previous == .unsatisfied && path.status == .satisfied {
+                Self.runtimeLogger.info("stage=pathRecovered scheduling recovery")
+                self.scheduleNetworkRecovery(delay: 1.0, reason: "pathRecovered")
+            }
+        }
+        monitor.start(queue: pathMonitorQueue)
+    }
+
+    private func stopPathMonitoring() {
+        pathMonitor?.cancel()
+        pathMonitor = nil
+    }
+
+    private func scheduleNetworkRecovery(delay: TimeInterval, reason: String) {
+        recoveryQueue.async { [weak self] in
+            guard let self else { return }
+            self.recoveryWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.performNetworkRecovery(reason: reason)
+            }
+            self.recoveryWorkItem = workItem
+            self.recoveryQueue.asyncAfter(
+                deadline: .now() + delay,
+                execute: workItem
+            )
+        }
+    }
+
+    private func performNetworkRecovery(reason: String) {
+        Self.runtimeLogger.info("stage=networkRecovery begin reason=\(reason, privacy: .public)")
+        do {
+            try core.resetNetworkState()
+            Self.runtimeLogger.info("stage=networkRecovery coreReset success")
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=networkRecovery coreReset failed reason=\(reason, privacy: .public) error=\(String(reflecting: error), privacy: .public)"
+            )
+        }
+        reassertNetworkSettings(reason: reason)
+    }
+
+    private func reassertNetworkSettings(reason: String) {
+        guard let settings = lastAppliedSettings else { return }
+        Self.runtimeLogger.info("stage=reassertNetworkSettings begin reason=\(reason, privacy: .public)")
+        reasserting = true
+        setTunnelNetworkSettings(settings) { [weak self] error in
+            if let error {
+                Self.runtimeLogger.error(
+                    "stage=reassertNetworkSettings failed reason=\(reason, privacy: .public) error=\(String(reflecting: error), privacy: .public)"
+                )
+            } else {
+                Self.runtimeLogger.info(
+                    "stage=reassertNetworkSettings success reason=\(reason, privacy: .public)"
+                )
+            }
+            self?.reasserting = false
+        }
+    }
+
     private func applyRoutingMode(
         _ mode: RoutingMode
     ) throws -> ProxySelectionProviderResponse {
         try core.setRoutingMode(mode)
         return .routingMode(mode)
+    }
+
+    private func handleResetNetwork() throws -> ProxySelectionProviderResponse {
+        Self.runtimeLogger.info("stage=appMessage resetNetwork requested")
+        try core.resetNetworkState()
+        reassertNetworkSettings(reason: "appMessage")
+        return .networkReset
     }
 
     private func makeNetworkSettings(

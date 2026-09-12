@@ -158,4 +158,18 @@ final class ProxySelectionProviderClientTests: XCTestCase {
         let applied = try await client.setRoutingMode(.global)
         XCTAssertEqual(applied, .global)
     }
+
+    func testResetNetworkSendsValidWireRequestAndAcceptsNetworkResetResponse() async throws {
+        let client = ProxySelectionProviderClient { data in
+            XCTAssertEqual(
+                try ProxySelectionProviderMessageCodec.decodeRequest(data),
+                .resetNetwork
+            )
+            return try ProxySelectionProviderMessageCodec.encode(
+                response: .networkReset
+            )
+        }
+
+        try await client.resetNetwork()
+    }
 }

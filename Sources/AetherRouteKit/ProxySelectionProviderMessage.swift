@@ -38,6 +38,7 @@ public enum ProxySelectionProviderRequest: Sendable, Equatable {
     case telemetry(maximumConnections: UInt16)
     case diagnostics
     case setRoutingMode(RoutingMode)
+    case resetNetwork
 }
 
 public enum ProxySelectionProviderFailure: UInt8, Sendable, Equatable {
@@ -54,6 +55,7 @@ public enum ProxySelectionProviderResponse: Sendable, Equatable {
     case telemetry(NetworkTelemetrySnapshot)
     case diagnostics(ProviderDiagnosticSnapshot)
     case routingMode(RoutingMode)
+    case networkReset
     case failure(ProxySelectionProviderFailure)
 }
 
@@ -175,6 +177,11 @@ public enum ProxySelectionProviderMessageCodec {
             group = Data()
             member = Data()
             reserved = [routingModeCode(mode), 0, 0]
+        case .resetNetwork:
+            operation = 8
+            group = Data()
+            member = Data()
+            reserved = [0, 0, 0]
         }
 
         var output = Data(requestMagic)
@@ -286,6 +293,15 @@ public enum ProxySelectionProviderMessageCodec {
                 let mode = routingMode(code: bytes[5])
             else { throw ProxySelectionProviderMessageError.malformed }
             return .setRoutingMode(mode)
+        case 8:
+            guard
+                bytes[5] == 0,
+                bytes[6] == 0,
+                bytes[7] == 0,
+                groupLength == 0,
+                memberLength == 0
+            else { throw ProxySelectionProviderMessageError.malformed }
+            return .resetNetwork
         default:
             throw ProxySelectionProviderMessageError.malformed
         }
@@ -392,6 +408,13 @@ public enum ProxySelectionProviderMessageCodec {
             appendUInt32(noSelection, to: &output)
             appendUInt32(0, to: &output)
             return output
+        case .networkReset:
+            var output = Data(responseMagic)
+            output.append(7)
+            output.append(contentsOf: [0, 0, 0])
+            appendUInt32(noSelection, to: &output)
+            appendUInt32(0, to: &output)
+            return output
         }
     }
 
@@ -452,11 +475,21 @@ public enum ProxySelectionProviderMessageCodec {
                 data.count == responseHeaderBytes,
                 routingMode(code: bytes[5]) != nil
             else { throw ProxySelectionProviderMessageError.malformed }
+        case 7:
+            guard
+                bytes[5] == 0,
+                selectedIndex == noSelection,
+                memberCount == 0,
+                data.count == responseHeaderBytes
+            else { throw ProxySelectionProviderMessageError.malformed }
         default:
             throw ProxySelectionProviderMessageError.malformed
         }
 
         var offset = responseHeaderBytes
+        if bytes[4] == 7 {
+            return .networkReset
+        }
         if bytes[4] == 6 {
             guard let mode = routingMode(code: bytes[5]) else {
                 throw ProxySelectionProviderMessageError.malformed

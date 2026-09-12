@@ -2035,6 +2035,25 @@ final class TunnelManager: ObservableObject {
         // never calls startVPNTunnel and never changes routes, DNS, or proxies.
         stopTelemetryPolling()
         updateState()
+
+        if event == .systemDidWake || event == .networkPathChanged {
+            Task { [weak self] in
+                guard let self, self.state == .connected else { return }
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard self.state == .connected else { return }
+                do {
+                    let client = self.makeProxySelectionProviderClient()
+                    try await client.resetNetwork()
+                    Self.runtimeLogger.info(
+                        "stage=handleRuntimeEnvironmentEvent resetNetwork success event=\(event == .systemDidWake ? "systemDidWake" : "networkPathChanged", privacy: .public)"
+                    )
+                } catch {
+                    Self.runtimeLogger.error(
+                        "stage=handleRuntimeEnvironmentEvent resetNetwork failed error=\(String(reflecting: error), privacy: .public)"
+                    )
+                }
+            }
+        }
     }
 
     private func refreshTelemetry() async {

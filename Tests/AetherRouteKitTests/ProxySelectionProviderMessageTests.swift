@@ -51,6 +51,7 @@ final class ProxySelectionProviderMessageTests: XCTestCase {
             .setRoutingMode(.rule),
             .setRoutingMode(.global),
             .setRoutingMode(.direct),
+            .resetNetwork,
         ]
         for request in requests {
             XCTAssertEqual(
@@ -60,6 +61,17 @@ final class ProxySelectionProviderMessageTests: XCTestCase {
                 request
             )
         }
+    }
+
+    func testNetworkResetResponseRoundTrips() throws {
+        let encoded = try ProxySelectionProviderMessageCodec.encode(
+            response: .networkReset
+        )
+        XCTAssertEqual(encoded.count, 16)
+        XCTAssertEqual(
+            try ProxySelectionProviderMessageCodec.decodeResponse(encoded),
+            .networkReset
+        )
     }
 
     func testRoutingModeResponseRoundTripsAndRejectsUnknownCode() throws {

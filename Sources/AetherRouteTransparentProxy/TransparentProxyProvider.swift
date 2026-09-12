@@ -308,6 +308,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     .diagnostics(diagnostics.snapshot())
                 case let .setRoutingMode(mode):
                     try self.applyRoutingMode(mode)
+                case .resetNetwork:
+                    .networkReset
                 }
             } catch is ProxySelectionProviderMessageError {
                 response = .failure(.invalidRequest)
@@ -653,6 +655,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         case .telemetry: "telemetry"
         case .diagnostics: "diagnostics"
         case .setRoutingMode: "setRoutingMode"
+        case .resetNetwork: "resetNetwork"
         }
     }
 }

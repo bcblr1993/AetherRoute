@@ -30,6 +30,7 @@ protocol CoreBridge: Sendable {
     func telemetrySnapshot(
         maximumConnections: UInt16
     ) throws -> NetworkTelemetrySnapshot
+    func resetNetworkState() throws
     func stop()
 }
 
@@ -494,6 +495,18 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             return try NetworkTelemetryCodec.decode(
                 telemetryOutputBuffer.prefix(requiredLength)
             )
+        }
+    }
+
+    func resetNetworkState() throws {
+        try controlLock.withLock {
+            guard isRunning(), !isStopping(), clash_packet_flow_ready() == 1 else {
+                throw PacketTunnelSelectorError.unavailable
+            }
+            let status = clash_packet_reset_network_state_v1()
+            guard status == CLASH_FLOW_OK else {
+                throw Self.selectorError(status, selecting: false)
+            }
         }
     }
 
