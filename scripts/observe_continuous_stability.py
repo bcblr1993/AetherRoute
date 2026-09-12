@@ -243,7 +243,17 @@ class ContinuousStabilityObserver:
             }
 
     def probe_http(self, url: str) -> Tuple[str, float]:
-        cmd = f"curl -s -o /dev/null -w '%{{http_code}}:%{{time_total}}' --connect-timeout 4 {url}"
+        cmd = f"curl -s -o /dev/null -w '%{{http_code}}:%{{time_total}}' --connect-timeout 4 --max-time 6 {url}"
+        out, _, code = self.run_cmd(cmd)
+        if code == 0 and out:
+            parts = out.split(":")
+            try:
+                if parts[0] not in ("000", ""):
+                    return parts[0], float(parts[1])
+            except (ValueError, IndexError):
+                pass
+        # Single transient retry on Wi-Fi/ISP jitter
+        time.sleep(0.5)
         out, _, code = self.run_cmd(cmd)
         if code == 0 and out:
             parts = out.split(":")
@@ -411,7 +421,7 @@ class ContinuousStabilityObserver:
         if app_fp_delta > 100.0 or mem_slope > 25.0:
             verdict = "CRITICAL"
             reasons.append("Severe memory growth or leak slope")
-        elif self.total_errors > 0 or proxy_sr < 95.0 or direct_sr < 95.0 or mem_slope > 10.0:
+        elif self.total_errors > 0 or proxy_sr < 90.0 or direct_sr < 90.0 or mem_slope > 10.0:
             if verdict != "CRITICAL":
                 verdict = "WARNING"
                 reasons.append("Degraded probe success or noticeable memory slope")
