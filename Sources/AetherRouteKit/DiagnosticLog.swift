@@ -31,7 +31,7 @@ public final class DiagnosticLog: @unchecked Sendable {
         category: String,
         sink: RotatingLogSink?,
         levelProvider: @escaping @Sendable () -> DiagnosticLogLevel,
-        subsystem: String = "com.aetherroute.desktop",
+        subsystem: String = AppLog.subsystem,
         timestamp: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.category = category

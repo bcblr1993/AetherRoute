@@ -3,10 +3,7 @@ import AetherRouteKit
 import OSLog
 
 final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
-    private static let runtimeLogger = Logger(
-        subsystem: "com.aetherroute.desktop",
-        category: "packet-runtime"
-    )
+    private static let runtimeLogger = AppLog.logger(category: AppLog.Category.tunnelRuntime)
 
     private lazy var core: any CoreBridge = RustCoreBridge(packetFlow: packetFlow)
     private let diagnostics = ProviderDiagnosticAccumulator()

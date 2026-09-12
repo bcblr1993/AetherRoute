@@ -30,10 +30,7 @@ final class SystemExtensionActivationCoordinator: NSObject,
     private let submitRequest: @MainActor (OSSystemExtensionRequest) -> Void
     private let bundledVersion: @MainActor (String) -> SystemExtensionActivationPolicy.Version?
     private let propertiesTimeoutDuration: Duration
-    private static let logger = Logger(
-        subsystem: "com.aetherroute.desktop",
-        category: "system-extension"
-    )
+    private static let logger = AppLog.logger(category: AppLog.Category.appActivation)
 
     init(
         submitRequest: @escaping @MainActor (OSSystemExtensionRequest) -> Void = {

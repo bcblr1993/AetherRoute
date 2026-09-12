@@ -5,10 +5,7 @@ import Foundation
 import OSLog
 
 private enum PacketCoreRuntimeLog {
-    static let logger = Logger(
-        subsystem: "com.aetherroute.desktop",
-        category: "packet-core"
-    )
+    static let logger = AppLog.logger(category: AppLog.Category.tunnelCore)
 }
 
 protocol CoreBridge: Sendable {

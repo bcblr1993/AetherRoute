@@ -37,10 +37,7 @@ public struct DiagnosticEvent: Codable, Equatable, Sendable {
 /// accidentally entering a support report.
 public final class DiagnosticEventBuffer: @unchecked Sendable {
     public static let maximumEvents = 128
-    private static let logger = Logger(
-        subsystem: "com.example.aetherroute",
-        category: "lifecycle"
-    )
+    private static let logger = AppLog.logger(category: AppLog.Category.diagnostics)
 
     private let lock = NSLock()
     private let capacity: Int

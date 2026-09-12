@@ -30,10 +30,7 @@ public enum ProfileKeyStoreError: LocalizedError, Equatable {
 public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Sendable {
     public static let defaultService = "com.aetherroute.profile-encryption"
     public static let keySizeBytes = 32
-    private static let runtimeLogger = Logger(
-        subsystem: "com.aetherroute.desktop",
-        category: "profile-keychain"
-    )
+    private static let runtimeLogger = AppLog.logger(category: AppLog.Category.profileKeys)
 
     private let accessGroupResolver: @Sendable () throws -> String
     private let service: String

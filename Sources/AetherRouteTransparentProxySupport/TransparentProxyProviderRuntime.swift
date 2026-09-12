@@ -4,10 +4,7 @@ import Foundation
 import OSLog
 
 private enum TransparentLifecycleLog {
-    static let logger = Logger(
-        subsystem: "com.aetherroute.desktop",
-        category: "transparent-lifecycle"
-    )
+    static let logger = AppLog.logger(category: AppLog.Category.proxyRuntime)
 }
 
 /// The narrow engine surface owned by one transparent-proxy provider runtime.

@@ -4,10 +4,7 @@ import Foundation
 import OSLog
 
 private enum FlowCoreRuntimeLog {
-    static let logger = Logger(
-        subsystem: "com.aetherroute.desktop",
-        category: "flow-core"
-    )
+    static let logger = AppLog.logger(category: AppLog.Category.flowEngine)
 }
 
 public struct FlowCoreEngineConfiguration: Sendable, Equatable {

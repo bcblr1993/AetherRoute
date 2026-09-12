@@ -28,10 +28,7 @@ public struct ActiveProfile: Codable, Equatable, Sendable {
 }
 
 public struct ActiveProfileStore: Sendable {
-    private static let runtimeLogger = Logger(
-        subsystem: "com.aetherroute.desktop",
-        category: "profile-runtime"
-    )
+    private static let runtimeLogger = AppLog.logger(category: AppLog.Category.activeProfile)
 
     public let directoryURL: URL
     private let keyStore: any ProfileKeyStoring

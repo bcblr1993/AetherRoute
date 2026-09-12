@@ -191,10 +191,7 @@ final class NetworkTelemetryViewModel: ObservableObject {
 
 @MainActor
 final class TunnelManager: ObservableObject {
-    private static let runtimeLogger = Logger(
-        subsystem: "com.aetherroute.desktop",
-        category: "host-lifecycle"
-    )
+    private static let runtimeLogger = AppLog.logger(category: AppLog.Category.appRuntime)
 
     enum State: Equatable {
         case privacyConsentRequired
@@ -633,7 +630,7 @@ final class TunnelManager: ObservableObject {
             importProfile(from: fileURL)
         } else if let subURL = qaAutomationEnvironment["AETHERROUTE_QA_SUBSCRIPTION_URL"], !subURL.isEmpty {
             Self.runtimeLogger.info(
-                "stage=qaAutomation autoImport requested url=\(subURL, privacy: .public)"
+                "stage=qaAutomation autoImport requested url=\(subURL.sanitizedURLForLogging, privacy: .private)"
             )
             _ = await addSubscription(urlText: subURL)
         }

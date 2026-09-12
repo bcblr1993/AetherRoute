@@ -4,10 +4,7 @@ import Foundation
 import OSLog
 
 private enum TransparentRuntimeInputLog {
-    static let logger = Logger(
-        subsystem: "com.aetherroute.desktop",
-        category: "transparent-input"
-    )
+    static let logger = AppLog.logger(category: AppLog.Category.proxyInput)
 }
 
 public struct TransparentProxyRuntimeInput: Sendable, Equatable {

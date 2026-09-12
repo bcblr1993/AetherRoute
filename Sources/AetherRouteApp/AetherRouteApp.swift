@@ -6,10 +6,7 @@ import SwiftUI
 
 @MainActor
 final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
-    private static let lifecycleLogger = Logger(
-        subsystem: "com.aetherroute.desktop",
-        category: "host-lifecycle"
-    )
+    private static let lifecycleLogger = AppLog.logger(category: AppLog.Category.appLifecycle)
 
     weak var tunnel: TunnelManager?
     private var terminationReplyPending = false

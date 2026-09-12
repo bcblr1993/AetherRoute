@@ -1,3 +1,4 @@
+import AetherRouteKit
 import Foundation
 import OSLog
 
@@ -52,10 +53,7 @@ public final class FlowResourceBudget: @unchecked Sendable {
     /// constraint for ordinary traffic instead of this backstop.
     public static let defaultMaximumBytes = 512 * 1_024 * 1_024
 
-    private static let logger = Logger(
-        subsystem: "com.aetherroute.desktop",
-        category: "transparent-flow-budget"
-    )
+    private static let logger = AppLog.logger(category: AppLog.Category.proxyBudget)
 
     private let maximumBytes: Int
     private let lock = NSLock()
