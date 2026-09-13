@@ -42,7 +42,7 @@ do
 done
 
 rg -F 'AetherRoute 1.0.1' "$PUBLIC/index.html" >/dev/null
-rg -F '58608a9674d141f86e09083bd701c3aeeef93bbdd9cbfa693f43ab1e931e3a30' "$PUBLIC/index.html" >/dev/null
+rg -F '2ee39728d7d578a4fb58c325e7914da58a41f897a45753d6bf5efa1942660bf5' "$PUBLIC/index.html" >/dev/null
 
 test "$(rg -c 'data-localized-image' "$PUBLIC/index.html")" -ge 1 || {
   echo "homepage must expose localized product screenshots" >&2
