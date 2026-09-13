@@ -66,11 +66,86 @@
         value === "zh" ? "Switch to English" : "切换到中文"
       );
     });
+
+    if (typeof updateShowcase === "function") {
+      updateShowcase(value);
+    }
   }
 
   document.querySelectorAll("[data-language-toggle]").forEach((button) => {
     button.addEventListener("click", () => {
       apply(root.dataset.language === "zh" ? "en" : "zh");
+    });
+  });
+
+  // Showcase Tab Switcher
+  const showcaseTabs = {
+    overview: {
+      zh: { src: "/assets/aetherroute-overview-zh.png", title: "AetherRoute — 概览", alt: "AetherRoute 中文深色模式真实概览界面" },
+      en: { src: "/assets/aetherroute-overview-en.png", title: "AetherRoute — Overview", alt: "AetherRoute real overview interface" }
+    },
+    profiles: {
+      zh: { src: "/assets/aetherroute-profiles-zh.png", title: "AetherRoute — 配置与订阅", alt: "AetherRoute 中文配置管理真实界面" },
+      en: { src: "/assets/aetherroute-profiles-en.png", title: "AetherRoute — Profiles", alt: "AetherRoute real profiles interface" }
+    },
+    settings: {
+      zh: { src: "/assets/aetherroute-settings-zh.png", title: "AetherRoute — 网络引擎设置", alt: "AetherRoute 中文设置真实界面" },
+      en: { src: "/assets/aetherroute-settings-en.png", title: "AetherRoute — Engine & Settings", alt: "AetherRoute real settings interface" }
+    }
+  };
+  let currentShowcaseTab = "overview";
+
+  function updateShowcase(lang) {
+    const tabInfo = showcaseTabs[currentShowcaseTab]?.[lang];
+    if (!tabInfo) return;
+    const img = document.getElementById("showcase-img");
+    const title = document.getElementById("showcase-window-title");
+    if (img) {
+      img.style.opacity = "0.4";
+      setTimeout(() => {
+        img.src = tabInfo.src;
+        img.alt = tabInfo.alt;
+        img.setAttribute(`data-src-${lang}`, tabInfo.src);
+        img.setAttribute(`data-alt-${lang}`, tabInfo.alt);
+        img.style.opacity = "1";
+      }, 100);
+    }
+    if (title) {
+      title.textContent = tabInfo.title;
+    }
+  }
+
+  document.querySelectorAll(".stage-tab").forEach((tabBtn) => {
+    tabBtn.addEventListener("click", () => {
+      const target = tabBtn.getAttribute("data-target-tab");
+      if (!target || !showcaseTabs[target]) return;
+      currentShowcaseTab = target;
+      document.querySelectorAll(".stage-tab").forEach(b => b.classList.remove("active"));
+      tabBtn.classList.add("active");
+      updateShowcase(root.dataset.language || "zh");
+    });
+  });
+
+  // SHA Checksum Capsule Click to Copy
+  document.querySelectorAll(".sha-capsule").forEach((capsule) => {
+    capsule.addEventListener("click", async () => {
+      const checksum = capsule.getAttribute("data-checksum");
+      if (!checksum) return;
+      try {
+        await navigator.clipboard.writeText(checksum);
+        const actionEl = capsule.querySelector(".copy-text");
+        const isZh = root.dataset.language === "zh";
+        if (actionEl) {
+          actionEl.textContent = isZh ? "已复制 ✓" : "Copied ✓";
+        }
+        capsule.style.borderColor = "var(--emerald)";
+        setTimeout(() => {
+          if (actionEl) {
+            actionEl.textContent = isZh ? "复制校验和" : "Copy Checksum";
+          }
+          capsule.style.borderColor = "";
+        }, 1600);
+      } catch (_) {}
     });
   });
 
