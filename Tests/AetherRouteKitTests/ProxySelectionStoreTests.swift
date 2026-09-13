@@ -450,6 +450,13 @@ final class ProxySelectionStoreTests: XCTestCase {
             ),
             .stopProvider
         )
+        XCTAssertEqual(
+            AutomaticRouteHealthRecoveryPolicy.exhaustionAction(
+                connectionWasReady: false,
+                isInGracePeriod: true
+            ),
+            .continueMonitoring
+        )
     }
 
     func testConnectedManualHotSwitchRequiresSelectedLeafToRespond() {

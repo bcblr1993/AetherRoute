@@ -102,14 +102,18 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         PacketCoreRuntimeLog.logger.info("stage=installLaunchResources success")
         let dnsPolicy = snapshot.dnsPolicy
         let savedSelections = snapshot.proxySelections
+        let profileSummary = ProfileConfigurationInspector.inspect(yaml: profileYAML)
         let manualGroups = Set(
-            ProfileConfigurationInspector.inspect(yaml: profileYAML)
+            profileSummary
                 .proxyGroups
                 .filter { $0.strategy.caseInsensitiveCompare("select") == .orderedSame }
                 .map(\.name)
         )
-        let restorableSelections = savedSelections.filter {
-            manualGroups.contains($0.key)
+        var restorableSelections = savedSelections.filter {
+            manualGroups.contains($0.key) || $0.key == "GLOBAL"
+        }
+        if restorableSelections["GLOBAL"] == nil {
+            restorableSelections["GLOBAL"] = "DIRECT"
         }
         PacketCoreRuntimeLog.logger.info(
             "stage=loadSelections success saved=\(savedSelections.count, privacy: .public) restorable=\(restorableSelections.count, privacy: .public)"
@@ -280,10 +284,6 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                 PacketCoreRuntimeLog.logger.info(
                     "stage=shutdownEngine status=\(status, privacy: .public)"
                 )
-                clash_uninstall_packet_flow()
-            }
-            if let retainedContext = stopResources.retainedContext {
-                Unmanaged<RustCoreBridge>.fromOpaque(retainedContext).release()
             }
         }
 
@@ -303,7 +303,24 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                 }
                 state.failure = PacketTunnelError.shutdownTimedOut
             }
+            if stopResources.requestsShutdown {
+                controlLock.withLock {
+                    clash_uninstall_packet_flow()
+                }
+                if let retainedContext = stopResources.retainedContext {
+                    Unmanaged<RustCoreBridge>.fromOpaque(retainedContext).release()
+                }
+            }
             return
+        }
+
+        if stopResources.requestsShutdown {
+            controlLock.withLock {
+                clash_uninstall_packet_flow()
+            }
+            if let retainedContext = stopResources.retainedContext {
+                Unmanaged<RustCoreBridge>.fromOpaque(retainedContext).release()
+            }
         }
 
         finishStoppedEngine(generation: stopResources.generation)

@@ -100,7 +100,7 @@ final class PortableProfileArchiveTests: XCTestCase {
     func testRequiresLongPasswordAndRejectsOversizedInputEarly() throws {
         let codec = testCodec()
         XCTAssertThrowsError(
-            try codec.seal(catalog: makeCatalog(), password: "too short")
+            try codec.seal(catalog: makeCatalog(), password: "12345")
         ) { error in
             XCTAssertEqual(
                 error as? PortableProfileArchiveError,

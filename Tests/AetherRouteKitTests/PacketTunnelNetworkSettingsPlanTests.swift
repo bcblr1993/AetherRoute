@@ -87,7 +87,7 @@ final class PacketTunnelNetworkSettingsPlanTests: XCTestCase {
             bypassPlan: bypassPlan
         )
 
-        XCTAssertEqual(plan.tunnelRemoteAddress, "127.0.0.1")
+        XCTAssertEqual(plan.tunnelRemoteAddress, "198.18.12.1")
         XCTAssertEqual(plan.mtu, 1_280)
         XCTAssertEqual(plan.ipv4.addresses, ["198.18.12.1"])
         XCTAssertEqual(plan.ipv4.subnetMasks, ["255.255.255.0"])

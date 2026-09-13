@@ -13,6 +13,7 @@ final class AppRuntimeEnvironmentController: ObservableObject {
         qos: .utility
     )
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var distributedObservers: [NSObjectProtocol] = []
     private var pathMonitor: NWPathMonitor?
     private var pathBaseline: NetworkPathFingerprint?
 
@@ -47,6 +48,54 @@ final class AppRuntimeEnvironmentController: ObservableObject {
             },
             workspaceCenter.addObserver(
                 forName: NSWorkspace.didWakeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.tunnel.handleRuntimeEnvironmentEvent(
+                        .systemDidWake
+                    )
+                }
+            },
+            workspaceCenter.addObserver(
+                forName: NSWorkspace.screensDidSleepNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.tunnel.handleRuntimeEnvironmentEvent(
+                        .systemWillSleep
+                    )
+                }
+            },
+            workspaceCenter.addObserver(
+                forName: NSWorkspace.screensDidWakeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.tunnel.handleRuntimeEnvironmentEvent(
+                        .systemDidWake
+                    )
+                }
+            },
+        ]
+
+        let distCenter = DistributedNotificationCenter.default()
+        distributedObservers = [
+            distCenter.addObserver(
+                forName: NSNotification.Name("com.apple.screenIsLocked"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.tunnel.handleRuntimeEnvironmentEvent(
+                        .systemWillSleep
+                    )
+                }
+            },
+            distCenter.addObserver(
+                forName: NSNotification.Name("com.apple.screenIsUnlocked"),
                 object: nil,
                 queue: .main
             ) { [weak self] _ in

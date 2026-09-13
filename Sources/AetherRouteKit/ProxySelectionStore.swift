@@ -75,6 +75,10 @@ public enum InitialProxySelectionPolicy {
 /// and which live member should be retained. The Network Extension supplies
 /// the measurements; this value-only policy is deterministic and unit-testable.
 public enum ProxyConnectionReadinessPolicy {
+    /// The selector group every profile is guaranteed to expose. The provider
+    /// restores a selection for it at startup, so it is the one group a
+    /// health probe can always name.
+    public static let globalGroupName = "GLOBAL"
     public static let maximumVerifiedGroupCount = 4
     public static let maximumMembersPerVerifiedGroup = 64
     public static let maximumProbeCandidateCount = 8
@@ -343,9 +347,13 @@ public enum AutomaticRouteHealthRecoveryPolicy {
     /// blackhole every request instead of returning the user to their direct
     /// connection.
     public static func exhaustionAction(
-        connectionWasReady: Bool
+        connectionWasReady: Bool,
+        isInGracePeriod: Bool = false
     ) -> ExhaustionAction {
-        connectionWasReady ? .continueMonitoring : .stopProvider
+        if isInGracePeriod {
+            return .continueMonitoring
+        }
+        return connectionWasReady ? .continueMonitoring : .stopProvider
     }
 }
 

@@ -111,6 +111,27 @@ final class TransparentProxySessionRegistryTests:
             )
         }
     }
+
+    func testCancelActiveSessionsCancelsWithoutStoppingRegistry() throws {
+        let registry = try TransparentProxySessionRegistry()
+        let first = StubProxySession()
+        let second = StubProxySession()
+        try registry.insert(first)
+        try registry.insert(second)
+
+        XCTAssertEqual(first.cancelCount, 0)
+        XCTAssertEqual(second.cancelCount, 0)
+
+        registry.cancelActiveSessions()
+
+        XCTAssertEqual(first.cancelCount, 1)
+        XCTAssertEqual(second.cancelCount, 1)
+        XCTAssertEqual(registry.snapshot().lifecycle, .accepting)
+
+        let third = StubProxySession()
+        try registry.insert(third)
+        XCTAssertEqual(third.cancelCount, 0)
+    }
 }
 
 private final class ReentrantDeinitSession:

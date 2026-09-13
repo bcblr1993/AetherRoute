@@ -25,12 +25,14 @@ public enum TunnelStartupTimingPolicy {
     public static let selectorReadinessMaximumMemberCount = 64
     public static let selectorReadinessMaximumConcurrency = 8
     public static let selectorReadinessResponseGraceSeconds = 2
-    /// Traffic counters are informational UI data. Each sample also crosses
-    /// the Network Extension boundary and asks the embedded core for a bounded
-    /// connection snapshot. A ten-second cadence keeps the dashboard useful
-    /// while preventing the provider allocator from accumulating short-lived
-    /// snapshot/channel pages during long sessions.
-    public static let telemetryPollingIntervalSeconds = 10
+    /// When the live traffic dashboard (or connections inspector) is actively visible
+    /// in the foreground, telemetry polls at 1 Hz to provide a real-time sliding waveform.
+    public static let activeTelemetryPollingIntervalSeconds = 1
+    /// When the dashboard is idle, in background, or running in tray, telemetry
+    /// steps down to 10 seconds to conserve battery and CPU.
+    public static let backgroundTelemetryPollingIntervalSeconds = 10
+    /// Legacy alias for backward compatibility with existing tests and call sites.
+    public static let telemetryPollingIntervalSeconds = backgroundTelemetryPollingIntervalSeconds
     public static let automaticRouteHealthIntervalSeconds = 15
     public static let automaticRouteFailoverAttemptCount = 8
     public static let automaticRouteFailureThreshold = 2

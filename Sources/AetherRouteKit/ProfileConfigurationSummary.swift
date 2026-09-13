@@ -182,6 +182,13 @@ public enum ProfileUpstreamEndpointInspector {
     }
 }
 
+public enum ProfileNamedEndpointInspector {
+    public static func inspect(yaml: String) -> [String: ProfileUpstreamEndpoint] {
+        var parser = Parser(yaml: yaml)
+        return parser.parseNamedEndpoints()
+    }
+}
+
 public struct ProxyGroupConfigurationSummary: Identifiable, Equatable, Sendable {
     public let id: Int
     public let name: String
@@ -338,6 +345,7 @@ private struct Parser {
 
     private var proxies: [ProxyConfigurationSummary] = []
     private var upstreamEndpoints: [ProfileUpstreamEndpoint] = []
+    private var namedEndpoints: [String: ProfileUpstreamEndpoint] = [:]
     private var groups: [ProxyGroupConfigurationSummary] = []
     private var proxyProviders: [ProviderConfigurationSummary] = []
     private var rules: [RuleConfigurationSummary] = []
@@ -378,6 +386,11 @@ private struct Parser {
     mutating func parseUpstreamEndpoints() -> [ProfileUpstreamEndpoint] {
         parseDocument()
         return upstreamEndpoints
+    }
+
+    mutating func parseNamedEndpoints() -> [String: ProfileUpstreamEndpoint] {
+        parseDocument()
+        return namedEndpoints
     }
 
     private mutating func parseDocument() {
@@ -817,14 +830,16 @@ private struct Parser {
         switch section {
         case .proxies:
             proxyCount += 1
-            if upstreamEndpoints.count
-                < ProfileUpstreamEndpointInspector.maximumEndpoints,
-               !item.server.isEmpty,
+            if !item.server.isEmpty,
                let port = UInt16(item.port),
                port > 0 {
-                upstreamEndpoints.append(
-                    ProfileUpstreamEndpoint(host: item.server, port: port)
-                )
+                let endpoint = ProfileUpstreamEndpoint(host: item.server, port: port)
+                if upstreamEndpoints.count < ProfileUpstreamEndpointInspector.maximumEndpoints {
+                    upstreamEndpoints.append(endpoint)
+                }
+                if !item.name.isEmpty, namedEndpoints.count < ProfileUpstreamEndpointInspector.maximumEndpoints {
+                    namedEndpoints[item.name] = endpoint
+                }
             }
             guard proxies.count < ProfileConfigurationInspector.maximumDisplayedItemsPerSection else {
                 return

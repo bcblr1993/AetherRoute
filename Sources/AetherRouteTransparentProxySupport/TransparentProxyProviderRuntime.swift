@@ -272,6 +272,15 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         }
     }
 
+    public func resetNetworkState() {
+        admissionLock.withLock {
+            guard acceptingFlows else { return }
+            TransparentLifecycleLog.logger.info("stage=flowRuntimeResetNetwork begin")
+            registry.cancelActiveSessions()
+            TransparentLifecycleLog.logger.info("stage=flowRuntimeResetNetwork success")
+        }
+    }
+
     public func snapshot() -> TransparentProxyRuntimeSnapshot {
         TransparentProxyRuntimeSnapshot(
             isAcceptingFlows: admissionLock.withLock { acceptingFlows },
@@ -688,6 +697,11 @@ public final class TransparentProxyProviderLifecycleController:
         return try runtime.telemetrySnapshot(
             maximumConnections: maximumConnections
         )
+    }
+
+    public func resetNetworkState() {
+        guard let runtime = runningRuntime() else { return }
+        runtime.resetNetworkState()
     }
 
     private func completePreparation(

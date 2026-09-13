@@ -138,6 +138,16 @@ public final class TransparentProxySessionRegistry: @unchecked Sendable {
         }
     }
 
+    /// Cancels all currently active sessions without changing the registry's lifecycle state.
+    /// This allows stale pre-sleep connections to be terminated cleanly so clients reconnect.
+    public func cancelActiveSessions() {
+        let activeSessions = lock.withLock { () -> [any TransparentProxySessionLifetime] in
+            guard lifecycle == .accepting else { return [] }
+            return Array(sessions.values)
+        }
+        activeSessions.forEach { $0.cancel() }
+    }
+
     public func snapshot() -> TransparentProxySessionRegistrySnapshot {
         lock.withLock {
             TransparentProxySessionRegistrySnapshot(

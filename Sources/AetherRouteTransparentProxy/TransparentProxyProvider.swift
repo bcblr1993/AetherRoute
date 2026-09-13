@@ -27,6 +27,13 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         label: "com.example.aetherroute.transparent-provider.messages",
         qos: .userInitiated
     )
+    /// Short enough that the whole schedule still fits inside the recovery
+    /// window, long enough not to fail a link that has just come up.
+    private static let healthProbeTimeoutMilliseconds: UInt32 = 3_000
+    /// Built in `init`, not lazily. `wake`, `sleep` and the provider message
+    /// queue can all reach it first, and a `lazy var` has no synchronisation on
+    /// that first access.
+    private var recovery: NetworkRecoveryCoordinator!
 
     override init() {
         let identityGuard = TransparentProxySelfIdentityGuard()
@@ -52,8 +59,13 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     as: UTF8.self
                 )
                 Self.runtimeLog.aggregate("stage=loadSelections begin")
-                let savedSelections = try ProxySelectionStore.applicationGroup()
+                let profileSummary = ProfileConfigurationInspector.inspect(yaml: profileYAML)
+                let rawSelections = try ProxySelectionStore.applicationGroup()
                     .selections(forProfileYAML: profileYAML)
+                let savedSelections = InitialProxySelectionPolicy.selections(
+                    persisted: rawSelections,
+                    summary: profileSummary
+                )
                 Self.runtimeLog.aggregate(
                     "stage=loadSelections success count=\(savedSelections.count)"
                 )
@@ -64,6 +76,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     // members. Ignore only that stale per-group override; corrupt
                     // encrypted storage still fails startup before reaching here.
                     _ = try? engine.selectProxy(group: group, member: member)
+                }
+                if savedSelections["GLOBAL"] == nil {
+                    _ = try? engine.selectProxy(group: "GLOBAL", member: "DIRECT")
                 }
                 Self.runtimeLog.aggregate("stage=createFlowRuntime begin")
                 let runtime = try TransparentProxyFlowRuntime(
@@ -87,6 +102,27 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             }
         }
         super.init()
+        recovery = NetworkRecoveryCoordinator(
+            perform: { [weak self] reason, attempt in
+                Self.runtimeLog.aggregate(
+                    "stage=flowRecovery attempt reason=\(reason) index=\(attempt)"
+                )
+                self?.runtimeController.resetNetworkState()
+            },
+            verify: { [weak self] in self?.dataPathIsHealthy() ?? false },
+            observer: { event in
+                // Exhaustion means the host never regained a data path, which
+                // is the one outcome that must stay visible with debug logging
+                // switched off.
+                if case let .exhausted(reason, attempts) = event {
+                    Self.runtimeLog.failure(
+                        "stage=flowRecovery exhausted reason=\(reason) attempts=\(attempts)"
+                    )
+                } else {
+                    Self.runtimeLog.aggregate("stage=flowRecovery event=\(event)")
+                }
+            }
+        )
     }
 
     override func startProxy(
@@ -148,6 +184,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                             group: group,
                             member: member
                         )
+                    }
+                    if snapshot.proxySelections["GLOBAL"] == nil {
+                        _ = try? engine.selectProxy(group: "GLOBAL", member: "DIRECT")
                     }
                     Self.runtimeLog.aggregate(
                         "stage=restoreSelections success count=\(snapshot.proxySelections.count)"
@@ -250,6 +289,36 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         }
     }
 
+    override func sleep(completionHandler: @escaping () -> Void) {
+        Self.runtimeLog.lifecycle("stage=sleep requested")
+        recovery.cancel(reason: "sleep")
+        completionHandler()
+    }
+
+    override func wake() {
+        Self.runtimeLog.lifecycle("stage=wake requested")
+        // Was a fixed pair of resets at +0s and +1.5s. A laptop reopening onto
+        // Wi-Fi is rarely ready that soon, and nothing re-ran afterwards.
+        recovery.trigger(reason: "wake")
+    }
+
+    /// Probes the live route end to end. The provider's own sockets do not pass
+    /// through the flows it proxies, so asking the core to URL-test the current
+    /// route is the only way to see whether traffic can leave the host.
+    private func dataPathIsHealthy() -> Bool {
+        do {
+            let state = try runtimeController.testActiveProxyLatency(
+                group: ProxyConnectionReadinessPolicy.globalGroupName,
+                url: ProxyConnectionReadinessPolicy
+                    .requiredExternalProbeURLString,
+                timeoutMilliseconds: Self.healthProbeTimeoutMilliseconds
+            )
+            return state.results.contains { $0.delayMilliseconds != nil }
+        } catch {
+            return false
+        }
+    }
+
     override func handleNewFlow(_ flow: NEAppProxyFlow) -> Bool {
         Self.runtimeLog.verbose("stage=handleNewFlow transport=tcp begin")
         return runtimeController.withFlowAdmission { [self] in
@@ -309,7 +378,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 case let .setRoutingMode(mode):
                     try self.applyRoutingMode(mode)
                 case .resetNetwork:
-                    .networkReset
+                    self.handleResetNetwork()
                 }
             } catch is ProxySelectionProviderMessageError {
                 response = .failure(.invalidRequest)
@@ -354,6 +423,15 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     ) throws -> ProxySelectionProviderResponse {
         try runtimeController.setRoutingMode(mode)
         return .routingMode(mode)
+    }
+
+    private func handleResetNetwork() -> ProxySelectionProviderResponse {
+        Self.runtimeLog.lifecycle("stage=appMessage resetNetwork requested")
+        // `NEProvider.wake()` is not guaranteed to arrive, so the host's wake
+        // request has to start the same converging run rather than a single
+        // best-effort reset.
+        recovery.trigger(reason: "appMessage")
+        return .networkReset
     }
 
     private func handleAdmittedFlow(_ flow: NEAppProxyFlow) -> Bool {

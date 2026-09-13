@@ -72,7 +72,14 @@ struct TunnelStartupTimingPolicyTests {
             TunnelStartupTimingPolicy.automaticRouteHealthIntervalSeconds > 0
         )
         #expect(
-            TunnelStartupTimingPolicy.telemetryPollingIntervalSeconds == 10
+            TunnelStartupTimingPolicy.activeTelemetryPollingIntervalSeconds == 1
+        )
+        #expect(
+            TunnelStartupTimingPolicy.backgroundTelemetryPollingIntervalSeconds == 10
+        )
+        #expect(
+            TunnelStartupTimingPolicy.telemetryPollingIntervalSeconds
+                == TunnelStartupTimingPolicy.backgroundTelemetryPollingIntervalSeconds
         )
         #expect(
             TunnelStartupTimingPolicy.automaticRouteFailoverAttemptCount >= 2

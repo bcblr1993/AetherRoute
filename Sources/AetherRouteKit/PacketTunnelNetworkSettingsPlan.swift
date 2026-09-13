@@ -88,7 +88,7 @@ public struct PacketTunnelNetworkSettingsPlan: Equatable, Sendable {
         configuration: TunnelConfiguration,
         bypassPlan: BypassNetworkSettingsPlan
     ) {
-        tunnelRemoteAddress = "127.0.0.1"
+        tunnelRemoteAddress = configuration.ipv4Address
         mtu = configuration.mtu
 
         let customIPv4Routes = bypassPlan.ipv4Routes.map {
@@ -144,7 +144,6 @@ public struct PacketTunnelNetworkSettingsPlan: Equatable, Sendable {
 
     private static let localIPv4Routes = [
         IPv4Route(destinationAddress: "10.0.0.0", subnetMask: "255.0.0.0"),
-        IPv4Route(destinationAddress: "127.0.0.0", subnetMask: "255.0.0.0"),
         IPv4Route(
             destinationAddress: "169.254.0.0",
             subnetMask: "255.255.0.0"
