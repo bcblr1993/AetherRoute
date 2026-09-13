@@ -43,9 +43,9 @@ if [ -n "$PREVIEW_AUDIT_DIRECTORY" ]; then
 fi
 
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy || true
-site=https://aetherroute.baizhiedu.xin
-downloads=https://downloads.baizhiedu.xin
-updates=https://updates.baizhiedu.xin
+site=${AETHERROUTE_SITE_URL:-https://aetherroute.pages.dev}
+downloads=${AETHERROUTE_DOWNLOADS_URL:-https://github.com/bcblr1993/AetherRoute/releases/download}
+updates=${AETHERROUTE_UPDATES_URL:-https://aetherroute.pages.dev}
 artifact_url="$downloads/$CHANNEL/$ARTIFACT_NAME"
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-web-verify.XXXXXX")

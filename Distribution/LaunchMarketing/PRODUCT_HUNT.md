@@ -3,7 +3,7 @@
 ## 1. Basic Information
 - **Name**: AetherRoute
 - **Tagline**: The private, native routing client engineered for Apple silicon
-- **Website URL**: https://aetherroute.baizhiedu.xin/
+- **Website URL**: https://aetherroute.pages.dev/
 - **Categories**: Developer Tools, Mac Apps, Privacy, Network & Utilities
 - **Platforms**: macOS (Apple silicon M-series, macOS 15+)
 - **Pricing**: 100% Free / Open Distribution (No subscription, No accounts required)

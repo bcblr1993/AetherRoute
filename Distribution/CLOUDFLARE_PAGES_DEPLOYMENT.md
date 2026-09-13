@@ -30,7 +30,7 @@
    - 10 秒内即可完成全球部署，获得默认分配域名（例如 `aetherroute.pages.dev`）。
 7. **配置自定义独立域名 (Custom Domains)**：
    - 在项目页面点击 **Custom domains** → **Set up a custom domain**。
-   - 输入您希望使用的海外独立站域名（例如 `aetherroute.com` 或 `aetherroute.baizhiedu.xin`）。
+   - 输入您希望使用的自定义域名（例如 `aetherroute.com` 或直接使用默认的 `aetherroute.pages.dev`）。
    - Cloudflare 会自动配置 DNS CNAME 记录并秒级签发 Universal SSL/TLS 证书。
 
 ---

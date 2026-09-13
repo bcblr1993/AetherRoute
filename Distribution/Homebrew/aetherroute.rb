@@ -1,16 +1,16 @@
 cask "aetherroute" do
   arch arm: "arm64"
 
-  version "1.0.0"
-  sha256 "e9c411a54b8fd694583a94cfc49ead4d1d23057fd5251ec969eff3dcfc575065"
+  version "1.0.1"
+  sha256 "58608a9674d141f86e09083bd701c3aeeef93bbdd9cbfa693f43ab1e931e3a30"
 
-  url "https://downloads.baizhiedu.xin/releases/#{version}/AetherRoute-#{version}-#{arch}.dmg"
+  url "https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.1-build-2026091301/AetherRoute-1.0.1-build-2026091301-#{arch}-Notarized-Test-Normal-Core.dmg"
   name "AetherRoute"
   desc "Native, private routing client engineered exclusively for Apple silicon macOS"
-  homepage "https://aetherroute.baizhiedu.xin/"
+  homepage "https://aetherroute.pages.dev/"
 
   livecheck do
-    url "https://aetherroute.baizhiedu.xin/releases/"
+    url "https://aetherroute.pages.dev/releases/"
     regex(/AetherRoute\s+v?(\d+(?:\.\d+)+)/i)
   end
 

@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://aetherroute.baizhiedu.xin/sitemap.xml
+Sitemap: https://aetherroute.pages.dev/sitemap.xml

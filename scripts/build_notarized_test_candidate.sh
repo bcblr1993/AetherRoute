@@ -322,7 +322,7 @@ chmod 600 "$SIGNING_OVERRIDES"
 ARCHIVE=
 BUILD_LOG=
 archive_attempt=1
-while test "$archive_attempt" -le 3; do
+while test "$archive_attempt" -le 5; do
   candidate_archive="$TEMPORARY/AetherRoute-$archive_attempt.xcarchive"
   candidate_log="$TEMPORARY/archive-$archive_attempt.log"
   if xcodebuild \
@@ -350,10 +350,10 @@ while test "$archive_attempt" -le 3; do
     # retry is safe; the final attempt still surfaces the complete build log.
     archive_retryable=1
   fi
-  if test "$archive_attempt" -lt 3 && test "$archive_retryable" -eq 1; then
-    echo "Apple signing service unavailable; retrying archive ($archive_attempt/3)" >&2
+  if test "$archive_attempt" -lt 5 && test "$archive_retryable" -eq 1; then
+    echo "Apple signing service unavailable; retrying archive ($archive_attempt/5)" >&2
     archive_attempt=$((archive_attempt+1))
-    sleep 5
+    sleep 10
     continue
   fi
   grep -nE '(^|[[:space:]])(error:|fatal error:)' "$candidate_log" >&2 || true

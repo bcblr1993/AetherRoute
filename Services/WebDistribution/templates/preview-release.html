@@ -58,6 +58,17 @@
       </section>
 
       <section>
+        <h2><span data-lang="zh">1.0.1 核心修复与更新日志 (Changelogs)</span><span data-lang="en">1.0.1 Fixes & Changelog</span></h2>
+        <ul>
+          <li><strong><span data-lang="zh">macOS 宿主机网络扩展公证装订强化</span><span data-lang="en">Notarization & Ticket Stapling</span></strong>: <span data-lang="zh">全面强化 Developer ID 签名与 Apple 官方公证票据（Stapled Ticket），彻底修复开启 SIP 的真实 Mac 宿主机上报 “code signature invalid” (OSSystemExtensionErrorDomain 8) 并卸载扩展的问题。</span><span data-lang="en">Enforced full Apple Notarization and ticket stapling, preventing "code signature invalid" (error code 8) under enabled System Integrity Protection (SIP).</span></li>
+          <li><strong><span data-lang="zh">休眠唤醒与网络环境切换自动恢复</span><span data-lang="en">Sleep-Wake & Interface Recovery</span></strong>: <span data-lang="zh">修复系统在经历长时间睡眠唤醒或 Wi-Fi/有线网卡热插拔切换时，数据平面丢失的问题，实现接口变更后的自愈重建。</span><span data-lang="en">Auto-recovers TUN data plane routing after long sleep/wake cycles and network interface switching.</span></li>
+          <li><strong><span data-lang="zh">TUN 模式路由规则与全局代理平滑切换</span><span data-lang="en">Routing Mode Transitions</span></strong>: <span data-lang="zh">优化 TUN 模式下规则分流与全局模式切换时的节点选择器与 DNS 解析流向，修复全局模式下特定节点连通性延迟问题。</span><span data-lang="en">Optimized proxy selector and DNS resolution when switching between Rule and Global routing modes.</span></li>
+          <li><strong><span data-lang="zh">透明代理流控与会话生命周期稳定性</span><span data-lang="en">Flow Control & Session Stability</span></strong>: <span data-lang="zh">强化透明代理会话注册表的并发控制与空闲流主动回收，杜绝长时间运行下的内存漂移。</span><span data-lang="en">Enhanced session registry concurrency and idle flow cleanup to prevent memory drift.</span></li>
+          <li><strong><span data-lang="zh">日志隐私脱敏与规范化</span><span data-lang="en">Sanitized Observability</span></strong>: <span data-lang="zh">统一日志 Subsystem 与分类，自动脱敏订阅链接与敏感凭证，严守隐私安全底线。</span><span data-lang="en">Unified logging categories with automatic redaction of subscription URLs and credentials.</span></li>
+        </ul>
+      </section>
+
+      <section>
         <h2><span data-lang="zh">本次提供</span><span data-lang="en">Included</span></h2>
         <ul>
           <li><span data-lang="zh">原生 macOS 界面，支持简体中文、英文和浅色、深色外观。</span><span data-lang="en">A native macOS interface in Simplified Chinese and English, with light and dark appearances.</span></li>
