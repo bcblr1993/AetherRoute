@@ -34,10 +34,10 @@
     <div class="page-hero">
       <span class="eyebrow"><span data-lang="zh">正式稳定版 · Apple 官方公证</span><span data-lang="en">Production stable · Apple notarized</span></span>
       <h1>AetherRoute 1.0.1</h1>
-      <p>Build 2026091301 · 2026-09-13 · Apple silicon · macOS 15.0+</p>
+      <p>Build 2026091302 · 2026-09-13 · Apple silicon · macOS 15.0+</p>
       <div class="hero-actions">
-        <a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.1-build-2026091301/AetherRoute-1.0.1-build-2026091301-arm64-Notarized-Test-Normal-Core.dmg"><span data-lang="zh">下载 DMG 安装包</span><span data-lang="en">Download DMG</span> <span aria-hidden="true">↓</span></a>
-        <a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.1-build-2026091301" target="_blank" rel="noreferrer">GitHub Release</a>
+        <a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.1-build-2026091302/AetherRoute-1.0.1-build-2026091302-arm64-Notarized-Test-Normal-Core.dmg"><span data-lang="zh">下载 DMG 安装包</span><span data-lang="en">Download DMG</span> <span aria-hidden="true">↓</span></a>
+        <a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.1-build-2026091302" target="_blank" rel="noreferrer">GitHub Release</a>
       </div>
     </div>
 
@@ -49,13 +49,15 @@
       </div>
 
       <section>
-        <h2><span data-lang="zh">1.0.1 核心修复与更新日志 (Changelogs)</span><span data-lang="en">1.0.1 Fixes & Changelog</span></h2>
+        <h2><span data-lang="zh">1.0.1 核心更新日志 (Changelogs)</span><span data-lang="en">1.0.1 Fixes & Changelog</span></h2>
         <ul>
-          <li><strong><span data-lang="zh">macOS 宿主机网络扩展公证装订全面强化</span><span data-lang="en">Notarization & Ticket Stapling</span></strong>: <span data-lang="zh">全面强化 Developer ID 签名与 Apple 官方公证票据（Stapled Ticket），彻底修复开启 SIP 的真实 Mac 宿主机上报 “code signature invalid” (OSSystemExtensionErrorDomain 8) 并卸载扩展的问题。</span><span data-lang="en">Enforced full Apple Notarization and ticket stapling, preventing "code signature invalid" (error code 8) under enabled System Integrity Protection (SIP).</span></li>
-          <li><strong><span data-lang="zh">休眠唤醒与网络环境切换自动恢复</span><span data-lang="en">Sleep-Wake & Interface Recovery</span></strong>: <span data-lang="zh">修复系统在经历长时间睡眠唤醒或 Wi-Fi/有线网卡热插拔切换时，数据平面丢失的问题，实现接口变更后的自愈重建。</span><span data-lang="en">Auto-recovers TUN data plane routing after long sleep/wake cycles and network interface switching.</span></li>
-          <li><strong><span data-lang="zh">TUN 模式路由规则与全局代理平滑切换</span><span data-lang="en">Routing Mode Transitions</span></strong>: <span data-lang="zh">优化 TUN 模式下规则分流与全局模式切换时的节点选择器与 DNS 解析流向，修复全局模式下特定节点连通性延迟问题。</span><span data-lang="en">Optimized proxy selector and DNS resolution when switching between Rule and Global routing modes.</span></li>
-          <li><strong><span data-lang="zh">透明代理流控与会话生命周期稳定性</span><span data-lang="en">Flow Control & Session Stability</span></strong>: <span data-lang="zh">强化透明代理会话注册表的并发控制与空闲流主动回收，杜绝长时间运行下的内存漂移。</span><span data-lang="en">Enhanced session registry concurrency and idle flow cleanup to prevent memory drift.</span></li>
-          <li><strong><span data-lang="zh">日志隐私脱敏与规范化</span><span data-lang="en">Sanitized Observability</span></strong>: <span data-lang="zh">统一日志 Subsystem 与分类，自动脱敏订阅链接与敏感凭证，严守隐私安全底线。</span><span data-lang="en">Unified logging categories with automatic redaction of subscription URLs and credentials.</span></li>
+          <li><strong><span data-lang="zh">智能 1 秒实时动态遥测与平滑波形 (方案 B)</span><span data-lang="en">Smart Realtime Telemetry & Waveform</span></strong>: <span data-lang="zh">概览面板在前台活跃时采用 1 秒高频采样与 30 秒平滑动态双波形跳动；切换至其他页面、窗口最小化或隐藏至托盘时自动降频至 10 秒，极致节省 CPU 与电池能耗。</span><span data-lang="en">Features 1-second high-resolution telemetry and smooth 30-second live waveforms when foregrounded, automatically throttling to 10 seconds when minimized or hidden to maximize energy efficiency.</span></li>
+          <li><strong><span data-lang="zh">全模块视觉体系规范化与物理动效</span><span data-lang="en">Design System & Motion Standards</span></strong>: <span data-lang="zh">全面统一 AetherVisual 动效节奏，包括 gentleSpring 原生物理弹簧过渡、quickFade 120ms 悬浮高亮微交互、统一卡片与控制项圆角分级，提供丝滑原生 macOS 体验。</span><span data-lang="en">Standardized visual system and motion tokens including gentleSpring physics, 120ms quickFade hover highlights, and aligned corner radii across all views.</span></li>
+          <li><strong><span data-lang="zh">100% 动态多语言本地化闭环</span><span data-lang="en">Full Dynamic Localization Pass</span></strong>: <span data-lang="zh">彻底重构界面文本体系，全量接入 AppLocalization，覆盖 887 个条目中英双语 100% 匹配，语言切换无需重启即时全量生效。</span><span data-lang="en">Full dynamic localization across all 887 keys in English and Simplified Chinese, ensuring immediate zero-restart language switching.</span></li>
+          <li><strong><span data-lang="zh">侧边栏导航与状态同步优化</span><span data-lang="en">Sidebar Navigation & State Sync</span></strong>: <span data-lang="zh">重构侧边栏导航项与 NavigationSplitView 交互绑定，彻底修复页面切换时详情区域空白及选中高亮错位的问题。</span><span data-lang="en">Resolved navigation state desync and detail blanking in NavigationSplitView with unified sidebar tagged navigation.</span></li>
+          <li><strong><span data-lang="zh">配置管理操作菜单原生化重构</span><span data-lang="en">Native Context Menu Overhaul</span></strong>: <span data-lang="zh">将配置卡片操作菜单全面升级为原生高对比度 macOS 菜单，清晰呈现重命名与二次确认移除等关键操作。</span><span data-lang="en">Replaced popovers with high-contrast native macOS menus for configuration management, renaming, and removal.</span></li>
+          <li><strong><span data-lang="zh">休眠唤醒与网卡切换数据平面自愈</span><span data-lang="en">Sleep-Wake & Interface Recovery</span></strong>: <span data-lang="zh">引入 NetworkRecoveryCoordinator，在长时间睡眠唤醒或 Wi-Fi/有线网卡切换时自动指数退避自愈恢复，杜绝断流空悬。</span><span data-lang="en">Introduced NetworkRecoveryCoordinator for automatic route convergence and recovery after sleep/wake cycles and network changes.</span></li>
+          <li><strong><span data-lang="zh">macOS 宿主机网络扩展公证装订全面强化</span><span data-lang="en">Notarization & Ticket Stapling</span></strong>: <span data-lang="zh">严格执行 Developer ID 签名与 Apple 官方公证票据离线装订（Stapled Ticket），彻底确保开启 SIP 的系统环境中稳定激活运行。</span><span data-lang="en">Strict Developer ID signing and offline ticket stapling ensuring reliable activation on SIP-enabled systems.</span></li>
         </ul>
       </section>
 

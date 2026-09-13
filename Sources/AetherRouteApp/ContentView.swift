@@ -359,7 +359,9 @@ struct ContentView: View {
             List(selection: sectionSelection) {
                 Section {
                     ForEach(AppSection.allCases) { section in
-                        NavigationLink(value: section) {
+                        Button {
+                            selectSection(section)
+                        } label: {
                             HStack(spacing: AetherVisual.sCompact) {
                                 Image(systemName: section.symbol)
                                     .font(.system(size: 14, weight: .semibold))
@@ -378,7 +380,10 @@ struct ContentView: View {
                                 navigationBadge(for: section)
                             }
                             .padding(.vertical, AetherVisual.sMicro)
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .tag(section)
                         .accessibilityIdentifier("primary-navigation-\(section.rawValue)")
                     }
                 }
