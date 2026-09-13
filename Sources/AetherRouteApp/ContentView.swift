@@ -318,6 +318,7 @@ struct ContentView: View {
 #endif
 
     @State private var copiedTerminalExport: Bool = false
+    @State private var isSettingsHovered: Bool = false
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -384,10 +385,8 @@ struct ContentView: View {
             }
             .listStyle(.sidebar)
 
-            // 3. 底部活动配置卡与设置入口
-            VStack(spacing: AetherVisual.s2) {
-                activeProfileQuickCard
-
+            // 3. 底部设置入口
+            VStack(spacing: 0) {
                 Divider()
                     .opacity(0.3)
                     .padding(.horizontal, AetherVisual.s3)
@@ -402,17 +401,19 @@ struct ContentView: View {
                             Text(AppLocalization.string("Settings"))
                                 .font(.system(size: 12.5, weight: .medium))
                         }
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(isSettingsHovered ? Color.primary : Color.secondary)
                         .padding(.vertical, AetherVisual.s2)
                         .padding(.horizontal, AetherVisual.sCompact)
+                        .aetherHoverHighlight(isHovered: isSettingsHovered)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .onHover { isSettingsHovered = $0 }
                     .accessibilityIdentifier("sidebar-settings-button")
 
                     Spacer()
 
-                    Text(verbatim: "v1.0.0")
+                    Text(verbatim: currentAppVersion)
                         .font(.system(size: 10.5, weight: .regular, design: .monospaced))
                         .foregroundStyle(Color.secondary.opacity(0.5))
                         .padding(.trailing, AetherVisual.s2)
@@ -460,59 +461,9 @@ struct ContentView: View {
         }
     }
 
-    private var activeProfileQuickCard: some View {
-        Menu {
-            ForEach(tunnel.profiles, id: \.id) { item in
-                Button {
-                    Task { await tunnel.activateProfile(id: item.id) }
-                } label: {
-                    if item.id == tunnel.activeProfileID {
-                        Label(item.profile.name, systemImage: "checkmark")
-                    } else {
-                        Text(item.profile.name)
-                    }
-                }
-            }
-            Divider()
-            Button {
-                selectSection(.profiles)
-            } label: {
-                Label(AppLocalization.string("Manage Profiles…"), systemImage: "gearshape")
-            }
-        } label: {
-            HStack(spacing: AetherVisual.s2) {
-                Image(systemName: "doc.badge.gearshape")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-
-                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    Text(tunnel.activeProfile?.name ?? AppLocalization.string("No profile"))
-                        .font(.system(size: 12, weight: .medium))
-                        .lineLimit(1)
-                        .foregroundStyle(.primary)
-
-                    Text(activeProfileStatus)
-                        .font(.system(size: 10, weight: .regular))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, AetherVisual.s3)
-            .padding(.vertical, AetherVisual.sCompact)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.7), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
-            .overlay {
-                RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
-            }
-        }
-        .menuStyle(.borderlessButton)
-        .padding(.horizontal, AetherVisual.s3)
+    private var currentAppVersion: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1"
+        return "v\(version)"
     }
 
     private var sectionSelection: Binding<AppSection?> {
@@ -530,18 +481,6 @@ struct ContentView: View {
             UIResponsivenessProbe.begin("main.\(section.rawValue)")
         }
         selectedSection = section
-    }
-
-    private var activeProfileStatus: String {
-        if tunnel.isUpdatingRoutingResources {
-            return AppLocalization.string("Preparing routing rules…")
-        }
-        return switch tunnel.state {
-        case .connecting: AppLocalization.string("Starting")
-        case .connected: AppLocalization.string("In use")
-        case .disconnecting: AppLocalization.string("Stopping")
-        default: AppLocalization.string("Ready to connect")
-        }
     }
 
     private var detail: some View {
@@ -655,7 +594,32 @@ private struct OverviewView: View {
             SubscriptionEditorSheet(urlText: $subscriptionURL)
                 .environmentObject(tunnel)
         }
+        .onAppear {
+            updateOverviewTelemetryState()
+        }
+        .onDisappear {
+            tunnel.setRealtimeTelemetryPreferred(false, for: "overview")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didMiniaturizeNotification)) { _ in
+            tunnel.setRealtimeTelemetryPreferred(false, for: "overview")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didDeminiaturizeNotification)) { _ in
+            updateOverviewTelemetryState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willHideNotification)) { _ in
+            tunnel.setRealtimeTelemetryPreferred(false, for: "overview")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didUnhideNotification)) { _ in
+            updateOverviewTelemetryState()
+        }
         .accessibilityIdentifier("overview-page")
+    }
+
+    private func updateOverviewTelemetryState() {
+        let hasVisibleWindow = NSApplication.shared.windows.contains { window in
+            window.isVisible && !window.isMiniaturized && !(window is NSPanel)
+        }
+        tunnel.setRealtimeTelemetryPreferred(hasVisibleWindow, for: "overview")
     }
 
     private var overviewDetails: some View {
@@ -928,7 +892,7 @@ private struct ConnectionRecoveryCard: View {
         .accessibilityIdentifier("recovery-\(action.rawValue)")
 
         if prominent {
-            button.buttonStyle(.bordered)
+            button.buttonStyle(.borderedProminent)
         } else {
             button.buttonStyle(.bordered)
         }
@@ -1759,199 +1723,37 @@ private struct ProfilesView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AetherVisual.s5) {
-                VStack(alignment: .leading, spacing: AetherVisual.s4) {
-                    HStack(alignment: .center, spacing: AetherVisual.s4) {
-                        VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                            Text("Profiles")
-                                .font(.title2.weight(.semibold))
-                            Text(
-                                tunnel.activeProfile?.name
-                                    ?? AppLocalization.string("No active profile")
-                            )
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                                .help(
-                                    tunnel.activeProfile?.name
-                                        ?? AppLocalization.string("No active profile")
-                                )
-                            Text(profileDetail)
-                                .font(.body.weight(.medium))
-                                .foregroundStyle(.primary)
-                        }
-                        Spacer(minLength: 0)
-                    }
+                pageHeader
 
-                    Divider()
-
-                    HStack(spacing: AetherVisual.s2) {
-                        Button("Add Subscription…", systemImage: "link.badge.plus") {
-                            tunnel.clearProfileMessage()
-                            subscriptionURL = ""
-                            isSubscriptionEditorPresented = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!tunnel.canImportOrAddProfile)
-                        .accessibilityIdentifier("add-subscription")
-
-                        Button("Import Profile…", systemImage: "square.and.arrow.down") {
-                            tunnel.clearProfileMessage()
-                            presentFileImporter(.profile)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(!tunnel.canImportOrAddProfile)
-
-                        Menu("More", systemImage: "ellipsis.circle") {
-                            Button("Add Node…", systemImage: "plus") {
-                                tunnel.clearProfileMessage()
-                                isManualNodeEditorPresented = true
-                            }
-                            .disabled(!tunnel.canImportOrAddProfile)
-                            Divider()
-                            Button("Export Portable Archive…", systemImage: "square.and.arrow.up") {
-                                tunnel.clearProfileMessage()
-                                isExportPasswordPresented = true
-                            }
-                            .disabled(tunnel.profiles.isEmpty || tunnel.isTransferringProfiles)
-                            Button("Import Portable Archive…", systemImage: "square.and.arrow.down") {
-                                tunnel.clearProfileMessage()
-                                presentFileImporter(.portableArchive)
-                            }
-                            .disabled(!tunnel.canModifyProfiles)
-                        }
-                        .accessibilityIdentifier("profiles-more-menu")
-                        Spacer(minLength: 0)
-                    }
-                    .controlSize(.large)
-
-                    if let message = tunnel.profileMessage,
-                       !tunnel.isImportingProfile {
-                        Label(
-                            message,
-                            systemImage: tunnel.profileMessageIsError
-                                ? "exclamationmark.triangle"
-                                : "checkmark.circle"
-                        )
-                        .font(.caption)
-                        .foregroundStyle(tunnel.profileMessageIsError ? .red : .green)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                if let message = tunnel.profileMessage, !tunnel.isImportingProfile {
+                    profileMessageBanner(message: message, isError: tunnel.profileMessageIsError)
                 }
-                .padding(AetherVisual.s6)
-                .aetherPanel()
 
                 if tunnel.isImportingProfile {
-                    HStack(spacing: AetherVisual.s3) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Importing profile…")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.primary)
-                        Spacer(minLength: 0)
-                        Button("Cancel", role: .cancel) {
-                            tunnel.cancelProfileImport()
-                        }
+                    importProgressCard
+                }
+
+                if tunnel.profiles.isEmpty {
+                    emptyOnboardingSection
+                } else {
+                    if let active = tunnel.activeProfile {
+                        activeProfileHeroCard(active: active)
                     }
-                    .padding(.horizontal, AetherVisual.s4)
-                    .padding(.vertical, AetherVisual.s4)
-                    .aetherPanel()
-                    .accessibilityIdentifier("profile-import-progress")
-                }
 
-                if let subscription = tunnel.activeProfile?.subscription {
-                    ProfileSubscriptionCard(
-                        subscription: subscription,
-                        isRefreshing: tunnel.isRefreshingSubscription,
-                        canRefresh: tunnel.canModifyProfiles
-                    ) {
-                        Task { await tunnel.refreshSubscription() }
-                    }
-                }
+                    profileLibraryCard
 
-                if !tunnel.requiredRoutingResources.isEmpty {
-                    RoutingResourcesCard(
-                        importResource: { kind in
-                            routingResourceImportKind = kind
-                            presentFileImporter(.routingResource)
-                        }
-                    )
-                    .environmentObject(tunnel)
-                }
-
-                if !tunnel.profiles.isEmpty {
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                                Text("Profile Library")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                Text(
-                                    String.localizedStringWithFormat(
-                                        AppLocalization.string("%lld encrypted profiles"),
-                                        Int64(tunnel.profiles.count)
-                                    )
-                                )
-                                .font(.body)
-                                .foregroundStyle(.primary)
+                    if !tunnel.requiredRoutingResources.isEmpty {
+                        RoutingResourcesCard(
+                            importResource: { kind in
+                                routingResourceImportKind = kind
+                                presentFileImporter(.routingResource)
                             }
-                            Spacer()
-                            Label("Encrypted on this Mac", systemImage: "lock.fill")
-                                .font(.body)
-                                .foregroundStyle(.primary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(.horizontal, AetherVisual.s5)
-                        .padding(.vertical, AetherVisual.s4)
-
-                        Divider()
-                            .padding(.horizontal, AetherVisual.s5)
-
-                        ForEach(Array(tunnel.profiles.enumerated()), id: \.element.id) { index, managed in
-                            ManagedProfileRow(
-                                managed: managed,
-                                isActive: managed.id == tunnel.activeProfileID,
-                                canActivate: tunnel.canActivateProfile,
-                                canModify: tunnel.canModifyProfiles,
-                                activate: {
-                                    Task {
-                                        await tunnel.activateProfile(
-                                            id: managed.id
-                                        )
-                                    }
-                                },
-                                rename: {
-                                    profileToRename = managed
-                                },
-                                editNative: managed.profile.nativeNodes == nil
-                                    ? nil
-                                    : { nativeProfileToEdit = managed },
-                                remove: {
-                                    Task {
-                                        await tunnel.removeProfile(
-                                            id: managed.id
-                                        )
-                                    }
-                                }
-                            )
-                            if index < tunnel.profiles.count - 1 {
-                                Divider()
-                                    .padding(.leading, AetherVisual.tableContentIndent)
-                                    .padding(.trailing, AetherVisual.s5)
-                            }
-                        }
+                        )
+                        .environmentObject(tunnel)
                     }
-                    .aetherPanel()
                 }
 
-                VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                    Label("Supported formats", systemImage: "doc.text")
-                        .font(.headline)
-                    Text("Supports Clash-compatible YAML/JSON profiles, HTTPS subscriptions, and common node links.")
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(AetherVisual.s5)
-                .background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous))
+                supportedFormatsCard
             }
             .padding(.horizontal, AetherVisual.pageHorizontalPadding)
             .padding(.top, AetherVisual.pageTopPadding)
@@ -2024,19 +1826,447 @@ private struct ProfilesView: View {
         .accessibilityIdentifier("profiles-page")
     }
 
-    private var profileDetail: String {
-        guard let profile = tunnel.activeProfile else {
-            return AppLocalization.string(
-                "Add a subscription, add a node, or import a Clash-compatible YAML/JSON profile to get started."
-            )
+    private var pageHeader: some View {
+        HStack(alignment: .center, spacing: AetherVisual.s3) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                Text("Profiles")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.primary)
+
+                Text(AppLocalization.string("Manage proxy subscriptions, local files, and routing profiles."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: AetherVisual.s2)
+
+            HStack(spacing: AetherVisual.s2) {
+                Button("Add Subscription…", systemImage: "link.badge.plus") {
+                    tunnel.clearProfileMessage()
+                    subscriptionURL = ""
+                    isSubscriptionEditorPresented = true
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .disabled(!tunnel.canImportOrAddProfile)
+                .accessibilityIdentifier("add-subscription")
+
+                Button("Import Profile…", systemImage: "square.and.arrow.down") {
+                    tunnel.clearProfileMessage()
+                    presentFileImporter(.profile)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .disabled(!tunnel.canImportOrAddProfile)
+
+                Menu("More", systemImage: "ellipsis.circle") {
+                    Button("Add Node…", systemImage: "plus") {
+                        tunnel.clearProfileMessage()
+                        isManualNodeEditorPresented = true
+                    }
+                    .disabled(!tunnel.canImportOrAddProfile)
+
+                    Divider()
+
+                    Button("Export Portable Archive…", systemImage: "square.and.arrow.up") {
+                        tunnel.clearProfileMessage()
+                        isExportPasswordPresented = true
+                    }
+                    .disabled(tunnel.profiles.isEmpty || tunnel.isTransferringProfiles)
+
+                    Button("Import Portable Archive…", systemImage: "square.and.arrow.down") {
+                        tunnel.clearProfileMessage()
+                        presentFileImporter(.portableArchive)
+                    }
+                    .disabled(!tunnel.canModifyProfiles)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .accessibilityIdentifier("profiles-more-menu")
+            }
         }
+        .padding(.bottom, AetherVisual.s1)
+    }
+
+    private func profileMessageBanner(message: String, isError: Bool) -> some View {
+        HStack(spacing: AetherVisual.s3) {
+            Image(systemName: isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(isError ? Color.orange : Color.green)
+
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+
+            Spacer(minLength: AetherVisual.s2)
+
+            Button {
+                tunnel.clearProfileMessage()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, AetherVisual.s4)
+        .padding(.vertical, AetherVisual.s3)
+        .background(
+            (isError ? Color.orange : Color.green).opacity(0.08),
+            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
+                .stroke((isError ? Color.orange : Color.green).opacity(0.2), lineWidth: 0.5)
+        }
+    }
+
+    private var importProgressCard: some View {
+        HStack(spacing: AetherVisual.s3) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Importing profile…")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+            Spacer(minLength: AetherVisual.s2)
+            Button("Cancel", role: .cancel) {
+                tunnel.cancelProfileImport()
+            }
+        }
+        .padding(.horizontal, AetherVisual.s4)
+        .padding(.vertical, AetherVisual.s4)
+        .aetherPanel()
+        .accessibilityIdentifier("profile-import-progress")
+    }
+
+    private var emptyOnboardingSection: some View {
+        VStack(spacing: AetherVisual.s5) {
+            VStack(spacing: AetherVisual.s3) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.accentColor.opacity(0.18), Color.blue.opacity(0.06)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+                .frame(width: 60, height: 60)
+                .padding(.top, AetherVisual.s3)
+
+                Text(AppLocalization.string("No Profiles Added"))
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.primary)
+
+                Text(AppLocalization.string("Add a subscription link or import a Clash-compatible configuration to get started."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 440)
+            }
+
+            HStack(spacing: AetherVisual.s4) {
+                Button {
+                    tunnel.clearProfileMessage()
+                    subscriptionURL = ""
+                    isSubscriptionEditorPresented = true
+                } label: {
+                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                        HStack {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                                    .fill(Color.blue.opacity(0.12))
+                                Image(systemName: "link.badge.plus")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(Color.blue)
+                            }
+                            .frame(width: 34, height: 34)
+
+                            Spacer(minLength: 0)
+
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Text(AppLocalization.string("Add Subscription…"))
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+
+                        Text(AppLocalization.string("Import HTTPS subscription URL from your provider."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(AetherVisual.s4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.6), in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                            .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    tunnel.clearProfileMessage()
+                    presentFileImporter(.profile)
+                } label: {
+                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                        HStack {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                                    .fill(Color.indigo.opacity(0.12))
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(Color.indigo)
+                            }
+                            .frame(width: 34, height: 34)
+
+                            Spacer(minLength: 0)
+
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Text(AppLocalization.string("Import Profile…"))
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+
+                        Text(AppLocalization.string("Supports Clash-compatible YAML/JSON profiles."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(AetherVisual.s4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.6), in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                            .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, AetherVisual.s2)
+
+            HStack(spacing: AetherVisual.s5) {
+                Label(AppLocalization.string("Encrypted on this Mac"), systemImage: "lock.shield.fill")
+                Label(AppLocalization.string("Clash Compatible"), systemImage: "checkmark.circle.fill")
+                Label(AppLocalization.string("Multi-Protocol"), systemImage: "bolt.horizontal.fill")
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.bottom, AetherVisual.s2)
+        }
+        .padding(AetherVisual.s6)
+        .aetherPanel()
+    }
+
+    private func activeProfileHeroCard(active: ActiveProfile) -> some View {
+        let isSubscription = active.subscription != nil
+        return VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            HStack(alignment: .center, spacing: AetherVisual.s3) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: isSubscription
+                                    ? [Color.blue.opacity(0.20), Color.cyan.opacity(0.08)]
+                                    : [Color.teal.opacity(0.20), Color.green.opacity(0.08)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    Image(systemName: isSubscription ? "link.circle.fill" : "doc.badge.gearshape.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(isSubscription ? Color.blue : Color.teal)
+                }
+                .frame(width: 40, height: 40)
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                    HStack(spacing: AetherVisual.s2) {
+                        Text(active.name)
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+
+                        HStack(spacing: AetherVisual.s1) {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 5, height: 5)
+                            Text("In Use")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(Color.green)
+                        }
+                        .padding(.horizontal, AetherVisual.s2)
+                        .padding(.vertical, AetherVisual.sMicro)
+                        .background(Color.green.opacity(0.12), in: Capsule())
+                    }
+
+                    HStack(spacing: AetherVisual.s1) {
+                        Text(isSubscription ? AppLocalization.string("HTTPS subscription") : AppLocalization.string("Local profile"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Text(verbatim: "·")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+
+                        Text(String.localizedStringWithFormat(
+                            AppLocalization.string("Activated %@"),
+                            AppLocalization.date(active.importedAt, date: .abbreviated, time: .shortened)
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer(minLength: AetherVisual.s2)
+
+                if isSubscription {
+                    Button {
+                        Task { await tunnel.refreshSubscription() }
+                    } label: {
+                        AetherProgressButtonLabel(
+                            "Check for Updates",
+                            systemImage: "arrow.clockwise",
+                            isWorking: tunnel.isRefreshingSubscription
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!tunnel.canModifyProfiles || tunnel.isRefreshingSubscription)
+                }
+            }
+
+            if let subscription = active.subscription {
+                Divider()
+                    .opacity(0.4)
+
+                HStack(spacing: AetherVisual.s3) {
+                    Label(
+                        subscriptionUpdateDetail(subscription),
+                        systemImage: "clock"
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                    if let lastCheckedAt = subscription.lastCheckedAt {
+                        Spacer(minLength: AetherVisual.s2)
+                        Text(String.localizedStringWithFormat(
+                            AppLocalization.string("Checked %@"),
+                            AppLocalization.date(lastCheckedAt, date: .abbreviated, time: .shortened)
+                        ))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        }
+        .padding(AetherVisual.s4)
+        .aetherPanel()
+    }
+
+    private var profileLibraryCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center) {
+                HStack(spacing: AetherVisual.s2) {
+                    Text("Profile Library")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+
+                    Text(verbatim: "\(tunnel.profiles.count)")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, AetherVisual.sCompact)
+                        .padding(.vertical, AetherVisual.sMicro)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                }
+
+                Spacer()
+
+                Label("Encrypted on this Mac", systemImage: "lock.shield.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, AetherVisual.s5)
+            .padding(.vertical, AetherVisual.s4)
+
+            Divider()
+                .padding(.horizontal, AetherVisual.s5)
+
+            ForEach(Array(tunnel.profiles.enumerated()), id: \.element.id) { index, managed in
+                ManagedProfileRow(
+                    managed: managed,
+                    isActive: managed.id == tunnel.activeProfileID,
+                    canActivate: tunnel.canActivateProfile,
+                    canModify: tunnel.canModifyProfiles,
+                    activate: {
+                        Task { await tunnel.activateProfile(id: managed.id) }
+                    },
+                    rename: {
+                        profileToRename = managed
+                    },
+                    editNative: managed.profile.nativeNodes == nil ? nil : { nativeProfileToEdit = managed },
+                    remove: {
+                        Task { await tunnel.removeProfile(id: managed.id) }
+                    }
+                )
+
+                if index < tunnel.profiles.count - 1 {
+                    Divider()
+                        .padding(.leading, AetherVisual.tableContentIndent)
+                        .padding(.trailing, AetherVisual.s5)
+                }
+            }
+        }
+        .aetherPanel()
+    }
+
+    private var supportedFormatsCard: some View {
+        HStack(spacing: AetherVisual.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                    .fill(Color.teal.opacity(0.12))
+                Image(systemName: "doc.text.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.teal)
+            }
+            .frame(width: 32, height: 32)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                Text(AppLocalization.string("Supported formats"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text(AppLocalization.string("Supports Clash-compatible YAML/JSON profiles, HTTPS subscriptions, and common node links."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: AetherVisual.s2)
+        }
+        .padding(AetherVisual.s4)
+        .aetherPanel()
+    }
+
+    private func subscriptionUpdateDetail(_ subscription: ProfileSubscription) -> String {
+        guard let interval = subscription.autoUpdateInterval else {
+            return AppLocalization.string("HTTPS subscription · manual updates")
+        }
+        let hours = max(1, Int(interval / 3_600))
         return String.localizedStringWithFormat(
-            AppLocalization.string("Activated %@"),
-            AppLocalization.date(
-                profile.importedAt,
-                date: .abbreviated,
-                time: .shortened
-            )
+            AppLocalization.string("HTTPS subscription · updates every %lld hours"),
+            Int64(hours)
         )
     }
 
@@ -2226,7 +2456,7 @@ private struct RoutingResourcesCard: View {
                     .foregroundStyle(.primary)
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: AetherVisual.s3)
 
             Button("Import…", systemImage: "square.and.arrow.down") {
                 importResource(kind)
@@ -2295,7 +2525,8 @@ private struct RoutingResourcesCard: View {
 }
 
 private struct ManagedProfileRow: View {
-    @State private var isActionsPresented = false
+    @State private var isHovered = false
+    @State private var isActionHovered = false
     let managed: ManagedProfile
     let isActive: Bool
     let canActivate: Bool
@@ -2306,107 +2537,161 @@ private struct ManagedProfileRow: View {
     let remove: () -> Void
 
     var body: some View {
-        HStack(spacing: AetherVisual.s4) {
+        HStack(spacing: AetherVisual.s3) {
             ZStack {
                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                    .fill(iconColor.opacity(0.10))
-                Image(systemName: managed.profile.subscription == nil
-                    ? "doc.text.fill"
-                    : "link")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(iconColor)
+                    .fill(iconGradient)
+                Image(systemName: iconName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(iconTint)
             }
-            .frame(width: 42, height: 42)
+            .frame(width: 36, height: 36)
             .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 HStack(spacing: AetherVisual.s2) {
                     Text(managed.profile.name)
-                        .font(.body.weight(.medium))
+                        .font(.system(size: 13.5, weight: .semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
+
                     if isActive {
-                        Text("In Use")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, AetherVisual.s2)
-                            .padding(.vertical, AetherVisual.s1)
-                            .background(
-                                Color.teal.opacity(0.10),
-                                in: Capsule()
-                            )
+                        HStack(spacing: AetherVisual.s1) {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 5, height: 5)
+                            Text("In Use")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(Color.green)
+                        }
+                        .padding(.horizontal, AetherVisual.s2)
+                        .padding(.vertical, AetherVisual.sMicro)
+                        .background(Color.green.opacity(0.12), in: Capsule())
                     }
                 }
+
                 Text(detail)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: AetherVisual.s2)
 
             if !isActive {
-                Button("Use", action: activate)
+                Button(AppLocalization.string("Use"), action: activate)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(!canActivate)
                     .accessibilityIdentifier("activate-profile-\(managed.id.uuidString)")
             }
 
-            Button {
-                isActionsPresented.toggle()
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.primary)
-            }
-            .buttonStyle(.borderless)
-            .frame(width: 28)
-            .accessibilityLabel("Profile actions")
-            .popover(isPresented: $isActionsPresented, arrowEdge: .trailing) {
-                VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                    if let editNative {
-                        Button("Edit Nodes…", systemImage: "point.3.connected.trianglepath.dotted") {
-                            isActionsPresented = false
-                            editNative()
-                        }
-                        .disabled(!canModify)
-                    }
-                    Button("Rename…", systemImage: "pencil") {
-                        isActionsPresented = false
-                        rename()
+            Menu {
+                if let editNative {
+                    Button(action: editNative) {
+                        Label(AppLocalization.string("Edit Nodes…"), systemImage: "point.3.connected.trianglepath.dotted")
                     }
                     .disabled(!canModify)
-                    if !isActive {
-                        Divider()
-                        Button(
-                            "Remove Profile",
-                            systemImage: "trash",
-                            role: .destructive
-                        ) {
-                            isActionsPresented = false
-                            remove()
-                        }
-                        .disabled(!canModify)
-                    }
                 }
-                .buttonStyle(.borderless)
-                .padding(AetherVisual.s3)
+
+                Button(action: rename) {
+                    Label(AppLocalization.string("Rename…"), systemImage: "pencil")
+                }
+                .disabled(!canModify)
+
+                if !isActive {
+                    Divider()
+                    Button(role: .destructive, action: remove) {
+                        Label(AppLocalization.string("Remove Profile"), systemImage: "trash")
+                    }
+                    .disabled(!canModify)
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isActionHovered ? Color.primary : Color.secondary)
+                    .frame(width: 26, height: 26)
+                    .background(isActionHovered ? Color.secondary.opacity(0.18) : Color.clear, in: Circle())
+                    .contentShape(Circle())
             }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 26, height: 26)
+            .onHover { isActionHovered = $0 }
+            .accessibilityLabel("Profile actions")
+            .accessibilityIdentifier("profile-actions-\(managed.id.uuidString)")
         }
         .padding(.horizontal, AetherVisual.s5)
-        .padding(.vertical, AetherVisual.s3)
+        .padding(.vertical, AetherVisual.sRow)
+        .background(isHovered ? Color.primary.opacity(0.03) : Color.clear)
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .contextMenu {
+            if !isActive {
+                Button(action: activate) {
+                    Label(AppLocalization.string("Use"), systemImage: "play.circle")
+                }
+                .disabled(!canActivate)
+                Divider()
+            }
+            if let editNative {
+                Button(action: editNative) {
+                    Label(AppLocalization.string("Edit Nodes…"), systemImage: "point.3.connected.trianglepath.dotted")
+                }
+                .disabled(!canModify)
+            }
+            Button(action: rename) {
+                Label(AppLocalization.string("Rename…"), systemImage: "pencil")
+            }
+            .disabled(!canModify)
+            if !isActive {
+                Divider()
+                Button(role: .destructive, action: remove) {
+                    Label(AppLocalization.string("Remove Profile"), systemImage: "trash")
+                }
+                .disabled(!canModify)
+            }
+        }
     }
 
-    private var iconColor: Color {
-        managed.profile.subscription == nil ? .teal : .blue
+    private var isSubscription: Bool {
+        managed.profile.subscription != nil
+    }
+
+    private var iconName: String {
+        if isSubscription {
+            return "link"
+        }
+        if managed.profile.nativeNodes != nil {
+            return "point.3.connected.trianglepath.dotted"
+        }
+        return "doc.text.fill"
+    }
+
+    private var iconTint: Color {
+        if isSubscription {
+            return .blue
+        }
+        if managed.profile.nativeNodes != nil {
+            return .orange
+        }
+        return .teal
+    }
+
+    private var iconGradient: LinearGradient {
+        LinearGradient(
+            colors: [iconTint.opacity(0.18), iconTint.opacity(0.08)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 
     private var detail: String {
-        let source = managed.profile.subscription == nil
-            ? AppLocalization.string("Local profile")
-            : AppLocalization.string("HTTPS subscription")
+        let source = isSubscription
+            ? AppLocalization.string("HTTPS subscription")
+            : (managed.profile.nativeNodes != nil
+                ? AppLocalization.string("Manual nodes")
+                : AppLocalization.string("Local profile"))
         let importedAt = AppLocalization.date(
             managed.profile.importedAt,
             date: .abbreviated,
@@ -2472,70 +2757,6 @@ private struct ProfileRenameSheet: View {
         }
         .padding(AetherVisual.dialogPadding)
         .frame(width: 460)
-    }
-}
-
-private struct ProfileSubscriptionCard: View {
-    let subscription: ProfileSubscription
-    let isRefreshing: Bool
-    let canRefresh: Bool
-    let refresh: () -> Void
-
-    var body: some View {
-        HStack(spacing: AetherVisual.s4) {
-            Image(systemName: "link.circle.fill")
-                .font(.system(size: 26))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 48, height: 48)
-                .background(Color.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
-
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text(subscription.url.host ?? AppLocalization.string("HTTPS subscription"))
-                    .font(.headline)
-                    .lineLimit(1)
-                Text(updateDetail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if let lastCheckedAt = subscription.lastCheckedAt {
-                    Text(
-                        String.localizedStringWithFormat(
-                            AppLocalization.string("Checked %@"),
-                            AppLocalization.date(
-                                lastCheckedAt,
-                                date: .abbreviated,
-                                time: .shortened
-                            )
-                        )
-                    )
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                }
-            }
-
-            Spacer()
-
-            Button(action: refresh) {
-                AetherProgressButtonLabel(
-                    "Check for Updates",
-                    systemImage: "arrow.clockwise",
-                    isWorking: isRefreshing
-                )
-            }
-                .disabled(!canRefresh || isRefreshing)
-        }
-        .padding(AetherVisual.s5)
-        .aetherPanel()
-    }
-
-    private var updateDetail: String {
-        guard let interval = subscription.autoUpdateInterval else {
-            return AppLocalization.string("HTTPS subscription · manual updates")
-        }
-        let hours = max(1, Int(interval / 3_600))
-        return String.localizedStringWithFormat(
-            AppLocalization.string("HTTPS subscription · updates every %lld hours"),
-            Int64(hours)
-        )
     }
 }
 

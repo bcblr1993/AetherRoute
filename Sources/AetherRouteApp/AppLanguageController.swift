@@ -25,6 +25,10 @@ enum AppLocalization {
         return String(localized: value, bundle: snapshot.1, locale: locale)
     }
 
+    static func string(_ value: String) -> String {
+        string(String.LocalizationValue(value))
+    }
+
     static func date(
         _ value: Date,
         date dateStyle: Date.FormatStyle.DateStyle,

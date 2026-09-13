@@ -1,6 +1,76 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Add a subscription link or import a Clash-compatible configuration to get started.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加 HTTPS 订阅链接或导入 Clash 兼容的配置文件即可开始使用。"
+          }
+        }
+      }
+    },
+    "Clash Compatible": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "兼容 Clash"
+          }
+        }
+      }
+    },
+    "Import HTTPS subscription URL from your provider.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从服务商获取并导入 HTTPS 订阅链接。"
+          }
+        }
+      }
+    },
+    "Manage proxy subscriptions, local files, and routing profiles.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理您的代理节点、订阅及本地分流配置。"
+          }
+        }
+      }
+    },
+    "Multi-Protocol": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "多协议支持"
+          }
+        }
+      }
+    },
+    "No Profiles Added": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未添加任何配置"
+          }
+        }
+      }
+    },
+    "Supports Clash-compatible YAML/JSON profiles.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支持 Clash 兼容的 YAML/JSON 配置文件。"
+          }
+        }
+      }
+    },
     "%@ · %lld members": {
       "localizations": {
         "zh-Hans": {
@@ -3615,6 +3685,16 @@
         }
       }
     },
+    "Manual nodes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自建节点"
+          }
+        }
+      }
+    },
     "Maps names into a synthetic range for deterministic domain routing.": {
       "localizations": {
         "zh-Hans": {
@@ -3918,6 +3998,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "未配置明确的上游传输方式"
+          }
+        }
+      }
+    },
+    "No matching rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有匹配的规则"
           }
         }
       }
@@ -8151,6 +8241,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "TUN 运行时覆盖"
+          }
+        }
+      }
+    },
+    "Try adjusting the filter or clearing the search text.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尝试调整过滤条件或清除搜索文本。"
           }
         }
       }

@@ -57,10 +57,10 @@ struct RulesView: View {
                                 .accessibilityHidden(true)
 
                                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                                    Text("Ordered routing policy")
+                                    Text(AppLocalization.string("Ordered routing policy"))
                                         .font(.title3.weight(.bold))
                                         .foregroundStyle(.primary)
-                                    Text("Rules are evaluated from top to bottom by the protocol core.")
+                                    Text(AppLocalization.string("Rules are evaluated from top to bottom by the protocol core."))
                                         .font(.subheadline.weight(.medium))
                                         .foregroundStyle(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
@@ -74,7 +74,7 @@ struct RulesView: View {
                                         .font(.title2.weight(.bold))
                                         .monospacedDigit()
                                         .foregroundStyle(.primary)
-                                    Text("explicit rules")
+                                    Text(AppLocalization.string("explicit rules"))
                                         .font(.subheadline.weight(.medium))
                                         .foregroundStyle(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
@@ -96,7 +96,7 @@ struct RulesView: View {
                         .accessibilityAddTraits(.isStaticText)
 
                         if !summary.ruleProviders.isEmpty {
-                            FeatureSection(title: "Rule providers", symbol: "shippingbox") {
+                            FeatureSection(title: AppLocalization.string("Rule providers"), symbol: "shippingbox") {
                                 VStack(spacing: 0) {
                                     ForEach(summary.ruleProviders) { provider in
                                         ProviderRow(provider: provider)
@@ -122,7 +122,7 @@ struct RulesView: View {
                                             let isSelected = selectedFilter == filter
                                             let count = summary.rules.filter { filter.accepts($0.kind) }.count
                                             Button {
-                                                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                                                withAnimation(AetherVisual.quickFade) {
                                                     selectedFilter = filter
                                                 }
                                             } label: {
@@ -172,7 +172,7 @@ struct RulesView: View {
                                 }
 
                                 HStack {
-                                    Label("Evaluation order", systemImage: "arrow.down")
+                                    Label(AppLocalization.string("Evaluation order"), systemImage: "arrow.down")
                                         .font(.subheadline.weight(.bold))
                                         .foregroundStyle(.secondary)
                                     Spacer()
@@ -184,14 +184,14 @@ struct RulesView: View {
                         if summary.rules.isEmpty {
                             FeatureEmptyState(
                                 symbol: "list.bullet.rectangle.portrait",
-                                title: "No explicit rules",
-                                detail: "The active profile contains no ordered rule entries. Its effective fallback is determined only after the protocol core validates and starts the profile."
+                                title: AppLocalization.string("No explicit rules"),
+                                detail: AppLocalization.string("The active profile contains no ordered rule entries. Its effective fallback is determined only after the protocol core validates and starts the profile.")
                             )
                         } else if displayedRules.isEmpty {
                             FeatureEmptyState(
                                 symbol: "line.3.horizontal.decrease.circle",
-                                title: "No matching rules",
-                                detail: "Try adjusting the filter or clearing the search text."
+                                title: AppLocalization.string("No matching rules"),
+                                detail: AppLocalization.string("Try adjusting the filter or clearing the search text.")
                             )
                         } else {
                             VStack(spacing: AetherVisual.sCompact) {
@@ -200,8 +200,8 @@ struct RulesView: View {
                                 }
                             }
                             .accessibilityElement(children: .contain)
-                            .accessibilityLabel("Ordered routing rules")
-                            .animation(.spring(response: 0.32, dampingFraction: 0.82), value: displayedRules.count)
+                            .accessibilityLabel(AppLocalization.string("Ordered routing rules"))
+                            .animation(AetherVisual.gentleSpring, value: displayedRules.count)
                         }
 
                         TruncationNotice(
@@ -219,18 +219,18 @@ struct RulesView: View {
                     .frame(maxWidth: AetherVisual.contentMaxWidth)
                     .frame(maxWidth: .infinity)
                     .accessibilityElement(children: .contain)
-                    .accessibilityLabel("Routing rules content")
+                    .accessibilityLabel(AppLocalization.string("Routing rules content"))
                 }
                 .searchable(
                     text: $searchText,
                     placement: .toolbar,
-                    prompt: Text("Search rules")
+                    prompt: Text(AppLocalization.string("Search rules"))
                 )
             } else {
                 FeatureEmptyState(
                     symbol: "list.bullet.rectangle.portrait",
-                    title: "No rule set loaded",
-                    detail: "Import a validated profile to inspect routing order and targets."
+                    title: AppLocalization.string("No rule set loaded"),
+                    detail: AppLocalization.string("Import a validated profile to inspect routing order and targets.")
                 )
             }
         }
@@ -278,14 +278,14 @@ struct DNSView: View {
                     .frame(maxWidth: AetherVisual.contentMaxWidth)
                     .frame(maxWidth: .infinity)
                     .accessibilityElement(children: .contain)
-                    .accessibilityLabel("DNS configuration details")
+                    .accessibilityLabel(AppLocalization.string("DNS configuration details"))
                     .accessibilityIdentifier("dns-page-content")
                 }
             } else {
                 FeatureEmptyState(
                     symbol: "network.badge.shield.half.filled",
-                    title: "No DNS policy loaded",
-                    detail: "Import a validated profile to inspect its resolver behavior without exposing server addresses."
+                    title: AppLocalization.string("No DNS policy loaded"),
+                    detail: AppLocalization.string("Import a validated profile to inspect its resolver behavior without exposing server addresses.")
                 )
             }
         }
@@ -305,7 +305,7 @@ struct DNSView: View {
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                Text("DNS & Fake-IP")
+                Text(AppLocalization.string("DNS & Fake-IP"))
                     .font(.title3.weight(.semibold))
                 Text(headerDetail(dns))
                     .foregroundStyle(.primary)
@@ -326,32 +326,32 @@ struct DNSView: View {
     private func configuredContent(_ dns: DNSConfigurationSummary) -> some View {
         HStack(spacing: AetherVisual.s3) {
             DNSMetricCard(
-                title: "Primary",
+                title: AppLocalization.string("Primary"),
                 value: "\(dns.nameserverCount)",
-                detail: "upstreams",
+                detail: AppLocalization.string("upstreams"),
                 symbol: "server.rack",
                 tint: .blue
             )
             DNSMetricCard(
-                title: "Fallback",
+                title: AppLocalization.string("Fallback"),
                 value: "\(dns.fallbackCount)",
-                detail: "resolvers",
+                detail: AppLocalization.string("resolvers"),
                 symbol: "arrow.trianglehead.branch",
                 tint: .indigo
             )
             DNSMetricCard(
-                title: "Policies",
+                title: AppLocalization.string("Policies"),
                 value: "\(dns.nameserverPolicyCount)",
-                detail: "domain rules",
+                detail: AppLocalization.string("domain rules"),
                 symbol: "list.bullet.indent",
                 tint: .teal
             )
         }
 
-        FeatureSection(title: "Resolution behavior", symbol: "switch.2") {
+        FeatureSection(title: AppLocalization.string("Resolution behavior"), symbol: "switch.2") {
             VStack(spacing: 0) {
                 DNSSettingRow(
-                    title: "Enhanced mode",
+                    title: AppLocalization.string("Enhanced mode"),
                     detail: modeDetail(dns.mode),
                     value: modeTitle(dns.mode),
                     symbol: modeSymbol(dns.mode),
@@ -359,10 +359,10 @@ struct DNSView: View {
                 )
                 Divider().padding(.leading, AetherVisual.wideListIndent)
                 DNSSettingRow(
-                    title: "IPv6 answers",
+                    title: AppLocalization.string("IPv6 answers"),
                     detail: dns.allowsIPv6
-                        ? "AAAA responses are allowed by this profile."
-                        : "AAAA responses are filtered by this profile.",
+                        ? AppLocalization.string("AAAA responses are allowed by this profile.")
+                        : AppLocalization.string("AAAA responses are filtered by this profile."),
                     value: dns.allowsIPv6
                         ? AppLocalization.string("Allowed")
                         : AppLocalization.string("Filtered"),
@@ -371,10 +371,10 @@ struct DNSView: View {
                 )
                 Divider().padding(.leading, AetherVisual.wideListIndent)
                 DNSSettingRow(
-                    title: "Rule-aware queries",
+                    title: AppLocalization.string("Rule-aware queries"),
                     detail: dns.respectsRules
-                        ? "Upstream queries follow the routing rule engine."
-                        : "Upstream queries use the core's direct DNS path.",
+                        ? AppLocalization.string("Upstream queries follow the routing rule engine.")
+                        : AppLocalization.string("Upstream queries use the core's direct DNS path."),
                     value: dns.respectsRules
                         ? AppLocalization.string("On")
                         : AppLocalization.string("Off"),
@@ -383,10 +383,10 @@ struct DNSView: View {
                 )
                 Divider().padding(.leading, AetherVisual.wideListIndent)
                 DNSSettingRow(
-                    title: "Hosts mapping",
+                    title: AppLocalization.string("Hosts mapping"),
                     detail: dns.usesHosts
-                        ? "Profile hosts entries participate in resolution."
-                        : "Profile hosts entries are ignored for DNS.",
+                        ? AppLocalization.string("Profile hosts entries participate in resolution.")
+                        : AppLocalization.string("Profile hosts entries are ignored for DNS."),
                     value: dns.usesHosts
                         ? AppLocalization.string("On")
                         : AppLocalization.string("Off"),
@@ -401,13 +401,13 @@ struct DNSView: View {
         tunRuntimePolicyContent(dns)
 #endif
 
-        FeatureSection(title: "Upstream privacy", symbol: "lock.shield") {
+        FeatureSection(title: AppLocalization.string("Upstream privacy"), symbol: "lock.shield") {
             VStack(alignment: .leading, spacing: AetherVisual.s4) {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                        Text("Transport types")
+                        Text(AppLocalization.string("Transport types"))
                             .font(.subheadline.weight(.semibold))
-                        Text("Server addresses stay hidden in this summary.")
+                        Text(AppLocalization.string("Server addresses stay hidden in this summary."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -423,7 +423,7 @@ struct DNSView: View {
                 }
 
                 if dns.upstreamTransports.isEmpty {
-                    Label("No explicit upstream transport", systemImage: "minus.circle")
+                    Label(AppLocalization.string("No explicit upstream transport"), systemImage: "minus.circle")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
@@ -449,21 +449,21 @@ struct DNSView: View {
 
                 Grid(horizontalSpacing: 28, verticalSpacing: 10) {
                     GridRow {
-                        DNSCountLabel("Bootstrap")
+                        DNSCountLabel(AppLocalization.string("Bootstrap"))
                         Text(verbatim: String(dns.defaultNameserverCount))
                             .monospacedDigit()
-                        DNSCountLabel("Proxy hostnames")
+                        DNSCountLabel(AppLocalization.string("Proxy hostnames"))
                         Text(verbatim: String(dns.proxyNameserverCount))
                             .monospacedDigit()
                     }
                     GridRow {
-                        DNSCountLabel("Local listener")
+                        DNSCountLabel(AppLocalization.string("Local listener"))
                         Text(
                             dns.hasListener
                                 ? AppLocalization.string("Configured")
                                 : AppLocalization.string("None")
                         )
-                        DNSCountLabel("EDNS subnet")
+                        DNSCountLabel(AppLocalization.string("EDNS subnet"))
                         Text(
                             dns.hasEDNSClientSubnet
                                 ? AppLocalization.string("Configured")
@@ -478,10 +478,10 @@ struct DNSView: View {
         }
 
         if dns.mode == .fakeIP || dns.fakeIPFilterCount > 0 {
-            FeatureSection(title: "Fake-IP safeguards", symbol: "wand.and.stars") {
+            FeatureSection(title: AppLocalization.string("Fake-IP safeguards"), symbol: "wand.and.stars") {
                 HStack(spacing: 0) {
                     DNSCompactFact(
-                        title: "Address pool",
+                        title: AppLocalization.string("Address pool"),
                         value: dns.hasExplicitFakeIPRange
                             ? AppLocalization.string("Profile range")
                             : AppLocalization.string("Core default"),
@@ -489,13 +489,13 @@ struct DNSView: View {
                     )
                     Divider().frame(height: 50)
                     DNSCompactFact(
-                        title: "Bypass filters",
+                        title: AppLocalization.string("Bypass filters"),
                         value: "\(dns.fakeIPFilterCount)",
                         symbol: "line.3.horizontal.decrease.circle"
                     )
                     Divider().frame(height: 50)
                     DNSCompactFact(
-                        title: "Fallback filter",
+                        title: AppLocalization.string("Fallback filter"),
                         value: dns.hasFallbackFilter
                             ? AppLocalization.string("Configured")
                             : AppLocalization.string("Default"),
@@ -508,7 +508,7 @@ struct DNSView: View {
         }
 
         Label(
-            "This page is a privacy-safe view of the imported profile. The protocol core remains authoritative and validates DNS semantics when a session starts.",
+            AppLocalization.string("This page is a privacy-safe view of the imported profile. The protocol core remains authoritative and validates DNS semantics when a session starts."),
             systemImage: "info.circle"
         )
         .font(.caption)
@@ -528,10 +528,10 @@ struct DNSView: View {
                 for: dns,
                 profileAllowsIPv6: tunnel.activeProfileSummary?.allowsIPv6 == true
             )
-        return FeatureSection(title: "Automatic TUN DNS", symbol: "network") {
+        return FeatureSection(title: AppLocalization.string("Automatic TUN DNS"), symbol: "network") {
             VStack(spacing: 0) {
                 DNSSettingRow(
-                    title: "Enhanced mode",
+                    title: AppLocalization.string("Enhanced mode"),
                     detail: modeDetail(mode),
                     value: modeTitle(mode),
                     symbol: modeSymbol(mode),
@@ -539,8 +539,8 @@ struct DNSView: View {
                 )
                 Divider().padding(.leading, AetherVisual.wideListIndent)
                 DNSSettingRow(
-                    title: "IPv6 answers",
-                    detail: "IPv6 answers follow the selected TUN policy.",
+                    title: AppLocalization.string("IPv6 answers"),
+                    detail: AppLocalization.string("IPv6 answers follow the selected TUN policy."),
                     value: allowsIPv6
                         ? AppLocalization.string("On")
                         : AppLocalization.string("Off"),
@@ -555,11 +555,11 @@ struct DNSView: View {
     private func tunRuntimePolicyContent(
         _ dns: DNSConfigurationSummary
     ) -> some View {
-        FeatureSection(title: "TUN runtime overrides", symbol: "slider.horizontal.3") {
+        FeatureSection(title: AppLocalization.string("TUN runtime overrides"), symbol: "slider.horizontal.3") {
             VStack(spacing: 0) {
                 HStack(spacing: AetherVisual.s3) {
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                        Text("Structured core policy")
+                        Text(AppLocalization.string("Structured core policy"))
                             .font(.subheadline.weight(.semibold))
                         Text(
                             tunnel.networkEngineMode == .tun
@@ -586,8 +586,8 @@ struct DNSView: View {
 
                 Divider().padding(.leading, AetherVisual.s4)
                 dnsPolicyRow(
-                    title: "Resolution mode",
-                    detail: "Choose Normal, Fake-IP, or Redir-host without rewriting imported YAML."
+                    title: AppLocalization.string("Resolution mode"),
+                    detail: AppLocalization.string("Choose Normal, Fake-IP, or Redir-host without rewriting imported YAML.")
                 ) {
                     Picker("Resolution mode", selection: resolutionModeBinding) {
                         ForEach(DNSRuntimeResolutionMode.allCases, id: \.self) {
@@ -602,11 +602,11 @@ struct DNSView: View {
 
                 Divider().padding(.leading, AetherVisual.s4)
                 dnsPolicyRow(
-                    title: "IPv6 answers",
-                    detail: "Override whether the resolver returns AAAA answers."
+                    title: AppLocalization.string("IPv6 answers"),
+                    detail: AppLocalization.string("Override whether the resolver returns AAAA answers.")
                 ) {
                     dnsBooleanPicker(
-                        "IPv6 answers",
+                        AppLocalization.string("IPv6 answers"),
                         selection: booleanBinding(\.ipv6),
                         identifier: "dns-runtime-ipv6"
                     )
@@ -614,11 +614,11 @@ struct DNSView: View {
 
                 Divider().padding(.leading, AetherVisual.s4)
                 dnsPolicyRow(
-                    title: "Rule-aware queries",
-                    detail: "Route upstream DNS queries through the rule engine."
+                    title: AppLocalization.string("Rule-aware queries"),
+                    detail: AppLocalization.string("Route upstream DNS queries through the rule engine.")
                 ) {
                     dnsBooleanPicker(
-                        "Rule-aware queries",
+                        AppLocalization.string("Rule-aware queries"),
                         selection: booleanBinding(\.respectsRules),
                         identifier: "dns-runtime-respect-rules"
                     )
@@ -647,8 +647,8 @@ struct DNSView: View {
     }
 
     private func dnsPolicyRow<Control: View>(
-        title: LocalizedStringKey,
-        detail: LocalizedStringKey,
+        title: String,
+        detail: String,
         @ViewBuilder control: () -> Control
     ) -> some View {
         HStack(spacing: AetherVisual.s4) {
@@ -657,8 +657,8 @@ struct DNSView: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                 Text(detail)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Spacer(minLength: 16)
             control()
@@ -672,7 +672,7 @@ struct DNSView: View {
     }
 
     private func dnsBooleanPicker(
-        _ title: LocalizedStringKey,
+        _ title: String,
         selection: Binding<DNSRuntimeBoolean>,
         identifier: String
     ) -> some View {
@@ -750,13 +750,13 @@ struct DNSView: View {
 
     private var systemResolverContent: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
-            Label("System resolver", systemImage: "macbook.and.iphone")
+            Label(AppLocalization.string("System resolver"), systemImage: "macbook.and.iphone")
                 .font(.headline)
-            Text("The active profile has no DNS section. The core therefore uses the system resolver behavior available to the selected network engine.")
+            Text(AppLocalization.string("The active profile has no DNS section. The core therefore uses the system resolver behavior available to the selected network engine."))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Label(
-                "No resolver address or browsing-domain value is collected for this screen.",
+                AppLocalization.string("No resolver address or browsing-domain value is collected for this screen."),
                 systemImage: "hand.raised.fill"
             )
             .font(.subheadline)
@@ -798,16 +798,16 @@ struct DNSView: View {
             : AppLocalization.string("Profile DNS off")
     }
 
-    private func headerDetail(_ dns: DNSConfigurationSummary) -> LocalizedStringKey {
+    private func headerDetail(_ dns: DNSConfigurationSummary) -> String {
         if usesAutomaticTUNDNS(dns) {
-            return "TUN manages DNS automatically when the profile has no enabled DNS section. Review or adjust its policy below."
+            return AppLocalization.string("TUN manages DNS automatically when the profile has no enabled DNS section. Review or adjust its policy below.")
         }
         guard dns.isPresent else {
-            return "This profile does not define a custom DNS section."
+            return AppLocalization.string("This profile does not define a custom DNS section.")
         }
         return dns.isEnabled
-            ? "Resolver behavior is supplied by the active profile and validated by the core."
-            : "A DNS section is present, but its resolver is disabled."
+            ? AppLocalization.string("Resolver behavior is supplied by the active profile and validated by the core.")
+            : AppLocalization.string("A DNS section is present, but its resolver is disabled.")
     }
 
     private func modeTitle(_ mode: DNSResolutionMode) -> String {
@@ -819,12 +819,12 @@ struct DNSView: View {
         }
     }
 
-    private func modeDetail(_ mode: DNSResolutionMode) -> LocalizedStringKey {
+    private func modeDetail(_ mode: DNSResolutionMode) -> String {
         switch mode {
-        case .normal: "Returns upstream addresses without synthetic mapping."
-        case .fakeIP: "Maps names into a synthetic range for deterministic domain routing."
-        case .redirHost: "Resolves real addresses while retaining enhanced host routing."
-        case .unsupported: "The profile uses a mode that requires protocol-core validation."
+        case .normal: AppLocalization.string("Returns upstream addresses without synthetic mapping.")
+        case .fakeIP: AppLocalization.string("Maps names into a synthetic range for deterministic domain routing.")
+        case .redirHost: AppLocalization.string("Resolves real addresses while retaining enhanced host routing.")
+        case .unsupported: AppLocalization.string("The profile uses a mode that requires protocol-core validation.")
         }
     }
 
@@ -885,10 +885,11 @@ struct DNSView: View {
 
 private struct DNSMetricCard: View {
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
 
-    let title: LocalizedStringKey
+    let title: String
     let value: String
-    let detail: LocalizedStringKey
+    let detail: String
     let symbol: String
     let tint: Color
 
@@ -897,10 +898,10 @@ private struct DNSMetricCard: View {
             HStack(spacing: AetherVisual.s3) {
                 Image(systemName: symbol)
                     .font(.body)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(tint)
                     .frame(width: 32, height: 32)
                     .background(
-                        tint.opacity(0.10),
+                        tint.opacity(0.12),
                         in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
                     )
                     .accessibilityHidden(true)
@@ -916,13 +917,21 @@ private struct DNSMetricCard: View {
                     .foregroundStyle(.primary)
                 Text(detail)
                     .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(AetherVisual.s4)
         .frame(maxWidth: .infinity)
         .featureCard()
+        .overlay {
+            RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
+                .stroke(isHovered ? tint.opacity(0.35) : Color.clear, lineWidth: 1)
+        }
+        .animation(AetherVisual.quickFade, value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(title))
     }
@@ -931,8 +940,8 @@ private struct DNSMetricCard: View {
 private struct DNSSettingRow: View {
     @Environment(\.colorScheme) private var colorScheme
 
-    let title: LocalizedStringKey
-    let detail: LocalizedStringKey
+    let title: String
+    let detail: String
     let value: String
     let symbol: String
     let tint: Color
@@ -972,9 +981,9 @@ private struct DNSSettingRow: View {
 }
 
 private struct DNSCountLabel: View {
-    let title: LocalizedStringKey
+    let title: String
 
-    init(_ title: LocalizedStringKey) {
+    init(_ title: String) {
         self.title = title
     }
 
@@ -986,7 +995,7 @@ private struct DNSCountLabel: View {
 }
 
 private struct DNSCompactFact: View {
-    let title: LocalizedStringKey
+    let title: String
     let value: String
     let symbol: String
 
@@ -1078,14 +1087,30 @@ private struct CountBadge: View {
 }
 
 struct FeatureSection<Content: View>: View {
-    let title: LocalizedStringKey
+    let title: Text
     let symbol: String
     @ViewBuilder let content: Content
 
+    init(title: String, symbol: String, @ViewBuilder content: () -> Content) {
+        self.title = Text(title)
+        self.symbol = symbol
+        self.content = content()
+    }
+
+    init(title: LocalizedStringKey, symbol: String, @ViewBuilder content: () -> Content) {
+        self.title = Text(title)
+        self.symbol = symbol
+        self.content = content()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            Label(title, systemImage: symbol)
-                .font(.headline)
+            Label {
+                title
+            } icon: {
+                Image(systemName: symbol)
+            }
+            .font(.headline)
             content
         }
     }
@@ -1273,8 +1298,8 @@ private struct StatePill: View {
 
 struct FeatureEmptyState: View {
     let symbol: String
-    let title: LocalizedStringKey
-    let detail: LocalizedStringKey
+    let title: String
+    let detail: String
 
     var body: some View {
         ContentUnavailableView {

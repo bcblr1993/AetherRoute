@@ -354,7 +354,7 @@ struct AetherContentCanvas: View {
 /// The action title remains visible, so the control neither collapses to a
 /// spinner nor makes people guess which operation is running.
 struct AetherProgressButtonLabel: View {
-    let title: LocalizedStringKey
+    let title: Text
     var systemImage: String?
     let isWorking: Bool
 
@@ -363,7 +363,17 @@ struct AetherProgressButtonLabel: View {
         systemImage: String? = nil,
         isWorking: Bool
     ) {
-        self.title = title
+        self.title = Text(title)
+        self.systemImage = systemImage
+        self.isWorking = isWorking
+    }
+
+    init(
+        _ titleString: String,
+        systemImage: String? = nil,
+        isWorking: Bool
+    ) {
+        self.title = Text(titleString)
         self.systemImage = systemImage
         self.isWorking = isWorking
     }
@@ -378,7 +388,7 @@ struct AetherProgressButtonLabel: View {
                 Image(systemName: systemImage)
                     .accessibilityHidden(true)
             }
-            Text(title)
+            title
         }
         .accessibilityElement(children: .combine)
     }
@@ -405,6 +415,26 @@ extension View {
                 isHovered: isHovered
             )
         )
+    }
+
+    func aetherHoverHighlight(
+        _ isHovered: Bool,
+        cornerRadius: CGFloat = AetherVisual.controlRadius,
+        hoverColor: Color = Color.secondary.opacity(0.12)
+    ) -> some View {
+        aetherHoverHighlight(isHovered: isHovered, cornerRadius: cornerRadius, hoverColor: hoverColor)
+    }
+
+    func aetherHoverHighlight(
+        isHovered: Bool,
+        cornerRadius: CGFloat = AetherVisual.controlRadius,
+        hoverColor: Color = Color.secondary.opacity(0.12)
+    ) -> some View {
+        background(
+            isHovered ? hoverColor : Color.clear,
+            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        )
+        .animation(AetherVisual.quickFade, value: isHovered)
     }
 }
 

@@ -44,7 +44,7 @@ struct ConnectionsView: View {
                 .overlay(alignment: .top) { Divider() }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Connections")
+        .accessibilityLabel(AppLocalization.string("Connections"))
         .accessibilityIdentifier("connections-page")
     }
 
@@ -52,7 +52,7 @@ struct ConnectionsView: View {
     private func footerContents(visibleCount: Int) -> some View {
         Text(footerText(visibleCount: visibleCount))
             .accessibilityIdentifier("connections-count-summary")
-        Text("Only connections visible on this Mac are counted, and nothing is reported anywhere.")
+        Text(AppLocalization.string("Only connections visible on this Mac are counted, and nothing is reported anywhere."))
             .accessibilityIdentifier("connections-privacy-summary")
     }
 
@@ -62,12 +62,12 @@ struct ConnectionsView: View {
         ContentUnavailableView {
             Label(
                 tunnel.isConnected
-                    ? "No active connections"
-                    : "Connections appear here once you connect",
+                    ? AppLocalization.string("No active connections")
+                    : AppLocalization.string("Connections appear here once you connect"),
                 systemImage: "arrow.left.arrow.right"
             )
         } description: {
-            Text("Each row shows the destination, the rule that matched, which outlet carried it, and how much it moved. Nothing is fabricated while the session is stopped.")
+            Text(AppLocalization.string("Each row shows the destination, the rule that matched, which outlet carried it, and how much it moved. Nothing is fabricated while the session is stopped."))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(AetherVisual.s6)
@@ -104,35 +104,35 @@ struct ConnectionsView: View {
             .padding(.vertical, AetherVisual.s2)
 
             Table(rows) {
-                TableColumn("Destination") { row in
+                TableColumn(AppLocalization.string("Destination")) { row in
                     ConnectionDestinationCell(connection: row.connection)
                 }
-                TableColumn("Matched rule") { row in
+                TableColumn(AppLocalization.string("Matched rule")) { row in
                     ConnectionRuleCell(connection: row.connection)
                 }
                 .width(min: 150, ideal: 250, max: 400)
-                TableColumn("Outlet") { row in
+                TableColumn(AppLocalization.string("Outlet")) { row in
                     ConnectionOutletCell(connection: row.connection)
                 }
                 .width(min: 92, ideal: 110, max: 130)
-                TableColumn("Traffic") { row in
+                TableColumn(AppLocalization.string("Traffic")) { row in
                     ConnectionTrafficCell(connection: row.connection)
                 }
                 .width(min: 90, ideal: 105, max: 120)
-                TableColumn("Duration") { row in
+                TableColumn(AppLocalization.string("Duration")) { row in
                     ConnectionDurationCell(connection: row.connection)
                 }
                 .width(min: 64, ideal: 68, max: 76)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: false))
-            .accessibilityLabel("Connections")
+            .accessibilityLabel(AppLocalization.string("Connections"))
             .accessibilityIdentifier("connections-table")
             .scrollIndicators(.hidden, axes: .horizontal)
         }
     }
 
     private var filterPicker: some View {
-        Picker("Filter", selection: $filter) {
+        Picker(AppLocalization.string("Filter"), selection: $filter) {
             ForEach(ConnectionOutletFilter.allCases) { option in
                 Text(label(for: option)).tag(option)
             }
@@ -149,7 +149,7 @@ struct ConnectionsView: View {
 
     private var connectionActions: some View {
         HStack(spacing: AetherVisual.s2) {
-            Picker("Sort", selection: $sort) {
+            Picker(AppLocalization.string("Sort"), selection: $sort) {
                 ForEach(ConnectionSort.allCases) { option in
                     Text(option.localizedTitle).tag(option)
                 }
@@ -159,7 +159,7 @@ struct ConnectionsView: View {
             .frame(width: 112)
 
             if tunnel.isConnected {
-                Button("Disconnect all", systemImage: "xmark.circle") {
+                Button(AppLocalization.string("Disconnect all"), systemImage: "xmark.circle") {
                     Task { await tunnel.setEnabled(false) }
                 }
                 .buttonStyle(.bordered)

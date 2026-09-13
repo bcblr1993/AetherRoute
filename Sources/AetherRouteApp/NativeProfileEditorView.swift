@@ -56,7 +56,7 @@ struct NativeProfileEditorSheet: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text("Edit Native Profile")
+                Text(AppLocalization.string("Edit Native Profile"))
                     .font(.title3.weight(.semibold))
                 Text(profile.profile.name)
                     .font(.subheadline)
@@ -64,7 +64,7 @@ struct NativeProfileEditorSheet: View {
                     .lineLimit(1)
             }
             Spacer()
-            Button("Add Node", systemImage: "plus") {
+            Button(AppLocalization.string("Add Node"), systemImage: "plus") {
                 isAddingNode = true
             }
             .buttonStyle(.bordered)
@@ -82,7 +82,7 @@ struct NativeProfileEditorSheet: View {
                 HStack(spacing: AetherVisual.s4) {
                     Image(systemName: "line.3.horizontal")
                         .foregroundStyle(.tertiary)
-                        .help("Drag to reorder")
+                        .help(AppLocalization.string("Drag to reorder"))
                         .accessibilityHidden(true)
 
                     Text(node.protocolID.displayName.prefix(1))
@@ -106,23 +106,23 @@ struct NativeProfileEditorSheet: View {
 
                     Spacer(minLength: 12)
 
-                    Button("Edit", systemImage: "pencil") {
+                    Button(AppLocalization.string("Edit"), systemImage: "pencil") {
                         nodeToEdit = node
                     }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .controlSize(.small)
-                    .accessibilityLabel("Edit Node")
+                    .accessibilityLabel(AppLocalization.string("Edit Node"))
 
-                    Button("Remove", systemImage: "trash", role: .destructive) {
+                    Button(AppLocalization.string("Remove"), systemImage: "trash", role: .destructive) {
                         nodes.remove(at: index)
                     }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .controlSize(.small)
                     .disabled(nodes.count == 1)
-                    .help("A native profile must keep at least one node.")
-                    .accessibilityLabel("Remove Node")
+                    .help(AppLocalization.string("A native profile must keep at least one node."))
+                    .accessibilityLabel(AppLocalization.string("Remove Node"))
                 }
                 .padding(.vertical, AetherVisual.s2)
             }
@@ -156,7 +156,7 @@ struct NativeProfileEditorSheet: View {
             }
 
             HStack {
-                Button("Cancel", role: .cancel) { dismiss() }
+                Button(AppLocalization.string("Cancel"), role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .disabled(isSaving)
                 Spacer()
@@ -172,7 +172,7 @@ struct NativeProfileEditorSheet: View {
                     }
                 } label: {
                     AetherProgressButtonLabel(
-                        "Save Profile",
+                        AppLocalization.string("Save Profile"),
                         isWorking: isSaving
                     )
                 }

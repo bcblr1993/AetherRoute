@@ -35,9 +35,9 @@ struct SupportDiagnosticsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: AetherVisual.s5) {
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    Text("Diagnostics")
+                    Text(AppLocalization.string("Diagnostics"))
                         .font(.title2.weight(.semibold))
-                    Text("Create a bounded support report only when you choose to save it. Nothing is uploaded automatically.")
+                    Text(AppLocalization.string("Create a bounded support report only when you choose to save it. Nothing is uploaded automatically."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -47,7 +47,7 @@ struct SupportDiagnosticsView: View {
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
                         Text("JSON · AR1")
                             .font(.subheadline.weight(.semibold))
-                        Text("Maximum 64 KiB. Review the file before sharing it.")
+                        Text(AppLocalization.string("Maximum 64 KiB. Review the file before sharing it."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -56,7 +56,7 @@ struct SupportDiagnosticsView: View {
                         Task { await createReport() }
                     } label: {
                         AetherProgressButtonLabel(
-                            "Export Diagnostic Report",
+                            AppLocalization.string("Export Diagnostic Report"),
                             systemImage: "square.and.arrow.up",
                             isWorking: isCreatingReport
                         )
@@ -137,21 +137,25 @@ struct SupportDiagnosticsView: View {
     /// property of the item, not of the heading, and a coloured heading here
     /// read as a status the page does not have.
     private func diagnosticSection(
-        title: LocalizedStringKey,
+        title: String,
         symbol: String,
         tint: Color,
-        items: [LocalizedStringKey]
+        items: [String]
     ) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            Text(title)
+            Text(verbatim: AppLocalization.string(title))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, AetherVisual.s1)
 
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    Label(item, systemImage: symbol)
-                        .labelStyle(DiagnosticItemLabelStyle(tint: tint))
+                    Label {
+                        Text(verbatim: AppLocalization.string(item))
+                    } icon: {
+                        Image(systemName: symbol)
+                    }
+                    .labelStyle(DiagnosticItemLabelStyle(tint: tint))
                 }
             }
             // Fill before the panel is applied, so every card on the page shares

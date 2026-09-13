@@ -61,18 +61,18 @@ struct AboutAetherRouteView: View {
                     releaseStatusBadge
                 }
 
-                Text("Private routing, thoughtfully native.")
+                Text(AppLocalization.string("Private routing, thoughtfully native."))
                     .font(.body)
                     .foregroundStyle(.primary)
 
                 HStack(spacing: AetherVisual.s2) {
                     metadataCapsule(
                         symbol: "apple.logo",
-                        title: "Apple silicon"
+                        title: AppLocalization.string("Apple silicon")
                     )
                     metadataCapsule(
                         symbol: "swift",
-                        title: "Native macOS"
+                        title: AppLocalization.string("Native macOS")
                     )
                 }
             }
@@ -113,7 +113,7 @@ struct AboutAetherRouteView: View {
 
     private func metadataCapsule(
         symbol: String,
-        title: LocalizedStringKey
+        title: String
     ) -> some View {
         Label(title, systemImage: symbol)
             .font(.caption.weight(.medium))
@@ -130,7 +130,7 @@ struct AboutAetherRouteView: View {
     private var releaseSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeading(
-                title: "Release information",
+                title: AppLocalization.string("Release information"),
                 symbol: "shippingbox"
             )
             .padding(.horizontal, AetherVisual.s5)
@@ -143,25 +143,25 @@ struct AboutAetherRouteView: View {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 0) {
                     releaseMetric(
-                        title: "Version",
+                        title: AppLocalization.string("Version"),
                         value: marketingVersion,
                         identifier: "about-release-version"
                     )
                     metricDivider
                     releaseMetric(
-                        title: "Build",
+                        title: AppLocalization.string("Build"),
                         value: buildNumber,
                         identifier: "about-release-build"
                     )
                     metricDivider
                     releaseMetric(
-                        title: "Release channel",
+                        title: AppLocalization.string("Release channel"),
                         value: releaseChannelDescription,
                         identifier: "about-release-channel-value"
                     )
                     metricDivider
                     releaseMetric(
-                        title: "Release date",
+                        title: AppLocalization.string("Release date"),
                         value: releaseDateDescription,
                         identifier: "about-release-date"
                     )
@@ -173,22 +173,22 @@ struct AboutAetherRouteView: View {
                     spacing: AetherVisual.s4
                 ) {
                     releaseMetric(
-                        title: "Version",
+                        title: AppLocalization.string("Version"),
                         value: marketingVersion,
                         identifier: "about-release-version"
                     )
                     releaseMetric(
-                        title: "Build",
+                        title: AppLocalization.string("Build"),
                         value: buildNumber,
                         identifier: "about-release-build"
                     )
                     releaseMetric(
-                        title: "Release channel",
+                        title: AppLocalization.string("Release channel"),
                         value: releaseChannelDescription,
                         identifier: "about-release-channel-value"
                     )
                     releaseMetric(
-                        title: "Release date",
+                        title: AppLocalization.string("Release date"),
                         value: releaseDateDescription,
                         identifier: "about-release-date"
                     )
@@ -199,11 +199,11 @@ struct AboutAetherRouteView: View {
         .background(panelBackground(radius: AetherVisual.panelRadius))
         .overlay(panelBorder(radius: AetherVisual.panelRadius))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Release information")
+        .accessibilityLabel(AppLocalization.string("Release information"))
     }
 
     private func sectionHeading(
-        title: LocalizedStringKey,
+        title: String,
         symbol: String
     ) -> some View {
         HStack(spacing: AetherVisual.s2) {
@@ -217,7 +217,7 @@ struct AboutAetherRouteView: View {
     }
 
     private func releaseMetric(
-        title: LocalizedStringKey,
+        title: String,
         value: String,
         identifier: String
     ) -> some View {
@@ -256,13 +256,13 @@ struct AboutAetherRouteView: View {
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text("Created by")
+                Text(AppLocalization.string("Created by"))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.primary)
                 Text(localizedAuthorName)
                     .font(.title3.weight(.semibold))
                     .accessibilityIdentifier("about-author-name")
-                Text("Original design and native macOS development")
+                Text(AppLocalization.string("Original design and native macOS development"))
                     .font(.caption)
                     .foregroundStyle(.primary)
             }
@@ -278,7 +278,7 @@ struct AboutAetherRouteView: View {
         .background(panelBackground(radius: AetherVisual.panelRadius))
         .overlay(panelBorder(radius: AetherVisual.panelRadius))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Created by")
+        .accessibilityLabel(AppLocalization.string("Created by"))
     }
 
     private func panelBackground(radius: CGFloat) -> some View {

@@ -386,25 +386,27 @@ struct ManualNodeEditorSheet: View {
             HStack {
                 storageStatusLabel
                 Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }
+                Button(AppLocalization.string("Cancel"), role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .disabled(isSaving)
                 Button {
                     submit()
                 } label: {
                     AetherProgressButtonLabel(
-                        isEditing ? "Save Changes" : "Create Profile",
+                        isEditing
+                            ? AppLocalization.string("Save Changes")
+                            : AppLocalization.string("Create Profile"),
                         isWorking: isSaving
                     )
                 }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(
-                        !isCreateEnabled
-                            || tunnel.isUpdatingProfiles
-                            || isSaving
-                    )
-                    .accessibilityIdentifier("create-manual-node")
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(
+                    !isCreateEnabled
+                        || tunnel.isUpdatingProfiles
+                        || isSaving
+                )
+                .accessibilityIdentifier("create-manual-node")
             }
         }
         .padding(AetherVisual.s5)
@@ -413,14 +415,14 @@ struct ManualNodeEditorSheet: View {
     private var storageStatusLabel: some View {
 #if AETHERROUTE_DEVELOPMENT_PREVIEW
         Label(
-            "Preview changes are kept only for this session",
+            AppLocalization.string("Preview changes are kept only for this session"),
             systemImage: "clock.arrow.circlepath"
         )
         .font(.caption)
         .foregroundStyle(.secondary)
 #else
         Label(
-            "Stored in the encrypted profile library",
+            AppLocalization.string("Stored in the encrypted profile library"),
             systemImage: "lock.fill"
         )
         .font(.caption)

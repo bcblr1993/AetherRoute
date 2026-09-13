@@ -72,15 +72,15 @@ struct ThirdPartyLicensesView: View {
             case .loading:
                 ProgressView()
                     .controlSize(.small)
-                    .accessibilityLabel("Open-Source Software")
+                    .accessibilityLabel(AppLocalization.string("Open-Source Software"))
             case let .loaded(report):
                 licenseBrowser(report)
             case .failed:
                 ContentUnavailableView(
-                    "License notices unavailable",
+                    AppLocalization.string("License notices unavailable"),
                     systemImage: "doc.text.magnifyingglass",
                     description: Text(
-                        "The bundled notice file could not be verified. Reinstall AetherRoute before distribution."
+                        AppLocalization.string("The bundled notice file could not be verified. Reinstall AetherRoute before distribution.")
                     )
                 )
             }
@@ -113,7 +113,7 @@ struct ThirdPartyLicensesView: View {
     ) -> some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                TextField("Search components", text: $searchText)
+                TextField(AppLocalization.string("Search components"), text: $searchText)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("license-search-field")
                     .padding(AetherVisual.s3)
@@ -174,7 +174,7 @@ struct ThirdPartyLicensesView: View {
             .frame(width: 220)
             .background(.bar)
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("Open-Source Software")
+            .accessibilityLabel(AppLocalization.string("Open-Source Software"))
             .accessibilityIdentifier("license-navigation")
 
             Divider()
@@ -189,10 +189,10 @@ struct ThirdPartyLicensesView: View {
                     )
                 } else {
                     ContentUnavailableView(
-                        "Select a component",
+                        AppLocalization.string("Select a component"),
                         systemImage: "doc.plaintext",
                         description: Text(
-                            "View its license expression, source repository, and complete notice text."
+                            AppLocalization.string("View its license expression, source repository, and complete notice text.")
                         )
                     )
                 }
@@ -237,7 +237,7 @@ struct ThirdPartyLicensesView: View {
             )
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color(nsColor: .labelColor))
-            Text("Independent app runtime")
+            Text(AppLocalization.string("Independent app runtime"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color(nsColor: .labelColor))
         }
@@ -285,7 +285,7 @@ private struct ComponentLicenseDetail: View {
 
                 if blocks.isEmpty {
                     Label(
-                        "No notice text was bundled for this component.",
+                        AppLocalization.string("No notice text was bundled for this component."),
                         systemImage: "exclamationmark.triangle"
                     )
                     .foregroundStyle(.secondary)
@@ -323,7 +323,7 @@ private struct ComponentLicenseDetail: View {
             if let repositoryURL = URL(string: component.repository),
                !component.repository.isEmpty {
                 Link(destination: repositoryURL) {
-                    Label("Source repository", systemImage: "arrow.up.right.square")
+                    Label(AppLocalization.string("Source repository"), systemImage: "arrow.up.right.square")
                 }
                 .accessibilityIdentifier("license-source-repository")
             }

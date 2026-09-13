@@ -28,9 +28,9 @@ struct BypassRulesView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s3) {
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text("Bypass Rules")
+                Text(AppLocalization.string("Bypass Rules"))
                     .font(.title2.weight(.semibold))
-                Text("Send trusted destinations over the normal network path instead of the selected proxy engine.")
+                Text(AppLocalization.string("Send trusted destinations over the normal network path instead of the selected proxy engine."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -52,36 +52,36 @@ struct BypassRulesView: View {
 
     private var editor: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            Text("Add a destination")
+            Text(AppLocalization.string("Add a destination"))
                 .font(.headline)
 
             HStack(spacing: AetherVisual.s3) {
-                TextField("example.com or 192.168.0.0/16", text: $newRule)
+                TextField(AppLocalization.string("example.com or 192.168.0.0/16"), text: $newRule)
                     .textFieldStyle(.roundedBorder)
                     .focused($isInputFocused)
                     .onSubmit(addRule)
-                    .accessibilityLabel("Bypass destination")
+                    .accessibilityLabel(AppLocalization.string("Bypass destination"))
                     .accessibilityIdentifier("bypass-rule-field")
 
                 Button(action: addRule) {
                     AetherProgressButtonLabel(
-                        "Add",
+                        AppLocalization.string("Add"),
                         systemImage: "plus",
                         isWorking: isAddingRule
                     )
                 }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(
-                        newRule.trimmingCharacters(
-                            in: .whitespacesAndNewlines
-                        ).isEmpty
-                            || !tunnel.canModifyBypassPolicy
-                            || isAddingRule
-                    )
-                    .accessibilityIdentifier("add-bypass-rule")
+                .buttonStyle(.borderedProminent)
+                .disabled(
+                    newRule.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    ).isEmpty
+                        || !tunnel.canModifyBypassPolicy
+                        || isAddingRule
+                )
+                .accessibilityIdentifier("add-bypass-rule")
             }
 
-            Text("Use an ASCII domain suffix, IPv4 CIDR, or IPv6 CIDR. Wildcard domains such as *.example.com are normalized safely.")
+            Text(AppLocalization.string("Use an ASCII domain suffix, IPv4 CIDR, or IPv6 CIDR. Wildcard domains such as *.example.com are normalized safely."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -108,7 +108,7 @@ struct BypassRulesView: View {
 #if AETHERROUTE_INDEPENDENT
         if tunnel.networkEngineMode == .tun {
             Label(
-                "TUN applies IPv4 and IPv6 CIDR exclusions at the system route layer. Domain rules stay encrypted and apply when Transparent Proxy is selected.",
+                AppLocalization.string("TUN applies IPv4 and IPv6 CIDR exclusions at the system route layer. Domain rules stay encrypted and apply when Transparent Proxy is selected."),
                 systemImage: "info.circle"
             )
             .font(.callout)
@@ -130,7 +130,7 @@ struct BypassRulesView: View {
 
     private var transparentSemantics: some View {
         Label(
-            "Transparent Proxy excludes matching domains and IP networks before a flow enters the proxy provider.",
+            AppLocalization.string("Transparent Proxy excludes matching domains and IP networks before a flow enters the proxy provider."),
             systemImage: "checkmark.shield"
         )
         .font(.callout)
@@ -148,9 +148,9 @@ struct BypassRulesView: View {
     private var ruleList: some View {
         if tunnel.bypassPolicy.rules.isEmpty {
             ContentUnavailableView(
-                "No Bypass Rules",
+                AppLocalization.string("No Bypass Rules"),
                 systemImage: "arrow.trianglehead.branch",
-                description: Text("All supported traffic follows the selected routing mode.")
+                description: Text(AppLocalization.string("All supported traffic follows the selected routing mode."))
             )
             .frame(maxWidth: .infinity)
             .padding(.vertical, AetherVisual.s6)
@@ -161,7 +161,17 @@ struct BypassRulesView: View {
                     Array(tunnel.bypassPolicy.rules.enumerated()),
                     id: \.element.id
                 ) { index, rule in
-                    ruleRow(rule)
+                    BypassRuleRowView(
+                        rule: rule,
+                        removingRuleID: removingRuleID,
+                        canModify: tunnel.canModifyBypassPolicy
+                    ) {
+                        removingRuleID = rule.id
+                        Task {
+                            await tunnel.removeBypassRule(id: rule.id)
+                            if removingRuleID == rule.id { removingRuleID = nil }
+                        }
+                    }
                     if index < tunnel.bypassPolicy.rules.count - 1 {
                         Divider().padding(
                             .leading,
@@ -171,10 +181,31 @@ struct BypassRulesView: View {
                 }
             }
             .aetherPanel()
+            .animation(AetherVisual.gentleSpring, value: tunnel.bypassPolicy.rules.count)
         }
     }
 
-    private func ruleRow(_ rule: BypassRule) -> some View {
+    private func addRule() {
+        let submittedRule = newRule
+        isAddingRule = true
+        Task {
+            defer { isAddingRule = false }
+            guard await tunnel.addBypassRule(submittedRule) else { return }
+            if newRule == submittedRule { newRule = "" }
+            isInputFocused = true
+        }
+    }
+}
+
+private struct BypassRuleRowView: View {
+    let rule: BypassRule
+    let removingRuleID: UUID?
+    let canModify: Bool
+    let onRemove: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
         HStack(spacing: AetherVisual.s4) {
             Image(systemName: symbol(for: rule.kind))
                 .font(.system(size: 15, weight: .semibold))
@@ -192,13 +223,7 @@ struct BypassRulesView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button(role: .destructive) {
-                removingRuleID = rule.id
-                Task {
-                    await tunnel.removeBypassRule(id: rule.id)
-                    if removingRuleID == rule.id { removingRuleID = nil }
-                }
-            } label: {
+            Button(role: .destructive, action: onRemove) {
                 if removingRuleID == rule.id {
                     ProgressView()
                         .controlSize(.small)
@@ -207,10 +232,8 @@ struct BypassRulesView: View {
                 }
             }
             .buttonStyle(.borderless)
-            .disabled(
-                !tunnel.canModifyBypassPolicy || removingRuleID != nil
-            )
-            .help("Remove bypass rule")
+            .disabled(!canModify || removingRuleID != nil)
+            .help(AppLocalization.string("Remove bypass rule"))
             .accessibilityLabel(
                 String.localizedStringWithFormat(
                     AppLocalization.string("Remove %@"),
@@ -220,16 +243,11 @@ struct BypassRulesView: View {
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s3)
-    }
-
-    private func addRule() {
-        let submittedRule = newRule
-        isAddingRule = true
-        Task {
-            defer { isAddingRule = false }
-            guard await tunnel.addBypassRule(submittedRule) else { return }
-            if newRule == submittedRule { newRule = "" }
-            isInputFocused = true
+        .aetherHoverHighlight(isHovered, cornerRadius: AetherVisual.insetRadius)
+        .onHover { hovering in
+            withAnimation(AetherVisual.quickFade) {
+                isHovered = hovering
+            }
         }
     }
 
@@ -241,9 +259,6 @@ struct BypassRulesView: View {
         }
     }
 
-    /// Rule kind is already carried by the glyph and by the scope line beneath
-    /// the value, so the badge stays neutral. Color here would read as status,
-    /// which these rows do not have.
     private func color(for _: BypassRuleKind) -> Color {
         .secondary
     }

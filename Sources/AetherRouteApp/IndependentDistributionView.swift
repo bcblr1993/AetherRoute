@@ -48,7 +48,7 @@ struct IndependentDistributionView: View {
     private var freeEditionCard: some View {
         distributionCard {
             Label {
-                Text("No activation required")
+                Text(AppLocalization.string("No activation required"))
             } icon: {
                 Image(systemName: "checkmark.seal.fill")
                     .foregroundStyle(.green)
@@ -70,7 +70,7 @@ struct IndependentDistributionView: View {
                     tint: licenseTint
                 )
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    Text("License")
+                    Text(AppLocalization.string("License"))
                         .font(.headline)
                     Text(licenseTitle)
                         .font(.subheadline.weight(.medium))
@@ -82,10 +82,10 @@ struct IndependentDistributionView: View {
                 Spacer(minLength: 12)
                 if hasStoredLicense {
                     Menu {
-                        Button("Refresh License") {
+                        Button(AppLocalization.string("Refresh License")) {
                             Task { await distribution.refreshLicense() }
                         }
-                        Button("Deactivate This Mac", role: .destructive) {
+                        Button(AppLocalization.string("Deactivate This Mac"), role: .destructive) {
                             Task { await distribution.deactivate() }
                         }
                     } label: {
@@ -93,7 +93,7 @@ struct IndependentDistributionView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .disabled(distribution.isActivating)
-                    .accessibilityLabel("License actions")
+                    .accessibilityLabel(AppLocalization.string("License actions"))
                 }
             }
 
@@ -108,7 +108,7 @@ struct IndependentDistributionView: View {
             if distribution.isConfigured && !hasStoredLicense {
                 Divider()
                 HStack(spacing: AetherVisual.s3) {
-                    SecureField("License key", text: $licenseKey)
+                    SecureField(AppLocalization.string("License key"), text: $licenseKey)
                         .textFieldStyle(.roundedBorder)
                         .accessibilityIdentifier("license-key-field")
                         .onSubmit { activate() }
@@ -116,7 +116,7 @@ struct IndependentDistributionView: View {
                         activate()
                     } label: {
                         AetherProgressButtonLabel(
-                            "Activate",
+                            AppLocalization.string("Activate"),
                             isWorking: distribution.isActivating
                         )
                     }
@@ -197,7 +197,7 @@ struct IndependentDistributionView: View {
 
     private var privacyFooter: some View {
         Label {
-            Text("The activation key is sent only to your configured HTTPS license service and is never saved, logged, exported, or included in diagnostics. Receipts stay in the Data Protection Keychain on this Mac.")
+            Text(AppLocalization.string("The activation key is sent only to your configured HTTPS license service and is never saved, logged, exported, or included in diagnostics. Receipts stay in the Data Protection Keychain on this Mac."))
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: "lock.shield")

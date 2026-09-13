@@ -498,6 +498,12 @@ private struct MenuBarContent: View {
             }
         }
         .frame(width: AetherVisual.popoverWidth)
+        .onAppear {
+            tunnel.setRealtimeTelemetryPreferred(true, for: "menubar")
+        }
+        .onDisappear {
+            tunnel.setRealtimeTelemetryPreferred(false, for: "menubar")
+        }
     }
 
     private var readyContent: some View {
