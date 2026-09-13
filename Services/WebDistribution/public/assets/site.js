@@ -10,6 +10,10 @@
       zh: "版本与更新日志 — AetherRoute",
       en: "Releases and changelog — AetherRoute"
     },
+    "/releases/1.0.1/": {
+      zh: "AetherRoute 1.0.1 正式稳定版",
+      en: "AetherRoute 1.0.1 Production Stable"
+    },
     "/releases/1.0.0/": {
       zh: "AetherRoute 1.0.0 正式稳定版",
       en: "AetherRoute 1.0.0 Production Stable"
@@ -81,15 +85,23 @@
   // Showcase Tab Switcher
   const showcaseTabs = {
     overview: {
-      zh: { src: "/assets/aetherroute-overview-zh.png", title: "AetherRoute — 概览", alt: "AetherRoute 中文深色模式真实概览界面" },
-      en: { src: "/assets/aetherroute-overview-en.png", title: "AetherRoute — Overview", alt: "AetherRoute real overview interface" }
+      zh: { src: "/assets/aetherroute-overview-zh.png", title: "AetherRoute — 概览", alt: "AetherRoute 中文深色模式真实概览界面，显示透明代理、规则路由、当前出口、延迟和实时流量" },
+      en: { src: "/assets/aetherroute-overview-en.png", title: "AetherRoute — Overview", alt: "The real AetherRoute overview in English and light appearance, showing TUN, Rule routing, current route, latency, and live traffic" }
+    },
+    proxies: {
+      zh: { src: "/assets/aetherroute-proxies-zh.png", title: "AetherRoute — 节点与测速", alt: "AetherRoute 中文节点策略组与延迟测速真实界面" },
+      en: { src: "/assets/aetherroute-proxies-en.png", title: "AetherRoute — Proxies", alt: "AetherRoute real proxies and latency testing interface" }
+    },
+    connections: {
+      zh: { src: "/assets/aetherroute-connections-zh.png", title: "AetherRoute — 实时连接追踪", alt: "AetherRoute 中文实时连接与分流详情真实界面" },
+      en: { src: "/assets/aetherroute-connections-en.png", title: "AetherRoute — Live Connections", alt: "AetherRoute real active connections interface" }
     },
     profiles: {
-      zh: { src: "/assets/aetherroute-profiles-zh.png", title: "AetherRoute — 配置与订阅", alt: "AetherRoute 中文配置管理真实界面" },
+      zh: { src: "/assets/aetherroute-profiles-zh.png", title: "AetherRoute — 配置与订阅", alt: "AetherRoute 中文配置管理与加密库真实界面" },
       en: { src: "/assets/aetherroute-profiles-en.png", title: "AetherRoute — Profiles", alt: "AetherRoute real profiles interface" }
     },
     settings: {
-      zh: { src: "/assets/aetherroute-settings-zh.png", title: "AetherRoute — 网络引擎设置", alt: "AetherRoute 中文设置真实界面" },
+      zh: { src: "/assets/aetherroute-settings-zh.png", title: "AetherRoute — 系统与引擎偏好", alt: "AetherRoute 中文设置真实界面" },
       en: { src: "/assets/aetherroute-settings-en.png", title: "AetherRoute — Engine & Settings", alt: "AetherRoute real settings interface" }
     }
   };
@@ -120,8 +132,12 @@
       const target = tabBtn.getAttribute("data-target-tab");
       if (!target || !showcaseTabs[target]) return;
       currentShowcaseTab = target;
-      document.querySelectorAll(".stage-tab").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".stage-tab").forEach(b => {
+        b.classList.remove("active");
+        b.setAttribute("aria-selected", "false");
+      });
       tabBtn.classList.add("active");
+      tabBtn.setAttribute("aria-selected", "true");
       updateShowcase(root.dataset.language || "zh");
     });
   });

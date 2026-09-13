@@ -627,91 +627,55 @@ img {
   position: relative;
   z-index: 1;
   width: 100%;
-  margin: 0;
-  border-radius: var(--radius-lg);
-  background: #0b0f17;
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-window), var(--shadow-glow);
-  overflow: hidden;
-  backdrop-filter: blur(40px);
-  -webkit-backdrop-filter: blur(40px);
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 1080px;
+  margin: 0 auto;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .hero-screenshot:hover {
   transform: translateY(-4px);
-  box-shadow: 0 54px 130px -20px rgba(0, 0, 0, 0.95), 0 0 0 1px var(--border-glow);
-}
-
-/* Realistic macOS Window Header with Traffic Lights */
-.window-chrome {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 42px;
-  padding: 0 16px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.traffic-lights {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 70px;
-}
-
-.traffic-lights span {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.light-close { background: #ff5f56; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.3); }
-.light-min { background: #ffbd2e; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.3); }
-.light-max { background: #27c93f; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.3); }
-
-.window-title {
-  color: var(--ink-tertiary);
-  font-size: 13px;
-  font-weight: 550;
-  letter-spacing: -0.01em;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.window-actions-dummy {
-  width: 70px;
-  display: flex;
-  justify-content: flex-end;
 }
 
 .screenshot-stage-box {
   position: relative;
-  background: #0d121c;
+  width: 100%;
+  background: transparent;
+  display: flex;
+  justify-content: center;
 }
 
 .product-screenshot {
   width: 100%;
   height: auto;
   display: block;
-  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  filter: drop-shadow(0 20px 50px rgba(0, 0, 0, 0.55));
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .hero-screenshot figcaption {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 20px;
-  background: rgba(255, 255, 255, 0.02);
-  border-top: 1px solid var(--border-subtle);
-  color: var(--ink-tertiary);
-  font-size: 12.5px;
+  margin-top: 18px;
+  padding: 8px 20px;
+  background: rgba(16, 20, 30, 0.75);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--ink-secondary);
+  font-size: 13px;
   font-weight: 550;
   letter-spacing: -0.01em;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-sm);
 }
 
 .live-dot {
@@ -860,10 +824,10 @@ img {
 
 .screen-media {
   aspect-ratio: 1.48;
-  padding: 24px 24px 0;
+  padding: 14px 14px 0;
   display: flex;
   align-items: flex-end;
-  background: linear-gradient(180deg, #0d121c 0%, #131926 100%);
+  background: radial-gradient(circle at 50% 10%, rgba(28, 38, 58, 0.4) 0%, rgba(11, 15, 24, 0.9) 100%);
   position: relative;
   overflow: hidden;
   border-bottom: 1px solid var(--border-subtle);
@@ -872,16 +836,13 @@ img {
 .screen-media img {
   width: 100%;
   height: auto;
-  border-top-left-radius: 12px;
-  border-top-right-radius: 12px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
-  border: 1px solid var(--border-subtle);
-  border-bottom: 0;
-  transition: transform 0.3s ease;
+  display: block;
+  filter: drop-shadow(0 12px 30px rgba(0, 0, 0, 0.5));
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .screen-card:hover .screen-media img {
-  transform: translateY(-2px);
+  transform: translateY(-3px) scale(1.015);
 }
 
 .screen-card figcaption {
@@ -1511,8 +1472,14 @@ html[data-language="en"] [data-lang="en"] {
   }
   .stage-tabs-wrap {
     width: 100%;
+    max-width: 100%;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     justify-content: flex-start;
+  }
+  .stage-tabs-wrap::-webkit-scrollbar {
+    display: none;
   }
   .stage-tab {
     padding: 6px 12px;
