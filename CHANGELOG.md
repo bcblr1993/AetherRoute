@@ -31,6 +31,27 @@ All notable changes to AetherRoute are recorded here. The format follows
   diagnostic core artifacts. Installed-extension performance now requires real
   paired measurements rather than isolated-core throughput numbers.
 
+## [1.0.2] - 2026-09-14
+
+### Fixed
+
+- Disconnecting now restores the system network immediately. macOS keeps a
+  tunnel's interface, routes and DNS installed until the provider reports the
+  stop complete, and the provider waited up to ten seconds there for the
+  protocol engine to unwind. A disconnect issued against a node that had
+  stopped responding therefore left the machine offline for that entire wait.
+  The engine is now signalled and joined in the background.
+- Restarting the tunnel can no longer leave two protocol engines running at
+  once. The engine is process-wide, but its owner is rebuilt for every
+  connection, so a restart that began while the previous engine was still
+  stopping started a second one — doubling memory and thread use, and leaving
+  either instance able to cancel the other's transport. Engine lifecycle now
+  runs through a process-wide gate; a restart waits for a clean handoff and
+  restarts the network extension if it cannot get one.
+- A latency probe against an unresponsive node no longer delays the shutdown
+  that would cancel it, nor the proxy selection and telemetry requests queued
+  behind it.
+
 ## [0.1.0-alpha.1] - 2026-08-03
 
 ### Added
