@@ -153,10 +153,11 @@ copy_test_workspace() {
   done
   # Cargo's disposable build cache can grow to tens of gigabytes and is not
   # consumed by the Xcode UI-review target, which links the audited artifacts
-  # in Core/Artifacts. Excluding it keeps each isolated UI run bounded without
-  # changing any source or product input.
+  # in Core/Artifacts. The dashboard's node_modules is also a build dependency
+  # cache, not an input to this native target. Exclude both so UI runs do not
+  # copy unrelated caches into the isolated workspace.
   mkdir -p "$ROOT/Core"
-  rsync -a --exclude '/Engine/target/' \
+  rsync -a --exclude '/Engine/target/' --exclude 'node_modules/' \
     "$REPOSITORY_ROOT/Core/" "$ROOT/Core/"
 }
 
@@ -259,6 +260,7 @@ sed 's/^    AETHERROUTE_BUNDLE_ID: com.aetherroute.desktop$/    AETHERROUTE_BUND
 
 set -- xcodebuild build-for-testing \
   -project "$ROOT/AetherRoute.xcodeproj" \
+  -clonedSourcePackagesDirPath "$REPOSITORY_ROOT/.build/DerivedData/SourcePackages" \
   -scheme AetherRouteUIReview \
   -configuration "$CONFIGURATION" \
   -destination 'platform=macOS,arch=arm64' \
@@ -309,6 +311,7 @@ done
 
 set -- xcodebuild test-without-building \
   -project "$ROOT/AetherRoute.xcodeproj" \
+  -clonedSourcePackagesDirPath "$REPOSITORY_ROOT/.build/DerivedData/SourcePackages" \
   -scheme AetherRouteUIReview \
   -configuration "$CONFIGURATION" \
   -destination 'platform=macOS,arch=arm64' \

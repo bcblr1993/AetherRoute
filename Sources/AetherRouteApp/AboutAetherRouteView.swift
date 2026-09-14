@@ -62,7 +62,7 @@ struct AboutAetherRouteView: View {
                 }
 
                 Text(AppLocalization.string("Private routing, thoughtfully native."))
-                    .font(.body)
+                    .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
 
                 HStack(spacing: AetherVisual.s2) {
@@ -223,7 +223,7 @@ struct AboutAetherRouteView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s1) {
             Text(title)
-                .font(.subheadline.weight(.medium))
+                .font(.body.weight(.semibold))
                 .foregroundStyle(.primary)
             Text(value)
                 .font(.body.monospacedDigit().weight(.semibold))

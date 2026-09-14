@@ -96,7 +96,7 @@ struct ProxiesView: View {
 
                 Text(verbatim: "\(groups.count)")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, AetherVisual.sCompact)
                     .padding(.vertical, AetherVisual.sMicro)
                     .background(Color.secondary.opacity(0.12), in: Capsule())
@@ -173,16 +173,17 @@ struct ProxiesView: View {
                 Image(systemName: "slider.horizontal.3")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 Text(AppLocalization.string("Raw Node Inventory & Providers"))
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                 Spacer()
                 HStack(spacing: AetherVisual.sMicro) {
                     Text(verbatim: "\(summary.proxyCount)")
                     Text(AppLocalization.string("Endpoints"))
                 }
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
             }
         }
         .padding(AetherVisual.s3)
@@ -332,7 +333,7 @@ private struct ActiveProxyGroupView: View {
                     Text(isTesting ? AppLocalization.string("Testing latency…") : AppLocalization.string("Latency results are local"))
                 }
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
             }
         }
         .padding(AetherVisual.s4)
@@ -383,7 +384,7 @@ private struct ActiveProxyGroupView: View {
                         : AppLocalization.string("Keeps the selected node pinned")
                 )
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
             } else {
                 HStack(spacing: AetherVisual.sCompact) {
@@ -396,7 +397,7 @@ private struct ActiveProxyGroupView: View {
                             : AppLocalization.string("This automatic group is ready and will choose the fastest available node when you connect.")
                     )
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                 }
             }
 
@@ -408,7 +409,7 @@ private struct ActiveProxyGroupView: View {
                     systemImage: "checkmark.circle"
                 )
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
             }
         }
     }
@@ -449,6 +450,8 @@ private struct ActiveProxyGroupView: View {
                     Task { await tunnel.testProxyLatency(group: group.name) }
                 } label: {
                     AetherProgressButtonLabel(AppLocalization.string("Test latency"), isWorking: isTesting)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(minWidth: 72)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -541,6 +544,8 @@ private struct ActiveProxyGroupView: View {
             }
         }
         .padding(.vertical, AetherVisual.s1)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(AppLocalization.string("Proxy group members"))
     }
 
     // MARK: - 节点列表展示 (Table 兼容已有测试标识)
@@ -713,7 +718,7 @@ private struct ProxyNodeModernCard: View {
                                     .frame(width: 5, height: 5)
                                 Text(AppLocalization.string("Active"))
                                     .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(Color.green)
+                                    .foregroundStyle(.primary)
                             }
                         } else {
                             Text(flagInfo.region)
@@ -892,7 +897,7 @@ private struct ProxyNodeInventory: View {
                             .lineLimit(1)
                             .help(proxy.name)
                     }
-                    .width(min: 84, ideal: 100)
+                    .width(min: 84, ideal: 90)
                     TableColumn(AppLocalization.string("Protocol")) { proxy in
                         Text(proxy.protocolName.uppercased())
                             .font(.subheadline.monospaced().weight(.semibold))
@@ -908,7 +913,7 @@ private struct ProxyNodeInventory: View {
                             .lineLimit(1)
                             .help(membership(of: proxy.name))
                     }
-                    .width(min: 80, ideal: 104, max: 170)
+                    .width(min: 80, ideal: 96, max: 170)
                     TableColumn(AppLocalization.string("Core status")) { proxy in
                         Label(
                             proxy.recognition.localizedTitle,

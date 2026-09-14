@@ -115,19 +115,15 @@ final class AetherRouteUITests: XCTestCase {
             app.windows["main-AppWindow-1"].waitForExistence(timeout: 5)
         )
         XCTAssertTrue(app.buttons["Disconnect"].isEnabled)
-        app.buttons["Proxies"].click()
+        navigationButton(in: app, title: "Proxies").click()
         XCTAssertTrue(app.staticTexts["Proxy groups"].waitForExistence(timeout: 2))
-        XCTAssertTrue(
-            app.staticTexts.matching(
-                NSPredicate(format: "value CONTAINS %@", "Singapore Edge")
-            ).firstMatch.exists
-        )
-        app.buttons["Connections"].click()
+        XCTAssertTrue(app.buttons["Singapore Edge"].waitForExistence(timeout: 2))
+        navigationButton(in: app, title: "Connections").click()
         XCTAssertTrue(app.staticTexts["Only connections visible on this Mac are counted, and nothing is reported anywhere."].waitForExistence(timeout: 2))
         XCTAssertTrue(app.buttons["Disconnect all"].isHittable)
         app.buttons["Profiles"].click()
         XCTAssertTrue(app.buttons["Import Profile…"].waitForExistence(timeout: 2))
-        app.buttons["Rules"].click()
+        navigationButton(in: app, title: "Rules").click()
         XCTAssertTrue(app.staticTexts["Evaluation order"].waitForExistence(timeout: 2))
         XCTAssertTrue(
             app.staticTexts.matching(
@@ -170,14 +166,14 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(mainWindow.waitForExistence(timeout: 5))
         let mainSize = mainWindow.frame.size
         for (button, landmark) in [
-            ("Overview", "Current route"),
+            ("Overview", "Traffic routing active"),
             ("Proxies", "Proxy groups"),
             ("Connections", "Only connections visible on this Mac are counted, and nothing is reported anywhere."),
             ("Profiles", "Import Profile…"),
             ("Rules", "Evaluation order"),
             ("DNS", "DNS & Fake-IP"),
         ] {
-            app.buttons[button].click()
+            navigationButton(in: app, title: button).click()
             XCTAssertTrue(
                 app.staticTexts[landmark].waitForExistence(timeout: 2)
                     || app.buttons[landmark].waitForExistence(timeout: 2)
@@ -435,7 +431,7 @@ final class AetherRouteUITests: XCTestCase {
             XCTAssertEqual(button.label, item.title)
             XCTAssertEqual(button.isEnabled, item.enabled)
             if item.state != "connected" {
-                app.buttons["Connections"].click()
+                navigationButton(in: app, title: "Connections").click()
                 let connectionsButton = app.buttons["connections-primary-action"]
                 XCTAssertTrue(connectionsButton.waitForExistence(timeout: 2))
                 XCTAssertEqual(connectionsButton.label, item.title)
@@ -498,7 +494,7 @@ final class AetherRouteUITests: XCTestCase {
             XCTAssertTrue(engine.isEnabled, "Engine switching is disabled while \(state).")
             XCTAssertTrue(routing.isEnabled, "Routing switching is disabled while \(state).")
 
-            app.buttons["Proxies"].click()
+            navigationButton(in: app, title: "Proxies").click()
             let selectionModeByIdentifier = app.radioGroups[
                 "proxy-selection-mode-Balanced"
             ]
@@ -597,19 +593,19 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertFalse(connectButton.isEnabled)
 
         app.buttons["Profiles"].click()
-        XCTAssertTrue(app.staticTexts["No active profile"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["No Profiles Added"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.buttons["add-subscription"].isHittable)
         XCTAssertTrue(app.buttons["Import Profile…"].isHittable)
-        app.buttons["Connections"].click()
+        navigationButton(in: app, title: "Connections").click()
         let connectionsButton = app.buttons["connections-primary-action"]
         XCTAssertTrue(connectionsButton.waitForExistence(timeout: 2))
         XCTAssertEqual(connectionsButton.label, "Connect")
         XCTAssertFalse(connectionsButton.isEnabled)
-        app.buttons["Proxies"].click()
+        navigationButton(in: app, title: "Proxies").click()
         XCTAssertTrue(
             app.staticTexts["No proxies yet"].waitForExistence(timeout: 2)
         )
-        app.buttons["Rules"].click()
+        navigationButton(in: app, title: "Rules").click()
         XCTAssertTrue(
             app.staticTexts["No rule set loaded"].waitForExistence(timeout: 2)
         )
@@ -627,7 +623,8 @@ final class AetherRouteUITests: XCTestCase {
         app.typeKey("5", modifierFlags: .command)
         XCTAssertTrue(app.staticTexts["Evaluation order"].waitForExistence(timeout: 2))
         app.typeKey("1", modifierFlags: .command)
-        XCTAssertTrue(app.staticTexts["Current route"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.descendants(matching: .any)["overview-page"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Traffic routing active"].exists)
         app.typeKey("6", modifierFlags: .command)
         XCTAssertTrue(app.staticTexts["DNS & Fake-IP"].waitForExistence(timeout: 2))
     }
@@ -644,10 +641,10 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(app.buttons["概览"].exists)
         XCTAssertTrue(app.staticTexts["流量路由已启用"].exists)
         XCTAssertTrue(app.buttons["断开连接"].isEnabled)
-        XCTAssertTrue(app.buttons["代理"].isHittable)
-        XCTAssertTrue(app.buttons["连接"].isHittable)
+        XCTAssertTrue(navigationButton(in: app, title: "代理").isHittable)
+        XCTAssertTrue(navigationButton(in: app, title: "连接").isHittable)
         XCTAssertTrue(app.buttons["配置"].isHittable)
-        XCTAssertTrue(app.buttons["规则"].isHittable)
+        XCTAssertTrue(navigationButton(in: app, title: "规则").isHittable)
         XCTAssertFalse(
             app.staticTexts.matching(
                 NSPredicate(
@@ -723,7 +720,7 @@ final class AetherRouteUITests: XCTestCase {
 
         XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
         app.buttons["Profiles"].click()
-        XCTAssertTrue(app.staticTexts["profiles.example"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["HTTPS subscription"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.buttons["Check for Updates"].isHittable)
         XCTAssertTrue(app.buttons["add-subscription"].isHittable)
     }
@@ -758,12 +755,12 @@ final class AetherRouteUITests: XCTestCase {
             app.staticTexts["Profile activated."].waitForExistence(timeout: 2)
         )
 
-        let tokyoActions = app.buttons.matching(
-            identifier: "Profile actions"
+        let tokyoActions = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "profile-actions-")
         ).element(boundBy: 1)
         XCTAssertTrue(tokyoActions.isHittable)
         tokyoActions.click()
-        let rename = app.buttons["Rename…"]
+        let rename = app.menuItems["Rename…"]
         XCTAssertTrue(rename.waitForExistence(timeout: 2))
         rename.click()
 
@@ -781,12 +778,12 @@ final class AetherRouteUITests: XCTestCase {
             app.staticTexts["Tokyo · Production"].waitForExistence(timeout: 2)
         )
 
-        let officeActions = app.buttons.matching(
-            identifier: "Profile actions"
+        let officeActions = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "profile-actions-")
         ).element(boundBy: 2)
         XCTAssertTrue(officeActions.isHittable)
         officeActions.click()
-        let remove = app.buttons["Remove Profile"]
+        let remove = app.menuItems["Remove Profile"]
         XCTAssertTrue(remove.waitForExistence(timeout: 2))
         remove.click()
         XCTAssertTrue(
@@ -1297,7 +1294,7 @@ final class AetherRouteUITests: XCTestCase {
 
         closeResponsiveSettings(in: app)
         XCTAssertTrue(app.buttons["Overview"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["Proxies"].exists)
+        XCTAssertTrue(navigationButton(in: app, title: "Proxies").exists)
         XCTAssertTrue(app.staticTexts["Not connected"].exists)
         XCTAssertTrue(
             app.staticTexts["Traffic is using the normal network path"].exists
@@ -1487,14 +1484,14 @@ final class AetherRouteUITests: XCTestCase {
                 tab: "Account",
                 heading: "Free Edition",
                 activation: "No activation required",
-                updates: "This edition does not contact a licensing service. Install a newer signed DMG to update; your saved configurations are kept."
+                updates: "This edition does not contact a licensing service. Software updates are checked and verified automatically."
             ),
             (
                 language: "zh-Hans",
                 tab: "账户",
                 heading: "免费版",
                 activation: "无需激活",
-                updates: "此版本无需连接授权服务。安装新版签名 DMG 即可更新，已保存的配置会保留。"
+                updates: "当前版本无需激活许可服务。软件更新会自动检查并安全验证。"
             ),
         ]
 
@@ -1517,7 +1514,7 @@ final class AetherRouteUITests: XCTestCase {
                 XCTAssertFalse(
                     app.secureTextFields["license-key-field"].exists
                 )
-                XCTAssertFalse(
+                XCTAssertTrue(
                     app.buttons["check-for-updates-button"].exists
                 )
                 try auditProductAccessibility(in: app)
@@ -2173,7 +2170,7 @@ final class AetherRouteUITests: XCTestCase {
                 ).click()
             }
 
-        try app.performAccessibilityAudit(for: .all) { issue in
+        let isFrameworkIssue: (XCUIAccessibilityAuditIssue) -> Bool = { issue in
             print(
                 "AETHERROUTE_AX_AUDIT type=\(issue.auditType.rawValue) "
                     + "compact=\(issue.compactDescription) "
@@ -2545,6 +2542,29 @@ final class AetherRouteUITests: XCTestCase {
             // every product element remains audited.
             return true
         }
+        var failures: [String] = []
+        try app.performAccessibilityAudit(for: .all) { issue in
+            if isFrameworkIssue(issue) { return true }
+            let description = "\(issue.compactDescription): \(issue.detailedDescription)"
+            failures.append(description)
+            let detail = XCTAttachment(string: description)
+            detail.name = "Accessibility issue \(failures.count)"
+            detail.lifetime = .keepAlways
+            self.add(detail)
+            if let element = issue.element, element.exists {
+                let screenshot = XCTAttachment(screenshot: element.screenshot())
+                screenshot.name = "Accessibility element \(failures.count)"
+                screenshot.lifetime = .keepAlways
+                self.add(screenshot)
+            }
+            // Keep collecting issues from this page; fail the audit below with
+            // every unhandled issue, using exactly the same framework filters.
+            return true
+        }
+        if !failures.isEmpty {
+            attachFailureScreenshot(app, name: "Accessibility page failures")
+        }
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
 
     private func isDescendant(
@@ -2572,6 +2592,12 @@ final class AetherRouteUITests: XCTestCase {
                 .matching(
                     NSPredicate(format: "title == %@", element.title)
                 )
+        } else if let value = element.value as? String, !value.isEmpty {
+            // AppKit static text often exposes its text only as a value.
+            // Narrow the query before comparing frames, just as for labels.
+            candidates = settingsWindow
+                .descendants(matching: element.elementType)
+                .matching(NSPredicate(format: "value == %@", value))
         } else {
             candidates = settingsWindow.descendants(
                 matching: element.elementType
@@ -2592,6 +2618,26 @@ final class AetherRouteUITests: XCTestCase {
         return false
     }
 
+    private func navigationButton(in app: XCUIApplication, title: String) -> XCUIElement {
+        let sections = [
+            "Overview": "overview", "概览": "overview",
+            "Proxies": "proxies", "代理": "proxies",
+            "Connections": "connections", "连接": "connections",
+            "Profiles": "profiles", "配置": "profiles",
+            "Rules": "rules", "规则": "rules", "DNS": "dns",
+        ]
+        guard let section = sections[title] else {
+            XCTFail("Unknown navigation title: \(title)")
+            return app.buttons[title]
+        }
+        // Count badges form part of the native button label. Identify the
+        // destination independently while still checking its translated title.
+        let button = app.buttons["primary-navigation-\(section)"]
+        XCTAssertTrue(button.waitForExistence(timeout: 3))
+        XCTAssertTrue(button.label.contains(title), "Navigation lost its localized title: \(button.label)")
+        return button
+    }
+
     private func auditPrimaryPage(
         button: String,
         landmark: String,
@@ -2608,7 +2654,7 @@ final class AetherRouteUITests: XCTestCase {
                     mainProductRoot(in: app).waitForExistence(timeout: 5)
                 )
                 if button != "Overview" {
-                    let navigationButton = app.buttons[button]
+                    let navigationButton = self.navigationButton(in: app, title: button)
                     XCTAssertTrue(
                         navigationButton.waitForExistence(timeout: 2)
                     )
@@ -2678,8 +2724,8 @@ final class AetherRouteUITests: XCTestCase {
         let rows = table.children(matching: .outlineRow)
         XCTAssertEqual(rows.count, 2)
         for row in rows.allElementsBoundByIndex {
-            XCTAssertTrue(bounds.contains(row.frame))
-            XCTAssertTrue(table.frame.contains(row.frame))
+            XCTAssertTrue(bounds.contains(row.frame), "Connection row \(row.frame) exceeds window \(bounds)")
+            XCTAssertTrue(table.frame.contains(row.frame), "Connection row \(row.frame) exceeds table \(table.frame)")
         }
         let count = app.staticTexts["connections-count-summary"]
         let privacy = app.staticTexts["connections-privacy-summary"]
@@ -2706,7 +2752,32 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(windowFrame.contains(latencyButton.frame))
 
         let table = app.outlines["proxy-node-inventory-table"]
+        if !table.exists {
+            // The inventory is now an explicit advanced disclosure. Exercise
+            // opening it before checking its columns and accessible content.
+            let disclosure = app.disclosureTriangles.firstMatch
+            for _ in 0..<3 {
+                if disclosure.exists && disclosure.isHittable { break }
+                app.descendants(matching: .any)["proxies-page"]
+                    .scroll(byDeltaX: 0, deltaY: 480)
+            }
+            XCTAssertTrue(disclosure.waitForExistence(timeout: 2))
+            XCTAssertTrue(disclosure.isHittable)
+            // The native disclosure's AX frame includes the full custom
+            // label. Its center is blank space; activate the leading arrow.
+            disclosure.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
+                .withOffset(CGVector(dx: 26, dy: 0)).click()
+            XCTAssertEqual(String(describing: disclosure.value ?? ""), "1")
+        }
+        // The expanded inventory sits below the group cards in a lazy stack;
+        // scroll it into the viewport so AppKit creates the native table.
+        for _ in 0..<4 {
+            if table.exists && windowFrame.contains(table.frame) { break }
+            app.descendants(matching: .any)["proxies-page"]
+                .scroll(byDeltaX: 0, deltaY: -400)
+        }
         XCTAssertTrue(table.waitForExistence(timeout: 2))
+        XCTAssertTrue(windowFrame.contains(table.frame))
         let columns = table.children(matching: .tableColumn)
         XCTAssertEqual(columns.count, 4)
         print("PROXIES_LAYOUT window=\(windowFrame) latency=\(latencyButton.frame) table=\(table.frame)")
@@ -2775,13 +2846,14 @@ final class AetherRouteUITests: XCTestCase {
         let originalValue = picker.value as? String ?? ""
         XCTAssertFalse(originalValue.isEmpty)
         picker.click()
-        let option = app.menuItems.matching(
+        let options = app.menuItems.matching(
             NSPredicate(
                 format: "label BEGINSWITH %@ OR title BEGINSWITH %@ OR value BEGINSWITH %@",
                 optionPrefix, optionPrefix, optionPrefix
             )
-        ).firstMatch
-        guard option.waitForExistence(timeout: 2) else {
+        )
+        XCTAssertTrue(options.firstMatch.waitForExistence(timeout: 2))
+        guard let option = options.allElementsBoundByIndex.first(where: { $0.isHittable }) else {
             app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
             XCTFail("The compact filter did not expose the expected menu option \(optionPrefix).")
             return
@@ -2834,7 +2906,7 @@ final class AetherRouteUITests: XCTestCase {
         ).click()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 3))
         for destination in destinations {
-            let button = app.buttons[destination.button]
+            let button = navigationButton(in: app, title: destination.button)
             XCTAssertTrue(button.waitForExistence(timeout: 2))
             XCTAssertTrue(button.isHittable)
             button.click()
@@ -2947,7 +3019,8 @@ final class AetherRouteUITests: XCTestCase {
 
     /// The external Instruments controller must acknowledge that recording is
     /// active before the measured navigation interval begins. All control
-    /// files stay in the disposable test home; ordinary UI tests skip this.
+    /// files stay in the dedicated evidence directory, which can be inside
+    /// the XCTest runner's container; ordinary UI tests skip this.
     private func prepareHangsRecordingIfRequested(
         app: XCUIApplication,
         isolatedHome: URL,
@@ -2977,7 +3050,7 @@ final class AetherRouteUITests: XCTestCase {
             throw hangsRecordingError("The exact isolated Release app is not running.")
         }
         let recording = HangsRecording(
-            directory: home,
+            directory: evidenceURL.standardizedFileURL.resolvingSymlinksInPath(),
             token: UUID().uuidString,
             processID: process.processIdentifier,
             tracePath: evidenceURL.standardizedFileURL.resolvingSymlinksInPath()

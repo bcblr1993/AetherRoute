@@ -62,7 +62,7 @@ struct RulesView: View {
                                         .foregroundStyle(.primary)
                                     Text(AppLocalization.string("Rules are evaluated from top to bottom by the protocol core."))
                                         .font(.subheadline.weight(.medium))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(.primary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -75,8 +75,8 @@ struct RulesView: View {
                                         .monospacedDigit()
                                         .foregroundStyle(.primary)
                                     Text(AppLocalization.string("explicit rules"))
-                                        .font(.subheadline.weight(.medium))
-                                        .foregroundStyle(.secondary)
+                                        .font(.body.weight(.medium))
+                                        .foregroundStyle(.primary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 Spacer(minLength: AetherVisual.s2)
@@ -131,7 +131,7 @@ struct RulesView: View {
                                                         .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
                                                     if filter != .all {
                                                         Text(verbatim: "\(count)")
-                                                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                                                            .font(.body.weight(.semibold))
                                                             .padding(.horizontal, AetherVisual.s1)
                                                             .padding(.vertical, AetherVisual.sMicro)
                                                             .background(
@@ -142,7 +142,7 @@ struct RulesView: View {
                                                 }
                                                 .padding(.horizontal, AetherVisual.s2)
                                                 .padding(.vertical, AetherVisual.s1)
-                                                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                                                .foregroundStyle(.primary)
                                                 .background(
                                                     isSelected ? Color.accentColor.opacity(0.12) : Color.clear,
                                                     in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
@@ -167,14 +167,14 @@ struct RulesView: View {
                                             Int64(summary.rules.count)
                                         )
                                     )
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(.primary)
                                 }
 
                                 HStack {
                                     Label(AppLocalization.string("Evaluation order"), systemImage: "arrow.down")
                                         .font(.subheadline.weight(.bold))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(.primary)
                                     Spacer()
                                 }
                                 .padding(.top, AetherVisual.s1)
@@ -917,7 +917,7 @@ private struct DNSMetricCard: View {
                     .foregroundStyle(.primary)
                 Text(detail)
                     .font(.body.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -1175,15 +1175,15 @@ private struct RuleRow: View {
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
             Text(verbatim: String(rule.order))
-                .font(.caption.monospacedDigit().weight(.bold))
-                .foregroundStyle(.secondary)
+                .font(.body.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.primary)
                 .frame(width: 26, height: 26)
                 .background(Color.secondary.opacity(0.1), in: Circle())
 
             HStack(spacing: AetherVisual.sCompact) {
                 Text(rule.kind)
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(ruleKindColor(rule.kind))
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, AetherVisual.sCompact)
                     .padding(.vertical, AetherVisual.sMicro)
                     .background(ruleKindColor(rule.kind).opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
@@ -1198,7 +1198,7 @@ private struct RuleRow: View {
                 } else {
                     Text(AppLocalization.string("Any remaining traffic"))
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                 }
             }
 
@@ -1213,18 +1213,21 @@ private struct RuleRow: View {
                 if targetColor == .green {
                     Image(systemName: "arrow.forward")
                         .font(.system(size: 9.5, weight: .bold))
+                        .accessibilityHidden(true)
                 } else if targetColor == .red {
                     Image(systemName: "hand.raised.fill")
                         .font(.system(size: 9.5, weight: .bold))
+                        .accessibilityHidden(true)
                 } else {
                     Image(systemName: "arrow.triangle.branch")
                         .font(.system(size: 9.5, weight: .bold))
+                        .accessibilityHidden(true)
                 }
 
                 Text(rule.target)
                     .font(.system(size: 11, weight: .semibold))
             }
-            .foregroundStyle(targetColor)
+            .foregroundStyle(.primary)
             .padding(.horizontal, AetherVisual.s2)
             .padding(.vertical, AetherVisual.s1)
             .background(targetColor.opacity(0.12), in: Capsule())

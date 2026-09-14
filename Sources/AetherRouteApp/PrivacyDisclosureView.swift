@@ -73,7 +73,7 @@ struct PrivacyDisclosureView: View {
                     .foregroundStyle(.primary)
                 Text(disclosureSubtitle)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -253,6 +253,7 @@ private struct PrivacyPointRow: View {
             }
             .frame(width: 38, height: 38)
             .shadow(color: point.colors[0].opacity(0.3), radius: 4, x: 0, y: 2)
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(point.title)

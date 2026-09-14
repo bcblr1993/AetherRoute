@@ -340,7 +340,7 @@ struct ContentView: View {
                         )
                         Text(tunnel.isConnected ? AppLocalization.string("Protected") : AppLocalization.string("Idle"))
                             .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(tunnel.isConnected ? Color.green : Color.secondary)
+                            .foregroundStyle(.primary)
                     }
                 }
 
@@ -420,7 +420,7 @@ struct ContentView: View {
 
                     Text(verbatim: currentAppVersion)
                         .font(.system(size: 10.5, weight: .regular, design: .monospaced))
-                        .foregroundStyle(Color.secondary.opacity(0.5))
+                        .foregroundStyle(.primary)
                         .padding(.trailing, AetherVisual.s2)
                 }
                 .padding(.horizontal, AetherVisual.s3)
@@ -447,7 +447,7 @@ struct ContentView: View {
             if count > 0 {
                 Text(verbatim: "\(count)")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.cyan)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, AetherVisual.sCompact)
                     .padding(.vertical, AetherVisual.sMicro)
                     .background(Color.cyan.opacity(0.12), in: Capsule())
@@ -698,20 +698,20 @@ private struct OverviewView: View {
                         HStack {
                             Label(AppLocalization.string("Live Traffic Waveform (30s)"), systemImage: "chart.xyaxis.line")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.primary)
                             Spacer()
                             HStack(spacing: AetherVisual.s3) {
                                 HStack(spacing: AetherVisual.s1) {
                                     Circle().fill(Color.cyan).frame(width: 6, height: 6)
                                     Text("Down")
                                         .font(.system(size: 10, weight: .medium))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(.primary)
                                 }
                                 HStack(spacing: AetherVisual.s1) {
                                     Circle().fill(Color.purple).frame(width: 6, height: 6)
                                     Text("Up")
                                         .font(.system(size: 10, weight: .medium))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(.primary)
                                 }
                             }
                         }
@@ -770,6 +770,7 @@ private struct OverviewView: View {
                         .fill(Color.accentColor.opacity(0.12))
                     Text(flagInfo.flag)
                         .font(.system(size: 18))
+                        .accessibilityHidden(true)
                 }
                 .frame(width: 38, height: 38)
 
@@ -777,14 +778,14 @@ private struct OverviewView: View {
                     HStack(spacing: AetherVisual.sCompact) {
                         Text(primaryGroup.name)
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.primary)
                             .textCase(.uppercase)
 
                         AetherProtocolBadge(type: protocolName)
 
                         Text(flagInfo.region)
                             .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(.primary)
                             .padding(.horizontal, AetherVisual.s1)
                             .padding(.vertical, AetherVisual.sMicro)
                             .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
@@ -1218,59 +1219,74 @@ private struct ConnectionControlBar: View {
     let selectRoutingMode: (RoutingMode) -> Void
 
     var body: some View {
-        HStack(spacing: AetherVisual.s4) {
-            // 1. 主路由模式（自适应主视觉）
-            VStack(alignment: .leading, spacing: AetherVisual.sCompact) {
-                HStack(spacing: AetherVisual.sCompact) {
-                    Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                    Text(AppLocalization.string("Routing mode"))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-
-                RoutingModeSegmentedControl(
-                    selection: Binding(
-                        get: { routingMode },
-                        set: { mode in selectRoutingMode(mode) }
-                    ),
-                    isEnabled: canChangeRoutingMode
-                )
-            }
-            .frame(maxWidth: .infinity)
-
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: AetherVisual.s4) {
+                routingControls
 #if AETHERROUTE_INDEPENDENT
-            Divider()
-                .frame(height: 38)
-                .opacity(0.4)
-
-            // 2. 底层网络引擎（右侧清晰副模块）
-            VStack(alignment: .leading, spacing: AetherVisual.sCompact) {
-                HStack(spacing: AetherVisual.sCompact) {
-                    Image(systemName: networkEngineMode == .tun ? "bolt.shield.fill" : "network")
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                    Text(AppLocalization.string("Network engine"))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-
-                NetworkEngineSegmentedControl(
-                    selection: Binding(
-                        get: { networkEngineMode },
-                        set: { mode in selectNetworkEngine(mode) }
-                    ),
-                    isEnabled: canChangeNetworkEngine
-                )
-            }
-            .frame(width: 220)
+                Divider()
+                    .frame(height: 38)
+                    .opacity(0.4)
+                engineControls
+                    .frame(minWidth: 220)
 #endif
+            }
+            VStack(alignment: .leading, spacing: AetherVisual.s4) {
+                routingControls
+#if AETHERROUTE_INDEPENDENT
+                engineControls
+#endif
+            }
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.sRow)
         .aetherPanel()
     }
+
+    private var routingControls: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.sCompact) {
+            HStack(spacing: AetherVisual.sCompact) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+                Text(AppLocalization.string("Routing mode"))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
+            RoutingModeSegmentedControl(
+                selection: Binding(
+                    get: { routingMode },
+                    set: { mode in selectRoutingMode(mode) }
+                ),
+                isEnabled: canChangeRoutingMode
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+#if AETHERROUTE_INDEPENDENT
+    private var engineControls: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.sCompact) {
+            HStack(spacing: AetherVisual.sCompact) {
+                Image(systemName: networkEngineMode == .tun ? "bolt.shield.fill" : "network")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+                Text(AppLocalization.string("Network engine"))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
+            NetworkEngineSegmentedControl(
+                selection: Binding(
+                    get: { networkEngineMode },
+                    set: { mode in selectNetworkEngine(mode) }
+                ),
+                isEnabled: canChangeNetworkEngine
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+#endif
 }
 
 #if AETHERROUTE_INDEPENDENT
@@ -1839,8 +1855,8 @@ private struct ProfilesView: View {
                     .foregroundStyle(.primary)
 
                 Text(AppLocalization.string("Manage proxy subscriptions, local files, and routing profiles."))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
             }
 
             Spacer(minLength: AetherVisual.s2)
@@ -1969,7 +1985,7 @@ private struct ProfilesView: View {
 
                 Text(AppLocalization.string("Add a subscription link or import a Clash-compatible configuration to get started."))
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 440)
             }
@@ -2004,7 +2020,7 @@ private struct ProfilesView: View {
 
                         Text(AppLocalization.string("Import HTTPS subscription URL from your provider."))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(AetherVisual.s4)
@@ -2045,7 +2061,7 @@ private struct ProfilesView: View {
 
                         Text(AppLocalization.string("Supports Clash-compatible YAML/JSON profiles."))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(AetherVisual.s4)
@@ -2066,7 +2082,7 @@ private struct ProfilesView: View {
                 Label(AppLocalization.string("Multi-Protocol"), systemImage: "bolt.horizontal.fill")
             }
             .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.primary)
             .padding(.bottom, AetherVisual.s2)
         }
         .padding(AetherVisual.s6)
@@ -2108,7 +2124,7 @@ private struct ProfilesView: View {
                                 .frame(width: 5, height: 5)
                             Text("In Use")
                                 .font(.caption2.weight(.bold))
-                                .foregroundStyle(Color.green)
+                                .foregroundStyle(.primary)
                         }
                         .padding(.horizontal, AetherVisual.s2)
                         .padding(.vertical, AetherVisual.sMicro)
@@ -2118,18 +2134,19 @@ private struct ProfilesView: View {
                     HStack(spacing: AetherVisual.s1) {
                         Text(isSubscription ? AppLocalization.string("HTTPS subscription") : AppLocalization.string("Local profile"))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.primary)
 
                         Text(verbatim: "·")
                             .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.primary)
+                            .accessibilityHidden(true)
 
                         Text(String.localizedStringWithFormat(
                             AppLocalization.string("Activated %@"),
                             AppLocalization.date(active.importedAt, date: .abbreviated, time: .shortened)
                         ))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
                     }
                 }
 
@@ -2161,7 +2178,7 @@ private struct ProfilesView: View {
                         systemImage: "clock"
                     )
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
 
                     if let lastCheckedAt = subscription.lastCheckedAt {
                         Spacer(minLength: AetherVisual.s2)
@@ -2189,7 +2206,7 @@ private struct ProfilesView: View {
 
                     Text(verbatim: "\(tunnel.profiles.count)")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                         .padding(.horizontal, AetherVisual.sCompact)
                         .padding(.vertical, AetherVisual.sMicro)
                         .background(Color.secondary.opacity(0.12), in: Capsule())
@@ -2199,7 +2216,7 @@ private struct ProfilesView: View {
 
                 Label("Encrypted on this Mac", systemImage: "lock.shield.fill")
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
             }
             .padding(.horizontal, AetherVisual.s5)
             .padding(.vertical, AetherVisual.s4)
@@ -2254,7 +2271,7 @@ private struct ProfilesView: View {
 
                 Text(AppLocalization.string("Supports Clash-compatible YAML/JSON profiles, HTTPS subscriptions, and common node links."))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -2361,7 +2378,7 @@ private struct RoutingResourcesCard: View {
                 HStack(spacing: AetherVisual.s1) {
                     Image(systemName: showsAdvanced ? "chevron.down" : "chevron.right")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                         .frame(width: 12)
                         .accessibilityHidden(true)
                     Text("Advanced")
@@ -2411,7 +2428,7 @@ private struct RoutingResourcesCard: View {
 
                     Text("Bundled rules use DB-IP Lite and V2Fly data. Country rule updates may use MaxMind data through Loyalsoldier. See Open-Source Software for sources and licenses.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -2567,7 +2584,7 @@ private struct ManagedProfileRow: View {
                                 .frame(width: 5, height: 5)
                             Text("In Use")
                                 .font(.caption2.weight(.bold))
-                                .foregroundStyle(Color.green)
+                                .foregroundStyle(.primary)
                         }
                         .padding(.horizontal, AetherVisual.s2)
                         .padding(.vertical, AetherVisual.sMicro)
@@ -2577,7 +2594,7 @@ private struct ManagedProfileRow: View {
 
                 Text(detail)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
             }
 
@@ -2977,7 +2994,7 @@ private struct MetricTile: View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
             Label(label, systemImage: symbol)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
             HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
                 Text(value)
                     .font(.title2.weight(.medium))
@@ -2985,7 +3002,7 @@ private struct MetricTile: View {
                     .monospacedDigit()
                 Text(unit)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -3013,7 +3030,7 @@ private struct LiveTelemetryMetricTile: View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
             Label(label, systemImage: symbol)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
             HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
                 LiveTelemetryMetricValue(
                     metric: metric,
@@ -3022,7 +3039,7 @@ private struct LiveTelemetryMetricTile: View {
                 )
                 Text(unit)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

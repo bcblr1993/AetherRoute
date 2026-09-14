@@ -220,7 +220,7 @@ private struct BypassRuleRowView: View {
                     .textSelection(.enabled)
                 Text(scope(for: rule.kind))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
             }
             Spacer()
             Button(role: .destructive, action: onRemove) {

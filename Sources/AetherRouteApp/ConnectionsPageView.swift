@@ -107,18 +107,19 @@ struct ConnectionsView: View {
                 TableColumn(AppLocalization.string("Destination")) { row in
                     ConnectionDestinationCell(connection: row.connection)
                 }
+                .width(min: 124, ideal: 144, max: 400)
                 TableColumn(AppLocalization.string("Matched rule")) { row in
                     ConnectionRuleCell(connection: row.connection)
                 }
-                .width(min: 150, ideal: 250, max: 400)
+                .width(min: 100, ideal: 120, max: 400)
                 TableColumn(AppLocalization.string("Outlet")) { row in
                     ConnectionOutletCell(connection: row.connection)
                 }
-                .width(min: 92, ideal: 110, max: 130)
+                .width(min: 70, ideal: 80, max: 130)
                 TableColumn(AppLocalization.string("Traffic")) { row in
                     ConnectionTrafficCell(connection: row.connection)
                 }
-                .width(min: 90, ideal: 105, max: 120)
+                .width(min: 76, ideal: 80, max: 120)
                 TableColumn(AppLocalization.string("Duration")) { row in
                     ConnectionDurationCell(connection: row.connection)
                 }
@@ -219,7 +220,7 @@ struct ConnectionsView: View {
     }
 }
 
-/// One 44pt row that is the only place this page reports state. Rates read as
+/// A compact row that grows for longer status text. Rates read as
 /// an em dash when nothing is running: zero is a measurement, and claiming a
 /// measurement that was never taken is what made the old page feel wrong.
 private struct SessionBar: View {
@@ -236,7 +237,8 @@ private struct SessionBar: View {
                 )
                 Text(tunnel.statusTitle)
                     .font(.body.weight(.semibold))
-                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if !tunnel.isConnected {
@@ -255,11 +257,9 @@ private struct SessionBar: View {
 
             Divider().frame(height: 18).opacity(0.4)
 
-            rate(symbol: "arrow.down", value: downloadText)
-                .foregroundStyle(Color.cyan)
+            rate(symbol: "arrow.down", value: downloadText, tint: .cyan)
                 .accessibilityIdentifier("connections-download-title")
-            rate(symbol: "arrow.up", value: uploadText)
-                .foregroundStyle(Color.purple)
+            rate(symbol: "arrow.up", value: uploadText, tint: .purple)
                 .accessibilityIdentifier("connections-upload-title")
 
             Spacer(minLength: AetherVisual.s3)
@@ -269,7 +269,7 @@ private struct SessionBar: View {
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     Text(AppLocalization.string("Outlet"))
                         .font(.system(size: 9.5, weight: .bold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                     Text(outlet)
                         .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
@@ -289,9 +289,10 @@ private struct SessionBar: View {
             }
         }
         .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-        .frame(height: 44)
+        .padding(.vertical, AetherVisual.s1)
+        .frame(minHeight: 44)
         .background(
-            Material.ultraThinMaterial,
+            Color(nsColor: .controlBackgroundColor),
             in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
         )
         .overlay {
@@ -302,14 +303,15 @@ private struct SessionBar: View {
         .accessibilityIdentifier("connections-session-bar")
     }
 
-    private func rate(symbol: String, value: String) -> some View {
+    private func rate(symbol: String, value: String, tint: Color) -> some View {
         HStack(spacing: AetherVisual.s1) {
             Image(systemName: symbol)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(tint)
                 .accessibilityHidden(true)
             Text(value)
                 .font(.body.monospacedDigit())
+                .foregroundStyle(.primary)
         }
         .accessibilityElement(children: .combine)
     }
@@ -380,7 +382,7 @@ private struct ConnectionDestinationCell: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(connection.transport == .tcp ? "TCP" : "UDP")
-                    .font(.body.monospaced())
+                    .font(.body.monospaced().weight(.semibold))
                     .foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

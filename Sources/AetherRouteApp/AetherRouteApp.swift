@@ -1279,7 +1279,7 @@ private struct SettingsView: View {
                     ?? tunnel.localProxySettingsMessage {
                     Text(message)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                         .lineLimit(2)
                         .multilineTextAlignment(.trailing)
                         .accessibilityIdentifier("local-proxy-status")

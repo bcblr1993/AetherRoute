@@ -143,7 +143,7 @@ struct IndependentDistributionView: View {
                         .font(.subheadline.weight(.medium))
                     Text(lastCheckDescription)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)

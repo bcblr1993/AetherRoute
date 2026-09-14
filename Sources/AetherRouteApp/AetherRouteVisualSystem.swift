@@ -325,7 +325,7 @@ struct AetherProtocolBadge: View {
     var body: some View {
         Text(displayType)
             .font(.system(size: 9.5, weight: .bold, design: .rounded))
-            .foregroundStyle(badgeColor)
+            .foregroundStyle(.primary)
             .padding(.horizontal, 5)
             .padding(.vertical, 2.5)
             .background(badgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -382,7 +382,7 @@ struct AetherLatencyPill: View {
 
                 Text(displayText)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(pillColor)
+                    .foregroundStyle(.primary)
             }
             .padding(.horizontal, 7.5)
             .padding(.vertical, 3.5)
@@ -445,6 +445,7 @@ public struct AetherNodeIcon: View {
                     }
                 Text(flagInfo.flag)
                     .font(.system(size: size * 0.55))
+                    .accessibilityHidden(true)
             }
             .frame(width: size, height: size)
         } else {
@@ -837,5 +838,4 @@ public struct AetherTrafficMiniGraph: View {
         return path
     }
 }
-
 
