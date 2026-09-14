@@ -48,8 +48,12 @@ fail_if_found \
   '\.(padding|cornerRadius)\([^\n)]*(?<![A-Za-z0-9_.])\d|cornerRadius:[[:space:]]*\d|spacing:[[:space:]]*[1-9][0-9]*' \
   --pcre2 -g '!AetherRouteVisualSystem.swift'
 
+# The header must be localized *and* carry the column budget. Matching a bare
+# "Duration" literal here meant the guard demanded the untranslated string, so
+# localizing the header turned this into a false failure that blocked main even
+# though the 64/68/76 budget it exists to protect was untouched.
 if rg -Uq \
-  'TableColumn\("Duration"\)[^{]*\{[^}]*\}[[:space:]]*\.width\(min:[[:space:]]*64,[[:space:]]*ideal:[[:space:]]*68,[[:space:]]*max:[[:space:]]*76\)' \
+  'TableColumn\(AppLocalization\.string\("Duration"\)\)[^{]*\{[^}]*\}[[:space:]]*\.width\(min:[[:space:]]*64,[[:space:]]*ideal:[[:space:]]*68,[[:space:]]*max:[[:space:]]*76\)' \
   "$CONNECTIONS"; then
   :
 else

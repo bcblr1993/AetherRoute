@@ -13,6 +13,18 @@ printf '.padding(size * 0.097)\n' >"$FIXTURE/Sources/AetherRouteApp/AetherRouteV
 
 write_valid_source() {
   cat >"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift" <<'SWIFT'
+TableColumn(AppLocalization.string("Duration")) { connection in
+    Text(connection.duration)
+}
+.width(min: 64, ideal: 68, max: 76)
+SWIFT
+}
+
+# A header that kept the budget but lost its localization must still fail: the
+# guard exists to protect both properties, and the fixture above is the only
+# thing that proves it.
+write_unlocalized_source() {
+  cat >"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift" <<'SWIFT'
 TableColumn("Duration") { connection in
     Text(connection.duration)
 }
@@ -68,8 +80,12 @@ printf '\n.padding(15)\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView
 expect_failure 1 'UI design-token violation:' \
   "$FIXTURE/scripts/verify_ui_design_tokens.sh"
 
+write_unlocalized_source
+expect_failure 1 'localized Duration header needs its 64...76pt column budget' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
 printf 'Text("Duration")\n' >"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
 expect_failure 1 'localized Duration header needs its 64...76pt column budget' \
   "$FIXTURE/scripts/verify_ui_design_tokens.sh"
 
-echo 'UI design-token guards passed: valid source, missing rg, scan failure, PCRE2 failure, forbidden token and missing column budget.'
+echo 'UI design-token guards passed: valid source, missing rg, scan failure, PCRE2 failure, forbidden token, unlocalized header and missing column budget.'
