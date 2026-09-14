@@ -26,10 +26,14 @@
 
     <article class="prose">
       <div class="notice"><span data-lang="zh">本次发布沿用已在 Tart 中验证的 1.0.3 / 2026091402 已公证安装包。请同时查看下方的验证范围与已知限制。</span><span data-lang="en">This release uses the notarized 1.0.3 / 2026091402 installer tested in Tart. See validation coverage and known limitations below.</span></div>
-      <section><h2><span data-lang="zh">更新内容</span><span data-lang="en">What changed</span></h2><ul>
-      <li><span data-lang="zh">网络重置等待最多三秒，阻塞的重置操作与遥测、控制请求分离，同一时间只允许一个重置调用。</span><span data-lang="en">Network reset waits are bounded to three seconds. Blocked resets are isolated from telemetry and control requests, with one reset in flight at a time.</span></li>
-      <li><span data-lang="zh">区分扩展意外退出与主动断开。意外退出后按有限次数退避自动重连，用户主动断开会取消重连。</span><span data-lang="en">Unexpected provider exits trigger bounded automatic reconnect attempts. Explicit user disconnects cancel reconnects.</span></li>
-      </ul></section>
+      <section><h2><span data-lang="zh">相比 1.0.2，改进了什么？</span><span data-lang="en">What changed since 1.0.2?</span></h2>
+      <h3><span data-lang="zh">1. 断网恢复不再无限等待网络重置</span><span data-lang="en">1. Bounded network reset waits</span></h3>
+      <p><span data-lang="zh">1.0.2：断网或切换网络时，内核重置可能长时间不返回，并拖住遥测和控制请求。1.0.3：把重置放入独立队列，最多等待三秒，超时后继续尝试恢复网络设置；同一时间只允许一个重置任务，避免阻塞任务堆积。</span><span data-lang="en">In 1.0.2, a network reset could stall during an outage or network change and block telemetry and control requests. In 1.0.3, resets run on a separate queue with a three-second wait budget. Recovery then continues with network settings restoration, while only one reset remains in flight.</span></p>
+      <h3><span data-lang="zh">2. 网络扩展意外退出后自动尝试重连</span><span data-lang="en">2. Automatic reconnect after unexpected provider exits</span></h3>
+      <p><span data-lang="zh">1.0.2：扩展被系统终止时，可能被当成普通断开，应用保持未连接，需要手动重新连接。1.0.3：区分意外退出与主动停止，在用户仍希望连接时自动尝试恢复；最多重试五次，各次等待一、三、八、二十、四十五秒，避免无休止重试。</span><span data-lang="en">In 1.0.2, a provider terminated by the system could be treated as a normal disconnect, leaving the user to reconnect manually. In 1.0.3, unexpected exits are detected and retried while the user still wants a connection. Up to five retries use delays of 1, 3, 8, 20, and 45 seconds.</span></p>
+      <h3><span data-lang="zh">3. 自动重连尊重用户的主动断开</span><span data-lang="en">3. Explicit disconnects cancel automatic reconnects</span></h3>
+      <p><span data-lang="zh">新增连接意图保护：点击断开后，待执行的自动重连会被取消；手动发起连接会重新开始重试计数，连接成功后也会重置计数。</span><span data-lang="en">Connection intent is now tracked separately. Disconnect cancels pending retries; a manual connection or successful recovery resets the retry budget.</span></p>
+      </section>
       <section><h2><span data-lang="zh">验证范围</span><span data-lang="en">Validation coverage</span></h2><ul>
       <li><span data-lang="zh">485 项单元测试通过；Developer ID 签名、应用与 DMG 公证和票据装订通过。</span><span data-lang="en">485 unit tests passed. Developer ID signatures, app and DMG notarization, and stapled tickets were verified.</span></li>
       <li><span data-lang="zh">Tart macOS 26.6.1 中验证 1.0.2 覆盖升级、TUN 20/60 秒断网恢复、双引擎异常退出重连，以及主动断开后保持未连接。</span><span data-lang="en">Tart macOS 26.6.1 checks covered upgrading from 1.0.2, TUN recovery after 20/60-second outages, reconnects after both providers exited unexpectedly, and remaining disconnected after a user stop.</span></li>

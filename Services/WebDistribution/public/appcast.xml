@@ -12,12 +12,13 @@
             <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
-<h2>AetherRoute 1.0.3 (Build 2026091402)</h2>
+<h2>AetherRoute 1.0.3：相比 1.0.2 的改进</h2>
 <ul>
-<li>为网络状态重置增加三秒等待上限，隔离阻塞操作与遥测、控制请求。</li>
-<li>扩展意外退出后自动重连，采用有限次数退避；主动断开会取消自动重连。</li>
-<li>Tart 验证覆盖升级、20/60 秒断网恢复与双引擎异常退出重连；485 项单元测试通过。</li>
+<li><strong>断网恢复：</strong>1.0.2 的网络重置可能拖住遥测和控制请求。1.0.3 将其放入独立队列，最多等待三秒，超时后继续尝试恢复网络设置，并避免重置任务堆积。</li>
+<li><strong>异常退出自动重连：</strong>1.0.2 可能把扩展被系统终止视为普通断开，需要手动连接。1.0.3 会识别异常并最多重试五次，等待间隔为一、三、八、二十、四十五秒。</li>
+<li><strong>主动断开保护：</strong>用户点击断开即取消待执行的自动重连；手动连接或恢复成功后重置重试计数。</li>
 </ul>
+<p>验证：485 项单元测试通过；Tart 覆盖升级、20/60 秒断网恢复、双引擎异常退出重连及主动断开回归通过。</p>
 <p>已知限制：ipv6.google.com 的 HTTPS 失败在 1.0.2 同样存在。首次异常恢复曾耗时约 48 秒，后续为 7–8 秒。未完成原热点卡死条件重现、原生 IPv6 或 24 小时稳定性验证。</p>
             ]]></description>
             <enclosure
