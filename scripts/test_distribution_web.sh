@@ -92,11 +92,11 @@ find "$PUBLIC" -name '*.html' -type f -print0 | while IFS= read -r -d '' html; d
     echo "missing language switch: $html" >&2
     exit 1
   }
-  rg -F '/assets/site.css?v=20260914.04' "$html" >/dev/null || {
+  rg -F '/assets/site.css?v=20260914.05' "$html" >/dev/null || {
     echo "missing versioned stylesheet URL: $html" >&2
     exit 1
   }
-  rg -F '/assets/site.js?v=20260914.04' "$html" >/dev/null || {
+  rg -F '/assets/site.js?v=20260914.05' "$html" >/dev/null || {
     echo "missing versioned script URL: $html" >&2
     exit 1
   }

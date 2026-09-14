@@ -6,8 +6,7 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.2 Beta (Build 2026091401)</title>
-            <sparkle:channel>beta</sparkle:channel>
+            <title>Version 1.0.2 (Build 2026091401)</title>
             <pubDate>Mon, 14 Sep 2026 15:24:34 +0800</pubDate>
             <sparkle:version>2026091401</sparkle:version>
             <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>

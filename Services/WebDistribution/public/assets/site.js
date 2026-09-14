@@ -11,8 +11,8 @@
       en: "Releases and changelog — AetherRoute"
     },
     "/releases/1.0.2/": {
-      zh: "AetherRoute 1.0.2 已公证测试版",
-      en: "AetherRoute 1.0.2 Notarized Beta"
+      zh: "AetherRoute 1.0.2 稳定版",
+      en: "AetherRoute 1.0.2 Stable"
     },
     "/releases/1.0.1/": {
       zh: "AetherRoute 1.0.1 正式稳定版",
