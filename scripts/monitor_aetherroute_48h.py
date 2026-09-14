@@ -110,8 +110,6 @@ class TelemetryCollector:
                         self.start_time = datetime.datetime.fromisoformat(prev["start_time"]).timestamp()
                     if "active_pids" in prev:
                         self.last_pids = {k: v for k, v in prev["active_pids"].items() if v}
-                        # Correct app PID if it caught transient CLI command
-                        self.last_pids["app"] = 81887
                     if "recent_incidents" in prev:
                         self.recent_incidents = prev["recent_incidents"]
             except Exception:
@@ -218,9 +216,9 @@ class TelemetryCollector:
                 # reads as a 230 MB drop in the memory series.
                 if cmd.strip() == INSTALLED_APP_BINARY:
                     target_key = "app"
-                elif TUNNEL_EXT_ID in cmd:
+                elif "/Library/SystemExtensions/" in cmd and cmd.strip().endswith(f"/Contents/MacOS/{TUNNEL_EXT_ID}"):
                     target_key = "tunnel"
-                elif PROXY_EXT_ID in cmd:
+                elif "/Library/SystemExtensions/" in cmd and cmd.strip().endswith(f"/Contents/MacOS/{PROXY_EXT_ID}"):
                     target_key = "proxy"
 
                 if target_key and not processes[target_key]["running"]:
