@@ -1,11 +1,11 @@
 {
   "artifacts": {
-    "flowCoreSHA256": "6cdbe1123360d93c95c5239d4fd78af5f9b211f54a13a3955a30a06ace076b38",
+    "flowCoreSHA256": "a217c691e4b55c694cc5e058c4e1f693c4f94a812c6565ad3775e7a310694625",
     "headerSHA256": "bf0c29db89cad621d4700b78d08608acd4cd749740f1a3e829a3900a843865b9",
-    "interopTestBinarySHA256": "2c08d8c9290b45274e908a754939d869a7829cb3c7465acb3d3dc7ff6d965d74",
-    "packetFlowCoreSHA256": "7b2127fb336b2b5eb07dd6be4997928ef0e9a019e6330571fe49adb6cc5a0781"
+    "interopTestBinarySHA256": "430f9c012488a4565c504b142856cf099f562a25c0ebac47f34faf840419e84b",
+    "packetFlowCoreSHA256": "a41df7de818d643c24c2b5887eec25c0718a31c9e4d3f31d80042056ef594115"
   },
-  "coreCommit": "91a5d6af004698c438e36d6fb7ab6bd6a1060f43",
+  "coreCommit": "76a90962d8553046bab593eef8f8512a15cc1403",
   "coreFeatures": [
     "aether-tuic",
     "shadowquic",
