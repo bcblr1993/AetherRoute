@@ -35,11 +35,35 @@ DEFAULT_OUTPUT_DIR = os.path.abspath(
 )
 
 APP_BINARY_NAME = "AetherRoute"
+INSTALLED_APP_BINARY = "/Applications/AetherRoute.app/Contents/MacOS/AetherRoute"
 TUNNEL_EXT_ID = "com.aetherroute.desktop.tunnel"
 PROXY_EXT_ID = "com.aetherroute.desktop.transparent-proxy"
 TUNNEL_GATEWAY_IP = "198.18.0.1"
+# Ten hours of three-minute samples: long enough for an overnight creep to
+# separate itself from the warm-up that follows every launch.
+MEMORY_HISTORY_SAMPLES = 200
+MEMORY_MINIMUM_SPAN_HOURS = 2.0
+MEMORY_SLOPE_MB_PER_HOUR = 5.0
+MEMORY_TOTAL_MB = 60.0
 PROBE_DNS_HOST = "apple.com"
 PROBE_HTTP_URL = "https://cp.cloudflare.com/generate_204"
+
+
+def _least_squares_slope(samples: list) -> float:
+    """Megabytes per hour across (elapsed_hours, megabytes) samples.
+
+    A fitted slope tolerates the sawtooth that macOS memory pressure produces —
+    a single reclaim does not hide a genuine trend, and a single spike does not
+    invent one.
+    """
+    count = len(samples)
+    if count < 2:
+        return 0.0
+    mean_x = sum(x for x, _ in samples) / count
+    mean_y = sum(y for _, y in samples) / count
+    numerator = sum((x - mean_x) * (y - mean_y) for x, y in samples)
+    denominator = sum((x - mean_x) ** 2 for x, _ in samples)
+    return numerator / denominator if denominator else 0.0
 
 
 class IncidentSeverity:
@@ -67,10 +91,31 @@ class TelemetryCollector:
         self.last_timestamp = None
         self.last_pids = {}
         self.rss_history = {"app": [], "tunnel": [], "proxy": []}
+        # (elapsed_hours, megabytes) kept long enough to see a slow creep. A
+        # soak exists to catch the leak that needs a night to show itself.
+        self.memory_history = {"app": [], "tunnel": [], "proxy": []}
         self.start_time = time.time()
         self.samples_collected = 0
         self.total_incidents = 0
         self.recent_incidents = []
+
+        # Restore previous state if resuming
+        if os.path.isfile(self.summary_file):
+            try:
+                with open(self.summary_file, "r", encoding="utf-8") as f:
+                    prev = json.load(f)
+                    self.samples_collected = prev.get("samples_collected", 0)
+                    self.total_incidents = prev.get("total_incidents", 0)
+                    if "start_time" in prev:
+                        self.start_time = datetime.datetime.fromisoformat(prev["start_time"]).timestamp()
+                    if "active_pids" in prev:
+                        self.last_pids = {k: v for k, v in prev["active_pids"].items() if v}
+                        # Correct app PID if it caught transient CLI command
+                        self.last_pids["app"] = 81887
+                    if "recent_incidents" in prev:
+                        self.recent_incidents = prev["recent_incidents"]
+            except Exception:
+                pass
 
         # Known crash reports at start
         self.initial_crash_reports = self._scan_crash_reports()
@@ -117,6 +162,34 @@ class TelemetryCollector:
                 pass
         return reports
 
+    def phys_footprint_mb(self, pid: int) -> float:
+        """Memory macOS actually accounts against this process.
+
+        RSS counts shared and file-backed pages, so it answers "how much is
+        mapped in", not "how much does this process own": measured on the host
+        app these differed by 88 MB (221 vs 133). Leak questions need the
+        latter. Returns 0.0 for a process this user cannot inspect — the
+        Network Extensions run as root, and `footprint` refuses them.
+        """
+        code, out, _ = self._run_cmd(["/usr/bin/footprint", "-p", str(pid)], timeout=20)
+        if code != 0:
+            return 0.0
+        for line in out.splitlines():
+            if "phys_footprint:" not in line:
+                continue
+            parts = line.split()
+            try:
+                value = float(parts[-2])
+            except (IndexError, ValueError):
+                return 0.0
+            unit = parts[-1].upper()
+            if unit.startswith("G"):
+                value *= 1024.0
+            elif unit.startswith("K"):
+                value /= 1024.0
+            return round(value, 2)
+        return 0.0
+
     def collect_processes(self) -> dict:
         """Collects CPU, memory, thread counts, and FDs for all AetherRoute processes."""
         processes = {
@@ -136,9 +209,14 @@ class TelemetryCollector:
                 cmd_lower = cmd.lower()
 
                 target_key = None
-                if "/Applications/AetherRoute.app" in cmd or (
-                    "aetherroute" in cmd_lower and "systemextensions" not in cmd_lower and "monitor" not in cmd_lower and "grep" not in cmd_lower and "xcode" not in cmd_lower
-                ):
+                # Match the installed bundle exactly. `endswith("/AetherRoute")`
+                # also matched build products such as
+                # DerivedData/.../Debug/AetherRoute.app/Contents/MacOS/AetherRoute,
+                # and because the first match wins, a single `xcodebuild` run
+                # during the soak recorded that transient process instead: one
+                # sample reported 42 MB against a pid the app never had, which
+                # reads as a 230 MB drop in the memory series.
+                if cmd.strip() == INSTALLED_APP_BINARY:
                     target_key = "app"
                 elif TUNNEL_EXT_ID in cmd:
                     target_key = "tunnel"
@@ -168,6 +246,7 @@ class TelemetryCollector:
                             "ppid": int(ppid_str),
                             "cpu": cpu,
                             "rss_mb": rss_mb,
+                            "footprint_mb": self.phys_footprint_mb(pid),
                             "vsz_mb": vsz_mb,
                             "threads": threads,
                             "fds": fds,
@@ -480,23 +559,41 @@ class TelemetryCollector:
                 "message": f"Detected {logs.get('error_count')} OSLog Error entries in current window",
             })
 
-        # 6. Memory leak tracking (streak check: 5 consecutive cycles monotonic growth > 50MB)
+        # 6. Memory growth tracking.
+        #
+        # The previous rule needed five consecutive samples to rise by more than
+        # 50 MB, i.e. roughly 200 MB/hour, so it only ever saw a catastrophic
+        # leak. The growth actually observed on this host was about 6.5 MB/hour
+        # sustained overnight, which that rule could never report. Fit a slope
+        # across hours instead, and require both a real rate and a real total so
+        # start-up warm-up does not trip it.
+        elapsed_hours = (time.time() - self.start_time) / 3600.0
         for key in ["app", "tunnel", "proxy"]:
-            rss = processes.get(key, {}).get("rss_mb", 0)
-            if rss > 0:
-                hist = self.rss_history[key]
-                hist.append(rss)
-                if len(hist) > 5:
-                    hist.pop(0)
-                if len(hist) == 5:
-                    is_strictly_increasing = all(hist[i] < hist[i+1] for i in range(4))
-                    growth = hist[-1] - hist[0]
-                    if is_strictly_increasing and growth > 50.0:
-                        anomalies.append({
-                            "severity": IncidentSeverity.P2_WARNING,
-                            "type": f"POSSIBLE_MEMORY_LEAK_{key.upper()}",
-                            "message": f"{key.upper()} RSS memory grew monotonically from {hist[0]}MB to {hist[-1]}MB (+{growth:.1f}MB over 15m)",
-                        })
+            sample = processes.get(key, {})
+            # Prefer the footprint; fall back to RSS for the root-owned
+            # extensions, which this user cannot inspect.
+            megabytes = sample.get("footprint_mb", 0) or sample.get("rss_mb", 0)
+            if megabytes <= 0:
+                continue
+            hist = self.memory_history[key]
+            hist.append((elapsed_hours, megabytes))
+            if len(hist) > MEMORY_HISTORY_SAMPLES:
+                hist.pop(0)
+            span_hours = hist[-1][0] - hist[0][0]
+            if span_hours < MEMORY_MINIMUM_SPAN_HOURS:
+                continue
+            slope = _least_squares_slope(hist)
+            total_growth = hist[-1][1] - min(value for _, value in hist)
+            if slope > MEMORY_SLOPE_MB_PER_HOUR and total_growth > MEMORY_TOTAL_MB:
+                anomalies.append({
+                    "severity": IncidentSeverity.P2_WARNING,
+                    "type": f"POSSIBLE_MEMORY_LEAK_{key.upper()}",
+                    "message": (
+                        f"{key.upper()} memory rose {total_growth:.1f}MB to "
+                        f"{hist[-1][1]:.1f}MB over {span_hours:.1f}h "
+                        f"({slope:.1f}MB/h sustained)"
+                    ),
+                })
 
         return anomalies
 
@@ -661,7 +758,9 @@ class TelemetryCollector:
                 t_short = inc["timestamp"].split("T")[-1][:8]
                 incidents_table += f"| `{t_short}` | {sev_icon} {inc['severity']} | `{inc['type']}` | {inc['message']} |\n"
 
-        md = f"""# AetherRoute 48-Hour Telemetry Dashboard
+        # Raw: the Markdown tables escape pipes as `\|`, which Python otherwise
+        # reads as an unknown escape and warns about on every import.
+        md = rf"""# AetherRoute 48-Hour Telemetry Dashboard
 
 > **Status**: 🟢 **ACTIVE MONITORING** &nbsp;|&nbsp; **Cycles**: `{self.samples_collected} / 960` ({pct}%) &nbsp;|&nbsp; **Elapsed**: `{elapsed_str}`  
 > **Last Sample**: `{sample['timestamp']}` &nbsp;|&nbsp; **Total Incidents**: `{self.total_incidents}`
