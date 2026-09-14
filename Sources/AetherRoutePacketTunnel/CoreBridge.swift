@@ -31,19 +31,26 @@ protocol CoreBridge: Sendable {
         maximumConnections: UInt16
     ) throws -> NetworkTelemetrySnapshot
     func resetNetworkState() throws
-    func stop()
+    /// Signals the engine to stop and calls `completion` as soon as the tunnel
+    /// is safe to tear down — it does **not** wait for the engine to unwind.
+    /// The join continues on a background queue; see `RustCoreBridge.stop`.
+    func stop(completion: @escaping @Sendable () -> Void)
 }
 
 final class RustCoreBridge: CoreBridge, @unchecked Sendable {
     private struct State {
-        var running = false
-        var stopping = false
+        /// Hot-path gate for packet I/O. Deliberately per-instance and read
+        /// under this bridge's own lock: the packet queues must never contend
+        /// on the process-wide `EngineLifecycleGate`.
+        var isActive = false
         var bridgeInstalled = false
         var startupFinished = false
         var retainedContext: UnsafeMutableRawPointer?
         var failure: Error?
-        var engineGeneration: UInt64 = 0
-        var engineCompletion: DispatchGroup?
+        /// The process-wide generation this bridge owns, or `nil` before
+        /// admission and after the slot is handed back. Every stop request
+        /// carries it so a stale bridge cannot cancel its successor's engine.
+        var generation: UInt64?
     }
 
     private let packetFlow: NEPacketTunnelFlow
@@ -80,7 +87,6 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
     ) throws {
         lifecycleLock.lock()
         defer { lifecycleLock.unlock() }
-        reapStoppedEngineIfPossible()
 
         PacketCoreRuntimeLog.logger.info("stage=validateLaunchSnapshot begin")
         try snapshot.validate()
@@ -136,15 +142,31 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         }
         PacketCoreRuntimeLog.logger.info("stage=prepareRuntimeDirectory success")
 
-        let engineGeneration = try stateLock.withLock {
-            guard !state.running,
-                  !state.stopping,
-                  state.engineCompletion == nil else {
-                throw PacketTunnelError.lifecycleBusy
-            }
-            let generation = state.engineGeneration &+ 1
-            state = State(running: true, engineGeneration: generation)
-            return generation
+        // Admission is process-wide, not per-bridge. A replacement provider
+        // instance starts with pristine state but inherits whatever engine the
+        // previous one left running, so this is the only check that can keep
+        // the handle-free engine ABI to one live instance.
+        let engineGeneration: UInt64
+        switch EngineLifecycleGate.shared.acquireForStart(
+            waitingUpTo: .seconds(
+                TunnelStartupTimingPolicy.providerEngineHandoffWaitTimeoutSeconds
+            )
+        ) {
+        case let .admitted(generation):
+            engineGeneration = generation
+        case .rejected:
+            throw PacketTunnelError.lifecycleBusy
+        case let .handoffTimedOut(stuckGeneration):
+            PacketCoreRuntimeLog.logger.error(
+                "stage=startCore failed reason=engineHandoffTimedOut stuckGeneration=\(stuckGeneration, privacy: .public) timeoutSeconds=\(TunnelStartupTimingPolicy.providerEngineHandoffWaitTimeoutSeconds, privacy: .public)"
+            )
+            EngineLifecycleGate.shared.scheduleProcessRelaunch(
+                reason: "engineHandoffTimedOut"
+            )
+            throw PacketTunnelError.engineHandoffTimedOut
+        }
+        stateLock.withLock {
+            state = State(isActive: true, generation: engineGeneration)
         }
 
         let retainedContext = Unmanaged.passRetained(self).toOpaque()
@@ -158,7 +180,11 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                 "stage=installPacketBridge failed status=\(installed, privacy: .public)"
             )
             Unmanaged<RustCoreBridge>.fromOpaque(retainedContext).release()
-            stateLock.withLock { state.running = false }
+            stateLock.withLock {
+                state.isActive = false
+                state.generation = nil
+            }
+            EngineLifecycleGate.shared.abandonStart(generation: engineGeneration)
             throw PacketTunnelError.bridgeInstallationFailed
         }
         PacketCoreRuntimeLog.logger.info("stage=installPacketBridge success")
@@ -171,9 +197,10 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         PacketCoreRuntimeLog.logger.info("stage=startEngine begin")
         let engineCompletion = DispatchGroup()
         engineCompletion.enter()
-        stateLock.withLock {
-            state.engineCompletion = engineCompletion
-        }
+        EngineLifecycleGate.shared.registerEngineCompletion(
+            engineCompletion,
+            generation: engineGeneration
+        )
         startEngine(
             profile: profileYAML,
             runtimeDirectory: runtimeDirectory,
@@ -207,7 +234,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                         if self.finishStartup() {
                             completion(error)
                         }
-                        self.stop()
+                        self.stop {}
                         return
                     }
                     if self.finishStartup() {
@@ -222,7 +249,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                     if self.finishStartup() {
                         completion(failure)
                     }
-                    self.stop()
+                    self.stop {}
                     return
                 }
                 if !self.isRunning() {
@@ -239,98 +266,92 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                 PacketCoreRuntimeLog.logger.error("stage=readiness failed reason=timeout")
                 completion(PacketTunnelError.readinessTimedOut)
             }
-            self.stop()
+            self.stop {}
         }
     }
 
-    func stop() {
+    /// Signals the engine to stop and returns as soon as the tunnel is safe to
+    /// tear down.
+    ///
+    /// `completion` fires from the synchronous section, which is bounded by a
+    /// few non-blocking FFI calls. This matters because macOS does not remove
+    /// the tunnel's interface, routes or DNS until `stopTunnel`'s completion
+    /// handler returns: any wait here is time the user spends disconnected
+    /// *and* offline. Joining the engine worker is emphatically not bounded —
+    /// against an unresponsive node its tasks have taken minutes to unwind — so
+    /// it happens afterwards on `EngineLifecycleGate`'s own queue.
+    func stop(completion: @escaping @Sendable () -> Void) {
+        let handle = beginStop()
+        completion()
+        guard let handle else { return }
+        EngineLifecycleGate.shared.joinStoppedEngine(handle)
+    }
+
+    private func beginStop() -> EngineLifecycleGate.StopHandle? {
         lifecycleLock.lock()
         defer { lifecycleLock.unlock() }
         PacketCoreRuntimeLog.logger.info("stage=stopCore requested")
-        let stopResources: StopResources? = stateLock.withLock {
-            if state.stopping, let completion = state.engineCompletion {
-                return StopResources(
-                    retainedContext: nil,
-                    generation: state.engineGeneration,
-                    completion: completion,
-                    requestsShutdown: false
-                )
-            }
-            guard state.bridgeInstalled, !state.stopping,
-                  let completion = state.engineCompletion else {
-                return Optional<StopResources>.none
-            }
-            state.running = false
-            state.stopping = true
-            state.bridgeInstalled = false
+
+        let owned = stateLock.withLock {
+            () -> (generation: UInt64?, context: UnsafeMutableRawPointer?) in
+            let generation = state.generation
             let context = state.retainedContext
+            state.isActive = false
+            state.bridgeInstalled = false
             state.retainedContext = nil
-            return StopResources(
-                retainedContext: context,
-                generation: state.engineGeneration,
-                completion: completion,
-                requestsShutdown: true
-            )
-        }
-        guard let stopResources else {
-            PacketCoreRuntimeLog.logger.info("stage=stopCore skipped reason=inactive")
-            return
+            state.generation = nil
+            return (generation, context)
         }
 
-        if stopResources.requestsShutdown {
-            PacketCoreRuntimeLog.logger.info("stage=shutdownEngine begin")
-            controlLock.withLock {
-                let status = clash_shutdown()
-                PacketCoreRuntimeLog.logger.info(
-                    "stage=shutdownEngine status=\(status, privacy: .public)"
-                )
+        // The gate rejects a request whose generation is no longer live. That
+        // is what stops a stale bridge — a readiness task outliving its
+        // provider, say — from draining the engine's process-wide cancellation
+        // registry and killing whichever tunnel replaced it.
+        guard let handle = EngineLifecycleGate.shared.beginStop(
+            requestedBy: owned.generation
+        ) else {
+            PacketCoreRuntimeLog.logger.info(
+                "stage=stopCore skipped reason=notEngineOwner"
+            )
+            // Normally there is no context here: a bridge only holds one while
+            // it owns a generation. The exception is a stop that lands between
+            // installing the packet bridge and submitting the engine, where no
+            // shutdown is owed but the callback must still be severed before
+            // the context it borrows goes away.
+            if owned.context != nil {
+                controlLock.withLock { clash_uninstall_packet_flow() }
             }
+            releaseContext(owned.context)
+            return nil
         }
 
-        let waitResult = stopResources.completion.wait(
-            timeout: .now() + .seconds(
-                TunnelStartupTimingPolicy
-                    .providerCoreShutdownWaitTimeoutSeconds
-            )
+        PacketCoreRuntimeLog.logger.info(
+            "stage=shutdownEngine begin generation=\(handle.generation, privacy: .public)"
         )
-        guard waitResult == .success else {
-            PacketCoreRuntimeLog.logger.error(
-                "stage=stopCore failed reason=engineShutdownTimeout generation=\(stopResources.generation, privacy: .public) timeoutSeconds=\(TunnelStartupTimingPolicy.providerCoreShutdownWaitTimeoutSeconds, privacy: .public)"
-            )
-            stateLock.withLock {
-                guard state.engineGeneration == stopResources.generation else {
-                    return
-                }
-                state.failure = PacketTunnelError.shutdownTimedOut
-            }
-            if stopResources.requestsShutdown {
-                controlLock.withLock {
-                    clash_uninstall_packet_flow()
-                }
-                if let retainedContext = stopResources.retainedContext {
-                    Unmanaged<RustCoreBridge>.fromOpaque(retainedContext).release()
-                }
-            }
-            return
-        }
+        // Deliberately outside `controlLock`. That lock serializes this
+        // bridge's selector buffers, and a latency probe can hold it for its
+        // full timeout against a dead node — the exact situation where the
+        // shutdown is most urgently needed. `clash_shutdown` touches none of
+        // those buffers; the Rust side guards its own globals.
+        let status = clash_shutdown()
+        PacketCoreRuntimeLog.logger.info(
+            "stage=shutdownEngine status=\(status, privacy: .public)"
+        )
+        // `clash_shutdown` uninstalls the packet flow itself, so no further
+        // callback can reach the retained context once it returns.
+        releaseContext(owned.context)
+        return handle
+    }
 
-        if stopResources.requestsShutdown {
-            controlLock.withLock {
-                clash_uninstall_packet_flow()
-            }
-            if let retainedContext = stopResources.retainedContext {
-                Unmanaged<RustCoreBridge>.fromOpaque(retainedContext).release()
-            }
-        }
-
-        finishStoppedEngine(generation: stopResources.generation)
-        PacketCoreRuntimeLog.logger.info("stage=stopCore complete")
+    private func releaseContext(_ context: UnsafeMutableRawPointer?) {
+        guard let context else { return }
+        Unmanaged<RustCoreBridge>.fromOpaque(context).release()
     }
 
     func selectorSnapshot(group: String) throws -> ProxySelectionState {
         let groupData = try Self.selectorNameData(group)
         return try controlLock.withLock {
-            guard isRunning(), !isStopping(), clash_packet_flow_ready() == 1 else {
+            guard isRunning(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
             }
             return try selectorSnapshotLocked(group: groupData)
@@ -339,7 +360,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
 
     func setRoutingMode(_ mode: RoutingMode) throws {
         try controlLock.withLock {
-            guard isRunning(), !isStopping(), clash_packet_flow_ready() == 1 else {
+            guard isRunning(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
             }
             let status = clash_packet_set_routing_mode_v1(
@@ -358,7 +379,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         let groupData = try Self.selectorNameData(group)
         let memberData = try Self.selectorNameData(member)
         return try controlLock.withLock {
-            guard isRunning(), !isStopping(), clash_packet_flow_ready() == 1 else {
+            guard isRunning(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
             }
             let status = groupData.withUnsafeBytes { groupBytes in
@@ -396,7 +417,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                 .maximumLatencyTimeoutMilliseconds
         else { throw PacketTunnelSelectorError.invalidLatency }
         return try controlLock.withLock {
-            guard isRunning(), !isStopping(), clash_packet_flow_ready() == 1 else {
+            guard isRunning(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
             }
             guard let outputCapacity = ProxySelectionProviderMessageCodec
@@ -448,7 +469,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                 .maximumLatencyTimeoutMilliseconds
         else { throw PacketTunnelSelectorError.invalidLatency }
         return try controlLock.withLock {
-            guard isRunning(), !isStopping(), clash_packet_flow_ready() == 1 else {
+            guard isRunning(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
             }
             guard let outputCapacity = ProxySelectionProviderMessageCodec
@@ -491,7 +512,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             Int(maximumConnections) <= NetworkTelemetryCodec.maximumConnections
         else { throw PacketTunnelSelectorError.rejected }
         return try controlLock.withLock {
-            guard isRunning(), !isStopping(), clash_packet_flow_ready() == 1 else {
+            guard isRunning(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
             }
             var requiredLength = 0
@@ -517,7 +538,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
 
     func resetNetworkState() throws {
         try controlLock.withLock {
-            guard isRunning(), !isStopping(), clash_packet_flow_ready() == 1 else {
+            guard isRunning(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
             }
             let status = clash_packet_reset_network_state_v1()
@@ -757,7 +778,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
 
     private func recordFailureIfCurrent(_ error: Error, generation: UInt64) {
         stateLock.withLock {
-            guard state.engineGeneration == generation else { return }
+            guard state.generation == generation else { return }
             state.failure = error
         }
     }
@@ -767,48 +788,14 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
     }
 
     private func isRunning() -> Bool {
-        stateLock.withLock { state.running }
+        stateLock.withLock { state.isActive }
     }
 
-    private func isStopping() -> Bool {
-        stateLock.withLock { state.stopping }
-    }
-
+    /// True when this bridge asked for the engine to stop. `stop` clears both
+    /// fields together, so a cleared generation is the stop signal — the engine
+    /// worker uses it to tell a requested shutdown from an unexpected exit.
     private func isExpectedStop(generation: UInt64) -> Bool {
-        stateLock.withLock {
-            state.engineGeneration == generation && state.stopping
-        }
-    }
-
-    private func reapStoppedEngineIfPossible() {
-        let stoppedGeneration = stateLock.withLock { () -> UInt64? in
-            guard state.stopping,
-                  let completion = state.engineCompletion,
-                  completion.wait(timeout: .now()) == .success else {
-                return nil
-            }
-            return state.engineGeneration
-        }
-        guard let stoppedGeneration else { return }
-        PacketCoreRuntimeLog.logger.info(
-            "stage=reapStoppedEngine generation=\(stoppedGeneration, privacy: .public)"
-        )
-        finishStoppedEngine(generation: stoppedGeneration)
-    }
-
-    private func finishStoppedEngine(generation: UInt64) {
-        let finalized = stateLock.withLock {
-            guard state.engineGeneration == generation,
-                  state.stopping else { return false }
-            state.stopping = false
-            state.engineCompletion = nil
-            return true
-        }
-        guard finalized else { return }
-        let releasedBytes = malloc_zone_pressure_relief(nil, 0)
-        PacketCoreRuntimeLog.logger.info(
-            "stage=releaseAllocatorPages generation=\(generation, privacy: .public) bytes=\(releasedBytes, privacy: .public)"
-        )
+        stateLock.withLock { state.generation != generation }
     }
 
     private func finishStartup() -> Bool {
@@ -818,13 +805,6 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             return true
         }
     }
-}
-
-private struct StopResources {
-    let retainedContext: UnsafeMutableRawPointer?
-    let generation: UInt64
-    let completion: DispatchGroup
-    let requestsShutdown: Bool
 }
 
 private func aetherRoutePacketOutput(
@@ -848,7 +828,7 @@ enum PacketTunnelError: LocalizedError {
     case engineReturnedNoResult
     case engineStoppedUnexpectedly
     case readinessTimedOut
-    case shutdownTimedOut
+    case engineHandoffTimedOut
     case startupCancelled
 
     var errorDescription: String? {
@@ -867,8 +847,8 @@ enum PacketTunnelError: LocalizedError {
             "The protocol engine stopped before the tunnel was closed."
         case .readinessTimedOut:
             "The packet tunnel protocol core did not become ready before its bounded startup deadline."
-        case .shutdownTimedOut:
-            "The packet tunnel protocol core did not stop before its bounded shutdown deadline."
+        case .engineHandoffTimedOut:
+            "The previous protocol core has not finished stopping. The network extension will restart; try connecting again."
         case .startupCancelled:
             "Packet tunnel startup was cancelled."
         }

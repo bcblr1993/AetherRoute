@@ -98,8 +98,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                         "stage=startCore failed error=\(String(reflecting: coreError), privacy: .public)"
                     )
                     self.diagnostics.record(.startupFailure)
-                    self.core.stop()
-                    completion.call(coreError)
+                    self.core.stop { completion.call(coreError) }
                     return
                 }
 
@@ -122,13 +121,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                             "stage=installNetworkSettings failed error=\(String(reflecting: settingsError), privacy: .public)"
                         )
                         self.diagnostics.record(.networkSettingsFailure)
-                        self.core.stop()
-                    } else {
-                        Self.runtimeLogger.info("stage=installNetworkSettings success")
-                        self.lastAppliedPlan = settingsPlan
-                        self.startPathMonitoring()
+                        self.core.stop { completion.call(settingsError) }
+                        return
                     }
-                    completion.call(settingsError)
+                    Self.runtimeLogger.info("stage=installNetworkSettings success")
+                    self.lastAppliedPlan = settingsPlan
+                    self.startPathMonitoring()
+                    completion.call(nil)
                 }
             }
             Self.runtimeLogger.info("stage=startCore submitted")
@@ -137,8 +136,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 "stage=startTunnel failed error=\(String(reflecting: error), privacy: .public)"
             )
             diagnostics.record(.startupFailure)
-            core.stop()
-            completion.call(error)
+            core.stop { completion.call(error) }
         }
     }
 
@@ -151,9 +149,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         )
         stopPathMonitoring()
         recovery.cancel(reason: "stopTunnel")
-        core.stop()
-        Self.runtimeLogger.info("stage=stopTunnel complete")
-        completionHandler()
+        // macOS keeps the tunnel's interface, routes and DNS installed until
+        // this completion handler returns, so it must not wait on the engine
+        // unwinding. `core.stop` signals the engine and returns; the join
+        // happens on a background queue afterwards.
+        let completion = TunnelStopCompletion(completionHandler)
+        core.stop {
+            Self.runtimeLogger.info("stage=stopTunnel complete")
+            completion.call()
+        }
     }
 
     override func sleep(completionHandler: @escaping () -> Void) {
@@ -507,6 +511,25 @@ private final class TunnelStartCompletion: @unchecked Sendable {
 
     func call(_ error: Error?) {
         handler(error)
+    }
+}
+
+/// `stopTunnel`'s handler must fire exactly once: calling it twice traps inside
+/// the framework, and never calling it leaves the tunnel's routes installed.
+private final class TunnelStopCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handler: (() -> Void)?
+
+    init(_ handler: @escaping () -> Void) {
+        self.handler = handler
+    }
+
+    func call() {
+        let handler = lock.withLock { () -> (() -> Void)? in
+            defer { self.handler = nil }
+            return self.handler
+        }
+        handler?()
     }
 }
 

@@ -57,11 +57,23 @@ public enum TunnelStartupTimingPolicy {
     /// Covers all eight bounded selector batches (64 members / concurrency 8)
     /// at the member timeout, plus reply and scheduling grace.
     public static let automaticRouteProviderMessageTimeoutSeconds = 90
-    /// `clash_shutdown` requests cancellation but the embedded Tokio runtime
-    /// is not destroyed until its worker returns. Keep the provider alive long
-    /// enough to join that worker before a subsequent tunnel start can reuse
-    /// the process, while still completing below the host disconnect watchdog.
-    public static let providerCoreShutdownWaitTimeoutSeconds = 10
+    /// `clash_shutdown` only cancels; the embedded Tokio runtime is not
+    /// destroyed until every task observes that cancellation. Against a node
+    /// that has stopped answering, tasks blocked on their own I/O deadlines
+    /// have been measured taking over four minutes to unwind — far longer than
+    /// any budget a user should wait behind. Disconnect therefore never blocks
+    /// on the join; this bound applies to the opposite edge, where a *new*
+    /// tunnel start finds the previous engine still winding down.
+    ///
+    /// The engine ABI is process-wide and handle-free, so the replacement
+    /// cannot simply start alongside it. Wait this long for a clean handoff,
+    /// then relaunch the extension process rather than run two engines that
+    /// share one cancellation registry. Sized to leave the readiness budget
+    /// intact underneath the host connection watchdog.
+    public static let providerEngineHandoffWaitTimeoutSeconds = 15
+    /// How long the provider keeps running after reporting a failed handoff, so
+    /// the host receives the error over XPC before the process exits.
+    public static let providerEngineRelaunchDelayMilliseconds = 1_000
     public static let hostDisconnectionWatchdogTimeoutSeconds = 35
 
     /// The embedded selector runs bounded batches and adds a two-second reply
@@ -88,8 +100,8 @@ public enum TunnelStartupTimingPolicy {
         .seconds(hostDisconnectionWatchdogTimeoutSeconds)
     }
 
-    public static var providerCoreShutdownWaitTimeout: Duration {
-        .seconds(providerCoreShutdownWaitTimeoutSeconds)
+    public static var providerEngineHandoffWaitTimeout: Duration {
+        .seconds(providerEngineHandoffWaitTimeoutSeconds)
     }
 
     public static var selectorReadinessProviderMessageTimeout: Duration {

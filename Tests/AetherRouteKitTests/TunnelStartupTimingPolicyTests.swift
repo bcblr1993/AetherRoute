@@ -27,21 +27,28 @@ struct TunnelStartupTimingPolicyTests {
                     .hostDisconnectionWatchdogTimeoutSeconds
             )
         )
+        // The handoff wait sits on the *connect* path — disconnect never blocks
+        // on the engine — so it must leave the readiness budget intact
+        // underneath the host connection watchdog.
         #expect(
             TunnelStartupTimingPolicy
-                .providerCoreShutdownWaitTimeoutSeconds >= 5
+                .providerEngineHandoffWaitTimeoutSeconds >= 5
+        )
+        #expect(
+            TunnelStartupTimingPolicy.providerEngineHandoffWaitTimeoutSeconds
+                + TunnelStartupTimingPolicy.providerCoreReadinessTimeoutSeconds
+                < TunnelStartupTimingPolicy.hostConnectionWatchdogTimeoutSeconds
+        )
+        // The host must learn a handoff failed before the provider exits.
+        #expect(
+            TunnelStartupTimingPolicy
+                .providerEngineRelaunchDelayMilliseconds >= 500
         )
         #expect(
             TunnelStartupTimingPolicy
-                .providerCoreShutdownWaitTimeoutSeconds
+                .providerEngineRelaunchDelayMilliseconds
                 < TunnelStartupTimingPolicy
-                    .hostDisconnectionWatchdogTimeoutSeconds
-        )
-        #expect(
-            TunnelStartupTimingPolicy.hostDisconnectionWatchdogTimeoutSeconds
-                - TunnelStartupTimingPolicy
-                    .providerCoreShutdownWaitTimeoutSeconds
-                >= 10
+                    .hostConnectionWatchdogTimeoutSeconds * 1_000
         )
         let selectorBatchCount =
             (TunnelStartupTimingPolicy.selectorReadinessMaximumMemberCount
