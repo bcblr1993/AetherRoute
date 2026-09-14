@@ -5,18 +5,26 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 CORE_SOURCE=${AETHERROUTE_CORE_SOURCE:-"$ROOT/Core/Engine"}
 CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-"$ROOT/.build/core"}
 export CARGO_TARGET_DIR
+# Dependencies compile from the Cargo cache, and every panic/assert they carry
+# records its source path. Without a remap for this root the shipped binary
+# publishes the build machine's home directory to anyone running `strings`.
+CARGO_HOME=${CARGO_HOME:-"$HOME/.cargo"}
+export CARGO_HOME
 TARGET=aarch64-apple-darwin
 DESTINATION="$ROOT/Core/Artifacts/macos-arm64"
 FEATURES=${AETHERROUTE_CORE_FEATURES:-aether-flow-only}
 export MACOSX_DEPLOYMENT_TARGET=14.0
-export CFLAGS="-mmacosx-version-min=14.0"
-case "$CORE_SOURCE:$CARGO_TARGET_DIR" in
+# `ring` and other C/assembly dependencies embed their source paths through the
+# C compiler, which Rust's --remap-path-prefix cannot reach. Map the same root
+# for clang so those translation units stay anonymous too.
+export CFLAGS="-mmacosx-version-min=14.0 -ffile-prefix-map=$CARGO_HOME=/aetherroute-cargo"
+case "$CORE_SOURCE:$CARGO_TARGET_DIR:$CARGO_HOME" in
   *[[:space:]]*)
-    echo "Core source and Cargo target paths must not contain whitespace" >&2
+    echo "Core source, Cargo target, and Cargo home paths must not contain whitespace" >&2
     exit 1
     ;;
 esac
-export RUSTFLAGS="${RUSTFLAGS:--D warnings} --remap-path-prefix=$CORE_SOURCE=/aetherroute-core --remap-path-prefix=$CARGO_TARGET_DIR=/aetherroute-target"
+export RUSTFLAGS="${RUSTFLAGS:--D warnings} --remap-path-prefix=$CORE_SOURCE=/aetherroute-core --remap-path-prefix=$CARGO_TARGET_DIR=/aetherroute-target --remap-path-prefix=$CARGO_HOME=/aetherroute-cargo"
 
 if [ ! -f "$CORE_SOURCE/Cargo.lock" ]; then
   echo "Pinned core source not found: $CORE_SOURCE" >&2
