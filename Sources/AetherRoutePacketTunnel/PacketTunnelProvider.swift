@@ -58,12 +58,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 case .recovered:
                     self.reasserting = false
                 case .exhausted:
-                    self.reasserting = false
                     // Hand control back to the host's bounded reconnect policy.
                     if !self.uplinkLock.withLock({ self.providerStopping }),
                        self.currentPhysicalUplink() != nil {
+                        self.reasserting = false
                         self.cancelTunnelWithError(PacketTunnelError.coreUnavailable)
                     }
+                    // With no uplink, remain reasserting until a physical-link
+                    // event resumes recovery. Reporting connected here starts
+                    // host readiness probes while the machine is still offline.
                 case .cancelled:
                     self.reasserting = false
                 default: break

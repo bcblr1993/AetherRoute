@@ -884,14 +884,15 @@ final class TunnelManager: ObservableObject {
                     let profileSummary = ProfileConfigurationInspector.inspect(
                         yaml: profileYAML
                     )
-                    var initialSelections = InitialProxySelectionPolicy
+                    let initialSelections = InitialProxySelectionPolicy
                         .selections(
                             persisted: persistedSelections,
                             summary: profileSummary
                         )
-                    if initialSelections["GLOBAL"] == nil {
-                        initialSelections["GLOBAL"] = "DIRECT"
-                    }
+                    // Preserve explicit selections. Otherwise let the core's
+                    // deterministic GLOBAL default choose the profile's proxy
+                    // group, rather than forcing direct access until a probe
+                    // succeeds (which may be delayed by a network transition).
                     let snapshot = try ProviderLaunchSnapshot(
                         profileYAML: profileYAML,
                         routingMode: requestedMode,
@@ -4707,7 +4708,6 @@ final class TunnelManager: ObservableObject {
                     )
                 }
                 guard routeIsResponsive else {
-                    _ = try? await client.select(group: "GLOBAL", member: "DIRECT")
                     throw TunnelManagerError.noResponsiveProxy
                 }
                 if groups.first?.name == selection.group {
@@ -4763,7 +4763,11 @@ final class TunnelManager: ObservableObject {
             Self.runtimeLogger.error(
                 "stage=connectionReadiness degraded error=\(String(reflecting: error), privacy: .public)"
             )
-            _ = try? await makeProxySelectionProviderClient().select(group: "GLOBAL", member: "DIRECT")
+            // Readiness measures the selected route; it must not replace it.
+            // A link outage can fail this probe while the provider recovers.
+            // Switching GLOBAL to DIRECT here strands proxy-only destinations
+            // after the link returns and contradicts the user's pinned route.
+            Self.runtimeLogger.info("stage=connectionReadiness selectedRoute preserved")
             isVerifyingProxyReadiness = false
             let outcome = ConnectionQualityPolicy.outcome(
                 probeSucceeded: false,
