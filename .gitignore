@@ -6,6 +6,7 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 .tools/
+.wrangler/
 AetherRoute.xcodeproj/
 build/
 Core/Artifacts/
@@ -42,4 +43,3 @@ Config/sparkle_ed25519_priv.key
 __pycache__/
 *.pyc
 reports/
-
