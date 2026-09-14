@@ -1,12 +1,22 @@
 {
-  "images" : [
+  "images": [
     {
-      "filename" : "AetherSapphireEmblem.png",
-      "idiom" : "universal"
+      "filename": "AetherSapphireEmblem.png",
+      "idiom": "universal"
+    },
+    {
+      "filename": "AetherSapphireEmblem-Dark.png",
+      "idiom": "universal",
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ]
     }
   ],
-  "info" : {
-    "author" : "xcode",
-    "version" : 1
+  "info": {
+    "author": "xcode",
+    "version": 1
   }
 }

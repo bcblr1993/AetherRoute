@@ -35,10 +35,14 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ### Changed
 
+- Add System, Light and Dark appearance choices in General settings. Changes
+  apply immediately across app windows and persist across launches.
 - Replace the dark dot-matrix icon with the user-selected Silver Flight design:
   a graphite paper plane with a blue accent on a porcelain-white tile.
 - Use the same approved artwork for Dock, Finder, in-app branding and website
   icons, with reproducible 16–1024 px assets and the legacy ICNS resource.
+- In-app icons follow the selected theme: charcoal in dark mode and porcelain
+  in light mode, with the decorative blue glow and ring removed.
 - Networking behavior is unchanged from 1.0.3.
 
 ## [1.0.3] - 2026-09-14

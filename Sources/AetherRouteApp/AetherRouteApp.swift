@@ -271,6 +271,7 @@ struct AetherRouteApp: App {
     @NSApplicationDelegateAdaptor(AetherRouteApplicationDelegate.self)
     private var applicationDelegate
     @StateObject private var language: AppLanguageController
+    @StateObject private var appearance: AppAppearanceController
     @StateObject private var tunnel: TunnelManager
     @StateObject private var automation: AppAutomationController
     @StateObject private var distribution:
@@ -280,6 +281,7 @@ struct AetherRouteApp: App {
 
     init() {
         NavigationShortcutMonitor.install()
+        _appearance = StateObject(wrappedValue: AppAppearanceController())
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
         if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] != nil {
             // MenuBarExtra can cause XCTest to observe a newly launched app as
@@ -337,6 +339,7 @@ struct AetherRouteApp: App {
 
         Settings {
             SettingsView()
+                .environmentObject(appearance)
                 .environmentObject(tunnel)
                 .environmentObject(automation)
                 .environmentObject(distribution)
@@ -942,6 +945,7 @@ private struct SettingsView: View {
     @EnvironmentObject private var distribution:
         IndependentDistributionController
     @EnvironmentObject private var language: AppLanguageController
+    @EnvironmentObject private var appearance: AppAppearanceController
     @State private var localProxyCopyMessage: String?
     @State private var selectedTab: SettingsTab?
 
@@ -1055,6 +1059,7 @@ private struct SettingsView: View {
 
     private var generalSettings: some View {
         Form {
+            appearanceSettings
             languageSettings
 
 #if AETHERROUTE_INDEPENDENT
@@ -1131,6 +1136,26 @@ private struct SettingsView: View {
         .contentMargins(.vertical, 16, for: .scrollContent)
         .contentMargins(.trailing, 10, for: .scrollIndicators)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var appearanceSettings: some View {
+        Section("Appearance") {
+            Picker("Application theme", selection: Binding(
+                get: { appearance.preference },
+                set: { appearance.select($0) }
+            )) {
+                Text("Follow System").tag(AppAppearancePreference.system)
+                Text("Light").tag(AppAppearancePreference.light)
+                Text("Dark").tag(AppAppearancePreference.dark)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("app-appearance-picker")
+
+            Text("Theme changes apply immediately and are remembered next time.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var languageSettings: some View {

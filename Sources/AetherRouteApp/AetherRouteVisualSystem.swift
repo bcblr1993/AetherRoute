@@ -85,127 +85,19 @@ enum AetherVisual {
     }
 }
 
-/// Silver Flight: the approved porcelain tile and graphite paper plane.
-/// The existing asset name is retained for resource compatibility.
+/// The asset catalog selects the light or dark Silver Flight artwork using
+/// the current SwiftUI appearance, including live app-theme changes.
 struct AetherRouteGlyph: View {
     var isActive = false
     var isOnColor = false
 
     var body: some View {
-        Group {
-            if let image = NSImage(named: "AetherSapphireEmblem") {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else if let resourceUrl = Bundle.main.url(forResource: "AetherSapphireEmblem", withExtension: "png"),
-                      let image = NSImage(contentsOf: resourceUrl) {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else {
-                legacyGlyph
-            }
-        }
-        .opacity(isOnColor ? 1.0 : (isActive ? 1.0 : 0.88))
-        .shadow(
-            color: isActive ? glowColor.opacity(0.38) : .clear,
-            radius: 8
-        )
-        .aspectRatio(1, contentMode: .fit)
-        .accessibilityHidden(true)
-    }
-
-    private var legacyGlyph: some View {
-        GeometryReader { proxy in
-            let side = min(proxy.size.width, proxy.size.height)
-            let strokeWidth = max(1.4, side * Self.strokeUnits / Self.gridSide)
-
-            ZStack {
-                channelArc(side: side, rightSide: false)
-                    .stroke(markStyle, style: channelStroke(strokeWidth))
-
-                channelArc(side: side, rightSide: true)
-                    .stroke(markStyle, style: channelStroke(strokeWidth))
-                    .opacity(0.45)
-
-                routeArrow(side: side)
-                    .stroke(markStyle, style: channelStroke(strokeWidth))
-            }
-            .frame(width: side, height: side)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-
-    private static let gridSide: CGFloat = 96
-    private static let strokeUnits: CGFloat = 13
-    private static let arcTop: CGFloat = 14
-    private static let arcRadius: CGFloat = 38
-
-    private func channelArc(side: CGFloat, rightSide: Bool) -> Path {
-        Path { path in
-            let chordX: CGFloat = rightSide ? 64 : 32
-            let halfChord = (Self.gridSide - 2 * Self.arcTop) / 2
-            let offset = sqrt(
-                Self.arcRadius * Self.arcRadius - halfChord * halfChord
-            )
-            let center = point(
-                rightSide ? chordX - offset : chordX + offset,
-                Self.gridSide / 2,
-                side: side
-            )
-            let sweep = atan2(halfChord, offset)
-            let through: CGFloat = rightSide ? 0 : .pi
-            path.addRelativeArc(
-                center: center,
-                radius: Self.arcRadius / Self.gridSide * side,
-                startAngle: .radians(through - sweep),
-                delta: .radians(2 * sweep)
-            )
-        }
-    }
-
-    private func routeArrow(side: CGFloat) -> Path {
-        Path { path in
-            let axis = Self.gridSide / 2
-            path.move(to: point(18, axis, side: side))
-            path.addLine(to: point(58, axis, side: side))
-            path.move(to: point(50, axis - 15, side: side))
-            path.addLine(to: point(66, axis, side: side))
-            path.addLine(to: point(50, axis + 15, side: side))
-        }
-    }
-
-    private var markStyle: LinearGradient {
-        LinearGradient(
-            colors: isOnColor
-                ? [Color.white, Color.white.opacity(0.90)]
-                : [AetherVisual.portalLight, AetherVisual.portalMid, AetherVisual.portalDark],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
-
-    private func channelStroke(_ width: CGFloat) -> StrokeStyle {
-        StrokeStyle(
-            lineWidth: width,
-            lineCap: .round,
-            lineJoin: .round
-        )
-    }
-
-    private var glowColor: Color {
-        isOnColor ? .white : AetherVisual.portalLight
-    }
-
-    private func point(
-        _ x: CGFloat,
-        _ y: CGFloat,
-        side: CGFloat
-    ) -> CGPoint {
-        CGPoint(
-            x: x / Self.gridSide * side,
-            y: y / Self.gridSide * side
-        )
+        Image("AetherSapphireEmblem")
+            .resizable()
+            .renderingMode(.original)
+            .aspectRatio(contentMode: .fit)
+            .opacity(isOnColor || isActive ? 1 : 0.88)
+            .accessibilityHidden(true)
     }
 }
 
@@ -214,84 +106,26 @@ struct AetherRouteBrandTile: View {
     var isActive = false
 
     var body: some View {
-        Group {
-            if let image = NSImage(named: "AetherSapphireEmblem") {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else if let resourceUrl = Bundle.main.url(forResource: "AetherSapphireEmblem", withExtension: "png"),
-                      let image = NSImage(contentsOf: resourceUrl) {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else if let image = NSImage(named: "AppIcon") {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            }
-        }
-        .frame(width: size, height: size)
-        .shadow(
-            color: AetherVisual.portalLight.opacity(isActive ? 0.35 : 0.12),
-            radius: isActive ? size * 0.25 : size * 0.08
-        )
-        .accessibilityLabel("AetherRoute")
+        Image("AetherSapphireEmblem")
+            .resizable()
+            .renderingMode(.original)
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size, height: size)
+            .accessibilityLabel("AetherRoute")
     }
 }
 
-/// A state-bearing rendition of the brand mark for connection surfaces.
-/// Employs Scheme A: Sapphire crystal mobius ring with radial refraction halo.
+/// Quiet, theme-matched branding. Connection state is presented by the
+/// adjacent status label rather than an ornamental halo around the artwork.
 struct AetherRouteStatusLens: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var size: CGFloat = 52
     var isActive = false
 
     var body: some View {
-        ZStack {
-            // Ambient outer glow matching Scheme A
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            AetherVisual.portalLight.opacity(isActive ? 0.30 : (colorScheme == .dark ? 0.16 : 0.09)),
-                            AetherVisual.portalMid.opacity(isActive ? 0.16 : (colorScheme == .dark ? 0.08 : 0.04)),
-                            Color.clear
-                        ],
-                        center: .center,
-                        startRadius: size * 0.15,
-                        endRadius: size * 0.52
-                    )
-                )
-
-            // Precision refractive ring
-            Circle()
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            AetherVisual.portalLight.opacity(isActive ? 0.55 : 0.22),
-                            AetherVisual.portalDark.opacity(isActive ? 0.28 : 0.10),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1.0
-                )
-
-            // Sapphire crystal ring emblem
-            AetherRouteGlyph(isActive: isActive)
-                .padding(size * 0.06)
-        }
-        .frame(width: size, height: size)
-        .shadow(
-            color: AetherVisual.portalLight.opacity(isActive ? 0.36 : 0.08),
-            radius: isActive ? 14 : 5
-        )
-        .accessibilityHidden(true)
+        AetherRouteGlyph(isActive: isActive)
+            .padding(size * 0.06)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 

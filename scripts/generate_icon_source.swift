@@ -10,20 +10,25 @@ let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 let args = CommandLine.arguments
 precondition(args.count == 1 || (args.count == 3 && args[1] == "--output-directory"))
 let output = args.count == 3 ? URL(fileURLWithPath: args[2]) : root
-let source = root.appendingPathComponent("Design/AppIcon/SilverFlight.png")
-guard let image = NSImage(contentsOf: source),
-      let bitmap = image.representations.first as? NSBitmapImageRep,
-      let cgImage = bitmap.cgImage else { fatalError("Cannot load SilverFlight.png") }
-let context = CGContext(data: nil, width: 1024, height: 1024, bitsPerComponent: 8,
-    bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.displayP3)!,
-    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-context.interpolationQuality = .high
-context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1024, height: 1024))
-let rendered = NSBitmapImageRep(cgImage: context.makeImage()!)
-let data = rendered.representation(using: .png, properties: [:])!
-for path in [
-    "Sources/AetherRouteApp/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
-    "Sources/AetherRouteApp/Assets.xcassets/AetherSapphireEmblem.imageset/AetherSapphireEmblem.png"
+func render(_ filename: String) throws -> Data {
+    let source = root.appendingPathComponent("Design/AppIcon/\(filename)")
+    guard let image = NSImage(contentsOf: source),
+          let bitmap = image.representations.first as? NSBitmapImageRep,
+          let cgImage = bitmap.cgImage else { fatalError("Cannot load \(filename)") }
+    let context = CGContext(data: nil, width: 1024, height: 1024, bitsPerComponent: 8,
+        bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.displayP3)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    context.interpolationQuality = .high
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1024, height: 1024))
+    return NSBitmapImageRep(cgImage: context.makeImage()!)
+        .representation(using: .png, properties: [:])!
+}
+let light = try render("SilverFlight.png")
+let dark = try render("SilverFlightDark.png")
+for (path, data) in [
+    ("Sources/AetherRouteApp/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png", light),
+    ("Sources/AetherRouteApp/Assets.xcassets/AetherSapphireEmblem.imageset/AetherSapphireEmblem.png", light),
+    ("Sources/AetherRouteApp/Assets.xcassets/AetherSapphireEmblem.imageset/AetherSapphireEmblem-Dark.png", dark)
 ] {
     let url = output.appendingPathComponent(path)
     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)

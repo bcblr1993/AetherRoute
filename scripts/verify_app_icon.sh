@@ -34,6 +34,9 @@ jq -e '
 swift "$ROOT/scripts/generate_icon_source.swift" --output-directory "$RENDER_DIRECTORY" >/dev/null
 cmp "$ICON_DIRECTORY/AppIcon-1024.png" "$RENDER_DIRECTORY/Sources/AetherRouteApp/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
 cmp "$ICON_DIRECTORY/AppIcon-1024.png" "$ROOT/Sources/AetherRouteApp/Assets.xcassets/AetherSapphireEmblem.imageset/AetherSapphireEmblem.png"
+EMBLEM="Sources/AetherRouteApp/Assets.xcassets/AetherSapphireEmblem.imageset"
+cmp "$ROOT/$EMBLEM/AetherSapphireEmblem-Dark.png" "$RENDER_DIRECTORY/$EMBLEM/AetherSapphireEmblem-Dark.png"
+jq -e '.images | any(.filename == "AetherSapphireEmblem-Dark.png" and .appearances == [{"appearance":"luminosity","value":"dark"}])' "$ROOT/$EMBLEM/Contents.json" >/dev/null
 swift "$ROOT/scripts/generate_app_icon.swift" \
   --output-directory "$GENERATED_DIRECTORY" >/dev/null
 swift "$ROOT/scripts/generate_icon_composer_assets.swift" \
