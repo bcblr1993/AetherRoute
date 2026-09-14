@@ -19,6 +19,7 @@ for required in \
   "$PUBLIC/support/index.html" \
   "$PUBLIC/license/index.html" \
   "$PUBLIC/releases/index.html" \
+  "$PUBLIC/releases/1.0.2/index.html" \
   "$PUBLIC/releases/1.0.1/index.html" \
   "$PUBLIC/releases/1.0.0/index.html" \
   "$PUBLIC/releases/0.1.0-preview/index.html" \
@@ -41,8 +42,8 @@ do
   }
 done
 
-rg -F 'AetherRoute 1.0.1' "$PUBLIC/index.html" >/dev/null
-rg -F '2ee39728d7d578a4fb58c325e7914da58a41f897a45753d6bf5efa1942660bf5' "$PUBLIC/index.html" >/dev/null
+rg -F 'AetherRoute 1.0.2' "$PUBLIC/index.html" >/dev/null
+rg -F '2857d383bc249dce1dec053a6b42b391309d51be0d9c28c41b468668123f6a67' "$PUBLIC/index.html" >/dev/null
 
 test "$(rg -c 'data-localized-image' "$PUBLIC/index.html")" -ge 1 || {
   echo "homepage must expose localized product screenshots" >&2
@@ -103,6 +104,7 @@ done
 
 for route in \
   /releases/ \
+  /releases/1.0.2/ \
   /releases/1.0.1/ \
   /releases/1.0.0/ \
   /releases/0.1.0-preview/ \
@@ -118,6 +120,7 @@ done
 
 # Check SEO and sitemap
 rg -F 'https://aetherroute.pages.dev/sitemap.xml' "$PUBLIC/robots.txt" >/dev/null
+rg -F 'https://aetherroute.pages.dev/releases/1.0.2/' "$PUBLIC/sitemap.xml" >/dev/null
 rg -F 'https://aetherroute.pages.dev/releases/1.0.1/' "$PUBLIC/sitemap.xml" >/dev/null
 
 echo "Web distribution static and Cloudflare Pages guards passed"
