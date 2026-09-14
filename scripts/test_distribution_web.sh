@@ -42,8 +42,8 @@ do
   }
 done
 
-rg -F 'AetherRoute 1.0.2' "$PUBLIC/index.html" >/dev/null
-rg -F '2857d383bc249dce1dec053a6b42b391309d51be0d9c28c41b468668123f6a67' "$PUBLIC/index.html" >/dev/null
+rg -F 'AetherRoute 1.0.1' "$PUBLIC/index.html" >/dev/null
+rg -F '2ee39728d7d578a4fb58c325e7914da58a41f897a45753d6bf5efa1942660bf5' "$PUBLIC/index.html" >/dev/null
 
 test "$(rg -c 'data-localized-image' "$PUBLIC/index.html")" -ge 1 || {
   echo "homepage must expose localized product screenshots" >&2
@@ -92,11 +92,11 @@ find "$PUBLIC" -name '*.html' -type f -print0 | while IFS= read -r -d '' html; d
     echo "missing language switch: $html" >&2
     exit 1
   }
-  rg -F '/assets/site.css?v=20260912.01' "$html" >/dev/null || {
+  rg -F '/assets/site.css?v=20260914.03' "$html" >/dev/null || {
     echo "missing versioned stylesheet URL: $html" >&2
     exit 1
   }
-  rg -F '/assets/site.js?v=20260912.01' "$html" >/dev/null || {
+  rg -F '/assets/site.js?v=20260914.03' "$html" >/dev/null || {
     echo "missing versioned script URL: $html" >&2
     exit 1
   }

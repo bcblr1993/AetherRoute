@@ -8,27 +8,13 @@
   <link rel="icon" href="/assets/aetherroute-mark.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/assets/favicon.png" type="image/png">
   <link rel="apple-touch-icon" href="/assets/aetherroute-mark.png">
-  <link rel="stylesheet" href="/assets/site.css?v=20260912.01">
-  <script src="/assets/site.js?v=20260912.01" defer></script>
+  <link rel="stylesheet" href="/assets/site.css?v=20260914.03">
+  <script src="/assets/site.js?v=20260914.03" defer></script>
 </head>
 <body>
-  <a class="skip-link" href="#content">Skip to content / 跳到正文</a>
+  <a class="skip-link" href="#content"><span data-lang="zh">跳到正文</span><span data-lang="en">Skip to content</span></a>
   
-  <header class="site-header">
-    <nav class="nav" aria-label="Primary navigation">
-      <a class="brand" href="/">
-        <img src="/assets/aetherroute-mark.svg" alt="AetherRoute Logo" width="32" height="32">
-        <span>AetherRoute</span>
-      </a>
-      <div class="nav-links">
-        <a href="/"><span data-lang="zh">首页</span><span data-lang="en">Home</span></a>
-        <a href="/releases/"><span data-lang="zh">所有版本</span><span data-lang="en">Releases</span></a>
-        <a href="/support/"><span data-lang="zh">支持</span><span data-lang="en">Support</span></a>
-        <a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a>
-      </div>
-      <button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button>
-    </nav>
-  </header>
+  <header class="site-header"><nav class="nav wrap" aria-label="Main navigation"><a class="brand" href="/"><img src="/assets/aetherroute-mark.png" width="34" height="34" alt="">AetherRoute</a><div class="navlinks"><a href="/#experience"><span data-lang="zh">使用体验</span><span data-lang="en">Experience</span></a><a href="/releases/"><span data-lang="zh">版本更新</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">使用帮助</span><span data-lang="en">Support</span></a></div><div class="nav-actions"><button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button><a class="small-button" href="/releases/"><span data-lang="zh">获取 Mac 版</span><span data-lang="en">Get for Mac</span> <span aria-hidden="true">↗</span></a></div></nav></header>
 
   <main id="content" class="shell">
     <div class="page-hero">
@@ -38,63 +24,51 @@
     </div>
 
     <div class="prose">
+      <div class="notice"><span data-lang="zh">当前公开下载版本为 1.0.1。1.0.2 暂保留版本记录，安装包公开后再开放下载。</span><span data-lang="en">The current public download is 1.0.1. The 1.0.2 record is retained until its installer is published.</span></div>
       <!-- AETHERROUTE_STABLE_RELEASE_BEGIN -->
       <section>
         <h2><span data-lang="zh">稳定版本</span><span data-lang="en">Stable releases</span></h2>
-        <div class="card" style="margin-top: 18px;">
-          <span class="status-pill"><span data-lang="zh">当前最新版</span><span data-lang="en">Latest release</span></span>
-          <h2 style="margin: 14px 0 6px; font-size: 26px;">AetherRoute 1.0.2</h2>
-          <p style="color: var(--ink-tertiary); font-size: 13.5px; margin-bottom: 14px;">Build 2026091401 · 2026-09-14 · Apple silicon · macOS 15.0+</p>
+        <div class="card">
+          <span class="status-pill"><span data-lang="zh">安装包暂未公开</span><span data-lang="en">Download not yet public</span></span>
+          <h2>AetherRoute 1.0.2</h2>
+          <p>Build 2026091401 · 2026-09-14 · Apple silicon · macOS 15.0+</p>
           <p><span data-lang="zh">Developer ID 签名、Apple 官方公证并完成装订的生产级稳定版本。集成断开连接即时恢复系统网络与 DNS、进程级单例引擎守卫治理、非阻塞节点探活与真实生效 DNS 解析器遥测感知。</span><span data-lang="en">Production stable release with Developer ID signing and Apple notarization. Features immediate system network and DNS restoration on disconnect, process-wide engine concurrency guard, non-blocking latency probing, and active DNS resolver telemetry.</span></p>
-          <p style="margin-top: 24px;"><a class="button primary" href="/releases/1.0.2/"><span data-lang="zh">查看详情与更新日志</span><span data-lang="en">View details & changelog</span> <span aria-hidden="true">→</span></a></p>
+          <p><a class="button primary" href="/releases/1.0.2/"><span data-lang="zh">查看详情与更新日志</span><span data-lang="en">View details & changelog</span> <span aria-hidden="true">→</span></a></p>
         </div>
 
-        <div class="card" style="margin-top: 24px;">
-          <span class="status-pill" style="border-color: rgba(255,255,255,0.15); color: var(--ink-secondary);"><span data-lang="zh">历史版本</span><span data-lang="en">Previous release</span></span>
-          <h2 style="margin: 14px 0 6px; font-size: 22px;">AetherRoute 1.0.1</h2>
-          <p style="color: var(--ink-tertiary); font-size: 13.5px; margin-bottom: 14px;">Build 2026091302 · 2026-09-13 · Apple silicon · macOS 15.0+</p>
+        <div class="card">
+          <span class="status-pill"><span data-lang="zh">当前可下载版本</span><span data-lang="en">Latest available download</span></span>
+          <h2>AetherRoute 1.0.1</h2>
+          <p>Build 2026091302 · 2026-09-13 · Apple silicon · macOS 15.0+</p>
           <p><span data-lang="zh">智能 1 秒实时动态波形、全模块视觉规范统一与物理弹簧动效、全量动态多语言支持及休眠自愈恢复。</span><span data-lang="en">Smart 1-second telemetry, standardized motion design, full dynamic localization, and sleep-wake recovery.</span></p>
-          <p style="margin-top: 18px;"><a class="button" href="/releases/1.0.1/"><span data-lang="zh">查看历史说明</span><span data-lang="en">View 1.0.1 notes</span></a></p>
+          <p><a class="button" href="/releases/1.0.1/"><span data-lang="zh">查看历史说明</span><span data-lang="en">View 1.0.1 notes</span></a></p>
         </div>
 
-        <div class="card" style="margin-top: 24px;">
-          <span class="status-pill" style="border-color: rgba(255,255,255,0.15); color: var(--ink-secondary);"><span data-lang="zh">历史版本</span><span data-lang="en">Previous release</span></span>
-          <h2 style="margin: 14px 0 6px; font-size: 22px;">AetherRoute 1.0.0</h2>
-          <p style="color: var(--ink-tertiary); font-size: 13.5px; margin-bottom: 14px;">Build 2026091202 · 2026-09-12 · Apple silicon · macOS 15.0+</p>
+        <div class="card">
+          <span class="status-pill"><span data-lang="zh">历史版本</span><span data-lang="en">Previous release</span></span>
+          <h2>AetherRoute 1.0.0</h2>
+          <p>Build 2026091202 · 2026-09-12 · Apple silicon · macOS 15.0+</p>
           <p><span data-lang="zh">首个正式稳定版，原生 Swift 6 架构与透明代理/TUN 双引擎。</span><span data-lang="en">First production release with Swift 6 and dual engines.</span></p>
-          <p style="margin-top: 18px;"><a class="button" href="/releases/1.0.0/"><span data-lang="zh">查看历史说明</span><span data-lang="en">View 1.0.0 notes</span></a></p>
+          <p><a class="button" href="/releases/1.0.0/"><span data-lang="zh">查看历史说明</span><span data-lang="en">View 1.0.0 notes</span></a></p>
         </div>
       </section>
       <!-- AETHERROUTE_STABLE_RELEASE_END -->
 
       <!-- AETHERROUTE_PREVIEW_RELEASE_BEGIN -->
-      <section style="margin-top: 56px;">
+      <section>
         <h2><span data-lang="zh">历史版本归档</span><span data-lang="en">Archived previews</span></h2>
-        <div class="card" style="margin-top: 18px;">
-          <span class="status-pill" style="border-color: rgba(245, 158, 11, 0.3); color: var(--amber);"><span data-lang="zh">历史技术预览</span><span data-lang="en">Technical preview</span></span>
-          <h2 style="margin: 14px 0 6px; font-size: 26px;">AetherRoute 0.1.0 Preview</h2>
-          <p style="color: var(--ink-tertiary); font-size: 13.5px; margin-bottom: 14px;">Build 2026080703 · 2026-08-07 · Apple silicon · macOS 15.0+</p>
+        <div class="card">
+          <span class="status-pill"><span data-lang="zh">历史技术预览</span><span data-lang="en">Technical preview</span></span>
+          <h2>AetherRoute 0.1.0 Preview</h2>
+          <p>Build 2026080703 · 2026-08-07 · Apple silicon · macOS 15.0+</p>
           <p><span data-lang="zh">首个 Developer ID 签名、Apple 公证并装订的跨机器测试候选版本。已完成历史测试使命，请升级至 1.0.0 正式稳定版。</span><span data-lang="en">The first cross-machine candidate signed with Developer ID, notarized by Apple, and stapled. Superseded by 1.0.0 stable.</span></p>
-          <p style="margin-top: 24px;"><a class="button" href="/releases/0.1.0-preview/"><span data-lang="zh">查看预览归档</span><span data-lang="en">View preview notes</span></a></p>
+          <p><a class="button" href="/releases/0.1.0-preview/"><span data-lang="zh">查看预览归档</span><span data-lang="en">View preview notes</span></a></p>
         </div>
       </section>
       <!-- AETHERROUTE_PREVIEW_RELEASE_END -->
     </div>
   </main>
 
-  <footer class="site-footer">
-    <div class="shell footer-grid">
-      <div>
-        <strong style="color: var(--ink-primary); font-size: 15px; font-weight: 700;">AetherRoute</strong><br>
-        <span style="display:inline-block; margin-top: 6px; color: var(--ink-secondary);">© 2026 BianChengBuLiangRen. Released under MIT License.</span>
-      </div>
-      <div class="footer-links">
-        <a href="/"><span data-lang="zh">首页</span><span data-lang="en">Home</span></a>
-        <a href="/privacy/"><span data-lang="zh">隐私政策</span><span data-lang="en">Privacy</span></a>
-        <a href="/support/"><span data-lang="zh">技术支持</span><span data-lang="en">Support</span></a>
-        <a href="https://github.com/bcblr1993/AetherRoute" target="_blank" rel="noreferrer">GitHub</a>
-      </div>
-    </div>
-  </footer>
+  <footer class="wrap site-footer"><span>© 2026 AetherRoute <span class="footer-note"><span data-lang="zh">由编程不良人用心打造。</span><span data-lang="en">Made by BianChengBuLiangRen.</span></span></span><div><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">帮助</span><span data-lang="en">Support</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可</span><span data-lang="en">License</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub ↗</a></div></footer>
 </body>
 </html>
