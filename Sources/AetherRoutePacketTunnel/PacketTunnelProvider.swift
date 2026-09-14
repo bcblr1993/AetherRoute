@@ -490,7 +490,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         switch error {
         case .invalidName:
             .invalidRequest
-        case .unavailable:
+        // A timeout means the engine is still busy with the previous call, so
+        // the answer the host wanted does not exist yet — the same thing, from
+        // the host's side, as the engine not being ready.
+        case .unavailable, .timedOut:
             .unavailable
         case .rejected, .selectionNotApplied:
             .rejected

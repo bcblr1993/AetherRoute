@@ -67,6 +67,23 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
     private let stateLock = NSLock()
     private let lifecycleLock = NSLock()
     private let controlLock = NSLock()
+    /// Runs the network-state reset off `controlLock`.
+    ///
+    /// That lock serializes this bridge's selector buffers and telemetry, and
+    /// the host polls telemetry once a second. A reset that blocks while
+    /// holding it therefore stalls *every* provider message until macOS decides
+    /// the extension is hung and kills it — which is exactly what happened when
+    /// the uplink disappeared: one attempt took 4.75s, the next never returned,
+    /// and the extension was terminated with the tunnel still installed.
+    private let resetQueue = DispatchQueue(
+        label: "com.aetherroute.engine-reset",
+        qos: .userInitiated
+    )
+    private let resetLock = NSLock()
+    /// True while a submitted reset has not returned. A reset that outran its
+    /// caller's budget still occupies the engine, so the next attempt is
+    /// refused rather than stacking a second blocked call behind it.
+    private var resetInFlight = false
     private var state = State()
     // Telemetry is polled every five seconds while connected. Keeping the
     // trust-boundary-sized destination alive for the bridge lifetime avoids a
@@ -536,16 +553,50 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         }
     }
 
+    /// Rebuilds the engine's view of the host network after the path moved.
+    ///
+    /// The readiness check runs under `controlLock` like every other engine
+    /// query — it is cheap and never touches the network. The reset itself does
+    /// not: it is submitted to `resetQueue` and waited on with a bound, so a
+    /// call that blocks inside the engine costs this attempt and nothing else.
+    /// Recovery treats a `timedOut` the same as any other failure and carries
+    /// on to reinstall the tunnel's settings, which does not need the engine.
     func resetNetworkState() throws {
         try controlLock.withLock {
             guard isRunning(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
             }
-            let status = clash_packet_reset_network_state_v1()
-            guard status == CLASH_FLOW_OK else {
-                throw Self.selectorError(status, selecting: false)
-            }
         }
+        let admitted = resetLock.withLock { () -> Bool in
+            guard !resetInFlight else { return false }
+            resetInFlight = true
+            return true
+        }
+        guard admitted else { throw PacketTunnelSelectorError.busy }
+
+        let outcome = EngineResetOutcome()
+        // `weak self` deliberately: if the reset never returns, the bridge must
+        // still be able to deallocate once the provider lets go of it.
+        resetQueue.async { [weak self] in
+            let status = clash_packet_reset_network_state_v1()
+            self?.finishReset()
+            outcome.complete(status)
+        }
+        guard outcome.wait(
+            seconds: TunnelStartupTimingPolicy.providerNetworkResetWaitSeconds
+        ) else {
+            throw PacketTunnelSelectorError.timedOut
+        }
+        guard let status = outcome.status else {
+            throw PacketTunnelSelectorError.internalFailure
+        }
+        guard status == CLASH_FLOW_OK else {
+            throw Self.selectorError(status, selecting: false)
+        }
+    }
+
+    private func finishReset() {
+        resetLock.withLock { resetInFlight = false }
     }
 
     fileprivate func writePacket(
@@ -855,6 +906,31 @@ enum PacketTunnelError: LocalizedError {
     }
 }
 
+/// Carries one network-state reset's result across the queue boundary.
+///
+/// The submitting thread may stop waiting before the engine answers, so the
+/// status has to outlive that stack frame — and the late completion must find
+/// somewhere safe to land rather than touching an abandoned caller.
+private final class EngineResetOutcome: @unchecked Sendable {
+    private let semaphore = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var value: Int32?
+
+    func complete(_ status: Int32) {
+        lock.withLock { value = status }
+        semaphore.signal()
+    }
+
+    /// Returns `true` when the engine answered inside the budget.
+    func wait(seconds: TimeInterval) -> Bool {
+        semaphore.wait(timeout: .now() + seconds) == .success
+    }
+
+    var status: Int32? {
+        lock.withLock { value }
+    }
+}
+
 enum PacketTunnelSelectorError: Error, Sendable, Equatable {
     case invalidName
     case unavailable
@@ -865,6 +941,9 @@ enum PacketTunnelSelectorError: Error, Sendable, Equatable {
     case invalidLatency
     case selectionNotApplied
     case internalFailure
+    /// The engine did not finish within the caller's budget. The call is still
+    /// running on its own queue; the caller has simply stopped waiting.
+    case timedOut
 }
 
 private enum PacketSelectorSnapshotCodec {

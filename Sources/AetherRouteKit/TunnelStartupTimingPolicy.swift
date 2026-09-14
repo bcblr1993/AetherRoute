@@ -74,6 +74,16 @@ public enum TunnelStartupTimingPolicy {
     /// How long the provider keeps running after reporting a failed handoff, so
     /// the host receives the error over XPC before the process exits.
     public static let providerEngineRelaunchDelayMilliseconds = 1_000
+    /// Upper bound on how long one recovery attempt waits for the engine to
+    /// rebuild its network state.
+    ///
+    /// The reset is a synchronous FFI call, and when the host has *no* uplink
+    /// at all it blocks inside the engine rather than failing fast — measured
+    /// at 4.75s on a hotspot drop, and on the following attempt it never
+    /// returned. Recovery must not inherit that: a reset which overruns this
+    /// bound is abandoned and the attempt continues to the settings reinstall,
+    /// which does not depend on the engine and can restore routing on its own.
+    public static let providerNetworkResetWaitSeconds: TimeInterval = 3
     public static let hostDisconnectionWatchdogTimeoutSeconds = 35
 
     /// The embedded selector runs bounded batches and adds a two-second reply

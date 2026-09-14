@@ -373,6 +373,26 @@ final class TunnelManager: ObservableObject {
     private var connectionRequestID: UUID?
     private var connectionAttemptID: UUID?
     private var disconnectionAttemptID: UUID?
+    /// Whether the disconnection the watchdog is guarding is one *we* asked
+    /// for.
+    ///
+    /// The watchdog is armed from two very different places: a stop this host
+    /// initiated, and a `.disconnecting` status the provider reported on its
+    /// own. Both used to set `disconnectionAttemptID` alone, which made the
+    /// second case indistinguishable from the first — so a provider killed by
+    /// macOS looked like a user-requested disconnect and
+    /// `handleUnexpectedProviderTermination` was skipped entirely.
+    private var disconnectionWasSelfInitiated = false
+    /// Reconnects attempted since the last successful connection. Reset when
+    /// the tunnel connects or the user takes over.
+    private var automaticReconnectAttempt = 0
+    private var automaticReconnectTask: Task<Void, Never>?
+    /// The user's standing intent to be connected.
+    ///
+    /// Distinct from `isEnabled`, which is derived from the current provider
+    /// status and therefore goes false the instant the tunnel drops — exactly
+    /// when a reconnect needs to know whether the user still wants one.
+    private var userIntendsToConnect = false
     private var providerConnectionID: UUID?
     private var readinessVerifiedConnectionID: UUID?
     private var readinessFailureStopPending = false
@@ -720,6 +740,19 @@ final class TunnelManager: ObservableObject {
     }
 
     func setEnabled(_ enabled: Bool) async {
+        await setEnabled(enabled, isAutomaticReconnect: false)
+    }
+
+    /// - Parameter isAutomaticReconnect: distinguishes a reconnect this manager
+    ///   scheduled from a connect the user asked for. Only the latter restores
+    ///   the retry budget; a reconnect that reset it would retry forever. This
+    ///   travels as an argument rather than an instance flag because the body
+    ///   suspends, and a flag could be read by a user-driven call that
+    ///   interleaved with this one.
+    private func setEnabled(
+        _ enabled: Bool,
+        isAutomaticReconnect: Bool
+    ) async {
         Self.runtimeLogger.info(
             "stage=setEnabled request=\(enabled ? "connect" : "disconnect", privacy: .public) state=\(Self.diagnosticEventCode(for: self.state).rawValue, privacy: .public) engine=\(self.networkEngineMode.rawValue, privacy: .public) routing=\(self.routingMode.rawValue, privacy: .public)"
         )
@@ -728,6 +761,10 @@ final class TunnelManager: ObservableObject {
             // be preparing resources even though NetworkExtension has not
             // received startVPNTunnel yet.
             invalidateConnectionRequest()
+            // The user is taking over. No scheduled reconnect may outlive this,
+            // or the tunnel would come back up after they asked for it down.
+            userIntendsToConnect = false
+            cancelAutomaticReconnect(reason: "userDisconnected")
         }
         guard ensurePrivacyConsent() else { return }
         guard !enabled || distributionConnectionAccess.permitsNewConnection
@@ -757,6 +794,13 @@ final class TunnelManager: ObservableObject {
             }
             disconnectErrorLookupID = nil
             cancelDisconnectionWatchdog()
+            // An explicit connect supersedes any reconnect still waiting out
+            // its delay, and restores the full retry budget for the next drop.
+            userIntendsToConnect = true
+            if !isAutomaticReconnect {
+                cancelAutomaticReconnect(reason: "userConnected")
+                automaticReconnectAttempt = 0
+            }
             let newRequestID = beginConnectionRequest()
             requestID = newRequestID
             if manager == nil {
@@ -801,7 +845,7 @@ final class TunnelManager: ObservableObject {
                 return
             }
             state = .disconnecting
-            beginDisconnectionWatchdog()
+            beginDisconnectionWatchdog(selfInitiated: true)
         }
         let requestedMode = routingMode
         var launchSnapshot: ProviderLaunchSnapshot?
@@ -4250,7 +4294,9 @@ final class TunnelManager: ObservableObject {
             }
             if status == .disconnecting {
                 if disconnectionAttemptID == nil {
-                    beginDisconnectionWatchdog()
+                    // The readiness failure is our own stop request working its
+                    // way through, so this terminal status is expected.
+                    beginDisconnectionWatchdog(selfInitiated: true)
                 }
                 Self.runtimeLogger.info(
                     "stage=updateState readinessFailureStop pending"
@@ -4266,7 +4312,11 @@ final class TunnelManager: ObservableObject {
             Self.runtimeLogger.info(
                 "stage=updateState adoptingDisconnectingStatus"
             )
-            beginDisconnectionWatchdog()
+            // Nobody here asked for this. The provider is going down on its
+            // own — killed by macOS for an unanswered IPC, or failed outright —
+            // so the watchdog guards the transition but the terminal status it
+            // arrives at must still count as unexpected.
+            beginDisconnectionWatchdog(selfInitiated: false)
         }
 
         if disconnectionAttemptID != nil,
@@ -4296,7 +4346,12 @@ final class TunnelManager: ObservableObject {
                 Self.isActiveProviderStatus($0)
             } ?? false,
             connectionAttemptPending: connectionAttemptID != nil,
+            // Only a stop this host requested makes a terminal status expected.
+            // Adopting the provider's own `.disconnecting` also arms the
+            // watchdog, and counting that as a pending request is what used to
+            // classify a macOS-killed extension as a normal disconnect.
             disconnectionAttemptPending: disconnectionAttemptID != nil
+                && disconnectionWasSelfInitiated
         ) {
             Self.runtimeLogger.error(
                 "stage=updateState unexpectedTerminal status=\(status.rawValue, privacy: .public) previous=\(previousProviderStatus?.rawValue ?? -1, privacy: .public)"
@@ -4324,6 +4379,15 @@ final class TunnelManager: ObservableObject {
         if status == .connected {
             refreshOlderRoutingResourcesAfterConnection()
             cancelConnectionWatchdog()
+            // The tunnel carries traffic again, so the next unexpected drop
+            // starts from a full budget rather than inheriting this one's.
+            if automaticReconnectAttempt != 0 {
+                Self.runtimeLogger.info(
+                    "stage=automaticReconnect recovered afterAttempts=\(self.automaticReconnectAttempt, privacy: .public)"
+                )
+                automaticReconnectAttempt = 0
+            }
+            cancelAutomaticReconnect(reason: "connected")
         }
         switch state {
         case .connected, .disconnected, .failed:
@@ -4337,7 +4401,8 @@ final class TunnelManager: ObservableObject {
             invalidateConnectionRequest()
             cancelConnectionWatchdog()
             cancelConnectionReadiness()
-            beginDisconnectionWatchdog()
+            // A licensing stop is ours, and must not be undone by a reconnect.
+            beginDisconnectionWatchdog(selfInitiated: true)
             manager?.connection.stopVPNTunnel()
             state = .disconnecting
             connectedSince = nil
@@ -4911,6 +4976,81 @@ final class TunnelManager: ObservableObject {
                 )
             }
         }
+        scheduleAutomaticReconnect()
+    }
+
+    /// Brings the tunnel back after the provider went down on its own.
+    ///
+    /// macOS terminates an extension that stops answering IPC, which a blocked
+    /// engine call can cause on any uplink change. Without this the host simply
+    /// sat in `.failed` until the user noticed and pressed Connect — the tunnel
+    /// was recoverable the whole time, nothing was trying.
+    private func scheduleAutomaticReconnect() {
+        let attempt = automaticReconnectAttempt
+        guard ProviderAutoReconnectPolicy.shouldReconnect(
+            terminationWasUnexpected: true,
+            userWantsConnection: userIntendsToConnect,
+            attempt: attempt
+        ), let delay = ProviderAutoReconnectPolicy.delay(forAttempt: attempt)
+        else {
+            Self.runtimeLogger.info(
+                "stage=automaticReconnect declined attempt=\(attempt, privacy: .public) userIntendsToConnect=\(self.userIntendsToConnect, privacy: .public)"
+            )
+            return
+        }
+        automaticReconnectAttempt = attempt + 1
+        Self.runtimeLogger.info(
+            "stage=automaticReconnect scheduled attempt=\(attempt, privacy: .public) delaySeconds=\(delay, privacy: .public)"
+        )
+        automaticReconnectTask?.cancel()
+        automaticReconnectTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await self?.performAutomaticReconnect(attempt: attempt)
+        }
+    }
+
+    private func performAutomaticReconnect(attempt: Int) async {
+        // Re-checked after the delay: the user may have disconnected, or the
+        // provider may have recovered on its own, while this was waiting.
+        guard userIntendsToConnect else {
+            Self.runtimeLogger.info(
+                "stage=automaticReconnect abandoned attempt=\(attempt, privacy: .public) reason=userNoLongerWantsConnection"
+            )
+            return
+        }
+        guard !isEnabled else {
+            Self.runtimeLogger.info(
+                "stage=automaticReconnect abandoned attempt=\(attempt, privacy: .public) reason=alreadyActive"
+            )
+            return
+        }
+        Self.runtimeLogger.info(
+            "stage=automaticReconnect attempting attempt=\(attempt, privacy: .public)"
+        )
+        await setEnabled(true, isAutomaticReconnect: true)
+        // `setEnabled` can bail out before reaching the provider — the host may
+        // still be transitioning, or licensing may refuse a new connection — and
+        // nothing calls back in that case. A start that *was* submitted leaves
+        // the tunnel connecting, and a later failure re-enters through
+        // `handleUnexpectedProviderTermination`, so only re-arm when neither
+        // happened.
+        if !isEnabled {
+            scheduleAutomaticReconnect()
+        }
+    }
+
+    private func cancelAutomaticReconnect(reason: String) {
+        guard automaticReconnectTask != nil else { return }
+        Self.runtimeLogger.info(
+            "stage=automaticReconnect cancelled reason=\(reason, privacy: .public)"
+        )
+        automaticReconnectTask?.cancel()
+        automaticReconnectTask = nil
     }
 
     private func applyDisconnectError(
@@ -5052,12 +5192,17 @@ final class TunnelManager: ObservableObject {
         connectionAttemptID = nil
     }
 
-    private func beginDisconnectionWatchdog() {
+    /// - Parameter selfInitiated: `true` when this host asked the provider to
+    ///   stop. `false` when the provider reported `.disconnecting` on its own —
+    ///   the watchdog still guards the transition, but the stop is not ours and
+    ///   the terminal status it leads to must be treated as unexpected.
+    private func beginDisconnectionWatchdog(selfInitiated: Bool) {
         cancelDisconnectionWatchdog()
         let attemptID = UUID()
         disconnectionAttemptID = attemptID
+        disconnectionWasSelfInitiated = selfInitiated
         Self.runtimeLogger.info(
-            "stage=disconnectionWatchdog armed timeoutSeconds=\(TunnelStartupTimingPolicy.hostDisconnectionWatchdogTimeoutSeconds, privacy: .public)"
+            "stage=disconnectionWatchdog armed selfInitiated=\(selfInitiated, privacy: .public) timeoutSeconds=\(TunnelStartupTimingPolicy.hostDisconnectionWatchdogTimeoutSeconds, privacy: .public)"
         )
         disconnectionWatchdogTask = Task { [weak self] in
             do {
@@ -5082,6 +5227,7 @@ final class TunnelManager: ObservableObject {
         disconnectionWatchdogTask?.cancel()
         disconnectionWatchdogTask = nil
         disconnectionAttemptID = nil
+        disconnectionWasSelfInitiated = false
     }
 
     private func disconnectionWatchdogFired(_ attemptID: UUID) {

@@ -31,6 +31,17 @@ All notable changes to AetherRoute are recorded here. The format follows
   diagnostic core artifacts. Installed-extension performance now requires real
   paired measurements rather than isolated-core throughput numbers.
 
+## [1.0.3] - 2026-09-14
+
+### Fixed
+
+- Bound network-state reset waits to three seconds and keep blocked resets
+  separate from provider telemetry and control requests. Only one reset may
+  remain in flight while recovery continues with network settings restoration.
+- Distinguish unexpected provider termination from a user-requested stop and
+  retry an interrupted connection with a finite backoff schedule. An explicit
+  disconnect cancels pending automatic reconnects.
+
 ## [1.0.2] - 2026-09-14
 
 ### Fixed
