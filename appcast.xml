@@ -6,7 +6,8 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.2 (Build 2026091401)</title>
+            <title>Version 1.0.2 Beta (Build 2026091401)</title>
+            <sparkle:channel>beta</sparkle:channel>
             <pubDate>Mon, 14 Sep 2026 15:24:34 +0800</pubDate>
             <sparkle:version>2026091401</sparkle:version>
             <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
@@ -24,6 +25,28 @@
                 url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.2-build-2026091401/AetherRoute-1.0.2-build-2026091401-arm64-Notarized-Test-Normal-Core.dmg"
                 sparkle:edSignature="K9KGcCOAhx/rJbVCcmCwyUwcxYBHMda8XnW/rL38XYcSSkkYv8tC2xxDWdHqiSe5U1TLN5zcR5De+iQ9sZouDw=="
                 length="27107832"
+                type="application/octet-stream" />
+        </item>
+        <item>
+            <title>Version 1.0.1 (Build 2026091302)</title>
+            <pubDate>Sun, 13 Sep 2026 16:50:56 +0800</pubDate>
+            <sparkle:version>2026091302</sparkle:version>
+            <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+<h2>AetherRoute 1.0.1 (Build 2026091302)</h2>
+<ul>
+  <li>修复侧边栏导航点击白屏及选中态错位问题，优化 NavigationSplitView 交互。</li>
+  <li>实时波形双通道 1 秒平滑动画与后台节能限流机制（Scheme B）。</li>
+  <li>全面接入 AetherVisual 动效规范与 macOS 原生悬停交互体系。</li>
+  <li>完成全部界面组件的 AppLocalization 国际化与可访问性覆盖。</li>
+  <li>优化系统睡眠唤醒后的网络恢复机制与 DNS 防泄漏门禁。</li>
+</ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.1-build-2026091302/AetherRoute-1.0.1-build-2026091302-arm64-Notarized-Test-Normal-Core.dmg"
+                sparkle:edSignature="zm+o3dGi1VCm/aCGwvDH5zmd/5DUtsKETu++v+cfBP26B8IwHLdX8C8mo/SEthbN6R4R7OIw1LdsV1BVRV27Dw=="
+                length="27097276"
                 type="application/octet-stream" />
         </item>
     </channel>

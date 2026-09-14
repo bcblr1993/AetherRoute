@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="AetherRoute 1.0.2 正式版本说明、更新日志、安装包下载与 SHA-256 校验和。">
-  <title>AetherRoute 1.0.2 正式版</title>
+  <meta name="description" content="AetherRoute 1.0.2 已公证测试版本说明、更新日志、安装包下载与 SHA-256 校验和。">
+  <title>AetherRoute 1.0.2 已公证测试版</title>
   <link rel="icon" href="/assets/aetherroute-mark.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/assets/favicon.png" type="image/png">
   <link rel="apple-touch-icon" href="/assets/aetherroute-mark.png">
-  <link rel="stylesheet" href="/assets/site.css?v=20260914.03">
-  <script src="/assets/site.js?v=20260914.03" defer></script>
+  <link rel="stylesheet" href="/assets/site.css?v=20260914.04">
+  <script src="/assets/site.js?v=20260914.04" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#content"><span data-lang="zh">跳到正文</span><span data-lang="en">Skip to content</span></a>
@@ -18,19 +18,14 @@
 
   <main id="content" class="shell">
     <div class="page-hero">
-      <span class="eyebrow"><span data-lang="zh">版本记录 · 安装包暂未公开</span><span data-lang="en">Release record · Download not yet public</span></span>
+      <span class="eyebrow"><span data-lang="zh">已公证测试版 · Beta</span><span data-lang="en">Notarized test release · Beta</span></span>
       <h1>AetherRoute 1.0.2</h1>
       <p>Build 2026091401 · 2026-09-14 · Apple silicon · macOS 15.0+</p>
-      <div class="hero-actions"><a class="button primary" href="/releases/1.0.1/"><span data-lang="zh">下载当前可用版本 1.0.1</span><span data-lang="en">Get available version 1.0.1</span></a></div>
+      <div class="hero-actions"><a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.2-build-2026091401/AetherRoute-1.0.2-build-2026091401-arm64-Notarized-Test-Normal-Core.dmg"><span data-lang="zh">下载 1.0.2 测试版</span><span data-lang="en">Download 1.0.2 Beta</span></a><a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.2-build-2026091401">GitHub Release ↗</a><a class="button" href="/releases/1.0.1/"><span data-lang="zh">获取 1.0.1 稳定版</span><span data-lang="en">Get 1.0.1 stable</span></a></div>
     </div>
 
-    <article class="prose"><div class="notice"><span data-lang="zh">此版本的 GitHub 安装包暂未公开。以下保留版本记录，请通过上方入口下载已公开的 1.0.1。</span><span data-lang="en">This version’s GitHub installer is not publicly available. The release record is retained below; use the link above for the published 1.0.1 release.</span></div>
-      <div class="notice">
-        <strong><span data-lang="zh">可信分发承诺：</span><span data-lang="en">Trusted distribution:</span></strong> 
-        <span data-lang="zh">此版本采用 Apple Developer ID 签名并已通过 Apple 官方公证和票据装订（Stapled Ticket）。安装包采用 Normal-Core 生产级内核，包含严格安全强化的原生 arm64 架构二进制，不含第三方捆绑软件或追踪分析代码。</span>
-        <span data-lang="en">This release is signed with Developer ID, notarized by Apple, and stapled. Built with Normal-Core production engine, strictly hardened native arm64 Mach-O binaries with zero third-party bundles or tracking analytics.</span>
-      </div>
-
+    <article class="prose">
+<div class="notice"><span data-lang="zh">此安装包为已公证测试候选版，尚未完成稳定版发布批准。适合主动体验新版本的用户；日常使用可选择 1.0.1 稳定版。</span><span data-lang="en">This notarized test candidate is not production-approved. Choose it to try the new version, or use 1.0.1 for the stable release.</span></div>
       <section>
         <h2><span data-lang="zh">1.0.2 核心更新日志 (Changelogs)</span><span data-lang="en">1.0.2 Fixes & Changelog</span></h2>
         <ul>
@@ -59,15 +54,7 @@
         <div class="checksum">2857d383bc249dce1dec053a6b42b391309d51be0d9c28c41b468668123f6a67</div>
       </section>
 
-      <section>
-        <h2><span data-lang="zh">安全与测试验证状态</span><span data-lang="en">Verification status</span></h2>
-        <ul>
-          <li><span data-lang="zh">Developer ID 强化运行时与安全时间戳：已验证</span><span data-lang="en">Developer ID hardened runtime and secure timestamp: verified</span></li>
-          <li><span data-lang="zh">Apple Notarization 公证票据与装订：Accepted / Valid</span><span data-lang="en">Apple notarization and stapling: Accepted / Valid</span></li>
-          <li><span data-lang="zh">macOS Gatekeeper 严格安全评估：Accepted</span><span data-lang="en">macOS Gatekeeper assessment: Accepted</span></li>
-          <li><span data-lang="zh">单例引擎门禁、即时网络恢复与 DNS 防泄漏门禁：全部通过</span><span data-lang="en">Singleton engine, immediate network recovery, and DNS leak checks: passed</span></li>
-        </ul>
-      </section>
+      <section><h2><span data-lang="zh">本次发布核验</span><span data-lang="en">Publication checks</span></h2><ul><li><span data-lang="zh">版本号 1.0.2、构建号 2026091401；主程序与两个网络扩展均为 arm64。</span><span data-lang="en">Version 1.0.2, build 2026091401; the app and both Network Extensions are arm64.</span></li><li><span data-lang="zh">严格代码签名校验通过；三个可执行文件的哈希与原始构建记录一致。</span><span data-lang="en">Strict code-signature verification passed; all three executable hashes match the original build record.</span></li><li><span data-lang="zh">应用和 DMG 的 Apple 公证票据装订校验通过。</span><span data-lang="en">Apple notarization ticket stapling validation passed for both the app and the DMG.</span></li><li><span data-lang="zh">安装包 SHA-256 已核对。本次仅发布已有构建，未重新执行双引擎完整运行与长期稳定性验收。</span><span data-lang="en">The DMG SHA-256 was verified. This publishes the existing build; full dual-engine runtime and long-duration acceptance were not repeated.</span></li></ul></section>
 
       <section>
         <h2><span data-lang="zh">帮助与技术支持</span><span data-lang="en">Support</span></h2>
