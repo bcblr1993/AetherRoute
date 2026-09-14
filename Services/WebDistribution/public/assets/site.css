@@ -136,7 +136,7 @@ h1 em {
   border-radius:18px;
   position:relative;
   isolation:isolate;
-  overflow:hidden;
+  overflow:clip;
   background:linear-gradient(120deg,#e9ece6 0%,#e3ebed 55%,#d7e2ee 100%);
   border:1px solid #dfe4e3;
   scroll-margin-top:105px}
@@ -671,3 +671,13 @@ html[data-language="en"] h1 {
 .questions summary > span[data-lang] { font: inherit; color: inherit; }
 .small-button > span[data-lang] { margin-left: 0; }
 .depth-intro h2 > span[data-lang] { color: inherit; }
+
+/* Current native screenshots retain their original proportions. */
+.stage-label a { color: inherit; letter-spacing: .2px; text-decoration: none; }
+.stage-label a:hover { text-decoration: underline; }
+.stage-foot { flex-wrap: wrap; margin-top: 16px; }
+.view-switch { flex-wrap: wrap; justify-content: center; }
+@media (max-width: 700px) {
+  .showcase > img { width: 100%; max-width: 100%; margin: 12px auto 0; }
+  .view-switch button { padding: 8px 9px; }
+}

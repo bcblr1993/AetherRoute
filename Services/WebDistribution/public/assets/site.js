@@ -42,13 +42,19 @@
   const views = {
     overview: { zh: "概览", en: "Overview" },
     proxies: { zh: "节点管理", en: "Proxies" },
-    connections: { zh: "实时连接", en: "Connections" }
+    connections: { zh: "实时连接", en: "Connections" },
+    settings: { zh: "主题设置", en: "Appearance" },
+    dark: { zh: "深色外观", en: "Dark mode" }
   };
   let currentView = "overview";
   function updateShowcase(language) {
     const image = document.getElementById("showcase-img");
     if (!image) return;
-    image.src = `/assets/aetherroute-${currentView}-${language}.png`;
+    image.src = `/assets/aetherroute-${currentView}-${language}.png?v=20260914.08`;
+    image.width = currentView === "settings" ? 1920 : 2290;
+    image.height = currentView === "settings" ? 1344 : 1312;
+    const original = document.getElementById("showcase-original");
+    if (original) original.href = image.src;
     image.alt = `AetherRoute — ${views[currentView][language]}`;
   }
   function apply(language) {
@@ -80,7 +86,7 @@
     viewButtons.forEach(item => item.setAttribute("aria-pressed", String(item === button)));
     updateShowcase(root.dataset.language);
     const number = document.querySelector(".stage-number");
-    if (number) number.textContent = `0${index + 1} / 03`;
+    if (number) number.textContent = `${String(index + 1).padStart(2, "0")} / ${String(viewButtons.length).padStart(2, "0")}`;
   }));
   document.querySelectorAll(".checksum").forEach(block => {
     if (block.tagName !== "BUTTON") {

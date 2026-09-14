@@ -8,13 +8,19 @@
   "theme_color": "#0874f8",
   "icons": [
     {
-      "src": "/assets/aetherroute-mark.png?v=1.0.4",
+      "src": "/assets/aetherroute-mark.png?v=20260914.08",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/assets/favicon.png?v=1.0.4",
+      "src": "/assets/app-icon-192.png?v=20260914.08",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/favicon.png?v=20260914.08",
       "sizes": "128x128",
       "type": "image/png",
       "purpose": "any"
