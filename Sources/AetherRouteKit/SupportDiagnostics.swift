@@ -175,6 +175,15 @@ public struct DiagnosticReport: Codable, Equatable, Sendable {
         public let downloadTotal: UInt64
         public let memoryBytes: UInt64
         public let activeConnectionCount: Int
+        /// True when the host asked for fewer connections than were open, so
+        /// `activeConnectionCount` is a floor rather than a total.
+        ///
+        /// The snapshot truncates to the requested limit, which made a
+        /// saturated tunnel report exactly "50" — a number that reads as a
+        /// measurement and is really "at least 50". During an outage that is
+        /// the difference between "some connections" and "connections are
+        /// piling up unanswered".
+        public let activeConnectionCountIsTruncated: Bool
 
         public init(
             uploadBytesPerSecond: UInt64,
@@ -182,17 +191,31 @@ public struct DiagnosticReport: Codable, Equatable, Sendable {
             uploadTotal: UInt64,
             downloadTotal: UInt64,
             memoryBytes: UInt64,
-            activeConnectionCount: Int
+            activeConnectionCount: Int,
+            requestedConnectionLimit: Int? = nil
         ) {
             self.uploadBytesPerSecond = uploadBytesPerSecond
             self.downloadBytesPerSecond = downloadBytesPerSecond
             self.uploadTotal = uploadTotal
             self.downloadTotal = downloadTotal
             self.memoryBytes = memoryBytes
-            self.activeConnectionCount = min(
+            let bounded = min(
                 max(0, activeConnectionCount),
                 NetworkTelemetryCodec.maximumConnections
             )
+            self.activeConnectionCount = bounded
+            if let requestedConnectionLimit, requestedConnectionLimit > 0 {
+                activeConnectionCountIsTruncated = bounded >= requestedConnectionLimit
+            } else {
+                activeConnectionCountIsTruncated = false
+            }
+        }
+
+        /// How the count should be read aloud: `50+` when it is a floor.
+        public var activeConnectionCountDescription: String {
+            activeConnectionCountIsTruncated
+                ? "\(activeConnectionCount)+"
+                : "\(activeConnectionCount)"
         }
     }
 
@@ -239,6 +262,9 @@ public struct DiagnosticReport: Codable, Equatable, Sendable {
     public let profile: Profile
     public let telemetry: Telemetry
     public let provider: Provider
+    /// Which resolver the system actually consults. Addresses only; no queried
+    /// names, which is why this can ship in every build.
+    public let resolver: SystemResolverPrecedence
     public let events: [DiagnosticEvent]
     public let privacy: Privacy
 
@@ -249,6 +275,7 @@ public struct DiagnosticReport: Codable, Equatable, Sendable {
         profile: Profile,
         telemetry: Telemetry,
         provider: Provider = .unavailable,
+        resolver: SystemResolverPrecedence = .unavailable,
         events: [DiagnosticEvent]
     ) {
         schema = Self.schemaVersion
@@ -258,6 +285,7 @@ public struct DiagnosticReport: Codable, Equatable, Sendable {
         self.profile = profile
         self.telemetry = telemetry
         self.provider = provider
+        self.resolver = resolver
         self.events = events
         privacy = Privacy()
     }

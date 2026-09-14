@@ -281,6 +281,11 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var connectedSince: Date?
     @Published private(set) var sessionRoutingMode: RoutingMode?
     @Published private(set) var sessionNetworkEngineMode: NetworkEngineMode?
+    /// Connections requested per telemetry poll. The snapshot truncates to this
+    /// limit, so the diagnostic report needs the same number to tell a real
+    /// count from a saturated one.
+    static let telemetryConnectionLimit: UInt16 = 50
+
     @Published private(set) var networkEngineMode: NetworkEngineMode
     @Published private(set) var systemExtensionApprovalRequired = false
     @Published private(set) var proxySelections: [String: ProxySelectionState] = [:]
@@ -2283,7 +2288,9 @@ final class TunnelManager: ObservableObject {
                 }
                 return try await self.sendProviderMessage(data)
             }
-            let refreshed = try await client.telemetry(maximumConnections: 50)
+            let refreshed = try await client.telemetry(
+                maximumConnections: Self.telemetryConnectionLimit
+            )
             telemetryUpdatedAt = .now
             telemetryViewModel.update(refreshed)
         } catch {
@@ -3298,12 +3305,27 @@ final class TunnelManager: ObservableObject {
                 uploadTotal: telemetry.uploadTotal,
                 downloadTotal: telemetry.downloadTotal,
                 memoryBytes: telemetry.memoryBytes,
-                activeConnectionCount: telemetry.connections.count
+                activeConnectionCount: telemetry.connections.count,
+                requestedConnectionLimit: Int(Self.telemetryConnectionLimit)
             ),
             provider: providerDiagnostics,
+            resolver: currentResolverPrecedence(),
             events: diagnosticEvents.snapshot()
         )
         return try DiagnosticReportEncoder.encode(report)
+    }
+
+    /// Only the packet tunnel installs a resolver, so only it can be preempted.
+    /// A transparent proxy leaves system DNS alone and keeps the hostname on
+    /// the flow, which is why it survives a network that poisons DNS.
+    private func currentResolverPrecedence() -> SystemResolverPrecedence {
+        guard state == .connected,
+              networkEngineMode == .tun,
+              !isUIReviewMode
+        else { return .unavailable }
+        return SystemResolverReader.precedence(
+            tunnelServers: TunnelConfiguration.packetFlowDNSServers
+        )
     }
 
     private func currentProviderDiagnostics() async -> DiagnosticReport.Provider {
