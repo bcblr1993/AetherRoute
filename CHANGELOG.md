@@ -31,6 +31,19 @@ All notable changes to AetherRoute are recorded here. The format follows
   diagnostic core artifacts. Installed-extension performance now requires real
   paired measurements rather than isolated-core throughput numbers.
 
+## [1.0.5]
+
+### Fixed
+
+- Recover TUN traffic after Ethernet and Wi-Fi handoffs by selecting the live
+  physical uplink explicitly, while keeping the tunnel routes installed.
+- Recreate DNS, Hysteria2, TUIC, WireGuard and ShadowQUIC transports when the
+  uplink changes instead of reusing sockets bound to the previous interface.
+- Keep pending DNS replies and latency probes from blocking network recovery.
+  Bound reset work and let genuine link changes interrupt recovery backoff.
+- Ignore duplicate network notifications and changes to unused secondary
+  interfaces so a recovered connection remains stable.
+
 ## [1.0.4] - 2026-09-14
 
 ### Changed

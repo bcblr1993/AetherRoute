@@ -97,7 +97,7 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
 
     /// Requests recovery. Safe to call from any thread and from any number of
     /// notification sources; overlapping requests collapse into one run.
-    public func trigger(reason: String) {
+    public func trigger(reason: String, supersedes: Bool = false) {
         queue.async { [self] in
             // A run already in flight is the answer to any new trigger: it
             // retries on its own and stops on its own health check. Restarting
@@ -105,12 +105,12 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
             // path-change notifications, so accepting triggers mid-run kept the
             // loop pinned to its shortest delays and it never reached the long
             // ones a slow link needs.
-            if isRunning {
+            if isRunning && !supersedes {
                 observer(.coalesced(reason: reason))
                 return
             }
             let now = clock()
-            if let activeAt = lastRunActivityAt,
+            if !supersedes, let activeAt = lastRunActivityAt,
                now.timeIntervalSince(activeAt) < debounce {
                 observer(.coalesced(reason: reason))
                 return

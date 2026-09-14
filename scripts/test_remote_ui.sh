@@ -29,13 +29,14 @@ trap cleanup EXIT HUP INT TERM
 SOURCE="$LOCAL_TEMP/source"
 mkdir -p "$SOURCE"
 for item in \
-  .github .gitmodules .tools Artifacts/Validation CHANGELOG.md CONTRIBUTING.md \
-  Config Core Docs Licenses README.md SECURITY.md Services Sources Tests \
+  .github .gitmodules .tools AetherRoute.xcodeproj Artifacts/Validation CHANGELOG.md CONTRIBUTING.md \
+  Config Core Docs Design Licenses README.md SECURITY.md Services Sources Tests \
   project.yml scripts
 do
   if [ "$item" = Core ]; then
     mkdir -p "$SOURCE/Core"
     rsync -a --exclude '/Engine/target/' --exclude '/Engine/.git' \
+      --exclude 'node_modules/' \
       "$ROOT/Core/" "$SOURCE/Core/"
   else
     ditto "$ROOT/$item" "$SOURCE/$item"
@@ -49,7 +50,7 @@ case "$REMOTE_TEMP" in
   *) echo "unexpected remote temporary path: $REMOTE_TEMP" >&2; exit 1 ;;
 esac
 
-rsync -a "$SOURCE/" "$REMOTE_HOST:$REMOTE_TEMP/source/"
+rsync -az "$SOURCE/" "$REMOTE_HOST:$REMOTE_TEMP/source/"
 rsync -a "$LOCAL_TEMP/expected-source.txt" \
   "$REMOTE_HOST:$REMOTE_TEMP/expected-source.txt"
 

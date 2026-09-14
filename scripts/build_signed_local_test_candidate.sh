@@ -116,7 +116,7 @@ TUNNEL_PROFILE=$(profile_uuid packet-tunnel)
 {
   printf 'CODE_SIGN_STYLE = Manual\n'
   printf 'CODE_SIGN_IDENTITY = %s\n' "$IDENTITY"
-  printf 'OTHER_CODE_SIGN_FLAGS = --timestamp\n'
+  printf 'OTHER_CODE_SIGN_FLAGS = --timestamp=http:/$()/timestamp.apple.com/ts01\n'
   printf 'MARKETING_VERSION = %s\n' "$VERSION"
   printf 'CURRENT_PROJECT_VERSION = %s\n' "$BUILD_NUMBER"
   printf 'AETHERROUTE_RELEASE_CHANNEL = development\n'
@@ -136,23 +136,51 @@ TUNNEL_PROFILE=$(profile_uuid packet-tunnel)
 } >>"$SIGNING_OVERRIDES"
 chmod 600 "$SIGNING_OVERRIDES"
 
-ARCHIVE="$TEMPORARY/AetherRoute.xcarchive"
-BUILD_LOG="$TEMPORARY/archive.log"
-if ! xcodebuild \
-  -project "$ROOT/AetherRoute.xcodeproj" \
-  -scheme AetherRoute \
-  -configuration Release \
-  -destination 'generic/platform=macOS' \
-  -derivedDataPath "$TEMPORARY/DerivedData" \
-  -archivePath "$ARCHIVE" \
-  -xcconfig "$SIGNING_OVERRIDES" \
-  SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
-  GCC_TREAT_WARNINGS_AS_ERRORS=YES \
-  archive >"$BUILD_LOG" 2>&1; then
-  grep -nE '(^|[[:space:]])(error:|fatal error:)' "$BUILD_LOG" >&2 || true
-  tail -160 "$BUILD_LOG" >&2
+ARCHIVE=
+BUILD_LOG=
+archive_attempt=1
+while test "$archive_attempt" -le 5; do
+  candidate_archive="$TEMPORARY/AetherRoute-$archive_attempt.xcarchive"
+  candidate_log="$TEMPORARY/archive-$archive_attempt.log"
+  if xcodebuild \
+    -project "$ROOT/AetherRoute.xcodeproj" \
+    -scheme AetherRoute \
+    -configuration Release \
+    -destination 'generic/platform=macOS' \
+    -derivedDataPath "$TEMPORARY/DerivedData" \
+    -archivePath "$candidate_archive" \
+    -xcconfig "$SIGNING_OVERRIDES" \
+    SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+    GCC_TREAT_WARNINGS_AS_ERRORS=YES \
+    archive >"$candidate_log" 2>&1; then
+    ARCHIVE=$candidate_archive
+    BUILD_LOG=$candidate_log
+    break
+  fi
+  archive_retryable=0
+  if grep -Eiq 'timestamp service is not available' "$candidate_log"; then
+    archive_retryable=1
+  elif grep -Eq '^\*\* ARCHIVE FAILED \*\*$' "$candidate_log" \
+    && grep -Eq '^[[:space:]]*CodeSign ' "$candidate_log"; then
+    # Xcode occasionally suppresses the timestamp-service diagnostic and only
+    # reports the affected CodeSign build command. A bounded clean archive
+    # retry is safe; the final attempt still surfaces the complete build log.
+    archive_retryable=1
+  fi
+  if test "$archive_attempt" -lt 5 && test "$archive_retryable" -eq 1; then
+    echo "Apple signing service unavailable; retrying archive ($archive_attempt/5)" >&2
+    archive_attempt=$((archive_attempt+1))
+    sleep 10
+    continue
+  fi
+  grep -nE '(^|[[:space:]])(error:|fatal error:)' "$candidate_log" >&2 || true
+  tail -160 "$candidate_log" >&2
   exit 1
-fi
+done
+test -n "$ARCHIVE" && test -n "$BUILD_LOG" || {
+  echo "archive retry budget exhausted" >&2
+  exit 1
+}
 
 APP="$ARCHIVE/Products/Applications/AetherRoute.app"
 HOST_BUNDLE=$(jq -r \

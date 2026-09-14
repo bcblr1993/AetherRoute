@@ -2,15 +2,13 @@ import AetherRouteKit
 import Network
 @preconcurrency import NetworkExtension
 import OSLog
+import SystemConfiguration
 
 final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private static let runtimeLogger = AppLog.logger(category: AppLog.Category.tunnelRuntime)
     /// Short enough that ten attempts still fit inside the recovery window,
     /// long enough that a link which has just come up is not failed early.
     private static let healthProbeTimeoutMilliseconds: UInt32 = 3_000
-    /// Upper bound on how long one attempt waits for macOS to reinstall the
-    /// tunnel's settings before moving on to the health check.
-    private static let reassertWaitSeconds: TimeInterval = 5
 
     private lazy var core: any CoreBridge = RustCoreBridge(packetFlow: packetFlow)
     private let diagnostics = ProviderDiagnosticAccumulator()
@@ -20,17 +18,23 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         attributes: [],
         autoreleaseFrequency: .workItem
     )
-    /// The plan, not the built settings object. A reassert has to hand the
-    /// framework a freshly constructed `NEPacketTunnelNetworkSettings`;
-    /// resubmitting the same instance is not a reliable way to make macOS
-    /// reinstall routes and DNS.
-    private var lastAppliedPlan: PacketTunnelNetworkSettingsPlan?
     private var pathMonitor: NWPathMonitor?
+    private var uplinkStore: SCDynamicStore?
+    private final class UplinkObserverContext {
+        weak var provider: PacketTunnelProvider?
+        init(_ provider: PacketTunnelProvider) { self.provider = provider }
+    }
     private let pathMonitorQueue = DispatchQueue(
         label: "com.aetherroute.packet-provider.path",
         qos: .utility
     )
     private var lastPathSignature: String?
+    private let uplinkLock = NSLock()
+    private var physicalInterfaces: [NWInterface] = []
+    private var resetSucceeded = false
+    private var lastResetInterface: UInt32?
+    private var providerStopping = false
+    private var recoveryRoutingMode: RoutingMode = .rule
     /// Built in `init`, not lazily. `wake`, `sleep`, the path monitor and the
     /// provider message queue can all reach it first, and a `lazy var` has no
     /// synchronisation on that first access.
@@ -43,7 +47,28 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 self?.performNetworkRecovery(reason: reason, attempt: attempt)
             },
             verify: { [weak self] in self?.dataPathIsHealthy() ?? false },
-            observer: { event in Self.logRecovery(event) }
+            observer: { [weak self] event in
+                Self.logRecovery(event)
+                guard let self else { return }
+                switch event {
+                case .started:
+                    self.resetSucceeded = false
+                    self.lastResetInterface = nil
+                    self.reasserting = true
+                case .recovered:
+                    self.reasserting = false
+                case .exhausted:
+                    self.reasserting = false
+                    // Hand control back to the host's bounded reconnect policy.
+                    if !self.uplinkLock.withLock({ self.providerStopping }),
+                       self.currentPhysicalUplink() != nil {
+                        self.cancelTunnelWithError(PacketTunnelError.coreUnavailable)
+                    }
+                case .cancelled:
+                    self.reasserting = false
+                default: break
+                }
+            }
         )
     }
 
@@ -51,6 +76,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         options: [String: NSObject]? = nil,
         completionHandler: @escaping (Error?) -> Void
     ) {
+        uplinkLock.withLock { providerStopping = false }
         Self.runtimeLogger.info("stage=startTunnel requested")
         let completion = TunnelStartCompletion(completionHandler)
         do {
@@ -66,6 +92,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             let routingMode = try TunnelProviderConfigurationCodec.routingMode(
                 from: provider?.providerConfiguration
             )
+            uplinkLock.withLock { recoveryRoutingMode = routingMode }
             let localProxy = try TunnelProviderConfigurationCodec
                 .localProxySettings(from: provider?.providerConfiguration)
             let enableIPv6 = try TunnelProviderConfigurationCodec
@@ -125,7 +152,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                         return
                     }
                     Self.runtimeLogger.info("stage=installNetworkSettings success")
-                    self.lastAppliedPlan = settingsPlan
                     self.startPathMonitoring()
                     completion.call(nil)
                 }
@@ -148,6 +174,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             "stage=stopTunnel requested reason=\(reason.rawValue, privacy: .public)"
         )
         stopPathMonitoring()
+        uplinkLock.withLock { providerStopping = true }
         recovery.cancel(reason: "stopTunnel")
         // macOS keeps the tunnel's interface, routes and DNS installed until
         // this completion handler returns, so it must not wait on the engine
@@ -254,64 +281,114 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             Self.runtimeLogger.info(
                 "stage=pathUpdate status=\(String(describing: path.status), privacy: .public) isExpensive=\(path.isExpensive, privacy: .public)"
             )
-            // React to the set of available interfaces changing, not only to a
-            // status transition. With the tunnel holding the default route the
-            // status is effectively pinned to `.satisfied`, so interface
-            // identity is the only signal left that the uplink moved.
-            //
-            // Only physical uplinks count. Reinstalling the tunnel's settings
-            // tears its own utun down and brings it back, and a signature that
-            // included virtual interfaces therefore changed as a direct result
-            // of recovery — measured on a VM, one genuine recovery triggered
-            // three more rounds of resets and route reinstalls off its own echo.
-            let signature = path.availableInterfaces
-                .filter { interface in
-                    switch interface.type {
-                    case .wifi, .wiredEthernet, .cellular: true
-                    default: false
-                    }
-                }
-                .map { "\($0.name):\($0.index)" }
-                .joined(separator: ",")
-                + "|\(path.status)"
-            let previous = self.lastPathSignature
-            self.lastPathSignature = signature
-            guard let previous, previous != signature else { return }
-            Self.runtimeLogger.info("stage=pathChanged scheduling recovery")
-            self.recovery.trigger(reason: "pathChanged")
+            self.uplinkLock.withLock { self.physicalInterfaces = path.availableInterfaces }
+            self.physicalPathDidChange(reason: "pathChanged")
+        }
+        let observerContext = UplinkObserverContext(self)
+        var context = SCDynamicStoreContext(version: 0,
+            info: Unmanaged.passUnretained(observerContext).toOpaque(),
+            retain: { pointer in
+                _ = Unmanaged<UplinkObserverContext>.fromOpaque(pointer).retain()
+                return pointer
+            },
+            release: { pointer in
+                Unmanaged<UplinkObserverContext>.fromOpaque(pointer).release()
+            }, copyDescription: nil)
+        uplinkStore = SCDynamicStoreCreate(nil, "AetherRoute link changes" as CFString,
+            { _, _, context in
+                guard let context else { return }
+                guard let provider = Unmanaged<UplinkObserverContext>.fromOpaque(context)
+                    .takeUnretainedValue().provider else { return }
+                guard !provider.uplinkLock.withLock({ provider.providerStopping }) else { return }
+                provider.physicalPathDidChange(reason: "physicalLinkChanged")
+            }, &context)
+        if let uplinkStore {
+            SCDynamicStoreSetNotificationKeys(uplinkStore, nil,
+                ["State:/Network/Interface/en[0-9]+/(Link|IPv4|IPv6)"] as CFArray)
+            SCDynamicStoreSetDispatchQueue(uplinkStore, pathMonitorQueue)
         }
         monitor.start(queue: pathMonitorQueue)
     }
 
     private func stopPathMonitoring() {
+        if let uplinkStore { SCDynamicStoreSetDispatchQueue(uplinkStore, nil) }
+        uplinkStore = nil
         pathMonitor?.cancel()
         pathMonitor = nil
     }
 
+    /// Both notification sources run on pathMonitorQueue. A secondary link or
+    /// duplicate DHCP notification must not destroy a healthy active transport.
+    private func physicalPathDidChange(reason: String) {
+        guard !uplinkLock.withLock({ providerStopping }) else { return }
+        var signature = "offline"
+        if let interface = currentPhysicalUplink(),
+           let store = SCDynamicStoreCreate(nil, "AetherRoute uplink identity" as CFString, nil, nil) {
+            signature = "\(interface.name):\(interface.index)|"
+                + physicalAddresses(store: store, interface: interface).sorted().joined(separator: ",")
+        }
+        let previous = lastPathSignature
+        lastPathSignature = signature
+        guard let previous, previous != signature else { return }
+        Self.runtimeLogger.info("stage=physicalUplinkChanged scheduling recovery")
+        recovery.trigger(reason: reason, supersedes: true)
+    }
+
+    private func physicalAddresses(store: SCDynamicStore, interface: NWInterface) -> [String] {
+        ["IPv4", "IPv6"].flatMap { family -> [String] in
+            guard let state = SCDynamicStoreCopyValue(store,
+                "State:/Network/Interface/\(interface.name)/\(family)" as CFString) as? [String: Any],
+                  let addresses = state["Addresses"] as? [String] else { return [] }
+            return addresses.filter { address in
+                !address.hasPrefix("169.254.") && !address.lowercased().hasPrefix("fe80:")
+                    && address != "0.0.0.0" && address != "::"
+            }
+        }
+    }
+
+    /// Path preference is supplied by Network.framework. Link state and
+    /// assigned addresses come from SystemConfiguration, not the tunnel's
+    /// satisfied default route or a sticky core interface cache.
+    private func currentPhysicalUplink() -> NWInterface? {
+        guard let store = SCDynamicStoreCreate(nil, "AetherRoute uplink" as CFString, nil, nil)
+        else { return nil }
+        let candidates = uplinkLock.withLock { physicalInterfaces }
+        return candidates.first { interface in
+            guard [.wifi, .wiredEthernet, .cellular].contains(interface.type),
+                  let link = SCDynamicStoreCopyValue(store,
+                    "State:/Network/Interface/\(interface.name)/Link" as CFString) as? [String: Any],
+                  link["Active"] as? Bool == true else { return false }
+            return !physicalAddresses(store: store, interface: interface).isEmpty
+        }
+    }
+
     private func performNetworkRecovery(reason: String, attempt: Int) {
+        guard !uplinkLock.withLock({ providerStopping }) else { return }
+        guard let interface = currentPhysicalUplink() else {
+            resetSucceeded = false
+            Self.runtimeLogger.info("stage=networkRecovery waitingForPhysicalUplink attempt=\(attempt, privacy: .public)")
+            return
+        }
+        let index = UInt32(interface.index)
+        // Once an interface was reset, retry the probe without destroying the
+        // connections/DNS transports that are only just becoming usable.
+        guard lastResetInterface != index || !resetSucceeded else { return }
+        resetSucceeded = false
         Self.runtimeLogger.info(
-            "stage=networkRecovery begin reason=\(reason, privacy: .public) attempt=\(attempt, privacy: .public)"
+            "stage=networkRecovery begin reason=\(reason, privacy: .public) attempt=\(attempt, privacy: .public) interface=\(interface.name, privacy: .public) index=\(index, privacy: .public)"
         )
         do {
-            try core.resetNetworkState()
+            try core.resetNetworkState(interfaceIndex: index)
+            lastResetInterface = index
+            resetSucceeded = true
             Self.runtimeLogger.info("stage=networkRecovery coreReset success")
         } catch {
             Self.runtimeLogger.error(
                 "stage=networkRecovery coreReset failed reason=\(reason, privacy: .public) error=\(String(reflecting: error), privacy: .public)"
             )
         }
-        // Wait for the reinstall before returning, so the coordinator's health
-        // check measures the settings this attempt installed rather than
-        // racing them. Bounded, because a reassert that never calls back must
-        // not stall the remaining attempts. This runs on the coordinator's own
-        // queue; the framework delivers the completion on another one.
-        let installed = DispatchSemaphore(value: 0)
-        reassertNetworkSettings(reason: reason) { installed.signal() }
-        if installed.wait(timeout: .now() + Self.reassertWaitSeconds) == .timedOut {
-            Self.runtimeLogger.error(
-                "stage=reassertNetworkSettings timedOut reason=\(reason, privacy: .public)"
-            )
-        }
+        // Physical egress changes do not change our utun addresses, routes or
+        // DNS server. Keep installed settings intact throughout recovery.
     }
 
     /// Probes the currently selected route end to end.
@@ -321,11 +398,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     /// route exercises the real outbound path — interface binding, DNS and the
     /// proxy connection — which is exactly the state a sleep invalidates.
     private func dataPathIsHealthy() -> Bool {
+        guard resetSucceeded, !uplinkLock.withLock({ providerStopping }),
+              let uplink = currentPhysicalUplink(),
+              UInt32(uplink.index) == lastResetInterface else { return false }
         do {
             let state = try core.testActiveProxyLatency(
-                group: ProxyConnectionReadinessPolicy.globalGroupName,
-                url: ProxyConnectionReadinessPolicy
-                    .requiredExternalProbeURLString,
+                group: uplinkLock.withLock { recoveryRoutingMode == .direct } ? "DIRECT"
+                    : ProxyConnectionReadinessPolicy.globalGroupName,
+                url: uplinkLock.withLock { recoveryRoutingMode == .direct }
+                    ? "http://cp.cloudflare.com/generate_204"
+                    : ProxyConnectionReadinessPolicy.requiredExternalProbeURLString,
                 timeoutMilliseconds: Self.healthProbeTimeoutMilliseconds
             )
             let healthy = state.results.contains { $0.delayMilliseconds != nil }
@@ -338,47 +420,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 "stage=recoveryHealthProbe unavailable error=\(String(reflecting: error), privacy: .public)"
             )
             return false
-        }
-    }
-
-    private func reassertNetworkSettings(
-        reason: String,
-        completion: @escaping @Sendable () -> Void = {}
-    ) {
-        guard let plan = lastAppliedPlan else {
-            completion()
-            return
-        }
-        Self.runtimeLogger.info("stage=reassertNetworkSettings begin reason=\(reason, privacy: .public)")
-        // Clear first, then install a freshly built object. macOS treats a
-        // repeat submission of unchanged settings as a no-op, so the previous
-        // "resubmit the cached instance" reassert could leave stale routes and
-        // DNS in place. `reasserting` tells the framework the tunnel is being
-        // re-established while this happens.
-        reasserting = true
-        setTunnelNetworkSettings(nil) { [weak self] clearError in
-            guard let self else {
-                completion()
-                return
-            }
-            if let clearError {
-                Self.runtimeLogger.error(
-                    "stage=reassertNetworkSettings clearFailed reason=\(reason, privacy: .public) error=\(String(reflecting: clearError), privacy: .public)"
-                )
-            }
-            self.setTunnelNetworkSettings(self.makeNetworkSettings(plan)) { error in
-                if let error {
-                    Self.runtimeLogger.error(
-                        "stage=reassertNetworkSettings failed reason=\(reason, privacy: .public) error=\(String(reflecting: error), privacy: .public)"
-                    )
-                } else {
-                    Self.runtimeLogger.info(
-                        "stage=reassertNetworkSettings success reason=\(reason, privacy: .public)"
-                    )
-                }
-                self.reasserting = false
-                completion()
-            }
         }
     }
 
@@ -415,6 +456,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         _ mode: RoutingMode
     ) throws -> ProxySelectionProviderResponse {
         try core.setRoutingMode(mode)
+        uplinkLock.withLock { recoveryRoutingMode = mode }
         return .routingMode(mode)
     }
 

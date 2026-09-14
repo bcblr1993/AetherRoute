@@ -30,7 +30,7 @@ protocol CoreBridge: Sendable {
     func telemetrySnapshot(
         maximumConnections: UInt16
     ) throws -> NetworkTelemetrySnapshot
-    func resetNetworkState() throws
+    func resetNetworkState(interfaceIndex: UInt32) throws
     /// Signals the engine to stop and calls `completion` as soon as the tunnel
     /// is safe to tear down — it does **not** wait for the engine to unwind.
     /// The join continues on a background queue; see `RustCoreBridge.stop`.
@@ -433,7 +433,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             timeoutMilliseconds <= ProxySelectionProviderMessageCodec
                 .maximumLatencyTimeoutMilliseconds
         else { throw PacketTunnelSelectorError.invalidLatency }
-        return try controlLock.withLock {
+        return try {
             guard isRunning(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
             }
@@ -469,7 +469,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             }
             output.count = requiredLength
             return try PacketSelectorLatencyCodec.decode(output)
-        }
+        }()
     }
 
     func testActiveProxyLatency(
@@ -485,7 +485,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             timeoutMilliseconds <= ProxySelectionProviderMessageCodec
                 .maximumLatencyTimeoutMilliseconds
         else { throw PacketTunnelSelectorError.invalidLatency }
-        return try controlLock.withLock {
+        return try {
             guard isRunning(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
             }
@@ -518,7 +518,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             }
             output.count = requiredLength
             return try PacketSelectorLatencyCodec.decode(output)
-        }
+        }()
     }
 
     func telemetrySnapshot(
@@ -561,11 +561,11 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
     /// call that blocks inside the engine costs this attempt and nothing else.
     /// Recovery treats a `timedOut` the same as any other failure and carries
     /// on to reinstall the tunnel's settings, which does not need the engine.
-    func resetNetworkState() throws {
-        try controlLock.withLock {
-            guard isRunning(), clash_packet_flow_ready() == 1 else {
-                throw PacketTunnelSelectorError.unavailable
-            }
+    func resetNetworkState(interfaceIndex: UInt32) throws {
+        // No controlLock: active URL probes can hold it for seconds on a
+        // dead uplink. Readiness is atomic in the engine and under stateLock here.
+        guard interfaceIndex > 0, isRunning(), clash_packet_flow_ready() == 1 else {
+            throw PacketTunnelSelectorError.unavailable
         }
         let admitted = resetLock.withLock { () -> Bool in
             guard !resetInFlight else { return false }
@@ -578,8 +578,13 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         // `weak self` deliberately: if the reset never returns, the bridge must
         // still be able to deallocate once the provider lets go of it.
         resetQueue.async { [weak self] in
-            let status = clash_packet_reset_network_state_v1()
-            self?.finishReset()
+            guard let self, self.isRunning() else {
+                self?.finishReset()
+                outcome.complete(Int32(CLASH_FLOW_INVALID_STATE))
+                return
+            }
+            let status = clash_packet_reset_network_state_on_interface_v1(interfaceIndex)
+            self.finishReset()
             outcome.complete(status)
         }
         guard outcome.wait(

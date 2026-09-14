@@ -49,6 +49,47 @@ private final class EventRecorder: @unchecked Sendable {
 struct NetworkRecoveryCoordinatorTests {
     private static let fastDelays: [TimeInterval] = [0.01, 0.01, 0.01, 0.01]
 
+    @Test
+    func newPhysicalUplinkIsNotLostInsideCompletionDebounce() {
+        let attempts = Counter()
+        let recorder = EventRecorder()
+        let coordinator = NetworkRecoveryCoordinator(
+            delays: [0.01], debounce: 60,
+            perform: { _, _ in attempts.increment() }, verify: { true },
+            observer: { recorder.record($0) })
+        coordinator.trigger(reason: "ethernet")
+        #expect(recorder.wait(for: {
+            if case .recovered(reason: "ethernet", attempt: 0) = $0 { return true }
+            return false
+        }))
+        coordinator.trigger(reason: "wifi", supersedes: true)
+        #expect(recorder.wait(for: {
+            if case .recovered(reason: "wifi", attempt: 0) = $0 { return true }
+            return false
+        }))
+        #expect(attempts.value == 2)
+    }
+
+    @Test
+    func newPhysicalUplinkSupersedesLongBackoff() {
+        let recorder = EventRecorder()
+        let coordinator = NetworkRecoveryCoordinator(
+            delays: [0.01, 60],
+            perform: { _, _ in }, verify: { false },
+            observer: { recorder.record($0) })
+        coordinator.trigger(reason: "offline")
+        #expect(recorder.wait(for: {
+            if case .attemptFailed(reason: "offline", attempt: 0) = $0 { return true }
+            return false
+        }))
+        coordinator.trigger(reason: "wifi", supersedes: true)
+        #expect(recorder.wait(for: {
+            if case .attemptFailed(reason: "wifi", attempt: 0) = $0 { return true }
+            return false
+        }))
+        coordinator.cancel()
+    }
+
     /// The whole point of the health check: a network that is already back must
     /// cost exactly one attempt, not the full schedule.
     @Test

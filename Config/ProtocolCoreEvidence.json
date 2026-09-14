@@ -1,11 +1,11 @@
 {
   "artifacts": {
-    "flowCoreSHA256": "d58d261de2aa961d68780823c1e3ec6ed9848fd009e5645ba987991ae42a64f2",
-    "headerSHA256": "03567a835792b2fab004e2f7437606cd45b0d5ea5ca141b53252b705ef4fb20b",
-    "interopTestBinarySHA256": "497b83631fb72c0240c1e4690aeb72ef357e521bbe93497064c126d8e5992ebf",
-    "packetFlowCoreSHA256": "4e4571f05cc6ff9934041bbd6044a3315ce4ee8334b4b4ab09f2ae4226dc99be"
+    "flowCoreSHA256": "6cdbe1123360d93c95c5239d4fd78af5f9b211f54a13a3955a30a06ace076b38",
+    "headerSHA256": "bf0c29db89cad621d4700b78d08608acd4cd749740f1a3e829a3900a843865b9",
+    "interopTestBinarySHA256": "2c08d8c9290b45274e908a754939d869a7829cb3c7465acb3d3dc7ff6d965d74",
+    "packetFlowCoreSHA256": "7b2127fb336b2b5eb07dd6be4997928ef0e9a019e6330571fe49adb6cc5a0781"
   },
-  "coreCommit": "8d54935e58f8a317f548b0e06d5f2e75f0032375",
+  "coreCommit": "91a5d6af004698c438e36d6fb7ab6bd6a1060f43",
   "coreFeatures": [
     "aether-tuic",
     "shadowquic",
@@ -57,10 +57,10 @@
     "dispatcherSHA256": "acd1fb94cdc3027e536f3ccf93385c4b6271ad4258df5fcf9ebdcaedbe16c7f3",
     "embeddedFlowSourceSHA256": "a79acca8f666238fc0ac4d3c3261500e1485e003b6de7d6b6c5db352c8de84da",
     "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
-    "ffiSourceSHA256": "fa7c5019ca0efb128a090b5ec8d885595a87f5da197f91e5c92708b14cb57021",
+    "ffiSourceSHA256": "a06f4c742f41d922b6a14a313176873c37f33980c2de697702431453143ba0dc",
     "flowFFISourceSHA256": "21e5677043303096439a2eb85f8fe7eb2521f599f343d575e68b55f63cfff393",
-    "interopTestsSHA256": "25d4c14b208633d6524a434a6925af63e7bd15cf3553441ca98bcb8f61182c23",
-    "outboundManagerSHA256": "ed10f10bd6a9911066da3bbeb4390d006c9a1b4abf7e7732a281958970d9fb3b",
+    "interopTestsSHA256": "d45e96c4895bf11eded10ed25c27c1b18b5c1256928dd72ee37a03a82fca8eee",
+    "outboundManagerSHA256": "a7200e3a318aef7588054aafbbaad3fd858c0be8d96339791c75866e6f2ceae1",
     "proxyManagerSHA256": "560fc42d699f21cf5a3801f587f6c76ddb1fce90bbe7a7b0a2eb69cf00ad9548",
     "selectorSourceSHA256": "b1092a6558910c5ab19e62eb613cdde72fe692a284d2b50f269b582fa25fc332"
   }
