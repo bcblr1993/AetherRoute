@@ -140,7 +140,8 @@ verify_core_artifact() {
   done
   flow_symbol_count=$(awk '{print $NF}' \
     "$core_symbols_directory/symbols.txt" | grep -Ec '^_clash_flow_' || true)
-  test "$flow_symbol_count" -eq 19 || \
+  # 20 since clash_flow_diagnostics_snapshot_v1; see scripts/build_core.sh.
+  test "$flow_symbol_count" -eq 20 || \
     fail "core artifact exposes an unexpected Flow ABI count: $flow_symbol_count"
   if awk '{print $NF}' "$core_symbols_directory/symbols.txt" \
     | grep -Eq '^_clash_(start|shutdown|packet_|push_packet_|install_packet_|uninstall_packet_|is_packet_)'; then

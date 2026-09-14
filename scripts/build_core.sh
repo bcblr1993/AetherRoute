@@ -140,8 +140,11 @@ do
   fi
 done
 
+# 20 since the flow engine gained clash_flow_diagnostics_snapshot_v1. This
+# count is a deliberate ceiling on the ABI surface: raising it should be a
+# decision, not a side effect of adding an export.
 FLOW_ABI_COUNT=$(printf '%s\n' "$FLOW_SYMBOLS" | grep -Ec '^_clash_flow_' || true)
-if [ "$FLOW_ABI_COUNT" -ne 19 ]; then
+if [ "$FLOW_ABI_COUNT" -ne 20 ]; then
   echo "Refusing core artifact with unexpected Flow ABI count: $FLOW_ABI_COUNT" >&2
   exit 1
 fi

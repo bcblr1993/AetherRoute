@@ -206,6 +206,20 @@ int32_t clash_packet_telemetry_snapshot_v1(
     size_t output_capacity,
     size_t *required_length
 );
+/* Data-plane counters as an "ARD1" blob: magic, count, then that many
+ * big-endian uint64 values. Pass a NULL output with zero capacity to learn the
+ * required length. Ordinals and numbers only, never endpoints or names, so
+ * these ship in every build. */
+int32_t clash_packet_diagnostics_snapshot_v1(
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+);
+int32_t clash_flow_diagnostics_snapshot_v1(
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+);
 
 const char *clash_flow_status_message(int32_t status);
 /* NULL options select 2 workers, queue depth 32, TCP 64 KiB, UDP 65507 bytes. */
