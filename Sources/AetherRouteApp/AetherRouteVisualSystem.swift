@@ -85,8 +85,8 @@ enum AetherVisual {
     }
 }
 
-/// The adopted Scheme A (以太跃迁 · 蓝宝石晶体环) emblem. It renders the
-/// luminous sapphire crystal mobius ring with forward portal energy arrow.
+/// Silver Flight: the approved porcelain tile and graphite paper plane.
+/// The existing asset name is retained for resource compatibility.
 struct AetherRouteGlyph: View {
     var isActive = false
     var isOnColor = false

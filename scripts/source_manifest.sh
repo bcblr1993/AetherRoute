@@ -19,6 +19,7 @@ MANIFEST="$WORK/manifest.txt"
     Config \
     Core/Headers \
     Docs \
+    Design \
     Licenses \
     Services \
     Sources \

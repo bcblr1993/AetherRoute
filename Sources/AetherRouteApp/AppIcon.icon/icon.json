@@ -2,19 +2,7 @@
   "fill-specializations": [
     {
       "value": {
-        "linear-gradient": [
-          "display-p3:0.11000,0.11000,0.11800,1.00000",
-          "display-p3:0.11000,0.11000,0.11800,1.00000"
-        ]
-      }
-    },
-    {
-      "appearance": "dark",
-      "value": {
-        "linear-gradient": [
-          "display-p3:0.11000,0.11000,0.11800,1.00000",
-          "display-p3:0.11000,0.11000,0.11800,1.00000"
-        ]
+        "solid": "display-p3:0,0,0,0"
       }
     }
   ],
@@ -22,66 +10,22 @@
     {
       "layers": [
         {
-          "fill-specializations": [
-            {
-              "value": {
-                "linear-gradient": [
-                  "display-p3:0.74900,0.74900,0.76500,1.00000",
-                  "display-p3:0.74900,0.74900,0.76500,1.00000"
-                ]
-              }
-            },
-            {
-              "appearance": "dark",
-              "value": {
-                "linear-gradient": [
-                  "display-p3:0.74900,0.74900,0.76500,1.00000",
-                  "display-p3:0.74900,0.74900,0.76500,1.00000"
-                ]
-              }
-            }
-          ],
-          "image-name": "Portal.png",
-          "name": "Portal"
-        },
-        {
-          "fill-specializations": [
-            {
-              "value": {
-                "linear-gradient": [
-                  "display-p3:1.00000,1.00000,1.00000,1.00000",
-                  "display-p3:1.00000,1.00000,1.00000,1.00000"
-                ]
-              }
-            },
-            {
-              "appearance": "dark",
-              "value": {
-                "linear-gradient": [
-                  "display-p3:1.00000,1.00000,1.00000,1.00000",
-                  "display-p3:1.00000,1.00000,1.00000,1.00000"
-                ]
-              }
-            }
-          ],
-          "image-name": "Route.png",
-          "name": "Rising Route"
+          "image-name": "SilverFlight.png",
+          "name": "Silver Flight",
+          "glass": false
         }
       ],
       "shadow": {
         "kind": "neutral",
-        "opacity": 0.34
+        "opacity": 0
       },
       "translucency": {
-        "enabled": true,
-        "value": 0.16
+        "enabled": false,
+        "value": 0
       }
     }
   ],
   "supported-platforms": {
-    "circles": [
-      "watchOS"
-    ],
     "squares": "shared"
   }
 }

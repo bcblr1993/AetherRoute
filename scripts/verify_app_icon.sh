@@ -25,12 +25,15 @@ test -x "$ICTOOL" || {
 jq -e . "$ICON_DIRECTORY/Contents.json" >/dev/null
 jq -e '
   (.groups | length) == 1 and
-  ([.groups[].layers[]."image-name"] | sort) == ["Portal.png", "Route.png"] and
+  ([.groups[].layers[]."image-name"] | sort) == ["SilverFlight.png"] and
   (.["supported-platforms"].squares == "shared")
 ' "$COMPOSER_DIRECTORY/icon.json" >/dev/null || {
   echo "App icon verification failed: unexpected Icon Composer document" >&2
   exit 1
 }
+swift "$ROOT/scripts/generate_icon_source.swift" --output-directory "$RENDER_DIRECTORY" >/dev/null
+cmp "$ICON_DIRECTORY/AppIcon-1024.png" "$RENDER_DIRECTORY/Sources/AetherRouteApp/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
+cmp "$ICON_DIRECTORY/AppIcon-1024.png" "$ROOT/Sources/AetherRouteApp/Assets.xcassets/AetherSapphireEmblem.imageset/AetherSapphireEmblem.png"
 swift "$ROOT/scripts/generate_app_icon.swift" \
   --output-directory "$GENERATED_DIRECTORY" >/dev/null
 swift "$ROOT/scripts/generate_icon_composer_assets.swift" \
@@ -59,7 +62,7 @@ for SIZE in 16 32 64 128 256 512 1024; do
   }
 done
 
-for ASSET in Portal.png Route.png; do
+for ASSET in SilverFlight.png; do
   SOURCE="$COMPOSER_DIRECTORY/Assets/$ASSET"
   GENERATED="$GENERATED_COMPOSER_DIRECTORY/$ASSET"
   test -f "$SOURCE" || {
@@ -103,4 +106,4 @@ for RENDITION in Default Dark Mono TintedLight TintedDark ClearLight ClearDark; 
   done
 done
 
-echo "App icon assets verified: layered Aether Lens, 7 renditions, 16-1024 px"
+echo "App icon assets verified: Silver Flight, 7 renditions, 16-1024 px"

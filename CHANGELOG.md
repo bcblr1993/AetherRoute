@@ -31,6 +31,16 @@ All notable changes to AetherRoute are recorded here. The format follows
   diagnostic core artifacts. Installed-extension performance now requires real
   paired measurements rather than isolated-core throughput numbers.
 
+## [1.0.4] - 2026-09-14
+
+### Changed
+
+- Replace the dark dot-matrix icon with the user-selected Silver Flight design:
+  a graphite paper plane with a blue accent on a porcelain-white tile.
+- Use the same approved artwork for Dock, Finder, in-app branding and website
+  icons, with reproducible 16–1024 px assets and the legacy ICNS resource.
+- Networking behavior is unchanged from 1.0.3.
+
 ## [1.0.3] - 2026-09-14
 
 ### Fixed
