@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-Hans" data-language="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AetherRoute 1.0.5 正式版本说明、更新日志、安装包下载与 SHA-256 校验和。">
+  <title>AetherRoute 1.0.5 正式版</title>
+  <link rel="icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="icon" href="/assets/favicon-dark.png?v=20260914.08" type="image/png" media="(prefers-color-scheme: dark)">
+  <link rel="alternate icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=20260914.08">
+  <link rel="stylesheet" href="/assets/site.css?v=20260914.08">
+  <script src="/assets/site.js?v=20260915.04" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content"><span data-lang="zh">跳到正文</span><span data-lang="en">Skip to content</span></a>
+  
+  <header class="site-header"><nav class="nav wrap" aria-label="Main navigation"><a class="brand" href="/"><img src="/assets/aetherroute-mark.png?v=20260914.08" srcset="/assets/aetherroute-mark.png?v=20260914.08 1x, /assets/aetherroute-mark-1024.png?v=20260914.08 2x" width="34" height="34" alt="">AetherRoute</a><div class="navlinks"><a href="/#experience"><span data-lang="zh">使用体验</span><span data-lang="en">Experience</span></a><a href="/releases/"><span data-lang="zh">版本更新</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">使用帮助</span><span data-lang="en">Support</span></a></div><div class="nav-actions"><button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button><a class="small-button" href="/releases/"><span data-lang="zh">获取 Mac 版</span><span data-lang="en">Get for Mac</span> <span aria-hidden="true">↗</span></a></div></nav></header>
+
+  <main id="content" class="shell">
+    <div class="page-hero">
+      <span class="eyebrow"><span data-lang="zh">正式版 · 已通过 Apple 公证</span><span data-lang="en">Release · Apple notarized</span></span>
+      <h1>AetherRoute 1.0.5</h1>
+      <p>Build 2026091504 · 2026-09-15 · Apple silicon · macOS 15.0+</p>
+      <div class="hero-actions"><a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.5/AetherRoute-1.0.5-build-2026091504-arm64.dmg"><span data-lang="zh">下载 1.0.5 正式版</span><span data-lang="en">Download 1.0.5 Release</span></a><a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.5">GitHub Release ↗</a><a class="button" href="/releases/1.0.4/"><span data-lang="zh">获取 1.0.4 历史版本</span><span data-lang="en">Get 1.0.4 previous release</span></a></div>
+    </div>
+
+    <article class="prose">
+<section><h2><span data-lang="zh">网络切换后自动恢复</span><span data-lang="en">Recover after switching networks</span></h2><ul>
+<li><span data-lang="zh">修复网线与 Wi-Fi 切换后 TUN 无法稳定恢复、需要手动重连的问题。同步实际出口接口，重建 DNS 与相关协议连接，避免重复重装路由。</span><span data-lang="en">Fix TUN recovery after Ethernet/Wi-Fi changes by updating the active interface and rebuilding DNS and protocol connections without repeatedly reinstalling routes.</span></li>
+<li><span data-lang="zh">断网或节点探测失败时保留已选代理，避免错误切到直连；无网络时保持恢复状态。</span><span data-lang="en">Keep the selected proxy during outages and failed health checks, and keep the recovery state truthful while offline.</span></li>
+<li><span data-lang="zh">修复 IPv6 hosts 地址族处理及 AAAA 映射，改善窄窗口布局与无障碍可读性。</span><span data-lang="en">Correct IPv6 hosts address-family handling and AAAA mappings, with improved narrow-window layouts and accessibility.</span></li></ul></section>
+<section><h2><span data-lang="zh">验证范围</span><span data-lang="en">Validation coverage</span></h2><p><span data-lang="zh">独立 VM 协议测试、受控 IPv6 DNS/HTTPS 及 210 秒断网、快速链路抖动后的稳定窗口复测通过。完整 UI 套件中的 38 项功能用例通过。正式包经过 Developer ID 签名与 Apple 公证，使用正常核心且不包含 QA 自动连接。</span><span data-lang="en">Independent VM protocol tests, controlled IPv6 DNS/HTTPS, and stable traffic windows following a 210-second outage and rapid link changes passed. 38 UI functional tests passed. The stable package is Developer ID signed and Apple notarized, with the normal core and no QA auto-connect.</span></p>
+<p><span data-lang="zh">本次由维护者明确授权发布，剩余性能、独立真机、24 小时稳定性和完整安装后验收予以豁免，未记为通过。VM UI 响应性 p95 为 581.574 ms（门槛 120 ms），宿主机窗口打开 RSS 最高约 174 MiB（门槛 128 MiB）。维护者将自行进行本机实际测试。</span><span data-lang="en">The maintainer explicitly authorized this release with the remaining performance, independent physical-Mac, 24-hour stability and full post-install gates waived, not passed. VM UI p95 was 581.574 ms against 120 ms; peak window-open RSS on the host was about 174 MiB against 128 MiB. The maintainer will perform local testing.</span></p></section>
+<section><h2><span data-lang="zh">下载与校验</span><span data-lang="en">Download and verify</span></h2><div class="checksum">AetherRoute-1.0.5-build-2026091504-arm64.dmg</div><p>SHA-256</p><div class="checksum">81bf0dee912647646338304faef69bbeb4dcb58c384ee9e4acd076b08be0ca4f</div></section>
+</article>
+  </main>
+
+  <footer class="wrap site-footer"><span>© 2026 AetherRoute <span class="footer-note"><span data-lang="zh">由编程不良人用心打造。</span><span data-lang="en">Made by BianChengBuLiangRen.</span></span></span><div><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">帮助</span><span data-lang="en">Support</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可</span><span data-lang="en">License</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub ↗</a></div></footer>
+</body>
+</html>

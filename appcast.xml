@@ -6,84 +6,18 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.4 (Build 2026091405)</title>
-            <pubDate>Mon, 14 Sep 2026 19:18:47 +0800</pubDate>
-            <sparkle:version>2026091405</sparkle:version>
-            <sparkle:shortVersionString>1.0.4</sparkle:shortVersionString>
+            <title>Version 1.0.5 (Build 2026091504)</title>
+            <pubDate>Tue, 15 Sep 2026 07:25:28 +0800</pubDate>
+            <sparkle:version>2026091504</sparkle:version>
+            <sparkle:shortVersionString>1.0.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
-<h2>AetherRoute 1.0.4</h2><ul><li>设置新增跟随系统、浅色和深色主题切换，立即生效并记住选择，应用内图标随主题切换深浅底色。</li><li>全新的银白纸飞机图标，统一 Dock、Finder、应用内标识和官网视觉。</li><li>网络行为沿用 1.0.3，保留已有配置与订阅。</li><li>通过 485 项单元测试、图标检查、Developer ID 签名与 Apple 公证。</li></ul><p>本次未重新执行原生 IPv6、整机睡眠唤醒及 24 小时稳定性验证，1.0.3 的已知限制仍需留意。</p><p><a href="https://aetherroute.pages.dev/releases/1.0.4/">完整版本说明</a></p>
-
+<h2>AetherRoute 1.0.5</h2><ul><li>修复网线与 Wi-Fi 切换后 TUN 难以恢复的问题，保留用户代理选择。</li><li>修复 IPv6 hosts 地址族及 AAAA 映射，改善窄窗口布局和无障碍可读性。</li><li>正式 stable 正常核心包，经过 Developer ID 签名与 Apple 公证。</li></ul><p>本次按维护者授权，豁免剩余性能、独立真机、24 小时稳定性及完整安装后验收，未记为通过。详情见官网版本说明。</p>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.4-build-2026091405/AetherRoute-1.0.4-build-2026091405-arm64-Notarized-Test-Normal-Core.dmg"
-                sparkle:edSignature="wxEXCY9ZzQZrk5rabh6K69hpFNfjOjluJzYPmW3ZuZq+N8iHvS+bqk88FB3VR7qVeoQFui7JH/DuPyU1IzaqAQ=="
-                length="23944091"
-                type="application/octet-stream" />
-        </item>
-        <item>
-            <title>Version 1.0.3 (Build 2026091402)</title>
-            <pubDate>Mon, 14 Sep 2026 18:35:00 +0800</pubDate>
-            <sparkle:version>2026091402</sparkle:version>
-            <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[
-<h2>AetherRoute 1.0.3：相比 1.0.2 的改进</h2>
-<ul>
-<li><strong>断网恢复：</strong>1.0.2 的网络重置可能拖住遥测和控制请求。1.0.3 将其放入独立队列，最多等待三秒，超时后继续尝试恢复网络设置，并避免重置任务堆积。</li>
-<li><strong>异常退出自动重连：</strong>1.0.2 可能把扩展被系统终止视为普通断开，需要手动连接。1.0.3 会识别异常并最多重试五次，等待间隔为一、三、八、二十、四十五秒。</li>
-<li><strong>主动断开保护：</strong>用户点击断开即取消待执行的自动重连；手动连接或恢复成功后重置重试计数。</li>
-</ul>
-<p>验证：485 项单元测试通过；Tart 覆盖升级、20/60 秒断网恢复、双引擎异常退出重连及主动断开回归通过。</p>
-<p>已知限制：ipv6.google.com 的 HTTPS 失败在 1.0.2 同样存在。首次异常恢复曾耗时约 48 秒，后续为 7–8 秒。未完成原热点卡死条件重现、原生 IPv6 或 24 小时稳定性验证。</p>
-            ]]></description>
-            <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.3-build-2026091402/AetherRoute-1.0.3-build-2026091402-arm64-Notarized-Test-Normal-Core.dmg"
-                sparkle:edSignature="m4NvWMQoNNxA427fiPuQAxnCdeXb/X/JDMGB0aGLwtsmbvQHw1WpR0NFfQZcIb4GrZKFTUFYrcXVW/oECsm4Bg=="
-                length="20779581"
-                type="application/octet-stream" />
-        </item>
-        <item>
-            <title>Version 1.0.2 (Build 2026091401)</title>
-            <pubDate>Mon, 14 Sep 2026 15:24:34 +0800</pubDate>
-            <sparkle:version>2026091401</sparkle:version>
-            <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[
-<h2>AetherRoute 1.0.2 (Build 2026091401)</h2>
-<ul>
-  <li>优化断开连接与网络恢复机制：断开时后台清理协议引擎，立即恢复宿主机原生路由与 DNS。</li>
-  <li>引入进程级单例引擎守卫（Process-Wide Engine Gate），杜绝快速重连导致双引擎并发占用内存与传输冲突。</li>
-  <li>优化节点测速探活取消逻辑，节点失联时不阻塞隧道停止与遥测队列。</li>
-  <li>新增 DNS 解析器实时上报与透明代理流量统计诊断支持。</li>
-</ul>
-            ]]></description>
-            <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.2-build-2026091401/AetherRoute-1.0.2-build-2026091401-arm64-Notarized-Test-Normal-Core.dmg"
-                sparkle:edSignature="K9KGcCOAhx/rJbVCcmCwyUwcxYBHMda8XnW/rL38XYcSSkkYv8tC2xxDWdHqiSe5U1TLN5zcR5De+iQ9sZouDw=="
-                length="27107832"
-                type="application/octet-stream" />
-        </item>
-        <item>
-            <title>Version 1.0.1 (Build 2026091302)</title>
-            <pubDate>Sun, 13 Sep 2026 16:50:56 +0800</pubDate>
-            <sparkle:version>2026091302</sparkle:version>
-            <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[
-<h2>AetherRoute 1.0.1 (Build 2026091302)</h2>
-<ul>
-  <li>修复侧边栏导航点击白屏及选中态错位问题，优化 NavigationSplitView 交互。</li>
-  <li>实时波形双通道 1 秒平滑动画与后台节能限流机制（Scheme B）。</li>
-  <li>全面接入 AetherVisual 动效规范与 macOS 原生悬停交互体系。</li>
-  <li>完成全部界面组件的 AppLocalization 国际化与可访问性覆盖。</li>
-  <li>优化系统睡眠唤醒后的网络恢复机制与 DNS 防泄漏门禁。</li>
-</ul>
-            ]]></description>
-            <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.1-build-2026091302/AetherRoute-1.0.1-build-2026091302-arm64-Notarized-Test-Normal-Core.dmg"
-                sparkle:edSignature="zm+o3dGi1VCm/aCGwvDH5zmd/5DUtsKETu++v+cfBP26B8IwHLdX8C8mo/SEthbN6R4R7OIw1LdsV1BVRV27Dw=="
-                length="27097276"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.5/AetherRoute-1.0.5-build-2026091504-arm64.dmg"
+                sparkle:edSignature="mR9+Y/sBa6gLHmN9VAJdbOXgeSb45pnJ0yoNUORT0cfRj58ZrwXI2XqBjVqK1JcUmg0OjoqkUloMW/RrGbcBCA=="
+                length="25360420"
                 type="application/octet-stream" />
         </item>
     </channel>
