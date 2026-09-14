@@ -33,8 +33,13 @@ case "$1" in
             exit 0
         fi
 
-        echo "🚀 Starting AetherRoute 48-Hour Continuous Monitor..."
-        nohup /usr/bin/python3 "$PYTHON_SCRIPT" --interval 180 --duration-hours 48 --output-dir "$OUTPUT_DIR" >> "$OUTPUT_DIR/monitor_stdout.log" 2>&1 &
+        INTERVAL=${2:-300}
+        DURATION=${3:-48}
+        TARGET_SAMPLES=$(( DURATION * 3600 / INTERVAL ))
+        INTERVAL_MIN=$(( INTERVAL / 60 ))
+
+        echo "🚀 Starting AetherRoute ${DURATION}-Hour Continuous Monitor..."
+        nohup /usr/bin/python3 "$PYTHON_SCRIPT" --interval "$INTERVAL" --duration-hours "$DURATION" --output-dir "$OUTPUT_DIR" >> "$OUTPUT_DIR/monitor_stdout.log" 2>&1 &
         BG_PID=$!
 
         sleep 2
@@ -42,8 +47,8 @@ case "$1" in
             echo "$BG_PID" > "$PID_FILE"
             echo "✅ Monitor successfully started in background!"
             echo "   PID: $BG_PID"
-            echo "   Interval: 180s (3 minutes)"
-            echo "   Target duration: 48 hours (960 samples)"
+            echo "   Interval: ${INTERVAL}s (${INTERVAL_MIN} minutes)"
+            echo "   Target duration: ${DURATION} hours (${TARGET_SAMPLES} samples)"
             echo "   Outputs: $OUTPUT_DIR"
             echo "   Live Dashboard: $DASHBOARD_FILE"
         else
@@ -64,7 +69,8 @@ try:
     with open("'"$SUMMARY_FILE"'") as f:
         d = json.load(f)
     sc = d.get("samples_collected", 0)
-    target = d.get("target_samples_48h", 960)
+    target = d.get("target_samples_48h", 576)
+    interval = d.get("interval_seconds", 300)
     eh = d.get("elapsed_hours", 0)
     last_up = d.get("last_updated", "N/A")
     inc = d.get("total_incidents", 0)
@@ -77,7 +83,7 @@ try:
     tun_rss = m.get("tunnel_rss_mb", 0)
     dns_lat = m.get("dns_latency_ms", 0)
     http_lat = m.get("http_latency_ms", 0)
-    print(f"Cycles:          {sc} / {target} ({eh:.2f}h elapsed)")
+    print(f"Cycles:          {sc} / {target} ({eh:.2f}h elapsed, interval {interval}s)")
     print(f"Last updated:    {last_up}")
     print(f"Total Incidents: {inc}")
     print(f"PIDs:            App={pid_app} | Tunnel={pid_tun} | Proxy={pid_prx}")

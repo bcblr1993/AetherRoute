@@ -73,8 +73,11 @@ class IncidentSeverity:
 
 
 class TelemetryCollector:
-    def __init__(self, output_dir: str):
+    def __init__(self, output_dir: str, interval: int = 300, duration_hours: float = 48.0):
         self.output_dir = output_dir
+        self.interval = interval
+        self.duration_hours = duration_hours
+        self.target_samples = max(1, int((duration_hours * 3600) / interval))
         self.snapshots_dir = os.path.join(output_dir, "diagnostic_snapshots")
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.snapshots_dir, exist_ok=True)
@@ -696,7 +699,9 @@ class TelemetryCollector:
         summary = {
             "status": "RUNNING",
             "samples_collected": self.samples_collected,
-            "target_samples_48h": 960,
+            "target_samples_48h": self.target_samples,
+            "interval_seconds": self.interval,
+            "duration_hours": self.duration_hours,
             "start_time": datetime.datetime.fromtimestamp(self.start_time).isoformat(),
             "last_updated": latest_sample["timestamp"],
             "elapsed_hours": round(elapsed_sec / 3600.0, 2),
@@ -725,7 +730,7 @@ class TelemetryCollector:
     def update_dashboard(self, sample: dict):
         elapsed_sec = time.time() - self.start_time
         elapsed_str = str(datetime.timedelta(seconds=int(elapsed_sec)))
-        pct = min(100.0, round((self.samples_collected / 960.0) * 100.0, 1))
+        pct = min(100.0, round((self.samples_collected / float(self.target_samples)) * 100.0, 1))
 
         p_app = sample["processes"]["app"]
         p_tun = sample["processes"]["tunnel"]
@@ -758,10 +763,13 @@ class TelemetryCollector:
 
         # Raw: the Markdown tables escape pipes as `\|`, which Python otherwise
         # reads as an unknown escape and warns about on every import.
+        interval_min = round(self.interval / 60.0, 1)
+        if interval_min.is_integer():
+            interval_min = int(interval_min)
         md = rf"""# AetherRoute 48-Hour Telemetry Dashboard
 
-> **Status**: 🟢 **ACTIVE MONITORING** &nbsp;|&nbsp; **Cycles**: `{self.samples_collected} / 960` ({pct}%) &nbsp;|&nbsp; **Elapsed**: `{elapsed_str}`  
-> **Last Sample**: `{sample['timestamp']}` &nbsp;|&nbsp; **Total Incidents**: `{self.total_incidents}`
+> **Status**: 🟢 **ACTIVE MONITORING** &nbsp;|&nbsp; **Cycles**: `{self.samples_collected} / {self.target_samples}` ({pct}%) &nbsp;|&nbsp; **Elapsed**: `{elapsed_str}`  
+> **Last Sample**: `{sample['timestamp']}` &nbsp;|&nbsp; **Total Incidents**: `{self.total_incidents}` &nbsp;|&nbsp; **Interval**: `{self.interval}s` (`{interval_min}m`)
 
 ---
 
@@ -801,7 +809,7 @@ class TelemetryCollector:
 {incidents_table}
 
 ---
-_Data automatically polled every 180s by `scripts/monitor_aetherroute_48h.py`. Next sample in ~3 minutes._
+_Data automatically polled every {self.interval}s by `scripts/monitor_aetherroute_48h.py`. Next sample in ~{interval_min} minutes._
 """
         temp_file = self.dashboard_file + ".tmp"
         with open(temp_file, "w", encoding="utf-8") as f:
@@ -859,14 +867,14 @@ def run_loop(collector: TelemetryCollector, interval_seconds: int, duration_hour
 
 def main():
     parser = argparse.ArgumentParser(description="AetherRoute 48-Hour Continuous Telemetry Monitor")
-    parser.add_argument("--interval", type=int, default=180, help="Sampling interval in seconds (default: 180)")
+    parser.add_argument("--interval", type=int, default=300, help="Sampling interval in seconds (default: 300)")
     parser.add_argument("--duration-hours", type=float, default=48.0, help="Duration in hours (default: 48)")
     parser.add_argument("--output-dir", type=str, default=DEFAULT_OUTPUT_DIR, help="Output directory path")
     parser.add_argument("--once", action="store_true", help="Run a single sample and exit (for dry-run verification)")
 
     args = parser.parse_args()
 
-    collector = TelemetryCollector(args.output_dir)
+    collector = TelemetryCollector(args.output_dir, interval=args.interval, duration_hours=args.duration_hours)
 
     if args.once:
         print("Running single baseline dry-run verification...")
