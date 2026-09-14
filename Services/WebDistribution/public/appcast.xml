@@ -6,6 +6,22 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
+            <title>Version 1.0.4 (Build 2026091405)</title>
+            <pubDate>Mon, 14 Sep 2026 19:18:47 +0800</pubDate>
+            <sparkle:version>2026091405</sparkle:version>
+            <sparkle:shortVersionString>1.0.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+<h2>AetherRoute 1.0.4</h2><ul><li>设置新增跟随系统、浅色和深色主题切换，立即生效并记住选择，应用内图标随主题切换深浅底色。</li><li>全新的银白纸飞机图标，统一 Dock、Finder、应用内标识和官网视觉。</li><li>网络行为沿用 1.0.3，保留已有配置与订阅。</li><li>通过 485 项单元测试、图标检查、Developer ID 签名与 Apple 公证。</li></ul><p>本次未重新执行原生 IPv6、整机睡眠唤醒及 24 小时稳定性验证，1.0.3 的已知限制仍需留意。</p><p><a href="https://aetherroute.pages.dev/releases/1.0.4/">完整版本说明</a></p>
+
+            ]]></description>
+            <enclosure
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.4-build-2026091405/AetherRoute-1.0.4-build-2026091405-arm64-Notarized-Test-Normal-Core.dmg"
+                sparkle:edSignature="wxEXCY9ZzQZrk5rabh6K69hpFNfjOjluJzYPmW3ZuZq+N8iHvS+bqk88FB3VR7qVeoQFui7JH/DuPyU1IzaqAQ=="
+                length="23944091"
+                type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 1.0.3 (Build 2026091402)</title>
             <pubDate>Mon, 14 Sep 2026 18:35:00 +0800</pubDate>
             <sparkle:version>2026091402</sparkle:version>

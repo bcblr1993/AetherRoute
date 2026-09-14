@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-Hans" data-language="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AetherRoute 1.0.4 正式版本说明、更新日志、安装包下载与 SHA-256 校验和。">
+  <title>AetherRoute 1.0.4 正式版</title>
+  <link rel="icon" href="/assets/favicon.png?v=1.0.4" type="image/png">
+  <link rel="alternate icon" href="/assets/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/aetherroute-mark.png?v=1.0.4">
+  <link rel="stylesheet" href="/assets/site.css?v=20260914.07">
+  <script src="/assets/site.js?v=20260914.07" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content"><span data-lang="zh">跳到正文</span><span data-lang="en">Skip to content</span></a>
+  
+  <header class="site-header"><nav class="nav wrap" aria-label="Main navigation"><a class="brand" href="/"><img src="/assets/aetherroute-mark.png?v=1.0.4" width="34" height="34" alt="">AetherRoute</a><div class="navlinks"><a href="/#experience"><span data-lang="zh">使用体验</span><span data-lang="en">Experience</span></a><a href="/releases/"><span data-lang="zh">版本更新</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">使用帮助</span><span data-lang="en">Support</span></a></div><div class="nav-actions"><button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button><a class="small-button" href="/releases/"><span data-lang="zh">获取 Mac 版</span><span data-lang="en">Get for Mac</span> <span aria-hidden="true">↗</span></a></div></nav></header>
+
+  <main id="content" class="shell">
+    <div class="page-hero">
+      <span class="eyebrow"><span data-lang="zh">正式版 · 已通过 Apple 公证</span><span data-lang="en">Release · Apple notarized</span></span>
+      <h1>AetherRoute 1.0.4</h1>
+      <p>Build 2026091405 · 2026-09-14 · Apple silicon · macOS 15.0+</p>
+      <div class="hero-actions"><a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.4-build-2026091405/AetherRoute-1.0.4-build-2026091405-arm64-Notarized-Test-Normal-Core.dmg"><span data-lang="zh">下载 1.0.4 正式版</span><span data-lang="en">Download 1.0.4 Release</span></a><a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.4-build-2026091405">GitHub Release ↗</a><a class="button" href="/releases/1.0.3/"><span data-lang="zh">获取 1.0.3 历史版本</span><span data-lang="en">Get 1.0.3 previous release</span></a></div>
+    </div>
+
+    <article class="prose">
+      <div class="notice"><span data-lang="zh">1.0.4 聚焦图标更新，网络行为沿用 1.0.3。请同时查看下方验证范围。</span><span data-lang="en">Version 1.0.4 refreshes the icon; networking behavior is unchanged from 1.0.3. See validation coverage below.</span></div>
+      <section><h2><span data-lang="zh">全新的银白纸飞机</span><span data-lang="en">Introducing Silver Flight</span></h2>
+      <img src="/assets/aetherroute-mark.png?v=1.0.4" width="160" height="160" alt="AetherRoute Silver Flight icon">
+      <ul><li><span data-lang="zh">设置 → 通用 → 外观新增跟随系统、浅色和深色主题，切换立即生效并记住选择。应用内图标随主题切换深浅底色，去掉外围蓝色光晕。</span><span data-lang="en">General settings now offer System, Light and Dark themes with instant switching and persistence. In-app icons adapt to the theme, without the decorative blue glow.</span></li><li><span data-lang="zh">采用银白底、石墨色纸飞机与蓝色点缀，替换原有深色点阵图标。</span><span data-lang="en">A porcelain-white tile, graphite paper plane and blue accent replace the dark dot-matrix icon.</span></li>
+      <li><span data-lang="zh">统一 Dock、Finder、应用内品牌标识及官网图标，提供 16–1024 像素资源。</span><span data-lang="en">Consistent Dock, Finder, in-app and website branding with 16–1024 px assets.</span></li>
+      <li><span data-lang="zh">保留已有配置、订阅与 1.0.3 的断网恢复、异常退出自动重连行为。</span><span data-lang="en">Existing profiles, subscriptions and the network recovery behavior from 1.0.3 are preserved.</span></li></ul></section>
+      <section><h2><span data-lang="zh">验证范围</span><span data-lang="en">Validation coverage</span></h2><ul>
+      <li><span data-lang="zh">485 项单元测试通过，图标尺寸、可重现性及 7 种 macOS 样式检查通过。</span><span data-lang="en">485 unit tests passed; icon sizes, reproducibility and seven macOS renditions were checked.</span></li>
+      <li><span data-lang="zh">Developer ID 签名、应用和 DMG 的 Apple 公证、票据装订与 Gatekeeper 校验通过。</span><span data-lang="en">Developer ID signatures, Apple notarization of app and DMG, stapled tickets and Gatekeeper were verified.</span></li>
+      <li><span data-lang="zh">在 Tart macOS 26.6.1 中完成 1.0.3 → 1.0.4 覆盖升级，保留配置，并实测侧栏、首页和 Dock 的新图标。已实测主题即时切换、深浅图标同步和重启保存。</span><span data-lang="en">An in-place upgrade from 1.0.3 to 1.0.4 in Tart macOS 26.6.1 preserved profiles. Sidebar, overview and Dock icons were visually checked. Instant theme changes, adaptive icons and persistence after relaunch were checked.</span></li>
+
+      </ul></section>
+      <section><h2><span data-lang="zh">已知限制</span><span data-lang="en">Known limitations</span></h2><p><span data-lang="zh">本次图标更新未重新执行全部协议矩阵、原生 IPv6、整机睡眠唤醒或 24 小时稳定性验证。1.0.3 已记录的 IPv6 HTTPS 与首次异常恢复延迟限制仍需留意，详见 <a href="/releases/1.0.3/">1.0.3 版本说明</a>。</span><span data-lang="en">This icon update does not repeat the full protocol matrix, native IPv6, system sleep/wake or 24-hour stability validation. The IPv6 HTTPS and initial recovery-delay limitations recorded for <a href="/releases/1.0.3/">1.0.3</a> remain relevant.</span></p></section>
+      <section><h2><span data-lang="zh">系统要求</span><span data-lang="en">Requirements</span></h2><p>Apple silicon · macOS 15.0+</p></section>
+      <section><h2><span data-lang="zh">文件完整性校验</span><span data-lang="en">Integrity verification</span></h2><div class="checksum">shasum -a 256 AetherRoute-1.0.4-build-2026091405-arm64-Notarized-Test-Normal-Core.dmg</div><p>SHA-256</p><div class="checksum">ef56aefb44f4f856aef72fb6b8077ca6e6263fa15a0f81b0062c485d942da298</div></section>
+    </article>
+  </main>
+
+  <footer class="wrap site-footer"><span>© 2026 AetherRoute <span class="footer-note"><span data-lang="zh">由编程不良人用心打造。</span><span data-lang="en">Made by BianChengBuLiangRen.</span></span></span><div><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">帮助</span><span data-lang="en">Support</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可</span><span data-lang="en">License</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub ↗</a></div></footer>
+</body>
+</html>
