@@ -1,6 +1,6 @@
 #!/usr/bin/env swift
 
-// Draws the AetherRoute mark: a dot-matrix "A" on a white squircle.
+// Draws the AetherRoute mark: a dot-matrix "A" on a dark squircle.
 //
 // Two outputs, both 1024x1024 in Display P3:
 //   AppIcon-1024.png            the flattened master the renditions derive from
@@ -30,27 +30,30 @@ let cornerRadius = plateSize * 0.2237
 //        ●  ●  ●      crossbar
 //        ●  .  ●      legs
 //
-// Ink carries apex and crossbar, grey carries the legs. That mirrors how the
-// reference splits a solid centre against lighter outer dots, and it keeps the
-// silhouette readable when the icon is 16pt.
+// The mark carries apex and crossbar, the legs sit a step dimmer. That mirrors
+// how the reference splits a solid centre against lighter outer dots, and it
+// keeps the silhouette readable when the icon is 16pt.
 let dotRadius = 68.0
 private let columns = [312.0, 512.0, 712.0]
 private let rows = [312.0, 512.0, 712.0]
 
 // Apex and crossbar.
-let darkDots: [(Double, Double)] = [
+let markDots: [(Double, Double)] = [
     (columns[1], rows[0]),
     (columns[0], rows[1]), (columns[1], rows[1]), (columns[2], rows[1]),
 ]
 // Legs.
-let greyDots: [(Double, Double)] = [
+let legDots: [(Double, Double)] = [
     (columns[0], rows[2]), (columns[2], rows[2]),
 ]
 
-let plateColor = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
-let darkColor = CGColor(srgbRed: 0.110, green: 0.110, blue: 0.118, alpha: 1)
-// Lighter outer dots, matching the reference mark's two-tone depth.
-let greyColor = CGColor(srgbRed: 0.604, green: 0.604, blue: 0.627, alpha: 1)
+let plateColor = CGColor(srgbRed: 0.110, green: 0.110, blue: 0.118, alpha: 1)
+let markColor = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
+// The legs sit a step below the apex and crossbar for the same two-tone depth
+// as the reference mark. On a dark plate that step has to be shallower than it
+// would be on a light one, or the lower half of the letter dissolves into the
+// background.
+let legColor = CGColor(srgbRed: 0.749, green: 0.749, blue: 0.765, alpha: 1)
 
 let outputRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 let appIconSet = outputRoot
@@ -98,7 +101,7 @@ func write(_ context: CGContext, to url: URL) {
     print("wrote \(url.lastPathComponent)")
 }
 
-// 1. Flattened master: white plate plus both dot groups.
+// 1. Flattened master: dark plate plus both dot groups.
 let master = makeContext()
 let plate = CGPath(
     roundedRect: CGRect(x: plateInset, y: plateInset, width: plateSize, height: plateSize),
@@ -109,11 +112,11 @@ let plate = CGPath(
 master.addPath(plate)
 master.setFillColor(plateColor)
 master.fillPath()
-master.setFillColor(darkColor)
-addDots(darkDots, to: master)
+master.setFillColor(markColor)
+addDots(markDots, to: master)
 master.fillPath()
-master.setFillColor(greyColor)
-addDots(greyDots, to: master)
+master.setFillColor(legColor)
+addDots(legDots, to: master)
 master.fillPath()
 write(master, to: appIconSet.appendingPathComponent("AppIcon-1024.png"))
 
@@ -146,11 +149,11 @@ func addEmblemDots(_ dots: [(Double, Double)], to context: CGContext) {
         ))
     }
 }
-emblem.setFillColor(darkColor)
-addEmblemDots(darkDots, to: emblem)
+emblem.setFillColor(markColor)
+addEmblemDots(markDots, to: emblem)
 emblem.fillPath()
-emblem.setFillColor(greyColor)
-addEmblemDots(greyDots, to: emblem)
+emblem.setFillColor(legColor)
+addEmblemDots(legDots, to: emblem)
 emblem.fillPath()
 write(emblem, to: outputRoot.appendingPathComponent(
     "Sources/AetherRouteApp/Assets.xcassets/AetherSapphireEmblem.imageset/AetherSapphireEmblem.png"
