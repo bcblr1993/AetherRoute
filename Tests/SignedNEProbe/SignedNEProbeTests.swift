@@ -145,7 +145,9 @@ final class SignedNEProbeTests: XCTestCase, @unchecked Sendable {
         let quoted = String(data: try JSONSerialization.data(withJSONObject: [marker]), encoding: .utf8)!
         let source = "import os,sys,signal,time,subprocess,json; child=subprocess.Popen(['/bin/sleep','20']); marker=json.loads('\(quoted)')[0]\ndef stop(a,b):\n child.terminate();child.wait(timeout=1);time.sleep(.1);open(marker,'w').write(str(child.pid));sys.exit(78)\nsignal.signal(signal.SIGTERM,stop);time.sleep(20)"
         let p = process(source)
-        XCTAssertThrowsError(try SignedNEProbe.capture(p, timeout: 0.3)) { XCTAssertEqual($0 as? SignedNEProbeError, .timedOut) }
+        // Allow the signed Python runtime to initialize and install SIGTERM.
+        // The cleanup assertions below still require the child to be reaped.
+        XCTAssertThrowsError(try SignedNEProbe.capture(p, timeout: 2)) { XCTAssertEqual($0 as? SignedNEProbeError, .timedOut) }
         XCTAssertFalse(p.isRunning)
         let child = try XCTUnwrap(Int32(String(contentsOfFile: marker, encoding: .utf8)))
         XCTAssertEqual(kill(child, 0), -1); XCTAssertEqual(errno, ESRCH)
@@ -158,8 +160,9 @@ final class SignedNEProbeTests: XCTestCase, @unchecked Sendable {
     func testUncooperativeHelperIsKilledAndCleanupNotClaimed() throws {
         let p = process("import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);time.sleep(20)")
         let start = Date()
-        XCTAssertThrowsError(try SignedNEProbe.capture(p, timeout: 0.3)) { XCTAssertEqual($0 as? SignedNEProbeError, .cleanupUnconfirmed) }
-        XCTAssertFalse(p.isRunning); XCTAssertLessThan(Date().timeIntervalSince(start), 4.5)
+        // Exercise an installed SIG_IGN handler, not a cold interpreter launch.
+        XCTAssertThrowsError(try SignedNEProbe.capture(p, timeout: 2)) { XCTAssertEqual($0 as? SignedNEProbeError, .cleanupUnconfirmed) }
+        XCTAssertFalse(p.isRunning); XCTAssertLessThan(Date().timeIntervalSince(start), 6.2)
     }
     func withStage(_ body: (String, [String: Any], SignedNEProbeBinding) throws -> Void) throws {
         let stage = "/private/tmp/aether-ne-probe." + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
