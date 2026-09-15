@@ -6,31 +6,6 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
-### v1.0.6 preparation
-
-- Foreground overview polls at approximately 1 second; switching to another
-  application, hiding/minimizing the window or leaving the overview releases
-  realtime demand so polling drops to 10 seconds when no other live panel needs it.
-- Plot the last 30 seconds using sample timestamps rather than a fixed count
-  of 30 samples. Coalesce same-second refreshes, discard expired samples and
-  reset history on clock rollback. Show the refresh interval separately.
-- Include the menu panel redesign below. Publication remains pending candidate
-  validation, signing/notarization and release acceptance.
-
-
-### Menu bar redesign (next release)
-
-- Use filled/outlined paper-plane menu bar symbols for connected/disconnected
-  states and a wider 380pt native frosted-material panel, respecting Reduce
-  Transparency and light/dark appearance. Remove the duplicate header power
-  button while retaining the main connect/disconnect action and all other controls.
-- Show the current node in a full-width row; open a second-level node panel
-  without search, ordered by measured latency with stable ties, then untested
-  and unavailable entries. Include runtime provider members beyond the old
-  16-item limit. Preserve selection errors and return only after selection succeeds.
-- Observe menu traffic values independently so live rates update without
-  redrawing the entire control panel.
-
 ### Changed
 
 - The first public edition uses free distribution with user-provided profiles,
@@ -55,6 +30,41 @@ All notable changes to AetherRoute are recorded here. The format follows
 - Bind protocol, signing and resource notices to the actual normal or
   diagnostic core artifacts. Installed-extension performance now requires real
   paired measurements rather than isolated-core throughput numbers.
+
+## [1.0.6] - 2026-09-15
+
+### Changed
+
+- Redesign the menu bar panel with a wider 380pt native frosted-glass layout,
+  light/dark appearance and Reduce Transparency support. Use paper-plane menu
+  bar symbols and retain one main connect/disconnect button.
+- Show the current node in a full-width row and open a second-level node list
+  without search. Sort measured nodes by latency with stable ties, followed by
+  untested and unavailable nodes; include all runtime provider members.
+- Poll the foreground overview approximately every second. Release realtime
+  demand when switching apps, hiding/minimizing the window or leaving the
+  overview; use 10-second polling when no other live panel needs realtime data.
+- Label the traffic graph as the last 30 seconds and show the refresh interval
+  separately. Position samples by their timestamps instead of keeping 30 points.
+
+### Fixed
+
+- Preserve healthy pooled transports when refreshing or reapplying the same
+  outbound interface. Only an actual interface-index change invalidates those
+  transports, avoiding unnecessary Hysteria2, TUIC, ShadowQUIC and WireGuard
+  reconnections.
+- Resolve the outbound interface once asynchronously for direct UDP sessions
+  and reuse it for both sockets, reducing repeated synchronous interface scans.
+- Fix missing node names in the menu panel and independently observe live
+  traffic values. Keep selection errors visible and return from the node list
+  only after selection succeeds.
+- Expire traffic samples outside the 30-second window, coalesce same-second
+  samples and reset history after clock rollback.
+
+### Diagnostics
+
+- Add scripts to collect intermittent proxy data-plane failures and inspect
+  transport rebuilds. These are developer troubleshooting tools.
 
 ## [1.0.5]
 
