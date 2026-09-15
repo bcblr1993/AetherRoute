@@ -171,41 +171,23 @@ private enum ProductionStartupLoader {
 @MainActor
 final class NetworkTelemetryViewModel: ObservableObject {
     @Published private(set) var snapshot: NetworkTelemetrySnapshot = .empty
-    @Published private(set) var downloadHistory: [Double] = Array(repeating: 0, count: 30)
-    @Published private(set) var uploadHistory: [Double] = Array(repeating: 0, count: 30)
+    private(set) var history = TrafficHistory()
 
     func update(_ snapshot: NetworkTelemetrySnapshot) {
-        let isSnapshotUnchanged = (snapshot == self.snapshot)
+        history.append(
+            download: Double(snapshot.downloadBytesPerSecond),
+            upload: Double(snapshot.uploadBytesPerSecond),
+            at: Date()
+        )
+        // One publication for both current values and the timestamped history.
         self.snapshot = snapshot
-
-        // Time-series history must advance even if the rate remains constant (e.g. at 0),
-        // so that previous peaks slide off the window. Only skip if the rate is 0 and
-        // the history is already completely flat at 0.
-        let isIdleAndFlat = snapshot.downloadBytesPerSecond == 0
-            && snapshot.uploadBytesPerSecond == 0
-            && (downloadHistory.allSatisfy { $0 == 0 })
-            && (uploadHistory.allSatisfy { $0 == 0 })
-
-        if isSnapshotUnchanged && isIdleAndFlat {
-            return
-        }
-
-        var down = downloadHistory
-        down.append(Double(snapshot.downloadBytesPerSecond))
-        if down.count > 30 { down.removeFirst() }
-        downloadHistory = down
-
-        var up = uploadHistory
-        up.append(Double(snapshot.uploadBytesPerSecond))
-        if up.count > 30 { up.removeFirst() }
-        uploadHistory = up
     }
 
     func reset() {
+        history = TrafficHistory()
         snapshot = .empty
-        downloadHistory = Array(repeating: 0, count: 30)
-        uploadHistory = Array(repeating: 0, count: 30)
     }
+
 }
 
 @MainActor

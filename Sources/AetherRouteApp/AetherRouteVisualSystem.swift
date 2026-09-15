@@ -694,11 +694,13 @@ public struct AetherTrafficMiniGraph: View {
     @Environment(\.colorScheme) private var colorScheme
     let downloadSamples: [Double]
     let uploadSamples: [Double]
+    let samplePositions: [Double]
     var height: CGFloat = 46
 
-    public init(downloadSamples: [Double], uploadSamples: [Double], height: CGFloat = 46) {
+    public init(downloadSamples: [Double], uploadSamples: [Double], samplePositions: [Double] = [], height: CGFloat = 46) {
         self.downloadSamples = downloadSamples
         self.uploadSamples = uploadSamples
+        self.samplePositions = samplePositions
         self.height = height
     }
 
@@ -777,7 +779,8 @@ public struct AetherTrafficMiniGraph: View {
         let step = width / CGFloat(samples.count - 1)
         return samples.enumerated().map { i, val in
             let normalizedY = height - CGFloat(min(val / maxVal, 1.0)) * (height - 6) - 3
-            return CGPoint(x: CGFloat(i) * step, y: normalizedY)
+            let x = samplePositions.count == samples.count ? CGFloat(samplePositions[i]) * width : CGFloat(i) * step
+            return CGPoint(x: x, y: normalizedY)
         }
     }
 
@@ -786,7 +789,7 @@ public struct AetherTrafficMiniGraph: View {
         let points = smoothPoints(samples: samples, width: width, height: height, maxVal: maxVal)
         guard points.count > 1 else { return path }
 
-        path.move(to: CGPoint(x: 0, y: height))
+        path.move(to: CGPoint(x: points[0].x, y: height))
         path.addLine(to: points[0])
 
         for i in 0..<(points.count - 1) {
@@ -807,7 +810,7 @@ public struct AetherTrafficMiniGraph: View {
             path.addCurve(to: p2, control1: cp1, control2: cp2)
         }
 
-        path.addLine(to: CGPoint(x: width, y: height))
+        path.addLine(to: CGPoint(x: points[points.count - 1].x, y: height))
         path.closeSubpath()
         return path
     }

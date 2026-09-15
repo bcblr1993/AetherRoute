@@ -6,6 +6,18 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+### v1.0.6 preparation
+
+- Foreground overview polls at approximately 1 second; switching to another
+  application, hiding/minimizing the window or leaving the overview releases
+  realtime demand so polling drops to 10 seconds when no other live panel needs it.
+- Plot the last 30 seconds using sample timestamps rather than a fixed count
+  of 30 samples. Coalesce same-second refreshes, discard expired samples and
+  reset history on clock rollback. Show the refresh interval separately.
+- Include the menu panel redesign below. Publication remains pending candidate
+  validation, signing/notarization and release acceptance.
+
+
 ### Menu bar redesign (next release)
 
 - Use filled/outlined paper-plane menu bar symbols for connected/disconnected

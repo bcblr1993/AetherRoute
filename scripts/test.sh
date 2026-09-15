@@ -37,6 +37,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_installed_ne_performance_c
 "$ROOT/scripts/test_isolated_soak_process_cleanup.sh"
 sh "$ROOT/Tests/ConnectionRows/run.sh"
 sh "$ROOT/Tests/MenuProxyNodeOrder/run.sh"
+sh "$ROOT/Tests/TrafficHistory/run.sh"
 sh "$ROOT/Tests/SystemExtensionActivation/run.sh"
 sh "$ROOT/Tests/WindowVisibility/run.sh"
 "$ROOT/scripts/test_release_soak_evidence.sh"

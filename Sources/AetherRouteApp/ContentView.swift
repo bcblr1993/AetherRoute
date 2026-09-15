@@ -617,12 +617,22 @@ private struct OverviewView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didUnhideNotification)) { _ in
             updateOverviewTelemetryState()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            updateOverviewTelemetryState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            tunnel.setRealtimeTelemetryPreferred(false, for: "overview")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { _ in
+            updateOverviewTelemetryState()
+        }
         .accessibilityIdentifier("overview-page")
     }
 
     private func updateOverviewTelemetryState() {
-        let hasVisibleWindow = NSApplication.shared.windows.contains { window in
+        let hasVisibleWindow = NSApplication.shared.isActive && NSApplication.shared.windows.contains { window in
             window.isVisible && !window.isMiniaturized && !(window is NSPanel)
+                && window.occlusionState.contains(.visible)
         }
         tunnel.setRealtimeTelemetryPreferred(hasVisibleWindow, for: "overview")
     }
@@ -696,7 +706,7 @@ private struct OverviewView: View {
                 if tunnel.isConnected {
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
                         HStack {
-                            Label(AppLocalization.string("Live Traffic Waveform (30s)"), systemImage: "chart.xyaxis.line")
+                            Label(AppLocalization.string("Traffic · Last 30 seconds"), systemImage: "chart.xyaxis.line")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(.primary)
                             Spacer()
@@ -717,10 +727,13 @@ private struct OverviewView: View {
                         }
                         .padding(.horizontal, AetherVisual.s4)
 
-                        AetherTrafficMiniGraph(
-                            downloadSamples: tunnel.telemetryViewModel.downloadHistory,
-                            uploadSamples: tunnel.telemetryViewModel.uploadHistory,
-                            height: 44
+                        Text(AppLocalization.string(tunnel.isRealtimeTelemetryPreferred ? "Refresh: every 1 second" : "Refresh: every 10 seconds"))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, AetherVisual.s4)
+                        LiveTrafficHistoryGraph(
+                            model: tunnel.telemetryViewModel,
+                            isRealtime: tunnel.isRealtimeTelemetryPreferred
                         )
                         .padding(.horizontal, AetherVisual.s2)
                         .padding(.bottom, AetherVisual.s2)
@@ -3143,6 +3156,26 @@ private struct SafetyNotice: View {
             "The selected route answered the latency and data-plane checks."
         case .degraded:
             "You are still connected. The selected route was slow to answer, and AetherRoute keeps looking for a faster node."
+        }
+    }
+}
+
+
+/// Observe high-frequency updates only where the waveform is drawn.
+private struct LiveTrafficHistoryGraph: View {
+    @ObservedObject var model: NetworkTelemetryViewModel
+    let isRealtime: Bool
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1, paused: !isRealtime)) { context in
+            let now = isRealtime ? context.date : Date()
+            let samples = model.history.visible(at: now)
+            AetherTrafficMiniGraph(
+                downloadSamples: samples.map(\.download),
+                uploadSamples: samples.map(\.upload),
+                samplePositions: samples.map { TrafficHistory.position(of: $0, at: now) },
+                height: 44
+            )
         }
     }
 }

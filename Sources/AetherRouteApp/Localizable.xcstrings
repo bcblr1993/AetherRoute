@@ -9058,6 +9058,39 @@
           }
         }
       }
+    },
+    "Traffic · Last 30 seconds": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络波形 · 最近 30 秒"
+          }
+        }
+      }
+    },
+    "Refresh: every 1 second": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新间隔：1 秒"
+          }
+        }
+      }
+    },
+    "Refresh: every 10 seconds": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新间隔：10 秒"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
