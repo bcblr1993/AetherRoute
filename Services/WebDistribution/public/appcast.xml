@@ -6,18 +6,18 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.5 (Build 2026091504)</title>
-            <pubDate>Tue, 15 Sep 2026 07:25:28 +0800</pubDate>
-            <sparkle:version>2026091504</sparkle:version>
-            <sparkle:shortVersionString>1.0.5</sparkle:shortVersionString>
+            <title>Version 1.0.6 (Build 2026091508)</title>
+            <pubDate>Tue, 15 Sep 2026 18:53:10 +0800</pubDate>
+            <sparkle:version>2026091508</sparkle:version>
+            <sparkle:shortVersionString>1.0.6</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
-<h2>AetherRoute 1.0.5</h2><ul><li>修复网线与 Wi-Fi 切换后 TUN 难以恢复的问题，保留用户代理选择。</li><li>修复 IPv6 hosts 地址族及 AAAA 映射，改善窄窗口布局和无障碍可读性。</li><li>正式 stable 正常核心包，经过 Developer ID 签名与 Apple 公证。</li></ul><p>本次按维护者授权，豁免剩余性能、独立真机、24 小时稳定性及完整安装后验收，未记为通过。详情见官网版本说明。</p>
+<h2>AetherRoute 1.0.6</h2><p>全新玻璃菜单面板、延迟排序节点列表、实时流量刷新及网络稳定性与退出优化。</p><p><a href="https://aetherroute.pages.dev/releases/1.0.6/">完整更新日志</a></p>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.5/AetherRoute-1.0.5-build-2026091504-arm64.dmg"
-                sparkle:edSignature="mR9+Y/sBa6gLHmN9VAJdbOXgeSb45pnJ0yoNUORT0cfRj58ZrwXI2XqBjVqK1JcUmg0OjoqkUloMW/RrGbcBCA=="
-                length="25360420"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.6/AetherRoute-1.0.6-build-2026091508-arm64.dmg"
+                sparkle:edSignature="jd68iOJ1R2e5JpXCqJfZ03+fPC9bpxy3Li8zfQrXyllyQfq+hf6yVzTvtsrYOUkkYvzBNqD9H5fqeV59us1+Aw=="
+                length="24442052"
                 type="application/octet-stream" />
         </item>
     </channel>
