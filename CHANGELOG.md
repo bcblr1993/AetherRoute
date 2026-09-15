@@ -52,9 +52,12 @@ All notable changes to AetherRoute are recorded here. The format follows
 - Preserve healthy pooled transports when refreshing or reapplying the same
   outbound interface. Only an actual interface-index change invalidates those
   transports, avoiding unnecessary Hysteria2, TUIC, ShadowQUIC and WireGuard
-  reconnections.
+  reconnections and the extra handshake delay on subsequent requests.
 - Resolve the outbound interface once asynchronously for direct UDP sessions
-  and reuse it for both sockets, reducing repeated synchronous interface scans.
+  and reuse it for both IPv4 and IPv6 sockets. This avoids repeating full
+  interface enumeration and candidate connect probes on the Tokio worker when
+  a TUN session has no pinned interface, reducing stalls in other tasks sharing
+  that worker. Both networking fixes are included from core commit `743cb63`.
 - Fix missing node names in the menu panel and independently observe live
   traffic values. Keep selection errors visible and return from the node list
   only after selection succeeds.
