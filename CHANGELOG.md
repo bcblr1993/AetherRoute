@@ -75,7 +75,8 @@ All notable changes to AetherRoute are recorded here. The format follows
 ### Diagnostics
 
 - Add scripts to collect intermittent proxy data-plane failures and inspect
-  transport rebuilds. These are developer troubleshooting tools.
+  transport rebuilds, plus automated network-loss recovery and interface-handoff
+  scenarios. These are developer troubleshooting and validation tools.
 
 ## [1.0.5]
 
