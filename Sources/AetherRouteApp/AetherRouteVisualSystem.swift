@@ -59,7 +59,7 @@ enum AetherVisual {
     static let sidebarWidth: CGFloat = 236
     static let windowWidth: CGFloat = 960
     static let windowHeight: CGFloat = 680
-    static let popoverWidth: CGFloat = 330
+    static let popoverWidth: CGFloat = 380
     /// Sheet content follows the final dialog handoff rather than the page
     /// spacing grid.
     static let dialogPadding: CGFloat = 26

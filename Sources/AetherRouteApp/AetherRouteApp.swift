@@ -330,8 +330,7 @@ struct AetherRouteApp: App {
                 .environmentObject(language)
                 .environment(\.locale, language.locale)
         } label: {
-            // Icon only. The symbol is a template image, so state is carried by
-            // its shape rather than by colour or by an adjacent title.
+            // Template artwork follows the menu bar's light/dark appearance.
             Image(systemName: menuBarIcon)
                 .accessibilityLabel(menuBarAccessibilityLabel)
         }
@@ -349,19 +348,42 @@ struct AetherRouteApp: App {
         .windowToolbarStyle(.unifiedCompact(showsTitle: true))
     }
 
+    private var isMenuPanelReview: Bool {
+#if DEBUG
+        ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_PANEL"] == "1"
+            && ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] != nil
+#else
+        false
+#endif
+    }
+
     private var mainWindow: some Scene {
         WindowGroup(productDisplayName, id: "main") {
-            ContentView()
+            Group {
+#if DEBUG
+                if isMenuPanelReview {
+                    // Render the actual popover in an isolated review window so
+                    // UI tools can exercise it without touching the host tunnel.
+                    MenuBarContent(telemetry: tunnel.telemetryViewModel)
+                        .preferredColorScheme(ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_APPEARANCE"] == "dark" ? .dark : .light)
+                        .fixedSize(horizontal: true, vertical: true)
+                } else {
+                    ContentView()
+                }
+#else
+                ContentView()
+#endif
+            }
                 .environmentObject(tunnel)
                 .environmentObject(runtimeEnvironment)
                 .environmentObject(language)
                 .environment(\.locale, language.locale)
         }
         .defaultSize(
-            width: AetherVisual.windowWidth,
-            height: AetherVisual.windowHeight
+            width: isMenuPanelReview ? AetherVisual.popoverWidth : AetherVisual.windowWidth,
+            height: isMenuPanelReview ? 440 : AetherVisual.windowHeight
         )
-        .windowResizability(.contentMinSize)
+        .windowResizability(isMenuPanelReview ? .contentSize : .contentMinSize)
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .commands {
             CommandGroup(after: .appInfo) {
@@ -466,7 +488,7 @@ struct AetherRouteApp: App {
     }
 
     private var menuBarIcon: String {
-        tunnel.isConnected ? "network.badge.shield.half.filled" : "network"
+        tunnel.isConnected ? "paperplane.fill" : "paperplane"
     }
 
     /// The menu bar shows no text, so connection state has to reach VoiceOver
@@ -487,25 +509,42 @@ private struct MenuBarContent: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @EnvironmentObject private var language: AppLanguageController
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @State private var showingNodes = false
     @State private var copiedTerminalCommand: Bool = false
     @State private var clearedTerminalCommand: Bool = false
     let telemetry: NetworkTelemetryViewModel
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
             if tunnel.hasAcceptedPrivacyDisclosure {
-                readyContent
-                    .task { await tunnel.prepare() }
+                Group {
+                    if showingNodes, let group = primaryGroup {
+                        MenuNodePanel(group: group) { showingNodes = false }
+                    } else {
+                        readyContent
+                    }
+                }
+                .task { await tunnel.prepare() }
             } else {
                 privacyRequiredContent
             }
         }
         .frame(width: AetherVisual.popoverWidth)
+        .background {
+            if reduceTransparency {
+                Color(nsColor: .windowBackgroundColor)
+            } else {
+                Rectangle().fill(.regularMaterial)
+            }
+        }
+        .onChange(of: tunnel.activeProfile?.yaml) { _, _ in showingNodes = false }
         .onAppear {
             tunnel.setRealtimeTelemetryPreferred(true, for: "menubar")
         }
         .onDisappear {
             tunnel.setRealtimeTelemetryPreferred(false, for: "menubar")
+            showingNodes = false
         }
     }
 
@@ -513,7 +552,7 @@ private struct MenuBarContent: View {
         VStack(alignment: .leading, spacing: 0) {
             // 1. 顶部品牌与连接状态指示
             HStack(spacing: AetherVisual.s3) {
-                AetherRouteBrandTile(size: 32, isActive: tunnel.isConnected)
+                AetherRouteBrandTile(size: 28, isActive: tunnel.isConnected)
 
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     HStack(spacing: AetherVisual.sCompact) {
@@ -534,75 +573,21 @@ private struct MenuBarContent: View {
                         .lineLimit(1)
                 }
                 Spacer()
-
-                // 快捷主开关
-                Button {
-                    Task { await tunnel.setEnabled(!tunnel.isEnabled) }
-                } label: {
-                    Image(systemName: "power")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(tunnel.isConnected ? Color.green : Color.secondary)
-                        .padding(AetherVisual.sCompact)
-                        .background(
-                            (tunnel.isConnected ? Color.green.opacity(0.15) : Color.secondary.opacity(0.12)),
-                            in: Circle()
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(!tunnel.canPerformPrimaryAction)
-                .help(tunnel.primaryActionTitle)
             }
             .padding(.horizontal, AetherVisual.s4)
             .padding(.top, AetherVisual.sRow)
             .padding(.bottom, AetherVisual.sRow)
 
-            Divider().opacity(0.4)
+            Divider()
 
-            // 2. 实时速率双胶囊
             if tunnel.isConnected {
-                HStack(spacing: AetherVisual.s2) {
-                    // 下行
-                    HStack(spacing: AetherVisual.s1) {
-                        Image(systemName: "arrow.down")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Color.cyan)
-                        Text(formatSpeed(telemetry.snapshot.downloadBytesPerSecond))
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.primary)
-                    }
-                    .padding(.horizontal, AetherVisual.s2)
-                    .padding(.vertical, AetherVisual.s1)
-                    .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius))
-
-                    // 上行
-                    HStack(spacing: AetherVisual.s1) {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Color.purple)
-                        Text(formatSpeed(telemetry.snapshot.uploadBytesPerSecond))
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.primary)
-                    }
-                    .padding(.horizontal, AetherVisual.s2)
-                    .padding(.vertical, AetherVisual.s1)
-                    .background(Color.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius))
-
-                    Spacer()
-
-                    // 连接数
-                    HStack(spacing: AetherVisual.sMicro) {
-                        Image(systemName: "point.3.connected.trianglepath.dotted")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                        Text(verbatim: "\(telemetry.snapshot.connections.count)")
-                            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
+                HStack(spacing: AetherVisual.s3) {
+                    MenuLiveTrafficMetric(title: "Download", symbol: "arrow.down", metric: .download, telemetry: telemetry)
+                    MenuLiveTrafficMetric(title: "Upload", symbol: "arrow.up", metric: .upload, telemetry: telemetry)
+                    MenuLiveTrafficMetric(title: "Connections", symbol: "point.3.connected.trianglepath.dotted", metric: .connections, telemetry: telemetry)
                 }
-                .padding(.horizontal, AetherVisual.s4)
-                .padding(.vertical, AetherVisual.sRow)
-
-                Divider().opacity(0.4)
+                .padding(AetherVisual.s4)
+                Divider()
             }
 
             // 3. 核心控制与节点选择
@@ -620,7 +605,8 @@ private struct MenuBarContent: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .controlSize(.small)
+                    .frame(maxWidth: .infinity)
+                    .controlSize(.regular)
                     .disabled(!tunnel.canChangeNetworkEngine)
                 }
 #endif
@@ -645,56 +631,46 @@ private struct MenuBarContent: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .controlSize(.small)
+                    .frame(maxWidth: .infinity)
+                    .controlSize(.regular)
                     .disabled(!tunnel.canChangeRoutingMode)
                 }
 
-                if let summary = tunnel.activeProfileSummary,
-                   let primaryGroup = summary.proxyGroups.first(where: { $0.strategy.lowercased() == "select" }) ?? summary.proxyGroups.first {
-                    let currentMember = tunnel.proxySelections[primaryGroup.name]?.selectedMember ?? "Auto"
-                    let flagInfo = AetherRegionFlag.flagAndRegion(from: currentMember)
 
-                    HStack(spacing: AetherVisual.s2) {
-                        Text(AppLocalization.string("Node"))
+                if let group = primaryGroup {
+                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                        Text("Current Node")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .frame(width: 52, alignment: .leading)
-
-                        Menu {
-                            let displayMembers = Array(primaryGroup.members.prefix(16))
-                            ForEach(displayMembers, id: \.self) { member in
-                                Button {
-                                    Task { await tunnel.selectProxy(group: primaryGroup.name, member: member) }
-                                } label: {
-                                    let itemFlag = AetherRegionFlag.flagAndRegion(from: member)
-                                    if member == currentMember {
-                                        Label(title: { Text(verbatim: "\(itemFlag.flag) \(member)") }, icon: { Image(systemName: "checkmark") })
-                                    } else {
-                                        Text(verbatim: "\(itemFlag.flag) \(member)")
-                                    }
-                                }
-                            }
-                            if primaryGroup.members.count > 16 {
-                                Divider()
-                                Text(verbatim: "+\(primaryGroup.members.count - 16) more nodes")
-                            }
-                        } label: {
-                            HStack(spacing: AetherVisual.sCompact) {
-                                Text(flagInfo.flag)
-                                    .font(.system(size: 12))
-                                Text(currentMember)
-                                    .font(.system(size: 11.5, weight: .medium))
+                        Button { showingNodes = true } label: {
+                            HStack(spacing: AetherVisual.s2) {
+                                let member = tunnel.proxySelections[group.name]?.selectedMember
+                                Text(verbatim: AetherRegionFlag.flagAndRegion(from: member ?? "").flag)
+                                Text(verbatim: member ?? AppLocalization.string("Select Node"))
                                     .lineLimit(1)
-                                Spacer()
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 8, weight: .bold))
+                                    .truncationMode(.middle)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                if let member {
+                                    MenuNodeLatency(status: ProxyLatencyStatus.status(
+                                        member: member,
+                                        results: tunnel.proxyLatencies[group.name]?.results,
+                                        isTesting: tunnel.proxyLatencyRequests.contains(group.name)
+                                    ))
+                                }
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                            .padding(.horizontal, AetherVisual.s2)
-                            .padding(.vertical, AetherVisual.s1)
-                            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius))
+                            .padding(AetherVisual.s3)
+                            .background(.quaternary, in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
+                            .contentShape(Rectangle())
                         }
-                        .menuStyle(.borderlessButton)
+                        .buttonStyle(.plain)
+                        .help(tunnel.proxySelections[group.name]?.selectedMember ?? AppLocalization.string("Select Node"))
+                        .accessibilityIdentifier("menu-proxy-node-selector")
+                        .task(id: "\(group.name):\(tunnel.isConnected)") {
+                            await tunnel.refreshProxySelection(group: group.name)
+                        }
                     }
                 }
 
@@ -758,7 +734,7 @@ private struct MenuBarContent: View {
             }
             .padding(AetherVisual.s4)
 
-            Divider().opacity(0.4)
+            Divider()
 
             HStack(spacing: AetherVisual.s3) {
                 Button(AppLocalization.string("Open AetherRoute")) {
@@ -784,11 +760,9 @@ private struct MenuBarContent: View {
         }
     }
 
-    private func formatSpeed(_ bytesPerSecond: UInt64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useAll]
-        formatter.countStyle = .memory
-        return "\(formatter.string(fromByteCount: Int64(bytesPerSecond)))/s"
+    private var primaryGroup: ProxyGroupConfigurationSummary? {
+        let groups = tunnel.activeProfileSummary?.proxyGroups ?? []
+        return groups.first { $0.strategy.lowercased() == "select" } ?? groups.first
     }
 
 #if AETHERROUTE_INDEPENDENT
@@ -852,6 +826,171 @@ private struct MenuBarContent: View {
     private func openMainWindow() {
         openWindow(id: "main")
         NSApplication.shared.activate()
+    }
+}
+
+private struct MenuNodeLatency: View {
+    let status: ProxyLatencyStatus
+
+    var body: some View {
+        Text(title)
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(status.tint)
+            .fixedSize()
+    }
+
+    private var title: String {
+        switch status {
+        case .responded(let milliseconds): "\(milliseconds) ms"
+        case .testing: AppLocalization.string("Testing latency…")
+        case .untested: AppLocalization.string("Untested")
+        case .timedOut: AppLocalization.string("Unavailable")
+        }
+    }
+}
+
+private struct MenuNodePanel: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+    let group: ProxyGroupConfigurationSummary
+    let onBack: () -> Void
+    @State private var orderedMembers: [String] = []
+    @State private var selecting = false
+
+    private var selectedMember: String? {
+        tunnel.proxySelections[group.name]?.selectedMember
+    }
+
+    private var unsupported: Set<String> {
+        Set((tunnel.activeProfileSummary?.proxies ?? [])
+            .filter { !$0.recognition.isSelectable }.map(\.name))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            HStack(spacing: AetherVisual.s3) {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(AppLocalization.string("Back"))
+                .accessibilityLabel(AppLocalization.string("Back"))
+                .accessibilityIdentifier("menu-node-back")
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                    Text("Select Node").font(.headline)
+                    Text("Latency: low to high")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if selecting || tunnel.proxyLatencyRequests.contains(group.name) {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            Divider()
+            if orderedMembers.isEmpty {
+                Text("No nodes available")
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, AetherVisual.s4)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: AetherVisual.s2) {
+                        ForEach(orderedMembers, id: \.self) { member in
+                            Button {
+                                if member == selectedMember { onBack(); return }
+                                selecting = true
+                                Task {
+                                    await tunnel.selectProxy(group: group.name, member: member)
+                                    selecting = false
+                                    if !Task.isCancelled, selectedMember == member {
+                                        onBack()
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: AetherVisual.s2) {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(Color.accentColor)
+                                        .opacity(member == selectedMember ? 1 : 0)
+                                        .frame(width: 16)
+                                    Text(verbatim: AetherRegionFlag.flagAndRegion(from: member).flag)
+                                    Text(verbatim: member)
+                                        .lineLimit(2)
+                                        .truncationMode(.middle)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    MenuNodeLatency(status: status(for: member))
+                                }
+                                .padding(AetherVisual.s3)
+                                .background(
+                                    member == selectedMember ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04),
+                                    in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
+                                )
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .help(member)
+                            .accessibilityIdentifier("menu-node-\(member)")
+                            .accessibilityAddTraits(member == selectedMember ? .isSelected : [])
+                            .disabled(selecting || tunnel.proxySelectionRequests.contains(group.name)
+                                || group.strategy.lowercased() != "select" || unsupported.contains(member))
+                        }
+                    }
+                }
+                .frame(height: min(CGFloat(orderedMembers.count) * 56, 364))
+            }
+            if group.strategy.lowercased() != "select" {
+                Text("This group is automatically managed by latency tests.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let message = tunnel.proxySelectionMessages[group.name] {
+                Text(verbatim: message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("menu-node-message")
+            }
+        }
+        .padding(AetherVisual.s4)
+        .task(id: group.name) {
+            updateOrder()
+            await tunnel.refreshProxySelection(group: group.name)
+            guard !Task.isCancelled else { return }
+            updateOrder()
+            if tunnel.isConnected, tunnel.proxyLatencies[group.name] == nil {
+                await tunnel.testProxyLatency(group: group.name)
+                guard !Task.isCancelled else { return }
+                updateOrder()
+            }
+        }
+        // Reorder only on a completed measurement, never for each arriving row.
+        .onChange(of: tunnel.proxyLatencyRequests.contains(group.name)) { wasTesting, isTesting in
+            if wasTesting && !isTesting && !selecting { updateOrder() }
+        }
+    }
+
+    private func status(for member: String) -> ProxyLatencyStatus {
+        if unsupported.contains(member) { return .timedOut }
+        return ProxyLatencyStatus.status(
+            member: member,
+            results: tunnel.proxyLatencies[group.name]?.results,
+            isTesting: tunnel.proxyLatencyRequests.contains(group.name)
+        )
+    }
+
+    private func updateOrder() {
+        let results = tunnel.proxyLatencies[group.name]?.results ?? []
+        var delays: [String: UInt32] = [:]
+        var unavailable = unsupported
+        for result in results {
+            if let delay = result.delayMilliseconds { delays[result.member] = delay }
+            else { unavailable.insert(result.member) }
+        }
+        orderedMembers = MenuProxyNodeOrder.sorted(
+            members: tunnel.proxySelections[group.name]?.members ?? group.members,
+            delays: delays,
+            unavailable: unavailable
+        )
     }
 }
 

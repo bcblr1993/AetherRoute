@@ -6,6 +6,19 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+### Menu bar redesign (next release)
+
+- Use filled/outlined paper-plane menu bar symbols for connected/disconnected
+  states and a wider 380pt native frosted-material panel, respecting Reduce
+  Transparency and light/dark appearance. Remove the duplicate header power
+  button while retaining the main connect/disconnect action and all other controls.
+- Show the current node in a full-width row; open a second-level node panel
+  without search, ordered by measured latency with stable ties, then untested
+  and unavailable entries. Include runtime provider members beyond the old
+  16-item limit. Preserve selection errors and return only after selection succeeds.
+- Observe menu traffic values independently so live rates update without
+  redrawing the entire control panel.
+
 ### Changed
 
 - The first public edition uses free distribution with user-provided profiles,
