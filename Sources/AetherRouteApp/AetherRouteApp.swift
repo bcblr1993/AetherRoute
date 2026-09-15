@@ -42,9 +42,13 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
             let disconnected = await tunnel
                 .disconnectForApplicationTermination()
             self.terminationReplyPending = false
-            sender?.reply(toApplicationShouldTerminate: disconnected)
+            (sender ?? NSApplication.shared).reply(toApplicationShouldTerminate: disconnected)
         }
         return .terminateLater
+    }
+
+    @objc func terminate(_ sender: Any?) {
+        NSApplication.shared.terminate(sender)
     }
 
     private func installTerminationSignalSource() {

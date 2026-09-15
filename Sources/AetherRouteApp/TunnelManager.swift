@@ -1232,6 +1232,10 @@ final class TunnelManager: ObservableObject {
     /// settle, the delegate cancels termination instead of leaving an
     /// unmanaged network extension active in the background.
     func disconnectForApplicationTermination() async -> Bool {
+        stopTelemetryPolling()
+        cancelConnectionReadiness()
+        runtimeEnvironmentResetTask?.cancel()
+        runtimeEnvironmentResetTask = nil
         guard managerConnectionIsActive else { return true }
         Self.runtimeLogger.info(
             "stage=applicationTermination disconnect begin"
@@ -2153,18 +2157,24 @@ final class TunnelManager: ObservableObject {
             "stage=providerMessage hostSend begin bytes=\(data.count, privacy: .public)"
         )
         let connectionID = providerConnectionID
+        let replyHolder = ProviderMessageReplyHolder()
         do {
-            let response = try await withCheckedThrowingContinuation {
-                (continuation: CheckedContinuation<Data, Error>) in
-                let reply = ProviderMessageReply(continuation)
-                do {
-                    try session.sendProviderMessage(data) { response in
-                        reply.receive(response)
+            let response = try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation {
+                    (continuation: CheckedContinuation<Data, Error>) in
+                    let reply = ProviderMessageReply(continuation)
+                    replyHolder.reply = reply
+                    do {
+                        try session.sendProviderMessage(data) { response in
+                            reply.receive(response)
+                        }
+                    } catch {
+                        reply.fail(error)
                     }
-                } catch {
-                    reply.fail(error)
+                    reply.startTimeout(after: timeout)
                 }
-                reply.startTimeout(after: timeout)
+            } onCancel: {
+                replyHolder.cancel()
             }
             guard providerConnectionID == connectionID,
                   manager?.connection === session,
@@ -2332,6 +2342,7 @@ final class TunnelManager: ObservableObject {
     /// intentionally excluded and therefore never fall back.
     private func refreshAutomaticRouteHealth() async {
         guard !isSystemSleeping else { return }
+        guard routingMode != .direct else { return }
         guard state == .connected,
               !Task.isCancelled,
               proxyLatencyRequests.isEmpty,
@@ -5536,6 +5547,10 @@ private final class ProviderMessageReply: @unchecked Sendable {
         finish(.failure(error))
     }
 
+    func cancel() {
+        finish(.failure(CancellationError()))
+    }
+
     func startTimeout(after timeout: Duration) {
         Task.detached(priority: .utility) { [self] in
             try? await Task.sleep(for: timeout)
@@ -5549,6 +5564,24 @@ private final class ProviderMessageReply: @unchecked Sendable {
             return self.continuation
         }
         continuation?.resume(with: result)
+    }
+}
+
+private final class ProviderMessageReplyHolder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _reply: ProviderMessageReply?
+
+    var reply: ProviderMessageReply? {
+        get { lock.withLock { _reply } }
+        set { lock.withLock { _reply = newValue } }
+    }
+
+    func cancel() {
+        let current = lock.withLock { () -> ProviderMessageReply? in
+            defer { _reply = nil }
+            return _reply
+        }
+        current?.cancel()
     }
 }
 

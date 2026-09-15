@@ -63,6 +63,14 @@ All notable changes to AetherRoute are recorded here. The format follows
   only after selection succeeds.
 - Expire traffic samples outside the 30-second window, coalesce same-second
   samples and reset history after clock rollback.
+- Cancel telemetry polling, route health checks and readiness verification
+  immediately upon application termination. Skip remote proxy health checks
+  in direct routing mode.
+- Add cooperative cancellation to provider message IPC to release waiting
+  continuations immediately when tasks cancel, preventing 90-second shutdown
+  hangs.
+- Add an explicit terminate action selector to the AppKit delegate and provide
+  a safe application fallback to avoid responder chain validation aborts.
 
 ### Diagnostics
 
