@@ -230,7 +230,7 @@ class ProcessTests(unittest.TestCase):
             start = time.monotonic()
             source = "import os,time,pathlib; pathlib.Path(%r).write_text(str(os.getpid())); time.sleep(20)" % str(pidfile)
             with self.assertRaisesRegex(probe.ProbeError, "deadline"):
-                probe.bounded_process(self.command(source), b"", timeout=.3)
+                probe.bounded_process(self.command(source), b"", timeout=2)
             self.assertLess(time.monotonic() - start, 3)
             pid = int(pidfile.read_text())
             with self.assertRaises(ProcessLookupError): os.kill(pid, 0)
@@ -238,10 +238,11 @@ class ProcessTests(unittest.TestCase):
     def test_exited_parent_cannot_leave_a_pipe_holding_descendant(self):
         with tempfile.TemporaryDirectory(prefix="aether-probe-descendant-") as folder:
             pidfile = Path(folder) / "pid"
+            # Allow both Python interpreters to start before exercising cleanup.
             child = "import os,time,pathlib; pathlib.Path(%r).write_text(str(os.getpid())); time.sleep(20)" % str(pidfile)
             parent = "import subprocess,sys; subprocess.Popen([sys.executable,'-I','-B','-c',%r])" % child
             with self.assertRaisesRegex(probe.ProbeError, "deadline"):
-                probe.bounded_process(self.command(parent), b"", timeout=.3)
+                probe.bounded_process(self.command(parent), b"", timeout=2)
             pid = int(pidfile.read_text())
             deadline = time.monotonic() + 2
             while True:
