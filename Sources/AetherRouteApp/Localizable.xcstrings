@@ -9136,6 +9136,26 @@
           }
         }
       }
+    },
+    "TCP reachability only; not verified through the node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅 TCP 可达性；未经该节点协议验证"
+          }
+        }
+      }
+    },
+    "Verified through the node's protocol handler": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已经该节点协议栈验证"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

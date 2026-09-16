@@ -348,24 +348,19 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         let completion = ProxyMessageCompletion(completionHandler)
 
         let request: ProxySelectionProviderRequest
-        do {
-            request = try ProxySelectionProviderMessageCodec.decodeRequest(messageData)
-        } catch {
-            let response = ProxySelectionProviderResponse.failure(.invalidRequest)
-            do {
-                completion.call(try ProxySelectionProviderMessageCodec.encode(response: response))
-            } catch {
-                completion.call(nil)
-            }
+        let messageClass: ProviderMessageClass
+        switch ProviderMessageRouting.classify(messageData) {
+        case let .routed(decoded, kind):
+            request = decoded
+            messageClass = kind
+        case let .undecodable(failure):
+            completion.call(ProviderMessageRouting.encodedFailure(failure))
             return
         }
 
-        let isProbeRequest: Bool = switch request {
-        case .latency, .activeLatency: true
-        default: false
-        }
-
-        let targetQueue = isProbeRequest ? probeMessageQueue : providerMessageQueue
+        let targetQueue = messageClass == .probe
+            ? probeMessageQueue
+            : providerMessageQueue
         targetQueue.async { [self, runtimeController, diagnostics] in
             let response: ProxySelectionProviderResponse
             do {

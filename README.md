@@ -62,8 +62,15 @@ privileged helper, separately shipped daemon, or downloaded executable code.
 - Native Proxies, Connections, Rules, privacy, settings, and searchable
   third-party license pages, with an original layered macOS Icon Composer mark
   and deterministic fallback assets for macOS 15+
-- User-initiated batch node latency testing through the selected proxy group's
-  real protocol handlers, with bounded requests/results and no background probe
+- User-initiated, two-layer node latency measurement with bounded
+  requests/results and no background probe. A bounded TCP reachability sweep
+  streams a number for every member as it arrives, and the group's selected
+  member is additionally verified through its real protocol handler. Each row
+  states which of the two it is reporting: a reachable node is not necessarily
+  a usable one, so the reachability number never claims to prove the node's
+  protocol, credentials, or egress still work. Full-group measurement through
+  the core is deliberately not used for this, because that request is capped at
+  64 members and holds an engine lock for the length of the sweep
 - Privacy-scoped, versioned live telemetry shared by both providers, with
   upload/download speed, bounded active connections, rule hits, proxy chains,
   and a native dynamic menu-bar label

@@ -359,11 +359,19 @@ struct AetherProtocolBadge: View {
 /// 现代测速延迟胶囊
 struct AetherLatencyPill: View {
     let status: ProxyLatencyStatus
+    /// Qualifies a measured number: a TCP handshake and a number measured
+    /// through the node's real protocol handler are not the same claim.
+    var confidence: ProxyLatencyConfidence = .reachability
     var onTap: (() -> Void)? = nil
     @State private var isHovered = false
 
-    init(status: ProxyLatencyStatus, onTap: (() -> Void)? = nil) {
+    init(
+        status: ProxyLatencyStatus,
+        confidence: ProxyLatencyConfidence = .reachability,
+        onTap: (() -> Void)? = nil
+    ) {
         self.status = status
+        self.confidence = confidence
         self.onTap = onTap
     }
 
@@ -400,6 +408,15 @@ struct AetherLatencyPill: View {
                 Text(displayText)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.primary)
+
+                if status.isMeasured, confidence == .verified {
+                    // Only the stronger claim is marked. Reachability is the
+                    // default, so badging it too would add noise to every row.
+                    Image(systemName: confidence.symbol)
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
+                }
             }
             .padding(.horizontal, 7.5)
             .padding(.vertical, 3.5)

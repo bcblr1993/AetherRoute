@@ -54,21 +54,54 @@ enum ProxyLatencyStatus: Equatable {
     }
 }
 
+/// How much a measured number is worth.
+///
+/// Reachability is a TCP handshake to the node's advertised endpoint: it
+/// proves a socket opened, not that the node's protocol, credentials, or
+/// egress still work. A node that is reachable but unusable would otherwise
+/// show the same green number as a working one, so the row states which of the
+/// two it measured instead of letting the colour imply the stronger claim.
+enum ProxyLatencyConfidence: Equatable {
+    case reachability
+    case verified
+
+    /// Drawn next to the number, never instead of it.
+    var symbol: String {
+        switch self {
+        case .reachability: "bolt.horizontal"
+        case .verified: "checkmark.seal"
+        }
+    }
+
+    var localizedHint: String {
+        switch self {
+        case .reachability:
+            AppLocalization.string("TCP reachability only; not verified through the node")
+        case .verified:
+            AppLocalization.string("Verified through the node's protocol handler")
+        }
+    }
+}
+
 extension ProxyLatencyStatus {
-    /// Derives a member's status from the three sources that know about it: the
-    /// in-flight request set, the last returned results, and the absence of any
-    /// result at all.
+    /// Presentation wrapper over `ProxyLatencyReading`, which owns the actual
+    /// state machine. Keeping the decision in one place is what lets the test
+    /// suite exercise the product's logic instead of a copy of it.
     static func status(
         member: String,
         results: [ProxyLatencyResult]?,
         isTesting: Bool
     ) -> ProxyLatencyStatus {
-        if let result = results?.first(where: { $0.member == member }) {
-            guard let delay = result.delayMilliseconds else { return .timedOut }
-            return .responded(delay)
+        switch ProxyLatencyReading.resolve(
+            member: member,
+            results: results,
+            isTesting: isTesting
+        ) {
+        case .untested: .untested
+        case .testing: .testing
+        case let .responded(delay): .responded(delay)
+        case .timedOut: .timedOut
         }
-        if isTesting { return .testing }
-        return .untested
     }
 }
 

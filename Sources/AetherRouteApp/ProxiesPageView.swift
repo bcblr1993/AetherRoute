@@ -525,6 +525,10 @@ private struct ActiveProxyGroupView: View {
                     name: member,
                     protocolName: proto,
                     status: nodeStatus,
+                    confidence: tunnel.latencyConfidence(
+                        group: group.name,
+                        member: member
+                    ),
                     isSelected: isSelected,
                     isBusy: isBusy,
                     canSelect: isManuallySelectable && !isAutomaticSelectionMode,
@@ -571,10 +575,14 @@ private struct ActiveProxyGroupView: View {
             }
             .width(84)
             TableColumn(AppLocalization.string("Latency")) { row in
-                ProxyLatencyBadge(status: row.status, name: nil)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                ProxyLatencyBadge(
+                    status: row.status,
+                    name: nil,
+                    confidence: row.confidence
+                )
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .width(72)
+            .width(88)
             TableColumn("") { row in
                 Image(systemName: "checkmark")
                     .font(.caption.weight(.semibold))
@@ -598,6 +606,10 @@ private struct ActiveProxyGroupView: View {
                 member: member,
                 protocolName: protocols[member],
                 status: status(for: member),
+                confidence: tunnel.latencyConfidence(
+                    group: group.name,
+                    member: member
+                ),
                 isSelected: member == selectedMember,
                 isBusy: tunnel.proxySelectionRequests.contains(group.name)
             )
@@ -672,6 +684,7 @@ private struct ProxyNodeModernCard: View {
     let name: String
     let protocolName: String
     let status: ProxyLatencyStatus
+    let confidence: ProxyLatencyConfidence
     let isSelected: Bool
     let isBusy: Bool
     let canSelect: Bool
@@ -731,6 +744,7 @@ private struct ProxyNodeModernCard: View {
                 // 右侧延迟测速胶囊
                 AetherLatencyPill(
                     status: status,
+                    confidence: confidence,
                     onTap: onTest
                 )
             }
@@ -797,12 +811,6 @@ private struct ProxyNodeModernCard: View {
         return Color(nsColor: .separatorColor).opacity(colorScheme == .dark ? 0.45 : 0.25)
     }
 
-    private var latencyMs: Int? {
-        if case let .responded(ms) = status {
-            return Int(ms)
-        }
-        return nil
-    }
 }
 
 // MARK: - 排序与状态模型
@@ -824,6 +832,7 @@ private struct ProxyMemberTableItem: Identifiable {
     let member: String
     let protocolName: String?
     let status: ProxyLatencyStatus
+    let confidence: ProxyLatencyConfidence
     let isSelected: Bool
     let isBusy: Bool
 
@@ -833,6 +842,9 @@ private struct ProxyMemberTableItem: Identifiable {
 private struct ProxyLatencyBadge: View {
     let status: ProxyLatencyStatus
     let name: String?
+    /// Only meaningful for a measured number; an untested or timed-out row has
+    /// nothing to qualify.
+    var confidence: ProxyLatencyConfidence = .reachability
 
     var body: some View {
         HStack(spacing: AetherVisual.s2) {
@@ -855,8 +867,19 @@ private struct ProxyLatencyBadge: View {
             Text(text)
                 .font(.subheadline.monospacedDigit().weight(.semibold))
                 .foregroundStyle(status.isMeasured ? .primary : .secondary)
+
+            if status.isMeasured {
+                Image(systemName: confidence.symbol)
+                    .font(.system(size: 8))
+                    .foregroundStyle(
+                        confidence == .verified ? Color.accentColor : .secondary
+                    )
+                    .help(confidence.localizedHint)
+                    .accessibilityHidden(true)
+            }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityDescription)
     }
 
     private var text: String {
@@ -870,6 +893,13 @@ private struct ProxyLatencyBadge: View {
         case .testing: AppLocalization.string("Testing")
         case .untested: AppLocalization.string("Untested")
         }
+    }
+
+    /// The badge's colour and glyph are never the only cue: the qualifier is
+    /// spoken too, so a measured number is not mistaken for a verified one.
+    private var accessibilityDescription: String {
+        guard status.isMeasured else { return text }
+        return "\(text), \(confidence.localizedHint)"
     }
 }
 

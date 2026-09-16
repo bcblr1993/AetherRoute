@@ -656,11 +656,17 @@ private struct MenuBarContent: View {
                                     .truncationMode(.middle)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 if let member {
-                                    MenuNodeLatency(status: ProxyLatencyStatus.status(
-                                        member: member,
-                                        results: tunnel.proxyLatencies[group.name]?.results,
-                                        isTesting: tunnel.proxyLatencyRequests.contains(group.name)
-                                    ))
+                                    MenuNodeLatency(
+                                        status: ProxyLatencyStatus.status(
+                                            member: member,
+                                            results: tunnel.proxyLatencies[group.name]?.results,
+                                            isTesting: tunnel.proxyLatencyRequests.contains(group.name)
+                                        ),
+                                        confidence: tunnel.latencyConfidence(
+                                            group: group.name,
+                                            member: member
+                                        )
+                                    )
                                 }
                                 Image(systemName: "chevron.right")
                                     .font(.caption)
@@ -836,12 +842,23 @@ private struct MenuBarContent: View {
 
 private struct MenuNodeLatency: View {
     let status: ProxyLatencyStatus
+    var confidence: ProxyLatencyConfidence = .reachability
 
     var body: some View {
-        Text(title)
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(status.tint)
-            .fixedSize()
+        HStack(spacing: 3) {
+            Text(title)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(status.tint)
+                .fixedSize()
+
+            if status.isMeasured, confidence == .verified {
+                Image(systemName: confidence.symbol)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+            }
+        }
+        .help(status.isMeasured ? confidence.localizedHint : title)
     }
 
     private var title: String {
@@ -923,7 +940,13 @@ private struct MenuNodePanel: View {
                                         .lineLimit(2)
                                         .truncationMode(.middle)
                                         .frame(maxWidth: .infinity, alignment: .leading)
-                                    MenuNodeLatency(status: status(for: member))
+                                    MenuNodeLatency(
+                                        status: status(for: member),
+                                        confidence: tunnel.latencyConfidence(
+                                            group: group.name,
+                                            member: member
+                                        )
+                                    )
                                 }
                                 .padding(AetherVisual.s3)
                                 .background(

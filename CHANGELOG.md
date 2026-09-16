@@ -4,6 +4,48 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Rework user-initiated latency measurement into two explicit layers. A
+  bounded TCP reachability sweep streams a number for every member as it
+  arrives; the selected member is then verified through its real protocol
+  handler. Rows state which of the two they report, so a node that answers TCP
+  but cannot actually carry traffic is no longer shown the same way as a
+  working one. Full-group measurement through the core is not used here: that
+  request is capped at 64 members and holds an engine lock for the whole sweep,
+  which is what made selector actions unresponsive during a measurement.
+- Replace the per-result merge with an indexed staging area. Recording one
+  result is now O(1) and the published state is rebuilt once per ~100 ms flush
+  window instead of once per node. The previous path rescanned every group's
+  member array and reassigned the full published dictionary for each arriving
+  result, so a large group cost quadratic main-actor work.
+- Share provider message classification between both Network Extensions
+  instead of duplicating it, and keep latency probes off the queue that serves
+  selector and telemetry traffic.
+
+### Fixed
+
+- Stop measuring TUN-mode reachability through the tunnel itself. Probes now
+  refuse virtual interfaces while a TUN session is active, so a measurement no
+  longer reports `host -> current node -> target node` latency or times out by
+  looping back through the node carrying the session.
+- Resolve nested strategy groups regardless of declaration order. Aggregation
+  repeats bottom-up until it settles, where a single declaration-order pass
+  previously left a group nested two or more levels deep reporting whatever
+  that one pass produced.
+- Stop probing strategy-group names as if they were nodes, which reported a
+  timeout and showed the row as failed until aggregation overwrote it.
+- Retry a group's measurement after a failed run. A failure previously left an
+  empty measured state behind, so the menu's first-open probe treated the group
+  as already measured and never tried again.
+- Keep a single-node measurement from being discarded by a concurrent
+  group-level run, and stop a single-result provider reply from shrinking a
+  whole group's published results down to one row.
+- Discard latency results that arrive after a profile switch instead of
+  writing them into a same-named group in the newly active profile.
+
 ## [1.0.10] - 2026-09-16
 
 ### Fixed

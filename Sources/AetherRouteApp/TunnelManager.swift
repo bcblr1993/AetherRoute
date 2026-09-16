@@ -279,6 +279,17 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var proxyLatencyRequests: Set<String> = []
     @Published private(set) var memberLatencyRequests: Set<String> = []
 
+    /// Staging area behind `proxyLatencies`. Merging one result is O(1) here;
+    /// the published arrays are rebuilt once per flush window instead of once
+    /// per arriving result.
+    private var latencyIndex = ProxyLatencyIndex()
+    /// The profile the index was built for. A profile switch resets the index
+    /// so a member name reused by the new profile never inherits an old
+    /// number.
+    private var latencyIndexToken: LatencyRunToken?
+    private var pendingLatencyFlush: Set<String> = []
+    private var lastLatencyFlushAt: ContinuousClock.Instant?
+
     public func isTestingLatency(group groupName: String, member memberName: String? = nil) -> Bool {
         if let memberName {
             return memberLatencyRequests.contains("\(groupName):\(memberName)")
@@ -1556,6 +1567,140 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    /// Identifies one measurement run.
+    ///
+    /// A probe that finishes after the user switched profiles must be dropped
+    /// rather than written to whatever group now carries the same name.
+    struct LatencyRunToken: Equatable {
+        let profileName: String
+        let importedAt: Date
+    }
+
+    private var currentLatencyRunToken: LatencyRunToken? {
+        activeProfile.map {
+            LatencyRunToken(profileName: $0.name, importedAt: $0.importedAt)
+        }
+    }
+
+    /// The members actually shown for each group: the live selector snapshot
+    /// when there is one, the profile summary otherwise.
+    private func latencyGroupsSnapshot() -> [(name: String, members: [String])] {
+        (activeProfileSummary?.proxyGroups ?? []).map { group in
+            (
+                name: group.name,
+                members: proxySelections[group.name]?.members ?? group.members
+            )
+        }
+    }
+
+    /// Rebuilds the reverse index for a run and returns its token.
+    @discardableResult
+    private func prepareLatencyIndex() -> LatencyRunToken? {
+        let token = currentLatencyRunToken
+        if token != latencyIndexToken {
+            latencyIndex = ProxyLatencyIndex()
+            latencyIndexToken = token
+            // Groups queued against the discarded index would otherwise be
+            // flushed from the new one and publish empty rows.
+            pendingLatencyFlush.removeAll(keepingCapacity: true)
+            lastLatencyFlushAt = nil
+        }
+        latencyIndex.beginRun(groups: latencyGroupsSnapshot())
+        return token
+    }
+
+    /// Publishing every arriving result reassigns a `@Published` dictionary
+    /// and invalidates the node list once per node. Coalescing into ~100 ms
+    /// windows keeps the list visibly streaming while bounding main-actor work
+    /// to the number of windows rather than the number of nodes.
+    private static let latencyFlushInterval = Duration.milliseconds(100)
+
+    private func publishLatency(
+        groups dirty: some Sequence<String>,
+        force: Bool
+    ) {
+        pendingLatencyFlush.formUnion(dirty)
+        guard !pendingLatencyFlush.isEmpty else { return }
+        let now = ContinuousClock.now
+        if !force,
+           let last = lastLatencyFlushAt,
+           now - last < Self.latencyFlushInterval {
+            return
+        }
+        lastLatencyFlushAt = now
+        for group in pendingLatencyFlush {
+            proxyLatencies[group] = latencyIndex.state(for: group)
+        }
+        pendingLatencyFlush.removeAll(keepingCapacity: true)
+    }
+
+    /// Records one measurement in every group that lists the member.
+    private func recordLatency(
+        member: String,
+        measurement: ProxyLatencyMeasurement,
+        runToken: LatencyRunToken?,
+        force: Bool = false
+    ) {
+        guard runToken == currentLatencyRunToken else { return }
+        let affected = latencyIndex.merge(
+            member: member,
+            measurement: measurement
+        )
+        publishLatency(groups: affected, force: force)
+    }
+
+    /// Whether a row's number came from the protocol core rather than a bare
+    /// TCP handshake.
+    func latencyConfidence(
+        group groupName: String,
+        member memberName: String
+    ) -> ProxyLatencyConfidence {
+        if isUIReviewMode {
+            // The visual matrix has to exercise both badges, so the seeded
+            // selected member reads as verified.
+            return proxySelections[groupName]?.selectedMember == memberName
+                ? .verified
+                : .reachability
+        }
+        return latencyIndex.isVerified(member: memberName, in: groupName)
+            ? .verified
+            : .reachability
+    }
+
+    /// Folds a provider-measured result into the index.
+    ///
+    /// These come from the core's real handlers, so they are recorded as
+    /// verified. Routing them through the index is also what stops a later
+    /// manual flush from overwriting them, and it keeps a single-result
+    /// `activeLatency` reply from shrinking the whole group down to one row
+    /// the way a direct assignment did.
+    private func adoptProviderLatency(
+        _ latency: ProxyLatencyState,
+        forGroup groupName: String
+    ) {
+        prepareLatencyIndex()
+        var affected: Set<String> = [groupName]
+        for result in latency.results {
+            affected.formUnion(
+                latencyIndex.merge(
+                    member: result.member,
+                    measurement: result.delayMilliseconds
+                        .map { .verified($0) } ?? .timedOut
+                )
+            )
+        }
+        publishLatency(groups: affected, force: true)
+    }
+
+    private static func uiReviewMeasurement(
+        member: String,
+        index: Int
+    ) -> ProxyLatencyMeasurement {
+        if member.uppercased() == "DIRECT" { return .reachable(3) }
+        if index == 2 { return .timedOut }
+        return .reachable(UInt32(28 + index * 32))
+    }
+
     func testProxyLatency(group groupName: String) async {
         guard activeProfileSummary?.proxyGroups.contains(where: {
                   $0.name == groupName
@@ -1563,44 +1708,109 @@ final class TunnelManager: ObservableObject {
               !proxyLatencyRequests.contains(groupName) else {
             return
         }
+        let runToken = prepareLatencyIndex()
         proxyLatencyRequests.insert(groupName)
         Self.runtimeLogger.info(
             "stage=proxyLatency request members=\(self.activeProfileSummary?.proxyGroups.first(where: { $0.name == groupName })?.memberCount ?? 0, privacy: .public)"
         )
         proxySelectionMessages[groupName] = nil
-        proxyLatencies[groupName] = ProxyLatencyState(results: [])
+        latencyIndex.clear(group: groupName)
+        // Clearing to `nil` rather than an empty state is deliberate: rows
+        // fall back to "testing" while the run is in flight, and a run that
+        // produces nothing leaves the group unmeasured so the menu's
+        // first-open probe retries it instead of treating a failure as a
+        // measured result.
+        proxyLatencies[groupName] = nil
         defer { proxyLatencyRequests.remove(groupName) }
 
-        do {
-            let latency: ProxyLatencyState
-            if isUIReviewMode {
-                try? await Task.sleep(nanoseconds: 120_000_000)
-                let members = proxySelections[groupName]?.members
-                    ?? activeProfileSummary?.proxyGroups
-                        .first(where: { $0.name == groupName })?.members
-                    ?? []
-                var mockResults: [ProxyLatencyResult] = []
-                for (index, member) in members.enumerated() {
-                    let result = ProxyLatencyResult(
+        let members = latencyGroupsSnapshot()
+            .first(where: { $0.name == groupName })?
+            .members ?? []
+
+        if isUIReviewMode {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            for (index, member) in members.enumerated() {
+                recordLatency(
+                    member: member,
+                    measurement: Self.uiReviewMeasurement(
                         member: member,
-                        delayMilliseconds: member.uppercased() == "DIRECT" ? 3 : (index == 2 ? nil : UInt32(28 + index * 32))
-                    )
-                    mockResults.append(result)
-                    mergeLatencyResultAcrossGroups(result)
-                }
-                latency = ProxyLatencyState(results: mockResults)
-            } else {
-                latency = await testDirectProxyLatency(group: groupName)
+                        index: index
+                    ),
+                    runToken: runToken
+                )
             }
-            proxyLatencies[groupName] = latency
+            publishLatency(groups: [groupName], force: true)
+            return
+        }
+
+        // Layer one: bare TCP reachability, streamed. Members that are
+        // themselves strategy groups are excluded here and resolved by
+        // aggregation afterwards, exactly as in the all-groups sweep.
+        let probeTargets = Set(latencyIndex.probeTargets)
+        await measureReachability(
+            members: members.filter(probeTargets.contains),
+            runToken: runToken
+        )
+        guard runToken == currentLatencyRunToken else { return }
+        let aggregated = latencyIndex.aggregateChildGroups()
+        publishLatency(groups: aggregated.union([groupName]), force: true)
+
+        let measured = proxyLatencies[groupName]?.results ?? []
+        Self.runtimeLogger.info(
+            "stage=proxyLatency success results=\(measured.count, privacy: .public) responsive=\(measured.lazy.filter { $0.delayMilliseconds != nil }.count, privacy: .public)"
+        )
+
+        // Layer two: upgrade the selected member to a verified number.
+        await verifySelectedMemberLatency(
+            group: groupName,
+            runToken: runToken
+        )
+    }
+
+    /// Upgrades the group's selected member from "reachable" to "verified" by
+    /// measuring it through the core's real protocol handler.
+    ///
+    /// Only the selected member is measured. `activeLatency` returns a single
+    /// result and does not walk the group, so it stays clear of both the
+    /// 64-member `selectorReadinessMaximumMemberCount` ceiling and the engine
+    /// lock a full-group `latency` request holds for the length of an entire
+    /// sweep. That lock is why measuring every member through the provider
+    /// blocked selector traffic for as long as the sweep ran.
+    private func verifySelectedMemberLatency(
+        group groupName: String,
+        runToken: LatencyRunToken?
+    ) async {
+        guard state == .connected, !isUIReviewMode else { return }
+        guard let selected = proxySelections[groupName]?.selectedMember,
+              !selected.isEmpty else { return }
+
+        do {
+            let latency = try await makeProxySelectionProviderClient()
+                .activeLatency(
+                    group: groupName,
+                    url: Self.defaultLatencyTestURL,
+                    timeoutMilliseconds: Self.uiLatencyTimeoutMilliseconds
+                )
+            guard let result = latency.results
+                .first(where: { $0.member == selected })
+                ?? latency.results.first
+            else { return }
+            recordLatency(
+                member: selected,
+                measurement: result.delayMilliseconds
+                    .map { .verified($0) } ?? .timedOut,
+                runToken: runToken,
+                force: true
+            )
             Self.runtimeLogger.info(
-                "stage=proxyLatency success results=\(latency.results.count, privacy: .public) responsive=\(latency.results.lazy.filter { $0.delayMilliseconds != nil }.count, privacy: .public)"
+                "stage=proxyLatency verified group=\(groupName, privacy: .public) member=\(selected, privacy: .public) delay=\(result.delayMilliseconds.map(String.init) ?? "timeout", privacy: .public)"
             )
         } catch {
+            // A failed verification leaves the reachability number alone. It
+            // does not manufacture a timeout for a node that answered TCP.
             Self.runtimeLogger.error(
-                "stage=proxyLatency failed error=\(String(reflecting: error), privacy: .public)"
+                "stage=proxyLatency verifyFailed group=\(groupName, privacy: .public) member=\(selected, privacy: .public) error=\(String(reflecting: error), privacy: .public)"
             )
-            proxySelectionMessages[groupName] = error.localizedDescription
         }
     }
 
@@ -1613,11 +1823,16 @@ final class TunnelManager: ObservableObject {
               !memberLatencyRequests.contains(memberKey) else {
             return
         }
+        let runToken = prepareLatencyIndex()
         memberLatencyRequests.insert(memberKey)
-        // 清理单节点旧结果，使其立即呈现测速中状态
-        var existing = proxyLatencies[groupName]?.results ?? []
-        existing.removeAll(where: { $0.member == memberName })
-        proxyLatencies[groupName] = ProxyLatencyState(results: existing)
+        // Clear the member in every group that lists it, so all of its rows
+        // read as "testing" instead of one row testing while the others keep
+        // showing a number that is about to change.
+        let affected = latencyIndex.groups(containing: memberName)
+        for group in affected {
+            latencyIndex.clear(member: memberName, in: group)
+        }
+        publishLatency(groups: affected, force: true)
         proxySelectionMessages[groupName] = nil
         defer { memberLatencyRequests.remove(memberKey) }
 
@@ -1625,200 +1840,219 @@ final class TunnelManager: ObservableObject {
             "stage=proxyLatency memberRequest group=\(groupName, privacy: .public) member=\(memberName, privacy: .public)"
         )
 
-        do {
-            let result: ProxyLatencyResult
-            if isUIReviewMode {
-                try? await Task.sleep(nanoseconds: 120_000_000)
-                let delay: UInt32? = memberName.uppercased() == "DIRECT" ? 3 : 36
-                result = ProxyLatencyResult(member: memberName, delayMilliseconds: delay)
-            } else {
-                result = await testDirectSingleProxyLatency(member: memberName)
-            }
-            mergeLatencyResultAcrossGroups(result)
-            Self.runtimeLogger.info(
-                "stage=proxyLatency memberSuccess group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) delay=\(result.delayMilliseconds.map(String.init) ?? "timeout", privacy: .public)"
-            )
-        } catch {
-            Self.runtimeLogger.error(
-                "stage=proxyLatency memberFailed group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) error=\(String(reflecting: error), privacy: .public)"
-            )
-            mergeLatencyResultAcrossGroups(
-                ProxyLatencyResult(member: memberName, delayMilliseconds: nil)
-            )
-        }
-    }
-
-    private func testDirectSingleProxyLatency(member: String) async -> ProxyLatencyResult {
-        let endpoints = activeProfile.map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
-        return await Self.probeDirectMemberLatency(member: member, endpoints: endpoints)
-    }
-
-    private func mergeLatencyResultAcrossGroups(_ newResult: ProxyLatencyResult) {
-        guard let groups = activeProfileSummary?.proxyGroups else { return }
-        for group in groups {
-            let members = proxySelections[group.name]?.members ?? group.members
-            if members.contains(newResult.member) {
-                mergeLatencyResult(newResult, forGroup: group.name)
-            }
-        }
-    }
-
-    private func mergeLatencyResult(_ newResult: ProxyLatencyResult, forGroup groupName: String) {
-        var currentResults = proxyLatencies[groupName]?.results ?? []
-        if let index = currentResults.firstIndex(where: { $0.member == newResult.member }) {
-            currentResults[index] = newResult
+        let measurement: ProxyLatencyMeasurement
+        if isUIReviewMode {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            measurement = memberName.uppercased() == "DIRECT"
+                ? .reachable(3)
+                : .reachable(36)
         } else {
-            currentResults.append(newResult)
+            let endpoints = activeProfile
+                .map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
+            measurement = await Self.probeDirectMemberLatency(
+                member: memberName,
+                endpoints: endpoints,
+                excludingVirtualInterfaces: shouldExcludeVirtualInterfaces
+            )
         }
-        proxyLatencies[groupName] = ProxyLatencyState(results: currentResults)
+        recordLatency(
+            member: memberName,
+            measurement: measurement,
+            runToken: runToken,
+            force: true
+        )
+        Self.runtimeLogger.info(
+            "stage=proxyLatency memberSuccess group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) delay=\(measurement.delayMilliseconds.map(String.init) ?? "timeout", privacy: .public)"
+        )
+
+        // A single-node test targeting the selected member is also the cheapest
+        // chance to give it a verified number.
+        if proxySelections[groupName]?.selectedMember == memberName {
+            await verifySelectedMemberLatency(
+                group: groupName,
+                runToken: runToken
+            )
+        }
     }
 
     func testAllProxyGroupsLatency() async {
         guard let groups = activeProfileSummary?.proxyGroups, !groups.isEmpty else { return }
-        for group in groups {
-            proxyLatencyRequests.insert(group.name)
-            proxyLatencies[group.name] = ProxyLatencyState(results: [])
+        let runToken = prepareLatencyIndex()
+        // Only claim the groups this run actually owns, and release exactly
+        // those. Releasing every group would clear a testing flag some other
+        // in-flight run still depends on.
+        let claimed = groups
+            .map(\.name)
+            .filter { !proxyLatencyRequests.contains($0) }
+        guard !claimed.isEmpty else { return }
+        proxyLatencyRequests.formUnion(claimed)
+        for group in claimed {
+            latencyIndex.clear(group: group)
+            proxyLatencies[group] = nil
         }
-        defer {
-            for group in groups {
-                proxyLatencyRequests.remove(group.name)
-            }
-        }
+        defer { proxyLatencyRequests.subtract(claimed) }
 
         if isUIReviewMode {
             try? await Task.sleep(nanoseconds: 120_000_000)
-            for group in groups {
-                let members = proxySelections[group.name]?.members ?? group.members
-                for (index, member) in members.enumerated() {
-                    let result = ProxyLatencyResult(
+            for group in latencyGroupsSnapshot() {
+                for (index, member) in group.members.enumerated() {
+                    recordLatency(
                         member: member,
-                        delayMilliseconds: member.uppercased() == "DIRECT" ? 3 : (index == 2 ? nil : UInt32(28 + index * 32))
+                        measurement: Self.uiReviewMeasurement(
+                            member: member,
+                            index: index
+                        ),
+                        runToken: runToken
                     )
-                    mergeLatencyResultAcrossGroups(result)
                 }
             }
+            let aggregated = latencyIndex.aggregateChildGroups()
+            publishLatency(groups: aggregated.union(claimed), force: true)
             return
         }
 
-        // 收集跨组唯一节点，消除重复测试
-        var uniqueMembers: [String] = []
-        var seenMembers = Set<String>()
-        for group in groups {
-            let members = proxySelections[group.name]?.members ?? group.members
-            for member in members {
-                if seenMembers.insert(member).inserted {
-                    uniqueMembers.append(member)
-                }
-            }
-        }
+        // Strategy-group names are excluded here rather than probed and
+        // repaired afterwards: probing one looks up an endpoint that does not
+        // exist, reports a timeout, and showed the row red until aggregation
+        // overwrote it.
+        await measureReachability(
+            members: latencyIndex.probeTargets,
+            runToken: runToken
+        )
 
-        let endpoints = activeProfile.map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
-        let maxConcurrent = 16
-
-        await withTaskGroup(of: ProxyLatencyResult.self) { taskGroup in
-            var iterator = uniqueMembers.makeIterator()
-            var activeCount = 0
-
-            while activeCount < maxConcurrent, let member = iterator.next() {
-                activeCount += 1
-                taskGroup.addTask {
-                    await Self.probeDirectMemberLatency(member: member, endpoints: endpoints)
-                }
-            }
-
-            while let result = await taskGroup.next() {
-                mergeLatencyResultAcrossGroups(result)
-                if let nextMember = iterator.next() {
-                    taskGroup.addTask {
-                        await Self.probeDirectMemberLatency(member: nextMember, endpoints: endpoints)
-                    }
-                }
-            }
-        }
-
-        // 自动计算并同步子策略组卡片的延迟展示
-        for group in groups {
-            let members = proxySelections[group.name]?.members ?? group.members
-            for member in members where groups.contains(where: { $0.name == member }) {
-                if let childResults = proxyLatencies[member]?.results {
-                    let bestDelay = childResults.compactMap(\.delayMilliseconds).min()
-                    mergeLatencyResult(
-                        ProxyLatencyResult(member: member, delayMilliseconds: bestDelay),
-                        forGroup: group.name
-                    )
-                }
-            }
-        }
+        guard runToken == currentLatencyRunToken else { return }
+        let aggregated = latencyIndex.aggregateChildGroups()
+        publishLatency(groups: aggregated.union(claimed), force: true)
     }
 
-    private func testDirectProxyLatency(group groupName: String) async -> ProxyLatencyState {
-        let members = proxySelections[groupName]?.members
-            ?? activeProfileSummary?.proxyGroups
-                .first(where: { $0.name == groupName })?.members
-            ?? []
-        guard !members.isEmpty else {
-            return ProxyLatencyState(results: [])
-        }
-
-        let endpoints = activeProfile.map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
+    /// Drives the bounded probe pool and streams each result into the index.
+    ///
+    /// The 16-worker sliding window is unchanged; what changed is that results
+    /// land in the index in O(1) and reach the published property on a flush
+    /// window instead of rebuilding every group's array per result.
+    private func measureReachability(
+        members: [String],
+        runToken: LatencyRunToken?
+    ) async {
+        guard !members.isEmpty else { return }
+        let endpoints = activeProfile
+            .map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
+        let excludeVirtual = shouldExcludeVirtualInterfaces
         let maxConcurrent = 16
 
-        let results = await withTaskGroup(of: ProxyLatencyResult.self, returning: [ProxyLatencyResult].self) { group in
+        await withTaskGroup(
+            of: (member: String, measurement: ProxyLatencyMeasurement).self
+        ) { taskGroup in
             var iterator = members.makeIterator()
             var activeCount = 0
 
             while activeCount < maxConcurrent, let member = iterator.next() {
                 activeCount += 1
-                group.addTask {
-                    await Self.probeDirectMemberLatency(member: member, endpoints: endpoints)
+                taskGroup.addTask {
+                    (
+                        member,
+                        await Self.probeDirectMemberLatency(
+                            member: member,
+                            endpoints: endpoints,
+                            excludingVirtualInterfaces: excludeVirtual
+                        )
+                    )
                 }
             }
 
-            var collected: [ProxyLatencyResult] = []
-            while let result = await group.next() {
-                collected.append(result)
-                mergeLatencyResultAcrossGroups(result)
+            while let result = await taskGroup.next() {
+                // A profile switch mid-sweep invalidates everything still in
+                // flight; stop rather than writing stale numbers into the
+                // new profile's groups.
+                if runToken != currentLatencyRunToken {
+                    taskGroup.cancelAll()
+                    break
+                }
+                recordLatency(
+                    member: result.member,
+                    measurement: result.measurement,
+                    runToken: runToken
+                )
+                if Task.isCancelled {
+                    taskGroup.cancelAll()
+                    break
+                }
                 if let nextMember = iterator.next() {
-                    group.addTask {
-                        await Self.probeDirectMemberLatency(member: nextMember, endpoints: endpoints)
+                    taskGroup.addTask {
+                        (
+                            nextMember,
+                            await Self.probeDirectMemberLatency(
+                                member: nextMember,
+                                endpoints: endpoints,
+                                excludingVirtualInterfaces: excludeVirtual
+                            )
+                        )
                     }
                 }
             }
-
-            let memberOrder = Dictionary(uniqueKeysWithValues: members.enumerated().map { ($1, $0) })
-            return collected.sorted { (memberOrder[$0.member] ?? 0) < (memberOrder[$1.member] ?? 0) }
         }
-
-        return ProxyLatencyState(results: results)
     }
 
+    /// Whether a reachability probe must refuse virtual interfaces.
+    ///
+    /// In TUN mode the app's own outbound packets enter `utun` unless the
+    /// node's address happens to sit in an excluded route, so a plain probe
+    /// measures `host -> current node -> target node` and can loop back on the
+    /// node currently carrying the tunnel until it times out. Restricting the
+    /// probe to physical interfaces measures the hop that was asked for.
+    ///
+    /// Transparent Proxy is left alone: it does not change routes, its
+    /// self-identity guard already excludes the app's own flows, and
+    /// prohibiting virtual interfaces there would break hosts whose real
+    /// uplink is itself a virtual interface.
+    private var shouldExcludeVirtualInterfaces: Bool {
+#if AETHERROUTE_INDEPENDENT
+        guard state == .connected || state == .recovering else { return false }
+        return networkEngineMode == .tun
+#else
+        return false
+#endif
+    }
+
+    /// Measures one member's TCP reachability.
+    ///
+    /// Every number this returns is `.reachable`: it is a handshake against
+    /// the node's advertised endpoint, not proof that the node's protocol or
+    /// egress works. `verifySelectedMemberLatency` is what produces a
+    /// `.verified` number.
     nonisolated private static func probeDirectMemberLatency(
         member: String,
-        endpoints: [String: ProfileUpstreamEndpoint]
-    ) async -> ProxyLatencyResult {
-        if member.uppercased() == "DIRECT" {
-            return ProxyLatencyResult(member: member, delayMilliseconds: 5)
-        }
-        if member.uppercased() == "REJECT" {
-            return ProxyLatencyResult(member: member, delayMilliseconds: nil)
-        }
-        if let endpoint = endpoints[member] {
-            let delay = await probeTCPLatency(host: endpoint.host, port: endpoint.port)
-            return ProxyLatencyResult(member: member, delayMilliseconds: delay)
-        }
-        return ProxyLatencyResult(member: member, delayMilliseconds: nil)
+        endpoints: [String: ProfileUpstreamEndpoint],
+        excludingVirtualInterfaces: Bool
+    ) async -> ProxyLatencyMeasurement {
+        if member.uppercased() == "DIRECT" { return .reachable(5) }
+        if member.uppercased() == "REJECT" { return .timedOut }
+        guard let endpoint = endpoints[member] else { return .timedOut }
+        let delay = await probeTCPLatency(
+            host: endpoint.host,
+            port: endpoint.port,
+            excludingVirtualInterfaces: excludingVirtualInterfaces
+        )
+        return delay.map { .reachable($0) } ?? .timedOut
     }
 
     nonisolated private static func probeTCPLatency(
         host: String,
         port: UInt16,
-        timeoutMilliseconds: UInt32 = 2500
+        timeoutMilliseconds: UInt32 = 2500,
+        excludingVirtualInterfaces: Bool = false
     ) async -> UInt32? {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { return nil }
         let endpoint = NWEndpoint.Host(host)
         let tcpOptions = NWProtocolTCP.Options()
         tcpOptions.connectionTimeout = max(1, Int(timeoutMilliseconds / 1000))
         let parameters = NWParameters(tls: nil, tcp: tcpOptions)
+        if excludingVirtualInterfaces {
+            // `utun` reports as `.other`. Refusing that type keeps a TUN
+            // session from carrying the probe it is supposed to be measured
+            // against.
+            parameters.prohibitedInterfaceTypes = [.other]
+        }
         let connection = NWConnection(host: endpoint, port: nwPort, using: parameters)
 
         return await withCheckedContinuation { continuation in
@@ -1914,7 +2148,7 @@ final class TunnelManager: ObservableObject {
             timeoutMilliseconds: TunnelStartupTimingPolicy
                 .selectorReadinessPerMemberTimeoutMilliseconds
         )
-        proxyLatencies[group.name] = latency
+        adoptProviderLatency(latency, forGroup: group.name)
         let responsiveMembers = Set(
             latency.results.compactMap { result in
                 result.delayMilliseconds == nil ? nil : result.member
@@ -2106,7 +2340,7 @@ final class TunnelManager: ObservableObject {
                             throw TunnelManagerError.noResponsiveProxy
                         }
                         try await verifyCurrentRouteDataPlane()
-                        proxyLatencies[groupName] = latency
+                        adoptProviderLatency(latency, forGroup: groupName)
                         snapshot = candidate
                         if let summary = activeProfileSummary,
                            ProxyConnectionReadinessPolicy.groupsToVerify(summary: summary).first?.name == groupName {
@@ -2584,7 +2818,7 @@ final class TunnelManager: ObservableObject {
                         guard responsiveCount > 0 else {
                             throw TunnelManagerError.noResponsiveProxy
                         }
-                        proxyLatencies[childGroup] = latency
+                        adoptProviderLatency(latency, forGroup: childGroup)
                         Self.runtimeLogger.info(
                             "stage=automaticRouteHealth childRescan responsive=\(responsiveCount, privacy: .public)"
                         )
@@ -4703,6 +4937,10 @@ final class TunnelManager: ObservableObject {
         proxyLatencies = [:]
         proxyLatencyRequests = []
         memberLatencyRequests = []
+        latencyIndex = ProxyLatencyIndex()
+        latencyIndexToken = nil
+        pendingLatencyFlush = []
+        lastLatencyFlushAt = nil
         telemetryViewModel.reset()
         telemetryUpdatedAt = nil
     }
@@ -4845,7 +5083,7 @@ final class TunnelManager: ObservableObject {
                         Self.runtimeLogger.info(
                             "stage=connectionReadiness automaticScan attempt=\(attempt + 1, privacy: .public) results=\(latency.results.count, privacy: .public) responsive=\(responsiveCount, privacy: .public)"
                         )
-                        proxyLatencies[automaticGroup.name] = latency
+                        adoptProviderLatency(latency, forGroup: automaticGroup.name)
                         if responsiveCount > 0 {
                             routeIsResponsive = true
                             break
@@ -4870,7 +5108,7 @@ final class TunnelManager: ObservableObject {
                                 throw TunnelManagerError.noResponsiveProxy
                             }
                             if result.delayMilliseconds != nil {
-                                proxyLatencies[selection.group] = latency
+                                adoptProviderLatency(latency, forGroup: selection.group)
                                 routeIsResponsive = true
                                 break
                             }
