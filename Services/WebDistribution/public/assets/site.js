@@ -10,6 +10,7 @@
       zh: "版本与更新日志 — AetherRoute",
       en: "Releases and changelog — AetherRoute"
     },
+    "/releases/1.0.9/": {zh: "AetherRoute 1.0.9 正式版", en: "AetherRoute 1.0.9 Release"},
     "/releases/1.0.8/": {zh: "AetherRoute 1.0.8 正式版", en: "AetherRoute 1.0.8 Release"},
     "/releases/1.0.7/": {zh: "AetherRoute 1.0.7 正式版", en: "AetherRoute 1.0.7 Release"},
     "/releases/1.0.6/": {zh: "AetherRoute 1.0.6 正式版", en: "AetherRoute 1.0.6 Release"},

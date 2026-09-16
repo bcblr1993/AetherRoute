@@ -6,18 +6,18 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.8 (Build 2026091602)</title>
-            <pubDate>Wed, 16 Sep 2026 17:59:53 +0800</pubDate>
-            <sparkle:version>2026091602</sparkle:version>
-            <sparkle:shortVersionString>1.0.8</sparkle:shortVersionString>
+            <title>Version 1.0.9 (Build 2026091603)</title>
+            <pubDate>Wed, 16 Sep 2026 18:45:43 +0800</pubDate>
+            <sparkle:version>2026091603</sparkle:version>
+            <sparkle:shortVersionString>1.0.9</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
-<h2>AetherRoute 1.0.8</h2><p>支持连接中编辑与删除非活跃配置，彻底修复代理测速闪退与高延迟问题，增加 16 并发度控制与单节点测速，重构 3 秒平滑网络波形。</p><p><a href="https://aetherroute.pages.dev/releases/1.0.8/">完整更新日志</a></p>
+<h2>AetherRoute 1.0.9</h2><p>修复锁屏与屏幕休眠时自动断开并重连的问题，保持锁屏期间网络稳定持续，通过虚拟机全量测试。</p><p><a href="https://aetherroute.pages.dev/releases/1.0.9/">完整更新日志</a></p>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.8/AetherRoute-1.0.8-build-2026091602-arm64.dmg"
-                sparkle:edSignature="nTyHb+br2I38eI852R+rIYYEVAneJudJ9CBA4ZWwoFkkeer5LM9s1laViz+e/VPLjOCKYwfCGZufCKFXriInAA=="
-                length="24084345"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.9/AetherRoute-1.0.9-build-2026091603-arm64.dmg"
+                sparkle:edSignature="0wI/ZVKTns2MDmtd3cl8KUNzO3dT+GaLrezM09jOawixZ8v8oBsXrTa9389rNJyJTpCnGM2MRnica/poS0BHBA=="
+                length="24083853"
                 type="application/octet-stream" />
         </item>
     </channel>

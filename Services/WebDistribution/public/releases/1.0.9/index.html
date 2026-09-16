@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-Hans" data-language="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AetherRoute 1.0.9 正式版本说明、更新日志、安装包下载与 SHA-256 校验和。">
+  <title>AetherRoute 1.0.9 正式版</title>
+  <link rel="icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="icon" href="/assets/favicon-dark.png?v=20260914.08" type="image/png" media="(prefers-color-scheme: dark)">
+  <link rel="alternate icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=20260914.08">
+  <link rel="stylesheet" href="/assets/site.css?v=20260914.08">
+  <script src="/assets/site.js?v=20260916.03" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content"><span data-lang="zh">跳到正文</span><span data-lang="en">Skip to content</span></a>
+  
+  <header class="site-header"><nav class="nav wrap" aria-label="Main navigation"><a class="brand" href="/"><img src="/assets/aetherroute-mark.png?v=20260914.08" srcset="/assets/aetherroute-mark.png?v=20260914.08 1x, /assets/aetherroute-mark-1024.png?v=20260914.08 2x" width="34" height="34" alt="">AetherRoute</a><div class="navlinks"><a href="/#experience"><span data-lang="zh">使用体验</span><span data-lang="en">Experience</span></a><a href="/releases/"><span data-lang="zh">版本更新</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">使用帮助</span><span data-lang="en">Support</span></a></div><div class="nav-actions"><button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button><a class="small-button" href="/releases/"><span data-lang="zh">获取 Mac 版</span><span data-lang="en">Get for Mac</span> <span aria-hidden="true">↗</span></a></div></nav></header>
+
+  <main id="content" class="shell">
+    <div class="page-hero">
+      <span class="eyebrow"><span data-lang="zh">正式版 · 已通过 Apple 公证</span><span data-lang="en">Release · Apple notarized</span></span>
+      <h1>AetherRoute 1.0.9</h1>
+      <p>Build 2026091603 · 2026-09-16 · Apple silicon · macOS 15.0+</p>
+      <div class="hero-actions"><a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.9/AetherRoute-1.0.9-build-2026091603-arm64.dmg"><span data-lang="zh">下载 1.0.9 正式版</span><span data-lang="en">Download 1.0.9 Release</span></a><a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.9">GitHub Release ↗</a><a class="button" href="/releases/1.0.8/"><span data-lang="zh">获取 1.0.8 历史版本</span><span data-lang="en">Get 1.0.8 previous release</span></a></div>
+    </div>
+
+    <article class="prose">
+<section><h2><span data-lang="zh">锁屏与屏幕休眠持续连接</span><span data-lang="en">Continuous connection during screen lock and display sleep</span></h2><ul><li><span data-lang="zh">修复锁屏与熄屏时隧道自动断开并重新连接的缺陷：解除屏幕锁屏/解锁（com.apple.screenIsLocked / com.apple.screenIsUnlocked）及显示器休眠/点亮对隧道重置的过度绑定。</span><span data-lang="en">Remove over-broad observers for screen lock/unlock and display sleep that falsely triggered tunnel resets and disconnections.</span></li><li><span data-lang="zh">锁屏与屏幕休眠期间，物理网络与系统状态正常运行，AetherRoute 保持持续连接且零抖动，避免锁屏期间打断文件下载与长连接会话。</span><span data-lang="en">Keep tunnel and TCP connections continuously active while screen is locked, preserving active downloads and SSH sessions with zero network interruptions.</span></li><li><span data-lang="zh">真实整机物理休眠与唤醒依然保持完整的网络自愈与重连支持，并增加自动化回归测试套件。</span><span data-lang="en">Retain robust self-healing on real system sleep/wake, backed by the new Tests/RuntimeEnvironment automated test suite.</span></li></ul></section>
+<section><h2><span data-lang="zh">虚拟机实机验证</span><span data-lang="en">Virtual machine verification</span></h2><ul><li><span data-lang="zh">在 Apple 芯片 macOS 虚拟机中完成 v1.0.9 正式包的安装、系统扩展激活、锁屏/解锁网络持续连通实测，无多余休眠/重连日志流转。</span><span data-lang="en">Verify v1.0.9 installation, system extension activation, and screen lock continuity in an Apple silicon VM with uninterrupted data path connectivity.</span></li><li><span data-lang="zh">物理网络链路断开 8 秒自愈与网络适配器出口动态切换实测通过，进程零重启、通道零阻塞。</span><span data-lang="en">Verify 8-second physical link disconnection self-healing and dynamic network adapter handoff with zero process restarts and zero packet blocks.</span></li></ul></section>
+<section><h2><span data-lang="zh">发布说明</span><span data-lang="en">Release information</span></h2><ul><li><span data-lang="zh">此正式包使用正常生产核心，经过 Developer ID 签名及 Apple 公证，不包含 QA 自动连接。</span><span data-lang="en">This stable package uses the normal production core, is Developer ID signed and Apple notarized, and contains no QA auto-connect.</span></li><li><span data-lang="zh">经维护者授权，在虚拟机详细测试全部通过后发布 v1.0.9 正式版。</span><span data-lang="en">Authorized by the maintainer for stable release following 100% pass across all virtual machine test suites.</span></li></ul></section><section><h2><span data-lang="zh">下载与校验</span><span data-lang="en">Download and verify</span></h2><div class="checksum">AetherRoute-1.0.9-build-2026091603-arm64.dmg</div><p>SHA-256</p><div class="checksum">5b2bda85b0088b2c26e2c0aae71dc7d3dc19d58fe382624534bad039e2bc7882</div></section>
+</article>
+  </main>
+
+  <footer class="wrap site-footer"><span>© 2026 AetherRoute <span class="footer-note"><span data-lang="zh">由编程不良人用心打造。</span><span data-lang="en">Made by BianChengBuLiangRen.</span></span></span><div><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">帮助</span><span data-lang="en">Support</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可</span><span data-lang="en">License</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub ↗</a></div></footer>
+</body>
+</html>
