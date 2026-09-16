@@ -8,10 +8,22 @@ trap 'rm -rf "$TEST_TEMP"' EXIT
 # runner previously hard-coded one machine's DerivedData hash, so on any other
 # Mac it either failed to resolve the framework or silently linked whatever
 # stale copy happened to sit at that path.
-PRODUCTS_DIR="${AETHERROUTE_PRODUCTS_DIR:-$ROOT/build/Debug}"
+PRODUCTS_DIR="${AETHERROUTE_PRODUCTS_DIR:-}"
+if [ -z "$PRODUCTS_DIR" ] || [ ! -d "$PRODUCTS_DIR/AetherRouteKit.framework" ]; then
+  for candidate in \
+    "$ROOT/build/Debug" \
+    "$ROOT/build/DerivedData/Build/Products/Debug" \
+    "$ROOT/build/Products/Debug"
+  do
+    if [ -d "$candidate/AetherRouteKit.framework" ]; then
+      PRODUCTS_DIR="$candidate"
+      break
+    fi
+  done
+fi
 
-if [ ! -d "$PRODUCTS_DIR/AetherRouteKit.framework" ]; then
-  echo "AetherRouteKit.framework not found under $PRODUCTS_DIR" >&2
+if [ -z "$PRODUCTS_DIR" ] || [ ! -d "$PRODUCTS_DIR/AetherRouteKit.framework" ]; then
+  echo "AetherRouteKit.framework not found" >&2
   echo "Build it first, for example:" >&2
   echo "  xcodebuild -project AetherRoute.xcodeproj -target AetherRouteKit \\" >&2
   echo "    -configuration Debug build" >&2

@@ -687,7 +687,17 @@ private struct MenuBarContent: View {
 
                 HStack(spacing: AetherVisual.s2) {
                     Button {
-                        let command = "export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 all_proxy=socks5://127.0.0.1:7890"
+                        let command = (try? tunnel.localProxySettings.shellEnvironmentCommand())
+                            ?? [
+                                "export HTTP_PROXY=http://127.0.0.1:\(tunnel.localProxySettings.httpPort)",
+                                "export HTTPS_PROXY=http://127.0.0.1:\(tunnel.localProxySettings.httpPort)",
+                                "export ALL_PROXY=socks5h://127.0.0.1:\(tunnel.localProxySettings.socksPort)",
+                                "export http_proxy=\"$HTTP_PROXY\"",
+                                "export https_proxy=\"$HTTPS_PROXY\"",
+                                "export all_proxy=\"$ALL_PROXY\"",
+                                "export NO_PROXY=localhost,127.0.0.1,::1",
+                                "export no_proxy=\"$NO_PROXY\"",
+                            ].joined(separator: "; ")
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(command, forType: .string)
                         copiedTerminalCommand = true
@@ -710,7 +720,7 @@ private struct MenuBarContent: View {
                     .accessibilityIdentifier("copy-terminal-proxy-button")
 
                     Button {
-                        let command = "unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY"
+                        let command = LocalProxySettings.clearShellEnvironmentCommand
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(command, forType: .string)
                         clearedTerminalCommand = true

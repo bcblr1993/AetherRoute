@@ -1873,6 +1873,11 @@ final class TunnelManager: ObservableObject {
                 runToken: runToken
             )
         }
+
+        guard runToken == currentLatencyRunToken else { return }
+        latencyIndex.aggregateChildGroups()
+        let allGroups = (activeProfileSummary?.proxyGroups ?? []).map(\.name)
+        publishLatency(groups: allGroups, force: true)
     }
 
     func testAllProxyGroupsLatency() async {

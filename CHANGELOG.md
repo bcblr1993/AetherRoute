@@ -4,7 +4,7 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.11] - 2026-09-16
 
 ### Changed
 
@@ -27,6 +27,12 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ### Fixed
 
+- Dynamically link menu-bar shell proxy commands to the user's configured local
+  proxy ports, avoiding hardcoded 7890 port mismatches, and standardize on
+  safe unset environment commands.
+- Cascade latency aggregation bottom-up to parent strategy groups immediately
+  upon completing single-node tests, ensuring parent groups reflect updated child
+  group measurements.
 - Stop measuring TUN-mode reachability through the tunnel itself. Probes now
   refuse virtual interfaces while a TUN session is active, so a measurement no
   longer reports `host -> current node -> target node` latency or times out by
@@ -45,6 +51,8 @@ All notable changes to AetherRoute are recorded here. The format follows
   whole group's published results down to one row.
 - Discard latency results that arrive after a profile switch instead of
   writing them into a same-named group in the newly active profile.
+- Auto-detect built framework products in standalone test runners, preventing
+  hardcoded DerivedData machine-specific path failures.
 
 ## [1.0.10] - 2026-09-16
 
