@@ -63,12 +63,12 @@ extension ProxyLatencyStatus {
         results: [ProxyLatencyResult]?,
         isTesting: Bool
     ) -> ProxyLatencyStatus {
-        if isTesting { return .testing }
-        guard let result = results?.first(where: { $0.member == member }) else {
-            return .untested
+        if let result = results?.first(where: { $0.member == member }) {
+            guard let delay = result.delayMilliseconds else { return .timedOut }
+            return .responded(delay)
         }
-        guard let delay = result.delayMilliseconds else { return .timedOut }
-        return .responded(delay)
+        if isTesting { return .testing }
+        return .untested
     }
 }
 

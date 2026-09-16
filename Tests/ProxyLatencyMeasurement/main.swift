@@ -13,12 +13,12 @@ enum MockProxyLatencyStatus: Equatable {
         results: [ProxyLatencyResult]?,
         isTesting: Bool
     ) -> MockProxyLatencyStatus {
-        if isTesting { return .testing }
-        guard let result = results?.first(where: { $0.member == member }) else {
-            return .untested
+        if let result = results?.first(where: { $0.member == member }) {
+            guard let delay = result.delayMilliseconds else { return .timedOut }
+            return .responded(delay)
         }
-        guard let delay = result.delayMilliseconds else { return .timedOut }
-        return .responded(delay)
+        if isTesting { return .testing }
+        return .untested
     }
 }
 
@@ -133,11 +133,35 @@ struct ProxyLatencyMeasurementTests {
         )
         precondition(statusDirect == .responded(18), "DIRECT node should have responsive delay (18ms)")
 
-        // 7. 全组测速 (group-level testing)
+        // 7. 全组测速 (group-level testing 增量流式显示校验)
+        manager.proxyLatencies[groupName] = ProxyLatencyState(results: [])
         manager.proxyLatencyRequests.insert(groupName)
         precondition(manager.isTestingLatency(group: groupName), "Group must report testing")
         precondition(manager.isTestingLatency(group: groupName, member: nodeA), "All members report testing during group test")
         precondition(manager.isTestingLatency(group: groupName, member: nodeB), "All members report testing during group test")
+
+        // 初始所有节点均在测试中
+        let statusA_groupInit = MockProxyLatencyStatus.status(
+            member: nodeA,
+            results: manager.proxyLatencies[groupName]?.results,
+            isTesting: manager.isTestingLatency(group: groupName, member: nodeA)
+        )
+        precondition(statusA_groupInit == .testing, "Node A must be .testing before returning")
+
+        // nodeA 先返回 (32ms)，应立即显示，不等全组完成
+        manager.mergeLatencyResult(ProxyLatencyResult(member: nodeA, delayMilliseconds: 32), forGroup: groupName)
+        let statusA_groupPartial = MockProxyLatencyStatus.status(
+            member: nodeA,
+            results: manager.proxyLatencies[groupName]?.results,
+            isTesting: manager.isTestingLatency(group: groupName, member: nodeA)
+        )
+        let statusB_groupPartial = MockProxyLatencyStatus.status(
+            member: nodeB,
+            results: manager.proxyLatencies[groupName]?.results,
+            isTesting: manager.isTestingLatency(group: groupName, member: nodeB)
+        )
+        precondition(statusA_groupPartial == .responded(32), "Node A must display 32ms immediately during group test")
+        precondition(statusB_groupPartial == .testing, "Node B must remain .testing while still pending")
 
         manager.proxyLatencyRequests.remove(groupName)
         precondition(!manager.isTestingLatency(group: groupName), "Group test cleared")

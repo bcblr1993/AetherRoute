@@ -1568,40 +1568,27 @@ final class TunnelManager: ObservableObject {
             "stage=proxyLatency request members=\(self.activeProfileSummary?.proxyGroups.first(where: { $0.name == groupName })?.memberCount ?? 0, privacy: .public)"
         )
         proxySelectionMessages[groupName] = nil
+        proxyLatencies[groupName] = ProxyLatencyState(results: [])
         defer { proxyLatencyRequests.remove(groupName) }
 
         do {
             let latency: ProxyLatencyState
             if isUIReviewMode {
-                try? await Task.sleep(nanoseconds: 280_000_000)
+                try? await Task.sleep(nanoseconds: 120_000_000)
                 let members = proxySelections[groupName]?.members
                     ?? activeProfileSummary?.proxyGroups
                         .first(where: { $0.name == groupName })?.members
                     ?? []
-                latency = ProxyLatencyState(
-                    results: members.enumerated().map { index, member in
-                        ProxyLatencyResult(
-                            member: member,
-                            delayMilliseconds: member.uppercased() == "DIRECT" ? 3 : (index == 2 ? nil : UInt32(28 + index * 32))
-                        )
-                    }
-                )
-            } else if state == .connected {
-                let client = ProxySelectionProviderClient { [weak self] data in
-                    guard let self else {
-                        throw TunnelManagerError.providerSessionUnavailable
-                    }
-                    return try await self.sendProviderMessage(
-                        data,
-                        timeout: TunnelStartupTimingPolicy
-                            .selectorReadinessProviderMessageTimeout
+                var mockResults: [ProxyLatencyResult] = []
+                for (index, member) in members.enumerated() {
+                    let result = ProxyLatencyResult(
+                        member: member,
+                        delayMilliseconds: member.uppercased() == "DIRECT" ? 3 : (index == 2 ? nil : UInt32(28 + index * 32))
                     )
+                    mockResults.append(result)
+                    mergeLatencyResultAcrossGroups(result)
                 }
-                latency = try await client.latency(
-                    group: groupName,
-                    url: Self.defaultLatencyTestURL,
-                    timeoutMilliseconds: Self.uiLatencyTimeoutMilliseconds
-                )
+                latency = ProxyLatencyState(results: mockResults)
             } else {
                 latency = await testDirectProxyLatency(group: groupName)
             }
@@ -1627,6 +1614,10 @@ final class TunnelManager: ObservableObject {
             return
         }
         memberLatencyRequests.insert(memberKey)
+        // 清理单节点旧结果，使其立即呈现测速中状态
+        var existing = proxyLatencies[groupName]?.results ?? []
+        existing.removeAll(where: { $0.member == memberName })
+        proxyLatencies[groupName] = ProxyLatencyState(results: existing)
         proxySelectionMessages[groupName] = nil
         defer { memberLatencyRequests.remove(memberKey) }
 
@@ -1640,33 +1631,10 @@ final class TunnelManager: ObservableObject {
                 try? await Task.sleep(nanoseconds: 120_000_000)
                 let delay: UInt32? = memberName.uppercased() == "DIRECT" ? 3 : 36
                 result = ProxyLatencyResult(member: memberName, delayMilliseconds: delay)
-            } else if state == .connected {
-                let client = ProxySelectionProviderClient { [weak self] data in
-                    guard let self else {
-                        throw TunnelManagerError.providerSessionUnavailable
-                    }
-                    return try await self.sendProviderMessage(
-                        data,
-                        timeout: TunnelStartupTimingPolicy
-                            .selectorReadinessProviderMessageTimeout
-                    )
-                }
-                let latency = try await client.latency(
-                    group: groupName,
-                    url: Self.defaultLatencyTestURL,
-                    timeoutMilliseconds: Self.uiLatencyTimeoutMilliseconds
-                )
-                if let matching = latency.results.first(where: { $0.member == memberName }) {
-                    result = matching
-                } else {
-                    result = ProxyLatencyResult(member: memberName, delayMilliseconds: nil)
-                }
-                // 同时将最新测试结果合并入该组缓存，保留已有测量结果
-                proxyLatencies[groupName] = latency
             } else {
                 result = await testDirectSingleProxyLatency(member: memberName)
             }
-            mergeLatencyResult(result, forGroup: groupName)
+            mergeLatencyResultAcrossGroups(result)
             Self.runtimeLogger.info(
                 "stage=proxyLatency memberSuccess group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) delay=\(result.delayMilliseconds.map(String.init) ?? "timeout", privacy: .public)"
             )
@@ -1674,9 +1642,8 @@ final class TunnelManager: ObservableObject {
             Self.runtimeLogger.error(
                 "stage=proxyLatency memberFailed group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) error=\(String(reflecting: error), privacy: .public)"
             )
-            mergeLatencyResult(
-                ProxyLatencyResult(member: memberName, delayMilliseconds: nil),
-                forGroup: groupName
+            mergeLatencyResultAcrossGroups(
+                ProxyLatencyResult(member: memberName, delayMilliseconds: nil)
             )
         }
     }
@@ -1684,6 +1651,16 @@ final class TunnelManager: ObservableObject {
     private func testDirectSingleProxyLatency(member: String) async -> ProxyLatencyResult {
         let endpoints = activeProfile.map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
         return await Self.probeDirectMemberLatency(member: member, endpoints: endpoints)
+    }
+
+    private func mergeLatencyResultAcrossGroups(_ newResult: ProxyLatencyResult) {
+        guard let groups = activeProfileSummary?.proxyGroups else { return }
+        for group in groups {
+            let members = proxySelections[group.name]?.members ?? group.members
+            if members.contains(newResult.member) {
+                mergeLatencyResult(newResult, forGroup: group.name)
+            }
+        }
     }
 
     private func mergeLatencyResult(_ newResult: ProxyLatencyResult, forGroup groupName: String) {
@@ -1698,10 +1675,77 @@ final class TunnelManager: ObservableObject {
 
     func testAllProxyGroupsLatency() async {
         guard let groups = activeProfileSummary?.proxyGroups, !groups.isEmpty else { return }
-        await withTaskGroup(of: Void.self) { taskGroup in
+        for group in groups {
+            proxyLatencyRequests.insert(group.name)
+            proxyLatencies[group.name] = ProxyLatencyState(results: [])
+        }
+        defer {
             for group in groups {
-                taskGroup.addTask { [weak self] in
-                    await self?.testProxyLatency(group: group.name)
+                proxyLatencyRequests.remove(group.name)
+            }
+        }
+
+        if isUIReviewMode {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            for group in groups {
+                let members = proxySelections[group.name]?.members ?? group.members
+                for (index, member) in members.enumerated() {
+                    let result = ProxyLatencyResult(
+                        member: member,
+                        delayMilliseconds: member.uppercased() == "DIRECT" ? 3 : (index == 2 ? nil : UInt32(28 + index * 32))
+                    )
+                    mergeLatencyResultAcrossGroups(result)
+                }
+            }
+            return
+        }
+
+        // 收集跨组唯一节点，消除重复测试
+        var uniqueMembers: [String] = []
+        var seenMembers = Set<String>()
+        for group in groups {
+            let members = proxySelections[group.name]?.members ?? group.members
+            for member in members {
+                if seenMembers.insert(member).inserted {
+                    uniqueMembers.append(member)
+                }
+            }
+        }
+
+        let endpoints = activeProfile.map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
+        let maxConcurrent = 16
+
+        await withTaskGroup(of: ProxyLatencyResult.self) { taskGroup in
+            var iterator = uniqueMembers.makeIterator()
+            var activeCount = 0
+
+            while activeCount < maxConcurrent, let member = iterator.next() {
+                activeCount += 1
+                taskGroup.addTask {
+                    await Self.probeDirectMemberLatency(member: member, endpoints: endpoints)
+                }
+            }
+
+            while let result = await taskGroup.next() {
+                mergeLatencyResultAcrossGroups(result)
+                if let nextMember = iterator.next() {
+                    taskGroup.addTask {
+                        await Self.probeDirectMemberLatency(member: nextMember, endpoints: endpoints)
+                    }
+                }
+            }
+        }
+
+        // 自动计算并同步子策略组卡片的延迟展示
+        for group in groups {
+            let members = proxySelections[group.name]?.members ?? group.members
+            for member in members where groups.contains(where: { $0.name == member }) {
+                if let childResults = proxyLatencies[member]?.results {
+                    let bestDelay = childResults.compactMap(\.delayMilliseconds).min()
+                    mergeLatencyResult(
+                        ProxyLatencyResult(member: member, delayMilliseconds: bestDelay),
+                        forGroup: group.name
+                    )
                 }
             }
         }
@@ -1733,6 +1777,7 @@ final class TunnelManager: ObservableObject {
             var collected: [ProxyLatencyResult] = []
             while let result = await group.next() {
                 collected.append(result)
+                mergeLatencyResultAcrossGroups(result)
                 if let nextMember = iterator.next() {
                     group.addTask {
                         await Self.probeDirectMemberLatency(member: nextMember, endpoints: endpoints)

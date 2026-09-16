@@ -18,6 +18,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         attributes: [],
         autoreleaseFrequency: .workItem
     )
+    private let probeMessageQueue = DispatchQueue(
+        label: "com.aetherroute.packet-provider.probes",
+        qos: .userInitiated,
+        attributes: [],
+        autoreleaseFrequency: .workItem
+    )
     private var pathMonitor: NWPathMonitor?
     private var uplinkStore: SCDynamicStore?
     private final class UplinkObserverContext {
@@ -209,11 +215,29 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     ) {
         guard let completionHandler else { return }
         let completion = PacketProviderMessageCompletion(completionHandler)
-        providerMessageQueue.async { [self] in
+
+        let request: ProxySelectionProviderRequest
+        do {
+            request = try ProxySelectionProviderMessageCodec.decodeRequest(messageData)
+        } catch {
+            let response = ProxySelectionProviderResponse.failure(.invalidRequest)
+            do {
+                completion.call(try ProxySelectionProviderMessageCodec.encode(response: response))
+            } catch {
+                completion.call(nil)
+            }
+            return
+        }
+
+        let isProbeRequest: Bool = switch request {
+        case .latency, .activeLatency: true
+        default: false
+        }
+
+        let targetQueue = isProbeRequest ? probeMessageQueue : providerMessageQueue
+        targetQueue.async { [self] in
             let response: ProxySelectionProviderResponse
             do {
-                let request = try ProxySelectionProviderMessageCodec
-                    .decodeRequest(messageData)
                 response = switch request {
                 case let .snapshot(group):
                     .snapshot(try core.selectorSnapshot(group: group))

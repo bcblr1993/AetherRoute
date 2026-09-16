@@ -24,7 +24,11 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     private let diagnostics: ProviderDiagnosticAccumulator
     private let runtimeController: TransparentProxyProviderLifecycleController
     private let providerMessageQueue = DispatchQueue(
-        label: "com.example.aetherroute.transparent-provider.messages",
+        label: "com.aetherroute.desktop.transparent-proxy.provider-message",
+        qos: .userInitiated
+    )
+    private let probeMessageQueue = DispatchQueue(
+        label: "com.aetherroute.desktop.transparent-proxy.probe-message",
         qos: .userInitiated
     )
     /// Short enough that the whole schedule still fits inside the recovery
@@ -342,11 +346,29 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     ) {
         guard let completionHandler else { return }
         let completion = ProxyMessageCompletion(completionHandler)
-        providerMessageQueue.async { [self, runtimeController, diagnostics] in
+
+        let request: ProxySelectionProviderRequest
+        do {
+            request = try ProxySelectionProviderMessageCodec.decodeRequest(messageData)
+        } catch {
+            let response = ProxySelectionProviderResponse.failure(.invalidRequest)
+            do {
+                completion.call(try ProxySelectionProviderMessageCodec.encode(response: response))
+            } catch {
+                completion.call(nil)
+            }
+            return
+        }
+
+        let isProbeRequest: Bool = switch request {
+        case .latency, .activeLatency: true
+        default: false
+        }
+
+        let targetQueue = isProbeRequest ? probeMessageQueue : providerMessageQueue
+        targetQueue.async { [self, runtimeController, diagnostics] in
             let response: ProxySelectionProviderResponse
             do {
-                let request = try ProxySelectionProviderMessageCodec
-                    .decodeRequest(messageData)
                 Self.runtimeLog.verbose(
                     "stage=providerMessage request=\(Self.messageKind(request)) bytes=\(messageData.count)"
                 )
