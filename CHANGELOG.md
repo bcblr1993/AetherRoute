@@ -4,20 +4,7 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
-
-### Changed
-
-- The first public edition uses free distribution with user-provided profiles,
-  without an activation service or account requirement.
-- Validated country and domain routing databases now ship with the app and are
-  prepared automatically when connecting. Manual database controls live under
-  Advanced Options; failed background updates preserve usable rules.
-- Subscription and configuration import are primary actions. Routing details,
-  bilingual settings, free-edition labels and About-page text have clearer
-  hierarchy and accessibility.
-- Production signing, notarization, installed Network Extension validation,
-  and the final 24-hour stability gate remain release-blocking.
+## [1.0.10] - 2026-09-16
 
 ### Fixed
 
@@ -28,15 +15,6 @@ All notable changes to AetherRoute are recorded here. The format follows
   the session duration and keeping Disconnect available in the window and menu.
 - Verify screen-lock continuity on one persistent TCP connection without
   automatic reconnection; separate simulated QA power events from screen lock.
-- Move routing-resource preparation and runtime configuration snapshots off
-  the main actor, reject stale results, and prevent conflicting write actions.
-- Restore the previous routing files and metadata when an update encounters a
-  disk or write failure, while preserving concurrent user imports.
-- Reuse the exact enabled system extension, recover windows saved off screen,
-  and verify actual provider shutdown and network restoration between tests.
-- Bind protocol, signing and resource notices to the actual normal or
-  diagnostic core artifacts. Installed-extension performance now requires real
-  paired measurements rather than isolated-core throughput numbers.
 
 ## [1.0.9] - 2026-09-16
 
