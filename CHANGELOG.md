@@ -31,6 +31,19 @@ All notable changes to AetherRoute are recorded here. The format follows
   diagnostic core artifacts. Installed-extension performance now requires real
   paired measurements rather than isolated-core throughput numbers.
 
+## [1.0.7] - 2026-09-16
+
+### Fixed
+
+- Fix a critical Network Extension lifecycle deadlock in TUN mode after physical uplink recovery exhaustion:
+  - When the physical uplink was severed and consecutive network reset attempts were exhausted, `PacketTunnelProvider` cancelled the tunnel with an error without stopping the underlying Rust core engine.
+  - The process-wide `EngineLifecycleGate` remained stuck in the `running` phase with a stale engine generation, permanently rejecting all subsequent reconnection requests with `lifecycleBusy` and preventing TUN connections until the entire Mac was rebooted.
+  - `PacketTunnelProvider` now guarantees `core.stop` is cleanly invoked prior to `cancelTunnelWithError`, along with an additional defensive cleanup barrier in its deinitializer.
+  - `EngineLifecycleGate` now actively detects residual running engines upon a new start request, immediately signals `clash_shutdown()`, transitions state to `stopping`, and awaits clean wind-down before admitting the new engine generation.
+  - Added automatic process relaunch fallback (`scheduleProcessRelaunch`) if an extension cannot safely recover from a busy lifecycle gate, ensuring automatic self-healing without requiring a Mac reboot.
+  - Added unexpected worker termination retirement to return the gate to `idle` if the background engine thread exits unexpectedly.
+- Verified physical network link disconnection recovery (8s link down) and dynamic network adapter handoff (IP alias addition/removal) on macOS virtual machines with zero process restarts and seamless data path recovery.
+
 ## [1.0.6] - 2026-09-15
 
 ### Changed

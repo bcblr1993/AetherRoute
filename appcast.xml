@@ -6,18 +6,18 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.6 (Build 2026091508)</title>
-            <pubDate>Tue, 15 Sep 2026 18:53:10 +0800</pubDate>
-            <sparkle:version>2026091508</sparkle:version>
-            <sparkle:shortVersionString>1.0.6</sparkle:shortVersionString>
+            <title>Version 1.0.7 (Build 2026091601)</title>
+            <pubDate>Wed, 16 Sep 2026 13:46:28 +0800</pubDate>
+            <sparkle:version>2026091601</sparkle:version>
+            <sparkle:shortVersionString>1.0.7</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
-<h2>AetherRoute 1.0.6</h2><p>全新玻璃菜单面板、延迟排序节点列表、实时流量刷新及网络稳定性与退出优化。</p><p><a href="https://aetherroute.pages.dev/releases/1.0.6/">完整更新日志</a></p>
+<h2>AetherRoute 1.0.7</h2><p>修复 TUN 模式断网恢复生命周期死锁，增加残留引擎驱逐与异常自愈保护，通过断网恢复与网卡切换实测。</p><p><a href="https://aetherroute.pages.dev/releases/1.0.7/">完整更新日志</a></p>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.6/AetherRoute-1.0.6-build-2026091508-arm64.dmg"
-                sparkle:edSignature="jd68iOJ1R2e5JpXCqJfZ03+fPC9bpxy3Li8zfQrXyllyQfq+hf6yVzTvtsrYOUkkYvzBNqD9H5fqeV59us1+Aw=="
-                length="24442052"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.7/AetherRoute-1.0.7-build-2026091601-arm64.dmg"
+                sparkle:edSignature="q6qp6aCKk0z0zLW+3Gu8wGp/rLWkzWEi5tW+fbzrCDGdzXvTNoofMsFDCkwCeGqSvLeQMwiONdg1iY0ToUVYDQ=="
+                length="23540153"
                 type="application/octet-stream" />
         </item>
     </channel>
