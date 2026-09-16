@@ -25,8 +25,30 @@ if [ ! -f "$PRIV_KEY" ] || [ ! -f "$PUB_KEY" ]; then
 fi
 
 OUTPUT_APPCAST="$ROOT/appcast.xml"
+WEB_APPCAST="$ROOT/Services/WebDistribution/public/appcast.xml"
 
-swift - "$DMG_PATH" "$PRIV_KEY" "$PUB_KEY" "$OUTPUT_APPCAST" "$RELEASE_URL" "$NOTES" << 'SWIFT_CODE'
+# Try finding Sparkle's official sign_update binary
+SIGN_UPDATE_BIN=""
+for candidate in \
+  "$ROOT/build/Debug/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
+  "$ROOT/.build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
+  "$ROOT/.build/xcode/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update"
+do
+  if [ -x "$candidate" ]; then
+    SIGN_UPDATE_BIN="$candidate"
+    break
+  fi
+done
+
+PRECOMPUTED_SIG=""
+if [ -n "$SIGN_UPDATE_BIN" ]; then
+  echo "Found official Sparkle sign_update tool: $SIGN_UPDATE_BIN"
+  PRECOMPUTED_SIG=$("$SIGN_UPDATE_BIN" -p -f "$PRIV_KEY" "$DMG_PATH")
+  "$SIGN_UPDATE_BIN" --verify "$DMG_PATH" "$PRECOMPUTED_SIG" -f "$PRIV_KEY"
+  echo "Verified signature with official Sparkle tool: $PRECOMPUTED_SIG"
+fi
+
+swift - "$DMG_PATH" "$PRIV_KEY" "$PUB_KEY" "$OUTPUT_APPCAST" "$RELEASE_URL" "$NOTES" "$PRECOMPUTED_SIG" << 'SWIFT_CODE'
 import Foundation
 import CryptoKit
 
@@ -42,6 +64,7 @@ let pubKeyPath = args[3]
 let appcastPath = args[4]
 let customReleaseURL = args.count > 5 && !args[5].isEmpty ? args[5] : nil
 let customNotes = args.count > 6 && !args[6].isEmpty ? args[6] : nil
+let precomputedSig = args.count > 7 && !args[7].isEmpty ? args[7] : nil
 
 let dmgURL = URL(fileURLWithPath: dmgPath)
 let dmgFilename = dmgURL.lastPathComponent
@@ -73,15 +96,28 @@ guard let privData = Data(base64Encoded: rawPriv),
 
 let dmgData = try Data(contentsOf: dmgURL)
 let dmgLength = dmgData.count
-let signature = try privateKey.signature(for: dmgData)
-let sigBase64 = signature.base64EncodedString()
 
-// Verify with public key
 guard let pubData = Data(base64Encoded: rawPub),
-      let publicKey = try? Curve25519.Signing.PublicKey(rawRepresentation: pubData),
-      publicKey.isValidSignature(signature, for: dmgData) else {
-    print("Error: Signature verification failed")
+      let publicKey = try? Curve25519.Signing.PublicKey(rawRepresentation: pubData) else {
+    print("Error: Invalid public key")
     exit(1)
+}
+
+let finalSig: String
+if let precomputedSig = precomputedSig, !precomputedSig.isEmpty {
+    guard let precomputedData = Data(base64Encoded: precomputedSig),
+          publicKey.isValidSignature(precomputedData, for: dmgData) else {
+        print("Error: Precomputed Sparkle sign_update signature failed public key verification")
+        exit(1)
+    }
+    finalSig = precomputedSig
+} else {
+    let signature = try privateKey.signature(for: dmgData)
+    guard publicKey.isValidSignature(signature, for: dmgData) else {
+        print("Error: CryptoKit signature verification failed")
+        exit(1)
+    }
+    finalSig = signature.base64EncodedString()
 }
 
 let downloadURL = customReleaseURL ?? "https://github.com/bcblr1993/AetherRoute/releases/download/v\(version)-build-\(build)/\(dmgFilename)"
@@ -120,7 +156,7 @@ let appcastXML = """
             ]]></description>
             <enclosure
                 url="\(downloadURL)"
-                sparkle:edSignature="\(sigBase64)"
+                sparkle:edSignature="\(finalSig)"
                 length="\(dmgLength)"
                 type="application/octet-stream" />
         </item>
@@ -133,6 +169,12 @@ print("Successfully generated appcast.xml:")
 print("  Version: \(version) (Build \(build))")
 print("  File: \(dmgFilename) (\(dmgLength) bytes)")
 print("  Download: \(downloadURL)")
-print("  Ed25519: \(sigBase64)")
+print("  Ed25519: \(finalSig)")
 print("  Saved to: \(appcastPath)")
 SWIFT_CODE
+
+if [ -f "$WEB_APPCAST" ] && [ "$OUTPUT_APPCAST" != "$WEB_APPCAST" ]; then
+  cp "$OUTPUT_APPCAST" "$WEB_APPCAST"
+  echo "Synchronized appcast to: $WEB_APPCAST"
+fi
+
