@@ -105,9 +105,7 @@ struct ProxiesView: View {
 
                 Button {
                     Task {
-                        for group in groups {
-                            await tunnel.testProxyLatency(group: group.name)
-                        }
+                        await tunnel.testAllProxyGroupsLatency()
                     }
                 } label: {
                     Label(AppLocalization.string("Test all"), systemImage: "gauge.with.dots.needle.33percent")
@@ -537,7 +535,7 @@ private struct ActiveProxyGroupView: View {
                     },
                     onTest: {
                         Task {
-                            await tunnel.testProxyLatency(group: group.name)
+                            await tunnel.testSingleProxyLatency(group: group.name, member: member)
                         }
                     }
                 )
@@ -663,7 +661,7 @@ private struct ActiveProxyGroupView: View {
         ProxyLatencyStatus.status(
             member: member,
             results: tunnel.proxyLatencies[group.name]?.results,
-            isTesting: isTesting
+            isTesting: tunnel.isTestingLatency(group: group.name, member: member)
         )
     }
 }
@@ -732,8 +730,7 @@ private struct ProxyNodeModernCard: View {
 
                 // 右侧延迟测速胶囊
                 AetherLatencyPill(
-                    latency: latencyMs,
-                    isTesting: status == .testing,
+                    status: status,
                     onTap: onTest
                 )
             }
@@ -771,7 +768,7 @@ private struct ProxyNodeModernCard: View {
         .contextMenu {
             Button(AppLocalization.string("Switch to this node")) { onSelect() }
                 .disabled(!canSelect || isBusy)
-            Button(AppLocalization.string("Retest group")) { onTest() }
+            Button(AppLocalization.string("Test latency")) { onTest() }
             Divider()
             Button(AppLocalization.string("Copy node name")) {
                 NSPasteboard.general.clearContents()

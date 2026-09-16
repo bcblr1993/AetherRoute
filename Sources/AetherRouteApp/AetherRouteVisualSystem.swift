@@ -358,22 +358,39 @@ struct AetherProtocolBadge: View {
 
 /// 现代测速延迟胶囊
 struct AetherLatencyPill: View {
-    let latency: Int?
-    var isTesting: Bool = false
+    let status: ProxyLatencyStatus
     var onTap: (() -> Void)? = nil
     @State private var isHovered = false
+
+    init(status: ProxyLatencyStatus, onTap: (() -> Void)? = nil) {
+        self.status = status
+        self.onTap = onTap
+    }
+
+    init(latency: Int?, isTesting: Bool = false, onTap: (() -> Void)? = nil) {
+        if isTesting {
+            self.status = .testing
+        } else if let ms = latency, ms > 0 {
+            self.status = .responded(UInt32(ms))
+        } else if latency == nil {
+            self.status = .untested
+        } else {
+            self.status = .timedOut
+        }
+        self.onTap = onTap
+    }
 
     var body: some View {
         Button {
             onTap?()
         } label: {
             HStack(spacing: 3.5) {
-                if isTesting {
+                if status == .testing {
                     ProgressView()
                         .controlSize(.mini)
                         .scaleEffect(0.65)
                         .frame(width: 9, height: 9)
-                } else if let ms = latency, ms > 0 {
+                } else if case .responded = status {
                     Circle()
                         .fill(pillColor)
                         .frame(width: 5, height: 5)
@@ -396,26 +413,40 @@ struct AetherLatencyPill: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            if onTap != nil && !isTesting {
+            if onTap != nil && status != .testing {
                 isHovered = hovering
             }
         }
-        .disabled(isTesting || onTap == nil)
+        .disabled(status == .testing || onTap == nil)
     }
 
     private var displayText: String {
-        if isTesting { return AppLocalization.string("Testing") }
-        guard let latency, latency > 0 else { return AppLocalization.string("Timeout") }
-        return "\(latency) ms"
+        switch status {
+        case .testing:
+            return AppLocalization.string("Testing")
+        case let .responded(ms):
+            return "\(ms) ms"
+        case .timedOut:
+            return AppLocalization.string("Timeout")
+        case .untested:
+            return AppLocalization.string("Untested")
+        }
     }
 
     private var pillColor: Color {
-        if isTesting { return .secondary }
-        guard let latency, latency > 0 else { return Color.secondary.opacity(0.7) }
-        if latency < 200 { return Color(red: 0.20, green: 0.78, blue: 0.42) } // 翡翠绿 (高速)
-        if latency < 500 { return Color(red: 0.18, green: 0.68, blue: 0.98) } // 科技蓝 (良好)
-        if latency < 900 { return Color(red: 0.96, green: 0.64, blue: 0.18) } // 琥珀橙 (普通)
-        return Color(red: 0.94, green: 0.40, blue: 0.38) // 珊瑚红 (慢速)
+        switch status {
+        case .testing:
+            return .secondary
+        case let .responded(latency):
+            if latency < 200 { return Color(red: 0.20, green: 0.78, blue: 0.42) } // 翡翠绿 (高速)
+            if latency < 500 { return Color(red: 0.18, green: 0.68, blue: 0.98) } // 科技蓝 (良好)
+            if latency < 900 { return Color(red: 0.96, green: 0.64, blue: 0.18) } // 琥珀橙 (普通)
+            return Color(red: 0.94, green: 0.40, blue: 0.38) // 珊瑚红 (慢速)
+        case .timedOut:
+            return Color(red: 0.94, green: 0.40, blue: 0.38).opacity(0.85)
+        case .untested:
+            return Color.secondary.opacity(0.6)
+        }
     }
 }
 
@@ -775,12 +806,116 @@ public struct AetherTrafficMiniGraph: View {
     }
 
     private func smoothPoints(samples: [Double], width: CGFloat, height: CGFloat, maxVal: Double) -> [CGPoint] {
-        guard samples.count > 1 else { return [] }
-        let step = width / CGFloat(samples.count - 1)
-        return samples.enumerated().map { i, val in
+        guard !samples.isEmpty else { return [] }
+        let baselineY = height - 3
+        let count = samples.count
+
+        var rawPoints: [CGPoint] = []
+        let hasPositions = samplePositions.count == count
+        let step = count > 1 ? width / CGFloat(count - 1) : width
+
+        for (i, val) in samples.enumerated() {
             let normalizedY = height - CGFloat(min(val / maxVal, 1.0)) * (height - 6) - 3
-            let x = samplePositions.count == samples.count ? CGFloat(samplePositions[i]) * width : CGFloat(i) * step
-            return CGPoint(x: x, y: normalizedY)
+            let x: CGFloat
+            if hasPositions {
+                x = CGFloat(samplePositions[i]) * width
+            } else {
+                x = CGFloat(i) * step
+            }
+            rawPoints.append(CGPoint(x: max(0, min(width, x)), y: normalizedY))
+        }
+
+        rawPoints.sort { $0.x < $1.x }
+        var deduped: [CGPoint] = []
+        for p in rawPoints {
+            if let last = deduped.last {
+                if p.x - last.x < 1.0 {
+                    deduped[deduped.count - 1] = CGPoint(x: p.x, y: min(last.y, p.y))
+                    continue
+                }
+            }
+            deduped.append(p)
+        }
+
+        guard !deduped.isEmpty else { return [] }
+
+        var result: [CGPoint] = []
+        // 当左侧没有充满 30 秒时，平滑补充最左端零基线点，避免波形悬空截断
+        if let first = deduped.first, first.x > 0 {
+            result.append(CGPoint(x: 0, y: baselineY))
+        }
+
+        result.append(contentsOf: deduped)
+
+        // 最右端延伸至视口边缘，保证波形饱满
+        if let last = result.last, last.x < width {
+            result.append(CGPoint(x: width, y: last.y))
+        }
+
+        return result
+    }
+
+    private func appendSmoothWaveformCurves(to path: inout Path, points: [CGPoint]) {
+        guard points.count > 1 else { return }
+
+        for i in 0..<(points.count - 1) {
+            let p1 = points[i]
+            let p2 = points[i + 1]
+            let dx = p2.x - p1.x
+            guard dx > 0.001 else {
+                path.addLine(to: p2)
+                continue
+            }
+
+            let s = (p2.y - p1.y) / dx
+            let sPrev: CGFloat
+            if i > 0 {
+                let p0 = points[i - 1]
+                let dxPrev = max(0.001, p1.x - p0.x)
+                sPrev = (p1.y - p0.y) / dxPrev
+            } else {
+                sPrev = s
+            }
+
+            let sNext: CGFloat
+            if i + 2 < points.count {
+                let p3 = points[i + 2]
+                let dxNext = max(0.001, p3.x - p2.x)
+                sNext = (p3.y - p2.y) / dxNext
+            } else {
+                sNext = 0
+            }
+
+            // 单调三次斜率控制：局部极值点切线置平，杜绝过冲与回卷
+            let m1: CGFloat
+            if sPrev * s <= 0 {
+                m1 = 0
+            } else {
+                let avg = (sPrev + s) * 0.5
+                let sign: CGFloat = avg >= 0 ? 1 : -1
+                m1 = sign * min(abs(avg), 2 * min(abs(sPrev), abs(s)))
+            }
+
+            let m2: CGFloat
+            if s * sNext <= 0 {
+                m2 = 0
+            } else {
+                let avg = (s + sNext) * 0.5
+                let sign: CGFloat = avg >= 0 ? 1 : -1
+                m2 = sign * min(abs(avg), 2 * min(abs(s), abs(sNext)))
+            }
+
+            // 控制点 x 严格保证在 p1.x 与 p2.x 之间且单调，绝不发生回环自相交
+            let cp1 = CGPoint(
+                x: p1.x + dx / 3.0,
+                y: p1.y + m1 * (dx / 3.0)
+            )
+            let cp2 = CGPoint(
+                x: p2.x - dx / 3.0,
+                y: p2.y - m2 * (dx / 3.0)
+            )
+
+            path.addCurve(to: p2, control1: cp1, control2: cp2)
         }
     }
 
@@ -791,25 +926,7 @@ public struct AetherTrafficMiniGraph: View {
 
         path.move(to: CGPoint(x: points[0].x, y: height))
         path.addLine(to: points[0])
-
-        for i in 0..<(points.count - 1) {
-            let p0 = i > 0 ? points[i - 1] : points[i]
-            let p1 = points[i]
-            let p2 = points[i + 1]
-            let p3 = i + 2 < points.count ? points[i + 2] : p2
-
-            let tension: CGFloat = 0.35
-            let cp1 = CGPoint(
-                x: p1.x + (p2.x - p0.x) * tension,
-                y: p1.y + (p2.y - p0.y) * tension
-            )
-            let cp2 = CGPoint(
-                x: p2.x - (p3.x - p1.x) * tension,
-                y: p2.y - (p3.y - p1.y) * tension
-            )
-            path.addCurve(to: p2, control1: cp1, control2: cp2)
-        }
-
+        appendSmoothWaveformCurves(to: &path, points: points)
         path.addLine(to: CGPoint(x: points[points.count - 1].x, y: height))
         path.closeSubpath()
         return path
@@ -821,23 +938,7 @@ public struct AetherTrafficMiniGraph: View {
         guard points.count > 1 else { return path }
 
         path.move(to: points[0])
-        for i in 0..<(points.count - 1) {
-            let p0 = i > 0 ? points[i - 1] : points[i]
-            let p1 = points[i]
-            let p2 = points[i + 1]
-            let p3 = i + 2 < points.count ? points[i + 2] : p2
-
-            let tension: CGFloat = 0.35
-            let cp1 = CGPoint(
-                x: p1.x + (p2.x - p0.x) * tension,
-                y: p1.y + (p2.y - p0.y) * tension
-            )
-            let cp2 = CGPoint(
-                x: p2.x - (p3.x - p1.x) * tension,
-                y: p2.y - (p3.y - p1.y) * tension
-            )
-            path.addCurve(to: p2, control1: cp1, control2: cp2)
-        }
+        appendSmoothWaveformCurves(to: &path, points: points)
         return path
     }
 }

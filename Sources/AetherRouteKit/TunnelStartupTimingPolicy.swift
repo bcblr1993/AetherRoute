@@ -26,8 +26,8 @@ public enum TunnelStartupTimingPolicy {
     public static let selectorReadinessMaximumConcurrency = 8
     public static let selectorReadinessResponseGraceSeconds = 2
     /// When the live traffic dashboard (or connections inspector) is actively visible
-    /// in the foreground, telemetry polls at 1 Hz to provide a real-time sliding waveform.
-    public static let activeTelemetryPollingIntervalSeconds = 1
+    /// in the foreground, telemetry polls at 3s cadence to provide a smooth, continuous waveform.
+    public static let activeTelemetryPollingIntervalSeconds = 3
     /// When the dashboard is idle, in background, or running in tray, telemetry
     /// steps down to 10 seconds to conserve battery and CPU.
     public static let backgroundTelemetryPollingIntervalSeconds = 10

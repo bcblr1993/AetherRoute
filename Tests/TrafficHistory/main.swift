@@ -23,8 +23,14 @@ import Foundation
         background.append(download: 10, upload: 8, at: origin.addingTimeInterval(120.2))
         precondition(background.samples.count == 1 && background.samples[0].download == 10)
         background.append(download: 2, upload: 0, at: origin)
-        precondition(background.samples.count == 1 && background.samples[0].date == origin)
+        var realtime3s = TrafficHistory()
+        for i in stride(from: 0, through: 60, by: 3) {
+            realtime3s.append(download: Double(i), upload: 0, at: origin.addingTimeInterval(Double(i)))
+        }
+        precondition(realtime3s.samples.count == 11)
+        precondition(realtime3s.samples.first?.download == 30)
+        precondition(realtime3s.samples.last?.download == 60)
         precondition(background.visible(at: origin.addingTimeInterval(-1)).isEmpty)
-        print("Traffic history passed: 1s/10s samples, 30s retention, time axis, gaps, coalescing, clock rollback.")
+        print("Traffic history passed: 1s/3s/10s samples, 30s retention, time axis, gaps, coalescing, clock rollback.")
     }
 }

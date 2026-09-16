@@ -276,6 +276,15 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var automaticProxySelectionGroups: Set<String> = []
     @Published private(set) var proxyLatencies: [String: ProxyLatencyState] = [:]
     @Published private(set) var proxyLatencyRequests: Set<String> = []
+    @Published private(set) var memberLatencyRequests: Set<String> = []
+
+    public func isTestingLatency(group groupName: String, member memberName: String? = nil) -> Bool {
+        if let memberName {
+            return memberLatencyRequests.contains("\(groupName):\(memberName)")
+                || proxyLatencyRequests.contains(groupName)
+        }
+        return proxyLatencyRequests.contains(groupName)
+    }
     @Published private(set) var isAutomaticRouteRecovering = false
     @Published private(set) var isVerifyingProxyReadiness = false
     /// Quality of the route behind an already-usable tunnel. The tunnel being
@@ -289,8 +298,8 @@ final class TunnelManager: ObservableObject {
     private var realtimeTelemetrySources: Set<String> = []
     @Published private(set) var isRealtimeTelemetryPreferred = false
 
-    /// Registers or unregisters demand for high-frequency (1s) telemetry.
-    /// When any source demands realtime telemetry, the polling interval switches to 1s
+    /// Registers or unregisters demand for high-frequency (3s) telemetry.
+    /// When any source demands realtime telemetry, the polling interval switches to 3s
     /// and immediately triggers a refresh; when all sources clear, it drops back to 10s.
     func setRealtimeTelemetryPreferred(_ preferred: Bool, for source: String = "overview") {
         if preferred {
@@ -1588,9 +1597,8 @@ final class TunnelManager: ObservableObject {
                 }
                 latency = try await client.latency(
                     group: groupName,
-                    url: Self.selectorLatencyTestURL,
-                    timeoutMilliseconds: TunnelStartupTimingPolicy
-                        .selectorReadinessPerMemberTimeoutMilliseconds
+                    url: Self.defaultLatencyTestURL,
+                    timeoutMilliseconds: Self.uiLatencyTimeoutMilliseconds
                 )
             } else {
                 latency = await testDirectProxyLatency(group: groupName)
@@ -1607,6 +1615,96 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    func testSingleProxyLatency(group groupName: String, member memberName: String) async {
+        let memberKey = "\(groupName):\(memberName)"
+        guard activeProfileSummary?.proxyGroups.contains(where: {
+                  $0.name == groupName && $0.members.contains(memberName)
+              }) == true,
+              !proxyLatencyRequests.contains(groupName),
+              !memberLatencyRequests.contains(memberKey) else {
+            return
+        }
+        memberLatencyRequests.insert(memberKey)
+        proxySelectionMessages[groupName] = nil
+        defer { memberLatencyRequests.remove(memberKey) }
+
+        Self.runtimeLogger.info(
+            "stage=proxyLatency memberRequest group=\(groupName, privacy: .public) member=\(memberName, privacy: .public)"
+        )
+
+        do {
+            let result: ProxyLatencyResult
+            if isUIReviewMode {
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                let delay: UInt32? = memberName.uppercased() == "DIRECT" ? 3 : 36
+                result = ProxyLatencyResult(member: memberName, delayMilliseconds: delay)
+            } else if state == .connected {
+                let client = ProxySelectionProviderClient { [weak self] data in
+                    guard let self else {
+                        throw TunnelManagerError.providerSessionUnavailable
+                    }
+                    return try await self.sendProviderMessage(
+                        data,
+                        timeout: TunnelStartupTimingPolicy
+                            .selectorReadinessProviderMessageTimeout
+                    )
+                }
+                let latency = try await client.latency(
+                    group: groupName,
+                    url: Self.defaultLatencyTestURL,
+                    timeoutMilliseconds: Self.uiLatencyTimeoutMilliseconds
+                )
+                if let matching = latency.results.first(where: { $0.member == memberName }) {
+                    result = matching
+                } else {
+                    result = ProxyLatencyResult(member: memberName, delayMilliseconds: nil)
+                }
+                // 同时将最新测试结果合并入该组缓存，保留已有测量结果
+                proxyLatencies[groupName] = latency
+            } else {
+                result = await testDirectSingleProxyLatency(member: memberName)
+            }
+            mergeLatencyResult(result, forGroup: groupName)
+            Self.runtimeLogger.info(
+                "stage=proxyLatency memberSuccess group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) delay=\(result.delayMilliseconds.map(String.init) ?? "timeout", privacy: .public)"
+            )
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=proxyLatency memberFailed group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) error=\(String(reflecting: error), privacy: .public)"
+            )
+            mergeLatencyResult(
+                ProxyLatencyResult(member: memberName, delayMilliseconds: nil),
+                forGroup: groupName
+            )
+        }
+    }
+
+    private func testDirectSingleProxyLatency(member: String) async -> ProxyLatencyResult {
+        let endpoints = activeProfile.map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
+        return await Self.probeDirectMemberLatency(member: member, endpoints: endpoints)
+    }
+
+    private func mergeLatencyResult(_ newResult: ProxyLatencyResult, forGroup groupName: String) {
+        var currentResults = proxyLatencies[groupName]?.results ?? []
+        if let index = currentResults.firstIndex(where: { $0.member == newResult.member }) {
+            currentResults[index] = newResult
+        } else {
+            currentResults.append(newResult)
+        }
+        proxyLatencies[groupName] = ProxyLatencyState(results: currentResults)
+    }
+
+    func testAllProxyGroupsLatency() async {
+        guard let groups = activeProfileSummary?.proxyGroups, !groups.isEmpty else { return }
+        await withTaskGroup(of: Void.self) { taskGroup in
+            for group in groups {
+                taskGroup.addTask { [weak self] in
+                    await self?.testProxyLatency(group: group.name)
+                }
+            }
+        }
+    }
+
     private func testDirectProxyLatency(group groupName: String) async -> ProxyLatencyState {
         let members = proxySelections[groupName]?.members
             ?? activeProfileSummary?.proxyGroups
@@ -1617,27 +1715,29 @@ final class TunnelManager: ObservableObject {
         }
 
         let endpoints = activeProfile.map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
+        let maxConcurrent = 16
 
         let results = await withTaskGroup(of: ProxyLatencyResult.self, returning: [ProxyLatencyResult].self) { group in
-            for member in members {
+            var iterator = members.makeIterator()
+            var activeCount = 0
+
+            while activeCount < maxConcurrent, let member = iterator.next() {
+                activeCount += 1
                 group.addTask {
-                    if member.uppercased() == "DIRECT" {
-                        return ProxyLatencyResult(member: member, delayMilliseconds: 5)
-                    }
-                    if member.uppercased() == "REJECT" {
-                        return ProxyLatencyResult(member: member, delayMilliseconds: nil)
-                    }
-                    if let endpoint = endpoints[member] {
-                        let delay = await Self.probeTCPLatency(host: endpoint.host, port: endpoint.port)
-                        return ProxyLatencyResult(member: member, delayMilliseconds: delay)
-                    }
-                    return ProxyLatencyResult(member: member, delayMilliseconds: nil)
+                    await Self.probeDirectMemberLatency(member: member, endpoints: endpoints)
                 }
             }
+
             var collected: [ProxyLatencyResult] = []
-            for await result in group {
+            while let result = await group.next() {
                 collected.append(result)
+                if let nextMember = iterator.next() {
+                    group.addTask {
+                        await Self.probeDirectMemberLatency(member: nextMember, endpoints: endpoints)
+                    }
+                }
             }
+
             let memberOrder = Dictionary(uniqueKeysWithValues: members.enumerated().map { ($1, $0) })
             return collected.sorted { (memberOrder[$0.member] ?? 0) < (memberOrder[$1.member] ?? 0) }
         }
@@ -1645,7 +1745,24 @@ final class TunnelManager: ObservableObject {
         return ProxyLatencyState(results: results)
     }
 
-    private static func probeTCPLatency(
+    nonisolated private static func probeDirectMemberLatency(
+        member: String,
+        endpoints: [String: ProfileUpstreamEndpoint]
+    ) async -> ProxyLatencyResult {
+        if member.uppercased() == "DIRECT" {
+            return ProxyLatencyResult(member: member, delayMilliseconds: 5)
+        }
+        if member.uppercased() == "REJECT" {
+            return ProxyLatencyResult(member: member, delayMilliseconds: nil)
+        }
+        if let endpoint = endpoints[member] {
+            let delay = await probeTCPLatency(host: endpoint.host, port: endpoint.port)
+            return ProxyLatencyResult(member: member, delayMilliseconds: delay)
+        }
+        return ProxyLatencyResult(member: member, delayMilliseconds: nil)
+    }
+
+    nonisolated private static func probeTCPLatency(
         host: String,
         port: UInt16,
         timeoutMilliseconds: UInt32 = 2500
@@ -1658,59 +1775,63 @@ final class TunnelManager: ObservableObject {
         let connection = NWConnection(host: endpoint, port: nwPort, using: parameters)
 
         return await withCheckedContinuation { continuation in
-            final class ProbeState: @unchecked Sendable {
+            final class ProbeContext: @unchecked Sendable {
                 var hasCompleted = false
                 let lock = NSLock()
+                let connection: NWConnection
+                let timer: any DispatchSourceTimer
+                let continuation: CheckedContinuation<UInt32?, Never>
+
+                init(
+                    connection: NWConnection,
+                    timer: any DispatchSourceTimer,
+                    continuation: CheckedContinuation<UInt32?, Never>
+                ) {
+                    self.connection = connection
+                    self.timer = timer
+                    self.continuation = continuation
+                }
+
+                func complete(delay: UInt32?) {
+                    let shouldComplete: Bool = lock.withLock {
+                        if !hasCompleted {
+                            hasCompleted = true
+                            return true
+                        }
+                        return false
+                    }
+                    guard shouldComplete else { return }
+                    timer.setEventHandler {}
+                    timer.cancel()
+                    connection.stateUpdateHandler = nil
+                    connection.cancel()
+                    continuation.resume(returning: delay)
+                }
             }
-            let state = ProbeState()
-            let startTime = DispatchTime.now()
 
             let timer = DispatchSource.makeTimerSource(queue: .global())
             timer.schedule(deadline: .now() + .milliseconds(Int(timeoutMilliseconds)))
-            timer.setEventHandler {
-                let shouldComplete: Bool = state.lock.withLock {
-                    if !state.hasCompleted {
-                        state.hasCompleted = true
-                        return true
-                    }
-                    return false
-                }
-                if shouldComplete {
-                    connection.cancel()
-                    continuation.resume(returning: nil)
-                }
+
+            let context = ProbeContext(
+                connection: connection,
+                timer: timer,
+                continuation: continuation
+            )
+            let startTime = DispatchTime.now()
+
+            timer.setEventHandler { [weak context] in
+                context?.complete(delay: nil)
             }
             timer.resume()
 
-            connection.stateUpdateHandler = { connState in
+            connection.stateUpdateHandler = { [weak context] connState in
                 switch connState {
                 case .ready:
-                    let shouldComplete: Bool = state.lock.withLock {
-                        if !state.hasCompleted {
-                            state.hasCompleted = true
-                            return true
-                        }
-                        return false
-                    }
-                    if shouldComplete {
-                        timer.cancel()
-                        let elapsed = DispatchTime.now().uptimeNanoseconds - startTime.uptimeNanoseconds
-                        let ms = UInt32(elapsed / 1_000_000)
-                        connection.cancel()
-                        continuation.resume(returning: max(1, ms))
-                    }
+                    let elapsed = DispatchTime.now().uptimeNanoseconds - startTime.uptimeNanoseconds
+                    let ms = UInt32(elapsed / 1_000_000)
+                    context?.complete(delay: max(1, ms))
                 case .failed, .cancelled:
-                    let shouldComplete: Bool = state.lock.withLock {
-                        if !state.hasCompleted {
-                            state.hasCompleted = true
-                            return true
-                        }
-                        return false
-                    }
-                    if shouldComplete {
-                        timer.cancel()
-                        continuation.resume(returning: nil)
-                    }
+                    context?.complete(delay: nil)
                 default:
                     break
                 }
@@ -2669,7 +2790,7 @@ final class TunnelManager: ObservableObject {
 
     @discardableResult
     func updateNativeProfile(id: UUID, nodes: [AetherNode]) async -> Bool {
-        guard ensurePrivacyConsent(), canModifyProfiles else {
+        guard ensurePrivacyConsent(), canModifyProfile(id: id) else {
             profileMessage = AppLocalization.string(
                 "Stop the secure connection before changing profiles."
             )
@@ -3199,7 +3320,7 @@ final class TunnelManager: ObservableObject {
 
     @discardableResult
     func renameProfile(id: UUID, name: String) async -> Bool {
-        guard canModifyProfiles else { return false }
+        guard canModifyProfile(id: id) else { return false }
         isUpdatingProfiles = true
         defer { isUpdatingProfiles = false }
         if isUIReviewMode {
@@ -3250,7 +3371,7 @@ final class TunnelManager: ObservableObject {
     }
 
     func removeProfile(id: UUID) async {
-        guard canModifyProfiles else { return }
+        guard canModifyProfile(id: id) else { return }
         isUpdatingProfiles = true
         defer { isUpdatingProfiles = false }
         if isUIReviewMode {
@@ -3792,6 +3913,31 @@ final class TunnelManager: ObservableObject {
             && !isUpdatingRoutingMode
             && !isSwitchingNetworkEngine
             && !isSavingConnectionConfiguration
+    }
+
+    var canModifyInactiveProfilesRegardlessOfPrivacy: Bool {
+        !isTransitioning
+            && !isRefreshingSubscription
+            && !isImportingProfile
+            && !isUpdatingProfiles
+            && !isUpdatingBypassPolicy
+            && !isTransferringProfiles
+            && !isUpdatingRoutingMode
+            && !isSwitchingNetworkEngine
+            && !isSavingConnectionConfiguration
+    }
+
+    var canModifyInactiveProfiles: Bool {
+        hasAcceptedPrivacyDisclosure
+            && canModifyInactiveProfilesRegardlessOfPrivacy
+    }
+
+    func canModifyProfile(id: UUID) -> Bool {
+        if id == activeProfileID {
+            return canModifyProfiles
+        } else {
+            return canModifyInactiveProfiles
+        }
     }
 
     var canImportOrAddProfile: Bool {
@@ -4470,8 +4616,9 @@ final class TunnelManager: ObservableObject {
         "AetherRoute.NetworkEngineMode"
     private static let selectorLatencyTestURL =
         ProxyConnectionReadinessPolicy.requiredExternalProbeURLString
-    private static let defaultLatencyTestURL =
-        ProxyConnectionReadinessPolicy.requiredExternalProbeURLString
+    public static let defaultLatencyTestURL =
+        "http://cp.cloudflare.com/generate_204"
+    public static let uiLatencyTimeoutMilliseconds: UInt32 = 3_000
 
     private func persistBypassPolicy(_ policy: BypassPolicy) async throws {
         let policy = try policy.validated()
@@ -4515,6 +4662,7 @@ final class TunnelManager: ObservableObject {
         proxySelectionRequests = []
         proxyLatencies = [:]
         proxyLatencyRequests = []
+        memberLatencyRequests = []
         telemetryViewModel.reset()
         telemetryUpdatedAt = nil
     }

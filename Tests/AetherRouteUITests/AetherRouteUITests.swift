@@ -792,6 +792,90 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Office · Automatic"].exists)
     }
 
+    func testConnectedStateAllowsInactiveProfileModificationsWhileProtectingActiveProfile() {
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "connected"
+        )
+        defer { app.terminate() }
+
+        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+        app.buttons["Profiles"].click()
+        XCTAssertTrue(app.staticTexts["Profile Library"].waitForExistence(timeout: 2))
+
+        let activeActions = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "profile-actions-")
+        ).element(boundBy: 0)
+        XCTAssertTrue(activeActions.isHittable)
+        activeActions.click()
+
+        let activeRename = app.menuItems["Rename…"]
+        XCTAssertTrue(activeRename.waitForExistence(timeout: 2))
+        XCTAssertFalse(activeRename.isEnabled)
+
+        let activeRemove = app.menuItems["Remove Profile"]
+        XCTAssertFalse(activeRemove.exists)
+
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+
+        let inactiveActions = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "profile-actions-")
+        ).element(boundBy: 1)
+        XCTAssertTrue(inactiveActions.isHittable)
+        inactiveActions.click()
+
+        let inactiveRename = app.menuItems["Rename…"]
+        XCTAssertTrue(inactiveRename.waitForExistence(timeout: 2))
+        XCTAssertTrue(inactiveRename.isEnabled)
+        inactiveRename.click()
+
+        let nameField = app.textFields["profile-name-field"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 2))
+        nameField.click()
+        app.typeKey("a", modifierFlags: .command)
+        app.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
+        nameField.typeText("Tokyo · Connected Edit")
+        app.buttons["Save"].click()
+        XCTAssertTrue(
+            app.staticTexts["Profile renamed."].waitForExistence(timeout: 2)
+        )
+        XCTAssertTrue(
+            app.staticTexts["Tokyo · Connected Edit"].waitForExistence(timeout: 2)
+        )
+
+        let officeActions = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "profile-actions-")
+        ).element(boundBy: 2)
+        XCTAssertTrue(officeActions.isHittable)
+        officeActions.click()
+        let remove = app.menuItems["Remove Profile"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 2))
+        XCTAssertTrue(remove.isEnabled)
+        remove.click()
+        XCTAssertTrue(
+            app.staticTexts["Profile removed."].waitForExistence(timeout: 2)
+        )
+        XCTAssertFalse(app.staticTexts["Office · Automatic"].exists)
+    }
+
+    func testProxiesPageTestAllAndLatencyActions() {
+        let app = launchReviewApp(appearance: "dark", language: "zh-Hans")
+        defer { app.terminate() }
+
+        let proxiesNav = navigationButton(in: app, title: "Proxies")
+        XCTAssertTrue(proxiesNav.waitForExistence(timeout: 3))
+        proxiesNav.click()
+
+        let testAllButton = app.buttons["test-all-proxy-groups"]
+        XCTAssertTrue(testAllButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(testAllButton.isHittable)
+
+        let latencyButton = app.buttons["proxy-test-latency-Balanced"]
+        if latencyButton.waitForExistence(timeout: 2) && latencyButton.isHittable {
+            latencyButton.click()
+        }
+    }
+
     func testRoutingRulesKeepManualResourceSetupInAdvancedOptions() {
         for (language, profilesTitle, explanation, advancedTitle) in [
             ("en", "Profiles", "AetherRoute prepares routing rules automatically when you connect.", "Advanced"),

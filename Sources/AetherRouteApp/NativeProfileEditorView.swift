@@ -69,7 +69,7 @@ struct NativeProfileEditorSheet: View {
             }
             .buttonStyle(.bordered)
             .disabled(
-                !tunnel.canModifyProfiles
+                !tunnel.canModifyProfile(id: profile.id)
                     || nodes.count >= AetherNodeProfileCompiler.maximumNodes
             )
         }
@@ -180,7 +180,7 @@ struct NativeProfileEditorSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     validationMessage != nil
-                        || !tunnel.canModifyProfiles
+                        || !tunnel.canModifyProfile(id: profile.id)
                         || tunnel.isUpdatingProfiles
                         || isSaving
                 )

@@ -9081,6 +9081,17 @@
         }
       }
     },
+    "Refresh: every 3 seconds": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新间隔：3 秒"
+          }
+        }
+      }
+    },
     "Refresh: every 10 seconds": {
       "extractionState": "manual",
       "localizations": {

@@ -727,7 +727,7 @@ private struct OverviewView: View {
                         }
                         .padding(.horizontal, AetherVisual.s4)
 
-                        Text(AppLocalization.string(tunnel.isRealtimeTelemetryPreferred ? "Refresh: every 1 second" : "Refresh: every 10 seconds"))
+                        Text(AppLocalization.string(tunnel.isRealtimeTelemetryPreferred ? "Refresh: every 3 seconds" : "Refresh: every 10 seconds"))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, AetherVisual.s4)
@@ -2242,7 +2242,7 @@ private struct ProfilesView: View {
                     managed: managed,
                     isActive: managed.id == tunnel.activeProfileID,
                     canActivate: tunnel.canActivateProfile,
-                    canModify: tunnel.canModifyProfiles,
+                    canModify: tunnel.canModifyProfile(id: managed.id),
                     activate: {
                         Task { await tunnel.activateProfile(id: managed.id) }
                     },
@@ -3167,7 +3167,7 @@ private struct LiveTrafficHistoryGraph: View {
     let isRealtime: Bool
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1, paused: !isRealtime)) { context in
+        TimelineView(.animation(minimumInterval: 3, paused: !isRealtime)) { context in
             let now = isRealtime ? context.date : Date()
             let samples = model.history.visible(at: now)
             AetherTrafficMiniGraph(
