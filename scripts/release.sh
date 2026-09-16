@@ -343,6 +343,10 @@ chmod 600 "$overrides"
 
 archive="$temporary/AetherRoute.xcarchive"
 build_log="$temporary/archive.log"
+mkdir -p "$temporary/DerivedData"
+if [ -d "$ROOT/build/DerivedData/SourcePackages" ]; then
+  ditto "$ROOT/build/DerivedData/SourcePackages" "$temporary/DerivedData/SourcePackages"
+fi
 if ! xcodebuild \
   -project "$ROOT/AetherRoute.xcodeproj" \
   -scheme AetherRoute \

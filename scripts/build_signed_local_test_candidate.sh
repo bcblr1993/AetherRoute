@@ -139,6 +139,10 @@ chmod 600 "$SIGNING_OVERRIDES"
 ARCHIVE=
 BUILD_LOG=
 archive_attempt=1
+mkdir -p "$TEMPORARY/DerivedData"
+if [ -d "$ROOT/build/DerivedData/SourcePackages" ]; then
+  ditto "$ROOT/build/DerivedData/SourcePackages" "$TEMPORARY/DerivedData/SourcePackages"
+fi
 while test "$archive_attempt" -le 5; do
   candidate_archive="$TEMPORARY/AetherRoute-$archive_attempt.xcarchive"
   candidate_log="$TEMPORARY/archive-$archive_attempt.log"
