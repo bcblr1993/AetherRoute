@@ -1,5 +1,7 @@
 # Release process
 
+> 详细中文发布规范与防错指南请参阅 [ReleaseSpecification.zh-CN.md](ReleaseSpecification.zh-CN.md)。
+
 AetherRoute uses Semantic Versioning tags. Development snapshots use tags such
 as `v0.1.0-alpha.1`; beta builds use `v0.1.0-beta.1`; production releases use
 `vMAJOR.MINOR.PATCH` without a prerelease suffix.
@@ -53,3 +55,20 @@ Every release states:
 
 GitHub releases are created from annotated version tags. Stable releases are
 never created from a dirty tree, a feature branch, or an unsigned preview.
+
+## Sparkle update feed generation and Ed25519 signature safety (CRITICAL)
+
+When publishing a release with Sparkle 2 automatic updates:
+
+1. **Dedicated Key Pair**: Sparkle update verification uses the key defined in `Config/sparkle_ed25519_pub.key` (`SUPublicEDKey` in `Config/App-Info.plist`).
+2. **Never sign from general Keychain / account names**:
+   - The developer machine's Keychain may contain keys from other software projects (e.g. `NotchQuota`).
+   - Using Sparkle's generic `sign_update` with `--account <name>` or default Keychain credentials will sign with an unrelated key, causing client updates to fail with:
+     `更新错误！此更新未正确签名，无法验证其真实性。`
+3. **Mandatory signing tool**:
+   - Always run `scripts/generate_sparkle_appcast.sh <dmg-path> <release-url> [notes]`.
+   - This script explicitly reads `Config/sparkle_ed25519_priv.key`, signs the DMG, and asserts signature verification against `Config/sparkle_ed25519_pub.key` before generating `appcast.xml`.
+4. **Feed synchronization**:
+   - Always copy the generated `appcast.xml` to `Services/WebDistribution/public/appcast.xml`.
+   - Commit and push to `main` branch so `https://raw.githubusercontent.com/bcblr1993/AetherRoute/main/appcast.xml` is immediately live.
+

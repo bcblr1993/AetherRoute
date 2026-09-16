@@ -276,7 +276,7 @@ The owner-operated license and signed update wire contract is defined in
 The production service topology and operations are documented in
 [`Docs/DistributionServiceDeployment.md`](Docs/DistributionServiceDeployment.md).
 Versioning, tagging, release notes, and artifact promotion are defined in
-[`Docs/ReleaseProcess.md`](Docs/ReleaseProcess.md).
+[`Docs/ReleaseProcess.md`](Docs/ReleaseProcess.md) and [`Docs/ReleaseSpecification.zh-CN.md`](Docs/ReleaseSpecification.zh-CN.md).
 
 ## Repository licensing
 
