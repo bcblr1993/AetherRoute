@@ -6,18 +6,18 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.9 (Build 2026091603)</title>
-            <pubDate>Wed, 16 Sep 2026 18:45:43 +0800</pubDate>
-            <sparkle:version>2026091603</sparkle:version>
-            <sparkle:shortVersionString>1.0.9</sparkle:shortVersionString>
+            <title>Version 1.0.10 (Build 2026091604)</title>
+            <pubDate>Wed, 16 Sep 2026 19:35:00 +0800</pubDate>
+            <sparkle:version>2026091604</sparkle:version>
+            <sparkle:shortVersionString>1.0.10</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
-<h2>AetherRoute 1.0.9</h2><p>修复锁屏与屏幕休眠时自动断开并重连的问题，保持锁屏期间网络稳定持续，通过虚拟机全量测试。</p><p><a href="https://aetherroute.pages.dev/releases/1.0.9/">完整更新日志</a></p>
+<h2>AetherRoute 1.0.10</h2><p>优化网络恢复与探针回退机制，保护透明代理与长连接，区分恢复中状态，通过虚拟机全量功能回归测试。</p><p><a href="https://aetherroute.pages.dev/releases/1.0.10/">完整更新日志</a></p>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.9/AetherRoute-1.0.9-build-2026091603-arm64.dmg"
-                sparkle:edSignature="0wI/ZVKTns2MDmtd3cl8KUNzO3dT+GaLrezM09jOawixZ8v8oBsXrTa9389rNJyJTpCnGM2MRnica/poS0BHBA=="
-                length="24083853"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.10/AetherRoute-1.0.10-build-2026091604-arm64.dmg"
+                sparkle:edSignature="Bmk2Jo2BHcEg9uQ0W+q0lUS2MtkC5o65FvGFfLIHPXJy2SFa8UnCxUI7bMhRtpQK7ug8L8zvBewewW2jb7ZRDg=="
+                length="23995520"
                 type="application/octet-stream" />
         </item>
     </channel>

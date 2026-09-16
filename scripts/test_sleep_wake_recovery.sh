@@ -48,9 +48,7 @@ cleanup() {
   if [ "$VMM_SUSPENDED" -eq 1 ]; then kill -CONT "$VMM_PID" 2>/dev/null || true; fi
   find "$TEST_TEMP" -depth -delete 2>/dev/null || true
 }
-trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
+trap cleanup EXIT HUP INT TERM
 
 say() { printf '%s %s\n' "$(date '+%H:%M:%S')" "$*"; }
 fail() { printf '[FAIL] %s\n' "$*" >&2; exit 1; }
