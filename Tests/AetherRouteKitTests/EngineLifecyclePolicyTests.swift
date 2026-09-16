@@ -158,4 +158,25 @@ struct EngineLifecyclePolicyTests {
                 == .ignore
         )
     }
+
+    @Test("an evicted running engine transitions safely into stopping and then idle")
+    func evictedRunningEngineTransitionsToIdle() {
+        var phase = EngineLifecyclePhase.running(generation: 3)
+        // When a residual running engine is evicted by a fresh session, phase transitions to stopping
+        phase = .stopping(generation: 3)
+        #expect(
+            EngineLifecyclePolicy.startAdmission(
+                for: phase,
+                currentGeneration: 3
+            ) == .awaitStop(generation: 3)
+        )
+        // Once completed or retired, phase becomes idle and admits next generation
+        phase = .idle
+        #expect(
+            EngineLifecyclePolicy.startAdmission(
+                for: phase,
+                currentGeneration: 3
+            ) == .admit(generation: 4)
+        )
+    }
 }

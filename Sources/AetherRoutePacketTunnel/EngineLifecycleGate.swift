@@ -72,11 +72,16 @@ final class EngineLifecycleGate: @unchecked Sendable {
                 return .admitted(generation: generation)
             case .reject:
                 let live = phase.generation ?? 0
-                lock.unlock()
                 EngineLifecycleLog.logger.error(
-                    "stage=engineLifecycle rejected reason=engineAlreadyRunning generation=\(live, privacy: .public)"
+                    "stage=engineLifecycle residualRunningEngineDetected liveGeneration=\(live, privacy: .public)"
                 )
-                return .rejected
+                // A new startTunnel in this process means the previous tunnel session is gone.
+                // Evict the zombie generation: signal shutdown, transition to stopping, and await wind-down.
+                phase = .stopping(generation: live)
+                stoppingGeneration = live
+                pending = engineCompletion
+                lock.unlock()
+                _ = clash_shutdown()
             case let .awaitStop(generation):
                 stoppingGeneration = generation
                 pending = engineCompletion
@@ -185,6 +190,26 @@ final class EngineLifecycleGate: @unchecked Sendable {
         engineCompletion = nil
         EngineLifecycleLog.logger.info(
             "stage=engineLifecycle abandoned generation=\(generation, privacy: .public)"
+        )
+    }
+
+    /// Retires an unexpectedly terminated engine generation, ensuring the gate returns to idle
+    /// and does not leave a zombie generation blocking future starts.
+    func retireUnexpectedlyTerminatedEngine(generation: UInt64) {
+        lock.lock()
+        let retired: Bool
+        if phase.generation == generation {
+            phase = .idle
+            engineCompletion = nil
+            retired = true
+        } else {
+            retired = false
+        }
+        lock.unlock()
+        guard retired else { return }
+        let releasedBytes = malloc_zone_pressure_relief(nil, 0)
+        EngineLifecycleLog.logger.error(
+            "stage=engineLifecycle retiredUnexpectedly generation=\(generation, privacy: .public) releasedBytes=\(releasedBytes, privacy: .public)"
         )
     }
 

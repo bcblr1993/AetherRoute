@@ -62,7 +62,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     if !self.uplinkLock.withLock({ self.providerStopping }),
                        self.currentPhysicalUplink() != nil {
                         self.reasserting = false
-                        self.cancelTunnelWithError(PacketTunnelError.coreUnavailable)
+                        self.stopPathMonitoring()
+                        self.uplinkLock.withLock { self.providerStopping = true }
+                        self.core.stop { [weak self] in
+                            self?.cancelTunnelWithError(PacketTunnelError.coreUnavailable)
+                        }
                     }
                     // With no uplink, remain reasserting until a physical-link
                     // event resumes recovery. Reporting connected here starts
@@ -546,6 +550,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             .responseTooLarge
         case .internalFailure:
             .internalFailure
+        }
+    }
+
+    deinit {
+        stopPathMonitoring()
+        if !uplinkLock.withLock({ providerStopping }) {
+            uplinkLock.withLock { providerStopping = true }
+            core.stop {}
         }
     }
 }

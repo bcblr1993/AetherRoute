@@ -172,6 +172,12 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         case let .admitted(generation):
             engineGeneration = generation
         case .rejected:
+            PacketCoreRuntimeLog.logger.error(
+                "stage=startCore rejected reason=lifecycleBusy schedulingRelaunch"
+            )
+            EngineLifecycleGate.shared.scheduleProcessRelaunch(
+                reason: "lifecycleBusyResidual"
+            )
             throw PacketTunnelError.lifecycleBusy
         case let .handoffTimedOut(stuckGeneration):
             PacketCoreRuntimeLog.logger.error(
@@ -688,6 +694,9 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             guard let result else {
                 PacketCoreRuntimeLog.logger.error("stage=engineWorker failed reason=noResult")
                 self.recordFailure(PacketTunnelError.engineReturnedNoResult)
+                EngineLifecycleGate.shared.retireUnexpectedlyTerminatedEngine(
+                    generation: generation
+                )
                 return
             }
             let message = String(cString: result)
@@ -700,6 +709,9 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                     message.isEmpty
                         ? PacketTunnelError.engineStoppedUnexpectedly
                         : PacketTunnelError.engineFailed(message),
+                    generation: generation
+                )
+                EngineLifecycleGate.shared.retireUnexpectedlyTerminatedEngine(
                     generation: generation
                 )
             } else {
