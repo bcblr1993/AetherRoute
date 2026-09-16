@@ -31,6 +31,28 @@ All notable changes to AetherRoute are recorded here. The format follows
   diagnostic core artifacts. Installed-extension performance now requires real
   paired measurements rather than isolated-core throughput numbers.
 
+## [1.0.8] - 2026-09-16
+
+### Added
+
+- Support editing, renaming, and removing inactive profiles while connected:
+  - Protect the currently active configuration from accidental modification or deletion during active VPN/tunnel sessions.
+  - Allow full rename, edit, and deletion actions on all non-active profiles in the profile list context menu without having to disconnect the VPN.
+- Support per-node latency testing with distinct state machine representation (`Testing`, `Responded`, `TimedOut`, and `Untested`), eliminating UI state flickering or reset on neighboring proxy items.
+
+### Changed
+
+- Refactor network traffic waveform from rapid jittery 1-second polling to smooth 3-second sampling and synchronized 3-second `TimelineView` rendering, eliminating animation stutters.
+- Implement monotonic cubic Hermite spline interpolation for traffic curves to completely prevent curve looping, knotting, and overshoot, with a flat baseline lead-in.
+- Switch proxy latency measurement target to a lightweight HTTP 204 no-content probe (`http://cp.cloudflare.com/generate_204`), eliminating redundant TLS handshake overhead and aligning test latency to ~50ms comparable to mainstream proxy clients.
+- Fix DIRECT connection node latency test timeout (5000ms+), achieving ~20ms near-instant response.
+
+### Fixed
+
+- Fix an application crash during proxy latency testing caused by Swift 6 Actor isolation violations in asynchronous task callbacks:
+  - Enforce strict main actor isolation when updating proxy latency state and publishing notifications.
+  - Introduce a bounded 16-worker sliding window concurrency pool to prevent socket descriptor exhaustion and system extension packet stream overload.
+
 ## [1.0.7] - 2026-09-16
 
 ### Fixed

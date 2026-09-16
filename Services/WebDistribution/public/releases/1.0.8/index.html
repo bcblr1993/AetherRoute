@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hans" data-language="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AetherRoute 1.0.8 正式版本说明、更新日志、安装包下载与 SHA-256 校验和。">
+  <title>AetherRoute 1.0.8 正式版</title>
+  <link rel="icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="icon" href="/assets/favicon-dark.png?v=20260914.08" type="image/png" media="(prefers-color-scheme: dark)">
+  <link rel="alternate icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=20260914.08">
+  <link rel="stylesheet" href="/assets/site.css?v=20260914.08">
+  <script src="/assets/site.js?v=20260916.02" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content"><span data-lang="zh">跳到正文</span><span data-lang="en">Skip to content</span></a>
+  
+  <header class="site-header"><nav class="nav wrap" aria-label="Main navigation"><a class="brand" href="/"><img src="/assets/aetherroute-mark.png?v=20260914.08" srcset="/assets/aetherroute-mark.png?v=20260914.08 1x, /assets/aetherroute-mark-1024.png?v=20260914.08 2x" width="34" height="34" alt="">AetherRoute</a><div class="navlinks"><a href="/#experience"><span data-lang="zh">使用体验</span><span data-lang="en">Experience</span></a><a href="/releases/"><span data-lang="zh">版本更新</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">使用帮助</span><span data-lang="en">Support</span></a></div><div class="nav-actions"><button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button><a class="small-button" href="/releases/"><span data-lang="zh">获取 Mac 版</span><span data-lang="en">Get for Mac</span> <span aria-hidden="true">↗</span></a></div></nav></header>
+
+  <main id="content" class="shell">
+    <div class="page-hero">
+      <span class="eyebrow"><span data-lang="zh">正式版 · 已通过 Apple 公证</span><span data-lang="en">Release · Apple notarized</span></span>
+      <h1>AetherRoute 1.0.8</h1>
+      <p>Build 2026091602 · 2026-09-16 · Apple silicon · macOS 15.0+</p>
+      <div class="hero-actions"><a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.8/AetherRoute-1.0.8-build-2026091602-arm64.dmg"><span data-lang="zh">下载 1.0.8 正式版</span><span data-lang="en">Download 1.0.8 Release</span></a><a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.8">GitHub Release ↗</a><a class="button" href="/releases/1.0.7/"><span data-lang="zh">获取 1.0.7 历史版本</span><span data-lang="en">Get 1.0.7 previous release</span></a></div>
+    </div>
+
+    <article class="prose">
+<section><h2><span data-lang="zh">连接中配置管理放宽</span><span data-lang="en">Unrestricted profile management while connected</span></h2><ul><li><span data-lang="zh">放宽连接状态下的配置操作限制：在 TUN/代理运行期间，保护当前正在运行的活跃配置（禁止移除与重命名），同时允许对所有非活跃配置进行重命名、编辑配置或直接移除，无需频繁断开重连。</span><span data-lang="en">Relax profile restrictions during active connection: the currently active profile remains protected from removal/rename, while all inactive profiles can be renamed, modified, or deleted without disconnecting the tunnel.</span></li></ul></section>
+<section><h2><span data-lang="zh">代理测速稳定性与性能优化</span><span data-lang="en">Proxy latency testing stability and performance optimization</span></h2><ul><li><span data-lang="zh">彻底修复 Swift 6 Actor 隔离冲突引起的代理测速闪退问题，在 Task 回调与状态分发中严格保证主线程 Actor 隔离安全。</span><span data-lang="en">Completely eliminate proxy latency testing crashes caused by Swift 6 Actor isolation conflicts, ensuring thread-safe state dispatch.</span></li><li><span data-lang="zh">引入最大 16 并发度的滑动窗口控制，防止批量测速瞬时发起海量并发连接导致文件描述符耗尽或网络扩展流过载。</span><span data-lang="en">Introduce a 16-worker sliding window concurrency pool to prevent socket exhaustion and packet tunnel stream overload during bulk latency testing.</span></li><li><span data-lang="zh">优化测速探测端点为轻量 HTTP 204 无内容探针，消除多余 TLS 握手耗时，延迟测量结果全面对齐主流代理工具（50ms 级别），并修复 DIRECT 直连节点测速超时（20ms 秒测）。</span><span data-lang="en">Switch latency probe target to a lightweight HTTP 204 endpoint to eliminate TLS handshake overhead, aligning latency readings to 50ms, and fix DIRECT node timeout with 20ms instant response.</span></li><li><span data-lang="zh">节点列表支持独立的单节点测速，明确区分测速中、已响应、已超时和未测速四种状态，测速过程不干扰其他节点显示。</span><span data-lang="en">Support independent single-node latency testing with distinct Testing, Responded, TimedOut, and Untested states without UI flickers across peer nodes.</span></li></ul></section>
+<section><h2><span data-lang="zh">网络波形图平滑重构与 3 秒刷新</span><span data-lang="en">Smooth traffic waveform and 3-second refresh</span></h2><ul><li><span data-lang="zh">主界面网络波形图由高频抖动刷新重构为 3 秒平滑采样与同频渲染，消除视觉顿挫感。</span><span data-lang="en">Refactor the traffic overview waveform from rapid jittery polling to smooth 3-second sampling and synchronized TimelineView rendering.</span></li><li><span data-lang="zh">引入单调三次 Hermite 样条插值算法，彻底杜绝折线打结与曲线极值过冲，并增加左侧平滑贴底延展。</span><span data-lang="en">Implement monotone cubic Hermite spline interpolation to eliminate loop knotting and overshoot, with a flat baseline lead-in.</span></li></ul></section>
+<section><h2><span data-lang="zh">虚拟机实机验证</span><span data-lang="en">Virtual machine verification</span></h2><ul><li><span data-lang="zh">在 Apple 芯片 macOS 虚拟机中完成 v1.0.8 正式包的安装、系统扩展激活、物理网络链路断开 8 秒自愈与网络适配器出口动态切换实测，进程零重启、通道零阻塞。</span><span data-lang="en">Verify v1.0.8 installation, system extension activation, 8-second physical link severance self-healing, and dynamic network adapter handoff in an Apple silicon VM with zero process restarts and uninterrupted connectivity.</span></li><li><span data-lang="zh">实测连接中非活跃配置重命名与移除、DIRECT 与代理节点单测/全测，所有功能 100% 正常。</span><span data-lang="en">Verify inactive profile rename/delete while connected, as well as single-node and bulk latency testing in the live environment.</span></li></ul></section>
+<section><h2><span data-lang="zh">发布说明</span><span data-lang="en">Release information</span></h2><ul><li><span data-lang="zh">此正式包使用正常生产核心，经过 Developer ID 签名及 Apple 公证，不包含 QA 自动连接。</span><span data-lang="en">This stable package uses the normal production core, is Developer ID signed and Apple notarized, and contains no QA auto-connect.</span></li><li><span data-lang="zh">经维护者授权，在虚拟机详细测试全部通过后发布 v1.0.8 正式版。</span><span data-lang="en">Authorized by the maintainer for stable release following 100% pass across all virtual machine test suites.</span></li></ul></section><section><h2><span data-lang="zh">下载与校验</span><span data-lang="en">Download and verify</span></h2><div class="checksum">AetherRoute-1.0.8-build-2026091602-arm64.dmg</div><p>SHA-256</p><div class="checksum">a5a8fb9dbccf4375f350082917ec4ecffb0f265d87c4fa48e1fd8d6290da4f99</div></section>
+</article>
+  </main>
+
+  <footer class="wrap site-footer"><span>© 2026 AetherRoute <span class="footer-note"><span data-lang="zh">由编程不良人用心打造。</span><span data-lang="en">Made by BianChengBuLiangRen.</span></span></span><div><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">帮助</span><span data-lang="en">Support</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可</span><span data-lang="en">License</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub ↗</a></div></footer>
+</body>
+</html>

@@ -19,6 +19,7 @@ for required in \
   "$PUBLIC/support/index.html" \
   "$PUBLIC/license/index.html" \
   "$PUBLIC/releases/index.html" \
+  "$PUBLIC/releases/1.0.8/index.html" \
   "$PUBLIC/releases/1.0.7/index.html" \
   "$PUBLIC/releases/1.0.5/index.html" \
   "$PUBLIC/releases/1.0.4/index.html" \
@@ -50,8 +51,8 @@ do
   }
 done
 
-rg -F 'AetherRoute 1.0.7' "$PUBLIC/index.html" >/dev/null
-rg -F '41be49bfc7a547bd657ebe5d98cccddc2832c509b073f17b32e849130c8dcdc6' "$PUBLIC/index.html" >/dev/null
+rg -F 'AetherRoute 1.0.8' "$PUBLIC/index.html" >/dev/null
+rg -F 'a5a8fb9dbccf4375f350082917ec4ecffb0f265d87c4fa48e1fd8d6290da4f99' "$PUBLIC/index.html" >/dev/null
 
 test "$(rg -c 'data-localized-image' "$PUBLIC/index.html")" -ge 1 || {
   echo "homepage must expose localized product screenshots" >&2
@@ -104,7 +105,7 @@ find "$PUBLIC" -name '*.html' -type f -print0 | while IFS= read -r -d '' html; d
     echo "missing versioned stylesheet URL: $html" >&2
     exit 1
   }
-  rg -F '/assets/site.js?v=20260916.01' "$html" >/dev/null || {
+  rg -F '/assets/site.js?v=20260916.02' "$html" >/dev/null || {
     echo "missing versioned script URL: $html" >&2
     exit 1
   }
@@ -112,6 +113,7 @@ done
 
 for route in \
   /releases/ \
+  /releases/1.0.8/ \
   /releases/1.0.7/ \
   /releases/1.0.5/ \
   /releases/1.0.4/ \
@@ -132,6 +134,7 @@ done
 
 # Check SEO and sitemap
 rg -F 'https://aetherroute.pages.dev/sitemap.xml' "$PUBLIC/robots.txt" >/dev/null
+rg -F 'https://aetherroute.pages.dev/releases/1.0.8/' "$PUBLIC/sitemap.xml" >/dev/null
 rg -F 'https://aetherroute.pages.dev/releases/1.0.7/' "$PUBLIC/sitemap.xml" >/dev/null
 rg -F 'https://aetherroute.pages.dev/releases/1.0.1/' "$PUBLIC/sitemap.xml" >/dev/null
 
