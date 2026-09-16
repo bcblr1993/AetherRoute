@@ -31,6 +31,10 @@ fi
 if command -v xcodebuild >/dev/null 2>&1 && \
   [ -d "$ROOT/AetherRoute.xcodeproj" ]; then
   settings="$TEST_DIRECTORY/build-settings.json"
+  mkdir -p "$TEST_DIRECTORY/DerivedData"
+  if [ -d "$ROOT/build/DerivedData/SourcePackages" ]; then
+    ditto "$ROOT/build/DerivedData/SourcePackages" "$TEST_DIRECTORY/DerivedData/SourcePackages"
+  fi
   xcodebuild \
     -quiet \
     -project "$ROOT/AetherRoute.xcodeproj" \

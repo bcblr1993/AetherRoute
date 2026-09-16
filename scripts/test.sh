@@ -160,6 +160,11 @@ do
   fi
 done
 
+mkdir -p "$DERIVED_DATA_PATH"
+if [ -d "$ROOT/build/DerivedData/SourcePackages" ]; then
+  ditto "$ROOT/build/DerivedData/SourcePackages" "$DERIVED_DATA_PATH/SourcePackages"
+fi
+
 xcodebuild \
   -project "$ROOT/AetherRoute.xcodeproj" \
   -scheme AetherRouteUnitTests \

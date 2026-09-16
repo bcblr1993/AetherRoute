@@ -86,6 +86,10 @@ build_app() {
   build=$2
   destination=$3
   log=$4
+  mkdir -p "$TEMP_DIR/DerivedData"
+  if [ -d "$ROOT/build/DerivedData/SourcePackages" ]; then
+    ditto "$ROOT/build/DerivedData/SourcePackages" "$TEMP_DIR/DerivedData/SourcePackages"
+  fi
   if ! xcodebuild \
     -project "$ROOT/AetherRoute.xcodeproj" \
     -scheme AetherRoute \

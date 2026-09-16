@@ -115,6 +115,10 @@ fi
 mkdir -p "$OUTPUT" "$TEMP/Home/tmp" "$TEMP/Run"
 "$ROOT/scripts/source_manifest.sh" >"$OUTPUT/source-manifest.txt"
 "$ROOT/scripts/bootstrap.sh"
+mkdir -p "$TEMP/DerivedData"
+if [ -d "$ROOT/build/DerivedData/SourcePackages" ]; then
+  ditto "$ROOT/build/DerivedData/SourcePackages" "$TEMP/DerivedData/SourcePackages"
+fi
 xcodebuild \
   -project "$ROOT/AetherRoute.xcodeproj" \
   -scheme AetherRoute \

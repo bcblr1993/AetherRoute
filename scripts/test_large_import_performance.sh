@@ -14,6 +14,10 @@ if [ "$(uname -m)" != arm64 ]; then
 fi
 
 "$ROOT/scripts/bootstrap.sh" >/dev/null
+mkdir -p "$TEMP/DerivedData"
+if [ -d "$ROOT/build/DerivedData/SourcePackages" ]; then
+  ditto "$ROOT/build/DerivedData/SourcePackages" "$TEMP/DerivedData/SourcePackages"
+fi
 xcodebuild -quiet \
   -project "$ROOT/AetherRoute.xcodeproj" \
   -scheme AetherRouteUnitTests \

@@ -6,18 +6,18 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.10 (Build 2026091604)</title>
-            <pubDate>Wed, 16 Sep 2026 20:10:01 +0800</pubDate>
-            <sparkle:version>2026091604</sparkle:version>
-            <sparkle:shortVersionString>1.0.10</sparkle:shortVersionString>
+            <title>Version 1.0.11 (Build 2026091605)</title>
+            <pubDate>Wed, 16 Sep 2026 23:06:59 +0800</pubDate>
+            <sparkle:version>2026091605</sparkle:version>
+            <sparkle:shortVersionString>1.0.11</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
-<h2>AetherRoute 1.0.10</h2><p>优化网络恢复与探针回退机制，保护透明代理与长连接，区分恢复中状态，通过虚拟机全量功能回归测试。</p><p><a href="https://aetherroute.pages.dev/releases/1.0.10/">完整更新日志</a></p>
+<h2>AetherRoute 1.0.11</h2><p>修复节点测速分层语义、级联聚合与菜单栏终端代理联动。</p><p><a href="https://aetherroute.pages.dev/releases/1.0.11/">完整更新日志</a></p>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.10/AetherRoute-1.0.10-build-2026091604-arm64.dmg"
-                sparkle:edSignature="+B2cxLRDPwWpYx9vKOQzU/vWaq7uAu4J3ozS2741M6KQG4DG36fty0NzosWt+XW+GT1BqXgbONHFbdKVVgJEAw=="
-                length="23995520"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.11/AetherRoute-1.0.11-build-2026091605-arm64.dmg"
+                sparkle:edSignature="rotbFDEVx0cIogrJ4U/ogn3PjGlTLXJ5fyyVwjAbkM1YFP/Y3rcgFNGTjTsWT61gn3y0iqp08hebH+j2x4PYBA=="
+                length="24032099"
                 type="application/octet-stream" />
         </item>
     </channel>
