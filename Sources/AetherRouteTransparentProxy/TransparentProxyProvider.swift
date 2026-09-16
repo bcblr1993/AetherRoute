@@ -34,6 +34,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     /// queue can all reach it first, and a `lazy var` has no synchronisation on
     /// that first access.
     private var recovery: NetworkRecoveryCoordinator!
+    // Accessed only on the recovery coordinator's serial queue.
+    private var recoveryDownloadBaseline: UInt64?
 
     override init() {
         let identityGuard = TransparentProxySelfIdentityGuard()
@@ -107,10 +109,16 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 Self.runtimeLog.aggregate(
                     "stage=flowRecovery attempt reason=\(reason) index=\(attempt)"
                 )
-                self?.runtimeController.resetNetworkState()
+                // Later attempts only probe. Repeated resets destroy flows
+                // opened while the uplink is still becoming usable.
+                if attempt == 0 { self?.runtimeController.resetNetworkState() }
             },
             verify: { [weak self] in self?.dataPathIsHealthy() ?? false },
-            observer: { event in
+            observer: { [weak self] event in
+                if case .started = event {
+                    self?.recoveryDownloadBaseline = try? self?.runtimeController
+                        .telemetrySnapshot(maximumConnections: 0).downloadTotal
+                }
                 // Exhaustion means the host never regained a data path, which
                 // is the one outcome that must stay visible with debug logging
                 // switched off.
@@ -306,16 +314,17 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     /// through the flows it proxies, so asking the core to URL-test the current
     /// route is the only way to see whether traffic can leave the host.
     private func dataPathIsHealthy() -> Bool {
-        do {
+        if NetworkRecoveryHealthPolicy.hasReceivedTraffic(
+            since: recoveryDownloadBaseline,
+            total: try? runtimeController.telemetrySnapshot(maximumConnections: 0).downloadTotal
+        ) { return true }
+        return NetworkRecoveryHealthPolicy.isReachable { url in
             let state = try runtimeController.testActiveProxyLatency(
                 group: ProxyConnectionReadinessPolicy.globalGroupName,
-                url: ProxyConnectionReadinessPolicy
-                    .requiredExternalProbeURLString,
+                url: url,
                 timeoutMilliseconds: Self.healthProbeTimeoutMilliseconds
             )
             return state.results.contains { $0.delayMilliseconds != nil }
-        } catch {
-            return false
         }
     }
 

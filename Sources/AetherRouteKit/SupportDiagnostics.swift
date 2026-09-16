@@ -17,6 +17,7 @@ public enum DiagnosticEventCode: String, Codable, CaseIterable, Sendable {
     case systemSleep
     case systemWake
     case networkPathChanged
+    case networkRecovering
 }
 
 public struct DiagnosticEvent: Codable, Equatable, Sendable {
@@ -88,6 +89,7 @@ public struct DiagnosticReport: Codable, Equatable, Sendable {
         case disconnected
         case connecting
         case connected
+        case recovering
         case disconnecting
         case failed
     }

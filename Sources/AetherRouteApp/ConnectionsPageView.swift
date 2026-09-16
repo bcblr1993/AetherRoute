@@ -350,7 +350,7 @@ private struct SessionBar: View {
     private var stateSymbol: String {
         switch tunnel.state {
         case .connected: "circle.fill"
-        case .connecting, .disconnecting, .loading: "circle.dotted"
+        case .recovering, .connecting, .disconnecting, .loading: "circle.dotted"
         case .failed: "exclamationmark.triangle.fill"
         case .privacyConsentRequired: "hand.raised.fill"
         case .disconnected: "circle"
@@ -360,7 +360,7 @@ private struct SessionBar: View {
     private var stateTint: Color {
         switch tunnel.state {
         case .connected: .green
-        case .connecting, .disconnecting, .loading, .privacyConsentRequired: .orange
+        case .recovering, .connecting, .disconnecting, .loading, .privacyConsentRequired: .orange
         case .failed: .red
         case .disconnected: .secondary
         }

@@ -21,6 +21,13 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ### Fixed
 
+- Preserve active tunnels when recovery probe endpoints are unavailable; use
+  fallback endpoints and received traffic as recovery evidence, and avoid
+  repeatedly resetting transparent-proxy flows during the same recovery run.
+- Show network recovery separately from initial connection setup, preserving
+  the session duration and keeping Disconnect available in the window and menu.
+- Verify screen-lock continuity on one persistent TCP connection without
+  automatic reconnection; separate simulated QA power events from screen lock.
 - Move routing-resource preparation and runtime configuration snapshots off
   the main actor, reject stale results, and prevent conflicting write actions.
 - Restore the previous routing files and metadata when an update encounters a

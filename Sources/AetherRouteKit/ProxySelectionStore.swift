@@ -319,7 +319,6 @@ public enum AutomaticRouteHealthRecoveryPolicy {
 
     public enum ExhaustionAction: Equatable, Sendable {
         case continueMonitoring
-        case stopProvider
     }
 
     public static func action(
@@ -334,27 +333,16 @@ public enum AutomaticRouteHealthRecoveryPolicy {
         return explicitlyAutomatic ? .reselectExplicitGroup : .none
     }
 
-    /// A route already known to carry traffic keeps its Network Extension
-    /// alive while every automatic member is temporarily unavailable, so a
-    /// later health scan can observe a recovered member and resume without
-    /// user intervention.
-    ///
-    /// `connectionWasReady` means "this tunnel has moved real traffic at least
-    /// once" — it is set both by a clean readiness pass and by a degraded pass
-    /// whose final data-plane request still succeeded. A slow route therefore
-    /// survives, while a tunnel that has never moved a byte stays stoppable:
-    /// the extension is fail-closed, so keeping a dead one alive would
-    /// blackhole every request instead of returning the user to their direct
-    /// connection.
+    /// Probe exhaustion never establishes provider failure, including when a
+    /// selected endpoint has been unavailable since startup. Keep the tunnel
+    /// available for other rules and for an explicit user disconnect.
     public static func exhaustionAction(
         connectionWasReady: Bool,
         isInGracePeriod: Bool = false
     ) -> ExhaustionAction {
-        if isInGracePeriod {
-            return .continueMonitoring
-        }
-        return connectionWasReady ? .continueMonitoring : .stopProvider
+        .continueMonitoring
     }
+
 }
 
 /// Validates a connected selector change before the host persists it. A

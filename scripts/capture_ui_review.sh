@@ -63,7 +63,7 @@ copy_review_workspace() {
   mkdir -p "$ROOT"
   for item in \
     .github .gitmodules .tools AetherRoute.xcodeproj Artifacts/Validation CHANGELOG.md CONTRIBUTING.md \
-    Config Docs Licenses README.md SECURITY.md Services Sources Tests \
+    Config Design Docs Licenses README.md SECURITY.md Services Sources Tests \
     project.yml scripts
   do
     ditto "$REPOSITORY_ROOT/$item" "$ROOT/$item"
@@ -261,6 +261,8 @@ overview-en-light-tun|en|light|overview|940x640|connected|tun|accepted|standard|
 overview-zh-dark-transparent|zh-Hans|dark|overview|940x640|connected|transparent|accepted|standard|-
 overview-en-light-disconnected|en|light|overview|940x640|disconnected|tun|accepted|standard|-
 overview-zh-light-connecting|zh-Hans|light|overview|940x640|connecting|tun|accepted|standard|-
+overview-zh-light-recovering|zh-Hans|light|overview|940x640|recovering|tun|accepted|standard|-
+overview-en-dark-recovering|en|dark|overview|940x640|recovering|transparent|accepted|standard|-
 proxies-en-dark|en|dark|proxies|940x640|connected|tun|accepted|standard|-
 proxies-zh-light|zh-Hans|light|proxies|940x640|connected|transparent|accepted|standard|-
 proxies-disconnected-zh-light|zh-Hans|light|proxies|940x640|disconnected|transparent|accepted|standard|-

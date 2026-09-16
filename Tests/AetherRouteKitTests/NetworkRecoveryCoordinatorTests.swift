@@ -47,6 +47,49 @@ private final class EventRecorder: @unchecked Sendable {
 }
 
 struct NetworkRecoveryCoordinatorTests {
+    @Test("only new received bytes provide evidence of a working data path")
+    func receivedTrafficIsEvidence() {
+        #expect(NetworkRecoveryHealthPolicy.hasReceivedTraffic(since: 100, total: 101))
+        #expect(!NetworkRecoveryHealthPolicy.hasReceivedTraffic(since: 100, total: 100))
+        #expect(!NetworkRecoveryHealthPolicy.hasReceivedTraffic(since: 100, total: 0))
+        #expect(!NetworkRecoveryHealthPolicy.hasReceivedTraffic(since: nil, total: 101))
+        #expect(!NetworkRecoveryHealthPolicy.hasReceivedTraffic(since: 100, total: nil))
+    }
+
+    @Test("a blocked primary endpoint falls back without resetting the provider")
+    func blockedPrimaryProbeFallsBack() {
+        var visited: [String] = []
+        let healthy = NetworkRecoveryHealthPolicy.isReachable { url in
+            visited.append(url)
+            return visited.count == 2
+        }
+        #expect(healthy)
+        #expect(visited == Array(NetworkRecoveryHealthPolicy.probeURLs.prefix(2)))
+    }
+
+    @Test("probe errors do not prevent checking other endpoints")
+    func failedProbeFallsBack() {
+        enum Unavailable: Error { case endpoint }
+        var attempts = 0
+        let healthy = NetworkRecoveryHealthPolicy.isReachable { _ in
+            attempts += 1
+            if attempts < 3 { throw Unavailable.endpoint }
+            return true
+        }
+        #expect(healthy)
+        #expect(attempts == 3)
+    }
+
+    @Test("probe exhaustion remains inconclusive and stops at its bounded budget")
+    func allProbesUnavailable() {
+        var attempts = 0
+        #expect(!NetworkRecoveryHealthPolicy.isReachable { _ in
+            attempts += 1
+            return false
+        })
+        #expect(attempts == NetworkRecoveryHealthPolicy.probeURLs.count)
+    }
+
     private static let fastDelays: [TimeInterval] = [0.01, 0.01, 0.01, 0.01]
 
     @Test

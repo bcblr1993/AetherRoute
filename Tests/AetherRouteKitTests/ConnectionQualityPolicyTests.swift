@@ -77,10 +77,10 @@ struct ConnectionQualityPolicyTests {
         )
     }
 
-    /// The safety valve: the extension is fail-closed, so a tunnel that has
-    /// never moved a byte must stay stoppable or every request blackholes.
-    @Test("a route that passes no traffic stays stoppable")
-    func deadRouteRemainsStoppable() {
+    /// An unavailable probe target is not proof that every rule is unusable.
+    /// The user can disconnect; monitoring must not tear down other routes.
+    @Test("an unverified route stays degraded without stopping other routes")
+    func unverifiedRouteKeepsMonitoring() {
         let outcome = ConnectionQualityPolicy.outcome(
             probeSucceeded: false,
             trafficReachesInternet: false
@@ -90,7 +90,7 @@ struct ConnectionQualityPolicyTests {
         #expect(
             AutomaticRouteHealthRecoveryPolicy.exhaustionAction(
                 connectionWasReady: outcome.marksConnectionUsable
-            ) == .stopProvider
+            ) == .continueMonitoring
         )
     }
 }

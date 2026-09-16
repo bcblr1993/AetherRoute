@@ -24,9 +24,8 @@ public enum ConnectionQuality: Equatable, Sendable {
 ///
 /// The distinction that matters is not "did the probe pass" but "does traffic
 /// reach the internet". A slow node fails the first and passes the second, and
-/// must keep its tunnel. A dead node fails both, and must leave the tunnel
-/// stoppable: the extension is fail-closed, so keeping a dead tunnel alive
-/// blackholes every request instead of returning the user to direct access.
+/// must keep its tunnel. Failed probes cannot distinguish a dead node from a
+/// blocked probe endpoint. Keep monitoring and allow the user to disconnect.
 public enum ConnectionQualityPolicy {
     /// A quality notice belongs to the current connected session. An old
     /// result, or a session without a measurement, must not imply verification.

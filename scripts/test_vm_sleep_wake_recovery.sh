@@ -21,6 +21,13 @@ SSH_KEY=${AETHERROUTE_VM_SSH_KEY:-$HOME/.ssh/id_ed25519}
 VM_USER=${AETHERROUTE_VM_USER:-chenxu}
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+TEST_TEMP=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-lock-continuity.XXXXXX")
+PROBE_JOB=
+cleanup() {
+  if [ -n "$PROBE_JOB" ]; then kill "$PROBE_JOB" 2>/dev/null || true; fi
+  find "$TEST_TEMP" -depth -delete 2>/dev/null || true
+}
+trap cleanup EXIT HUP INT TERM
 
 echo_log() { printf '%s\n' "$*"; }
 
@@ -39,8 +46,10 @@ send() {
 
 echo_log "Target VM: $VM ($IP)"
 
-# Send helper if needed
-send /tmp/post_notification /tmp/post_notification
+# Build the helper from source rather than relying on a stale /tmp executable.
+swiftc "$ROOT/scripts/post_runtime_notification.swift" -o "$TEST_TEMP/post_notification"
+send "$TEST_TEMP/post_notification" /tmp/post_notification
+send "$ROOT/scripts/lock_continuity_probe.py" /tmp/aetherroute-lock-continuity-probe.py
 vm "chmod +x /tmp/post_notification"
 
 # Ensure clean starting state
@@ -53,7 +62,7 @@ test_engine() {
   engine=$1
   echo_log ""
   echo_log "============================================================"
-  echo_log "Testing Sleep/Wake & Screen Lock Recovery: $engine mode"
+  echo_log "Testing Screen Lock Connection Continuity: $engine mode"
   echo_log "============================================================"
 
   # Configure preferences
@@ -120,48 +129,47 @@ test_engine() {
   fi
   echo_log "[PASS] baseline probes passed: Cloudflare HTTP $code1, Baidu HTTP $code2"
 
-  # Step 1: Simulate Screen Lock / Sleep
-  echo_log "Simulating Screen Lock (posting com.apple.screenIsLocked)..."
-  vm "/tmp/post_notification com.apple.screenIsLocked"
-  sleep 3
-
-  # Verify sleep entry logged
-  if vm "/usr/bin/log show --last 10s --style compact --info --predicate 'process == \"AetherRoute\" AND eventMessage CONTAINS \"stage=handleRuntimeEnvironmentEvent sleep entered\"' | grep -q 'sleep entered'"; then
-    echo_log "[PASS] App successfully entered sleep state"
-  else
-    echo_log "[NOTE] Sleep event processed"
-  fi
-
-  # Wait 5 seconds to simulate locked/idle duration
-  echo_log "Screen locked duration (5 seconds)..."
-  sleep 5
-
-  # Step 2: Simulate Screen Unlock / Wake
-  start_wake=$(date +%s)
-  echo_log "Simulating Screen Unlock (posting com.apple.screenIsUnlocked)..."
-  vm "/tmp/post_notification com.apple.screenIsUnlocked"
-
-  # Step 3: Measure Recovery Time & Validate Data Path
-  echo_log "Measuring network recovery time..."
-  recovered=0
-  recovery_duration=0
-  for attempt in $(seq 1 20); do
-    sleep 0.5
-    probe_code=$(vm "curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://cp.cloudflare.com/generate_204" || true)
-    if [ "$probe_code" = "204" ]; then
-      end_wake=$(date +%s)
-      recovery_duration=$((end_wake - start_wake))
-      recovered=1
+  # Keep one TCP/TLS connection alive across lock AND unlock. The helper
+  # disables HTTPConnection.auto_open, so it cannot hide a reconnect.
+  lock_started_at=$(vm "date '+%Y-%m-%d %H:%M:%S'")
+  vm "python3 /tmp/aetherroute-lock-continuity-probe.py --duration 25" \
+    >"$TEST_TEMP/$engine-continuity.log" 2>&1 &
+  PROBE_JOB=$!
+  probe_ready=0
+  for i in $(seq 1 20); do
+    if grep -q '^READY$' "$TEST_TEMP/$engine-continuity.log"; then
+      probe_ready=1
       break
     fi
+    kill -0 "$PROBE_JOB" 2>/dev/null || break
+    sleep 0.5
   done
-
-  if [ "$recovered" -ne 1 ]; then
-    echo_log "[FAIL] network did not recover after screen unlock within 10s (probe returned $probe_code)"
-    FAILED_TESTS=$((FAILED_TESTS + 1))
+  test "$probe_ready" -eq 1 || {
+    cat "$TEST_TEMP/$engine-continuity.log"
+    echo_log "[FAIL] long-lived connection was not established"
+    return 1
+  }
+  vm "/tmp/post_notification com.apple.screenIsLocked"
+  sleep 5
+  vm "/tmp/post_notification com.apple.screenIsUnlocked"
+  if ! wait "$PROBE_JOB"; then
+    PROBE_JOB=
+    cat "$TEST_TEMP/$engine-continuity.log"
+    echo_log "[FAIL] the existing connection was interrupted during lock/unlock"
     return 1
   fi
-  echo_log "[PASS] network recovered in <= ${recovery_duration}s (probe returned HTTP $probe_code)"
+  PROBE_JOB=
+  cat "$TEST_TEMP/$engine-continuity.log"
+  echo_log "[PASS] responses continued on the same TCP connection through lock/unlock"
+
+  # A running provider PID alone does not rule out a core reset. Assert both.
+  vm "/usr/bin/log show --start '$lock_started_at' --style compact --info --predicate 'subsystem == \"com.aetherroute.desktop\"'" \
+    >"$TEST_TEMP/$engine-events.log"
+  if grep -E 'stage=(appMessage resetNetwork|networkRecovery begin|flowRuntimeResetNetwork|recoveryRun started|stopTunnel|startTunnel|stopProxy|startProxy)|stage=handleRuntimeEnvironmentEvent (sleep|wake) entered' \
+      "$TEST_TEMP/$engine-events.log"; then
+    echo_log "[FAIL] screen lock/unlock triggered network lifecycle work"
+    return 1
+  fi
 
   # Secondary HTTPS check after wake
   baidu_code=$(vm "curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://www.baidu.com" || true)
@@ -176,12 +184,12 @@ test_engine() {
 
   # Step 4: Verify Provider Health & Diagnostics
   current_provider_pid=$(vm "pgrep -x $provider_id" || true)
-  if [ -z "$current_provider_pid" ]; then
-    echo_log "[FAIL] provider died during sleep/wake recovery"
+  if [ -z "$provider_pid" ] || [ "$current_provider_pid" != "$provider_pid" ]; then
+    echo_log "[FAIL] provider restarted during lock/unlock"
     FAILED_TESTS=$((FAILED_TESTS + 1))
     return 1
   fi
-  echo_log "[PASS] provider process survived sleep/wake (PID $current_provider_pid)"
+  echo_log "[PASS] provider process remained unchanged through lock/unlock (PID $current_provider_pid)"
 
   # Check crash reports
   crashes=$(vm "find /Library/Logs/DiagnosticReports -name '*AetherRoute*' -mmin -5 2>/dev/null | wc -l | tr -d ' '" || true)
@@ -200,7 +208,7 @@ test_engine() {
     vm "pgrep -x AetherRoute >/dev/null" || break
     sleep 1
   done
-  echo_log "[PASS] $engine sleep/wake recovery verification complete"
+  echo_log "[PASS] $engine screen-lock continuity verification complete"
 }
 
 # Run both engines
@@ -210,7 +218,7 @@ test_engine transparent
 echo_log ""
 echo_log "============================================================"
 if [ "$FAILED_TESTS" -eq 0 ]; then
-  echo_log "ALL SLEEP/WAKE RECOVERY TESTS PASSED! (0 failures)"
+  echo_log "ALL SCREEN-LOCK CONTINUITY TESTS PASSED! (0 failures)"
   exit 0
 else
   echo_log "TEST FAILURES: $FAILED_TESTS failed"

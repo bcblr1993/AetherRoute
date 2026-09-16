@@ -9102,6 +9102,40 @@
           }
         }
       }
+    },
+    "Recovering network": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recovering network"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在恢复网络"
+          }
+        }
+      }
+    },
+    "The tunnel remains active while the network recovers. You can disconnect at any time.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The tunnel remains active while the network recovers. You can disconnect at any time."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隧道保持启用，正在等待网络恢复。你可以随时断开连接。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

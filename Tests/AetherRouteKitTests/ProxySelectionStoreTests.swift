@@ -448,7 +448,7 @@ final class ProxySelectionStoreTests: XCTestCase {
             AutomaticRouteHealthRecoveryPolicy.exhaustionAction(
                 connectionWasReady: false
             ),
-            .stopProvider
+            .continueMonitoring
         )
         XCTAssertEqual(
             AutomaticRouteHealthRecoveryPolicy.exhaustionAction(

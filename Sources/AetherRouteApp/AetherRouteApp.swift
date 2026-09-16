@@ -394,11 +394,12 @@ struct AetherRouteApp: App {
                 CheckForUpdatesCommandButton()
             }
             CommandMenu(AppLocalization.string("Tunnel")) {
-                Button(tunnel.isConnected ? AppLocalization.string("Disconnect") : AppLocalization.string("Connect")) {
+                Button(tunnel.primaryActionTitle) {
                     Task {
-                        await tunnel.setEnabled(!tunnel.isConnected)
+                        await tunnel.setEnabled(!tunnel.isEnabled)
                     }
                 }
+                .disabled(!tunnel.canPerformPrimaryAction)
                 .keyboardShortcut("k", modifiers: .command)
 
                 Button(AppLocalization.string("Reconnect")) {

@@ -13,6 +13,9 @@ final class AppRuntimeEnvironmentController: ObservableObject {
         qos: .utility
     )
     private var workspaceObservers: [NSObjectProtocol] = []
+#if AETHERROUTE_QA_AUTOMATION
+    private var qaPowerObservers: [NSObjectProtocol] = []
+#endif
     private var pathMonitor: NWPathMonitor?
     private var pathBaseline: NetworkPathFingerprint?
 
@@ -59,6 +62,27 @@ final class AppRuntimeEnvironmentController: ObservableObject {
                 }
             },
         ]
+
+#if AETHERROUTE_QA_AUTOMATION
+        // A frozen VM cannot deliver actual NSWorkspace power notifications.
+        // This explicitly opted-in QA bridge exercises the same handlers and
+        // is absent from production builds. Screen lock is never a power event.
+        if environment["AETHERROUTE_QA_POWER_EVENTS"] == "1" {
+            let events: [(String, RuntimeEnvironmentEvent)] = [
+                ("com.aetherroute.qa.systemWillSleep", .systemWillSleep),
+                ("com.aetherroute.qa.systemDidWake", .systemDidWake),
+            ]
+            qaPowerObservers = events.map { name, event in
+                DistributedNotificationCenter.default().addObserver(
+                    forName: Notification.Name(name), object: nil, queue: .main
+                ) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        await self?.tunnel.handleRuntimeEnvironmentEvent(event)
+                    }
+                }
+            }
+        }
+#endif
 
         let monitor = NWPathMonitor()
         pathMonitor = monitor

@@ -200,6 +200,7 @@ final class TunnelManager: ObservableObject {
         case disconnected
         case connecting
         case connected
+        case recovering
         case disconnecting
         case failed(String)
     }
@@ -562,6 +563,7 @@ final class TunnelManager: ObservableObject {
             state = switch reviewState {
             case "loading": .loading
             case "connecting": .connecting
+            case "recovering": .recovering
             case "connected": .connected
             case "disconnecting": .disconnecting
             case "failed", "error":
@@ -576,10 +578,10 @@ final class TunnelManager: ObservableObject {
                 )
             default: .disconnected
             }
-            connectedSince = state == .connected
+            connectedSince = state == .connected || state == .recovering
                 ? Date(timeIntervalSince1970: 1_775_003_600)
                 : nil
-            sessionRoutingMode = state == .connected ? routingMode : nil
+            sessionRoutingMode = state == .connected || state == .recovering ? routingMode : nil
             if state == .connected {
                 proxySelections["Balanced"] = ProxySelectionState(
                     selectedMember: "Singapore Edge",
@@ -831,7 +833,7 @@ final class TunnelManager: ObservableObject {
             disconnectErrorLookupID = nil
             cancelConnectionWatchdog()
             cancelConnectionReadiness()
-            guard state == .connected || state == .connecting else {
+            guard state == .connected || state == .connecting || state == .recovering else {
                 Self.runtimeLogger.info("stage=setEnabled ignored reason=notActive")
                 return
             }
@@ -1298,7 +1300,7 @@ final class TunnelManager: ObservableObject {
         }
 
         if managerConnectionIsActive {
-            if state == .connected || state == .connecting {
+            if state == .connected || state == .connecting || state == .recovering {
                 await setEnabled(false)
             } else {
                 manager?.connection.stopVPNTunnel()
@@ -2154,7 +2156,7 @@ final class TunnelManager: ObservableObject {
     ) async {
         let mayEdit: Bool = switch state {
         case .disconnected, .failed: true
-        case .privacyConsentRequired, .loading, .connecting, .connected,
+        case .privacyConsentRequired, .loading, .connecting, .recovering, .connected,
              .disconnecting: false
         }
         guard mayEdit, canModifyProfiles,
@@ -2600,31 +2602,17 @@ final class TunnelManager: ObservableObject {
             guard failures
                     >= TunnelStartupTimingPolicy.automaticRouteFailureThreshold,
                   state == .connected else { continue }
+            // Probe failure is route quality, not proof of a broken provider.
+            // Keep monitoring even when the first readiness probe never passed.
             switch AutomaticRouteHealthRecoveryPolicy.exhaustionAction(
-                connectionWasReady:
-                    readinessVerifiedConnectionID == providerConnectionID,
+                connectionWasReady: readinessVerifiedConnectionID == providerConnectionID,
                 isInGracePeriod: isInWakeGracePeriod
             ) {
             case .continueMonitoring:
-                // Keep the already-verified provider alive so its automatic
-                // group can observe a recovered member on the next scan.
+                connectionQuality = .degraded
                 Self.runtimeLogger.error(
                     "stage=automaticRouteHealth degraded action=continueMonitoring"
                 )
-            case .stopProvider:
-                guard !isInWakeGracePeriod else {
-                    Self.runtimeLogger.info(
-                        "stage=automaticRouteHealth gracePeriodPreventedStop"
-                    )
-                    continue
-                }
-                readinessFailureStopPending = true
-                manager?.connection.stopVPNTunnel()
-                recordFailure(
-                    TunnelManagerError.noResponsiveProxy,
-                    context: .provider
-                )
-                return
             }
         }
     }
@@ -3271,7 +3259,7 @@ final class TunnelManager: ObservableObject {
         } catch {
             if shouldReconnect, let previousProfileID {
                 if managerConnectionIsActive {
-                    if state == .connected || state == .connecting {
+                    if state == .connected || state == .connecting || state == .recovering {
                         await setEnabled(false)
                     } else {
                         manager?.connection.stopVPNTunnel()
@@ -3787,7 +3775,7 @@ final class TunnelManager: ObservableObject {
 
     var isEnabled: Bool {
         switch state {
-        case .connecting, .connected: true
+        case .connecting, .connected, .recovering: true
         default: false
         }
     }
@@ -3798,7 +3786,7 @@ final class TunnelManager: ObservableObject {
 
     var isTransitioning: Bool {
         switch state {
-        case .loading, .connecting, .disconnecting: true
+        case .loading, .connecting, .recovering, .disconnecting: true
         default: false
         }
     }
@@ -3854,7 +3842,7 @@ final class TunnelManager: ObservableObject {
     var canChangeRoutingMode: Bool {
         let statePermitsChange = switch state {
         case .disconnected, .connected, .failed: true
-        case .privacyConsentRequired, .loading, .connecting, .disconnecting: false
+        case .privacyConsentRequired, .loading, .connecting, .recovering, .disconnecting: false
         }
         return hasAcceptedPrivacyDisclosure
             && statePermitsChange
@@ -3869,7 +3857,7 @@ final class TunnelManager: ObservableObject {
     var canChangeNetworkEngine: Bool {
         let statePermitsChange = switch state {
         case .disconnected, .connected, .failed: true
-        case .privacyConsentRequired, .loading, .connecting, .disconnecting: false
+        case .privacyConsentRequired, .loading, .connecting, .recovering, .disconnecting: false
         }
         return hasAcceptedPrivacyDisclosure
             && statePermitsChange
@@ -3883,7 +3871,7 @@ final class TunnelManager: ObservableObject {
     var canActivateProfile: Bool {
         let statePermitsChange = switch state {
         case .disconnected, .connected, .failed: true
-        case .privacyConsentRequired, .loading, .connecting, .disconnecting: false
+        case .privacyConsentRequired, .loading, .connecting, .recovering, .disconnecting: false
         }
         return hasAcceptedPrivacyDisclosure
             && statePermitsChange
@@ -3976,7 +3964,7 @@ final class TunnelManager: ObservableObject {
         switch state {
         case .disconnected, .failed:
             canConnect
-        case .connecting, .connected:
+        case .connecting, .connected, .recovering:
             true
         case .privacyConsentRequired, .loading, .disconnecting:
             false
@@ -3997,7 +3985,7 @@ final class TunnelManager: ObservableObject {
             AppLocalization.string("License required")
         case .disconnected: AppLocalization.string("Connect")
         case .connecting: AppLocalization.string("Cancel")
-        case .connected: AppLocalization.string("Disconnect")
+        case .connected, .recovering: AppLocalization.string("Disconnect")
         case .disconnecting: AppLocalization.string("Disconnecting")
         case .failed: AppLocalization.string("Retry")
         }
@@ -4014,6 +4002,7 @@ final class TunnelManager: ObservableObject {
             AppLocalization.string("License required")
         case .disconnected: AppLocalization.string("Not connected")
         case .connecting: AppLocalization.string("Connecting")
+        case .recovering: AppLocalization.string("Recovering network")
         case .connected where isAutomaticRouteRecovering:
             AppLocalization.string("Recovering route")
         case .connected: AppLocalization.string("Traffic routing active")
@@ -4045,6 +4034,8 @@ final class TunnelManager: ObservableObject {
         case .connecting:
             AppLocalization.string(isUpdatingRoutingResources
                 ? "Preparing routing rules…" : "Verifying the network extension")
+        case .recovering:
+            AppLocalization.string("The tunnel remains active while the network recovers. You can disconnect at any time.")
         case .connected where isAutomaticRouteRecovering:
             AppLocalization.string(
                 "The tunnel remains active while AetherRoute retries the fastest available node."
@@ -4507,10 +4498,14 @@ final class TunnelManager: ObservableObject {
         // connection immediately and let `connectionQuality` report the rest.
         state = switch status {
         case .invalid, .disconnected: .disconnected
-        case .connecting, .reasserting: .connecting
+        case .connecting: .connecting
+        case .reasserting: .recovering
         case .connected: .connected
         case .disconnecting: .disconnecting
         @unknown default: .failed(AppLocalization.string("Unknown network extension status"))
+        }
+        if status == .reasserting {
+            connectedSince = connection.connectedDate ?? connectedSince
         }
         connectionStage = ConnectionStagePolicy.stage(
             providerPhase: Self.providerLifecyclePhase(status),
@@ -4530,14 +4525,14 @@ final class TunnelManager: ObservableObject {
             cancelAutomaticReconnect(reason: "connected")
         }
         switch state {
-        case .connected, .disconnected, .failed:
+        case .connected, .recovering, .disconnected, .failed:
             cancelConnectionWatchdog()
             cancelDisconnectionWatchdog()
         case .privacyConsentRequired, .loading, .connecting, .disconnecting:
             break
         }
         if !distributionConnectionAccess.permitsNewConnection,
-           state == .connecting || state == .connected {
+           state == .connecting || state == .connected || state == .recovering {
             invalidateConnectionRequest()
             cancelConnectionWatchdog()
             cancelConnectionReadiness()
@@ -4592,7 +4587,7 @@ final class TunnelManager: ObservableObject {
             sessionRoutingMode = nil
             sessionNetworkEngineMode = nil
             clearProxySelectionRuntimeState()
-        case .privacyConsentRequired, .loading, .connecting, .connected,
+        case .privacyConsentRequired, .loading, .connecting, .recovering, .connected,
              .disconnecting:
             break
         }
@@ -5574,7 +5569,7 @@ final class TunnelManager: ObservableObject {
 
     private var runtimeConnectionActivity: RuntimeConnectionActivity {
         switch state {
-        case .connecting, .disconnecting:
+        case .connecting, .recovering, .disconnecting:
             .transitioning
         case .connected:
             .connected
@@ -5600,6 +5595,7 @@ final class TunnelManager: ObservableObject {
         case .loading: .preparing
         case .disconnected: .disconnected
         case .connecting: .connectRequested
+        case .recovering: .networkRecovering
         case .connected: .providerReady
         case .disconnecting: .disconnectRequested
         case .failed: .providerFailed
@@ -5614,6 +5610,7 @@ final class TunnelManager: ObservableObject {
         case .loading: .loading
         case .disconnected: .disconnected
         case .connecting: .connecting
+        case .recovering: .recovering
         case .connected: .connected
         case .disconnecting: .disconnecting
         case .failed: .failed

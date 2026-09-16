@@ -1,5 +1,30 @@
 import Foundation
 
+/// Connectivity probes are evidence about a route, not proof that a provider
+/// has failed. A blocked endpoint or an unused GLOBAL selection must never
+/// cause the provider to tear down unrelated, working rule-based traffic.
+public enum NetworkRecoveryHealthPolicy {
+    public static func hasReceivedTraffic(since baseline: UInt64?, total: UInt64?) -> Bool {
+        guard let baseline, let total else { return false }
+        return total > baseline
+    }
+
+    public static let probeURLs = [
+        "https://www.google.com/generate_204",
+        "https://cp.cloudflare.com/generate_204",
+        "https://www.apple.com/library/test/success.html",
+    ]
+
+    public static func isReachable(
+        probe: (String) throws -> Bool
+    ) -> Bool {
+        for url in probeURLs {
+            if (try? probe(url)) == true { return true }
+        }
+        return false
+    }
+}
+
 /// Drives a Network Extension provider back to a working data path after the
 /// host suspends, resumes, or changes network path.
 ///

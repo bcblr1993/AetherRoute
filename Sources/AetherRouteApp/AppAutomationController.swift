@@ -272,7 +272,7 @@ final class AppAutomationController: ObservableObject {
                     "The connection could not continue. Open AetherRoute to review the recovery steps."
                 )
             )
-        case .disconnected where previousTunnelState == .connected:
+        case .disconnected where previousTunnelState == .connected || previousTunnelState == .recovering:
             deliverNotification(
                 title: AppLocalization.string("AetherRoute disconnected"),
                 body: AppLocalization.string(

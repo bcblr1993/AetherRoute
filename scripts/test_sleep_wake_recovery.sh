@@ -19,8 +19,8 @@ umask 077
 # stops executing while wall-clock time passes, so peers time out and tear down
 # their side exactly as they do across a real laptop sleep. SIGCONT resumes it.
 # Because a save/restore is transparent to the guest, the host's wake
-# notifications are then posted explicitly, which reproduces what macOS does on
-# lid-open.
+# handlers are then invoked through an opt-in QA-only notification bridge.
+# This tests recovery across a VM suspension, not physical macOS sleep delivery.
 #
 # Prerequisites
 # -------------
@@ -28,7 +28,8 @@ umask 077
 #   needs a QA candidate, built with AETHERROUTE_QA_AUTOMATION=1; a release
 #   build leaves `connectForQAAutomationIfRequested` compiled out and the run
 #   below stops with a clear message.
-# * /tmp/post_notification present in the guest.
+# * The QA app must be launched
+#   with AETHERROUTE_QA_POWER_EVENTS=1; production builds omit this bridge.
 # * The VM started with `tart run <name> --no-graphics`. A windowed VMM that is
 #   frozen for minutes trips macOS's hung-application detection, and the system
 #   reclaims it on resume — observed once at a 300s freeze, taking the guest
@@ -40,6 +41,16 @@ RECOVERY_DEADLINE_SECONDS=${AETHERROUTE_RECOVERY_DEADLINE_SECONDS:-120}
 SSH_KEY=${AETHERROUTE_VM_SSH_KEY:-$HOME/.ssh/id_ed25519}
 VM_USER=${AETHERROUTE_VM_USER:-chenxu}
 PROBE_URL=${AETHERROUTE_PROBE_URL:-http://cp.cloudflare.com/generate_204}
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+TEST_TEMP=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-power-recovery.XXXXXX")
+VMM_SUSPENDED=0
+cleanup() {
+  if [ "$VMM_SUSPENDED" -eq 1 ]; then kill -CONT "$VMM_PID" 2>/dev/null || true; fi
+  find "$TEST_TEMP" -depth -delete 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 say() { printf '%s %s\n' "$(date '+%H:%M:%S')" "$*"; }
 fail() { printf '[FAIL] %s\n' "$*" >&2; exit 1; }
@@ -55,6 +66,9 @@ vm() {
 VMM_PID=$(pgrep -f "tart run $VM" | head -1 || true)
 test -n "$VMM_PID" || fail "cannot find the 'tart run $VM' process to suspend"
 say "VM $VM at $IP, monitor pid $VMM_PID"
+swiftc "$ROOT/scripts/post_runtime_notification.swift" -o "$TEST_TEMP/post_notification"
+scp -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+  -i "$SSH_KEY" "$TEST_TEMP/post_notification" "$VM_USER@$IP:/tmp/post_notification"
 
 # The guest has to be carrying traffic before the freeze, otherwise a pass after
 # it proves nothing.
@@ -72,14 +86,21 @@ if [ "${ENGINE:-}" = "tun" ]; then
 fi
 say "[PASS] baseline data path healthy"
 
+# Tell the opted-in QA host to pause polling before its VM is frozen.
+vm "strings /Applications/AetherRoute.app/Contents/MacOS/AetherRoute | grep -q com.aetherroute.qa.systemDidWake" \
+  || fail "this candidate does not contain the QA power-event bridge"
+vm "/tmp/post_notification com.aetherroute.qa.systemWillSleep"
+sleep 1
+vm "/usr/bin/log show --last 5s --info --style compact --predicate 'process == \"AetherRoute\" AND eventMessage CONTAINS \"stage=handleRuntimeEnvironmentEvent sleep entered\"' | grep -q 'sleep entered'" \
+  || fail "QA power bridge inactive; launch the QA app with AETHERROUTE_QA_POWER_EVENTS=1"
 say "suspending the VM for ${FREEZE_SECONDS}s so upstream connections really die"
+VMM_SUSPENDED=1
 kill -STOP "$VMM_PID"
 # Resume even if this script is interrupted; a stopped VM is not a state to
 # leave behind.
-trap 'kill -CONT '"$VMM_PID"' 2>/dev/null || true' EXIT INT TERM
 sleep "$FREEZE_SECONDS"
 kill -CONT "$VMM_PID"
-trap - EXIT INT TERM
+VMM_SUSPENDED=0
 RESUMED_AT=$(date +%s)
 say "resumed"
 
@@ -99,14 +120,9 @@ done
 test "$SSH_BACK" -eq 1 || fail "guest did not respond to SSH within 90s after resume; check that the VM survived the suspend (run it with --no-graphics: macOS treats a windowed VMM frozen this long as a hung app and reclaims it)"
 say "guest responsive after $(( $(date +%s) - RESUMED_AT ))s"
 
-# A transparent resume delivers no wake notification, so post the ones macOS
-# emits on lid-open. This is the signal path the host actually reacts to.
-vm "test -x /tmp/post_notification" 2>/dev/null \
-  || fail "/tmp/post_notification is missing in the guest"
-vm "/tmp/post_notification com.apple.screenIsLocked" || true
-sleep 1
-vm "/tmp/post_notification com.apple.screenIsUnlocked" || true
-say "posted wake notifications"
+# Explicit QA power event: screen unlock must not trigger recovery.
+vm "/tmp/post_notification com.aetherroute.qa.systemDidWake"
+say "posted QA system-wake event"
 
 say "probing for recovery, deadline ${RECOVERY_DEADLINE_SECONDS}s"
 RECOVERED=-1

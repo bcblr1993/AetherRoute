@@ -335,10 +335,10 @@ struct ContentView: View {
                     HStack(spacing: AetherVisual.s1) {
                         AetherStatusBeacon(
                             isConnected: tunnel.isConnected,
-                            isConnecting: tunnel.state == .connecting,
+                            isConnecting: tunnel.state == .connecting || tunnel.state == .recovering,
                             size: 6
                         )
-                        Text(tunnel.isConnected ? AppLocalization.string("Protected") : AppLocalization.string("Idle"))
+                        Text(tunnel.state == .recovering ? tunnel.statusTitle : (tunnel.isConnected ? AppLocalization.string("Protected") : AppLocalization.string("Idle")))
                             .font(.system(size: 10.5, weight: .semibold))
                             .foregroundStyle(.primary)
                     }
@@ -557,7 +557,7 @@ private struct ConnectionToolbarButton: View {
         }
         return switch tunnel.state {
         case .connecting: AppLocalization.string("Cancels the connection attempt")
-        case .connected: AppLocalization.string("Disconnects the secure connection")
+        case .connected, .recovering: AppLocalization.string("Disconnects the secure connection")
         case .failed: AppLocalization.string("Retries the secure connection")
         default: AppLocalization.string("Starts the secure connection")
         }
@@ -1052,6 +1052,7 @@ private struct ConnectionHero: View {
         case .loading: AppLocalization.string("Preparing")
         case .disconnected: AppLocalization.string("Standby")
         case .connecting: AppLocalization.string("Starting")
+        case .recovering: AppLocalization.string("Recovering network")
         case .connected where tunnel.isAutomaticRouteRecovering:
             AppLocalization.string("Recovering")
         case .connected: AppLocalization.string("Protected")
@@ -1079,6 +1080,8 @@ private struct ConnectionHero: View {
                 : AppLocalization.string("Connect when ready, or review the active profile first.")
         case .connecting:
             AppLocalization.string("You can cancel safely while readiness checks are running.")
+        case .recovering:
+            tunnel.statusDetail
         case .connected where tunnel.isAutomaticRouteRecovering:
             AppLocalization.string(
                 "The tunnel remains active while AetherRoute retries the fastest available node."
@@ -1097,6 +1100,7 @@ private struct ConnectionHero: View {
         return switch tunnel.state {
         case .connected where tunnel.isAutomaticRouteRecovering:
             "arrow.triangle.2.circlepath"
+        case .recovering: "arrow.triangle.2.circlepath"
         case .connected: "checkmark.circle.fill"
         case .failed: "exclamationmark.triangle.fill"
         case .connecting, .disconnecting, .loading: "clock"
@@ -1472,6 +1476,7 @@ private struct RouteSummary: View {
         case .loading: AppLocalization.string("Preparing")
         case .disconnected: AppLocalization.string("Normal network")
         case .connecting: AppLocalization.string("Starting")
+        case .recovering: AppLocalization.string("Recovering network")
         case .connected where tunnel.isAutomaticRouteRecovering:
             AppLocalization.string("Retrying nodes")
         case .connected: AppLocalization.string("Extension ready")
@@ -1490,6 +1495,8 @@ private struct RouteSummary: View {
             (AppLocalization.string("Standby"), "pause.circle", .secondary)
         case .connecting:
             (AppLocalization.string("Starting"), "progress.indicator", .orange)
+        case .recovering:
+            (AppLocalization.string("Recovering network"), "arrow.triangle.2.circlepath", .orange)
         case .connected where tunnel.isAutomaticRouteRecovering:
             (AppLocalization.string("Recovering"), "arrow.triangle.2.circlepath", .orange)
         case .connected:

@@ -32,6 +32,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private let uplinkLock = NSLock()
     private var physicalInterfaces: [NWInterface] = []
     private var resetSucceeded = false
+    // Accessed only on the recovery coordinator's serial queue.
+    private var recoveryDownloadBaseline: UInt64?
     private var lastResetInterface: UInt32?
     private var providerStopping = false
     private var recoveryRoutingMode: RoutingMode = .rule
@@ -52,22 +54,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 guard let self else { return }
                 switch event {
                 case .started:
+                    self.recoveryDownloadBaseline = try? self.core
+                        .telemetrySnapshot(maximumConnections: 0).downloadTotal
                     self.resetSucceeded = false
                     self.lastResetInterface = nil
                     self.reasserting = true
                 case .recovered:
                     self.reasserting = false
                 case .exhausted:
-                    // Hand control back to the host's bounded reconnect policy.
-                    if !self.uplinkLock.withLock({ self.providerStopping }),
-                       self.currentPhysicalUplink() != nil {
-                        self.reasserting = false
-                        self.stopPathMonitoring()
-                        self.uplinkLock.withLock { self.providerStopping = true }
-                        self.core.stop { [weak self] in
-                            self?.cancelTunnelWithError(PacketTunnelError.coreUnavailable)
-                        }
-                    }
+                    // Probe exhaustion does not prove an engine failure. Keep
+                    // routes, existing flows and physical-link monitoring alive.
+                    // In rule mode GLOBAL may not even be the user's active route.
+                    self.reasserting = self.currentPhysicalUplink() == nil
                     // With no uplink, remain reasserting until a physical-link
                     // event resumes recovery. Reporting connected here starts
                     // host readiness probes while the machine is still offline.
@@ -408,26 +406,21 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         guard resetSucceeded, !uplinkLock.withLock({ providerStopping }),
               let uplink = currentPhysicalUplink(),
               UInt32(uplink.index) == lastResetInterface else { return false }
-        do {
+        if NetworkRecoveryHealthPolicy.hasReceivedTraffic(
+            since: recoveryDownloadBaseline,
+            total: try? core.telemetrySnapshot(maximumConnections: 0).downloadTotal
+        ) { return true }
+        let healthy = NetworkRecoveryHealthPolicy.isReachable { url in
             let state = try core.testActiveProxyLatency(
                 group: uplinkLock.withLock { recoveryRoutingMode == .direct } ? "DIRECT"
                     : ProxyConnectionReadinessPolicy.globalGroupName,
-                url: uplinkLock.withLock { recoveryRoutingMode == .direct }
-                    ? "http://cp.cloudflare.com/generate_204"
-                    : ProxyConnectionReadinessPolicy.requiredExternalProbeURLString,
+                url: url,
                 timeoutMilliseconds: Self.healthProbeTimeoutMilliseconds
             )
-            let healthy = state.results.contains { $0.delayMilliseconds != nil }
-            Self.runtimeLogger.info(
-                "stage=recoveryHealthProbe healthy=\(healthy, privacy: .public)"
-            )
-            return healthy
-        } catch {
-            Self.runtimeLogger.info(
-                "stage=recoveryHealthProbe unavailable error=\(String(reflecting: error), privacy: .public)"
-            )
-            return false
+            return state.results.contains { $0.delayMilliseconds != nil }
         }
+        Self.runtimeLogger.info("stage=recoveryHealthProbe healthy=\(healthy, privacy: .public)")
+        return healthy
     }
 
     private static func logRecovery(_ event: NetworkRecoveryCoordinator.Event) {
