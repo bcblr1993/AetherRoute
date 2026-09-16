@@ -13,13 +13,13 @@ final class AppRuntimeEnvironmentController: ObservableObject {
         qos: .utility
     )
     private var workspaceObservers: [NSObjectProtocol] = []
-    private var distributedObservers: [NSObjectProtocol] = []
     private var pathMonitor: NWPathMonitor?
     private var pathBaseline: NetworkPathFingerprint?
 
     init(
         tunnel: TunnelManager,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        workspaceCenter: NotificationCenter = NSWorkspace.shared.notificationCenter
     ) {
         self.tunnel = tunnel
 #if DEBUG || AETHERROUTE_PERFORMANCE_MEASUREMENT
@@ -33,7 +33,8 @@ final class AppRuntimeEnvironmentController: ObservableObject {
 #endif
 #endif
 
-        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        // Locking the session or turning off a display leaves networking active.
+        // Only actual system sleep/wake may pause monitoring and reset connections.
         workspaceObservers = [
             workspaceCenter.addObserver(
                 forName: NSWorkspace.willSleepNotification,
@@ -48,54 +49,6 @@ final class AppRuntimeEnvironmentController: ObservableObject {
             },
             workspaceCenter.addObserver(
                 forName: NSWorkspace.didWakeNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    await self?.tunnel.handleRuntimeEnvironmentEvent(
-                        .systemDidWake
-                    )
-                }
-            },
-            workspaceCenter.addObserver(
-                forName: NSWorkspace.screensDidSleepNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    await self?.tunnel.handleRuntimeEnvironmentEvent(
-                        .systemWillSleep
-                    )
-                }
-            },
-            workspaceCenter.addObserver(
-                forName: NSWorkspace.screensDidWakeNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    await self?.tunnel.handleRuntimeEnvironmentEvent(
-                        .systemDidWake
-                    )
-                }
-            },
-        ]
-
-        let distCenter = DistributedNotificationCenter.default()
-        distributedObservers = [
-            distCenter.addObserver(
-                forName: NSNotification.Name("com.apple.screenIsLocked"),
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    await self?.tunnel.handleRuntimeEnvironmentEvent(
-                        .systemWillSleep
-                    )
-                }
-            },
-            distCenter.addObserver(
-                forName: NSNotification.Name("com.apple.screenIsUnlocked"),
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
