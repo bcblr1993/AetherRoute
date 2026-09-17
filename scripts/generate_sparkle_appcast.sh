@@ -262,24 +262,23 @@ let defaultNotesContent = """
 <div class="section">
   <span class="section-tag tag-feature">✨ 新增特性</span>
   <ul>
-    <li><strong>底层硬件热插拔检测器</strong>：引入 Darwin 硬件接口轮询与系统网络优先级匹配，秒级识别扩展坞与网卡热插拔。</li>
-    <li><strong>虚拟与容器网卡强力过滤</strong>：排除 Docker/OrbStack、桥接等 11 类接口，避免引擎误选断网。</li>
-    <li><strong>45秒宿主级自愈看门狗</strong>：网络重连超时时自动触发无缝热重启，保障长期运行零卡死。</li>
+    <li><strong>策略组 Segmented 胶囊栏</strong>：顶部切换器升级为 Apple HIG 原生胶囊分段栏，配备平滑弹簧切换动画。</li>
+    <li><strong>当前策略组专属状态卡片</strong>：在节点网格顶部清晰呈现当前选中的策略组名、语义图标、调度策略标签及切换状态。</li>
+    <li><strong>底库节点与协议诊断专区</strong>：重构底库清单为“节点解析与协议诊断”，明晰底层节点状态与协议参数排查入口。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">⚡️ 体验优化</span>
   <ul>
-    <li><strong>Hero 卡片零抖动锁定</strong>：移除繁杂步骤条，永久锁定卡片高度，状态切换平滑无跳跃。</li>
-    <li><strong>配置列表升级为原生分组</strong>：彻底重塑 Profile 管理界面，还原 macOS 原生质感。</li>
-    <li><strong>节点列表顺序绝对固化</strong>：批量测速或切换策略时，严格保持配置原始声明顺序。</li>
+    <li><strong>更新提示弹窗现代 HIG 视觉重构</strong>：升级为深浅色自适应原生双层卡片，版本及构建标签精致化呈现。</li>
+    <li><strong>明晰测速控制层级与职责</strong>：彻底区分顶层“全部测速”与组内“测试延迟”，消除操作歧义。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-fix">🐞 问题修复</span>
   <ul>
-    <li><strong>修复网络热插拔恢复死锁</strong>：彻底解决休眠恢复后插入有线网卡无限等待恢复的异常。</li>
-    <li><strong>修复并发测速级联故障</strong>：优化并发测速调度，消除策略组连带刷新延迟。</li>
+    <li><strong>更新日志排版修正</strong>：修复自动更新说明未应用样式与排版抖动的问题。</li>
+    <li><strong>代码闭合结构修复</strong>：修复代理视图内局部语法结构异常。</li>
   </ul>
 </div>
 """

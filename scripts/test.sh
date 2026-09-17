@@ -163,6 +163,7 @@ do
   fi
 done
 
+# Runs unit tests with -scheme AetherRouteUnitTests via test_product_build.sh
 AETHERROUTE_DERIVED_DATA_PATH="$DERIVED_DATA_PATH" "$ROOT/scripts/test_product_build.sh"
 "$ROOT/scripts/core_smoke.sh"
 "$ROOT/scripts/core_smoke_direct.sh"
