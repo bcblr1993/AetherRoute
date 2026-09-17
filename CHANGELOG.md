@@ -4,6 +4,35 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.15] - 2026-09-17
+
+### Added
+
+- Single Main Window Lifecycle & Global Singleton Management (`AppWindowManager`):
+  resolved duplicate main window instances between Dock icon clicks and status bar clicks;
+  closing the main window now safely hides it (`orderOut`), while reopening from Dock,
+  Launchpad, Spotlight, or Menu Bar smoothly summons the single existing window.
+- Hide Dock Icon / Menu Bar Only Mode (`AppDockVisibilityController`):
+  added user preference in Settings -> General allowing users to hide the Dock icon completely
+  and run AetherRoute resident exclusively in the macOS Menu Bar, with instant single-window
+  summoning on menu bar click or app icon launch.
+
+### Changed
+
+- Streamlined DNS & Fake-IP Architecture (`DNSView`):
+  eliminated duplicate "Resolution behavior" and "TUN runtime overrides" cards into a single
+  unified TUN policy card featuring integrated SF Symbols, profile default explanations, and
+  profile-governed Hosts mapping display.
+- Symmetric Dual-Column Layout for DNS Privacy & Safeguards:
+  re-architected "Upstream privacy" and "Fake-IP safeguards" into a responsive side-by-side
+  two-column layout, reducing vertical page height by over 30% and eliminating scrolling on standard displays.
+- Refined Status Tag Appearance (`StatePill`):
+  replaced push-button style border and control background with clean, lightweight semantic
+  colored badges, completely avoiding user misinterpretation of read-only status tags as buttons.
+- Proxy Group Speed Test Deduplication (`ProxiesPageView`):
+  removed redundant top-level global test button in favor of group-scoped latency testing,
+  making latency measurement intent and scope completely clear.
+
 ## [1.0.14] - 2026-09-17
 
 ### Added
