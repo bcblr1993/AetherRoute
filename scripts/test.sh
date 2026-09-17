@@ -13,6 +13,9 @@ trap cleanup EXIT HUP INT TERM
 "$ROOT/scripts/test_signing_overrides.sh"
 "$ROOT/scripts/test_temporary_cleanup_guards.sh"
 "$ROOT/scripts/test_external_profile_sanitizer.sh"
+sh "$ROOT/Tests/EngineReconnect/run.sh"
+sh "$ROOT/Tests/ProxyLatencyMeasurement/run.sh"
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_network_switch_gate.py"
 "$ROOT/scripts/test_signed_network_extension_guards.sh"
 "$ROOT/Tests/SignedNEProbe/run.sh"
 "$ROOT/scripts/test_app_termination_signal_guard.sh"
@@ -38,7 +41,6 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_installed_ne_performance_c
 sh "$ROOT/Tests/ConnectionRows/run.sh"
 sh "$ROOT/Tests/MenuProxyNodeOrder/run.sh"
 sh "$ROOT/Tests/ProxyPageNodeOrder/run.sh"
-sh "$ROOT/Tests/ProxyLatencyMeasurement/run.sh"
 sh "$ROOT/Tests/TrafficHistory/run.sh"
 sh "$ROOT/Tests/SystemExtensionActivation/run.sh"
 sh "$ROOT/Tests/WindowVisibility/run.sh"
@@ -161,49 +163,7 @@ do
   fi
 done
 
-mkdir -p "$DERIVED_DATA_PATH"
-if [ -d "$ROOT/build/DerivedData/SourcePackages" ] && [ "$DERIVED_DATA_PATH" != "$ROOT/build/DerivedData" ]; then
-  ditto "$ROOT/build/DerivedData/SourcePackages" "$DERIVED_DATA_PATH/SourcePackages"
-fi
-
-xcodebuild \
-  -project "$ROOT/AetherRoute.xcodeproj" \
-  -scheme AetherRouteUnitTests \
-  -destination 'platform=macOS,arch=arm64' \
-  -derivedDataPath "$DERIVED_DATA_PATH" \
-  CODE_SIGNING_ALLOWED=YES \
-  CODE_SIGNING_REQUIRED=NO \
-  CODE_SIGN_ENTITLEMENTS= \
-  CODE_SIGN_IDENTITY=- \
-  AD_HOC_CODE_SIGNING_ALLOWED=YES \
-  SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
-  build-for-testing
-
-"$ROOT/scripts/verify_transparent_proxy_metadata.sh" built \
-  "$DERIVED_DATA_PATH/Build/Products/Debug"
-"$ROOT/scripts/verify_product_metadata.sh" built \
-  "$DERIVED_DATA_PATH/Build/Products/Debug"
-"$ROOT/scripts/verify_licenses.sh" built \
-  "$DERIVED_DATA_PATH/Build/Products/Debug"
-if strings \
-  "$DERIVED_DATA_PATH/Build/Products/Debug/AetherRoute.app/Contents/MacOS/AetherRoute" \
-  | grep -F 'AETHERROUTE_PERFORMANCE_MEASUREMENT' >/dev/null; then
-  echo "Performance measurement fixture escaped into the standard app build" >&2
-  exit 1
-fi
-
-# Xcode 26 occasionally fails to instantiate a valid, ad-hoc-signed macOS
-# test bundle through test-without-building. Run the produced bundle directly;
-# this keeps the local and remote gate deterministic while still building the
-# complete independent app and both embedded Network Extensions above.
-for TEST_BUNDLE in \
-  "$DERIVED_DATA_PATH/Build/Products/Debug/AetherRouteTests.xctest" \
-  "$DERIVED_DATA_PATH/Build/Products/Debug/AetherRouteTransparentProxySupportTests.xctest" \
-  "$DERIVED_DATA_PATH/Build/Products/Debug/AetherRouteFlowCoreBridgeTests.xctest"
-do
-  codesign --verify --deep --strict "$TEST_BUNDLE"
-  xcrun xctest "$TEST_BUNDLE"
-done
+AETHERROUTE_DERIVED_DATA_PATH="$DERIVED_DATA_PATH" "$ROOT/scripts/test_product_build.sh"
 "$ROOT/scripts/core_smoke.sh"
 "$ROOT/scripts/core_smoke_direct.sh"
 "$ROOT/scripts/test_local_proxy.sh"

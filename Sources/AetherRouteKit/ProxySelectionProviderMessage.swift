@@ -12,24 +12,6 @@ public struct ProxySelectionState: Sendable, Equatable {
     }
 }
 
-public struct ProxyLatencyResult: Sendable, Equatable {
-    public let member: String
-    public let delayMilliseconds: UInt32?
-
-    public init(member: String, delayMilliseconds: UInt32?) {
-        self.member = member
-        self.delayMilliseconds = delayMilliseconds
-    }
-}
-
-public struct ProxyLatencyState: Sendable, Equatable {
-    public let results: [ProxyLatencyResult]
-
-    public init(results: [ProxyLatencyResult]) {
-        self.results = results
-    }
-}
-
 public enum ProxySelectionProviderRequest: Sendable, Equatable {
     case snapshot(group: String)
     case select(group: String, member: String)

@@ -1,4 +1,17 @@
-# ClashX feature-parity ledger
+# ClashX feature-parity ledger (historical validation snapshot)
+
+> Status reconciliation, 2026-09-17: the detailed table below is historical,
+> not a current release certificate. Later 1.0.12 release notes record signed
+> distribution and VM runs; this review has not revalidated those packages.
+> Current default distribution is free with Sparkle updates. Engine changes
+> use stop-and-reconnect, not seamless flow migration. Route preview supports
+> basic destination rules and reports indeterminate for runtime-dependent or
+> truncated rules. TUN domain bypass remains unsupported (CIDRs only).
+> Physical sleep/wake, genuine default-uplink handoff and real-network soak
+> need artifact-bound evidence; lock notification and VM-freeze tests are
+> separate scopes. See CodeReview-2026-09-17.zh-CN.md for the original findings
+> and ReviewFixes-2026-09-17.zh-CN.md for changes and current validation.
+
 
 This ledger prevents visual or compile-only work from being described as
 ClashX feature parity. A feature is complete only when its production path and

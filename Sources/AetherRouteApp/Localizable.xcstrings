@@ -9476,6 +9476,46 @@
           }
         }
       }
+    },
+    "Destination-only preview; the target may be a policy group.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅预览目标地址规则；出站目标可能是策略组。"
+          }
+        }
+      }
+    },
+    "Cannot determine the route: runtime data or rules outside this preview are required.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法判定路由：需要运行时数据或预览范围以外的规则。"
+          }
+        }
+      }
+    },
+    "No preview rule matched. The runtime routing mode remains authoritative.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命中预览规则，实际路由以运行时模式为准。"
+          }
+        }
+      }
+    },
+    "Enter a valid domain, IP address, or URL.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入有效的域名、IP 地址或 URL。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

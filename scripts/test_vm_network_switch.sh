@@ -2,82 +2,70 @@
 set -eu
 umask 077
 
-# Verifies that AetherRoute dynamically detects network adapter / uplink address
-# handoff, triggers network recovery / core reset, and preserves the tunnel data path
-# without crashing, restarting, or disconnecting.
-
+# TUN interface-address-change test. This is not a default-route handoff or
+# physical sleep test. Require a proxy-only HTTPS canary returning 204.
 VM=${1:-aether-diag-1434}
 SSH_KEY=${AETHERROUTE_VM_SSH_KEY:-$HOME/.ssh/id_ed25519}
 VM_USER=${AETHERROUTE_VM_USER:-chenxu}
-PROBE_URL=${AETHERROUTE_PROBE_URL:-http://cp.cloudflare.com/generate_204}
-
-say() { printf '%s %s\n' "$(date '+%H:%M:%S')" "$*"; }
+PROBE_URL=${AETHERROUTE_SWITCH_PROXY_CANARY_URL:-}
+case "$PROBE_URL" in https://*) ;; *) echo 'Set AETHERROUTE_SWITCH_PROXY_CANARY_URL to a proxy-only HTTPS 204 endpoint' >&2; exit 1 ;; esac
+# Values are placed in a single-quoted remote shell argument.
+case "$PROBE_URL" in *"'"*|*" "*|*"
+"*) echo 'Invalid canary URL' >&2; exit 1 ;; esac
 fail() { printf '[FAIL] %s\n' "$*" >&2; exit 1; }
-
 IP=$(tart ip "$VM" 2>/dev/null || true)
-test -n "$IP" || fail "cannot resolve IP for VM $VM"
-
+test -n "$IP" || fail 'cannot resolve VM IP'
 vm() {
   ssh -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
     -o ConnectTimeout=10 -i "$SSH_KEY" "$VM_USER@$IP" "$@"
 }
-
-say "=== Testing Network Adapter & Uplink Handoff on $VM ($IP) ==="
-
-# 1. Baseline verification
-say "[1/4] Checking baseline tunnel state..."
-PID_APP=$(vm "pgrep -x AetherRoute" || true)
-PID_TUN=$(vm "pgrep -f com.aetherroute.desktop.tunnel" || true)
-test -n "$PID_APP" || fail "AetherRoute is not running in guest"
-test -n "$PID_TUN" || fail "Tunnel extension is not running in guest"
-say "App PID: $PID_APP, Tunnel Extension PID: $PID_TUN"
-
-BASELINE_CODE=$(vm "curl -s -o /dev/null -w '%{http_code}' --max-time 10 '$PROBE_URL'" || true)
-say "Baseline probe: $BASELINE_CODE"
-test "$BASELINE_CODE" = "204" || fail "Baseline probe failed"
-say "[PASS] Baseline healthy"
-
-# 2. Simulate network handoff: Add secondary uplink IP alias
-say "[2/4] Simulating network handoff (adding secondary uplink IP 192.168.64.166)..."
-vm "sudo ifconfig en0 alias 192.168.64.166 netmask 255.255.255.0"
-# Probe data path with new uplink identity
-say "Probing data path after uplink change..."
-CODE1=""
-for i in $(seq 1 5); do
-  sleep 2
-  CODE1=$(vm "curl -s -o /dev/null -w '%{http_code}' --max-time 5 '$PROBE_URL'" || true)
-  if [ "$CODE1" = "204" ]; then break; fi
-done
-say "Probe result: $CODE1"
-test "$CODE1" = "204" || fail "Probe failed after adding alias (got $CODE1)"
-say "[PASS] Data path working under modified uplink signature"
-
-# 3. Simulate second handoff: Remove alias (uplink signature change back)
-say "[3/4] Simulating second network handoff (removing secondary uplink IP)..."
-vm "sudo ifconfig en0 -alias 192.168.64.166"
-
-# Probe data path after removal
-say "Probing data path after uplink restored..."
-CODE2=""
-for i in $(seq 1 5); do
-  sleep 2
-  CODE2=$(vm "curl -s -o /dev/null -w '%{http_code}' --max-time 5 '$PROBE_URL'" || true)
-  if [ "$CODE2" = "204" ]; then break; fi
-done
-say "Probe result: $CODE2"
-test "$CODE2" = "204" || fail "Probe failed after restoring alias (got $CODE2)"
-say "[PASS] Data path working after uplink restored"
-
-# 4. Verify provider log evidence and process survival
-say "[4/4] Verifying provider reaction logs and process stability..."
-CURR_APP=$(vm "pgrep -x AetherRoute" || true)
-CURR_TUN=$(vm "pgrep -f com.aetherroute.desktop.tunnel" || true)
-test "$CURR_APP" = "$PID_APP" || fail "AetherRoute restarted"
-test "$CURR_TUN" = "$PID_TUN" || fail "Tunnel extension restarted"
-say "[PASS] Both processes survived with zero restarts"
-
-say "--- Provider Physical Uplink Event Logs ---"
-vm "/usr/bin/log show --last 1m --info --debug --predicate 'subsystem == \"com.aetherroute.desktop\"' --style compact 2>/dev/null \
-  | grep -E 'stage=(physicalUplinkChanged|networkRecovery|recoveryHealthProbe|stateTransition)'" || true
-
-say "=== Network Adapter & Uplink Handoff PASSED Successfully! ==="
+ALIAS_ADDED=0
+cleanup() {
+  if [ "$ALIAS_ADDED" -eq 1 ]; then
+    vm 'sudo ifconfig en0 -alias 192.168.64.166' >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT HUP INT TERM
+PID_APP=$(vm 'pgrep -x AetherRoute')
+PID_TUN=$(vm 'pgrep -f com.aetherroute.desktop.tunnel')
+case "$PID_TUN" in ''|*[!0-9]*) fail 'expected exactly one packet provider PID' ;; esac
+case "$PID_APP" in ''|*[!0-9]*) fail 'expected exactly one app PID' ;; esac
+# Refuse to remove an address that was present before this test.
+if vm 'ifconfig en0' | grep -Fq 'inet 192.168.64.166 '; then
+  fail 'test alias already exists'
+fi
+probe() {
+  vm "curl --noproxy '*' --proto '=https' -s -o /dev/null -w '%{http_code}' --max-time 10 '$PROBE_URL'" || true
+}
+test "$(probe)" = 204 || fail 'proxy canary baseline failed'
+DIRECT_CODE=$(vm "curl --noproxy '*' --interface en0 --proto '=https' -s -o /dev/null -w '%{http_code}' --max-time 10 '$PROBE_URL'" || true)
+test "$DIRECT_CODE" != 204 || fail 'canary is reachable directly; cannot prove proxy routing'
+verify_recovery() {
+  start=$1
+  # log query is bound to the current provider and the mutation interval.
+  attempt=0
+  while [ "$attempt" -lt 20 ]; do
+    logs=$(vm "/usr/bin/log show --start '$start' --info --debug --style compact --predicate 'processID == $PID_TUN'" )
+    if printf '%s\n' "$logs" | grep -Fq 'stage=physicalUplinkChanged scheduling recovery' &&
+       printf '%s\n' "$logs" | grep -Fq 'stage=networkRecovery coreReset success' &&
+       test "$(probe)" = 204; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 2
+  done
+  fail 'missing current-provider uplink/reset evidence or proxy canary recovery'
+}
+START=$(vm 'date "+%Y-%m-%d %H:%M:%S"')
+ALIAS_ADDED=1
+vm 'sudo ifconfig en0 alias 192.168.64.166 netmask 255.255.255.0'
+verify_recovery "$START"
+# Use a new timestamp second so addition evidence cannot satisfy removal.
+sleep 2
+START=$(vm 'date "+%Y-%m-%d %H:%M:%S"')
+vm 'sudo ifconfig en0 -alias 192.168.64.166'
+ALIAS_ADDED=0
+verify_recovery "$START"
+test "$(vm 'pgrep -x AetherRoute')" = "$PID_APP" || fail 'app restarted'
+test "$(vm 'pgrep -f com.aetherroute.desktop.tunnel')" = "$PID_TUN" || fail 'provider restarted'
+printf '%s\n' 'TUN interface address change: provider reset, proxy-only canary and process continuity passed.'

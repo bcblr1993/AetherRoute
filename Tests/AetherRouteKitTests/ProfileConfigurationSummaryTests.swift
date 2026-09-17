@@ -730,4 +730,56 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
         XCTAssertEqual(res3?.order, 2)
         XCTAssertEqual(res3?.target, "GOOGLE_PROXY")
     }
+    func testRoutePreviewStopsAtRulesRequiringRuntimeContext() {
+        for kind in ["GEOIP", "GEOSITE", "RULE-SET", "SRC-IP-CIDR", "DST-PORT", "DOMAIN-REGEX", "AND"] {
+            let rules = [
+                RuleConfigurationSummary(id: 0, order: 1, kind: kind, criteria: "google", target: "DIRECT"),
+                RuleConfigurationSummary(id: 1, order: 2, kind: "MATCH", criteria: nil, target: "PROXY"),
+            ]
+            XCTAssertEqual(RouteMatchEngine.assess(destination: "not-google.invalid", against: rules),
+                           .indeterminate(ruleOrder: 1), kind)
+        }
+    }
+
+    func testRoutePreviewIPv6AndFamilyBoundaries() {
+        let rules = [
+            RuleConfigurationSummary(id: 0, order: 1, kind: "IP-CIDR6", criteria: "2001:db8::/32", target: "DIRECT"),
+            RuleConfigurationSummary(id: 1, order: 2, kind: "MATCH", criteria: nil, target: "PROXY"),
+        ]
+        for input in ["2001:db8::1", "2001:db8:0:0:0:0:0:1", "[2001:db8::1]", "https://[2001:db8::1]/path", "[2001:db8::1]:443"] {
+            XCTAssertEqual(RouteMatchEngine.evaluate(destination: input, against: rules)?.target, "DIRECT", input)
+        }
+        for input in ["2001:db9::1", "192.168.1.1"] {
+            XCTAssertEqual(RouteMatchEngine.evaluate(destination: input, against: rules)?.target, "PROXY", input)
+        }
+        XCTAssertEqual(RouteMatchEngine.assess(destination: "example.com", against: rules), .indeterminate(ruleOrder: 1))
+        for prefix in [0, 1, 63, 64, 127, 128] {
+            let rule = RuleConfigurationSummary(id: 0, order: 1, kind: "IP-CIDR6", criteria: "2001:db8::/\(prefix)", target: "DIRECT")
+            XCTAssertNotNil(RouteMatchEngine.evaluate(destination: "2001:db8::", against: [rule]))
+        }
+    }
+
+    func testRoutePreviewTruncationNeverClaimsDefaultDirect() {
+        for count in [499, 500, 501] {
+            let yaml = "rules:\n" + (1..<count).map { "  - DOMAIN,unused\($0).invalid,DIRECT\n" }.joined() + "  - MATCH,PROXY\n"
+            let summary = ProfileConfigurationInspector.inspect(yaml: yaml)
+            let result = RouteMatchEngine.assess(destination: "example.com", against: summary.rules, totalRuleCount: summary.ruleCount)
+            if count <= 500 {
+                guard case let .matched(match) = result else { return XCTFail("Missing catch-all") }
+                XCTAssertEqual(match.target, "PROXY")
+            } else {
+                XCTAssertEqual(result, .indeterminate(ruleOrder: nil))
+            }
+        }
+    }
+
+    func testRoutePreviewRejectsInvalidInputAndDoesNotInventCatchAll() {
+        let malformed = RuleConfigurationSummary(id: 0, order: 1, kind: "UNKNOWN", criteria: nil, target: "DIRECT")
+        XCTAssertEqual(RouteMatchEngine.assess(destination: "example.com", against: [malformed]), .indeterminate(ruleOrder: 1))
+        for input in ["", "not a host", "https://user:password@example.com", "[not-an-ip]"] {
+            XCTAssertEqual(RouteMatchEngine.assess(destination: input, against: []), .invalidDestination)
+        }
+        XCTAssertEqual(RouteMatchEngine.assess(destination: "example.com", against: []), .noMatch)
+    }
+
 }

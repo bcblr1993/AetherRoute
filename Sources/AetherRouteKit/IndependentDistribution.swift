@@ -185,13 +185,18 @@ public enum DistributionConnectionAccess: Equatable, Sendable {
     case unrestrictedDevelopment
     case activationRequired
     case authorized
+    case authorizedUntil(Date)
     case restricted(LicenseEntitlementState)
     case verificationUnavailable
 
-    public var permitsNewConnection: Bool {
+    public var permitsNewConnection: Bool { permitsNewConnection(at: Date()) }
+
+    public func permitsNewConnection(at now: Date) -> Bool {
         switch self {
         case .free, .unrestrictedDevelopment, .authorized:
             true
+        case let .authorizedUntil(expiry):
+            now < expiry
         case .activationRequired, .restricted, .verificationUnavailable:
             false
         }

@@ -1,5 +1,6 @@
 import AetherRouteKit
 import Foundation
+import Combine
 
 @MainActor
 final class IndependentDistributionController: ObservableObject {
@@ -11,31 +12,37 @@ final class IndependentDistributionController: ObservableObject {
         case failure(String)
     }
 
-    enum UpdateState: Equatable {
-        case notConfigured
-        case idle
-        case current(Date)
-        case available(SoftwareUpdateManifest)
-        case failure(String)
-    }
-
     @Published private(set) var licenseState: LicenseState = .notConfigured
-    @Published private(set) var updateState: UpdateState = .notConfigured
     @Published private(set) var connectionAccess:
         DistributionConnectionAccess = .verificationUnavailable
     private(set) var distributionMode: IndependentDistributionMode = .licensed
     @Published private(set) var licenseMessage: String?
     @Published private(set) var isActivating = false
-    @Published private(set) var isCheckingForUpdates = false
-    @Published private(set) var isDownloadingUpdate = false
-    @Published private(set) var updateDownloadMessage: String?
-    @Published private(set) var updateDownloadSucceeded = false
 
     private let client: IndependentDistributionClient?
     private let credentialStore: any DistributionCredentialStoring
     private let appVersion: String
     private let appBuild: String
     private var hasLoaded = false
+    private var expiryTask: Task<Void, Never>?
+    private var verifiedReceipt: LicenseEntitlement?
+    private var now: () -> Date = { Date() }
+
+    init(
+        client: IndependentDistributionClient,
+        credentialStore: any DistributionCredentialStoring,
+        now: @escaping () -> Date = { Date() }
+    ) {
+        self.client = client
+        self.credentialStore = credentialStore
+        self.appVersion = "1"
+        self.appBuild = "1"
+        self.now = now
+        licenseState = .inactive
+        connectionAccess = .activationRequired
+    }
+
+    deinit { expiryTask?.cancel() }
 
     init(
         bundle: Bundle = .main,
@@ -65,13 +72,11 @@ final class IndependentDistributionController: ObservableObject {
             )
             licenseState = .inactive
             connectionAccess = .activationRequired
-            updateState = .idle
         } catch {
             client = nil
             let message = Self.safeMessage(error)
             licenseState = .failure(message)
             connectionAccess = .verificationUnavailable
-            updateState = .failure(message)
         }
     }
 
@@ -85,6 +90,8 @@ final class IndependentDistributionController: ObservableObject {
         do {
             let deviceID = try credentialStore.loadOrCreateDeviceID()
             guard let receipt = try credentialStore.loadReceipt() else {
+                verifiedReceipt = nil
+                expiryTask?.cancel()
                 licenseState = .inactive
                 connectionAccess = .activationRequired
                 licenseMessage = nil
@@ -113,6 +120,8 @@ final class IndependentDistributionController: ObservableObject {
                 appVersion: appVersion,
                 appBuild: appBuild
             )
+            // A verified restriction takes effect even if Keychain persistence fails.
+            if result.entitlement.state != .active { apply(result.entitlement) }
             try credentialStore.saveReceipt(result.signedReceipt)
             apply(result.entitlement)
             return true
@@ -133,6 +142,8 @@ final class IndependentDistributionController: ObservableObject {
         do {
             let deviceID = try credentialStore.loadOrCreateDeviceID()
             guard let receipt = try credentialStore.loadReceipt() else {
+                verifiedReceipt = nil
+                expiryTask?.cancel()
                 licenseState = .inactive
                 connectionAccess = .activationRequired
                 licenseMessage = nil
@@ -144,12 +155,15 @@ final class IndependentDistributionController: ObservableObject {
                 appVersion: appVersion,
                 appBuild: appBuild
             )
+            // A verified restriction takes effect even if Keychain persistence fails.
+            if result.entitlement.state != .active { apply(result.entitlement) }
             try credentialStore.saveReceipt(result.signedReceipt)
             apply(result.entitlement)
         } catch {
             // Keep a previously verified, unexpired receipt authorized across
             // transient refresh failures. Without one, fail closed.
-            if connectionAccess.permitsNewConnection {
+            revalidateLicense()
+            if connectionAccess.permitsNewConnection, Self.isTransientRefreshFailure(error) {
                 licenseMessage = Self.safeMessage(error)
             } else {
                 licenseState = .failure(Self.safeMessage(error))
@@ -165,6 +179,8 @@ final class IndependentDistributionController: ObservableObject {
         do {
             let deviceID = try credentialStore.loadOrCreateDeviceID()
             guard let receipt = try credentialStore.loadReceipt() else {
+                verifiedReceipt = nil
+                expiryTask?.cancel()
                 licenseState = .inactive
                 connectionAccess = .activationRequired
                 licenseMessage = nil
@@ -177,6 +193,8 @@ final class IndependentDistributionController: ObservableObject {
                 appBuild: appBuild
             )
             try credentialStore.deleteReceipt()
+            verifiedReceipt = nil
+            expiryTask?.cancel()
             licenseState = .inactive
             connectionAccess = .activationRequired
             licenseMessage = nil
@@ -184,57 +202,6 @@ final class IndependentDistributionController: ObservableObject {
             // Deactivation is confirmed only by the service. Keep the local
             // signed receipt and its access decision when the request fails.
             licenseMessage = Self.safeMessage(error)
-        }
-    }
-
-    func checkForUpdates() async {
-        guard let client, !isCheckingForUpdates else { return }
-        guard let currentBuild = Int(appBuild), currentBuild > 0 else {
-            updateState = .failure(
-                AppLocalization.string("The current build number is invalid.")
-            )
-            return
-        }
-        isCheckingForUpdates = true
-        defer { isCheckingForUpdates = false }
-        do {
-            switch try await client.checkForUpdates(currentBuild: currentBuild) {
-            case let .current(checkedAt):
-                updateState = .current(checkedAt)
-            case let .available(manifest):
-                updateState = .available(manifest)
-            }
-        } catch {
-            updateState = .failure(Self.safeMessage(error))
-        }
-    }
-
-    func downloadUpdate(
-        _ manifest: SoftwareUpdateManifest,
-        to destinationURL: URL
-    ) async -> URL? {
-        guard !isDownloadingUpdate,
-              case let .available(availableManifest) = updateState,
-              availableManifest == manifest else {
-            return nil
-        }
-        isDownloadingUpdate = true
-        updateDownloadMessage = nil
-        updateDownloadSucceeded = false
-        defer { isDownloadingUpdate = false }
-        do {
-            let artifact = try await VerifiedSoftwareUpdateDownloader.live()
-                .download(manifest: manifest, to: destinationURL)
-            updateDownloadMessage = String.localizedStringWithFormat(
-                AppLocalization.string("Downloaded and verified %lld bytes."),
-                artifact.byteCount
-            )
-            updateDownloadSucceeded = true
-            return artifact.fileURL
-        } catch {
-            updateDownloadMessage = Self.safeMessage(error)
-            updateDownloadSucceeded = false
-            return nil
         }
     }
 
@@ -262,14 +229,54 @@ final class IndependentDistributionController: ObservableObject {
     }
 
     private func apply(_ entitlement: LicenseEntitlement) {
+        expiryTask?.cancel()
+        expiryTask = nil
         licenseMessage = nil
+        verifiedReceipt = entitlement
         if entitlement.state == .active {
             licenseState = .active(entitlement)
-            connectionAccess = .authorized
+            connectionAccess = entitlement.expiresAt.map { .authorizedUntil($0) } ?? .authorized
+            revalidateLicense()
+            if let expiry = entitlement.expiresAt, expiry > now() {
+                expiryTask = Task { [weak self] in
+                    // Recheck wall time after wake and after clock changes.
+                    // Connection admission also checks expiry synchronously.
+                    while !Task.isCancelled {
+                        guard let currentDate = self?.now() else { return }
+                        let remaining = expiry.timeIntervalSince(currentDate)
+                        if remaining <= 0 { self?.revalidateLicense(); return }
+                        do { try await Task.sleep(for: .seconds(min(remaining, 30))) }
+                        catch { return }
+                    }
+                }
+            }
         } else {
             licenseState = .restricted(entitlement)
             connectionAccess = .restricted(entitlement.state)
         }
+    }
+
+    func revalidateLicense() {
+        guard let entitlement = verifiedReceipt, entitlement.state == .active,
+              let expiry = entitlement.expiresAt, expiry <= now() else { return }
+        licenseState = .restricted(LicenseEntitlement(
+            schemaVersion: entitlement.schemaVersion,
+            productID: entitlement.productID, licenseID: entitlement.licenseID,
+            deviceID: entitlement.deviceID, state: .expired,
+            issuedAt: entitlement.issuedAt, expiresAt: entitlement.expiresAt
+        ))
+        connectionAccess = .restricted(.expired)
+    }
+
+    private static func isTransientRefreshFailure(_ error: Error) -> Bool {
+        if let error = error as? URLError {
+            return [.timedOut, .notConnectedToInternet, .networkConnectionLost,
+                    .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed].contains(error.code)
+        }
+        if case let .httpStatus(status) = error as? IndependentDistributionError {
+            return status == 429 || (500...599).contains(status)
+        }
+        return false
     }
 
     private static func connectionAccess(

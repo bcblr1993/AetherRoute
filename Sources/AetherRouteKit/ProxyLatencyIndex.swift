@@ -1,3 +1,21 @@
+public struct ProxyLatencyResult: Sendable, Equatable {
+    public let member: String
+    public let delayMilliseconds: UInt32?
+
+    public init(member: String, delayMilliseconds: UInt32?) {
+        self.member = member
+        self.delayMilliseconds = delayMilliseconds
+    }
+}
+
+public struct ProxyLatencyState: Sendable, Equatable {
+    public let results: [ProxyLatencyResult]
+
+    public init(results: [ProxyLatencyResult]) {
+        self.results = results
+    }
+}
+
 /// One member's last measurement, and how much that number is worth.
 ///
 /// A bare TCP handshake to the node's address proves the socket opened. It
@@ -121,6 +139,14 @@ public struct ProxyLatencyIndex {
             measurements[group, default: [:]][member] = measurement
         }
         return groups
+    }
+
+    public mutating func recordDirect(
+        member: String,
+        measurement: ProxyLatencyMeasurement,
+        in group: String
+    ) {
+        measurements[group, default: [:]][member] = measurement
     }
 
     public func measurement(for member: String, in group: String) -> ProxyLatencyMeasurement? {

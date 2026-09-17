@@ -4,6 +4,15 @@ import XCTest
 @testable import AetherRouteKit
 
 final class IndependentDistributionTests: XCTestCase {
+    func testConnectionAdmissionRechecksWallClockExpiry() {
+        let expiry = Date(timeIntervalSince1970: 2_000_000_000)
+        let access = DistributionConnectionAccess.authorizedUntil(expiry)
+        XCTAssertTrue(access.permitsNewConnection(at: expiry.addingTimeInterval(-1)))
+        XCTAssertFalse(access.permitsNewConnection(at: expiry))
+        XCTAssertFalse(access.permitsNewConnection(at: expiry.addingTimeInterval(86_400)))
+        XCTAssertTrue(DistributionConnectionAccess.free.permitsNewConnection(at: expiry))
+    }
+
     @TaskLocal private static var updateCommitCallerMarker = false
 
     private let productID = "com.example.aetherroute"

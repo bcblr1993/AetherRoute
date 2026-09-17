@@ -1,11 +1,9 @@
 name: Repository CI
 
-# Release-gated. These checks run on macOS runners, which bill at ten times the
-# Linux rate, so they fire only for an actual release tag (v1.0.1-build-2026091302
-# and friends) or when someone asks for them by hand. Ordinary commits to main
-# are guarded locally by scripts/test.sh instead.
 on:
+  pull_request:
   push:
+    branches: ["main"]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -38,3 +36,29 @@ jobs:
         run: brew install ripgrep
       - name: Run repository checks
         run: ./scripts/test_repository_ci.sh
+
+  product:
+    name: App, extensions and Swift regression tests
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - name: Check out source and pinned core
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          submodules: false
+      - name: Initialize the pinned core explicitly
+        run: git submodule update --init --checkout --recursive
+      - name: Install product check dependencies
+        run: |
+          brew install ripgrep jq
+          cargo install --locked cargo-about --version 0.9.1
+      - name: Build both embedded cores
+        run: |
+          rustup target add aarch64-apple-darwin
+          ./scripts/build_core.sh
+          ./scripts/build_direct_core.sh
+          ./scripts/generate_licenses.sh
+      - name: Build product and run Swift tests
+        run: ./scripts/test_product_build.sh
+      - name: Run source-built latency regression
+        run: sh Tests/ProxyLatencyMeasurement/run.sh

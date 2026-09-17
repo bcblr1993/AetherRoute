@@ -252,6 +252,7 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var routingModeMessage: String?
     @Published private(set) var routingModeMessageIsError = false
     @Published private(set) var isSwitchingNetworkEngine = false
+    private let engineReconnect = NetworkEngineReconnectCoordinator()
     @Published private(set) var networkEngineMessage: String?
     @Published private(set) var networkEngineMessageIsError = false
     @Published private(set) var isTransferringProfiles = false
@@ -762,6 +763,7 @@ final class TunnelManager: ObservableObject {
             "stage=setEnabled request=\(enabled ? "connect" : "disconnect", privacy: .public) state=\(Self.diagnosticEventCode(for: self.state).rawValue, privacy: .public) engine=\(self.networkEngineMode.rawValue, privacy: .public) routing=\(self.routingMode.rawValue, privacy: .public)"
         )
         if !enabled {
+            engineReconnect.cancel()
             // Invalidate before any guard or await. A connect request may still
             // be preparing resources even though NetworkExtension has not
             // received startVPNTunnel yet.
@@ -1260,6 +1262,9 @@ final class TunnelManager: ObservableObject {
     /// settle, the delegate cancels termination instead of leaving an
     /// unmanaged network extension active in the background.
     func disconnectForApplicationTermination() async -> Bool {
+        engineReconnect.cancel()
+        userIntendsToConnect = false
+        cancelAutomaticReconnect(reason: "applicationTermination")
         stopTelemetryPolling()
         cancelConnectionReadiness()
         runtimeEnvironmentResetTask?.cancel()
@@ -1290,200 +1295,104 @@ final class TunnelManager: ObservableObject {
             networkEngineMessageIsError = false
             return
         }
-
         let previousMode = networkEngineMode
         let shouldReconnect = isEnabled || managerConnectionIsActive
+        let currentRoutingMode = sessionRoutingMode ?? routingMode
         isSwitchingNetworkEngine = true
         networkEngineMessage = shouldReconnect
-            ? AppLocalization.string("Switching network engine…")
-            : nil
+            ? AppLocalization.string("Switching network engine…") : nil
         networkEngineMessageIsError = false
-        defer { isSwitchingNetworkEngine = false }
-
-        if shouldReconnect {
-            let originalConnectedSince = connectedSince
-            await performSeamlessNetworkEngineHandover(
-                from: previousMode,
-                to: mode,
-                originalConnectedSince: originalConnectedSince
-            )
-        } else {
+        defer {
+            isSwitchingNetworkEngine = false
+            if case .failed = state {} else {
+                lastObservedProviderStatus = manager?.connection.status
+                updateState()
+            }
+        }
+        guard shouldReconnect else {
             await applyNetworkEngineMode(mode)
             networkEngineMessage = AppLocalization.string("Network engine updated.")
-            networkEngineMessageIsError = false
-        }
-    }
-
-    private func performSeamlessNetworkEngineHandover(
-        from previousMode: NetworkEngineMode,
-        to targetMode: NetworkEngineMode,
-        originalConnectedSince: Date?
-    ) async {
-        Self.runtimeLogger.info(
-            "stage=handoverNetworkEngine begin from=\(previousMode.rawValue, privacy: .public) to=\(targetMode.rawValue, privacy: .public)"
-        )
-        let currentRoutingMode = sessionRoutingMode ?? routingMode
-
-        // 1. 优雅停止旧扩展
-        Self.runtimeLogger.info("stage=handoverNetworkEngine stoppingOldEngine")
-        stopTelemetryPolling()
-        if let oldConnection = manager?.connection, Self.isActiveProviderStatus(oldConnection.status) {
-            oldConnection.stopVPNTunnel()
-        }
-        let oldDrained = await waitForProviderToBecomeInactive(timeout: Self.networkEngineSwitchDrainTimeout)
-        guard oldDrained else {
-            Self.runtimeLogger.error("stage=handoverNetworkEngine oldEngineDrainTimeout")
-            networkEngineMessage = AppLocalization.string(
-                "The current network engine did not stop in time. It remains selected."
-            )
-            networkEngineMessageIsError = true
-            await attemptRollbackToEngine(
-                mode: previousMode,
-                routingMode: currentRoutingMode,
-                originalConnectedSince: originalConnectedSince,
-                errorMessage: networkEngineMessage
-            )
             return
         }
-
-        // 2. 卸载旧 manager 并切换模式
-        Self.runtimeLogger.info("stage=handoverNetworkEngine activatingTargetEngine")
-        detachManagerObserver()
-        networkEngineMode = targetMode
-        userDefaults.set(targetMode.rawValue, forKey: Self.networkEnginePreferenceKey)
-
+        state = .connecting
+        connectedSince = nil
+        cancelConnectionReadiness()
+        cancelAutomaticReconnect(reason: "switchingEngine")
+        stopTelemetryPolling()
+        var launchPayload: Data?
         do {
-            try await systemExtensionActivator.activate(
-                identifier: targetMode.providerBundleIdentifier
-            ) { [weak self] in
-                guard let self else { return }
-                self.failureContext = .configuration
-                self.systemExtensionApprovalRequired = true
-            }
-            await deactivateOpposingNetworkEngineManagers(for: targetMode)
-            let newManager = try await loadOrCreateManager()
-            installManager(newManager)
-
-            // 3. 准备启动快照与配置
-            let (_, launchPayload) = try await prepareLaunchSnapshotPayload(requestedMode: currentRoutingMode)
-            try await persistProviderConfiguration(
-                currentRoutingMode,
-                localProxy: providerLocalProxySettings,
-                in: newManager
+            let outcome = try await engineReconnect.run(
+                stop: { [self] in
+                    if let connection = manager?.connection, Self.isActiveProviderStatus(connection.status) {
+                        connection.stopVPNTunnel()
+                    }
+                    return await waitForProviderToBecomeInactive(timeout: Self.networkEngineSwitchDrainTimeout)
+                },
+                prepare: { [self] restoringPrevious in
+                    launchPayload = try await prepareNetworkEngineReconnect(
+                        mode: restoringPrevious ? previousMode : mode,
+                        routingMode: currentRoutingMode
+                    )
+                },
+                start: { [self] in
+                    guard distributionConnectionAccess.permitsNewConnection,
+                          let launchPayload,
+                          let session = manager?.connection as? NETunnelProviderSession else {
+                        throw CancellationError()
+                    }
+                    try session.startVPNTunnel(options: [
+                        ProviderLaunchSnapshotCodec.startOptionsKey: launchPayload as NSData
+                    ])
+                },
+                waitUntilConnected: { [self] in
+                    await waitForProviderConnectionStatus(.connected, timeout: Self.networkEngineSwitchSettleTimeout)
+                }
             )
-
-            guard let session = newManager.connection as? NETunnelProviderSession else {
-                throw TunnelManagerError.providerSessionUnavailable
-            }
-            let options: [String: NSObject] = [
-                ProviderLaunchSnapshotCodec.startOptionsKey: launchPayload as NSData
-            ]
-            Self.runtimeLogger.info("stage=handoverNetworkEngine startVPNTunnel submitted")
-            try session.startVPNTunnel(options: options)
-
-            // 4. 等待新扩展稳定连接
-            let connected = await waitForProviderConnectionStatus(.connected, timeout: Self.networkEngineSwitchSettleTimeout)
-            guard connected else {
-                throw TunnelManagerError.providerSessionUnavailable
-            }
-
-            // 5. 切换成功，对齐状态
-            Self.runtimeLogger.info("stage=handoverNetworkEngine success")
-            self.connectedSince = originalConnectedSince ?? newManager.connection.connectedDate ?? .now
-            self.sessionRoutingMode = currentRoutingMode
-            self.sessionNetworkEngineMode = targetMode
-            self.state = .connected
+            connectedSince = manager?.connection.connectedDate ?? .now
+            sessionRoutingMode = currentRoutingMode
+            sessionNetworkEngineMode = outcome == .switched ? mode : previousMode
+            state = .connected
             startTelemetryPollingIfNeeded()
-            networkEngineMessage = AppLocalization.string(
-                "Network engine switched without manual disconnection."
-            )
-            networkEngineMessageIsError = false
+            networkEngineMessage = AppLocalization.string(outcome == .switched
+                ? "Network engine switched without manual disconnection."
+                : "The new network engine could not connect. The previous engine was restored.")
+            networkEngineMessageIsError = outcome != .switched
+        } catch is CancellationError {
+            manager?.connection.stopVPNTunnel()
         } catch {
-            Self.runtimeLogger.error(
-                "stage=handoverNetworkEngine failed, initiating rollback: \(String(reflecting: error), privacy: .public)"
-            )
-            await attemptRollbackToEngine(
-                mode: previousMode,
-                routingMode: currentRoutingMode,
-                originalConnectedSince: originalConnectedSince,
-                errorMessage: AppLocalization.string(
-                    "The new network engine could not connect. The previous engine was restored."
-                )
-            )
+            // A failed rollback must not leave an unobserved connecting provider.
+            beginDisconnectionWatchdog(selfInitiated: true)
+            manager?.connection.stopVPNTunnel()
+            networkEngineMessage = AppLocalization.string("The new network engine and automatic rollback both failed.")
+            networkEngineMessageIsError = true
+            recordFailure(error, context: .provider)
         }
     }
 
-    private func attemptRollbackToEngine(
+    private func prepareNetworkEngineReconnect(
         mode: NetworkEngineMode,
-        routingMode: RoutingMode,
-        originalConnectedSince: Date?,
-        errorMessage: String?
-    ) async {
-        Self.runtimeLogger.info(
-            "stage=handoverNetworkEngine rollback begin mode=\(mode.rawValue, privacy: .public)"
-        )
-        if let currentConnection = manager?.connection, Self.isActiveProviderStatus(currentConnection.status) {
-            currentConnection.stopVPNTunnel()
-            _ = await waitForProviderToBecomeInactive(timeout: Self.networkEngineSwitchDrainTimeout)
-        }
-
+        routingMode: RoutingMode
+    ) async throws -> Data {
+        try engineReconnect.checkActive()
         detachManagerObserver()
         networkEngineMode = mode
         userDefaults.set(mode.rawValue, forKey: Self.networkEnginePreferenceKey)
-
-        do {
-            try await systemExtensionActivator.activate(
-                identifier: mode.providerBundleIdentifier
-            ) { [weak self] in
-                guard let self else { return }
-                self.failureContext = .configuration
-                self.systemExtensionApprovalRequired = true
-            }
-            await deactivateOpposingNetworkEngineManagers(for: mode)
-            let fallbackManager = try await loadOrCreateManager()
-            installManager(fallbackManager)
-
-            let (_, launchPayload) = try await prepareLaunchSnapshotPayload(requestedMode: routingMode)
-            try await persistProviderConfiguration(
-                routingMode,
-                localProxy: providerLocalProxySettings,
-                in: fallbackManager
-            )
-
-            guard let session = fallbackManager.connection as? NETunnelProviderSession else {
-                throw TunnelManagerError.providerSessionUnavailable
-            }
-            let options: [String: NSObject] = [
-                ProviderLaunchSnapshotCodec.startOptionsKey: launchPayload as NSData
-            ]
-            try session.startVPNTunnel(options: options)
-
-            let restored = await waitForProviderConnectionStatus(.connected, timeout: Self.networkEngineSwitchSettleTimeout)
-            if restored {
-                Self.runtimeLogger.info("stage=handoverNetworkEngine rollback success")
-                self.connectedSince = originalConnectedSince ?? fallbackManager.connection.connectedDate ?? .now
-                self.sessionRoutingMode = routingMode
-                self.sessionNetworkEngineMode = mode
-                self.state = .connected
-                startTelemetryPollingIfNeeded()
-                networkEngineMessage = errorMessage ?? AppLocalization.string(
-                    "The new network engine could not connect. The previous engine was restored."
-                )
-                networkEngineMessageIsError = true
-            } else {
-                throw TunnelManagerError.providerSessionUnavailable
-            }
-        } catch {
-            Self.runtimeLogger.error(
-                "stage=handoverNetworkEngine rollback failed completely: \(String(reflecting: error), privacy: .public)"
-            )
-            networkEngineMessage = AppLocalization.string(
-                "The new network engine and automatic rollback both failed."
-            )
-            networkEngineMessageIsError = true
-            invalidateCachedManager()
-            recordFailure(error, context: .provider)
+        try await systemExtensionActivator.activate(identifier: mode.providerBundleIdentifier) { [weak self] in
+            guard let self else { return }
+            self.failureContext = .configuration
+            self.systemExtensionApprovalRequired = true
         }
+        try engineReconnect.checkActive()
+        await deactivateOpposingNetworkEngineManagers(for: mode)
+        try engineReconnect.checkActive()
+        let newManager = try await loadOrCreateManager()
+        try engineReconnect.checkActive()
+        installManager(newManager)
+        let (_, payload) = try await prepareLaunchSnapshotPayload(requestedMode: routingMode)
+        try engineReconnect.checkActive()
+        try await persistProviderConfiguration(routingMode, localProxy: providerLocalProxySettings, in: newManager)
+        try engineReconnect.checkActive()
+        return payload
     }
 
     private func detachManagerObserver() {
@@ -1878,13 +1787,20 @@ final class TunnelManager: ObservableObject {
         prepareLatencyIndex()
         var affected: Set<String> = [groupName]
         for result in latency.results {
-            affected.formUnion(
-                latencyIndex.merge(
+            let merged = latencyIndex.merge(
+                member: result.member,
+                measurement: result.delayMilliseconds
+                    .map { .verified($0) } ?? .timedOut
+            )
+            affected.formUnion(merged)
+            if merged.isEmpty {
+                latencyIndex.recordDirect(
                     member: result.member,
                     measurement: result.delayMilliseconds
-                        .map { .verified($0) } ?? .timedOut
+                        .map { .verified($0) } ?? .timedOut,
+                    in: groupName
                 )
-            )
+            }
         }
         publishLatency(groups: affected, force: true)
     }
@@ -1940,9 +1856,31 @@ final class TunnelManager: ObservableObject {
             return
         }
 
-        // Layer one: bare TCP reachability, streamed. Members that are
-        // themselves strategy groups are excluded here and resolved by
-        // aggregation afterwards, exactly as in the all-groups sweep.
+        if state == .connected {
+            do {
+                let latency = try await makeProxySelectionProviderClient()
+                    .latency(
+                        group: groupName,
+                        url: Self.defaultLatencyTestURL,
+                        timeoutMilliseconds: Self.uiLatencyTimeoutMilliseconds
+                    )
+                guard runToken == currentLatencyRunToken else { return }
+                adoptProviderLatency(latency, forGroup: groupName)
+                let aggregated = latencyIndex.aggregateChildGroups()
+                publishLatency(groups: aggregated.union([groupName]), force: true)
+                let measured = proxyLatencies[groupName]?.results ?? []
+                Self.runtimeLogger.info(
+                    "stage=proxyLatency success results=\(measured.count, privacy: .public) responsive=\(measured.lazy.filter { $0.delayMilliseconds != nil }.count, privacy: .public)"
+                )
+                return
+            } catch {
+                Self.runtimeLogger.error(
+                    "stage=proxyLatency providerFailed group=\(groupName, privacy: .public) error=\(String(reflecting: error), privacy: .public)"
+                )
+            }
+        }
+
+        // Offline / fallback: bare TCP reachability, streamed.
         let probeTargets = Set(latencyIndex.probeTargets)
         await measureReachability(
             members: members.filter(probeTargets.contains),
@@ -1954,10 +1892,10 @@ final class TunnelManager: ObservableObject {
 
         let measured = proxyLatencies[groupName]?.results ?? []
         Self.runtimeLogger.info(
-            "stage=proxyLatency success results=\(measured.count, privacy: .public) responsive=\(measured.lazy.filter { $0.delayMilliseconds != nil }.count, privacy: .public)"
+            "stage=proxyLatency offlineSuccess results=\(measured.count, privacy: .public) responsive=\(measured.lazy.filter { $0.delayMilliseconds != nil }.count, privacy: .public)"
         )
 
-        // Layer two: upgrade the selected member to a verified number.
+        // Upgrade the selected member to a verified number if possible.
         await verifySelectedMemberLatency(
             group: groupName,
             runToken: runToken
@@ -2043,15 +1981,58 @@ final class TunnelManager: ObservableObject {
             measurement = memberName.uppercased() == "DIRECT"
                 ? .reachable(3)
                 : .reachable(36)
-        } else {
-            let endpoints = activeProfile
-                .map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
-            measurement = await Self.probeDirectMemberLatency(
+            recordLatency(
                 member: memberName,
-                endpoints: endpoints,
-                excludingVirtualInterfaces: shouldExcludeVirtualInterfaces
+                measurement: measurement,
+                runToken: runToken,
+                force: true
             )
+            Self.runtimeLogger.info(
+                "stage=proxyLatency memberSuccess group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) delay=\(measurement.delayMilliseconds.map(String.init) ?? "timeout", privacy: .public)"
+            )
+            guard runToken == currentLatencyRunToken else { return }
+            latencyIndex.aggregateChildGroups()
+            let allGroups = (activeProfileSummary?.proxyGroups ?? []).map(\.name)
+            publishLatency(groups: allGroups, force: true)
+            return
         }
+
+        if state == .connected {
+            if proxySelections[groupName]?.selectedMember == memberName {
+                await verifySelectedMemberLatency(
+                    group: groupName,
+                    runToken: runToken
+                )
+            } else {
+                do {
+                    let latency = try await makeProxySelectionProviderClient()
+                        .latency(
+                            group: groupName,
+                            url: Self.defaultLatencyTestURL,
+                            timeoutMilliseconds: Self.uiLatencyTimeoutMilliseconds
+                        )
+                    guard runToken == currentLatencyRunToken else { return }
+                    adoptProviderLatency(latency, forGroup: groupName)
+                } catch {
+                    Self.runtimeLogger.error(
+                        "stage=proxyLatency singleMemberProviderFailed group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) error=\(String(reflecting: error), privacy: .public)"
+                    )
+                }
+            }
+            guard runToken == currentLatencyRunToken else { return }
+            latencyIndex.aggregateChildGroups()
+            let allGroups = (activeProfileSummary?.proxyGroups ?? []).map(\.name)
+            publishLatency(groups: allGroups, force: true)
+            return
+        }
+
+        let endpoints = activeProfile
+            .map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
+        measurement = await Self.probeDirectMemberLatency(
+            member: memberName,
+            endpoints: endpoints,
+            excludingVirtualInterfaces: shouldExcludeVirtualInterfaces
+        )
         recordLatency(
             member: memberName,
             measurement: measurement,
@@ -2061,15 +2042,6 @@ final class TunnelManager: ObservableObject {
         Self.runtimeLogger.info(
             "stage=proxyLatency memberSuccess group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) delay=\(measurement.delayMilliseconds.map(String.init) ?? "timeout", privacy: .public)"
         )
-
-        // A single-node test targeting the selected member is also the cheapest
-        // chance to give it a verified number.
-        if proxySelections[groupName]?.selectedMember == memberName {
-            await verifySelectedMemberLatency(
-                group: groupName,
-                runToken: runToken
-            )
-        }
 
         guard runToken == currentLatencyRunToken else { return }
         latencyIndex.aggregateChildGroups()
@@ -2108,6 +2080,30 @@ final class TunnelManager: ObservableObject {
                     )
                 }
             }
+            let aggregated = latencyIndex.aggregateChildGroups()
+            publishLatency(groups: aggregated.union(claimed), force: true)
+            return
+        }
+
+        if state == .connected {
+            let client = makeProxySelectionProviderClient()
+            for group in claimed {
+                guard runToken == currentLatencyRunToken else { return }
+                do {
+                    let latency = try await client.latency(
+                        group: group,
+                        url: Self.defaultLatencyTestURL,
+                        timeoutMilliseconds: Self.uiLatencyTimeoutMilliseconds
+                    )
+                    guard runToken == currentLatencyRunToken else { return }
+                    adoptProviderLatency(latency, forGroup: group)
+                } catch {
+                    Self.runtimeLogger.error(
+                        "stage=allProxyLatency providerFailed group=\(group, privacy: .public) error=\(String(reflecting: error), privacy: .public)"
+                    )
+                }
+            }
+            guard runToken == currentLatencyRunToken else { return }
             let aggregated = latencyIndex.aggregateChildGroups()
             publishLatency(groups: aggregated.union(claimed), force: true)
             return
@@ -4460,7 +4456,7 @@ final class TunnelManager: ObservableObject {
     }
 
     var canPerformPrimaryAction: Bool {
-        if isSwitchingNetworkEngine { return false }
+        if isSwitchingNetworkEngine { return true }
         return switch state {
         case .disconnected, .failed:
             canConnect
@@ -4556,7 +4552,9 @@ final class TunnelManager: ObservableObject {
 
     private var distributionConnectionAccessDetail: String {
         switch distributionConnectionAccess {
-        case .free, .unrestrictedDevelopment, .authorized:
+        case .authorizedUntil where !distributionConnectionAccess.permitsNewConnection:
+            AppLocalization.string("The saved license has expired. Review Settings > Account.")
+        case .free, .unrestrictedDevelopment, .authorized, .authorizedUntil:
             AppLocalization.string("Traffic is using the normal network path")
         case .activationRequired:
             AppLocalization.string("Activate AetherRoute in Settings > Account before connecting.")
@@ -4897,7 +4895,10 @@ final class TunnelManager: ObservableObject {
         }
         let status = connection.status
         let previousProviderStatus = lastObservedProviderStatus
-        if isSwitchingNetworkEngine, status != .connected {
+        if isSwitchingNetworkEngine {
+            // A reconnect is a new session, not uninterrupted connectivity.
+            state = .connecting
+            connectedSince = nil
             lastObservedProviderStatus = status
             Self.runtimeLogger.info(
                 "stage=updateState switchingNetworkEngine transientStatus=\(status.rawValue, privacy: .public)"
@@ -5059,9 +5060,7 @@ final class TunnelManager: ObservableObject {
             failureContext = .provider
         }
         if status == .connected {
-            if !isSwitchingNetworkEngine || connectedSince == nil {
-                connectedSince = manager?.connection.connectedDate ?? connectedSince ?? .now
-            }
+            connectedSince = manager?.connection.connectedDate ?? connectedSince ?? .now
             let provider = manager?.protocolConfiguration as? NETunnelProviderProtocol
             do {
                 sessionRoutingMode = try TunnelProviderConfigurationCodec.routingMode(

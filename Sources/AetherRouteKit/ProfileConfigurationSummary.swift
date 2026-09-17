@@ -271,138 +271,113 @@ public struct RouteMatchResult: Identifiable, Equatable, Sendable {
     }
 }
 
+/// A destination-only preview cannot resolve runtime DNS, Geo databases,
+/// providers, source metadata, or the member selected by an outbound group.
+public enum RouteMatchAssessment: Equatable, Sendable {
+    case matched(RouteMatchResult)
+    case indeterminate(ruleOrder: Int?)
+    case noMatch
+    case invalidDestination
+}
+
 public enum RouteMatchEngine {
     public static func evaluate(destination: String, against rules: [RuleConfigurationSummary]) -> RouteMatchResult? {
-        let raw = destination.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !raw.isEmpty else { return nil }
-
-        var hostPart = raw
-        if let range = hostPart.range(of: "://") {
-            hostPart = String(hostPart[range.upperBound...])
-        }
-        if let slashIdx = hostPart.firstIndex(of: "/") {
-            hostPart = String(hostPart[..<slashIdx])
-        }
-
-        let host: String
-        if hostPart.hasPrefix("[") && hostPart.contains("]:") {
-            let sub = hostPart.dropFirst()
-            if let end = sub.firstIndex(of: "]") {
-                host = String(sub[..<end])
-            } else {
-                host = hostPart
-            }
-        } else if let colonIndex = hostPart.firstIndex(of: ":"), !hostPart.contains("::") {
-            host = String(hostPart[..<colonIndex])
-        } else {
-            host = hostPart
-        }
-
-        guard !host.isEmpty else { return nil }
-        let isIP = isIPAddress(host)
-
-        for rule in rules {
-            let kind = rule.kind.uppercased()
-            let criteria = rule.criteria?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
-            if kind.contains("DOMAIN-SUFFIX") {
-                if let criteria, !criteria.isEmpty {
-                    if host == criteria || host.hasSuffix("." + criteria) {
-                        return RouteMatchResult(
-                            matchedRule: rule,
-                            reason: "Matched domain suffix .\(criteria)",
-                            order: rule.order,
-                            target: rule.target
-                        )
-                    }
-                }
-            } else if kind.contains("DOMAIN-KEYWORD") {
-                if let criteria, !criteria.isEmpty, host.contains(criteria) {
-                    return RouteMatchResult(
-                        matchedRule: rule,
-                        reason: "Matched domain keyword '\(criteria)'",
-                        order: rule.order,
-                        target: rule.target
-                    )
-                }
-            } else if kind.contains("DOMAIN") {
-                if let criteria, !criteria.isEmpty, host == criteria {
-                    return RouteMatchResult(
-                        matchedRule: rule,
-                        reason: "Matched exact domain '\(criteria)'",
-                        order: rule.order,
-                        target: rule.target
-                    )
-                }
-            } else if kind.contains("IP-CIDR") || kind.contains("IP") {
-                if let criteria, !criteria.isEmpty {
-                    if isIP && matchesCIDR(ipString: host, cidrString: criteria) {
-                        return RouteMatchResult(
-                            matchedRule: rule,
-                            reason: "Matched subnet \(criteria)",
-                            order: rule.order,
-                            target: rule.target
-                        )
-                    } else if host == criteria {
-                        return RouteMatchResult(
-                            matchedRule: rule,
-                            reason: "Matched IP address \(criteria)",
-                            order: rule.order,
-                            target: rule.target
-                        )
-                    }
-                }
-            } else if kind.contains("GEOIP") || kind.contains("GEOSITE") {
-                if let criteria, !criteria.isEmpty {
-                    if host.contains(criteria) || host.hasSuffix(criteria) {
-                        return RouteMatchResult(
-                            matchedRule: rule,
-                            reason: "Matched Geo category \(criteria)",
-                            order: rule.order,
-                            target: rule.target
-                        )
-                    }
-                }
-            } else if kind.contains("MATCH") || rule.criteria == nil {
-                return RouteMatchResult(
-                    matchedRule: rule,
-                    reason: "Matched fallback catch-all rule",
-                    order: rule.order,
-                    target: rule.target
-                )
-            }
+        if case let .matched(result) = assess(destination: destination, against: rules) {
+            return result
         }
         return nil
     }
 
-    private static func isIPAddress(_ str: String) -> Bool {
-        var sin = sockaddr_in()
-        var sin6 = sockaddr_in6()
-        if str.withCString({ inet_pton(AF_INET, $0, &sin.sin_addr) }) == 1 { return true }
-        if str.withCString({ inet_pton(AF_INET6, $0, &sin6.sin6_addr) }) == 1 { return true }
-        return false
+    public static func assess(
+        destination: String,
+        against rules: [RuleConfigurationSummary],
+        totalRuleCount: Int? = nil
+    ) -> RouteMatchAssessment {
+        guard let host = destinationHost(destination) else { return .invalidDestination }
+        let address = addressBytes(host)
+        for rule in rules {
+            let kind = rule.kind.uppercased()
+            let criteria = rule.criteria?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let matches: Bool
+            switch kind {
+            case "MATCH", "FINAL":
+                matches = true
+            case "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD":
+                guard let criteria, !criteria.isEmpty else {
+                    return .indeterminate(ruleOrder: rule.order)
+                }
+                if address != nil { matches = false }
+                else if kind == "DOMAIN" { matches = host == criteria }
+                else if kind == "DOMAIN-SUFFIX" {
+                    matches = host == criteria || host.hasSuffix("." + criteria)
+                } else { matches = host.contains(criteria) }
+            case "IP-CIDR", "IP-CIDR6":
+                // A hostname may resolve into this subnet. Never skip it and
+                // claim a later MATCH is authoritative without DNS evidence.
+                guard let address, let criteria,
+                      let result = matchesCIDR(address: address, cidr: criteria) else {
+                    return .indeterminate(ruleOrder: rule.order)
+                }
+                matches = result
+            default:
+                // An earlier unsupported rule could win in the real core.
+                return .indeterminate(ruleOrder: rule.order)
+            }
+            if matches {
+                return .matched(RouteMatchResult(
+                    matchedRule: rule,
+                    reason: "Matched destination preview rule",
+                    order: rule.order,
+                    target: rule.target
+                ))
+            }
+        }
+        if let totalRuleCount, totalRuleCount > rules.count {
+            return .indeterminate(ruleOrder: nil)
+        }
+        return .noMatch
     }
 
-    private static func matchesCIDR(ipString: String, cidrString: String) -> Bool {
-        let parts = cidrString.split(separator: "/", maxSplits: 1)
-        guard parts.count == 2, let prefixLen = Int(parts[1]) else {
-            return ipString == cidrString
+    private static func destinationHost(_ destination: String) -> String? {
+        let raw = destination.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !raw.isEmpty, !raw.contains(where: { $0.isWhitespace }) else { return nil }
+        if addressBytes(raw) != nil { return raw }
+        let value = raw.contains("://") ? raw : "https://" + raw
+        guard let url = URLComponents(string: value),
+              url.user == nil, url.password == nil,
+              var host = url.host, !host.isEmpty else { return nil }
+        if host.hasPrefix("["), host.hasSuffix("]") {
+            host = String(host.dropFirst().dropLast())
+            guard addressBytes(host) != nil else { return nil }
         }
-        let netAddrStr = String(parts[0])
+        if host.hasSuffix(".") { host.removeLast() }
+        guard !host.isEmpty, !host.contains(":" ) || addressBytes(host) != nil else { return nil }
+        return host
+    }
 
-        var ipAddr = in_addr()
-        var netAddr = in_addr()
-        if ipString.withCString({ inet_pton(AF_INET, $0, &ipAddr) }) == 1,
-           netAddrStr.withCString({ inet_pton(AF_INET, $0, &netAddr) }) == 1 {
-            guard (0...32).contains(prefixLen) else { return false }
-            if prefixLen == 0 { return true }
-            let mask: UInt32 = prefixLen == 32 ? UInt32.max : (UInt32.max << (32 - prefixLen))
-            let ipHost = UInt32(bigEndian: ipAddr.s_addr)
-            let netHost = UInt32(bigEndian: netAddr.s_addr)
-            return (ipHost & mask) == (netHost & mask)
+    private static func addressBytes(_ text: String) -> [UInt8]? {
+        var ipv4 = in_addr()
+        if text.withCString({ inet_pton(AF_INET, $0, &ipv4) }) == 1 {
+            return withUnsafeBytes(of: ipv4) { Array($0) }
         }
-        if ipString == netAddrStr { return true }
-        return false
+        var ipv6 = in6_addr()
+        if text.withCString({ inet_pton(AF_INET6, $0, &ipv6) }) == 1 {
+            return withUnsafeBytes(of: ipv6) { Array($0) }
+        }
+        return nil
+    }
+
+    private static func matchesCIDR(address: [UInt8], cidr: String) -> Bool? {
+        let parts = cidr.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2, let network = addressBytes(String(parts[0])),
+              let prefix = Int(parts[1]), (0...network.count * 8).contains(prefix) else { return nil }
+        guard address.count == network.count else { return false }
+        for index in 0..<network.count {
+            let bits = min(8, max(0, prefix - index * 8))
+            let mask: UInt8 = bits == 0 ? 0 : UInt8.max << (8 - bits)
+            if address[index] & mask != network[index] & mask { return false }
+        }
+        return true
     }
 }
 

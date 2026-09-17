@@ -439,27 +439,28 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
             timeoutMilliseconds <= ProxySelectionProviderMessageCodec
                 .maximumLatencyTimeoutMilliseconds
         else { throw FlowCoreEngineError.selectorUnavailable }
-        return try gate.withLock {
+        let engineHandle: FlowCoreABIHandle = try gate.withLock {
             guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
             return try queue.sync {
                 guard phase == .running, let handle else {
                     throw FlowCoreEngineError.engineClosed
                 }
-                let result = backend.selectorLatency(
-                    engine: handle,
-                    group: group,
-                    url: url,
-                    timeoutMilliseconds: timeoutMilliseconds
-                )
-                guard
-                    result.status == FlowCoreABIStatus.success,
-                    let latencies = result.latencies
-                else {
-                    throw Self.selectorError(result.status, selecting: false)
-                }
-                return try ProxyLatencyResultCodec.decode(latencies)
+                return handle
             }
         }
+        let result = backend.selectorLatency(
+            engine: engineHandle,
+            group: group,
+            url: url,
+            timeoutMilliseconds: timeoutMilliseconds
+        )
+        guard
+            result.status == FlowCoreABIStatus.success,
+            let latencies = result.latencies
+        else {
+            throw Self.selectorError(result.status, selecting: false)
+        }
+        return try ProxyLatencyResultCodec.decode(latencies)
     }
 
     func testActiveProxyLatency(
@@ -475,27 +476,28 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
             timeoutMilliseconds <= ProxySelectionProviderMessageCodec
                 .maximumLatencyTimeoutMilliseconds
         else { throw FlowCoreEngineError.selectorUnavailable }
-        return try gate.withLock {
+        let engineHandle: FlowCoreABIHandle = try gate.withLock {
             guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
             return try queue.sync {
                 guard phase == .running, let handle else {
                     throw FlowCoreEngineError.engineClosed
                 }
-                let result = backend.selectorActiveLatency(
-                    engine: handle,
-                    group: group,
-                    url: url,
-                    timeoutMilliseconds: timeoutMilliseconds
-                )
-                guard
-                    result.status == FlowCoreABIStatus.success,
-                    let latencies = result.latencies
-                else {
-                    throw Self.selectorError(result.status, selecting: false)
-                }
-                return try ProxyLatencyResultCodec.decode(latencies)
+                return handle
             }
         }
+        let result = backend.selectorActiveLatency(
+            engine: engineHandle,
+            group: group,
+            url: url,
+            timeoutMilliseconds: timeoutMilliseconds
+        )
+        guard
+            result.status == FlowCoreABIStatus.success,
+            let latencies = result.latencies
+        else {
+            throw Self.selectorError(result.status, selecting: false)
+        }
+        return try ProxyLatencyResultCodec.decode(latencies)
     }
 
     func telemetrySnapshot(

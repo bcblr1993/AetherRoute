@@ -248,27 +248,6 @@ struct IndependentDistributionView: View {
         }
     }
 
-    private func saveVerifiedUpdate(_ manifest: SoftwareUpdateManifest) {
-        let panel = NSSavePanel()
-        panel.title = AppLocalization.string("Save Verified Update")
-        panel.prompt = AppLocalization.string("Download & Verify")
-        panel.allowedContentTypes = [.diskImage]
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.nameFieldStringValue =
-            "AetherRoute-\(manifest.version)-arm64.dmg"
-        guard panel.runModal() == .OK, let destinationURL = panel.url else {
-            return
-        }
-        Task {
-            guard let fileURL = await distribution.downloadUpdate(
-                manifest,
-                to: destinationURL
-            ) else { return }
-            NSWorkspace.shared.activateFileViewerSelecting([fileURL])
-        }
-    }
-
     private var hasStoredLicense: Bool {
         switch distribution.licenseState {
         case .active, .restricted: true
@@ -335,74 +314,6 @@ struct IndependentDistributionView: View {
                 String.localizedStringWithFormat(
                     AppLocalization.string("The signed receipt reports %@. Contact support before moving this license."),
                     localizedLicenseState(entitlement.state)
-            )
-        case let .failure(message):
-            message
-        }
-    }
-
-    private var updateSymbol: String {
-        switch distribution.updateState {
-        case .available: "arrow.down.circle.fill"
-        case .current: "checkmark.circle.fill"
-        case .failure: "exclamationmark.triangle.fill"
-        case .idle: "arrow.triangle.2.circlepath"
-        case .notConfigured: "wrench.and.screwdriver.fill"
-        }
-    }
-
-    private var updateTint: Color {
-        switch distribution.updateState {
-        case .available: .blue
-        case .current: Color.green
-        case .failure: .red
-        case .idle: .blue
-        case .notConfigured: .secondary
-        }
-    }
-
-    private var updateTitle: String {
-        switch distribution.updateState {
-        case .notConfigured:
-            AppLocalization.string("Update service not configured")
-        case .idle:
-            AppLocalization.string("Ready to check")
-        case .current:
-            AppLocalization.string("AetherRoute is up to date")
-        case let .available(manifest):
-            String.localizedStringWithFormat(
-                AppLocalization.string("AetherRoute %@ is available"),
-                manifest.version
-            )
-        case .failure:
-            AppLocalization.string("Update check failed")
-        }
-    }
-
-    private var updateDetail: String {
-        switch distribution.updateState {
-        case .notConfigured:
-            AppLocalization.string("Release builds require a signed HTTPS manifest owned by you.")
-        case .idle:
-            AppLocalization.string("Only a bounded, Ed25519-signed manifest is accepted. Downloads never install automatically.")
-        case let .current(date):
-            String.localizedStringWithFormat(
-                AppLocalization.string("Last checked %@"),
-                AppLocalization.date(
-                    date,
-                    date: .abbreviated,
-                    time: .shortened
-                )
-            )
-        case let .available(manifest):
-            String.localizedStringWithFormat(
-                AppLocalization.string("Build %lld · arm64 · published %@"),
-                Int64(manifest.build),
-                AppLocalization.date(
-                    manifest.publishedAt,
-                    date: .abbreviated,
-                    time: .omitted
-                )
             )
         case let .failure(message):
             message

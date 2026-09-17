@@ -145,6 +145,7 @@ struct RulesView: View {
     @State private var testQuery: String = ""
     @State private var testResult: RouteMatchResult? = nil
     @State private var hasAttemptedMatch: Bool = false
+    @State private var matchExplanation = ""
     @State private var highlightedRuleID: Int? = nil
 
     var body: some View {
@@ -276,7 +277,7 @@ struct RulesView: View {
                                         .textFieldStyle(.plain)
                                         .font(.system(size: 12.5, design: .monospaced))
                                         .onSubmit {
-                                            performMatch(rules: summary.rules)
+                                            performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
                                         }
 
                                         if !testQuery.isEmpty {
@@ -292,7 +293,7 @@ struct RulesView: View {
                                         }
 
                                         Button(AppLocalization.string("Test")) {
-                                            performMatch(rules: summary.rules)
+                                            performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
                                         }
                                         .buttonStyle(.borderedProminent)
                                         .controlSize(.small)
@@ -333,7 +334,7 @@ struct RulesView: View {
                                                     TargetPillView(target: result.target)
                                                 }
 
-                                                Text(result.reason)
+                                                Text(AppLocalization.string("Destination-only preview; the target may be a policy group."))
                                                     .font(.caption)
                                                     .foregroundStyle(.secondary)
                                             }
@@ -362,7 +363,7 @@ struct RulesView: View {
                                         HStack(spacing: AetherVisual.s2) {
                                             Image(systemName: "exclamationmark.triangle")
                                                 .foregroundStyle(.orange)
-                                            Text(AppLocalization.string("No rule matched. Traffic will follow default direct path."))
+                                            Text(matchExplanation)
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
@@ -541,7 +542,7 @@ struct RulesView: View {
                                             onTest: { destination in
                                                 testQuery = destination
                                                 showSimulator = true
-                                                performMatch(rules: summary.rules)
+                                                performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
                                             }
                                         )
                                         .id(rule.id)
@@ -581,9 +582,18 @@ struct RulesView: View {
         .accessibilityIdentifier("rules-page")
     }
 
-    private func performMatch(rules: [RuleConfigurationSummary]) {
+    private func performMatch(rules: [RuleConfigurationSummary], totalRuleCount: Int) {
         hasAttemptedMatch = true
-        testResult = RouteMatchEngine.evaluate(destination: testQuery, against: rules)
+        testResult = nil
+        switch RouteMatchEngine.assess(destination: testQuery, against: rules, totalRuleCount: totalRuleCount) {
+        case let .matched(result): testResult = result
+        case .indeterminate:
+            matchExplanation = AppLocalization.string("Cannot determine the route: runtime data or rules outside this preview are required.")
+        case .noMatch:
+            matchExplanation = AppLocalization.string("No preview rule matched. The runtime routing mode remains authoritative.")
+        case .invalidDestination:
+            matchExplanation = AppLocalization.string("Enter a valid domain, IP address, or URL.")
+        }
     }
 
     private func filteredRules(from rules: [RuleConfigurationSummary]) -> [RuleConfigurationSummary] {
@@ -1361,79 +1371,6 @@ private struct DNSCompactFact: View {
         .padding(.horizontal, AetherVisual.s5)
         .accessibilityElement(children: .combine)
     }
-}
-
-struct ProfileInspectionHeader: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    let profileName: String
-    let itemCount: Int
-    let groupCount: Int
-    let providerCount: Int
-
-    var body: some View {
-        HStack(spacing: AetherVisual.s5) {
-            ZStack {
-                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                    .fill(Color.teal.opacity(0.10))
-                Image(systemName: "checkmark.shield")
-                    .font(.system(size: 25, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
-                    .accessibilityHidden(true)
-            }
-            .frame(width: 58, height: 58)
-
-            VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                Text(profileName)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .help(profileName)
-                Text("Import safety checks passed. The core validates protocol semantics when a session starts.")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
-            CountBadge(value: itemCount, label: "Endpoints")
-            CountBadge(value: groupCount, label: "Groups")
-            if providerCount > 0 {
-                CountBadge(value: providerCount, label: "Providers")
-            }
-        }
-        .padding(AetherVisual.s5)
-        .featureCard()
-    }
-}
-
-private struct CountBadge: View {
-    let value: Int
-    let label: LocalizedStringKey
-
-    var body: some View {
-        VStack(spacing: AetherVisual.s1) {
-            Text(verbatim: String(value))
-                .font(.title3.weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(.primary)
-            Text(label)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.secondary)
-        }
-        .frame(minWidth: 52)
-        .padding(.horizontal, AetherVisual.s2)
-        .padding(.vertical, AetherVisual.s2)
-        .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-        }
-        .accessibilityElement(children: .contain)
-    }
-
 }
 
 struct FeatureSection<Content: View>: View {

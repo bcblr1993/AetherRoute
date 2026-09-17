@@ -18,9 +18,11 @@ The single host embeds both capture engines:
   NetworkExtension APIs and copies bounded packets between
   `NEPacketTunnelFlow` and the userspace PacketFlow core.
 
-The user chooses the engine before connecting. The selector is locked during a
-session, and visible state comes from the provider rather than the toggle's
-intent. There is no private `utun` lookup, KVC access, root helper, route
+The user can change engines while connected through a serialized stop-and-reconnect
+transaction. It drains the old provider before starting the target, shows a
+switching state and resets the session timer; it does not preserve existing
+TCP/UDP flows or promise uninterrupted capture. Cancellation also cancels
+rollback. Visible connectivity comes from provider state. There is no private `utun` lookup, KVC access, root helper, route
 subprocess, local listener inserted between Transparent Proxy and the core, or
 automatic activation after importing a profile.
 

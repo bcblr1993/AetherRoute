@@ -15,6 +15,9 @@ python3 "$ROOT/scripts/repository_worktree_snapshot.py" "$ROOT" \
 "$ROOT/scripts/test_repository_worktree_snapshot.sh"
 "$ROOT/scripts/test_ui_design_token_guards.sh"
 "$ROOT/scripts/test_external_profile_sanitizer.sh"
+sh "$ROOT/Tests/EngineReconnect/run.sh"
+sh "$ROOT/Tests/ProxyLatencyMeasurement/run.sh"
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_network_switch_gate.py"
 "$ROOT/Tests/SignedNEProbe/run.sh"
 
 # Syntax-check every script with the interpreter it actually declares.
