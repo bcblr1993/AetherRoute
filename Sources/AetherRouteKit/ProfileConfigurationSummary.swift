@@ -1,4 +1,5 @@
 import CoreFoundation
+import Darwin
 import Foundation
 
 public struct ProfileConfigurationSummary: Equatable, Sendable {
@@ -245,6 +246,163 @@ public struct RuleConfigurationSummary: Identifiable, Equatable, Sendable {
         self.kind = kind
         self.criteria = criteria
         self.target = target
+    }
+}
+
+public struct RouteMatchResult: Identifiable, Equatable, Sendable {
+    public let id: UUID
+    public let matchedRule: RuleConfigurationSummary
+    public let reason: String
+    public let order: Int
+    public let target: String
+
+    public init(
+        id: UUID = UUID(),
+        matchedRule: RuleConfigurationSummary,
+        reason: String,
+        order: Int,
+        target: String
+    ) {
+        self.id = id
+        self.matchedRule = matchedRule
+        self.reason = reason
+        self.order = order
+        self.target = target
+    }
+}
+
+public enum RouteMatchEngine {
+    public static func evaluate(destination: String, against rules: [RuleConfigurationSummary]) -> RouteMatchResult? {
+        let raw = destination.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !raw.isEmpty else { return nil }
+
+        var hostPart = raw
+        if let range = hostPart.range(of: "://") {
+            hostPart = String(hostPart[range.upperBound...])
+        }
+        if let slashIdx = hostPart.firstIndex(of: "/") {
+            hostPart = String(hostPart[..<slashIdx])
+        }
+
+        let host: String
+        if hostPart.hasPrefix("[") && hostPart.contains("]:") {
+            let sub = hostPart.dropFirst()
+            if let end = sub.firstIndex(of: "]") {
+                host = String(sub[..<end])
+            } else {
+                host = hostPart
+            }
+        } else if let colonIndex = hostPart.firstIndex(of: ":"), !hostPart.contains("::") {
+            host = String(hostPart[..<colonIndex])
+        } else {
+            host = hostPart
+        }
+
+        guard !host.isEmpty else { return nil }
+        let isIP = isIPAddress(host)
+
+        for rule in rules {
+            let kind = rule.kind.uppercased()
+            let criteria = rule.criteria?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+            if kind.contains("DOMAIN-SUFFIX") {
+                if let criteria, !criteria.isEmpty {
+                    if host == criteria || host.hasSuffix("." + criteria) {
+                        return RouteMatchResult(
+                            matchedRule: rule,
+                            reason: "Matched domain suffix .\(criteria)",
+                            order: rule.order,
+                            target: rule.target
+                        )
+                    }
+                }
+            } else if kind.contains("DOMAIN-KEYWORD") {
+                if let criteria, !criteria.isEmpty, host.contains(criteria) {
+                    return RouteMatchResult(
+                        matchedRule: rule,
+                        reason: "Matched domain keyword '\(criteria)'",
+                        order: rule.order,
+                        target: rule.target
+                    )
+                }
+            } else if kind.contains("DOMAIN") {
+                if let criteria, !criteria.isEmpty, host == criteria {
+                    return RouteMatchResult(
+                        matchedRule: rule,
+                        reason: "Matched exact domain '\(criteria)'",
+                        order: rule.order,
+                        target: rule.target
+                    )
+                }
+            } else if kind.contains("IP-CIDR") || kind.contains("IP") {
+                if let criteria, !criteria.isEmpty {
+                    if isIP && matchesCIDR(ipString: host, cidrString: criteria) {
+                        return RouteMatchResult(
+                            matchedRule: rule,
+                            reason: "Matched subnet \(criteria)",
+                            order: rule.order,
+                            target: rule.target
+                        )
+                    } else if host == criteria {
+                        return RouteMatchResult(
+                            matchedRule: rule,
+                            reason: "Matched IP address \(criteria)",
+                            order: rule.order,
+                            target: rule.target
+                        )
+                    }
+                }
+            } else if kind.contains("GEOIP") || kind.contains("GEOSITE") {
+                if let criteria, !criteria.isEmpty {
+                    if host.contains(criteria) || host.hasSuffix(criteria) {
+                        return RouteMatchResult(
+                            matchedRule: rule,
+                            reason: "Matched Geo category \(criteria)",
+                            order: rule.order,
+                            target: rule.target
+                        )
+                    }
+                }
+            } else if kind.contains("MATCH") || rule.criteria == nil {
+                return RouteMatchResult(
+                    matchedRule: rule,
+                    reason: "Matched fallback catch-all rule",
+                    order: rule.order,
+                    target: rule.target
+                )
+            }
+        }
+        return nil
+    }
+
+    private static func isIPAddress(_ str: String) -> Bool {
+        var sin = sockaddr_in()
+        var sin6 = sockaddr_in6()
+        if str.withCString({ inet_pton(AF_INET, $0, &sin.sin_addr) }) == 1 { return true }
+        if str.withCString({ inet_pton(AF_INET6, $0, &sin6.sin6_addr) }) == 1 { return true }
+        return false
+    }
+
+    private static func matchesCIDR(ipString: String, cidrString: String) -> Bool {
+        let parts = cidrString.split(separator: "/", maxSplits: 1)
+        guard parts.count == 2, let prefixLen = Int(parts[1]) else {
+            return ipString == cidrString
+        }
+        let netAddrStr = String(parts[0])
+
+        var ipAddr = in_addr()
+        var netAddr = in_addr()
+        if ipString.withCString({ inet_pton(AF_INET, $0, &ipAddr) }) == 1,
+           netAddrStr.withCString({ inet_pton(AF_INET, $0, &netAddr) }) == 1 {
+            guard (0...32).contains(prefixLen) else { return false }
+            if prefixLen == 0 { return true }
+            let mask: UInt32 = prefixLen == 32 ? UInt32.max : (UInt32.max << (32 - prefixLen))
+            let ipHost = UInt32(bigEndian: ipAddr.s_addr)
+            let netHost = UInt32(bigEndian: netAddr.s_addr)
+            return (ipHost & mask) == (netHost & mask)
+        }
+        if ipString == netAddrStr { return true }
+        return false
     }
 }
 

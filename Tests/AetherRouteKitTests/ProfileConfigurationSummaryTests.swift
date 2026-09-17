@@ -666,4 +666,68 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
             ).allowsIPv6
         )
     }
+
+    func testRouteMatchEngineEvaluatesInOrderAndMatchesDomainSuffix() {
+        let rules = [
+            RuleConfigurationSummary(id: 0, order: 1, kind: "DOMAIN-SUFFIX", criteria: "baizhiedu.xin", target: "DIRECT"),
+            RuleConfigurationSummary(id: 1, order: 2, kind: "DOMAIN-SUFFIX", criteria: "github.com", target: "PROXY"),
+            RuleConfigurationSummary(id: 2, order: 3, kind: "MATCH", criteria: nil, target: "FALLBACK"),
+        ]
+
+        let result1 = RouteMatchEngine.evaluate(destination: "baizhiedu.xin", against: rules)
+        XCTAssertNotNil(result1)
+        XCTAssertEqual(result1?.order, 1)
+        XCTAssertEqual(result1?.target, "DIRECT")
+
+        let result2 = RouteMatchEngine.evaluate(destination: "https://api.github.com/v1/user", against: rules)
+        XCTAssertNotNil(result2)
+        XCTAssertEqual(result2?.order, 2)
+        XCTAssertEqual(result2?.target, "PROXY")
+
+        let result3 = RouteMatchEngine.evaluate(destination: "unknown-site.org", against: rules)
+        XCTAssertNotNil(result3)
+        XCTAssertEqual(result3?.order, 3)
+        XCTAssertEqual(result3?.target, "FALLBACK")
+    }
+
+    func testRouteMatchEngineMatchesIPCIDRSubnets() {
+        let rules = [
+            RuleConfigurationSummary(id: 0, order: 1, kind: "IP-CIDR", criteria: "192.168.0.0/16", target: "DIRECT"),
+            RuleConfigurationSummary(id: 1, order: 2, kind: "IP-CIDR", criteria: "10.0.0.0/8", target: "LOCAL"),
+            RuleConfigurationSummary(id: 2, order: 3, kind: "MATCH", criteria: nil, target: "PROXY"),
+        ]
+
+        let res1 = RouteMatchEngine.evaluate(destination: "192.168.1.100", against: rules)
+        XCTAssertEqual(res1?.order, 1)
+        XCTAssertEqual(res1?.target, "DIRECT")
+
+        let res2 = RouteMatchEngine.evaluate(destination: "10.1.2.3:8080", against: rules)
+        XCTAssertEqual(res2?.order, 2)
+        XCTAssertEqual(res2?.target, "LOCAL")
+
+        let res3 = RouteMatchEngine.evaluate(destination: "8.8.8.8", against: rules)
+        XCTAssertEqual(res3?.order, 3)
+        XCTAssertEqual(res3?.target, "PROXY")
+    }
+
+    func testRouteMatchEngineMatchesDomainKeywordAndExactDomain() {
+        let rules = [
+            RuleConfigurationSummary(id: 0, order: 1, kind: "DOMAIN", criteria: "apple.com", target: "DIRECT"),
+            RuleConfigurationSummary(id: 1, order: 2, kind: "DOMAIN-KEYWORD", criteria: "google", target: "GOOGLE_PROXY"),
+            RuleConfigurationSummary(id: 2, order: 3, kind: "MATCH", criteria: nil, target: "FINAL"),
+        ]
+
+        let res1 = RouteMatchEngine.evaluate(destination: "apple.com", against: rules)
+        XCTAssertEqual(res1?.order, 1)
+        XCTAssertEqual(res1?.target, "DIRECT")
+
+        // Subdomain should not match exact DOMAIN apple.com, but should fall through
+        let res2 = RouteMatchEngine.evaluate(destination: "news.apple.com", against: rules)
+        XCTAssertEqual(res2?.order, 3)
+        XCTAssertEqual(res2?.target, "FINAL")
+
+        let res3 = RouteMatchEngine.evaluate(destination: "www.google.com.hk", against: rules)
+        XCTAssertEqual(res3?.order, 2)
+        XCTAssertEqual(res3?.target, "GOOGLE_PROXY")
+    }
 }

@@ -9156,6 +9156,286 @@
           }
         }
       }
+    },
+    "All Actions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部动作"
+          }
+        }
+      }
+    },
+    "Matched domain suffix .%@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命中域名后缀 .%@"
+          }
+        }
+      }
+    },
+    "Matched domain keyword '%@'": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命中域名关键字 '%@'"
+          }
+        }
+      }
+    },
+    "Matched exact domain '%@'": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命中完整域名 '%@'"
+          }
+        }
+      }
+    },
+    "Matched subnet %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命中网段 %@"
+          }
+        }
+      }
+    },
+    "Matched IP address %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命中 IP 地址 %@"
+          }
+        }
+      }
+    },
+    "Matched Geo category %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命中地理规则 %@"
+          }
+        }
+      }
+    },
+    "Matched fallback catch-all rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命中兜底全匹配规则"
+          }
+        }
+      }
+    },
+    "Direct: %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直连：%lld"
+          }
+        }
+      }
+    },
+    "Proxy: %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理：%lld"
+          }
+        }
+      }
+    },
+    "Reject: %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拦截：%lld"
+          }
+        }
+      }
+    },
+    "Hide Test": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起测试"
+          }
+        }
+      }
+    },
+    "Test Route": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试路由"
+          }
+        }
+      }
+    },
+    "Route Match Simulator": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路由匹配模拟器"
+          }
+        }
+      }
+    },
+    "Instant dry-run against active rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时模拟规则命中路径"
+          }
+        }
+      }
+    },
+    "Enter a domain (e.g. github.com) or IP (e.g. 192.168.1.1)…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入域名（如 github.com）或 IP（如 192.168.1.1）…"
+          }
+        }
+      }
+    },
+    "Test": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试"
+          }
+        }
+      }
+    },
+    "Matched Rule #%lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命中第 %lld 条规则"
+          }
+        }
+      }
+    },
+    "Locate": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定位"
+          }
+        }
+      }
+    },
+    "No rule matched. Traffic will follow default direct path.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未匹配到任何特定规则，流量将走默认策略。"
+          }
+        }
+      }
+    },
+    "Filter criteria, targets, or kinds…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索域名、IP、目标或类型…"
+          }
+        }
+      }
+    },
+    "Evaluation order (top to bottom)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自上而下按序匹配"
+          }
+        }
+      }
+    },
+    "Any remaining traffic (Fallback)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有剩余流量（兜底）"
+          }
+        }
+      }
+    },
+    "Copy criteria": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制匹配内容"
+          }
+        }
+      }
+    },
+    "Copy Criteria": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制匹配内容"
+          }
+        }
+      }
+    },
+    "Test This Destination": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试此项路由"
+          }
+        }
+      }
+    },
+    "Copy Full Rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制完整规则"
+          }
+        }
+      }
+    },
+    "Copy Target Name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制出口名称"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
