@@ -61,14 +61,19 @@
 - **严禁直接运行 `sign_update` 从系统钥匙串（Keychain）读取私钥**：
   开发者机器的钥匙串中经常包含其他软件项目（如 `NotchQuota`）的同名 Sparkle 密钥，直接使用 `--account` 或钥匙串默认密钥会导致使用错误项目的密钥签名！
 
-### 3. 正确签名流程（Mandatory Procedure）
-必须统一使用项目内置的专用脚本生成更新清单：
+### 3. 正确签名流程与更新弹窗规范（Mandatory Procedure）
+更新弹窗（Sparkle Update Dialog）内嵌 WebKit 渲染更新说明。为保证用户端视觉体验符合 Apple 原生规范（支持深浅色模式与分类徽标），`scripts/generate_sparkle_appcast.sh` 已内置现代卡片式 CSS 样式注入器。
+
+编写更新说明时必须分类书写（包括**新增特性**、**体验优化**、**问题修复**）：
 ```bash
+# 可直接传入结构化 HTML 片段（脚本会自动包裹 Apple HIG 样式与完整更新链接）
 sh scripts/generate_sparkle_appcast.sh \
   /path/to/dist/AetherRoute-<version>-build-<build>-arm64.dmg \
   "https://github.com/bcblr1993/AetherRoute/releases/download/v<version>/AetherRoute-<version>-build-<build>-arm64.dmg" \
-  "<h2>AetherRoute <version></h2><p>更新说明摘要...</p><p><a href=\"https://aetherroute.pages.dev/releases/<version>/\">完整更新日志</a></p>"
+  "<div class=\"section\"><span class=\"section-tag tag-feature\">✨ 新增特性</span><ul><li><strong>特性标题</strong>：详细技术说明与获益。</li></ul></div><div class=\"section\"><span class=\"section-tag tag-improve\">⚡️ 体验优化</span><ul><li><strong>优化标题</strong>：优化内容与体验改进。</li></ul></div><div class=\"section\"><span class=\"section-tag tag-fix\">🐞 问题修复</span><ul><li><strong>修复标题</strong>：解决的具体异常或边界缺陷。</li></ul></div>"
 ```
+也可以将更新日志保存为独立 HTML 文件传入文件路径，脚本会自动读取并格式化。
+
 **该脚本的安全保证**：
 1. 自动读取 `Config/sparkle_ed25519_priv.key` 进行 Ed25519 签名；
 2. 签名完成后，立即使用 `Config/sparkle_ed25519_pub.key` 自动执行反向验签断言（`publicKey.isValidSignature`）；若验签失败立即中断退出，彻底防止签名错误！

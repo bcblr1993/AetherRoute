@@ -121,22 +121,171 @@ if let precomputedSig = precomputedSig, !precomputedSig.isEmpty {
     finalSig = signature.base64EncodedString()
 }
 
-let downloadURL = customReleaseURL ?? "https://github.com/bcblr1993/AetherRoute/releases/download/v\(version)-build-\(build)/\(dmgFilename)"
+let downloadURL = customReleaseURL ?? "https://github.com/bcblr1993/AetherRoute/releases/download/v\(version)/\(dmgFilename)"
 
 let rfc822Formatter = DateFormatter()
 rfc822Formatter.locale = Locale(identifier: "en_US_POSIX")
 rfc822Formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss Z"
 let pubDate = rfc822Formatter.string(from: Date())
 
-let releaseNotesHTML = customNotes ?? """
-<h2>AetherRoute \(version) (Build \(build))</h2>
-<ul>
-  <li>Hardened transparent proxy with loopback and RFC 1918 private subnet isolation.</li>
-  <li>Enhanced subscription parsing with full Clash/Meta multi-node support.</li>
-  <li>Modernized deep sapphire visual system and native typography.</li>
-  <li>Added native Sparkle 2 automatic updates with Ed25519 signature verification.</li>
-</ul>
+func wrapWithAppleStyle(content: String, version: String, build: String) -> String {
+    if content.contains("<style>") {
+        return content
+    }
+    return """
+<style>
+  :root {
+    color-scheme: light dark;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    --border-color: rgba(0, 0, 0, 0.08);
+    --text-main: #111827;
+    --text-sub: #374151;
+    --text-muted: #6B7280;
+    --tag-bg-blue: #EFF6FF; --tag-text-blue: #1D4ED8; --tag-border-blue: #DBEAFE;
+    --tag-bg-green: #ECFDF5; --tag-text-green: #047857; --tag-border-green: #D1FAE5;
+    --tag-bg-red: #FEF2F2; --tag-text-red: #B91C1C; --tag-border-red: #FEE2E2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --border-color: rgba(255, 255, 255, 0.1);
+      --text-main: #F9FAFB;
+      --text-sub: #D1D5DB;
+      --text-muted: #9CA3AF;
+      --tag-bg-blue: rgba(59, 130, 246, 0.18); --tag-text-blue: #60A5FA; --tag-border-blue: rgba(96, 165, 250, 0.3);
+      --tag-bg-green: rgba(16, 185, 129, 0.18); --tag-text-green: #34D399; --tag-border-green: rgba(52, 211, 153, 0.3);
+      --tag-bg-red: rgba(239, 68, 68, 0.18); --tag-text-red: #F87171; --tag-border-red: rgba(248, 113, 113, 0.3);
+    }
+  }
+  body {
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-sub);
+    margin: 0;
+    padding: 12px 14px;
+    background: transparent;
+    -webkit-font-smoothing: antialiased;
+  }
+  .release-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .release-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-main);
+  }
+  .release-badge {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .section {
+    margin-bottom: 14px;
+  }
+  .section-tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    border: 1px solid transparent;
+  }
+  .tag-feature { background: var(--tag-bg-blue); color: var(--tag-text-blue); border-color: var(--tag-border-blue); }
+  .tag-improve { background: var(--tag-bg-green); color: var(--tag-text-green); border-color: var(--tag-border-green); }
+  .tag-fix { background: var(--tag-bg-red); color: var(--tag-text-red); border-color: var(--tag-border-red); }
+  ul {
+    margin: 0;
+    padding-left: 16px;
+  }
+  li {
+    margin-bottom: 6px;
+  }
+  li:last-child {
+    margin-bottom: 0;
+  }
+  li strong {
+    color: var(--text-main);
+    font-weight: 600;
+  }
+  code {
+    font-size: 11px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: rgba(127, 127, 127, 0.12);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  }
+  .footer-bar {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .footer-link {
+    color: #0066FF;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .footer-link:hover {
+    text-decoration: underline;
+  }
+</style>
+
+<div class="release-header">
+  <span class="release-title">AetherRoute \(version) 更新要点</span>
+  <span class="release-badge">Build \(build) · 建议更新</span>
+</div>
+\(content)
+<div class="footer-bar">
+  <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
+  <a class="footer-link" href="https://aetherroute.pages.dev/releases/\(version)/" target="_blank">查看网页完整更新日志 ↗</a>
+</div>
 """
+}
+
+var rawNotesContent = customNotes
+if let notesPath = customNotes, FileManager.default.fileExists(atPath: notesPath) {
+    if let fileContent = try? String(contentsOfFile: notesPath, encoding: .utf8) {
+        rawNotesContent = fileContent
+    }
+}
+
+let defaultNotesContent = """
+<div class="section">
+  <span class="section-tag tag-feature">✨ 新增特性</span>
+  <ul>
+    <li><strong>底层硬件热插拔检测器</strong>：引入 Darwin 硬件接口轮询与系统网络优先级匹配，秒级识别扩展坞与网卡热插拔。</li>
+    <li><strong>虚拟与容器网卡强力过滤</strong>：排除 Docker/OrbStack、桥接等 11 类接口，避免引擎误选断网。</li>
+    <li><strong>45秒宿主级自愈看门狗</strong>：网络重连超时时自动触发无缝热重启，保障长期运行零卡死。</li>
+  </ul>
+</div>
+<div class="section">
+  <span class="section-tag tag-improve">⚡️ 体验优化</span>
+  <ul>
+    <li><strong>Hero 卡片零抖动锁定</strong>：移除繁杂步骤条，永久锁定卡片高度，状态切换平滑无跳跃。</li>
+    <li><strong>配置列表升级为原生分组</strong>：彻底重塑 Profile 管理界面，还原 macOS 原生质感。</li>
+    <li><strong>节点列表顺序绝对固化</strong>：批量测速或切换策略时，严格保持配置原始声明顺序。</li>
+  </ul>
+</div>
+<div class="section">
+  <span class="section-tag tag-fix">🐞 问题修复</span>
+  <ul>
+    <li><strong>修复网络热插拔恢复死锁</strong>：彻底解决休眠恢复后插入有线网卡无限等待恢复的异常。</li>
+    <li><strong>修复并发测速级联故障</strong>：优化并发测速调度，消除策略组连带刷新延迟。</li>
+  </ul>
+</div>
+"""
+
+let releaseNotesHTML = wrapWithAppleStyle(content: rawNotesContent ?? defaultNotesContent, version: version, build: build)
+
 
 let appcastXML = """
 <?xml version="1.0" encoding="utf-8"?>
