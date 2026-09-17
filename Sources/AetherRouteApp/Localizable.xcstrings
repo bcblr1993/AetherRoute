@@ -5273,7 +5273,47 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "底库节点清单与 Providers"
+            "value": "节点解析与协议诊断（底库清单）"
+          }
+        }
+      }
+    },
+    "Diagnostic use only; inspects kernel protocol validation and raw endpoints.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用于排查订阅解析与内核协议支持状态，日常使用无需关注"
+          }
+        }
+      }
+    },
+    "Auto select fastest": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动优选最低延迟"
+          }
+        }
+      }
+    },
+    "Test all proxy groups across profile": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试配置内所有策略组的节点延迟"
+          }
+        }
+      }
+    },
+    "Test latency for current group nodes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试当前策略组内所有节点的延迟"
           }
         }
       }
