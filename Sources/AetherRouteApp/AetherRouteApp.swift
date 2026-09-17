@@ -23,9 +23,18 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        AppWindowManager.shared.showMainWindow()
+        return true
+    }
+
     func applicationShouldTerminate(
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {
+        AppWindowManager.shared.isTerminating = true
         Self.lifecycleLogger.info(
             "stage=applicationTermination source=AppKit requested pending=\(self.terminationReplyPending, privacy: .public)"
         )
@@ -84,6 +93,7 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
             return
         }
         signalTerminationPending = true
+        AppWindowManager.shared.isTerminating = true
         Self.lifecycleLogger.info(
             "stage=applicationTermination signal=SIGTERM received"
         )
@@ -111,15 +121,16 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
 struct WindowChromeSynchronizer: NSViewRepresentable {
     let title: String
     let showsTitle: Bool
+    var isMainWindow: Bool = false
 
     func makeNSView(context: Context) -> WindowChromeView {
         let view = WindowChromeView()
-        view.update(title: title, showsTitle: showsTitle)
+        view.update(title: title, showsTitle: showsTitle, isMainWindow: isMainWindow)
         return view
     }
 
     func updateNSView(_ nsView: WindowChromeView, context: Context) {
-        nsView.update(title: title, showsTitle: showsTitle)
+        nsView.update(title: title, showsTitle: showsTitle, isMainWindow: isMainWindow)
     }
 }
 
@@ -129,13 +140,18 @@ final class WindowChromeView: NSView {
 
     private var expectedTitle = ""
     private var showsWindowTitle = true
+    private var isMainWindow = false
     private weak var observedWindow: NSWindow?
     private let visibilityCoordinator = WindowVisibilityCoordinator()
 
-    func update(title: String, showsTitle: Bool) {
+    func update(title: String, showsTitle: Bool, isMainWindow: Bool = false) {
         expectedTitle = title
         showsWindowTitle = showsTitle
+        self.isMainWindow = isMainWindow
         applyWindowChrome()
+        if isMainWindow, let window {
+            AppWindowManager.shared.registerMainWindow(window)
+        }
     }
 
     override func viewDidMoveToWindow() {
@@ -143,6 +159,9 @@ final class WindowChromeView: NSView {
         stopObservingWindow()
         observedWindow = window
         visibilityCoordinator.observe(window)
+        if isMainWindow, let window {
+            AppWindowManager.shared.registerMainWindow(window)
+        }
         window?.addObserver(
             self,
             forKeyPath: "title",
@@ -276,6 +295,7 @@ struct AetherRouteApp: App {
     private var applicationDelegate
     @StateObject private var language: AppLanguageController
     @StateObject private var appearance: AppAppearanceController
+    @StateObject private var dockVisibility: AppDockVisibilityController
     @StateObject private var tunnel: TunnelManager
     @StateObject private var automation: AppAutomationController
     @StateObject private var distribution:
@@ -286,6 +306,8 @@ struct AetherRouteApp: App {
     init() {
         NavigationShortcutMonitor.install()
         _appearance = StateObject(wrappedValue: AppAppearanceController())
+        let dockVisibility = AppDockVisibilityController.shared
+        _dockVisibility = StateObject(wrappedValue: dockVisibility)
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
         if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] != nil {
             // MenuBarExtra can cause XCTest to observe a newly launched app as
@@ -343,6 +365,7 @@ struct AetherRouteApp: App {
         Settings {
             SettingsView()
                 .environmentObject(appearance)
+                .environmentObject(dockVisibility)
                 .environmentObject(tunnel)
                 .environmentObject(automation)
                 .environmentObject(distribution)
@@ -362,7 +385,7 @@ struct AetherRouteApp: App {
     }
 
     private var mainWindow: some Scene {
-        WindowGroup(productDisplayName, id: "main") {
+        Window(productDisplayName, id: "main") {
             Group {
 #if DEBUG
                 if isMenuPanelReview {
@@ -540,6 +563,9 @@ private struct MenuBarContent: View {
         .onChange(of: tunnel.activeProfile?.yaml) { _, _ in showingNodes = false }
         .onAppear {
             tunnel.setRealtimeTelemetryPreferred(true, for: "menubar")
+            AppWindowManager.shared.openWindowAction = { [openWindow] in
+                openWindow(id: "main")
+            }
         }
         .onDisappear {
             tunnel.setRealtimeTelemetryPreferred(false, for: "menubar")
@@ -808,8 +834,7 @@ private struct MenuBarContent: View {
 
             HStack(spacing: AetherVisual.s3) {
                 Button(AppLocalization.string("Open AetherRoute")) {
-                    openWindow(id: "main")
-                    NSApplication.shared.activate()
+                    AppWindowManager.shared.showMainWindow()
                 }
                 Spacer()
                 Button {
@@ -894,8 +919,7 @@ private struct MenuBarContent: View {
     }
 
     private func openMainWindow() {
-        openWindow(id: "main")
-        NSApplication.shared.activate()
+        AppWindowManager.shared.showMainWindow()
     }
 }
 
@@ -1150,6 +1174,7 @@ private struct SettingsView: View {
         IndependentDistributionController
     @EnvironmentObject private var language: AppLanguageController
     @EnvironmentObject private var appearance: AppAppearanceController
+    @EnvironmentObject private var dockVisibility: AppDockVisibilityController
     @State private var localProxyCopyMessage: String?
     @State private var selectedTab: SettingsTab?
 
@@ -1264,6 +1289,7 @@ private struct SettingsView: View {
     private var generalSettings: some View {
         Form {
             appearanceSettings
+            dockSettings
             languageSettings
 
 #if AETHERROUTE_INDEPENDENT
@@ -1359,6 +1385,28 @@ private struct SettingsView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var dockSettings: some View {
+        Section(AppLocalization.string("Dock & Menu Bar")) {
+            Toggle(
+                AppLocalization.string("Hide Dock icon"),
+                isOn: Binding(
+                    get: { dockVisibility.isDockIconHidden },
+                    set: { dockVisibility.setDockIconHidden($0) }
+                )
+            )
+            .accessibilityIdentifier("hide-dock-icon-toggle")
+
+            Text(
+                AppLocalization.string(
+                    "Keep AetherRoute in the menu bar only without a Dock icon. The main window can be reopened from the menu bar or by clicking the app icon."
+                )
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 

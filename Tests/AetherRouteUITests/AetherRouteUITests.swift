@@ -866,12 +866,8 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(proxiesNav.waitForExistence(timeout: 3))
         proxiesNav.click()
 
-        let testAllButton = app.buttons["test-all-proxy-groups"]
-        XCTAssertTrue(testAllButton.waitForExistence(timeout: 3))
-        XCTAssertTrue(testAllButton.isHittable)
-
         let latencyButton = app.buttons["proxy-test-latency-Balanced"]
-        if latencyButton.waitForExistence(timeout: 2) && latencyButton.isHittable {
+        if latencyButton.waitForExistence(timeout: 3) && latencyButton.isHittable {
             latencyButton.click()
         }
     }

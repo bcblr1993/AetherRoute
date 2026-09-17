@@ -708,6 +708,191 @@ struct DNSView: View {
             )
         }
 
+#if AETHERROUTE_INDEPENDENT
+        tunRuntimePolicyContent(dns)
+#else
+        resolutionBehaviorSection(dns)
+#endif
+
+        if dns.mode == .fakeIP || dns.fakeIPFilterCount > 0 {
+            HStack(alignment: .top, spacing: AetherVisual.s4) {
+                upstreamPrivacySection(dns)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                fakeIPSafeguardsSection(dns)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        } else {
+            upstreamPrivacySection(dns)
+        }
+
+        Label(
+            AppLocalization.string("This page is a privacy-safe view of the imported profile. The protocol core remains authoritative and validates DNS semantics when a session starts."),
+            systemImage: "info.circle"
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, AetherVisual.s1)
+    }
+
+    private func upstreamPrivacySection(_ dns: DNSConfigurationSummary) -> some View {
+        FeatureSection(title: AppLocalization.string("Upstream privacy"), symbol: "lock.shield") {
+            VStack(alignment: .leading, spacing: AetherVisual.s4) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                        Text(AppLocalization.string("Transport types"))
+                            .font(.subheadline.weight(.semibold))
+                        Text(AppLocalization.string("Server addresses stay hidden in this summary."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    Text(
+                        String.localizedStringWithFormat(
+                            AppLocalization.string("%lld total"),
+                            totalResolverCount(dns)
+                        )
+                    )
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.secondary)
+                }
+
+                if dns.upstreamTransports.isEmpty {
+                    Label(AppLocalization.string("No explicit upstream transport"), systemImage: "minus.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: AetherVisual.s2) {
+                        ForEach(dns.upstreamTransports, id: \.self) { transport in
+                            Label(
+                                transportTitle(transport),
+                                systemImage: transportSymbol(transport)
+                            )
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(transportColor(transport))
+                            .padding(.horizontal, AetherVisual.s3)
+                            .padding(.vertical, AetherVisual.s2)
+                            .background(
+                                transportColor(transport).opacity(0.09),
+                                in: Capsule()
+                            )
+                        }
+                    }
+                }
+
+                Divider()
+
+                Grid(alignment: .leading, horizontalSpacing: AetherVisual.s3, verticalSpacing: AetherVisual.s2) {
+                    GridRow {
+                        DNSCountLabel(AppLocalization.string("Bootstrap"))
+                        Spacer(minLength: 8)
+                        Text(verbatim: String(dns.defaultNameserverCount))
+                            .monospacedDigit()
+                    }
+                    GridRow {
+                        DNSCountLabel(AppLocalization.string("Proxy hostnames"))
+                        Spacer(minLength: 8)
+                        Text(verbatim: String(dns.proxyNameserverCount))
+                            .monospacedDigit()
+                    }
+                    GridRow {
+                        DNSCountLabel(AppLocalization.string("Local listener"))
+                        Spacer(minLength: 8)
+                        Text(
+                            dns.hasListener
+                                ? AppLocalization.string("Configured")
+                                : AppLocalization.string("None")
+                        )
+                    }
+                    GridRow {
+                        DNSCountLabel(AppLocalization.string("EDNS subnet"))
+                        Spacer(minLength: 8)
+                        Text(
+                            dns.hasEDNSClientSubnet
+                                ? AppLocalization.string("Configured")
+                                : AppLocalization.string("None")
+                        )
+                    }
+                }
+                .font(.subheadline)
+            }
+            .padding(AetherVisual.s5)
+            .featureCard()
+        }
+    }
+
+    private func fakeIPSafeguardsSection(_ dns: DNSConfigurationSummary) -> some View {
+        FeatureSection(title: AppLocalization.string("Fake-IP safeguards"), symbol: "wand.and.stars") {
+            VStack(alignment: .leading, spacing: AetherVisual.s4) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                        Text(AppLocalization.string("Address pool"))
+                            .font(.subheadline.weight(.semibold))
+                        Text(
+                            dns.hasExplicitFakeIPRange
+                                ? AppLocalization.string("Profile range")
+                                : AppLocalization.string("Core default")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    StatePill(
+                        title: modeTitle(dns.mode),
+                        color: modeColor(dns.mode),
+                        symbol: modeSymbol(dns.mode)
+                    )
+                }
+
+                HStack(spacing: AetherVisual.s2) {
+                    Label(
+                        dns.hasExplicitFakeIPRange
+                            ? AppLocalization.string("Profile range")
+                            : AppLocalization.string("Core default"),
+                        systemImage: "rectangle.3.group.bubble"
+                    )
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.indigo)
+                    .padding(.horizontal, AetherVisual.s3)
+                    .padding(.vertical, AetherVisual.s2)
+                    .background(
+                        Color.indigo.opacity(0.09),
+                        in: Capsule()
+                    )
+                }
+
+                Divider()
+
+                Grid(alignment: .leading, horizontalSpacing: AetherVisual.s3, verticalSpacing: AetherVisual.s2) {
+                    GridRow {
+                        DNSCountLabel(AppLocalization.string("Bypass filters"))
+                        Spacer(minLength: 8)
+                        Text(verbatim: String(dns.fakeIPFilterCount))
+                            .monospacedDigit()
+                    }
+                    GridRow {
+                        DNSCountLabel(AppLocalization.string("Fallback filter"))
+                        Spacer(minLength: 8)
+                        Text(
+                            dns.hasFallbackFilter
+                                ? AppLocalization.string("Configured")
+                                : AppLocalization.string("Default")
+                        )
+                    }
+                }
+                .font(.subheadline)
+            }
+            .padding(AetherVisual.s5)
+            .featureCard()
+        }
+    }
+
+#if !AETHERROUTE_INDEPENDENT
+    private func resolutionBehaviorSection(
+        _ dns: DNSConfigurationSummary
+    ) -> some View {
         FeatureSection(title: AppLocalization.string("Resolution behavior"), symbol: "switch.2") {
             VStack(spacing: 0) {
                 DNSSettingRow(
@@ -756,126 +941,8 @@ struct DNSView: View {
             }
             .featureCard()
         }
-
-#if AETHERROUTE_INDEPENDENT
-        tunRuntimePolicyContent(dns)
-#endif
-
-        FeatureSection(title: AppLocalization.string("Upstream privacy"), symbol: "lock.shield") {
-            VStack(alignment: .leading, spacing: AetherVisual.s4) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                        Text(AppLocalization.string("Transport types"))
-                            .font(.subheadline.weight(.semibold))
-                        Text(AppLocalization.string("Server addresses stay hidden in this summary."))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text(
-                        String.localizedStringWithFormat(
-                            AppLocalization.string("%lld total"),
-                            totalResolverCount(dns)
-                        )
-                    )
-                        .font(.caption.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-
-                if dns.upstreamTransports.isEmpty {
-                    Label(AppLocalization.string("No explicit upstream transport"), systemImage: "minus.circle")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    HStack(spacing: AetherVisual.s2) {
-                        ForEach(dns.upstreamTransports, id: \.self) { transport in
-                            Label(
-                                transportTitle(transport),
-                                systemImage: transportSymbol(transport)
-                            )
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(transportColor(transport))
-                            .padding(.horizontal, AetherVisual.s3)
-                            .padding(.vertical, AetherVisual.s2)
-                            .background(
-                                transportColor(transport).opacity(0.09),
-                                in: Capsule()
-                            )
-                        }
-                    }
-                }
-
-                Divider()
-
-                Grid(horizontalSpacing: 28, verticalSpacing: 10) {
-                    GridRow {
-                        DNSCountLabel(AppLocalization.string("Bootstrap"))
-                        Text(verbatim: String(dns.defaultNameserverCount))
-                            .monospacedDigit()
-                        DNSCountLabel(AppLocalization.string("Proxy hostnames"))
-                        Text(verbatim: String(dns.proxyNameserverCount))
-                            .monospacedDigit()
-                    }
-                    GridRow {
-                        DNSCountLabel(AppLocalization.string("Local listener"))
-                        Text(
-                            dns.hasListener
-                                ? AppLocalization.string("Configured")
-                                : AppLocalization.string("None")
-                        )
-                        DNSCountLabel(AppLocalization.string("EDNS subnet"))
-                        Text(
-                            dns.hasEDNSClientSubnet
-                                ? AppLocalization.string("Configured")
-                                : AppLocalization.string("None")
-                        )
-                    }
-                }
-                .font(.subheadline)
-            }
-            .padding(AetherVisual.s5)
-            .featureCard()
-        }
-
-        if dns.mode == .fakeIP || dns.fakeIPFilterCount > 0 {
-            FeatureSection(title: AppLocalization.string("Fake-IP safeguards"), symbol: "wand.and.stars") {
-                HStack(spacing: 0) {
-                    DNSCompactFact(
-                        title: AppLocalization.string("Address pool"),
-                        value: dns.hasExplicitFakeIPRange
-                            ? AppLocalization.string("Profile range")
-                            : AppLocalization.string("Core default"),
-                        symbol: "rectangle.3.group.bubble"
-                    )
-                    Divider().frame(height: 50)
-                    DNSCompactFact(
-                        title: AppLocalization.string("Bypass filters"),
-                        value: "\(dns.fakeIPFilterCount)",
-                        symbol: "line.3.horizontal.decrease.circle"
-                    )
-                    Divider().frame(height: 50)
-                    DNSCompactFact(
-                        title: AppLocalization.string("Fallback filter"),
-                        value: dns.hasFallbackFilter
-                            ? AppLocalization.string("Configured")
-                            : AppLocalization.string("Default"),
-                        symbol: "checkmark.shield"
-                    )
-                }
-                .padding(.vertical, AetherVisual.s2)
-                .featureCard()
-            }
-        }
-
-        Label(
-            AppLocalization.string("This page is a privacy-safe view of the imported profile. The protocol core remains authoritative and validates DNS semantics when a session starts."),
-            systemImage: "info.circle"
-        )
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, AetherVisual.s1)
     }
+#endif
 
 #if AETHERROUTE_INDEPENDENT
     private func automaticTUNDNSContent(
@@ -946,8 +1013,10 @@ struct DNSView: View {
 
                 Divider().padding(.leading, AetherVisual.s4)
                 dnsPolicyRow(
+                    symbol: modeSymbol(dns.mode),
+                    tint: modeColor(dns.mode),
                     title: AppLocalization.string("Resolution mode"),
-                    detail: AppLocalization.string("Choose Normal, Fake-IP, or Redir-host without rewriting imported YAML.")
+                    detail: modeDetail(dns.mode)
                 ) {
                     Picker("Resolution mode", selection: resolutionModeBinding) {
                         ForEach(DNSRuntimeResolutionMode.allCases, id: \.self) {
@@ -962,8 +1031,12 @@ struct DNSView: View {
 
                 Divider().padding(.leading, AetherVisual.s4)
                 dnsPolicyRow(
+                    symbol: "6.circle",
+                    tint: dns.allowsIPv6 ? .teal : .secondary,
                     title: AppLocalization.string("IPv6 answers"),
-                    detail: AppLocalization.string("Override whether the resolver returns AAAA answers.")
+                    detail: dns.allowsIPv6
+                        ? AppLocalization.string("AAAA responses are allowed by this profile.")
+                        : AppLocalization.string("AAAA responses are filtered by this profile.")
                 ) {
                     dnsBooleanPicker(
                         AppLocalization.string("IPv6 answers"),
@@ -974,13 +1047,42 @@ struct DNSView: View {
 
                 Divider().padding(.leading, AetherVisual.s4)
                 dnsPolicyRow(
+                    symbol: "arrow.triangle.branch",
+                    tint: dns.respectsRules ? .indigo : .secondary,
                     title: AppLocalization.string("Rule-aware queries"),
-                    detail: AppLocalization.string("Route upstream DNS queries through the rule engine.")
+                    detail: dns.respectsRules
+                        ? AppLocalization.string("Upstream queries follow the routing rule engine.")
+                        : AppLocalization.string("Upstream queries use the core's direct DNS path.")
                 ) {
                     dnsBooleanPicker(
                         AppLocalization.string("Rule-aware queries"),
                         selection: booleanBinding(\.respectsRules),
                         identifier: "dns-runtime-respect-rules"
+                    )
+                }
+
+                Divider().padding(.leading, AetherVisual.s4)
+                dnsPolicyRow(
+                    symbol: "house.and.flag",
+                    tint: dns.usesHosts ? .blue : .secondary,
+                    title: AppLocalization.string("Hosts mapping"),
+                    detail: dns.usesHosts
+                        ? AppLocalization.string("Profile hosts entries participate in resolution.")
+                        : AppLocalization.string("Profile hosts entries are ignored for DNS."),
+                    canDisable: false
+                ) {
+                    Text(
+                        dns.usesHosts
+                            ? AppLocalization.string("On")
+                            : AppLocalization.string("Off")
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(dns.usesHosts ? Color.blue : Color.secondary)
+                    .padding(.horizontal, AetherVisual.s3)
+                    .padding(.vertical, AetherVisual.s1)
+                    .background(
+                        (dns.usesHosts ? Color.blue : Color.secondary).opacity(0.12),
+                        in: Capsule()
                     )
                 }
 
@@ -1007,11 +1109,19 @@ struct DNSView: View {
     }
 
     private func dnsPolicyRow<Control: View>(
+        symbol: String,
+        tint: Color,
         title: String,
         detail: String,
+        canDisable: Bool = true,
         @ViewBuilder control: () -> Control
     ) -> some View {
         HStack(spacing: AetherVisual.s4) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+                .frame(width: 34, height: 34)
+                .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
@@ -1019,13 +1129,18 @@ struct DNSView: View {
                 Text(detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 16)
-            control()
-                .disabled(
-                    tunnel.networkEngineMode != .tun
-                        || !tunnel.canModifyDNSRuntimePolicy
-                )
+            if canDisable {
+                control()
+                    .disabled(
+                        tunnel.networkEngineMode != .tun
+                            || !tunnel.canModifyDNSRuntimePolicy
+                    )
+            } else {
+                control()
+            }
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s3)
@@ -1350,26 +1465,7 @@ private struct DNSCountLabel: View {
     var body: some View {
         Text(title)
             .foregroundStyle(.secondary)
-            .frame(minWidth: 110, alignment: .leading)
-    }
-}
-
-private struct DNSCompactFact: View {
-    let title: String
-    let value: String
-    let symbol: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            Label(title, systemImage: symbol)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.subheadline.weight(.semibold))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, AetherVisual.s5)
-        .accessibilityElement(children: .combine)
+            .frame(minWidth: 80, alignment: .leading)
     }
 }
 
@@ -1692,21 +1788,18 @@ private struct StatePill: View {
     var body: some View {
         Label {
             Text(title)
-                .foregroundStyle(.primary)
+                .foregroundStyle(color)
         } icon: {
             Image(systemName: symbol)
                 .foregroundStyle(color)
         }
-            .font(.body.weight(.medium))
-            .padding(.horizontal, AetherVisual.s3)
-            .padding(.vertical, AetherVisual.s2)
-            .background(
-                Color(nsColor: .controlBackgroundColor),
-                in: Capsule()
-            )
-            .overlay {
-                Capsule().stroke(color.opacity(0.52), lineWidth: 0.75)
-            }
+        .font(.caption.weight(.semibold))
+        .padding(.horizontal, AetherVisual.s3)
+        .padding(.vertical, AetherVisual.s1)
+        .background(
+            color.opacity(0.12),
+            in: Capsule()
+        )
     }
 }
 

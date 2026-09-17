@@ -105,19 +105,6 @@ struct ProxiesView: View {
                 }
 
                 Spacer()
-
-                Button {
-                    Task {
-                        await tunnel.testAllProxyGroupsLatency()
-                    }
-                } label: {
-                    Label(AppLocalization.string("Test all"), systemImage: "gauge.with.dots.needle.33percent")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(!tunnel.proxyLatencyRequests.isEmpty)
-                .help(AppLocalization.string("Test all proxy groups across profile"))
-                .accessibilityIdentifier("test-all-proxy-groups")
             }
 
             ScrollView(.horizontal, showsIndicators: false) {

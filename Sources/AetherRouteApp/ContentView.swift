@@ -145,10 +145,11 @@ struct ContentView: View {
         .overlay(alignment: .topLeading) {
             WindowChromeSynchronizer(
                 title: "AetherRoute",
-                showsTitle: false
+                showsTitle: false,
+                isMainWindow: true
             )
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
         }
         .animation(effectiveReduceMotion ? nil : .snappy(duration: 0.28), value: selectedSection)
         .onReceive(

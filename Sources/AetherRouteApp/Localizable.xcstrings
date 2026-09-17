@@ -1,6 +1,36 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Dock & Menu Bar": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dock 与菜单栏"
+          }
+        }
+      }
+    },
+    "Hide Dock icon": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏 Dock 图标"
+          }
+        }
+      }
+    },
+    "Keep AetherRoute in the menu bar only without a Dock icon. The main window can be reopened from the menu bar or by clicking the app icon.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启后 AetherRoute 仅在菜单栏常驻，不占用 Dock 栏。可通过菜单栏或重新点击应用图标唤起主面板。"
+          }
+        }
+      }
+    },
     "Add a subscription link or import a Clash-compatible configuration to get started.": {
       "localizations": {
         "zh-Hans": {
