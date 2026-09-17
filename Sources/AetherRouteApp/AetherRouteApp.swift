@@ -638,14 +638,47 @@ private struct MenuBarContent: View {
 
                 if let group = primaryGroup {
                     VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                        HStack {
-                            Text("Current Node")
-                                .font(.caption)
+                        HStack(spacing: AetherVisual.s2) {
+                            Text(verbatim: group.name.isEmpty ? AppLocalization.string("Current Node") : group.name)
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                            Spacer()
-                            if showingNodes && tunnel.proxyLatencyRequests.contains(group.name) {
-                                ProgressView().controlSize(.mini)
+                                .lineLimit(1)
+
+                            if !group.strategy.isEmpty {
+                                Text(verbatim: group.strategy.uppercased())
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(Color.accentColor)
+                                    .padding(.horizontal, AetherVisual.sCompact)
+                                    .padding(.vertical, AetherVisual.sMicro)
+                                    .background(Color.accentColor.opacity(0.12), in: Capsule())
                             }
+
+                            Spacer()
+
+                            let isTesting = tunnel.proxyLatencyRequests.contains(group.name)
+                            Button {
+                                Task { await tunnel.testProxyLatency(group: group.name) }
+                            } label: {
+                                HStack(spacing: AetherVisual.sMicro) {
+                                    if isTesting {
+                                        ProgressView()
+                                            .controlSize(.mini)
+                                    } else {
+                                        Image(systemName: "bolt.fill")
+                                            .font(.caption2)
+                                    }
+                                    Text(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
+                                        .font(.caption2.weight(.medium))
+                                }
+                                .foregroundStyle(isTesting ? Color.secondary : Color.primary)
+                                .padding(.horizontal, AetherVisual.sCompact)
+                                .padding(.vertical, AetherVisual.sMicro)
+                                .background(Color.secondary.opacity(0.12), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isTesting)
+                            .help(AppLocalization.string("Test all"))
+                            .accessibilityIdentifier("menu-proxy-speedtest-button")
                         }
                         Button {
                             withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {

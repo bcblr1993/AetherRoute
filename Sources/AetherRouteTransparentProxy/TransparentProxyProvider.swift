@@ -311,7 +311,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         Self.runtimeLog.lifecycle("stage=wake requested")
         // Was a fixed pair of resets at +0s and +1.5s. A laptop reopening onto
         // Wi-Fi is rarely ready that soon, and nothing re-ran afterwards.
-        recovery.trigger(reason: "wake")
+        recovery.trigger(reason: "wake", supersedes: true)
     }
 
     /// Probes the live route end to end. The provider's own sockets do not pass
@@ -456,7 +456,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         // `NEProvider.wake()` is not guaranteed to arrive, so the host's wake
         // request has to start the same converging run rather than a single
         // best-effort reset.
-        recovery.trigger(reason: "appMessage")
+        recovery.trigger(reason: "appMessage", supersedes: true)
         return .networkReset
     }
 

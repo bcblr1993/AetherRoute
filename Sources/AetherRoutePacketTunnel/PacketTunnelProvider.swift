@@ -206,7 +206,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
 
     override func wake() {
         Self.runtimeLogger.info("stage=wake requested")
-        recovery.trigger(reason: "wake")
+        lastResetInterface = nil
+        resetSucceeded = false
+        recovery.trigger(reason: "wake", supersedes: true)
     }
 
     override func handleAppMessage(
@@ -485,7 +487,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         // guaranteed to arrive — on a live host it never did across an entire
         // session. Route it through the coordinator so the app's single request
         // still gets the full converging retry loop instead of one attempt.
-        recovery.trigger(reason: "appMessage")
+        lastResetInterface = nil
+        resetSucceeded = false
+        recovery.trigger(reason: "appMessage", supersedes: true)
         return .networkReset
     }
 

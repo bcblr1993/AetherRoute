@@ -2090,8 +2090,8 @@ final class TunnelManager: ObservableObject {
             final class ProbeContext: @unchecked Sendable {
                 var hasCompleted = false
                 let lock = NSLock()
-                let connection: NWConnection
-                let timer: any DispatchSourceTimer
+                var connection: NWConnection?
+                var timer: (any DispatchSourceTimer)?
                 let continuation: CheckedContinuation<UInt32?, Never>
 
                 init(
@@ -2113,10 +2113,16 @@ final class TunnelManager: ObservableObject {
                         return false
                     }
                     guard shouldComplete else { return }
-                    timer.setEventHandler {}
-                    timer.cancel()
-                    connection.stateUpdateHandler = nil
-                    connection.cancel()
+                    if let timer {
+                        timer.setEventHandler {}
+                        timer.cancel()
+                        self.timer = nil
+                    }
+                    if let connection {
+                        connection.stateUpdateHandler = nil
+                        connection.cancel()
+                        self.connection = nil
+                    }
                     continuation.resume(returning: delay)
                 }
             }
@@ -2131,19 +2137,19 @@ final class TunnelManager: ObservableObject {
             )
             let startTime = DispatchTime.now()
 
-            timer.setEventHandler { [weak context] in
-                context?.complete(delay: nil)
+            timer.setEventHandler {
+                context.complete(delay: nil)
             }
             timer.resume()
 
-            connection.stateUpdateHandler = { [weak context] connState in
+            connection.stateUpdateHandler = { connState in
                 switch connState {
                 case .ready:
                     let elapsed = DispatchTime.now().uptimeNanoseconds - startTime.uptimeNanoseconds
                     let ms = UInt32(elapsed / 1_000_000)
-                    context?.complete(delay: max(1, ms))
+                    context.complete(delay: max(1, ms))
                 case .failed, .cancelled:
-                    context?.complete(delay: nil)
+                    context.complete(delay: nil)
                 default:
                     break
                 }
@@ -2721,28 +2727,34 @@ final class TunnelManager: ObservableObject {
         updateState()
 
         if event == .systemDidWake {
-            // One request is enough. The provider answers it by starting a
-            // converging recovery run that retries with backoff and stops on
-            // its own health check, so the host no longer needs to guess how
-            // long the link will take to come up. This used to fire twice, at
-            // +0.5s and +2.0s, and the host emits several wake notifications:
-            // on a live machine that produced four resets and four route
-            // reinstalls inside six seconds, all of them before the uplink was
-            // ready, after which nothing re-ran.
+            // One successful request is enough. The provider answers it by
+            // starting a converging recovery run that retries with backoff and
+            // stops on its own health check. If the IPC fails transiently (e.g.
+            // provider waking up or IPC timeout), retry up to 3 attempts.
             runtimeEnvironmentResetTask?.cancel()
             runtimeEnvironmentResetTask = Task { [weak self] in
                 guard let self, self.state == .connected else { return }
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                guard !Task.isCancelled, self.state == .connected else { return }
-                do {
-                    let client = self.makeProxySelectionProviderClient()
-                    try await client.resetNetwork()
-                    Self.runtimeLogger.info(
-                        "stage=handleRuntimeEnvironmentEvent resetNetwork success event=systemDidWake"
-                    )
-                } catch {
+                var lastError: Error?
+                for attempt in 1...3 {
+                    try? await Task.sleep(nanoseconds: attempt == 1 ? 500_000_000 : 1_000_000_000)
+                    guard !Task.isCancelled, self.state == .connected else { return }
+                    do {
+                        let client = self.makeProxySelectionProviderClient()
+                        try await client.resetNetwork()
+                        Self.runtimeLogger.info(
+                            "stage=handleRuntimeEnvironmentEvent resetNetwork success event=systemDidWake attempt=\(attempt, privacy: .public)"
+                        )
+                        return
+                    } catch {
+                        lastError = error
+                        Self.runtimeLogger.warning(
+                            "stage=handleRuntimeEnvironmentEvent resetNetwork attempt=\(attempt, privacy: .public) failed error=\(String(reflecting: error), privacy: .public)"
+                        )
+                    }
+                }
+                if let lastError {
                     Self.runtimeLogger.error(
-                        "stage=handleRuntimeEnvironmentEvent resetNetwork failed error=\(String(reflecting: error), privacy: .public)"
+                        "stage=handleRuntimeEnvironmentEvent resetNetwork failed error=\(String(reflecting: lastError), privacy: .public)"
                     )
                 }
             }
