@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.15 (Build 2026091706)</title>
-            <pubDate>Thu, 17 Sep 2026 16:54:18 +0800</pubDate>
-            <sparkle:version>2026091706</sparkle:version>
-            <sparkle:shortVersionString>1.0.15</sparkle:shortVersionString>
+            <title>Version 1.0.16 (Build 2026091801)</title>
+            <pubDate>Fri, 18 Sep 2026 07:52:05 +0800</pubDate>
+            <sparkle:version>2026091801</sparkle:version>
+            <sparkle:shortVersionString>1.0.16</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,40 +119,40 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.0.15 更新要点</span>
-  <span class="release-badge">Build 2026091706 · 建议更新</span>
+  <span class="release-title">AetherRoute 1.0.16 更新要点</span>
+  <span class="release-badge">Build 2026091801 · 建议更新</span>
 </div>
 <div class="section">
   <span class="section-tag tag-feature">✨ 新增特性</span>
   <ul>
-    <li><strong>主窗口单例生命周期统一</strong>：彻底统一 Dock 图标与菜单栏唤起的窗口实例，全局保持唯一主面板，杜绝重复创建或多窗口共存。</li>
-    <li><strong>隐藏 Dock 图标 / 仅菜单栏常驻</strong>：支持切换为极简 Accessory 常驻模式，关闭面板后后台平稳运行，点击状态栏菜单随时秒级唤出大面板。</li>
-    <li><strong>DNS 设置现代紧凑双列与一体化卡片</strong>：重构宽松纵向布局为标准紧凑双列网格，深度融合运行时状态与解析诊断卡片，移除重复多余操作。</li>
+    <li><strong>开机自启动管理</strong>：基于 macOS 原生 SMAppService 深度集成开机自启动，支持状态动态感知与系统权限未批准引导。</li>
+    <li><strong>连接意图持久化</strong>：引入独立线程安全意图存储层，严格区分用户主动操作与系统生命周期行为。</li>
+    <li><strong>设置界面开机启动配置项</strong>：在通用设置中新增开机自启动切换开关与说明，中英文完备本地化。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">⚡️ 体验优化</span>
   <ul>
-    <li><strong>窗口置顶唤醒体验优化</strong>：点击 Dock 图标或菜单栏激活项时平滑前置现有窗口，消除闪烁与层级错乱。</li>
-    <li><strong>DNS 页面信息密度与视觉层级升级</strong>：重新编排基础设置、高级特性与上游服务器列表层级，提升大屏阅读舒适度。</li>
+    <li><strong>退出/关机安全保护机制</strong>：退出与关机时安全切断 Network Extension 避免系统断网，同时完整保护原连接意图不被抹除。</li>
+    <li><strong>冷启动与开机智能自动恢复</strong>：启动时智能检测上次连接状态，此前为连接态且满足条件时自动秒级恢复连接，此前为关闭态则保持关闭。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-fix">🐞 稳定性验证</span>
   <ul>
-    <li><strong>虚拟机全场景矩阵测试 100% 通过</strong>：TUN / 透明代理双引擎 × 规则 / 全局 / 直连 6 种模式零故障回归。</li>
-    <li><strong>硬件网络热插拔与休眠长连接自愈验证</strong>：物理链路秒级自愈，锁屏长连接零重连保持。</li>
+    <li><strong>虚拟机全场景矩阵测试 100% 通过</strong>：Tart 虚拟机自动化全链路（连接-退出保护-冷启动重连-主动断开-保持断开）4 大场景 100% 通过。</li>
+    <li><strong>真实硬件 Mac mini 双机测试通过</strong>：物理真机联调闭环通过，系统扩展授权与真实网络路由无缝恢复。</li>
   </ul>
 </div>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.15/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.16/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.15/AetherRoute-1.0.15-build-2026091706-arm64.dmg"
-                sparkle:edSignature="1j2S/F2rHVU+rywvdy+8oT1LA0GTg6jUUP7G4O+6mnFlZ8oMKY1TmOUyqIDrk9HmY8XVxS1fA09T50JHk5xuBg=="
-                length="25535585"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.16/AetherRoute-1.0.16-build-2026091801-arm64.dmg"
+                sparkle:edSignature="Aum2DinGdAEcaWHG6ydCCTsqFK7B0do7LrxoerpmMINQCnas9iOE8755NDL71M/2crE6CV66s6V/fZcdTJcFDA=="
+                length="25549394"
                 type="application/octet-stream" />
         </item>
     </channel>

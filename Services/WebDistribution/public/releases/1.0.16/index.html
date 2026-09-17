@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-Hans" data-language="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AetherRoute 1.0.16 正式版本说明、更新日志、安装包下载与 SHA-256 校验和。">
+  <title>AetherRoute 1.0.16 正式版</title>
+  <link rel="icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="icon" href="/assets/favicon-dark.png?v=20260914.08" type="image/png" media="(prefers-color-scheme: dark)">
+  <link rel="alternate icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=20260914.08">
+  <link rel="stylesheet" href="/assets/site.css?v=20260914.08">
+  <script src="/assets/site.js?v=20260916.05" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content"><span data-lang="zh">跳到正文</span><span data-lang="en">Skip to content</span></a>
+  
+  <header class="site-header"><nav class="nav wrap" aria-label="Main navigation"><a class="brand" href="/"><img src="/assets/aetherroute-mark.png?v=20260914.08" srcset="/assets/aetherroute-mark.png?v=20260914.08 1x, /assets/aetherroute-mark-1024.png?v=20260914.08 2x" width="34" height="34" alt="">AetherRoute</a><div class="navlinks"><a href="/#experience"><span data-lang="zh">使用体验</span><span data-lang="en">Experience</span></a><a href="/releases/"><span data-lang="zh">版本更新</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">使用帮助</span><span data-lang="en">Support</span></a></div><div class="nav-actions"><button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button><a class="small-button" href="/releases/"><span data-lang="zh">获取 Mac 版</span><span data-lang="en">Get for Mac</span> <span aria-hidden="true">↗</span></a></div></nav></header>
+
+  <main id="content" class="shell">
+    <div class="page-hero">
+      <span class="eyebrow"><span data-lang="zh">正式版 · 已通过 Apple 公证</span><span data-lang="en">Release · Apple notarized</span></span>
+      <h1>AetherRoute 1.0.16</h1>
+      <p>Build 2026091801 · 2026-09-18 · Apple silicon · macOS 15.0+</p>
+      <div class="hero-actions"><a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.16/AetherRoute-1.0.16-build-2026091801-arm64.dmg"><span data-lang="zh">下载 1.0.16 正式版</span><span data-lang="en">Download 1.0.16 Release</span></a><a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.16">GitHub Release ↗</a><a class="button" href="/releases/1.0.15/"><span data-lang="zh">获取 1.0.15 历史版本</span><span data-lang="en">Get 1.0.15 previous release</span></a></div>
+    </div>
+
+    <article class="prose">
+<section><h2><span data-lang="zh">原生 macOS 开机自启动深度集成</span><span data-lang="en">Native macOS Launch at Login Integration</span></h2><ul><li><span data-lang="zh">基于 macOS 原生 ServiceManagement (SMAppService.mainApp) 框架构建，遵循沙盒与系统登录项安全规范。</span><span data-lang="en">Built with native ServiceManagement (SMAppService.mainApp) framework, strictly adhering to macOS sandbox and login items security standards.</span></li><li><span data-lang="zh">在设置面板中提供开机自启动直观切换开关，支持动态感知系统授权状态并提供未批准引导。</span><span data-lang="en">Provide an intuitive toggle in settings, dynamically reflecting system authorization status with guidance when approval is required.</span></li></ul></section>
+<section><h2><span data-lang="zh">退出保护与智能连接状态记忆恢复</span><span data-lang="en">Termination Protection & Smart State Recovery</span></h2><ul><li><span data-lang="zh">退出或关机时安全切断 Network Extension 避免系统网络瘫痪，同时锁定连接意图隔离标志，防止清理逻辑误判。</span><span data-lang="en">Safely disengage Network Extension on quit or reboot to protect OS networking while preserving user connection intent.</span></li><li><span data-lang="zh">应用冷启动或开机自启动就绪后，若退出前为连接状态且满足网络权限则自动秒级恢复连接；若此前为关闭状态则保持关闭。</span><span data-lang="en">Automatically reconnect on launch if connected before quit; gracefully remain disconnected if previously turned off.</span></li><li><span data-lang="zh">严格区分用户主动操作与系统生命周期断开，记忆状态始终精准体现用户真实意志。</span><span data-lang="en">Strictly distinguish manual user toggles from lifecycle cleanup, ensuring state memory accurately reflects user intent.</span></li></ul></section>
+<section><h2><span data-lang="zh">Tart 虚拟机与物理真机双机全生命周期验证</span><span data-lang="en">Dual-Machine Full Lifecycle Verification</span></h2><ul><li><span data-lang="zh">在 Tart 虚拟机（macOS 15.0 / arm64）中完成连接退出保护、冷启动自动重连、主动断开退出及冷启动保持断开 4 大全链路自动化测试，100% 通过。</span><span data-lang="en">Automated tests across all 4 lifecycle scenarios passed 100% in Tart VM.</span></li><li><span data-lang="zh">通过 SSH 在真实 Apple Silicon 硬件设备（Mac mini）上执行实机闭环联调，对齐正式签名与扩展权限，全量测试验证 100% 通过。</span><span data-lang="en">Physical hardware validation on Apple Silicon Mac mini completed with 100% pass rate.</span></li><li><span data-lang="zh">包含单元测试（ConnectionIntentStoreTests）与回归测试在内的 104+ 测试用例全部通过。</span><span data-lang="en">All unit and regression test suites (104+ test cases) passed with zero failures.</span></li></ul></section>
+<section><h2><span data-lang="zh">发布说明</span><span data-lang="en">Release Information</span></h2><ul><li><span data-lang="zh">此正式包使用正常生产核心，经过 Developer ID 签名及 Apple 官方公证，不包含 QA 自动化标记。</span><span data-lang="en">This stable package uses the normal production core, is Developer ID signed and Apple notarized, and contains no QA automation flags.</span></li><li><span data-lang="zh">经维护者授权，在虚拟机与物理真机详细测试全部通过后发布 v1.0.16 正式版。</span><span data-lang="en">Authorized by the maintainer for stable release following 100% pass across all test suites.</span></li></ul></section><section><h2><span data-lang="zh">下载与校验</span><span data-lang="en">Download and Verify</span></h2><div class="checksum">AetherRoute-1.0.16-build-2026091801-arm64.dmg</div><p>SHA-256</p><div class="checksum">186e8c2fd047977d1c79495caab1b0a549e5a30b2d76a9f33a6913a525d655d6</div></section>
+</article>
+  </main>
+
+  <footer class="wrap site-footer"><span>© 2026 AetherRoute <span class="footer-note"><span data-lang="zh">由编程不良人用心打造。</span><span data-lang="en">Made by BianChengBuLiangRen.</span></span></span><div><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">帮助</span><span data-lang="en">Support</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可</span><span data-lang="en">License</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub ↗</a></div></footer>
+</body>
+</html>
