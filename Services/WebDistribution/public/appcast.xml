@@ -6,18 +6,18 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.12 (Build 2026091702)</title>
-            <pubDate>Thu, 17 Sep 2026 10:49:02 +0800</pubDate>
-            <sparkle:version>2026091702</sparkle:version>
-            <sparkle:shortVersionString>1.0.12</sparkle:shortVersionString>
+            <title>Version 1.0.13 (Build 2026091703)</title>
+            <pubDate>Thu, 17 Sep 2026 13:11:26 +0800</pubDate>
+            <sparkle:version>2026091703</sparkle:version>
+            <sparkle:shortVersionString>1.0.13</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
-<h2>AetherRoute 1.0.12</h2><p>实现 TUN 与透明代理底层平滑热切与 UI 连贯切换；修复长时间休眠唤醒网络卡顿；新增规则路由模拟测试器与动作筛选；重构概览页面转场动效。</p><p><a href="https://aetherroute.pages.dev/releases/1.0.12/">完整更新日志</a></p>
+<h2>AetherRoute 1.0.13</h2><p>修复网络热插拔恢复死锁与虚拟网卡误选，新增宿主级自愈看门狗；重构配置管理为原生分组列表；固化节点顺序；Hero卡片零高度抖动优化。</p><p><a href="https://aetherroute.pages.dev/releases/1.0.13/">完整更新日志</a></p>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.12/AetherRoute-1.0.12-build-2026091702-arm64.dmg"
-                sparkle:edSignature="t3ZUofeYT1VOD+W0lFyzgLMkQq+AyYPN26ZSlO+WPakHQb0+S4uqERi8oXLI6/0cCMo5TUTJ/BEsK6MhwnroCg=="
-                length="25503702"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.13/AetherRoute-1.0.13-build-2026091703-arm64.dmg"
+                sparkle:edSignature="sSY8oMb95L5jmiudgz+mEvWRQjBgP71HU9q2PNkpkvOfkrFCM4c24wlnvCKeqmYgTCyN7Wp3gKpHufcIvqWHCg=="
+                length="23850150"
                 type="application/octet-stream" />
         </item>
     </channel>
