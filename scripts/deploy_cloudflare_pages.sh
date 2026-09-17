@@ -18,6 +18,6 @@ for file in "$PUBLIC/index.html" "$PUBLIC/404.html" "$PUBLIC/_headers" "$PUBLIC/
 done
 
 echo "==> Deploying AetherRoute Web Distribution to Cloudflare Pages..."
-npx wrangler pages deploy "$PUBLIC" --project-name=aetherroute --commit-dirty=true "$@"
+npx --yes wrangler@3 pages deploy "$PUBLIC" --project-name=aetherroute --commit-dirty=true "$@"
 
 echo "==> Successfully deployed to Cloudflare Pages: https://aetherroute.pages.dev/"
