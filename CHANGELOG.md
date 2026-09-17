@@ -4,6 +4,43 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.16] - 2026-09-18
+
+### Added
+
+- Launch at Login Management (`AppStartupController`):
+  integrated native macOS `ServiceManagement.SMAppService.mainApp` to provide seamless,
+  sandboxed launch-at-login capability with dynamic status observation and granular
+  system permission guidance in Settings -> General.
+- Persistent Connection Intent Store (`ConnectionIntentStore` in `AetherRouteKit`):
+  introduced a dedicated thread-safe persistence layer capturing the user's explicit
+  connection intent, cleanly decoupled from UI review mode and transient lifecycle states.
+- Settings Interface & Localization:
+  added "Launch at login" toggle, informational guidance, and permission requirement
+  callouts in the General settings view with complete English and Simplified Chinese localizations.
+
+### Changed
+
+- Intelligent Connection State Memory & Auto-Recovery (`TunnelManager`):
+  - Application Termination Protection: when the application terminates or the system
+    shuts down, `disconnectForApplicationTermination()` safely disengages the Network Extension
+    to prevent OS-level routing paralysis while preserving the user's intended connection
+    state without falsely recording a manual disconnect.
+  - Startup Auto-Reconnect: during the startup sequence, if the tunnel was actively connected
+    prior to termination and network distribution permissions permit, AetherRoute automatically
+    restores the proxy connection seamlessly; if disconnected prior to termination, it remains disconnected.
+  - User Intent Tracking: accurately distinguishes between manual user disconnects and
+    lifecycle cleanup disconnections, ensuring state memory strictly reflects user intent.
+
+### Verified
+
+- Multi-Environment Full Lifecycle Verification:
+  - Tart Virtual Machine (`aether-diag-1434` / macOS 15.0 arm64): completed all 4 lifecycle
+    scenarios (connect -> terminate-with-protection -> cold-start auto-connect -> manual disconnect
+    -> cold-start remain-off) with 100% pass rate.
+  - Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`): verified end-to-end against production
+    Network Extension profiles and system extension approval with 100% pass rate.
+
 ## [1.0.15] - 2026-09-17
 
 ### Added
