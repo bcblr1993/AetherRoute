@@ -400,6 +400,8 @@ final class TunnelManager: ObservableObject {
     /// status and therefore goes false the instant the tunnel drops — exactly
     /// when a reconnect needs to know whether the user still wants one.
     private var userIntendsToConnect = false
+    private let connectionIntentStore: ConnectionIntentStore
+    private var isApplicationTerminating = false
     private var providerConnectionID: UUID?
     private var readinessVerifiedConnectionID: UUID?
     private var readinessFailureStopPending = false
@@ -414,11 +416,16 @@ final class TunnelManager: ObservableObject {
         isSystemSleeping || Date().timeIntervalSince(lastSystemWakeAt) < wakeGracePeriodDuration
     }
 
+    var wasConnectedBeforeTermination: Bool {
+        connectionIntentStore.wasConnected
+    }
+
     init(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         privacyConsentStore: PrivacyConsentStore = PrivacyConsentStore(),
         routingModePreferenceStore: RoutingModePreferenceStore =
             RoutingModePreferenceStore(),
+        connectionIntentStore: ConnectionIntentStore? = nil,
         userDefaults: UserDefaults = .standard,
         subscriptionClient: ProfileSubscriptionClient = .live(),
         routingResourceDownloadClient: RoutingResourceDownloadClient = .live(),
@@ -432,6 +439,7 @@ final class TunnelManager: ObservableObject {
         self.qaAutomationEnvironment = environment
         self.privacyConsentStore = privacyConsentStore
         self.routingModePreferenceStore = routingModePreferenceStore
+        self.connectionIntentStore = connectionIntentStore ?? ConnectionIntentStore(defaults: userDefaults)
         self.userDefaults = userDefaults
         self.subscriptionClient = subscriptionClient
         self.routingResourceDownloadClient = routingResourceDownloadClient
@@ -679,11 +687,28 @@ final class TunnelManager: ObservableObject {
             if state == .disconnected {
                 await refreshSubscriptionIfDue()
             }
+            await restorePreviousConnectionIfRequested()
             await connectForQAAutomationIfRequested()
         } catch {
             systemExtensionApprovalRequired = false
             recordFailure(error, context: .configuration)
         }
+    }
+
+    private func restorePreviousConnectionIfRequested() async {
+        guard !isUIReviewMode else { return }
+        guard wasConnectedBeforeTermination else { return }
+        guard state == .disconnected else { return }
+        guard canConnect else {
+            Self.runtimeLogger.info(
+                "stage=startup autoReconnect skipped reason=cannotConnect"
+            )
+            return
+        }
+        Self.runtimeLogger.info(
+            "stage=startup autoReconnect restoring previous connection"
+        )
+        await setEnabled(true)
     }
 
     /// Starts the tunnel without UI so an acceptance run can be unattended.
@@ -774,6 +799,9 @@ final class TunnelManager: ObservableObject {
             // or the tunnel would come back up after they asked for it down.
             userIntendsToConnect = false
             cancelAutomaticReconnect(reason: "userDisconnected")
+            if !isApplicationTerminating && !isUIReviewMode {
+                connectionIntentStore.save(intendedConnected: false)
+            }
         }
         guard ensurePrivacyConsent() else { return }
         guard !enabled || distributionConnectionAccess.permitsNewConnection
@@ -806,6 +834,9 @@ final class TunnelManager: ObservableObject {
             // An explicit connect supersedes any reconnect still waiting out
             // its delay, and restores the full retry budget for the next drop.
             userIntendsToConnect = true
+            if !isUIReviewMode {
+                connectionIntentStore.save(intendedConnected: true)
+            }
             if !isAutomaticReconnect {
                 cancelAutomaticReconnect(reason: "userConnected")
                 automaticReconnectAttempt = 0
@@ -1267,6 +1298,11 @@ final class TunnelManager: ObservableObject {
     /// settle, the delegate cancels termination instead of leaving an
     /// unmanaged network extension active in the background.
     func disconnectForApplicationTermination() async -> Bool {
+        isApplicationTerminating = true
+        let wasActive = managerConnectionIsActive || userIntendsToConnect
+        if wasActive && !isUIReviewMode {
+            connectionIntentStore.save(intendedConnected: true)
+        }
         engineReconnect.cancel()
         userIntendsToConnect = false
         cancelAutomaticReconnect(reason: "applicationTermination")
@@ -1276,7 +1312,7 @@ final class TunnelManager: ObservableObject {
         runtimeEnvironmentResetTask = nil
         guard managerConnectionIsActive else { return true }
         Self.runtimeLogger.info(
-            "stage=applicationTermination disconnect begin"
+            "stage=applicationTermination disconnect begin wasActive=\(wasActive, privacy: .public)"
         )
         await setEnabled(false)
         let stopped = await waitForProviderToBecomeInactive(

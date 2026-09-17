@@ -1,6 +1,46 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Startup": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动"
+          }
+        }
+      }
+    },
+    "Launch at login": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开机自启动"
+          }
+        }
+      }
+    },
+    "Automatically start AetherRoute when logging into macOS. If connected before quitting, it will automatically reconnect upon launch.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在登录 macOS 时自动启动 AetherRoute。若退出或关机前处于连接状态，启动后将自动恢复连接。"
+          }
+        }
+      }
+    },
+    "AetherRoute requires approval in System Settings > General > Login Items & Extensions.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute 需要在「系统设置 > 通用 > 登录项与扩展」中予以允许。"
+          }
+        }
+      }
+    },
     "Dock & Menu Bar": {
       "localizations": {
         "zh-Hans": {

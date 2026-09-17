@@ -296,6 +296,7 @@ struct AetherRouteApp: App {
     @StateObject private var language: AppLanguageController
     @StateObject private var appearance: AppAppearanceController
     @StateObject private var dockVisibility: AppDockVisibilityController
+    @StateObject private var startup: AppStartupController
     @StateObject private var tunnel: TunnelManager
     @StateObject private var automation: AppAutomationController
     @StateObject private var distribution:
@@ -308,6 +309,7 @@ struct AetherRouteApp: App {
         _appearance = StateObject(wrappedValue: AppAppearanceController())
         let dockVisibility = AppDockVisibilityController.shared
         _dockVisibility = StateObject(wrappedValue: dockVisibility)
+        _startup = StateObject(wrappedValue: AppStartupController.shared)
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
         if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] != nil {
             // MenuBarExtra can cause XCTest to observe a newly launched app as
@@ -366,6 +368,7 @@ struct AetherRouteApp: App {
             SettingsView()
                 .environmentObject(appearance)
                 .environmentObject(dockVisibility)
+                .environmentObject(startup)
                 .environmentObject(tunnel)
                 .environmentObject(automation)
                 .environmentObject(distribution)
@@ -1175,6 +1178,7 @@ private struct SettingsView: View {
     @EnvironmentObject private var language: AppLanguageController
     @EnvironmentObject private var appearance: AppAppearanceController
     @EnvironmentObject private var dockVisibility: AppDockVisibilityController
+    @EnvironmentObject private var startup: AppStartupController
     @State private var localProxyCopyMessage: String?
     @State private var selectedTab: SettingsTab?
 
@@ -1290,6 +1294,7 @@ private struct SettingsView: View {
         Form {
             appearanceSettings
             dockSettings
+            startupSettings
             languageSettings
 
 #if AETHERROUTE_INDEPENDENT
@@ -1407,6 +1412,43 @@ private struct SettingsView: View {
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var startupSettings: some View {
+        Section(AppLocalization.string("Startup")) {
+            Toggle(
+                AppLocalization.string("Launch at login"),
+                isOn: Binding(
+                    get: { startup.isLaunchAtLoginEnabled },
+                    set: { startup.setLaunchAtLoginEnabled($0) }
+                )
+            )
+            .accessibilityIdentifier("launch-at-login-toggle")
+
+            Text(
+                AppLocalization.string(
+                    "Automatically start AetherRoute when logging into macOS. If connected before quitting, it will automatically reconnect upon launch."
+                )
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+            if startup.serviceStatus == .requiresApproval {
+                Label(
+                    AppLocalization.string(
+                        "AetherRoute requires approval in System Settings > General > Login Items & Extensions."
+                    ),
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(.yellow)
+            } else if let error = startup.errorMessage {
+                Label(error, systemImage: "exclamationmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
         }
     }
 
