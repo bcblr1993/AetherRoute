@@ -4,6 +4,47 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.12] - 2026-09-17
+
+### Added
+
+- Seamless Network Engine Handover (`performSeamlessNetworkEngineHandover` in
+  `TunnelManager`): switching between TUN and Transparent Proxy modes is now
+  executed via active pre-activation of the destination engine, verification of
+  readiness, and graceful teardown of the prior engine, completely preventing
+  connection dropouts.
+- Visual continuity during engine handover: the main interface and status bar
+  preserve the connected state without resetting connection timers or flashing
+  disconnected UI states.
+- Interactive Route Simulation Tester on the Rules page (`RulesSettingsView`),
+  allowing users to input domains or IP addresses to preview matched rules, rule
+  types, and target outbound groups in real time.
+- Action-based filter chips (All, Proxy, Direct, Reject) on the Rules page for
+  quick classification and rule inspection.
+
+### Changed
+
+- Overhauled the Rules page visual design with modern card styling, type capsule
+  tags, and refined layout hierarchy.
+- Redesigned overview connection transitions with zero height jitter, beacon
+  status pulse animations, and progressive diagnostics disclosure.
+- Stabilized menu bar proxy node sorting: fixed node order to respect the
+  original configuration declaration order, preventing list reorganization during
+  selection or latency sweeps.
+- Clarified terminal proxy action button labels: distinctly differentiated
+  between "Copy Proxy Command" and "Copy Clear Command".
+
+### Fixed
+
+- Resolved long-idle network degradation where the browser or background update
+  stalled after 10+ hours of sleep/wake cycles. Scheduled an active core
+  connection reset and socket pool refresh within the macOS wake recovery path.
+- Added re-entrancy switching lock (`isSwitchingEngine`) and automatic rollback
+  safeguard (`attemptRollbackToEngine`) to handle unexpected engine handover
+  failures gracefully.
+- Added complete localization for the `Reject` routing action across supported
+  languages.
+
 ## [1.0.11] - 2026-09-16
 
 ### Changed
