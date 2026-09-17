@@ -530,11 +530,20 @@ private struct ConnectionToolbarButton: View {
             Task { await tunnel.setEnabled(!tunnel.isEnabled) }
         } label: {
             HStack(spacing: AetherVisual.s2) {
-                Image(systemName: "power")
+                if tunnel.state == .connecting {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityHidden(true)
+                } else {
+                    Image(systemName: "power")
+                        .accessibilityHidden(true)
+                }
                 Text(tunnel.primaryActionTitle)
+                    .contentTransition(.opacity)
             }
-                .font(.body.weight(.semibold))
-                .frame(minWidth: 116)
+            .font(.body.weight(.semibold))
+            .frame(minWidth: 118)
+            .padding(.vertical, 2)
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
@@ -944,6 +953,8 @@ private struct ConnectionRecoveryCard: View {
 private struct ConnectionHero: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showDetailedStages = false
+    @State private var stageDisclosureTask: Task<Void, Never>? = nil
 
     var body: some View {
         VStack(spacing: AetherVisual.s4) {
@@ -954,17 +965,67 @@ private struct ConnectionHero: View {
             }
             if tunnel.systemExtensionApprovalRequired {
                 approvalControls
-            } else if tunnel.state == .connecting {
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else if tunnel.state == .connecting && showDetailedStages {
                 ConnectionProgressStages()
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(AetherVisual.s5)
         .frame(maxWidth: .infinity)
         .aetherHeroPanel()
+        .overlay(alignment: .top) {
+            if tunnel.state == .connecting {
+                ConnectionLuminousBar()
+                    .clipShape(
+                        UnevenRoundedRectangle(
+                            topLeadingRadius: AetherVisual.panelRadius,
+                            bottomLeadingRadius: 0,
+                            bottomTrailingRadius: 0,
+                            topTrailingRadius: AetherVisual.panelRadius,
+                            style: .continuous
+                        )
+                    )
+                    .transition(.opacity)
+            }
+        }
         .animation(
             effectiveReduceMotion ? nil : .smooth(duration: 0.34),
             value: tunnel.state
         )
+        .animation(
+            effectiveReduceMotion ? nil : .smooth(duration: 0.35),
+            value: showDetailedStages
+        )
+        .onAppear {
+            updateStageDisclosure(for: tunnel.state)
+        }
+        .onChange(of: tunnel.state) { _, newState in
+            updateStageDisclosure(for: newState)
+        }
+        .onDisappear {
+            stageDisclosureTask?.cancel()
+        }
+    }
+
+    private func updateStageDisclosure(for state: TunnelManager.State) {
+        stageDisclosureTask?.cancel()
+        if state == .connecting {
+            stageDisclosureTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(1200))
+                if !Task.isCancelled && tunnel.state == .connecting {
+                    withAnimation(effectiveReduceMotion ? nil : .smooth(duration: 0.35)) {
+                        showDetailedStages = true
+                    }
+                }
+            }
+        } else {
+            if showDetailedStages {
+                withAnimation(effectiveReduceMotion ? nil : .smooth(duration: 0.25)) {
+                    showDetailedStages = false
+                }
+            }
+        }
     }
 
     private var approvalControls: some View {
@@ -1006,38 +1067,53 @@ private struct ConnectionHero: View {
 
     private var connectionIdentity: some View {
         HStack(spacing: AetherVisual.s4) {
-            AetherRouteStatusLens(size: 54, isActive: tunnel.isConnected)
+            AetherRouteStatusLens(
+                size: 54,
+                isActive: tunnel.isConnected,
+                isConnecting: tunnel.state == .connecting
+            )
 
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                Text(stateBadgeTitle)
-                    .foregroundStyle(.primary)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, AetherVisual.s3)
-                    .padding(.vertical, AetherVisual.s2)
-                    .background(
-                        stateBadgeBackground,
-                        in: Capsule()
+                HStack(spacing: AetherVisual.s2) {
+                    AetherStatusBeacon(
+                        isConnected: tunnel.isConnected,
+                        isConnecting: tunnel.state == .connecting,
+                        size: 7
                     )
-                    .overlay {
-                        Capsule()
-                            .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-                    }
-                    .accessibilityHidden(true)
+                    Text(stateBadgeTitle)
+                        .foregroundStyle(.primary)
+                        .font(.caption.weight(.semibold))
+                        .contentTransition(.opacity)
+                }
+                .padding(.horizontal, AetherVisual.s3)
+                .padding(.vertical, AetherVisual.s2)
+                .background(
+                    stateBadgeBackground,
+                    in: Capsule()
+                )
+                .overlay {
+                    Capsule()
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                }
+                .accessibilityHidden(true)
 
                 Text(tunnel.statusTitle)
                     .font(.title.weight(.semibold))
                     .tracking(-0.45)
                     .foregroundStyle(.primary)
+                    .contentTransition(.opacity)
                     .accessibilityValue(Text(tunnel.statusDetail))
                 Text(tunnel.statusDetail)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
                     .accessibilityHidden(true)
                 Label(nextStep, systemImage: nextStepSymbol)
                     .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1161,6 +1237,10 @@ private struct ConnectionProgressStages: View {
             Color(nsColor: .controlBackgroundColor),
             in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 0.5)
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Connection progress")
         .accessibilityValue(LocalizedStringKey(currentStageLabel(current)))

@@ -115,17 +115,101 @@ struct AetherRouteBrandTile: View {
     }
 }
 
-/// Quiet, theme-matched branding. Connection state is presented by the
-/// adjacent status label rather than an ornamental halo around the artwork.
+/// Quiet, theme-matched branding. Connection state is presented with an
+/// ambient breathing aura when connecting, settling into a serene emerald glow when active.
 struct AetherRouteStatusLens: View {
     var size: CGFloat = 52
     var isActive = false
+    var isConnecting = false
+
+    @State private var pulse = false
 
     var body: some View {
-        AetherRouteGlyph(isActive: isActive)
-            .padding(size * 0.06)
-            .frame(width: size, height: size)
-            .accessibilityHidden(true)
+        ZStack {
+            if isConnecting {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color.accentColor.opacity(0.35), Color.clear],
+                            center: .center,
+                            startRadius: size * 0.1,
+                            endRadius: size * 0.65
+                        )
+                    )
+                    .scaleEffect(pulse ? 1.15 : 0.88)
+                    .opacity(pulse ? 0.9 : 0.45)
+                    .animation(
+                        .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
+                        value: pulse
+                    )
+            } else if isActive {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color.green.opacity(0.22), Color.clear],
+                            center: .center,
+                            startRadius: size * 0.1,
+                            endRadius: size * 0.62
+                        )
+                    )
+                    .transition(.opacity)
+            }
+
+            AetherRouteGlyph(isActive: isActive)
+                .padding(size * 0.06)
+                .frame(width: size, height: size)
+                .scaleEffect(isConnecting ? (pulse ? 1.03 : 0.97) : 1.0)
+                .animation(
+                    isConnecting ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true) : .default,
+                    value: pulse
+                )
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+        .onAppear {
+            if isConnecting { pulse = true }
+        }
+        .onChange(of: isConnecting) { _, newValue in
+            pulse = newValue
+        }
+    }
+}
+
+/// 精致的顶部微型能量流光条：在连接中提供行云流水般的高级微动效，卡片高度零跳动
+struct ConnectionLuminousBar: View {
+    @State private var phase: CGFloat = -0.5
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.0),
+                            .init(color: Color.accentColor.opacity(0.3), location: 0.2),
+                            .init(color: Color.accentColor, location: 0.5),
+                            .init(color: Color.cyan, location: 0.7),
+                            .init(color: Color.accentColor.opacity(0.3), location: 0.8),
+                            .init(color: .clear, location: 1.0),
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: max(width * 0.45, 120), height: 2.5)
+                .offset(x: phase * width)
+        }
+        .frame(height: 2.5)
+        .clipped()
+        .onAppear {
+            withAnimation(
+                .linear(duration: 1.3)
+                    .repeatForever(autoreverses: false)
+            ) {
+                phase = 1.1
+            }
+        }
     }
 }
 
