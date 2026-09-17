@@ -4,6 +4,43 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.14] - 2026-09-17
+
+### Added
+
+- Native Segmented Proxy Group Bar (`ProxiesPageView`):
+  redesigned the top strategy group picker into an Apple HIG-compliant segmented capsule
+  switcher with smooth spring animation and clear active item highlight.
+- Active Strategy Group Hero Banner (`ProxiesPageView`):
+  added a dedicated identity card above the node grid explicitly detailing the active
+  strategy group's name, semantic SF Symbol, routing mode badge (Select, URL-Test, Fallback),
+  and manual switching status.
+- Node Resolution & Diagnostic Registry:
+  rebranded the raw providers and underlying node section into "节点解析与协议诊断（底库清单）",
+  adding contextual guidance clarifying that this section is dedicated to inspecting
+  underlying parser results, health status, and protocol parameters.
+- Localized strings for all new proxy view components across English and Chinese
+  (`Localizable.xcstrings`).
+
+### Changed
+
+- Sparkle Update Dialog Layout & Design System (`AppUpdateWindow`):
+  completely redesigned update window styling following modern Apple HIG principles,
+  featuring responsive light and dark mode cards, subtle translucent borders, and
+  structured categorized release notes (New Features, Improvements, Bug Fixes).
+- Decoupled Speedtest Scopes:
+  separated top-level "全部测速" (Test All Groups) with explicit scope description from the
+  per-group "测试延迟" (Test Group Latency) action, eliminating user ambiguity regarding
+  button functionality and test boundaries.
+- Automated Appcast Styling (`generate_sparkle_appcast.sh`):
+  enhanced update release pipeline to automatically wrap release notes in modern responsive
+  Apple-styled HTML templates before embedding into `appcast.xml`.
+
+### Fixed
+
+- Resolved layout shifting and unstyled raw markdown formatting in the Sparkle updater feed.
+- Fixed syntax closure discrepancy in `ProxiesPageView`.
+
 ## [1.0.13] - 2026-09-17
 
 ### Added
