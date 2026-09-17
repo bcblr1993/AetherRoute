@@ -289,6 +289,7 @@ final class TunnelManager: ObservableObject {
     private var latencyIndexToken: LatencyRunToken?
     private var pendingLatencyFlush: Set<String> = []
     private var lastLatencyFlushAt: ContinuousClock.Instant?
+    private var latencyFlushTask: Task<Void, Never>?
 
     public func isTestingLatency(group groupName: String, member memberName: String? = nil) -> Bool {
         if let memberName {
@@ -1272,8 +1273,11 @@ final class TunnelManager: ObservableObject {
         return stopped
     }
 
+    private static let networkEngineSwitchSettleTimeout = Duration.seconds(10)
+    private static let networkEngineSwitchDrainTimeout = Duration.seconds(8)
+
     func setNetworkEngineMode(_ mode: NetworkEngineMode) async {
-        guard mode != networkEngineMode, canChangeNetworkEngine else { return }
+        guard !isSwitchingNetworkEngine, mode != networkEngineMode, canChangeNetworkEngine else { return }
         let previousMode = networkEngineMode
         let shouldReconnect = isEnabled || managerConnectionIsActive
         isSwitchingNetworkEngine = true
@@ -1285,7 +1289,7 @@ final class TunnelManager: ObservableObject {
 
         if shouldReconnect {
             await setEnabled(false)
-            guard await waitForProviderToBecomeInactive() else {
+            guard await waitForProviderToBecomeInactive(timeout: Self.networkEngineSwitchDrainTimeout) else {
                 networkEngineMessage = AppLocalization.string(
                     "The current network engine did not stop in time. It remains selected."
                 )
@@ -1303,7 +1307,7 @@ final class TunnelManager: ObservableObject {
         }
 
         await setEnabled(true)
-        if await waitForConnectionToSettle() {
+        if await waitForConnectionToSettle(timeout: Self.networkEngineSwitchSettleTimeout) {
             networkEngineMessage = AppLocalization.string(
                 "Network engine switched without manual disconnection."
             )
@@ -1316,11 +1320,11 @@ final class TunnelManager: ObservableObject {
             } else {
                 manager?.connection.stopVPNTunnel()
             }
-            _ = await waitForProviderToBecomeInactive()
+            _ = await waitForProviderToBecomeInactive(timeout: Self.networkEngineSwitchDrainTimeout)
         }
         await applyNetworkEngineMode(previousMode)
         await setEnabled(true)
-        let restored = await waitForConnectionToSettle()
+        let restored = await waitForConnectionToSettle(timeout: Self.networkEngineSwitchSettleTimeout)
         networkEngineMessage = restored
             ? AppLocalization.string(
                 "The new network engine could not connect. The previous engine was restored."
@@ -1625,9 +1629,25 @@ final class TunnelManager: ObservableObject {
         if !force,
            let last = lastLatencyFlushAt,
            now - last < Self.latencyFlushInterval {
+            if latencyFlushTask == nil {
+                latencyFlushTask = Task { @MainActor [weak self] in
+                    do {
+                        try await Task.sleep(for: Self.latencyFlushInterval)
+                    } catch { return }
+                    guard let self, !self.pendingLatencyFlush.isEmpty else { return }
+                    self.latencyFlushTask = nil
+                    self.flushPendingLatency()
+                }
+            }
             return
         }
-        lastLatencyFlushAt = now
+        latencyFlushTask?.cancel()
+        latencyFlushTask = nil
+        flushPendingLatency()
+    }
+
+    private func flushPendingLatency() {
+        lastLatencyFlushAt = ContinuousClock.now
         for group in pendingLatencyFlush {
             proxyLatencies[group] = latencyIndex.state(for: group)
         }
@@ -1943,7 +1963,7 @@ final class TunnelManager: ObservableObject {
         let endpoints = activeProfile
             .map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
         let excludeVirtual = shouldExcludeVirtualInterfaces
-        let maxConcurrent = 16
+        let maxConcurrent = 32
 
         await withTaskGroup(
             of: (member: String, measurement: ProxyLatencyMeasurement).self
@@ -2041,16 +2061,22 @@ final class TunnelManager: ObservableObject {
         return delay.map { .reachable($0) } ?? .timedOut
     }
 
+    nonisolated private static let probeQueue = DispatchQueue(
+        label: "com.aetherroute.desktop.latency-probe",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
+
     nonisolated private static func probeTCPLatency(
         host: String,
         port: UInt16,
-        timeoutMilliseconds: UInt32 = 2500,
+        timeoutMilliseconds: UInt32 = 1500,
         excludingVirtualInterfaces: Bool = false
     ) async -> UInt32? {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { return nil }
         let endpoint = NWEndpoint.Host(host)
         let tcpOptions = NWProtocolTCP.Options()
-        tcpOptions.connectionTimeout = max(1, Int(timeoutMilliseconds / 1000))
+        tcpOptions.connectionTimeout = max(1, Int((timeoutMilliseconds + 999) / 1000))
         let parameters = NWParameters(tls: nil, tcp: tcpOptions)
         if excludingVirtualInterfaces {
             // `utun` reports as `.other`. Refusing that type keeps a TUN
@@ -2095,7 +2121,7 @@ final class TunnelManager: ObservableObject {
                 }
             }
 
-            let timer = DispatchSource.makeTimerSource(queue: .global())
+            let timer = DispatchSource.makeTimerSource(queue: probeQueue)
             timer.schedule(deadline: .now() + .milliseconds(Int(timeoutMilliseconds)))
 
             let context = ProbeContext(
@@ -2122,7 +2148,7 @@ final class TunnelManager: ObservableObject {
                     break
                 }
             }
-            connection.start(queue: .global())
+            connection.start(queue: probeQueue)
         }
     }
 
@@ -4570,13 +4596,6 @@ final class TunnelManager: ObservableObject {
                         "stage=deactivateOpposing stopVPNTunnel opposing=\(opposing.description, privacy: .public)"
                     )
                     opposing.connection.stopVPNTunnel()
-                }
-                if opposing.isEnabled {
-                    Self.runtimeLogger.info(
-                        "stage=deactivateOpposing disable opposing=\(opposing.description, privacy: .public)"
-                    )
-                    opposing.isEnabled = false
-                    try? await opposing.saveToPreferences()
                 }
             }
         } catch {

@@ -16,6 +16,13 @@ All notable changes to AetherRoute are recorded here. The format follows
   working one. Full-group measurement through the core is not used here: that
   request is capped at 64 members and holds an engine lock for the whole sweep,
   which is what made selector actions unresponsive during a measurement.
+- Massive performance acceleration for full-profile latency sweeps: increased
+  probe concurrency to 32 parallel workers, optimized timeout to 1500 ms, moved
+  socket scheduling to a dedicated concurrent queue (`probeQueue`), and added
+  throttled flush debouncing (`latencyFlushTask`). Profiles with hundreds of nodes
+  now complete sweeps in seconds without UI jitter or thread starvation.
+- Retain fixed source configuration order in proxy lists during latency tests,
+  preventing rows from rearranging under the mouse pointer.
 - Replace the per-result merge with an indexed staging area. Recording one
   result is now O(1) and the published state is rebuilt once per ~100 ms flush
   window instead of once per node. The previous path rescanned every group's
@@ -27,6 +34,15 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ### Fixed
 
+- Eliminate macOS `nehelper` deadlocks and system freezes during Transparent Proxy
+  and TUN engine switching. Replaced destructive preference modification of opposing
+  managers with clean connection teardown, added re-entrancy switching guards, and
+  reduced connection settling watchdog timeouts.
+- Fix macOS NetworkExtension rejecting TUN routing configuration with `IPv6 routes
+  are invalid: ("IPv6Route Destination address in loopback")`. Removed `::1/128`
+  from excluded IPv6 routes.
+- Cache active system extension identity state in `SystemExtensionActivationCoordinator`,
+  eliminating repeated sysextd IPC lookups and latency during mode changes.
 - Dynamically link menu-bar shell proxy commands to the user's configured local
   proxy ports, avoiding hardcoded 7890 port mismatches, and standardize on
   safe unset environment commands.

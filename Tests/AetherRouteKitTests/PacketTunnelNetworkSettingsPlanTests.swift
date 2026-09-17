@@ -136,4 +136,19 @@ final class PacketTunnelNetworkSettingsPlanTests: XCTestCase {
         )
         XCTAssertEqual(plan.ipv6?.excludedRoutes, [])
     }
+
+    func testPlanNeverIncludesLoopbackInIPv6ExcludedRoutes() throws {
+        let bypassPlan = try BypassNetworkSettingsPlan(policy: BypassPolicy())
+        let plan = PacketTunnelNetworkSettingsPlan(
+            configuration: TunnelConfiguration(
+                enableIPv6: true,
+                excludeLocalNetworks: true
+            ),
+            bypassPlan: bypassPlan
+        )
+        let containsLoopback = plan.ipv6?.excludedRoutes.contains {
+            $0.destinationAddress == "::1"
+        } ?? false
+        XCTAssertFalse(containsLoopback, "macOS NetworkExtension rejects loopback in IPv6 excluded routes")
+    }
 }

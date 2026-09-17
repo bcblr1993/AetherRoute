@@ -159,7 +159,6 @@ public struct PacketTunnelNetworkSettingsPlan: Equatable, Sendable {
     ]
 
     private static let localIPv6Routes = [
-        IPv6Route(destinationAddress: "::1", prefixLength: 128),
         IPv6Route(destinationAddress: "fc00::", prefixLength: 7),
         IPv6Route(destinationAddress: "fe80::", prefixLength: 10),
     ]

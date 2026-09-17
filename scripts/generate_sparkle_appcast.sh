@@ -30,6 +30,7 @@ WEB_APPCAST="$ROOT/Services/WebDistribution/public/appcast.xml"
 # Try finding Sparkle's official sign_update binary
 SIGN_UPDATE_BIN=""
 for candidate in \
+  "$ROOT/build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
   "$ROOT/build/Debug/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
   "$ROOT/.build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
   "$ROOT/.build/xcode/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update"

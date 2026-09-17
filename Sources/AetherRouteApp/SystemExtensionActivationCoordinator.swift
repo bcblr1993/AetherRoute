@@ -27,6 +27,7 @@ final class SystemExtensionActivationCoordinator: NSObject,
     private var submittedRequest: OSSystemExtensionRequest?
     private var isCheckingProperties = false
     private var propertiesTimeout: Task<Void, Never>?
+    private var activatedIdentifiers: Set<String> = []
     private let submitRequest: @MainActor (OSSystemExtensionRequest) -> Void
     private let bundledVersion: @MainActor (String) -> SystemExtensionActivationPolicy.Version?
     private let propertiesTimeoutDuration: Duration
@@ -51,6 +52,10 @@ final class SystemExtensionActivationCoordinator: NSObject,
         identifier: String,
         onApprovalRequired: @escaping @MainActor @Sendable () -> Void
     ) async throws {
+        if activatedIdentifiers.contains(identifier) {
+            Self.logger.info("stage=activation cached identifier=\(identifier, privacy: .public)")
+            return
+        }
         guard pendingActivation == nil else {
             throw SystemExtensionActivationError.requestAlreadyInProgress
         }
@@ -186,6 +191,9 @@ final class SystemExtensionActivationCoordinator: NSObject,
 
     private func finish(_ result: Result<Void, Error>) {
         guard let pendingActivation else { return }
+        if case .success = result {
+            activatedIdentifiers.insert(pendingActivation.identifier)
+        }
         self.pendingActivation = nil
         propertiesTimeout?.cancel()
         propertiesTimeout = nil

@@ -523,14 +523,8 @@ private struct MenuBarContent: View {
     var body: some View {
         VStack(spacing: 0) {
             if tunnel.hasAcceptedPrivacyDisclosure {
-                Group {
-                    if showingNodes, let group = primaryGroup {
-                        MenuNodePanel(group: group) { showingNodes = false }
-                    } else {
-                        readyContent
-                    }
-                }
-                .task { await tunnel.prepare() }
+                readyContent
+                    .task { await tunnel.prepare() }
             } else {
                 privacyRequiredContent
             }
@@ -644,10 +638,20 @@ private struct MenuBarContent: View {
 
                 if let group = primaryGroup {
                     VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                        Text("Current Node")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Button { showingNodes = true } label: {
+                        HStack {
+                            Text("Current Node")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if showingNodes && tunnel.proxyLatencyRequests.contains(group.name) {
+                                ProgressView().controlSize(.mini)
+                            }
+                        }
+                        Button {
+                            withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                                showingNodes.toggle()
+                            }
+                        } label: {
                             HStack(spacing: AetherVisual.s2) {
                                 let member = tunnel.proxySelections[group.name]?.selectedMember
                                 Text(verbatim: AetherRegionFlag.flagAndRegion(from: member ?? "").flag)
@@ -671,6 +675,7 @@ private struct MenuBarContent: View {
                                 Image(systemName: "chevron.right")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                    .rotationEffect(.degrees(showingNodes ? 90 : 0))
                             }
                             .padding(AetherVisual.s3)
                             .background(.quaternary, in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
@@ -681,6 +686,15 @@ private struct MenuBarContent: View {
                         .accessibilityIdentifier("menu-proxy-node-selector")
                         .task(id: "\(group.name):\(tunnel.isConnected)") {
                             await tunnel.refreshProxySelection(group: group.name)
+                        }
+
+                        if showingNodes {
+                            MenuNodeListInline(group: group) {
+                                withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                                    showingNodes = false
+                                }
+                            }
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                     }
                 }
@@ -855,7 +869,7 @@ private struct MenuNodeLatency: View {
     var confidence: ProxyLatencyConfidence = .reachability
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: AetherVisual.sMicro) {
             Text(title)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(status.tint)
@@ -881,10 +895,10 @@ private struct MenuNodeLatency: View {
     }
 }
 
-private struct MenuNodePanel: View {
+private struct MenuNodeListInline: View {
     @EnvironmentObject private var tunnel: TunnelManager
     let group: ProxyGroupConfigurationSummary
-    let onBack: () -> Void
+    let onClose: () -> Void
     @State private var orderedMembers: [String] = []
     @State private var selecting = false
 
@@ -898,56 +912,38 @@ private struct MenuNodePanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            HStack(spacing: AetherVisual.s3) {
-                Button(action: onBack) {
-                    Image(systemName: "chevron.left")
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(AppLocalization.string("Back"))
-                .accessibilityLabel(AppLocalization.string("Back"))
-                .accessibilityIdentifier("menu-node-back")
-                VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    Text("Select Node").font(.headline)
-                    Text("Latency: low to high")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if selecting || tunnel.proxyLatencyRequests.contains(group.name) {
-                    ProgressView().controlSize(.small)
-                }
-            }
-            Divider()
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
             if orderedMembers.isEmpty {
                 Text("No nodes available")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.vertical, AetherVisual.s4)
+                    .padding(.vertical, AetherVisual.s2)
+                    .frame(maxWidth: .infinity, alignment: .center)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: AetherVisual.s2) {
+                    LazyVStack(spacing: AetherVisual.s1) {
                         ForEach(orderedMembers, id: \.self) { member in
                             Button {
-                                if member == selectedMember { onBack(); return }
+                                if member == selectedMember {
+                                    onClose()
+                                    return
+                                }
                                 selecting = true
                                 Task {
                                     await tunnel.selectProxy(group: group.name, member: member)
                                     selecting = false
-                                    if !Task.isCancelled, selectedMember == member {
-                                        onBack()
-                                    }
                                 }
                             } label: {
                                 HStack(spacing: AetherVisual.s2) {
                                     Image(systemName: "checkmark")
+                                        .font(.system(size: 11, weight: .bold))
                                         .foregroundStyle(Color.accentColor)
                                         .opacity(member == selectedMember ? 1 : 0)
-                                        .frame(width: 16)
+                                        .frame(width: 14)
                                     Text(verbatim: AetherRegionFlag.flagAndRegion(from: member).flag)
                                     Text(verbatim: member)
-                                        .lineLimit(2)
+                                        .font(.caption)
+                                        .lineLimit(1)
                                         .truncationMode(.middle)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                     MenuNodeLatency(
@@ -958,7 +954,8 @@ private struct MenuNodePanel: View {
                                         )
                                     )
                                 }
-                                .padding(AetherVisual.s3)
+                                .padding(.horizontal, AetherVisual.s2)
+                                .padding(.vertical, AetherVisual.sCompact)
                                 .background(
                                     member == selectedMember ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04),
                                     in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
@@ -973,23 +970,31 @@ private struct MenuNodePanel: View {
                                 || group.strategy.lowercased() != "select" || unsupported.contains(member))
                         }
                     }
+                    .padding(AetherVisual.s1)
                 }
-                .frame(height: min(CGFloat(orderedMembers.count) * 56, 364))
+                .frame(height: min(CGFloat(orderedMembers.count) * 36, 216))
+                .background(
+                    Color(nsColor: .controlBackgroundColor).opacity(0.4),
+                    in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
+                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                )
             }
             if group.strategy.lowercased() != "select" {
                 Text("This group is automatically managed by latency tests.")
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
             if let message = tunnel.proxySelectionMessages[group.name] {
                 Text(verbatim: message)
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("menu-node-message")
             }
         }
-        .padding(AetherVisual.s4)
         .task(id: group.name) {
             updateOrder()
             await tunnel.refreshProxySelection(group: group.name)
@@ -1000,10 +1005,6 @@ private struct MenuNodePanel: View {
                 guard !Task.isCancelled else { return }
                 updateOrder()
             }
-        }
-        // Reorder only on a completed measurement, never for each arriving row.
-        .onChange(of: tunnel.proxyLatencyRequests.contains(group.name)) { wasTesting, isTesting in
-            if wasTesting && !isTesting && !selecting { updateOrder() }
         }
     }
 
@@ -1017,17 +1018,8 @@ private struct MenuNodePanel: View {
     }
 
     private func updateOrder() {
-        let results = tunnel.proxyLatencies[group.name]?.results ?? []
-        var delays: [String: UInt32] = [:]
-        var unavailable = unsupported
-        for result in results {
-            if let delay = result.delayMilliseconds { delays[result.member] = delay }
-            else { unavailable.insert(result.member) }
-        }
         orderedMembers = MenuProxyNodeOrder.sorted(
-            members: tunnel.proxySelections[group.name]?.members ?? group.members,
-            delays: delays,
-            unavailable: unavailable
+            members: tunnel.proxySelections[group.name]?.members ?? group.members
         )
     }
 }

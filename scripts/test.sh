@@ -161,7 +161,7 @@ do
 done
 
 mkdir -p "$DERIVED_DATA_PATH"
-if [ -d "$ROOT/build/DerivedData/SourcePackages" ]; then
+if [ -d "$ROOT/build/DerivedData/SourcePackages" ] && [ "$DERIVED_DATA_PATH" != "$ROOT/build/DerivedData" ]; then
   ditto "$ROOT/build/DerivedData/SourcePackages" "$DERIVED_DATA_PATH/SourcePackages"
 fi
 
