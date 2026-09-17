@@ -953,8 +953,6 @@ private struct ConnectionRecoveryCard: View {
 private struct ConnectionHero: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var showDetailedStages = false
-    @State private var stageDisclosureTask: Task<Void, Never>? = nil
 
     var body: some View {
         VStack(spacing: AetherVisual.s4) {
@@ -965,9 +963,6 @@ private struct ConnectionHero: View {
             }
             if tunnel.systemExtensionApprovalRequired {
                 approvalControls
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            } else if tunnel.state == .connecting && showDetailedStages {
-                ConnectionProgressStages()
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -993,39 +988,6 @@ private struct ConnectionHero: View {
             effectiveReduceMotion ? nil : .smooth(duration: 0.34),
             value: tunnel.state
         )
-        .animation(
-            effectiveReduceMotion ? nil : .smooth(duration: 0.35),
-            value: showDetailedStages
-        )
-        .onAppear {
-            updateStageDisclosure(for: tunnel.state)
-        }
-        .onChange(of: tunnel.state) { _, newState in
-            updateStageDisclosure(for: newState)
-        }
-        .onDisappear {
-            stageDisclosureTask?.cancel()
-        }
-    }
-
-    private func updateStageDisclosure(for state: TunnelManager.State) {
-        stageDisclosureTask?.cancel()
-        if state == .connecting {
-            stageDisclosureTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(1200))
-                if !Task.isCancelled && tunnel.state == .connecting {
-                    withAnimation(effectiveReduceMotion ? nil : .smooth(duration: 0.35)) {
-                        showDetailedStages = true
-                    }
-                }
-            }
-        } else {
-            if showDetailedStages {
-                withAnimation(effectiveReduceMotion ? nil : .smooth(duration: 0.25)) {
-                    showDetailedStages = false
-                }
-            }
-        }
     }
 
     private var approvalControls: some View {
@@ -1193,126 +1155,6 @@ private struct ConnectionHero: View {
     }
 }
 
-/// Makes the fail-closed wait legible: the extension has to clear four steps
-/// before this app will report "connected", and this draws which one is
-/// running right now. Every value here is derived from the live provider
-/// status — nothing is scripted.
-private struct ConnectionProgressStages: View {
-    @EnvironmentObject private var tunnel: TunnelManager
-
-    /// The steps that stand between pressing Connect and carrying traffic.
-    ///
-    /// Route readiness is deliberately absent: it now runs after the tunnel is
-    /// already usable, so showing it here would have described the connection
-    /// as unfinished while traffic was already flowing. `SafetyNotice` reports
-    /// route quality once these three are done.
-    private static let stages: [(ConnectionStage, String)] = [
-        (.systemAuthorization, "System authorization"),
-        (.extensionStartup, "Extension startup"),
-        (.protocolHandshake, "Protocol handshake"),
-    ]
-
-    var body: some View {
-        let current = tunnel.connectionStage
-
-        HStack(spacing: AetherVisual.s2) {
-            ForEach(Array(Self.stages.enumerated()), id: \.offset) { index, stage in
-                let position = position(of: stage.0, relativeTo: current)
-
-                HStack(spacing: AetherVisual.s2) {
-                    Image(systemName: symbol(for: position))
-                        .font(.caption.weight(.semibold))
-                    Text(LocalizedStringKey(stage.1))
-                        .font(.caption2.weight(position == .current ? .semibold : .medium))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.82)
-                }
-                .foregroundStyle(tint(for: position))
-                .fixedSize(horizontal: false, vertical: true)
-
-                if index < Self.stages.count - 1 {
-                    Rectangle()
-                        .fill(connectorTint(after: stage.0, current: current))
-                        .frame(minWidth: AetherVisual.s2, maxWidth: .infinity)
-                        .frame(height: 1)
-                }
-            }
-        }
-        .padding(.horizontal, AetherVisual.s4)
-        .padding(.vertical, AetherVisual.s3)
-        .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 0.5)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Connection progress")
-        .accessibilityValue(LocalizedStringKey(currentStageLabel(current)))
-    }
-
-    private enum StagePosition {
-        case complete
-        case current
-        case pending
-    }
-
-    private func position(
-        of stage: ConnectionStage,
-        relativeTo current: ConnectionStage
-    ) -> StagePosition {
-        if stage.rawValue < current.rawValue { return .complete }
-        if stage == current { return .current }
-        return .pending
-    }
-
-    private func symbol(for position: StagePosition) -> String {
-        switch position {
-        case .complete: "checkmark.circle.fill"
-        case .current: "circle.dotted"
-        case .pending: "circle"
-        }
-    }
-
-    /// Three status colors only, per the color-semantics rule: done is green,
-    /// in-flight needs attention so it is orange, not-yet is idle.
-    private func tint(for position: StagePosition) -> Color {
-        switch position {
-        case .complete: .green
-        case .current: .orange
-        case .pending: .secondary
-        }
-    }
-
-    private func connectorTint(
-        after stage: ConnectionStage,
-        current: ConnectionStage
-    ) -> AnyShapeStyle {
-        if stage.rawValue < current.rawValue - 1 {
-            return AnyShapeStyle(Color.green)
-        }
-        if stage.rawValue == current.rawValue - 1 {
-            // The segment feeding the running step fades out, so the eye lands
-            // on where progress has actually reached.
-            return AnyShapeStyle(
-                LinearGradient(
-                    colors: [.green, Color(nsColor: .separatorColor)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-        }
-        return AnyShapeStyle(Color(nsColor: .separatorColor))
-    }
-
-    private func currentStageLabel(
-        _ current: ConnectionStage
-    ) -> String {
-        Self.stages.first { $0.0 == current }?.1 ?? ""
-    }
-}
 
 private struct ConnectionControlBar: View {
     let networkEngineMode: NetworkEngineMode
