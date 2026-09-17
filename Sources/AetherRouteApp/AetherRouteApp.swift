@@ -566,7 +566,7 @@ private struct MenuBarContent: View {
                         )
                     }
 
-                    Text(tunnel.isConnected ? AppLocalization.string("Tunnel Protected") : tunnel.statusTitle)
+                    Text(tunnel.isSwitchingNetworkEngine ? tunnel.statusTitle : (tunnel.isConnected ? AppLocalization.string("Tunnel Protected") : tunnel.statusTitle))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(tunnel.isConnected ? Color.green : Color.secondary)
                         .lineLimit(1)

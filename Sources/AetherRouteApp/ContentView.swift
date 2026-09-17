@@ -335,10 +335,10 @@ struct ContentView: View {
                     HStack(spacing: AetherVisual.s1) {
                         AetherStatusBeacon(
                             isConnected: tunnel.isConnected,
-                            isConnecting: tunnel.state == .connecting || tunnel.state == .recovering,
+                            isConnecting: tunnel.state == .connecting || tunnel.state == .recovering || tunnel.isSwitchingNetworkEngine,
                             size: 6
                         )
-                        Text(tunnel.state == .recovering ? tunnel.statusTitle : (tunnel.isConnected ? AppLocalization.string("Protected") : AppLocalization.string("Idle")))
+                        Text(tunnel.state == .recovering || tunnel.isSwitchingNetworkEngine ? tunnel.statusTitle : (tunnel.isConnected ? AppLocalization.string("Protected") : AppLocalization.string("Idle")))
                             .font(.system(size: 10.5, weight: .semibold))
                             .foregroundStyle(.primary)
                     }
@@ -1070,14 +1070,14 @@ private struct ConnectionHero: View {
             AetherRouteStatusLens(
                 size: 54,
                 isActive: tunnel.isConnected,
-                isConnecting: tunnel.state == .connecting
+                isConnecting: tunnel.state == .connecting || tunnel.isSwitchingNetworkEngine
             )
 
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 HStack(spacing: AetherVisual.s2) {
                     AetherStatusBeacon(
                         isConnected: tunnel.isConnected,
-                        isConnecting: tunnel.state == .connecting,
+                        isConnecting: tunnel.state == .connecting || tunnel.isSwitchingNetworkEngine,
                         size: 7
                     )
                     Text(stateBadgeTitle)
@@ -1123,6 +1123,9 @@ private struct ConnectionHero: View {
         if tunnel.systemExtensionApprovalRequired {
             return AppLocalization.string("Approval needed")
         }
+        if tunnel.isSwitchingNetworkEngine {
+            return AppLocalization.string("Switching network engine…")
+        }
         return switch tunnel.state {
         case .privacyConsentRequired: AppLocalization.string("Privacy")
         case .loading: AppLocalization.string("Preparing")
@@ -1144,6 +1147,9 @@ private struct ConnectionHero: View {
     private var nextStep: String {
         if tunnel.systemExtensionApprovalRequired {
             return AppLocalization.string("Open System Settings to allow the network extension.")
+        }
+        if tunnel.isSwitchingNetworkEngine {
+            return AppLocalization.string("Switching network engine…")
         }
         return switch tunnel.state {
         case .privacyConsentRequired:
@@ -1173,6 +1179,7 @@ private struct ConnectionHero: View {
 
     private var nextStepSymbol: String {
         if tunnel.systemExtensionApprovalRequired { return "hand.raised.fill" }
+        if tunnel.isSwitchingNetworkEngine { return "arrow.triangle.2.circlepath" }
         return switch tunnel.state {
         case .connected where tunnel.isAutomaticRouteRecovering:
             "arrow.triangle.2.circlepath"

@@ -857,61 +857,10 @@ final class TunnelManager: ObservableObject {
         var launchPayload: Data?
 
         do {
-            if enabled, activeProfile == nil {
-                throw ActiveProfileStoreError.noActiveProfile
-            }
-            if enabled, let activeProfile {
-                Self.runtimeLogger.info("stage=prepareRuntimeResources begin")
-                isUpdatingRoutingResources = true
-                defer { isUpdatingRoutingResources = false }
-                let profileYAML = activeProfile.yaml
-                let storeFactory = routingResourceStoreFactory
-                let downloadClient = routingResourceDownloadClient
-                let bundleDirectory = bundledResourceDirectoryURL
-                let requestedBypassPolicy = bypassPolicy
-                let requestedDNSPolicy = dnsRuntimePolicy
-                let launchInput = try await Task.detached(
-                    priority: .userInitiated
-                ) {
-                    let store = try storeFactory()
-                    let bundled = try BundledRoutingResources(
-                        directoryURL: bundleDirectory
-                    ).installMissingResources(for: profileYAML, in: store)
-                    let downloaded = try await downloadClient
-                        .ensureRequiredResources(
-                            for: profileYAML,
-                            in: store
-                        )
-                    try store.prepareRuntimeResources(for: profileYAML)
-                    let persistedSelections = try ProxySelectionStore
-                        .applicationGroup()
-                        .selections(forProfileYAML: profileYAML)
-                    let profileSummary = ProfileConfigurationInspector.inspect(
-                        yaml: profileYAML
-                    )
-                    let initialSelections = InitialProxySelectionPolicy
-                        .selections(
-                            persisted: persistedSelections,
-                            summary: profileSummary
-                        )
-                    // Preserve explicit selections. Otherwise let the core's
-                    // deterministic GLOBAL default choose the profile's proxy
-                    // group, rather than forcing direct access until a probe
-                    // succeeds (which may be delayed by a network transition).
-                    let snapshot = try ProviderLaunchSnapshot(
-                        profileYAML: profileYAML,
-                        routingMode: requestedMode,
-                        bypassPolicy: requestedBypassPolicy,
-                        dnsPolicy: requestedDNSPolicy,
-                        proxySelections: initialSelections,
-                        routingResources: try store.launchResourceSnapshot(for: profileYAML)
-                    )
-                    return (
-                        snapshot,
-                        try ProviderLaunchSnapshotCodec.encodedPayload(for: snapshot),
-                        bundled.union(downloaded)
-                    )
-                }.value
+            if enabled {
+                let (snapshot, payload) = try await prepareLaunchSnapshotPayload(
+                    requestedMode: requestedMode
+                )
                 guard let requestID,
                       shouldContinueConnectionPreparation(requestID) else {
                     Self.runtimeLogger.info(
@@ -919,16 +868,8 @@ final class TunnelManager: ObservableObject {
                     )
                     return
                 }
-                if !launchInput.2.isEmpty {
-                    routingResourceMessage = AppLocalization.string(
-                        "Routing rules are ready."
-                    )
-                    routingResourceMessageIsError = false
-                    refreshRoutingResourceStatuses()
-                }
-                launchSnapshot = launchInput.0
-                launchPayload = launchInput.1
-                Self.runtimeLogger.info("stage=prepareRuntimeResources success")
+                launchSnapshot = snapshot
+                launchPayload = payload
             }
             Self.runtimeLogger.info("stage=requireManager begin")
             let manager = try await requireManager()
@@ -1012,6 +953,70 @@ final class TunnelManager: ObservableObject {
             }
             recordFailure(error, context: context)
         }
+    }
+
+    private func prepareLaunchSnapshotPayload(
+        requestedMode: RoutingMode
+    ) async throws -> (ProviderLaunchSnapshot, Data) {
+        guard let activeProfile else {
+            throw ActiveProfileStoreError.noActiveProfile
+        }
+        Self.runtimeLogger.info("stage=prepareRuntimeResources begin")
+        isUpdatingRoutingResources = true
+        defer { isUpdatingRoutingResources = false }
+        let profileYAML = activeProfile.yaml
+        let storeFactory = routingResourceStoreFactory
+        let downloadClient = routingResourceDownloadClient
+        let bundleDirectory = bundledResourceDirectoryURL
+        let requestedBypassPolicy = bypassPolicy
+        let requestedDNSPolicy = dnsRuntimePolicy
+        let launchInput = try await Task.detached(
+            priority: .userInitiated
+        ) {
+            let store = try storeFactory()
+            let bundled = try BundledRoutingResources(
+                directoryURL: bundleDirectory
+            ).installMissingResources(for: profileYAML, in: store)
+            let downloaded = try await downloadClient
+                .ensureRequiredResources(
+                    for: profileYAML,
+                    in: store
+                )
+            try store.prepareRuntimeResources(for: profileYAML)
+            let persistedSelections = try ProxySelectionStore
+                .applicationGroup()
+                .selections(forProfileYAML: profileYAML)
+            let profileSummary = ProfileConfigurationInspector.inspect(
+                yaml: profileYAML
+            )
+            let initialSelections = InitialProxySelectionPolicy
+                .selections(
+                    persisted: persistedSelections,
+                    summary: profileSummary
+                )
+            let snapshot = try ProviderLaunchSnapshot(
+                profileYAML: profileYAML,
+                routingMode: requestedMode,
+                bypassPolicy: requestedBypassPolicy,
+                dnsPolicy: requestedDNSPolicy,
+                proxySelections: initialSelections,
+                routingResources: try store.launchResourceSnapshot(for: profileYAML)
+            )
+            return (
+                snapshot,
+                try ProviderLaunchSnapshotCodec.encodedPayload(for: snapshot),
+                bundled.union(downloaded)
+            )
+        }.value
+        if !launchInput.2.isEmpty {
+            routingResourceMessage = AppLocalization.string(
+                "Routing rules are ready."
+            )
+            routingResourceMessageIsError = false
+            refreshRoutingResourceStatuses()
+        }
+        Self.runtimeLogger.info("stage=prepareRuntimeResources success")
+        return (launchInput.0, launchInput.1)
     }
 
     func reconnect() async {
@@ -1278,6 +1283,14 @@ final class TunnelManager: ObservableObject {
 
     func setNetworkEngineMode(_ mode: NetworkEngineMode) async {
         guard !isSwitchingNetworkEngine, mode != networkEngineMode, canChangeNetworkEngine else { return }
+        if isUIReviewMode {
+            networkEngineMode = mode
+            userDefaults.set(mode.rawValue, forKey: Self.networkEnginePreferenceKey)
+            networkEngineMessage = AppLocalization.string("Network engine updated.")
+            networkEngineMessageIsError = false
+            return
+        }
+
         let previousMode = networkEngineMode
         let shouldReconnect = isEnabled || managerConnectionIsActive
         isSwitchingNetworkEngine = true
@@ -1288,51 +1301,215 @@ final class TunnelManager: ObservableObject {
         defer { isSwitchingNetworkEngine = false }
 
         if shouldReconnect {
-            await setEnabled(false)
-            guard await waitForProviderToBecomeInactive(timeout: Self.networkEngineSwitchDrainTimeout) else {
-                networkEngineMessage = AppLocalization.string(
-                    "The current network engine did not stop in time. It remains selected."
-                )
-                networkEngineMessageIsError = true
-                return
-            }
+            let originalConnectedSince = connectedSince
+            await performSeamlessNetworkEngineHandover(
+                from: previousMode,
+                to: mode,
+                originalConnectedSince: originalConnectedSince
+            )
+        } else {
+            await applyNetworkEngineMode(mode)
+            networkEngineMessage = AppLocalization.string("Network engine updated.")
+            networkEngineMessageIsError = false
         }
+    }
 
-        await applyNetworkEngineMode(mode)
-        guard shouldReconnect else {
+    private func performSeamlessNetworkEngineHandover(
+        from previousMode: NetworkEngineMode,
+        to targetMode: NetworkEngineMode,
+        originalConnectedSince: Date?
+    ) async {
+        Self.runtimeLogger.info(
+            "stage=handoverNetworkEngine begin from=\(previousMode.rawValue, privacy: .public) to=\(targetMode.rawValue, privacy: .public)"
+        )
+        let currentRoutingMode = sessionRoutingMode ?? routingMode
+
+        // 1. 优雅停止旧扩展
+        Self.runtimeLogger.info("stage=handoverNetworkEngine stoppingOldEngine")
+        stopTelemetryPolling()
+        if let oldConnection = manager?.connection, Self.isActiveProviderStatus(oldConnection.status) {
+            oldConnection.stopVPNTunnel()
+        }
+        let oldDrained = await waitForProviderToBecomeInactive(timeout: Self.networkEngineSwitchDrainTimeout)
+        guard oldDrained else {
+            Self.runtimeLogger.error("stage=handoverNetworkEngine oldEngineDrainTimeout")
             networkEngineMessage = AppLocalization.string(
-                "Network engine updated."
+                "The current network engine did not stop in time. It remains selected."
+            )
+            networkEngineMessageIsError = true
+            await attemptRollbackToEngine(
+                mode: previousMode,
+                routingMode: currentRoutingMode,
+                originalConnectedSince: originalConnectedSince,
+                errorMessage: networkEngineMessage
             )
             return
         }
 
-        await setEnabled(true)
-        if await waitForConnectionToSettle(timeout: Self.networkEngineSwitchSettleTimeout) {
+        // 2. 卸载旧 manager 并切换模式
+        Self.runtimeLogger.info("stage=handoverNetworkEngine activatingTargetEngine")
+        detachManagerObserver()
+        networkEngineMode = targetMode
+        userDefaults.set(targetMode.rawValue, forKey: Self.networkEnginePreferenceKey)
+
+        do {
+            try await systemExtensionActivator.activate(
+                identifier: targetMode.providerBundleIdentifier
+            ) { [weak self] in
+                guard let self else { return }
+                self.failureContext = .configuration
+                self.systemExtensionApprovalRequired = true
+            }
+            await deactivateOpposingNetworkEngineManagers(for: targetMode)
+            let newManager = try await loadOrCreateManager()
+            installManager(newManager)
+
+            // 3. 准备启动快照与配置
+            let (_, launchPayload) = try await prepareLaunchSnapshotPayload(requestedMode: currentRoutingMode)
+            try await persistProviderConfiguration(
+                currentRoutingMode,
+                localProxy: providerLocalProxySettings,
+                in: newManager
+            )
+
+            guard let session = newManager.connection as? NETunnelProviderSession else {
+                throw TunnelManagerError.providerSessionUnavailable
+            }
+            let options: [String: NSObject] = [
+                ProviderLaunchSnapshotCodec.startOptionsKey: launchPayload as NSData
+            ]
+            Self.runtimeLogger.info("stage=handoverNetworkEngine startVPNTunnel submitted")
+            try session.startVPNTunnel(options: options)
+
+            // 4. 等待新扩展稳定连接
+            let connected = await waitForProviderConnectionStatus(.connected, timeout: Self.networkEngineSwitchSettleTimeout)
+            guard connected else {
+                throw TunnelManagerError.providerSessionUnavailable
+            }
+
+            // 5. 切换成功，对齐状态
+            Self.runtimeLogger.info("stage=handoverNetworkEngine success")
+            self.connectedSince = originalConnectedSince ?? newManager.connection.connectedDate ?? .now
+            self.sessionRoutingMode = currentRoutingMode
+            self.sessionNetworkEngineMode = targetMode
+            self.state = .connected
+            startTelemetryPollingIfNeeded()
             networkEngineMessage = AppLocalization.string(
                 "Network engine switched without manual disconnection."
             )
-            return
+            networkEngineMessageIsError = false
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=handoverNetworkEngine failed, initiating rollback: \(String(reflecting: error), privacy: .public)"
+            )
+            await attemptRollbackToEngine(
+                mode: previousMode,
+                routingMode: currentRoutingMode,
+                originalConnectedSince: originalConnectedSince,
+                errorMessage: AppLocalization.string(
+                    "The new network engine could not connect. The previous engine was restored."
+                )
+            )
         }
+    }
 
-        if managerConnectionIsActive {
-            if state == .connected || state == .connecting || state == .recovering {
-                await setEnabled(false)
-            } else {
-                manager?.connection.stopVPNTunnel()
-            }
+    private func attemptRollbackToEngine(
+        mode: NetworkEngineMode,
+        routingMode: RoutingMode,
+        originalConnectedSince: Date?,
+        errorMessage: String?
+    ) async {
+        Self.runtimeLogger.info(
+            "stage=handoverNetworkEngine rollback begin mode=\(mode.rawValue, privacy: .public)"
+        )
+        if let currentConnection = manager?.connection, Self.isActiveProviderStatus(currentConnection.status) {
+            currentConnection.stopVPNTunnel()
             _ = await waitForProviderToBecomeInactive(timeout: Self.networkEngineSwitchDrainTimeout)
         }
-        await applyNetworkEngineMode(previousMode)
-        await setEnabled(true)
-        let restored = await waitForConnectionToSettle(timeout: Self.networkEngineSwitchSettleTimeout)
-        networkEngineMessage = restored
-            ? AppLocalization.string(
-                "The new network engine could not connect. The previous engine was restored."
+
+        detachManagerObserver()
+        networkEngineMode = mode
+        userDefaults.set(mode.rawValue, forKey: Self.networkEnginePreferenceKey)
+
+        do {
+            try await systemExtensionActivator.activate(
+                identifier: mode.providerBundleIdentifier
+            ) { [weak self] in
+                guard let self else { return }
+                self.failureContext = .configuration
+                self.systemExtensionApprovalRequired = true
+            }
+            await deactivateOpposingNetworkEngineManagers(for: mode)
+            let fallbackManager = try await loadOrCreateManager()
+            installManager(fallbackManager)
+
+            let (_, launchPayload) = try await prepareLaunchSnapshotPayload(requestedMode: routingMode)
+            try await persistProviderConfiguration(
+                routingMode,
+                localProxy: providerLocalProxySettings,
+                in: fallbackManager
             )
-            : AppLocalization.string(
+
+            guard let session = fallbackManager.connection as? NETunnelProviderSession else {
+                throw TunnelManagerError.providerSessionUnavailable
+            }
+            let options: [String: NSObject] = [
+                ProviderLaunchSnapshotCodec.startOptionsKey: launchPayload as NSData
+            ]
+            try session.startVPNTunnel(options: options)
+
+            let restored = await waitForProviderConnectionStatus(.connected, timeout: Self.networkEngineSwitchSettleTimeout)
+            if restored {
+                Self.runtimeLogger.info("stage=handoverNetworkEngine rollback success")
+                self.connectedSince = originalConnectedSince ?? fallbackManager.connection.connectedDate ?? .now
+                self.sessionRoutingMode = routingMode
+                self.sessionNetworkEngineMode = mode
+                self.state = .connected
+                startTelemetryPollingIfNeeded()
+                networkEngineMessage = errorMessage ?? AppLocalization.string(
+                    "The new network engine could not connect. The previous engine was restored."
+                )
+                networkEngineMessageIsError = true
+            } else {
+                throw TunnelManagerError.providerSessionUnavailable
+            }
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=handoverNetworkEngine rollback failed completely: \(String(reflecting: error), privacy: .public)"
+            )
+            networkEngineMessage = AppLocalization.string(
                 "The new network engine and automatic rollback both failed."
             )
-        networkEngineMessageIsError = true
+            networkEngineMessageIsError = true
+            invalidateCachedManager()
+            recordFailure(error, context: .provider)
+        }
+    }
+
+    private func detachManagerObserver() {
+        if let statusObserver {
+            NotificationCenter.default.removeObserver(statusObserver)
+            self.statusObserver = nil
+        }
+        resetManagerScopedLifecycleState()
+        self.manager = nil
+    }
+
+    private func waitForProviderConnectionStatus(
+        _ targetStatus: NEVPNStatus,
+        timeout: Duration
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while clock.now < deadline {
+            if manager?.connection.status == targetStatus { return true }
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+            } catch {
+                return false
+            }
+        }
+        return false
     }
 
     private func applyNetworkEngineMode(_ mode: NetworkEngineMode) async {
@@ -4283,7 +4460,8 @@ final class TunnelManager: ObservableObject {
     }
 
     var canPerformPrimaryAction: Bool {
-        switch state {
+        if isSwitchingNetworkEngine { return false }
+        return switch state {
         case .disconnected, .failed:
             canConnect
         case .connecting, .connected, .recovering:
@@ -4317,6 +4495,9 @@ final class TunnelManager: ObservableObject {
         if systemExtensionApprovalRequired {
             return AppLocalization.string("Waiting for approval")
         }
+        if isSwitchingNetworkEngine {
+            return AppLocalization.string("Switching network engine…")
+        }
         return switch state {
         case .privacyConsentRequired: AppLocalization.string("Privacy review required")
         case .loading: AppLocalization.string("Preparing")
@@ -4338,6 +4519,9 @@ final class TunnelManager: ObservableObject {
             return AppLocalization.string(
                 "Approve the AetherRoute network extension to continue."
             )
+        }
+        if isSwitchingNetworkEngine {
+            return AppLocalization.string("Switching network engine…")
         }
         if isConnectionPreviewOnly, !isEnabled {
             return AppLocalization.string(
@@ -4701,6 +4885,9 @@ final class TunnelManager: ObservableObject {
     private func updateState() {
         guard let connection = manager?.connection else {
             Self.runtimeLogger.info("stage=updateState status=missing")
+            if isSwitchingNetworkEngine {
+                return
+            }
             state = .disconnected
             connectedSince = nil
             sessionRoutingMode = nil
@@ -4710,6 +4897,13 @@ final class TunnelManager: ObservableObject {
         }
         let status = connection.status
         let previousProviderStatus = lastObservedProviderStatus
+        if isSwitchingNetworkEngine, status != .connected {
+            lastObservedProviderStatus = status
+            Self.runtimeLogger.info(
+                "stage=updateState switchingNetworkEngine transientStatus=\(status.rawValue, privacy: .public)"
+            )
+            return
+        }
         if status == .connected, previousProviderStatus != .connected {
             providerConnectionID = UUID()
             readinessVerifiedConnectionID = nil
@@ -4865,7 +5059,9 @@ final class TunnelManager: ObservableObject {
             failureContext = .provider
         }
         if status == .connected {
-            connectedSince = manager?.connection.connectedDate ?? connectedSince ?? .now
+            if !isSwitchingNetworkEngine || connectedSince == nil {
+                connectedSince = manager?.connection.connectedDate ?? connectedSince ?? .now
+            }
             let provider = manager?.protocolConfiguration as? NETunnelProviderProtocol
             do {
                 sessionRoutingMode = try TunnelProviderConfigurationCodec.routingMode(
