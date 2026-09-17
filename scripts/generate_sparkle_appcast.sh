@@ -262,23 +262,23 @@ let defaultNotesContent = """
 <div class="section">
   <span class="section-tag tag-feature">✨ 新增特性</span>
   <ul>
-    <li><strong>策略组 Segmented 胶囊栏</strong>：顶部切换器升级为 Apple HIG 原生胶囊分段栏，配备平滑弹簧切换动画。</li>
-    <li><strong>当前策略组专属状态卡片</strong>：在节点网格顶部清晰呈现当前选中的策略组名、语义图标、调度策略标签及切换状态。</li>
-    <li><strong>底库节点与协议诊断专区</strong>：重构底库清单为“节点解析与协议诊断”，明晰底层节点状态与协议参数排查入口。</li>
+    <li><strong>主窗口单例生命周期统一</strong>：彻底统一 Dock 图标与菜单栏唤起的窗口实例，全局保持唯一主面板，杜绝重复创建或多窗口共存。</li>
+    <li><strong>隐藏 Dock 图标 / 仅菜单栏常驻</strong>：支持切换为极简 Accessory 常驻模式，关闭面板后后台平稳运行，点击状态栏菜单随时秒级唤出大面板。</li>
+    <li><strong>DNS 设置现代紧凑双列与一体化卡片</strong>：重构宽松纵向布局为标准紧凑双列网格，深度融合运行时状态与解析诊断卡片，移除重复多余操作。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">⚡️ 体验优化</span>
   <ul>
-    <li><strong>更新提示弹窗现代 HIG 视觉重构</strong>：升级为深浅色自适应原生双层卡片，版本及构建标签精致化呈现。</li>
-    <li><strong>明晰测速控制层级与职责</strong>：彻底区分顶层“全部测速”与组内“测试延迟”，消除操作歧义。</li>
+    <li><strong>窗口置顶唤醒体验优化</strong>：点击 Dock 图标或菜单栏激活项时平滑前置现有窗口，消除闪烁与层级错乱。</li>
+    <li><strong>DNS 页面信息密度与视觉层级升级</strong>：重新编排基础设置、高级特性与上游服务器列表层级，提升大屏阅读舒适度。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 问题修复</span>
+  <span class="section-tag tag-fix">🐞 稳定性验证</span>
   <ul>
-    <li><strong>更新日志排版修正</strong>：修复自动更新说明未应用样式与排版抖动的问题。</li>
-    <li><strong>代码闭合结构修复</strong>：修复代理视图内局部语法结构异常。</li>
+    <li><strong>虚拟机全场景矩阵测试 100% 通过</strong>：TUN / 透明代理双引擎 × 规则 / 全局 / 直连 6 种模式零故障回归。</li>
+    <li><strong>硬件网络热插拔与休眠长连接自愈验证</strong>：物理链路秒级自愈，锁屏长连接零重连保持。</li>
   </ul>
 </div>
 """
