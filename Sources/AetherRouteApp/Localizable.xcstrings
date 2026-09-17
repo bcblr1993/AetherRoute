@@ -1725,6 +1725,36 @@
         }
       }
     },
+    "Copy Proxy Command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制代理命令"
+          }
+        }
+      }
+    },
+    "Copy terminal export command to clipboard": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制终端代理 export 命令到剪贴板"
+          }
+        }
+      }
+    },
+    "Copy terminal unset command to clipboard": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制终端代理 unset 清除命令到剪贴板"
+          }
+        }
+      }
+    },
     "Copy Shell Environment": {
       "localizations": {
         "zh-Hans": {
@@ -5394,6 +5424,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "刷新授权"
+          }
+        }
+      }
+    },
+    "Reject": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒绝"
           }
         }
       }

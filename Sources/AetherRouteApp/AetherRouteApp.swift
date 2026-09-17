@@ -756,7 +756,7 @@ private struct MenuBarContent: View {
                         HStack(spacing: AetherVisual.s1) {
                             Image(systemName: copiedTerminalCommand ? "checkmark.circle.fill" : "terminal")
                                 .foregroundStyle(copiedTerminalCommand ? Color.green : Color.primary)
-                            Text(copiedTerminalCommand ? AppLocalization.string("Copied") : AppLocalization.string("Copy Proxy"))
+                            Text(copiedTerminalCommand ? AppLocalization.string("Copied") : AppLocalization.string("Copy Proxy Command"))
                                 .lineLimit(1)
                         }
                         .font(.caption)
@@ -764,6 +764,7 @@ private struct MenuBarContent: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .help(AppLocalization.string("Copy terminal export command to clipboard"))
                     .accessibilityIdentifier("copy-terminal-proxy-button")
 
                     Button {
@@ -779,7 +780,7 @@ private struct MenuBarContent: View {
                         HStack(spacing: AetherVisual.s1) {
                             Image(systemName: clearedTerminalCommand ? "checkmark.circle.fill" : "terminal.fill")
                                 .foregroundStyle(clearedTerminalCommand ? Color.green : Color.primary)
-                            Text(clearedTerminalCommand ? AppLocalization.string("Cleared") : AppLocalization.string("Clear Proxy"))
+                            Text(clearedTerminalCommand ? AppLocalization.string("Copied") : AppLocalization.string("Copy Clear Command"))
                                 .lineLimit(1)
                         }
                         .font(.caption)
@@ -787,6 +788,7 @@ private struct MenuBarContent: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .help(AppLocalization.string("Copy terminal unset command to clipboard"))
                     .accessibilityIdentifier("clear-terminal-proxy-button")
                 }
 
