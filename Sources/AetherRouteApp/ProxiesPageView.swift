@@ -270,7 +270,7 @@ private struct ProxyGroupTabButton: View {
 private struct ActiveProxyGroupView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var filter: ProxyNodeFilter = .all
-    @State private var sort: ProxyNodeSort = .latency
+    @State private var sort: ProxyNodeSort = .default
     let group: ProxyGroupConfigurationSummary
     let protocols: [String: String]
     let searchText: String
@@ -632,16 +632,8 @@ private struct ActiveProxyGroupView: View {
     }
 
     private var visibleMembers: [String] {
-        members
-            .filter { filter.accepts(status(for: $0)) && matchesSearch($0) }
-            .sorted { lhs, rhs in
-                switch sort {
-                case .latency:
-                    return latencyRank(status(for: lhs)) < latencyRank(status(for: rhs))
-                case .name:
-                    return lhs.localizedStandardCompare(rhs) == .orderedAscending
-                }
-            }
+        let filtered = members.filter { filter.accepts(status(for: $0)) && matchesSearch($0) }
+        return ProxyPageNodeOrder.sorted(members: filtered, by: sort) { latencyRank(status(for: $0)) }
     }
 
     private func latencyRank(_ status: ProxyLatencyStatus) -> Int {
@@ -813,20 +805,7 @@ private struct ProxyNodeModernCard: View {
 
 }
 
-// MARK: - 排序与状态模型
-private enum ProxyNodeSort: String, CaseIterable, Identifiable {
-    case latency
-    case name
-
-    var id: Self { self }
-
-    var localizedTitle: String {
-        switch self {
-        case .latency: AppLocalization.string("By latency")
-        case .name: AppLocalization.string("By name")
-        }
-    }
-}
+// MARK: - 表格模型
 
 private struct ProxyMemberTableItem: Identifiable {
     let member: String
