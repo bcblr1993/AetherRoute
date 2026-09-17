@@ -4,6 +4,45 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.13] - 2026-09-17
+
+### Added
+
+- Physical Uplink Detector (`PhysicalUplinkDetector` in `AetherRouteKit`):
+  introduced low-level Darwin network interface enumeration (`if_nameindex()`)
+  combined with macOS `ServiceOrder` priority matching to immediately detect
+  hot-plugged network hardware adapters (e.g. USB Ethernet dongles) even when
+  the sandboxed `NWPathMonitor` remains quiet while reasserting.
+- Strict virtual and container interface prefix filtering: excluded `feth`
+  (Docker/OrbStack), `bridge`, `utun`, `vmenet`, `anpi`, `ap`, `awdl`, `llw`,
+  `gif`, `stf`, and `lo` from uplink selection, preventing virtual interfaces
+  from causing core network reset failure and recovery exhaustion.
+- Host-level recovery watchdog (`hostRecoveryWatchdogTimeout` in `TunnelManager`):
+  armed a 45-second fallback watchdog whenever entering the `.recovering` state,
+  automatically triggering a graceful restart to self-heal if the system extension
+  ever encounters an unrecoverable driver deadlock.
+
+### Changed
+
+- Streamlined connection transition animations in Overview (`ContentView`):
+  completely removed the 3-stage progress step bar ("System Auth -> Extension -> Handshake")
+  to permanently lock the Hero connection card height with absolute zero layout shift,
+  retaining the fluid luminous energy bar and breathing beacon lens.
+- Redesigned configuration profiles list (`ProfilesSettingsView`): transformed the
+  profile management interface into an Apple-native grouped list, eliminating
+  repetitive metadata badges, visual fragmentation, and card clutter.
+- Fixed proxy node ordering in the main application (`ProxiesSettingsView`):
+  anchored node card layout to strictly follow the original configuration declaration
+  order, eliminating card jumping and layout re-ordering during latency testing.
+
+### Fixed
+
+- Resolved network recovery deadlock where disconnecting mobile hotspot/Wi-Fi,
+  sleeping, and subsequently plugging in an Ethernet cable left the app indefinitely
+  frozen in "Waiting for network recovery", requiring a manual reconnect.
+- Fixed node speedtest timeouts and cascading parent strategy group latency
+  refresh issues (`measureCurrentNodeSelection` in `TunnelManager`).
+
 ## [1.0.12] - 2026-09-17
 
 ### Added
