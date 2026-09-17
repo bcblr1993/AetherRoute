@@ -85,6 +85,9 @@ public enum TunnelStartupTimingPolicy {
     /// which does not depend on the engine and can restore routing on its own.
     public static let providerNetworkResetWaitSeconds: TimeInterval = 3
     public static let hostDisconnectionWatchdogTimeoutSeconds = 35
+    /// Upper bound on how long the host allows a tunnel in `.recovering` to stay
+    /// reasserting before triggering an automatic reconnect.
+    public static let hostRecoveryWatchdogTimeoutSeconds = 45
 
     /// The embedded selector runs bounded batches and adds a two-second reply
     /// grace period. Keep the host deadline beyond that hard upper bound so a
@@ -108,6 +111,10 @@ public enum TunnelStartupTimingPolicy {
 
     public static var hostDisconnectionWatchdogTimeout: Duration {
         .seconds(hostDisconnectionWatchdogTimeoutSeconds)
+    }
+
+    public static var hostRecoveryWatchdogTimeout: Duration {
+        .seconds(hostRecoveryWatchdogTimeoutSeconds)
     }
 
     public static var providerEngineHandoffWaitTimeout: Duration {

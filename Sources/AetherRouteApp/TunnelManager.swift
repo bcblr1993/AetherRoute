@@ -374,10 +374,12 @@ final class TunnelManager: ObservableObject {
         .appendingPathComponent("RoutingResources", isDirectory: true)
     private var connectionWatchdogTask: Task<Void, Never>?
     private var disconnectionWatchdogTask: Task<Void, Never>?
+    private var recoveryWatchdogTask: Task<Void, Never>?
     private var connectionReadinessTask: Task<Void, Never>?
     private var connectionRequestID: UUID?
     private var connectionAttemptID: UUID?
     private var disconnectionAttemptID: UUID?
+    private var recoveryAttemptID: UUID?
     /// Whether the disconnection the watchdog is guarding is one *we* asked
     /// for.
     ///
@@ -846,6 +848,8 @@ final class TunnelManager: ObservableObject {
         } else {
             disconnectErrorLookupID = nil
             cancelConnectionWatchdog()
+            cancelDisconnectionWatchdog()
+            cancelRecoveryWatchdog()
             cancelConnectionReadiness()
             guard state == .connected || state == .connecting || state == .recovering else {
                 Self.runtimeLogger.info("stage=setEnabled ignored reason=notActive")
@@ -939,6 +943,7 @@ final class TunnelManager: ObservableObject {
             )
             cancelConnectionWatchdog()
             cancelDisconnectionWatchdog()
+            cancelRecoveryWatchdog()
             invalidateCachedManager()
             let context: ConnectionFailureContext
             if (error as? ActiveProfileStoreError) == .noActiveProfile {
@@ -4813,6 +4818,7 @@ final class TunnelManager: ObservableObject {
         invalidateConnectionRequest()
         cancelConnectionWatchdog()
         cancelDisconnectionWatchdog()
+        cancelRecoveryWatchdog()
         if let statusObserver {
             NotificationCenter.default.removeObserver(statusObserver)
             self.statusObserver = nil
@@ -5040,6 +5046,11 @@ final class TunnelManager: ObservableObject {
             cancelDisconnectionWatchdog()
         case .privacyConsentRequired, .loading, .connecting, .disconnecting:
             break
+        }
+        if state == .recovering {
+            beginRecoveryWatchdogIfNeeded()
+        } else {
+            cancelRecoveryWatchdog()
         }
         if !distributionConnectionAccess.permitsNewConnection,
            state == .connecting || state == .connected || state == .recovering {
@@ -5809,6 +5820,7 @@ final class TunnelManager: ObservableObject {
         invalidateConnectionRequest()
         cancelConnectionWatchdog()
         cancelDisconnectionWatchdog()
+        cancelRecoveryWatchdog()
         failureContext = context
         state = .failed(localizedConnectionError(error).localizedDescription)
     }
@@ -5965,6 +5977,53 @@ final class TunnelManager: ObservableObject {
             ),
             context: .provider
         )
+    }
+
+    private func beginRecoveryWatchdogIfNeeded() {
+        guard recoveryWatchdogTask == nil else { return }
+        let attemptID = UUID()
+        recoveryAttemptID = attemptID
+        Self.runtimeLogger.info(
+            "stage=recoveryWatchdog armed timeoutSeconds=\(TunnelStartupTimingPolicy.hostRecoveryWatchdogTimeoutSeconds, privacy: .public)"
+        )
+        recoveryWatchdogTask = Task { [weak self] in
+            do {
+                try await Task.sleep(
+                    for: TunnelStartupTimingPolicy.hostRecoveryWatchdogTimeout
+                )
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.recoveryWatchdogFired(attemptID)
+        }
+    }
+
+    private func cancelRecoveryWatchdog() {
+        if recoveryWatchdogTask != nil {
+            Self.runtimeLogger.info("stage=recoveryWatchdog cancelled")
+        }
+        recoveryWatchdogTask?.cancel()
+        recoveryWatchdogTask = nil
+        recoveryAttemptID = nil
+    }
+
+    private func recoveryWatchdogFired(_ attemptID: UUID) {
+        guard recoveryAttemptID == attemptID,
+              case .recovering = state else {
+            Self.runtimeLogger.info("stage=recoveryWatchdog ignored reason=stale")
+            return
+        }
+        Self.runtimeLogger.error(
+            "stage=recoveryWatchdog fired tunnelStuckInRecovery attempting restart"
+        )
+        cancelRecoveryWatchdog()
+        Task { [weak self] in
+            guard let self else { return }
+            await self.setEnabled(false)
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            await self.setEnabled(true)
+        }
     }
 
     private func localizedConnectionError(_ error: Error) -> Error {

@@ -329,8 +329,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 provider.physicalPathDidChange(reason: "physicalLinkChanged")
             }, &context)
         if let uplinkStore {
-            SCDynamicStoreSetNotificationKeys(uplinkStore, nil,
-                ["State:/Network/Interface/en[0-9]+/(Link|IPv4|IPv6)"] as CFArray)
+            SCDynamicStoreSetNotificationKeys(
+                uplinkStore,
+                nil,
+                [
+                    "State:/Network/Interface/en[0-9]+/(Link|IPv4|IPv6)",
+                    "State:/Network/Interface/pdp_ip[0-9]+/(Link|IPv4|IPv6)",
+                    "State:/Network/Global/IPv4",
+                ] as CFArray
+            )
             SCDynamicStoreSetDispatchQueue(uplinkStore, pathMonitorQueue)
         }
         monitor.start(queue: pathMonitorQueue)
@@ -347,45 +354,35 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     /// duplicate DHCP notification must not destroy a healthy active transport.
     private func physicalPathDidChange(reason: String) {
         guard !uplinkLock.withLock({ providerStopping }) else { return }
-        var signature = "offline"
-        if let interface = currentPhysicalUplink(),
-           let store = SCDynamicStoreCreate(nil, "AetherRoute uplink identity" as CFString, nil, nil) {
-            signature = "\(interface.name):\(interface.index)|"
-                + physicalAddresses(store: store, interface: interface).sorted().joined(separator: ",")
-        }
+        guard let store = SCDynamicStoreCreate(nil, "AetherRoute uplink identity" as CFString, nil, nil)
+        else { return }
+        let cached = uplinkLock.withLock { physicalInterfaces }
+        let uplink = PhysicalUplinkDetector.currentPhysicalUplink(
+            store: store,
+            cachedPathInterfaces: cached
+        )
+        let signature = PhysicalUplinkDetector.pathSignature(store: store, uplink: uplink)
         let previous = lastPathSignature
         lastPathSignature = signature
         guard let previous, previous != signature else { return }
-        Self.runtimeLogger.info("stage=physicalUplinkChanged scheduling recovery")
+        Self.runtimeLogger.info(
+            "stage=physicalUplinkChanged scheduling recovery reason=\(reason, privacy: .public) signature=\(signature, privacy: .public) previous=\(previous, privacy: .public)"
+        )
         recovery.trigger(reason: reason, supersedes: true)
     }
 
-    private func physicalAddresses(store: SCDynamicStore, interface: NWInterface) -> [String] {
-        ["IPv4", "IPv6"].flatMap { family -> [String] in
-            guard let state = SCDynamicStoreCopyValue(store,
-                "State:/Network/Interface/\(interface.name)/\(family)" as CFString) as? [String: Any],
-                  let addresses = state["Addresses"] as? [String] else { return [] }
-            return addresses.filter { address in
-                !address.hasPrefix("169.254.") && !address.lowercased().hasPrefix("fe80:")
-                    && address != "0.0.0.0" && address != "::"
-            }
-        }
-    }
-
-    /// Path preference is supplied by Network.framework. Link state and
-    /// assigned addresses come from SystemConfiguration, not the tunnel's
-    /// satisfied default route or a sticky core interface cache.
-    private func currentPhysicalUplink() -> NWInterface? {
+    /// Primary physical hardware uplink interface, resolved via SystemConfiguration
+    /// and Darwin network interface enumeration to ensure hot-plugged devices (such as
+    /// USB Ethernet adapters) and link changes are immediately detected even if
+    /// the sandboxed NWPathMonitor is quiet.
+    private func currentPhysicalUplink() -> PhysicalUplink? {
         guard let store = SCDynamicStoreCreate(nil, "AetherRoute uplink" as CFString, nil, nil)
         else { return nil }
-        let candidates = uplinkLock.withLock { physicalInterfaces }
-        return candidates.first { interface in
-            guard [.wifi, .wiredEthernet, .cellular].contains(interface.type),
-                  let link = SCDynamicStoreCopyValue(store,
-                    "State:/Network/Interface/\(interface.name)/Link" as CFString) as? [String: Any],
-                  link["Active"] as? Bool == true else { return false }
-            return !physicalAddresses(store: store, interface: interface).isEmpty
-        }
+        let cached = uplinkLock.withLock { physicalInterfaces }
+        return PhysicalUplinkDetector.currentPhysicalUplink(
+            store: store,
+            cachedPathInterfaces: cached
+        )
     }
 
     private func performNetworkRecovery(reason: String, attempt: Int) {
