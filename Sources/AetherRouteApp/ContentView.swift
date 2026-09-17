@@ -1705,11 +1705,8 @@ private struct ProfilesView: View {
 
                 if tunnel.profiles.isEmpty {
                     emptyOnboardingSection
+                    supportedFormatsCard
                 } else {
-                    if let active = tunnel.activeProfile {
-                        activeProfileHeroCard(active: active)
-                    }
-
                     profileLibraryCard
 
                     if !tunnel.requiredRoutingResources.isEmpty {
@@ -1722,8 +1719,6 @@ private struct ProfilesView: View {
                         .environmentObject(tunnel)
                     }
                 }
-
-                supportedFormatsCard
             }
             .padding(.horizontal, AetherVisual.pageHorizontalPadding)
             .padding(.top, AetherVisual.pageTopPadding)
@@ -2038,112 +2033,6 @@ private struct ProfilesView: View {
         .aetherPanel()
     }
 
-    private func activeProfileHeroCard(active: ActiveProfile) -> some View {
-        let isSubscription = active.subscription != nil
-        return VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            HStack(alignment: .center, spacing: AetherVisual.s3) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: isSubscription
-                                    ? [Color.blue.opacity(0.20), Color.cyan.opacity(0.08)]
-                                    : [Color.teal.opacity(0.20), Color.green.opacity(0.08)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    Image(systemName: isSubscription ? "link.circle.fill" : "doc.badge.gearshape.fill")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(isSubscription ? Color.blue : Color.teal)
-                }
-                .frame(width: 40, height: 40)
-                .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    HStack(spacing: AetherVisual.s2) {
-                        Text(active.name)
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-
-                        HStack(spacing: AetherVisual.s1) {
-                            Circle()
-                                .fill(Color.green)
-                                .frame(width: 5, height: 5)
-                            Text("In Use")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.primary)
-                        }
-                        .padding(.horizontal, AetherVisual.s2)
-                        .padding(.vertical, AetherVisual.sMicro)
-                        .background(Color.green.opacity(0.12), in: Capsule())
-                    }
-
-                    HStack(spacing: AetherVisual.s1) {
-                        Text(isSubscription ? AppLocalization.string("HTTPS subscription") : AppLocalization.string("Local profile"))
-                            .font(.caption)
-                            .foregroundStyle(.primary)
-
-                        Text(verbatim: "·")
-                            .font(.caption)
-                            .foregroundStyle(.primary)
-                            .accessibilityHidden(true)
-
-                        Text(String.localizedStringWithFormat(
-                            AppLocalization.string("Activated %@"),
-                            AppLocalization.date(active.importedAt, date: .abbreviated, time: .shortened)
-                        ))
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
-                    }
-                }
-
-                Spacer(minLength: AetherVisual.s2)
-
-                if isSubscription {
-                    Button {
-                        Task { await tunnel.refreshSubscription() }
-                    } label: {
-                        AetherProgressButtonLabel(
-                            "Check for Updates",
-                            systemImage: "arrow.clockwise",
-                            isWorking: tunnel.isRefreshingSubscription
-                        )
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(!tunnel.canModifyProfiles || tunnel.isRefreshingSubscription)
-                }
-            }
-
-            if let subscription = active.subscription {
-                Divider()
-                    .opacity(0.4)
-
-                HStack(spacing: AetherVisual.s3) {
-                    Label(
-                        subscriptionUpdateDetail(subscription),
-                        systemImage: "clock"
-                    )
-                    .font(.caption2)
-                    .foregroundStyle(.primary)
-
-                    if let lastCheckedAt = subscription.lastCheckedAt {
-                        Spacer(minLength: AetherVisual.s2)
-                        Text(String.localizedStringWithFormat(
-                            AppLocalization.string("Checked %@"),
-                            AppLocalization.date(lastCheckedAt, date: .abbreviated, time: .shortened)
-                        ))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    }
-                }
-            }
-        }
-        .padding(AetherVisual.s4)
-        .aetherPanel()
-    }
 
     private var profileLibraryCard: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -2496,6 +2385,8 @@ private struct RoutingResourcesCard: View {
 }
 
 private struct ManagedProfileRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var tunnel: TunnelManager
     @State private var isHovered = false
     @State private var isActionHovered = false
     let managed: ManagedProfile
@@ -2509,6 +2400,34 @@ private struct ManagedProfileRow: View {
 
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
+            // 1. 左侧原生单选指示器 (Radio Indicator)
+            Button(action: {
+                if !isActive && canActivate {
+                    activate()
+                }
+            }) {
+                ZStack {
+                    Circle()
+                        .strokeBorder(
+                            isActive ? Color.accentColor : Color.secondary.opacity(0.35),
+                            lineWidth: 1.5
+                        )
+                        .frame(width: 16, height: 16)
+                    if isActive {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 8, height: 8)
+                    }
+                }
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isActive || !canActivate)
+            .accessibilityIdentifier("radio-select-\(managed.id.uuidString)")
+            .accessibilityLabel(isActive ? "Selected" : "Select")
+
+            // 2. 节点/配置图标 (磨砂色底 + 矢量图标)
             ZStack {
                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                     .fill(iconGradient)
@@ -2519,10 +2438,11 @@ private struct ManagedProfileRow: View {
             .frame(width: 36, height: 36)
             .accessibilityHidden(true)
 
+            // 3. 配置名称与副标题
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 HStack(spacing: AetherVisual.s2) {
                     Text(managed.profile.name)
-                        .font(.system(size: 13.5, weight: .semibold))
+                        .font(.system(size: 13.5, weight: isActive ? .bold : .semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
@@ -2548,6 +2468,22 @@ private struct ManagedProfileRow: View {
             }
 
             Spacer(minLength: AetherVisual.s2)
+
+            // 4. 右侧操作区：如果是激活的订阅，展示检查更新按钮；如果是未激活项，展示使用按钮
+            if isActive && isSubscription {
+                Button {
+                    Task { await tunnel.refreshSubscription() }
+                } label: {
+                    AetherProgressButtonLabel(
+                        "Check for Updates",
+                        systemImage: "arrow.clockwise",
+                        isWorking: tunnel.isRefreshingSubscription
+                    )
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!canModify || tunnel.isRefreshingSubscription)
+            }
 
             if !isActive {
                 Button(AppLocalization.string("Use"), action: activate)
@@ -2594,8 +2530,17 @@ private struct ManagedProfileRow: View {
         }
         .padding(.horizontal, AetherVisual.s5)
         .padding(.vertical, AetherVisual.sRow)
-        .background(isHovered ? Color.primary.opacity(0.03) : Color.clear)
+        .background(
+            isActive
+                ? Color.accentColor.opacity(colorScheme == .dark ? 0.08 : 0.04)
+                : (isHovered ? Color.primary.opacity(0.03) : Color.clear)
+        )
         .contentShape(Rectangle())
+        .onTapGesture {
+            if !isActive && canActivate {
+                activate()
+            }
+        }
         .onHover { isHovered = $0 }
         .contextMenu {
             if !isActive {
