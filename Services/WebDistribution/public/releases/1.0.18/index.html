@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-Hans" data-language="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AetherRoute 1.0.18 正式版本说明、更新日志、安装包下载与 SHA-256 校验和。">
+  <title>AetherRoute 1.0.18 正式版</title>
+  <link rel="icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="icon" href="/assets/favicon-dark.png?v=20260914.08" type="image/png" media="(prefers-color-scheme: dark)">
+  <link rel="alternate icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=20260914.08">
+  <link rel="stylesheet" href="/assets/site.css?v=20260914.08">
+  <script src="/assets/site.js?v=20260916.05" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content"><span data-lang="zh">跳到正文</span><span data-lang="en">Skip to content</span></a>
+  
+  <header class="site-header"><nav class="nav wrap" aria-label="Main navigation"><a class="brand" href="/"><img src="/assets/aetherroute-mark.png?v=20260914.08" srcset="/assets/aetherroute-mark.png?v=20260914.08 1x, /assets/aetherroute-mark-1024.png?v=20260914.08 2x" width="34" height="34" alt="">AetherRoute</a><div class="navlinks"><a href="/#experience"><span data-lang="zh">使用体验</span><span data-lang="en">Experience</span></a><a href="/releases/"><span data-lang="zh">版本更新</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">使用帮助</span><span data-lang="en">Support</span></a></div><div class="nav-actions"><button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button><a class="small-button" href="/releases/"><span data-lang="zh">获取 Mac 版</span><span data-lang="en">Get for Mac</span> <span aria-hidden="true">↗</span></a></div></nav></header>
+
+  <main id="content" class="shell">
+    <div class="page-hero">
+      <span class="eyebrow"><span data-lang="zh">正式版 · 已通过 Apple 公证</span><span data-lang="en">Release · Apple notarized</span></span>
+      <h1>AetherRoute 1.0.18</h1>
+      <p>Build 2026091816 · 2026-09-18 · Apple silicon · macOS 15.0+</p>
+      <div class="hero-actions"><a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.18/AetherRoute-1.0.18-build-2026091816-arm64.dmg"><span data-lang="zh">下载 1.0.18 正式版</span><span data-lang="en">Download 1.0.18 Release</span></a><a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.18">GitHub Release ↗</a><a class="button" href="/releases/1.0.17/"><span data-lang="zh">获取 1.0.17 历史版本</span><span data-lang="en">Get 1.0.17 previous release</span></a></div>
+    </div>
+
+    <article class="prose">
+<section><h2><span data-lang="zh">零配置透明国内与 Apple 服务加速引擎</span><span data-lang="en">Zero-Config Domestic & Apple Acceleration Engine</span></h2><ul><li><span data-lang="zh">内存级无损配置优化：在不破坏用户磁盘原始配置的前提下，运行时自动注入 Apple 服务与国内高优规则，达成“国内直连丝滑、国外自动代理”。</span><span data-lang="en">Lossless in-memory optimization dynamically injects Apple and domestic direct rules without mutating on-disk profiles.</span></li><li><span data-lang="zh">Apple 服务 CDN 智能防护：针对 swcdn.apple.com 等系统更新服务智能过滤 fake-ip 劫持，国内 DNS 直接解析真实 Anycast IP，实测 34.9 MB/s 线速跑满带宽。</span><span data-lang="en">Bypasses Fake-IP for Apple CDN domains, resolving to authentic domestic Anycast IPs for saturated line-rate downloads (34.9 MB/s verified).</span></li><li><span data-lang="zh">智能 DNS 分流：国内域名全自动映射至低延迟国内 DNS（223.5.5.5），杜绝海外 DNS 污染与解析延迟。</span><span data-lang="en">Maps domestic domains to fast domestic upstream DNS (223.5.5.5), eliminating latency and poisoning.</span></li></ul></section>
+<section><h2><span data-lang="zh">网络切换防振荡与健壮解析</span><span data-lang="en">Anti-Oscillation & Robust Parsing</span></h2><ul><li><span data-lang="zh">彻底根治应用层接收网络事件触发重复重置引起的无限振荡循环，保障休眠唤醒与 Wi-Fi 切换平稳自愈。</span><span data-lang="en">Eliminated reassertion feedback loops during network path changes, ensuring smooth reconnection on wake and Wi-Fi handovers.</span></li><li><span data-lang="zh">全面兼容非缩进 YAML 列表项及不规则大小写/复数段落名，解析健壮性大幅增强。</span><span data-lang="en">Fully compatible with non-indented list items and varied section case/plural headers in imported profiles.</span></li></ul></section>
+<section><h2><span data-lang="zh">物理真机硬件与虚拟机矩阵全绿验证</span><span data-lang="en">Physical Hardware & VM Matrix Verification</span></h2><ul><li><span data-lang="zh">真实 Apple Silicon Mac mini 硬件实机验证：系统扩展稳定加载，国内下载拉满带宽，Apple CDN 直连解析，海外目标 HTTP/2 代理畅通，0 振荡 100% 通过。</span><span data-lang="en">Verified on physical Apple Silicon Mac mini: line-rate domestic throughput, authentic Apple CDN resolution, stable proxy routing, and zero oscillation.</span></li><li><span data-lang="zh">Tart 虚拟机全模式矩阵（TUN / 透明代理 x 规则 / 全局 / 直连）6 项矩阵验收 100% 通过，0 崩溃 0 失败。</span><span data-lang="en">Passed all 6 Tart VM matrix configurations across TUN and Transparent Proxy modes with 0 failures and 0 crashes.</span></li></ul></section>
+<section><h2><span data-lang="zh">发布说明</span><span data-lang="en">Release Information</span></h2><ul><li><span data-lang="zh">此正式包使用正常生产核心，经过 Developer ID 签名及 Apple 官方双重公证装订，不包含 QA 自动化标记。</span><span data-lang="en">This stable package uses the normal production core, is Developer ID signed and Apple double-notarized (app + dmg stapled), and contains no QA automation flags.</span></li><li><span data-lang="zh">经维护者要求，在真实物理机实测闭环通过后发布 v1.0.18 正式版。</span><span data-lang="en">Authorized by the maintainer for stable release following real hardware verification.</span></li></ul></section><section><h2><span data-lang="zh">下载与校验</span><span data-lang="en">Download and Verify</span></h2><div class="checksum">AetherRoute-1.0.18-build-2026091816-arm64.dmg</div><p>SHA-256</p><div class="checksum">6864fcacb950c95401504ac04fb0b3a91ca41993d7cfd23069154cc1cb3d31bf</div></section>
+</article>
+  </main>
+
+  <footer class="wrap site-footer"><span>© 2026 AetherRoute <span class="footer-note"><span data-lang="zh">由编程不良人用心打造。</span><span data-lang="en">Made by BianChengBuLiangRen.</span></span></span><div><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">帮助</span><span data-lang="en">Support</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可</span><span data-lang="en">License</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub ↗</a></div></footer>
+</body>
+</html>
