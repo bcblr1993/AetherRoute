@@ -604,6 +604,7 @@ private struct MenuBarContent: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var showingNodes = false
+    @State private var isMenuVisible = false
     @State private var copiedTerminalCommand: Bool = false
     @State private var clearedTerminalCommand: Bool = false
     let telemetry: NetworkTelemetryViewModel
@@ -620,6 +621,7 @@ private struct MenuBarContent: View {
         .frame(width: AetherVisual.popoverWidth)
         .background {
             MenuBarVisibilitySynchronizer { isVisible in
+                isMenuVisible = isVisible
                 tunnel.setRealtimeTelemetryPreferred(isVisible, for: "menubar")
                 if !isVisible {
                     showingNodes = false
@@ -679,9 +681,9 @@ private struct MenuBarContent: View {
 
             if tunnel.isConnected {
                 HStack(spacing: AetherVisual.s3) {
-                    MenuLiveTrafficMetric(title: "Download", symbol: "arrow.down", metric: .download, telemetry: telemetry)
-                    MenuLiveTrafficMetric(title: "Upload", symbol: "arrow.up", metric: .upload, telemetry: telemetry)
-                    MenuLiveTrafficMetric(title: "Connections", symbol: "point.3.connected.trianglepath.dotted", metric: .connections, telemetry: telemetry)
+                    MenuLiveTrafficMetric(title: "Download", symbol: "arrow.down", metric: .download, telemetry: telemetry, isLive: isMenuVisible)
+                    MenuLiveTrafficMetric(title: "Upload", symbol: "arrow.up", metric: .upload, telemetry: telemetry, isLive: isMenuVisible)
+                    MenuLiveTrafficMetric(title: "Connections", symbol: "point.3.connected.trianglepath.dotted", metric: .connections, telemetry: telemetry, isLive: isMenuVisible)
                 }
                 .padding(AetherVisual.s4)
                 Divider()
@@ -1166,13 +1168,18 @@ private struct MenuLiveTrafficMetric: View {
     let symbol: String
     let metric: MenuLiveTrafficMetricKind
     let telemetry: NetworkTelemetryViewModel
+    var isLive: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s1) {
             Label(title, systemImage: symbol)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            MenuLiveTrafficValue(metric: metric, telemetry: telemetry)
+            if isLive {
+                MenuLiveTrafficValue(metric: metric, telemetry: telemetry)
+            } else {
+                MenuStaticTrafficValue(metric: metric, snapshot: telemetry.snapshot)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -1197,6 +1204,28 @@ private struct MenuLiveTrafficValue: View {
             return formattedRate(telemetry.snapshot.uploadBytesPerSecond)
         case .connections:
             return String(telemetry.snapshot.connections.count)
+        }
+    }
+}
+
+private struct MenuStaticTrafficValue: View {
+    let metric: MenuLiveTrafficMetricKind
+    let snapshot: NetworkTelemetrySnapshot
+
+    var body: some View {
+        Text(value)
+            .font(.caption.monospacedDigit().weight(.semibold))
+            .lineLimit(1)
+    }
+
+    private var value: String {
+        switch metric {
+        case .download:
+            return formattedRate(snapshot.downloadBytesPerSecond)
+        case .upload:
+            return formattedRate(snapshot.uploadBytesPerSecond)
+        case .connections:
+            return String(snapshot.connections.count)
         }
     }
 }

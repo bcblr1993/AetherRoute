@@ -329,6 +329,7 @@ final class TunnelManager: ObservableObject {
                 await self?.refreshTelemetry()
             }
         }
+        restartTelemetryPolling()
     }
     @Published private(set) var localProxySettings: LocalProxySettings
     @Published private(set) var localProxySettingsMessage: String? = nil
@@ -2869,42 +2870,50 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    private func restartTelemetryPolling() {
+        stopTelemetryPolling()
+        startTelemetryPollingIfNeeded()
+    }
+
     private func startTelemetryPollingIfNeeded() {
         guard
             state == .connected,
             !isUIReviewMode,
             telemetryPollingTask == nil
         else { return }
+        let isRealtime = isRealtimeTelemetryPreferred
         telemetryPollingTask = Task { [weak self] in
-            var secondsUntilTelemetryRefresh = 0
-            var secondsUntilAutomaticHealthCheck =
-                TunnelStartupTimingPolicy.automaticRouteHealthIntervalSeconds
-            while !Task.isCancelled {
-                let isRealtime = self?.isRealtimeTelemetryPreferred == true
-                let cadence = isRealtime
-                    ? TunnelStartupTimingPolicy.activeTelemetryPollingIntervalSeconds
-                    : TunnelStartupTimingPolicy.backgroundTelemetryPollingIntervalSeconds
-
-                if isRealtime && secondsUntilTelemetryRefresh > cadence {
-                    secondsUntilTelemetryRefresh = 0
+            if isRealtime {
+                var secondsUntilAutomaticHealthCheck =
+                    TunnelStartupTimingPolicy.automaticRouteHealthIntervalSeconds
+                while !Task.isCancelled {
+                    do {
+                        try await Task.sleep(
+                            for: .seconds(TunnelStartupTimingPolicy.activeTelemetryPollingIntervalSeconds)
+                        )
+                    } catch {
+                        break
+                    }
+                    guard let self, !Task.isCancelled else { break }
+                    await self.refreshTelemetry()
+                    secondsUntilAutomaticHealthCheck -= TunnelStartupTimingPolicy.activeTelemetryPollingIntervalSeconds
+                    if secondsUntilAutomaticHealthCheck <= 0 {
+                        await self.refreshAutomaticRouteHealth()
+                        secondsUntilAutomaticHealthCheck =
+                            TunnelStartupTimingPolicy.automaticRouteHealthIntervalSeconds
+                    }
                 }
-
-                if secondsUntilTelemetryRefresh <= 0 {
-                    await self?.refreshTelemetry()
-                    secondsUntilTelemetryRefresh = cadence
-                }
-                secondsUntilTelemetryRefresh -= 1
-                secondsUntilAutomaticHealthCheck -= 1
-                if secondsUntilAutomaticHealthCheck <= 0 {
-                    await self?.refreshAutomaticRouteHealth()
-                    secondsUntilAutomaticHealthCheck =
-                        TunnelStartupTimingPolicy
-                            .automaticRouteHealthIntervalSeconds
-                }
-                do {
-                    try await Task.sleep(for: .seconds(1))
-                } catch {
-                    break
+            } else {
+                while !Task.isCancelled {
+                    do {
+                        try await Task.sleep(
+                            for: .seconds(TunnelStartupTimingPolicy.automaticRouteHealthIntervalSeconds)
+                        )
+                    } catch {
+                        break
+                    }
+                    guard let self, !Task.isCancelled else { break }
+                    await self.refreshAutomaticRouteHealth()
                 }
             }
         }

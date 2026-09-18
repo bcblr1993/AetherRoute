@@ -655,16 +655,17 @@ public struct AetherStatusBeacon: View {
         ZStack {
             if isConnected {
                 Circle()
-                    .fill(Color.green.opacity(isPulsing ? 0.25 : 0.45))
-                    .frame(width: size * 2.0, height: size * 2.0)
-                    .scaleEffect(isPulsing ? 1.25 : 0.95)
-                    .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true), value: isPulsing)
+                    .fill(Color.green.opacity(0.22))
+                    .frame(width: size * 1.8, height: size * 1.8)
             } else if isConnecting {
                 Circle()
                     .stroke(Color.orange.opacity(0.5), lineWidth: 1.5)
                     .frame(width: size * 1.8, height: size * 1.8)
                     .rotationEffect(.degrees(isPulsing ? 360 : 0))
-                    .animation(.linear(duration: 1.5).repeatForever(autoreverses: false), value: isPulsing)
+                    .animation(
+                        isConnecting ? .linear(duration: 1.5).repeatForever(autoreverses: false) : .default,
+                        value: isPulsing
+                    )
             }
 
             Circle()
@@ -674,15 +675,10 @@ public struct AetherStatusBeacon: View {
         }
         .frame(width: size * 2.2, height: size * 2.2)
         .onAppear {
-            if isConnected || isConnecting {
-                isPulsing = true
-            }
-        }
-        .onChange(of: isConnected) { _, newValue in
-            isPulsing = newValue
+            isPulsing = isConnecting
         }
         .onChange(of: isConnecting) { _, newValue in
-            if newValue { isPulsing = true }
+            isPulsing = newValue
         }
     }
 

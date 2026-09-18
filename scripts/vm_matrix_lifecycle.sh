@@ -28,7 +28,7 @@ pids_for() {
 process_start() {
   started=$(LC_ALL=C ps -p "$1" -o lstart=) || return 1
   LC_ALL=C date -j -f '%a %b %e %T %Y' \
-    "$(printf '%s\n' "$started" | sed 's/^[[:space:]]*//')" '+%Y-%m-%d %H:%M:%S'
+    "$(printf '%s\n' "$started" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')" '+%Y-%m-%d %H:%M:%S'
 }
 
 provider_state() {
