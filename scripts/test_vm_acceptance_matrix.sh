@@ -141,7 +141,8 @@ RUN_STAGE=install
 # Keep app data and prior reports. A failed/partial run cannot accumulate ZIPs.
 vm 'for path in /tmp/candidate.zip /tmp/candidate-extract; do
       if [ -e "$path" ]; then find "$path" -depth -delete; fi
-    done'
+    done
+    find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -iname "*aetherroute*.ips" -delete 2>/dev/null || true'
 free_kb=$(vm "df -Pk /Applications | awk 'NR == 2 {print \$4}'")
 case "$free_kb" in ''|*[!0-9]*) echo "cannot determine VM free disk" >&2; exit 1 ;; esac
 expanded_bytes=$(unzip -l "$CANDIDATE" | awk '/[0-9]+ files?$/ {print $1}')

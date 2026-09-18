@@ -223,6 +223,15 @@ case "$ROUTING" in
 esac
 
 status=$(scutil --nc status AetherRoute 2>/dev/null | head -1 || echo "no configuration")
+if [ "$status" = "Connecting" ]; then
+  for _ in $(seq 1 10); do
+    sleep 1
+    status=$(scutil --nc status AetherRoute 2>/dev/null | head -1 || echo "no configuration")
+    if [ "$status" = "Connected" ]; then
+      break
+    fi
+  done
+fi
 route_if=$(route -n get default 2>/dev/null | awk '/interface:/ {print $2; exit}')
 CONNECTED=no
 PROVIDER_PID=

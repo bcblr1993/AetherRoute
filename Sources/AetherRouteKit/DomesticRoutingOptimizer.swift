@@ -190,8 +190,6 @@ public enum DomesticRoutingOptimizer {
     ]
 
     public static let domesticNameserverPolicies: [(String, String)] = [
-        ("geosite:apple", "223.5.5.5"),
-        ("geosite:cn", "223.5.5.5"),
         ("'+.apple.com'", "223.5.5.5"),
         ("'+.cdn-apple.com'", "223.5.5.5"),
         ("'+.aaplimg.com'", "223.5.5.5"),
@@ -279,6 +277,26 @@ public enum DomesticRoutingOptimizer {
         }
     }
 
+    private static func canonicalSectionKey(_ rawKey: String) -> String {
+        let lower = rawKey.lowercased()
+        switch lower {
+        case "proxy", "proxies":
+            return "proxies"
+        case "proxy-group", "proxy-groups", "proxy group", "proxy groups":
+            return "proxy-groups"
+        case "rule", "rules":
+            return "rules"
+        case "rule-provider", "rule-providers", "rule provider", "rule providers":
+            return "rule-providers"
+        case "proxy-provider", "proxy-providers", "proxy provider", "proxy providers":
+            return "proxy-providers"
+        case "dns":
+            return "dns"
+        default:
+            return lower
+        }
+    }
+
     private static func parseTopLevelSections(from lines: [String]) -> OrderedSectionMap {
         var result = OrderedSectionMap()
         var currentSection: String?
@@ -296,14 +314,20 @@ public enum DomesticRoutingOptimizer {
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let isComment = trimmed.hasPrefix("#")
+            let isListItem = trimmed.hasPrefix("-")
             let isIndent = line.hasPrefix(" ") || line.hasPrefix("\t")
 
-            if !isIndent, !isComment, let colonIndex = line.firstIndex(of: ":") {
-                let keyCandidate = String(line[..<colonIndex]).trimmingCharacters(in: .whitespaces)
-                if isValidTopLevelKey(keyCandidate) {
+            if !isIndent, !isComment, !isListItem, let colonIndex = line.firstIndex(of: ":") {
+                let rawKeyCandidate = String(line[..<colonIndex]).trimmingCharacters(in: .whitespaces)
+                if !rawKeyCandidate.isEmpty {
                     finishSection()
-                    currentSection = keyCandidate
-                    currentLines.append(line)
+                    let canonicalKey = canonicalSectionKey(rawKeyCandidate)
+                    currentSection = canonicalKey
+                    let remainder = String(line[colonIndex...]).trimmingCharacters(in: .whitespaces)
+                    let normalizedLine = (remainder == ":" && canonicalKey != rawKeyCandidate)
+                        ? "\(canonicalKey):"
+                        : line
+                    currentLines.append(normalizedLine)
                     continue
                 }
             }
@@ -311,16 +335,6 @@ public enum DomesticRoutingOptimizer {
         }
         finishSection()
         return result
-    }
-
-    private static func isValidTopLevelKey(_ candidate: String) -> Bool {
-        let recognized: Set<String> = [
-            "mode", "mixed-port", "port", "socks-port", "redir-port", "tproxy-port",
-            "allow-lan", "bind-address", "log-level", "ipv6", "external-controller",
-            "secret", "dns", "tun", "experimental", "profile", "proxies",
-            "proxy-groups", "proxy-providers", "rule-providers", "rules", "hosts"
-        ]
-        return recognized.contains(candidate.lowercased())
     }
 
     // MARK: - DNS Section Optimization
@@ -378,7 +392,12 @@ public enum DomesticRoutingOptimizer {
                         // Will be generated deterministically
                         continue
                     default:
-                        if !val.isEmpty {
+                        let recognizedDNSFields: Set<String> = [
+                            "ipv6", "use-hosts", "respect-rules", "listen",
+                            "default-nameserver", "proxy-server-nameserver",
+                            "edns-client-subnet"
+                        ]
+                        if recognizedDNSFields.contains(lowerKey) && !val.isEmpty {
                             otherDNSProps.append("  \(key): \(val)")
                         }
                         continue
@@ -463,16 +482,19 @@ public enum DomesticRoutingOptimizer {
         var policyKeys = Set(mergedPolicies.map { unquote($0.0) })
         for (k, v) in existingPolicies {
             let cleanK = unquote(k)
+            guard !cleanK.lowercased().hasPrefix("geosite:"), !cleanK.isEmpty else { continue }
             if !policyKeys.contains(cleanK) {
                 policyKeys.insert(cleanK)
-                mergedPolicies.append((k, v))
+                mergedPolicies.append((cleanK, unquote(v)))
             }
         }
         output.append("  nameserver-policy:")
         for (k, v) in mergedPolicies {
             let cleanK = unquote(k)
-            let formattedKey = cleanK.contains(":") || cleanK.hasPrefix("+.") ? "'\(cleanK)'" : cleanK
-            output.append("    \(formattedKey): \(v)")
+            let cleanV = unquote(v)
+            guard !cleanK.isEmpty, !cleanV.isEmpty else { continue }
+            let formattedKey = cleanK.contains(":") || cleanK.hasPrefix("+.") || cleanK.contains("*") ? "'\(cleanK)'" : cleanK
+            output.append("    \(formattedKey): \(cleanV)")
         }
 
         output.append("  fallback-filter:")
@@ -509,8 +531,9 @@ public enum DomesticRoutingOptimizer {
         output.append("  nameserver-policy:")
         for (k, v) in domesticNameserverPolicies {
             let cleanK = unquote(k)
-            let formattedKey = cleanK.contains(":") || cleanK.hasPrefix("+.") ? "'\(cleanK)'" : cleanK
-            output.append("    \(formattedKey): \(v)")
+            let cleanV = unquote(v)
+            let formattedKey = cleanK.contains(":") || cleanK.hasPrefix("+.") || cleanK.contains("*") ? "'\(cleanK)'" : cleanK
+            output.append("    \(formattedKey): \(cleanV)")
         }
         output.append("  fallback-filter:")
         output.append("    geoip: true")

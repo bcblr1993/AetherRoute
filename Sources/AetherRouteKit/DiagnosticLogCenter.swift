@@ -28,7 +28,10 @@ public final class DiagnosticLogCenter: @unchecked Sendable {
         let identifier = Bundle.main.bundleIdentifier ?? "app"
         processName = Self.processName(for: identifier)
 
-        if let container = FileManager.default.containerURL(
+        let isRunningInTest = NSClassFromString("XCTestCase") != nil ||
+            ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        if !isRunningInTest,
+           let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: AppConstants.appGroup
         ) {
             let support = container.appendingPathComponent(

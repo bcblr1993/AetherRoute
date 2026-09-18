@@ -55,19 +55,21 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     .loadApplicationGroup()
                 Self.runtimeLog.aggregate("stage=loadSharedProfile success")
                 Self.runtimeLog.aggregate("stage=createFlowCore begin")
-                let engine = try FlowCoreEngine(
-                    profile: input.profile,
-                    runtimeDirectory: input.runtimeDirectory
-                )
-                Self.runtimeLog.aggregate("stage=createFlowCore success")
-                let profileYAML = String(
+                let rawYAML = String(
                     decoding: input.profile,
                     as: UTF8.self
                 )
+                let profileYAML = DomesticRoutingOptimizer.optimizedProfile(for: rawYAML)
+                let engineProfile = Data(profileYAML.utf8)
+                let engine = try FlowCoreEngine(
+                    profile: engineProfile,
+                    runtimeDirectory: input.runtimeDirectory
+                )
+                Self.runtimeLog.aggregate("stage=createFlowCore success")
                 Self.runtimeLog.aggregate("stage=loadSelections begin")
                 let profileSummary = ProfileConfigurationInspector.inspect(yaml: profileYAML)
                 let rawSelections = try ProxySelectionStore.applicationGroup()
-                    .selections(forProfileYAML: profileYAML)
+                    .selections(forProfileYAML: rawYAML)
                 let savedSelections = InitialProxySelectionPolicy.selections(
                     persisted: rawSelections,
                     summary: profileSummary

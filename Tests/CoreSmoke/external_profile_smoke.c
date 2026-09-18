@@ -181,6 +181,9 @@ static int run_profile(
             stopped,
             arguments.result == NULL ? "missing" : "present"
         );
+        if (arguments.result != NULL) {
+            fprintf(stderr, "engine error: %s\n", arguments.result);
+        }
     }
     clash_free_string(arguments.result);
     return success ? 0 : 1;

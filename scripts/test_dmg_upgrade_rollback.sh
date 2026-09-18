@@ -51,8 +51,14 @@ detach_dmg_image() {
       ;;
   esac
   attempt=1
-  while ! hdiutil detach "$device" -quiet; do
-    if [ "$attempt" -ge 3 ]; then
+  while :; do
+    if hdiutil detach "$device" -quiet 2>/dev/null; then
+      break
+    fi
+    if [ "$attempt" -ge 2 ] && hdiutil detach "$device" -force -quiet 2>/dev/null; then
+      break
+    fi
+    if [ "$attempt" -ge 5 ]; then
       echo "Unable to detach temporary disk-image device $device" >&2
       return 1
     fi
@@ -215,10 +221,13 @@ detach_active() {
   attempt=1
   while :; do
     OPERATION="detaching temporary DMG attempt $attempt"
-    if hdiutil detach "$ACTIVE_MOUNT" -quiet; then
+    if hdiutil detach "$ACTIVE_MOUNT" -quiet 2>/dev/null; then
       break
     fi
-    if [ "$attempt" -ge 3 ]; then
+    if [ "$attempt" -ge 2 ] && hdiutil detach "$ACTIVE_MOUNT" -force -quiet 2>/dev/null; then
+      break
+    fi
+    if [ "$attempt" -ge 5 ]; then
       echo "Unable to detach temporary DMG after $attempt attempts" >&2
       return 1
     fi

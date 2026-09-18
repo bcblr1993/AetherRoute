@@ -699,6 +699,14 @@ final class TunnelManager: ObservableObject {
 
     private func restorePreviousConnectionIfRequested() async {
         guard !isUIReviewMode else { return }
+#if AETHERROUTE_QA_AUTOMATION
+        if qaAutomationEnvironment["AETHERROUTE_QA_AUTOCONNECT"] == "0" {
+            Self.runtimeLogger.info(
+                "stage=startup autoReconnect skipped reason=qaAutomationAutoconnectDisabled"
+            )
+            return
+        }
+#endif
         guard wasConnectedBeforeTermination else { return }
         guard state == .disconnected else { return }
         guard canRestorePreviousConnection else {
@@ -1028,6 +1036,14 @@ final class TunnelManager: ObservableObject {
         defer { isUpdatingRoutingResources = false }
         let rawProfileYAML = activeProfile.yaml
         let profileYAML = DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML)
+#if AETHERROUTE_QA_AUTOMATION
+        if let appGroupDir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup)?
+            .appendingPathComponent("Library/Application Support/AetherRoute", isDirectory: true) {
+            try? FileManager.default.createDirectory(at: appGroupDir, withIntermediateDirectories: true)
+            try? rawProfileYAML.write(to: appGroupDir.appendingPathComponent("debug_profile_raw.yaml"), atomically: true, encoding: .utf8)
+            try? profileYAML.write(to: appGroupDir.appendingPathComponent("debug_profile_optimized.yaml"), atomically: true, encoding: .utf8)
+        }
+#endif
         let storeFactory = routingResourceStoreFactory
         let downloadClient = routingResourceDownloadClient
         let bundleDirectory = bundledResourceDirectoryURL
@@ -2975,7 +2991,7 @@ final class TunnelManager: ObservableObject {
         stopTelemetryPolling()
         updateState()
 
-        if event == .systemDidWake || event == .networkPathChanged {
+        if event == .systemDidWake {
             // One successful request is enough. The provider answers it by
             // starting a converging recovery run that retries with backoff and
             // stops on its own health check. If the IPC fails transiently (e.g.
@@ -2984,15 +3000,14 @@ final class TunnelManager: ObservableObject {
             runtimeEnvironmentResetTask = Task { [weak self] in
                 guard let self, self.state == .connected else { return }
                 var lastError: Error?
-                let initialSleepNanoseconds: UInt64 = event == .systemDidWake ? 500_000_000 : 200_000_000
                 for attempt in 1...3 {
-                    try? await Task.sleep(nanoseconds: attempt == 1 ? initialSleepNanoseconds : 1_000_000_000)
+                    try? await Task.sleep(nanoseconds: attempt == 1 ? 500_000_000 : 1_000_000_000)
                     guard !Task.isCancelled, self.state == .connected else { return }
                     do {
                         let client = self.makeProxySelectionProviderClient()
                         try await client.resetNetwork()
                         Self.runtimeLogger.info(
-                            "stage=handleRuntimeEnvironmentEvent resetNetwork success event=\(String(describing: event), privacy: .public) attempt=\(attempt, privacy: .public)"
+                            "stage=handleRuntimeEnvironmentEvent resetNetwork success event=systemDidWake attempt=\(attempt, privacy: .public)"
                         )
                         return
                     } catch {

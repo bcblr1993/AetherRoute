@@ -168,4 +168,53 @@ final class DomesticRoutingOptimizerTests: XCTestCase {
         XCTAssertTrue(output.contains("url: http://cp.cloudflare.com/generate_204"))
         XCTAssertTrue(output.contains("interval: 300"))
     }
+
+    func testOptimizeProfileWithLegacyAliases() throws {
+        let input = """
+        mode: rule
+        mixed-port: 7890
+        allow-lan: false
+        log-level: info
+        ipv6: false
+        dns:
+          nameserver-policy:
+            "+.apple.com": "223.5.5.5"
+            "geosite:apple": "223.5.5.5"
+        Proxy:
+          - name: SS-Proxy
+            type: ss
+            server: 1.2.3.4
+            port: 443
+            cipher: chacha20-ietf-poly1305
+            password: secret
+        Proxy Group:
+          - name: SS-Group
+            type: select
+            proxies:
+              - SS-Proxy
+        Rule:
+          - DOMAIN-SUFFIX,google.com,SS-Group
+          - MATCH,SS-Group
+        """
+
+        let output = DomesticRoutingOptimizer.optimizedProfile(for: input)
+
+        // Must normalize section headers
+        XCTAssertTrue(output.contains("proxies:\n  - name: SS-Proxy"))
+        XCTAssertTrue(output.contains("proxy-groups:\n  - name: SS-Group"))
+        XCTAssertTrue(output.contains("rules:\n"))
+
+        // nameserver-policy must not contain geosite:
+        XCTAssertFalse(output.contains("geosite:apple"))
+        XCTAssertTrue(output.contains("'+.apple.com': 223.5.5.5"))
+
+        // Rules must preserve custom and default rules
+        XCTAssertTrue(output.contains("DOMAIN-SUFFIX,google.com,SS-Group"))
+        XCTAssertTrue(output.contains("MATCH,SS-Group"))
+        XCTAssertTrue(output.contains("GEOIP,CN,DIRECT"))
+        XCTAssertTrue(output.contains("DOMAIN-SUFFIX,swcdn.apple.com,DIRECT"))
+
+        // Must pass ProfileImportValidator
+        try ProfileImportValidator.validate(data: Data(output.utf8))
+    }
 }

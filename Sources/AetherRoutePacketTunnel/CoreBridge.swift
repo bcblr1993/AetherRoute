@@ -272,6 +272,12 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                     return
                 }
                 if let failure = self.currentFailure() {
+                    if case let PacketTunnelError.engineFailed(errMsg) = failure {
+                        let tail = errMsg.count > 500 ? String(errMsg.suffix(500)) : errMsg
+                        PacketCoreRuntimeLog.logger.error(
+                            "stage=readiness failed errorTail=\(tail, privacy: .public)"
+                        )
+                    }
                     PacketCoreRuntimeLog.logger.error(
                         "stage=readiness failed error=\(String(reflecting: failure), privacy: .public)"
                     )
@@ -754,8 +760,9 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             let message = String(cString: result)
             clash_free_string(result)
             if !self.isExpectedStop(generation: generation) {
+                let tail = message.count > 500 ? String(message.suffix(500)) : message
                 PacketCoreRuntimeLog.logger.error(
-                    "stage=engineWorker returned generation=\(generation, privacy: .public) hasMessage=\(!message.isEmpty, privacy: .public)"
+                    "stage=engineWorker returned generation=\(generation, privacy: .public) hasMessage=\(!message.isEmpty, privacy: .public) errorTail=\(tail, privacy: .public)"
                 )
                 self.recordFailureIfCurrent(
                     message.isEmpty

@@ -4,6 +4,46 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.18] - 2026-09-18
+
+### Added
+
+- Lossless In-Memory Domestic & Apple Acceleration Engine (`DomesticRoutingOptimizer` in `AetherRouteKit`):
+  introduced a zero-configuration, lossless in-memory profile optimization engine. Leaves on-disk user
+  profiles completely untouched while dynamically injecting high-priority domestic direct rules, CDN domain
+  bypass policies, and domestic upstream DNS mappings at runtime.
+- Apple CDN Line-Rate Bypass & Fake-IP Protection:
+  ensured Apple critical system update and media domains (`swcdn.apple.com`, `updates.cdn-apple.com`,
+  `appldnld.apple.com`, etc.) bypass Fake-IP resolution and map directly to domestic Anycast IPs,
+  achieving saturated physical line-rate throughput without manual configuration.
+- Domestic Fast DNS Integration:
+  automatically maps mainland Chinese domains and Apple infrastructure to domestic low-latency DNS
+  (`223.5.5.5`), eliminating overseas DNS contamination and latency penalties.
+
+### Fixed
+
+- Network Transition Oscillation & Feedback Loop (`TunnelManager`):
+  resolved an oscillation defect where app-layer triggers on `.networkPathChanged` called `resetNetwork()`,
+  re-triggering provider reassertion and generating an endless loop. Reverted app-level trigger to
+  `.systemDidWake`, delegating physical interface transitions to `PacketTunnelProvider`'s native
+  `NWPathMonitor` and `SCDynamicStore` path-signature observers.
+- Clash-RS Compatible Profile & List Parsing:
+  added support for non-indented YAML list items (`- name: ...`), robust key normalization (case/plural
+  variations of `rules`, `proxy-groups`, `proxies`), and cleaned up unquoted wildcard domain policies
+  for strict trie compatibility.
+
+### Verified
+
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`):
+  deployed notarized release candidate build 2026091816. Verified domestic CDN throughput at 34.9 MB/s,
+  confirmed genuine China Mobile CDN IP resolution for `swcdn.apple.com` (no Fake-IP contamination),
+  verified HTTP/2 proxying for overseas endpoints, and confirmed zero tunnel oscillation.
+- Tart Virtual Machine Matrix (`aether-diag-1434`):
+  executed full acceptance matrix across TUN and Transparent Proxy modes in Rule, Global, and Direct
+  configurations with 100% pass rate (`TOTAL_FAIL=0`, 0 crashes).
+- Product Test Suite:
+  all 104+ unit tests, regression suites, and integration tests passed cleanly.
+
 ## [1.0.17] - 2026-09-18
 
 ### Fixed
