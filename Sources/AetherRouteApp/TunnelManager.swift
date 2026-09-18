@@ -1026,7 +1026,8 @@ final class TunnelManager: ObservableObject {
         Self.runtimeLogger.info("stage=prepareRuntimeResources begin")
         isUpdatingRoutingResources = true
         defer { isUpdatingRoutingResources = false }
-        let profileYAML = activeProfile.yaml
+        let rawProfileYAML = activeProfile.yaml
+        let profileYAML = DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML)
         let storeFactory = routingResourceStoreFactory
         let downloadClient = routingResourceDownloadClient
         let bundleDirectory = bundledResourceDirectoryURL
@@ -1047,7 +1048,7 @@ final class TunnelManager: ObservableObject {
             try store.prepareRuntimeResources(for: profileYAML)
             let persistedSelections = try ProxySelectionStore
                 .applicationGroup()
-                .selections(forProfileYAML: profileYAML)
+                .selections(forProfileYAML: rawProfileYAML)
             let profileSummary = ProfileConfigurationInspector.inspect(
                 yaml: profileYAML
             )
@@ -1144,7 +1145,8 @@ final class TunnelManager: ObservableObject {
     func prepareRequiredRoutingResources() async {
         guard ensurePrivacyConsent(), canModifyProfiles,
               !isUpdatingRoutingResources, !isUIReviewMode,
-              let profileYAML = activeProfile?.yaml else { return }
+              let rawYAML = activeProfile?.yaml else { return }
+        let profileYAML = DomesticRoutingOptimizer.optimizedProfile(for: rawYAML)
         isUpdatingRoutingResources = true
         routingResourceMessage = nil
         routingResourceMessageIsError = false
@@ -1171,7 +1173,8 @@ final class TunnelManager: ObservableObject {
         guard !isUIReviewMode, hasAcceptedPrivacyDisclosure,
               routingResourceRefreshTask == nil,
               lastAutomaticResourceRefreshAttempt.map({ Date.now.timeIntervalSince($0) >= 86_400 }) ?? true,
-              let profileYAML = activeProfile?.yaml else { return }
+              let rawYAML = activeProfile?.yaml else { return }
+        let profileYAML = DomesticRoutingOptimizer.optimizedProfile(for: rawYAML)
         lastAutomaticResourceRefreshAttempt = .now
         let storeFactory = routingResourceStoreFactory
         let downloadClient = routingResourceDownloadClient
@@ -2972,7 +2975,7 @@ final class TunnelManager: ObservableObject {
         stopTelemetryPolling()
         updateState()
 
-        if event == .systemDidWake {
+        if event == .systemDidWake || event == .networkPathChanged {
             // One successful request is enough. The provider answers it by
             // starting a converging recovery run that retries with backoff and
             // stops on its own health check. If the IPC fails transiently (e.g.
@@ -2981,14 +2984,15 @@ final class TunnelManager: ObservableObject {
             runtimeEnvironmentResetTask = Task { [weak self] in
                 guard let self, self.state == .connected else { return }
                 var lastError: Error?
+                let initialSleepNanoseconds: UInt64 = event == .systemDidWake ? 500_000_000 : 200_000_000
                 for attempt in 1...3 {
-                    try? await Task.sleep(nanoseconds: attempt == 1 ? 500_000_000 : 1_000_000_000)
+                    try? await Task.sleep(nanoseconds: attempt == 1 ? initialSleepNanoseconds : 1_000_000_000)
                     guard !Task.isCancelled, self.state == .connected else { return }
                     do {
                         let client = self.makeProxySelectionProviderClient()
                         try await client.resetNetwork()
                         Self.runtimeLogger.info(
-                            "stage=handleRuntimeEnvironmentEvent resetNetwork success event=systemDidWake attempt=\(attempt, privacy: .public)"
+                            "stage=handleRuntimeEnvironmentEvent resetNetwork success event=\(String(describing: event), privacy: .public) attempt=\(attempt, privacy: .public)"
                         )
                         return
                     } catch {

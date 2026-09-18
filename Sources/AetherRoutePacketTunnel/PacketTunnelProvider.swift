@@ -41,6 +41,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     // Accessed only on the recovery coordinator's serial queue.
     private var recoveryDownloadBaseline: UInt64?
     private var lastResetInterface: UInt32?
+    private var lastResetSignature: String?
     private var providerStopping = false
     private var recoveryRoutingMode: RoutingMode = .rule
     /// Built in `init`, not lazily. `wake`, `sleep`, the path monitor and the
@@ -64,6 +65,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                         .telemetrySnapshot(maximumConnections: 0).downloadTotal
                     self.resetSucceeded = false
                     self.lastResetInterface = nil
+                    self.lastResetSignature = nil
                     self.reasserting = true
                 case .recovered:
                     self.reasserting = false
@@ -207,6 +209,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     override func wake() {
         Self.runtimeLogger.info("stage=wake requested")
         lastResetInterface = nil
+        lastResetSignature = nil
         resetSucceeded = false
         recovery.trigger(reason: "wake", supersedes: true)
     }
@@ -393,16 +396,20 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             return
         }
         let index = UInt32(interface.index)
-        // Once an interface was reset, retry the probe without destroying the
-        // connections/DNS transports that are only just becoming usable.
-        guard lastResetInterface != index || !resetSucceeded else { return }
+        let store = SCDynamicStoreCreate(nil, "AetherRoute recovery signature" as CFString, nil, nil)
+        let signature = store.flatMap { PhysicalUplinkDetector.pathSignature(store: $0, uplink: interface) }
+        // Once an interface and IP signature was reset, retry the probe without destroying the
+        // connections/DNS transports that are only just becoming usable, unless the physical uplink
+        // signature changed or reset has not yet succeeded.
+        guard lastResetInterface != index || lastResetSignature != signature || !resetSucceeded else { return }
         resetSucceeded = false
         Self.runtimeLogger.info(
-            "stage=networkRecovery begin reason=\(reason, privacy: .public) attempt=\(attempt, privacy: .public) interface=\(interface.name, privacy: .public) index=\(index, privacy: .public)"
+            "stage=networkRecovery begin reason=\(reason, privacy: .public) attempt=\(attempt, privacy: .public) interface=\(interface.name, privacy: .public) index=\(index, privacy: .public) signature=\(signature ?? "unknown", privacy: .public)"
         )
         do {
             try core.resetNetworkState(interfaceIndex: index)
             lastResetInterface = index
+            lastResetSignature = signature
             resetSucceeded = true
             Self.runtimeLogger.info("stage=networkRecovery coreReset success")
         } catch {
@@ -424,6 +431,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         guard resetSucceeded, !uplinkLock.withLock({ providerStopping }),
               let uplink = currentPhysicalUplink(),
               UInt32(uplink.index) == lastResetInterface else { return false }
+        let store = SCDynamicStoreCreate(nil, "AetherRoute health signature" as CFString, nil, nil)
+        let signature = store.flatMap { PhysicalUplinkDetector.pathSignature(store: $0, uplink: uplink) }
+        guard lastResetSignature == signature else { return false }
         if NetworkRecoveryHealthPolicy.hasReceivedTraffic(
             since: recoveryDownloadBaseline,
             total: try? core.telemetrySnapshot(maximumConnections: 0).downloadTotal
@@ -480,11 +490,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
 
     private func handleResetNetwork() throws -> ProxySelectionProviderResponse {
         Self.runtimeLogger.info("stage=appMessage resetNetwork requested")
-        // The host asks for this on wake, and `NEProvider.wake()` is not
+        // The host asks for this on wake or path change, and `NEProvider.wake()` is not
         // guaranteed to arrive — on a live host it never did across an entire
         // session. Route it through the coordinator so the app's single request
         // still gets the full converging retry loop instead of one attempt.
         lastResetInterface = nil
+        lastResetSignature = nil
         resetSucceeded = false
         recovery.trigger(reason: "appMessage", supersedes: true)
         return .networkReset

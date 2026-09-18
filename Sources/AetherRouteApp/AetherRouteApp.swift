@@ -15,6 +15,9 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installTerminationSignalSource()
+        Task { @MainActor [weak self] in
+            await self?.tunnel?.prepare()
+        }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -58,6 +61,20 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
 
     @objc func terminate(_ sender: Any?) {
         NSApplication.shared.terminate(sender)
+    }
+
+    @objc func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(terminate(_:)) {
+            return true
+        }
+        return true
+    }
+
+    @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(terminate(_:)) {
+            return true
+        }
+        return true
     }
 
     private func installTerminationSignalSource() {

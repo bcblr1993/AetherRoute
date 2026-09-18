@@ -6,6 +6,7 @@ trap 'find "$TEST_TEMP" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 swiftc -swift-version 6 -warnings-as-errors -emit-library -emit-module \
   -module-name AetherRouteKit \
   "$ROOT/Sources/AetherRouteKit/RuntimeEnvironmentPolicy.swift" \
+  "$ROOT/Sources/AetherRouteKit/PhysicalUplinkDetector.swift" \
   -emit-module-path "$TEST_TEMP/AetherRouteKit.swiftmodule" \
   -o "$TEST_TEMP/libAetherRouteKit.dylib"
 swiftc -swift-version 6 -warnings-as-errors -parse-as-library \
