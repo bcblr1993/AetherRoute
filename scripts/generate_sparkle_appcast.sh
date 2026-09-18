@@ -260,25 +260,25 @@ if let notesPath = customNotes, FileManager.default.fileExists(atPath: notesPath
 
 let defaultNotesContent = """
 <div class="section">
-  <span class="section-tag tag-feature">✨ 新增特性</span>
+  <span class="section-tag tag-fix">🐞 缺陷修复</span>
   <ul>
-    <li><strong>开机自启动管理</strong>：基于 macOS 原生 SMAppService 深度集成开机自启动，支持状态动态感知与系统权限未批准引导。</li>
-    <li><strong>连接意图持久化</strong>：引入独立线程安全意图存储层，严格区分用户主动操作与系统生命周期行为。</li>
-    <li><strong>设置界面开机启动配置项</strong>：在通用设置中新增开机自启动切换开关与说明，中英文完备本地化。</li>
+    <li><strong>开机自启动连接恢复门禁解耦</strong>：修复启动异步初始化期间因准备锁未复位导致跳过自动连接的缺陷，开机自启动秒级自动恢复连接。</li>
+    <li><strong>TCP 半关闭连接安全回收</strong>：增加 15 秒超时自动清理机制，防止半关闭会话悬空与描述符泄漏。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">⚡️ 体验优化</span>
+  <span class="section-tag tag-improve">⚡️ 体验与性能优化</span>
   <ul>
-    <li><strong>退出/关机安全保护机制</strong>：退出与关机时安全切断 Network Extension 避免系统断网，同时完整保护原连接意图不被抹除。</li>
-    <li><strong>冷启动与开机智能自动恢复</strong>：启动时智能检测上次连接状态，此前为连接态且满足条件时自动秒级恢复连接，此前为关闭态则保持关闭。</li>
+    <li><strong>菜单栏低功耗按需刷新</strong>：动态感知菜单栏展开与遮挡状态，仅在展示时轮询遥测，收起后自动休眠，杜绝后台 CPU 占用。</li>
+    <li><strong>TUN 出站包批量合并</strong>：引入线程安全出站缓冲区合并发包，大幅减少内核边界切换与系统调用开销。</li>
+    <li><strong>连接断开日志降级</strong>：将常规连接关闭与取消日志降级为 verbose，保持系统日志纯净。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 稳定性验证</span>
+  <span class="section-tag tag-feature">✨ 稳定性验证</span>
   <ul>
-    <li><strong>虚拟机全场景矩阵测试 100% 通过</strong>：Tart 虚拟机自动化全链路（连接-退出保护-冷启动重连-主动断开-保持断开）4 大场景 100% 通过。</li>
-    <li><strong>真实硬件 Mac mini 双机测试通过</strong>：物理真机联调闭环通过，系统扩展授权与真实网络路由无缝恢复。</li>
+    <li><strong>物理真机 Mac mini 实测 100% 通过</strong>：在 Apple Silicon Mac mini 上实测静默开机秒级恢复连接、主动断开冷启动保持断开，零人工干预。</li>
+    <li><strong>全量产品回归测试通过</strong>：104+ 单元测试与协议矩阵全部通过。</li>
   </ul>
 </div>
 """

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-Hans" data-language="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AetherRoute 1.0.17 正式版本说明、更新日志、安装包下载与 SHA-256 校验和。">
+  <title>AetherRoute 1.0.17 正式版</title>
+  <link rel="icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="icon" href="/assets/favicon-dark.png?v=20260914.08" type="image/png" media="(prefers-color-scheme: dark)">
+  <link rel="alternate icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=20260914.08">
+  <link rel="stylesheet" href="/assets/site.css?v=20260914.08">
+  <script src="/assets/site.js?v=20260916.05" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content"><span data-lang="zh">跳到正文</span><span data-lang="en">Skip to content</span></a>
+  
+  <header class="site-header"><nav class="nav wrap" aria-label="Main navigation"><a class="brand" href="/"><img src="/assets/aetherroute-mark.png?v=20260914.08" srcset="/assets/aetherroute-mark.png?v=20260914.08 1x, /assets/aetherroute-mark-1024.png?v=20260914.08 2x" width="34" height="34" alt="">AetherRoute</a><div class="navlinks"><a href="/#experience"><span data-lang="zh">使用体验</span><span data-lang="en">Experience</span></a><a href="/releases/"><span data-lang="zh">版本更新</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">使用帮助</span><span data-lang="en">Support</span></a></div><div class="nav-actions"><button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button><a class="small-button" href="/releases/"><span data-lang="zh">获取 Mac 版</span><span data-lang="en">Get for Mac</span> <span aria-hidden="true">↗</span></a></div></nav></header>
+
+  <main id="content" class="shell">
+    <div class="page-hero">
+      <span class="eyebrow"><span data-lang="zh">正式版 · 已通过 Apple 公证</span><span data-lang="en">Release · Apple notarized</span></span>
+      <h1>AetherRoute 1.0.17</h1>
+      <p>Build 2026091802 · 2026-09-18 · Apple silicon · macOS 15.0+</p>
+      <div class="hero-actions"><a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.17/AetherRoute-1.0.17-build-2026091802-arm64.dmg"><span data-lang="zh">下载 1.0.17 正式版</span><span data-lang="en">Download 1.0.17 Release</span></a><a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.17">GitHub Release ↗</a><a class="button" href="/releases/1.0.16/"><span data-lang="zh">获取 1.0.16 历史版本</span><span data-lang="en">Get 1.0.16 previous release</span></a></div>
+    </div>
+
+    <article class="prose">
+<section><h2><span data-lang="zh">开机自启动连接恢复门禁彻底解耦修复</span><span data-lang="en">Startup Auto-Reconnect Gate Decoupling</span></h2><ul><li><span data-lang="zh">彻底修复初始化准备阶段 isPreparing 锁未复位导致开机启动时 100% 误判跳过连接的缺陷。</span><span data-lang="en">Resolved critical gate lock issue where isPreparing caused startup auto-reconnection to be skipped on boot.</span></li><li><span data-lang="zh">独立定义 canRestorePreviousConnection 门禁，开机自启动后全自动静默秒级恢复隧道连接。</span><span data-lang="en">Decoupled security gate ensuring fully automatic and silent tunnel restoration upon boot or cold start.</span></li></ul></section>
+<section><h2><span data-lang="zh">菜单栏低功耗按需刷新与多项性能优化</span><span data-lang="en">Menu Bar Power Optimization & Performance</span></h2><ul><li><span data-lang="zh">动态追踪菜单栏 Popover 弹出与遮挡状态，仅在展示时调度高频遥测轮询，收起时自动休眠，杜绝后台 CPU 浪费。</span><span data-lang="en">Dynamically observe menu bar popover visibility, suspending telemetry polling when hidden to eliminate background CPU load.</span></li><li><span data-lang="zh">TCP 半关闭看门狗机制：为透明代理半关闭流提供 15 秒看门狗超时清理，防止会话悬空与句柄泄漏。</span><span data-lang="en">15-second watchdog timer for half-closed transparent TCP flows, safely reclaiming orphaned resources.</span></li><li><span data-lang="zh">TUN 出站包批量写入：引入线程安全出站缓冲区合并发包，大幅减少内核边界切换与系统调用开销。</span><span data-lang="en">Thread-safe batched writePackets queueing, boosting packet tunnel throughput.</span></li></ul></section>
+<section><h2><span data-lang="zh">真机硬件与生产全量自动化回归通过</span><span data-lang="en">Hardware & Automated Regression Verification</span></h2><ul><li><span data-lang="zh">在真实硬件 Apple Silicon Mac mini 上实测静默开机秒级自动重连、主动断开保持断开，全生命周期通过率 100%。</span><span data-lang="en">Verified silent auto-reconnect and state retention on real Apple Silicon Mac mini with 100% pass rate.</span></li><li><span data-lang="zh">全量本地构建与自动化测试套件（104+ 测试用例）全绿通过，零回归。</span><span data-lang="en">All product test suites (104+ test cases) passed cleanly with zero regressions.</span></li></ul></section>
+<section><h2><span data-lang="zh">发布说明</span><span data-lang="en">Release Information</span></h2><ul><li><span data-lang="zh">此正式包使用正常生产核心，经过 Developer ID 签名及 Apple 官方双重公证装订，不包含 QA 自动化标记。</span><span data-lang="en">This stable package uses the normal production core, is Developer ID signed and Apple double-notarized (app + dmg stapled), and contains no QA automation flags.</span></li><li><span data-lang="zh">经维护者授权，在真实物理机实测闭环通过后发布 v1.0.17 正式版。</span><span data-lang="en">Authorized by the maintainer for stable release following real hardware verification.</span></li></ul></section><section><h2><span data-lang="zh">下载与校验</span><span data-lang="en">Download and Verify</span></h2><div class="checksum">AetherRoute-1.0.17-build-2026091802-arm64.dmg</div><p>SHA-256</p><div class="checksum">66d2cd3fe12c54e3c864971d3a6a20fe73985951eaa6bc329702f139fbbc1576</div></section>
+</article>
+  </main>
+
+  <footer class="wrap site-footer"><span>© 2026 AetherRoute <span class="footer-note"><span data-lang="zh">由编程不良人用心打造。</span><span data-lang="en">Made by BianChengBuLiangRen.</span></span></span><div><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">帮助</span><span data-lang="en">Support</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可</span><span data-lang="en">License</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub ↗</a></div></footer>
+</body>
+</html>
