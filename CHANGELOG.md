@@ -4,6 +4,40 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.17] - 2026-09-18
+
+### Fixed
+
+- Startup Auto-Reconnect Gate Decoupling (`TunnelManager`):
+  resolved a critical race/gate defect where the `isPreparing` flag remained set during
+  `restorePreviousConnectionIfRequested()`, causing `canConnect` to evaluate to false and
+  unconditionally skip auto-reconnection on system boot and cold launch. Introduced a decoupled
+  `canRestorePreviousConnection` security gate and reset `isPreparing` immediately upon
+  extension registration.
+
+### Changed
+
+- Menu Bar Resource Optimization (`AetherRouteApp`):
+  introduced `MenuBarVisibilitySynchronizer` to dynamically activate real-time telemetry
+  only when the menu bar popover is visibly occluded/expanded, eliminating background CPU
+  and timer overhead when hidden.
+- TCP Half-Close Timeout Watchdog (`TCPFlowStateMachine`):
+  implemented a 15-second watchdog timer to safely cancel lingering half-closed transparent proxy
+  streams, preventing socket descriptor leaks.
+- Outbound Packet Batching (`CoreBridge` in `AetherRoutePacketTunnel`):
+  introduced thread-safe queue buffering with `outgoingPacketLock` to batch multiple packets
+  into single `NEPacketTunnelFlow.writePackets` system calls, significantly boosting network throughput.
+- Session Lifecycle Log Level Adjustment (`TransparentProxyFlowSession`):
+  downgraded normal flow closure and cancellation log entries to verbose, eliminating log spam.
+
+### Verified
+
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`):
+  verified cold start auto-reconnection on real hardware (1s disconnected -> 2s connecting -> 3s connected)
+  and intentional disconnect retention with 100% pass rate.
+- Product Test Suite (`test_product_build.sh`):
+  all 104+ unit, integration, and performance boundary tests passed cleanly with zero regressions.
+
 ## [1.0.16] - 2026-09-18
 
 ### Added
