@@ -170,12 +170,6 @@ final class WindowChromeView: NSView {
         )
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(windowDidUpdate(_:)),
-            name: NSWindow.didUpdateNotification,
-            object: window
-        )
-        NotificationCenter.default.addObserver(
-            self,
             selector: #selector(toolbarWillAddItem(_:)),
             name: NSToolbar.willAddItemNotification,
             object: window?.toolbar
@@ -209,11 +203,6 @@ final class WindowChromeView: NSView {
     }
 
     @objc
-    private func windowDidUpdate(_ notification: Notification) {
-        applyWindowChrome()
-    }
-
-    @objc
     private func toolbarWillAddItem(_ notification: Notification) {
         guard let item = notification.userInfo?["item"] as? NSToolbarItem,
               item.itemIdentifier.rawValue ==
@@ -229,11 +218,18 @@ final class WindowChromeView: NSView {
         if window.title != expectedTitle {
             window.title = expectedTitle
         }
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = showsWindowTitle ? .visible : .hidden
+        if !window.titlebarAppearsTransparent {
+            window.titlebarAppearsTransparent = true
+        }
+        let targetVisibility: NSWindow.TitleVisibility = showsWindowTitle ? .visible : .hidden
+        if window.titleVisibility != targetVisibility {
+            window.titleVisibility = targetVisibility
+        }
 
         guard let toolbar = window.toolbar else { return }
-        toolbar.isVisible = false
+        if toolbar.isVisible {
+            toolbar.isVisible = false
+        }
         while let index = toolbar.items.firstIndex(where: {
             $0.itemIdentifier.rawValue ==
                 Self.automaticSidebarToggleIdentifier
@@ -536,6 +532,72 @@ struct AetherRouteApp: App {
 
 }
 
+private struct MenuBarVisibilitySynchronizer: NSViewRepresentable {
+    let onVisibilityChanged: (Bool) -> Void
+
+    func makeNSView(context: Context) -> MenuBarVisibilityTrackerView {
+        let view = MenuBarVisibilityTrackerView()
+        view.onVisibilityChanged = onVisibilityChanged
+        return view
+    }
+
+    func updateNSView(_ nsView: MenuBarVisibilityTrackerView, context: Context) {
+        nsView.onVisibilityChanged = onVisibilityChanged
+    }
+}
+
+private final class MenuBarVisibilityTrackerView: NSView {
+    var onVisibilityChanged: ((Bool) -> Void)?
+    private weak var observedWindow: NSWindow?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        stopObserving()
+        guard let window else {
+            onVisibilityChanged?(false)
+            return
+        }
+        observedWindow = window
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(checkVisibility),
+            name: NSWindow.didChangeOcclusionStateNotification,
+            object: window
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(checkVisibility),
+            name: NSWindow.didBecomeKeyNotification,
+            object: window
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(checkVisibility),
+            name: NSWindow.didResignKeyNotification,
+            object: window
+        )
+        checkVisibility()
+    }
+
+    @objc private func checkVisibility() {
+        guard let window = observedWindow ?? window else {
+            onVisibilityChanged?(false)
+            return
+        }
+        let isVisible = window.isVisible && window.occlusionState.contains(.visible)
+        onVisibilityChanged?(isVisible)
+    }
+
+    private func stopObserving() {
+        NotificationCenter.default.removeObserver(self)
+        observedWindow = nil
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+}
+
 private struct MenuBarContent: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @EnvironmentObject private var language: AppLanguageController
@@ -557,6 +619,14 @@ private struct MenuBarContent: View {
         }
         .frame(width: AetherVisual.popoverWidth)
         .background {
+            MenuBarVisibilitySynchronizer { isVisible in
+                tunnel.setRealtimeTelemetryPreferred(isVisible, for: "menubar")
+                if !isVisible {
+                    showingNodes = false
+                }
+            }
+        }
+        .background {
             if reduceTransparency {
                 Color(nsColor: .windowBackgroundColor)
             } else {
@@ -565,7 +635,6 @@ private struct MenuBarContent: View {
         }
         .onChange(of: tunnel.activeProfile?.yaml) { _, _ in showingNodes = false }
         .onAppear {
-            tunnel.setRealtimeTelemetryPreferred(true, for: "menubar")
             AppWindowManager.shared.openWindowAction = { [openWindow] in
                 openWindow(id: "main")
             }

@@ -92,6 +92,12 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
     private var telemetryOutputBuffer = Data(
         count: NetworkTelemetryCodec.maximumMessageBytes
     )
+    private static let ipv4Protocol = NSNumber(value: AF_INET)
+    private static let ipv6Protocol = NSNumber(value: AF_INET6)
+    private let outgoingPacketLock = NSLock()
+    private var pendingPackets: [Data] = []
+    private var pendingProtocols: [NSNumber] = []
+    private var isFlushScheduled = false
 
     init(packetFlow: NEPacketTunnelFlow) {
         self.packetFlow = packetFlow
@@ -324,6 +330,11 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             state.retainedContext = nil
             state.generation = nil
             return (generation, context)
+        }
+        outgoingPacketLock.withLock {
+            pendingPackets.removeAll(keepingCapacity: false)
+            pendingProtocols.removeAll(keepingCapacity: false)
+            isFlushScheduled = false
         }
 
         // The gate rejects a request whose generation is no longer live. That
@@ -615,15 +626,56 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         ipVersion: UInt8
     ) {
         guard ipVersion == 4 || ipVersion == 6 else { return }
-        packetQueue.async { [weak self] in
-            guard let self, self.isRunning() else { return }
+        let proto = ipVersion == 6 ? Self.ipv6Protocol : Self.ipv4Protocol
+
+        let shouldSchedule: Bool = outgoingPacketLock.withLock {
+            pendingPackets.append(data)
+            pendingProtocols.append(proto)
+            if !isFlushScheduled {
+                isFlushScheduled = true
+                return true
+            }
+            return false
+        }
+
+        if shouldSchedule {
+            packetQueue.async { [weak self] in
+                self?.flushPendingPackets()
+            }
+        }
+    }
+
+    private func flushPendingPackets() {
+        while true {
+            guard isRunning() else {
+                outgoingPacketLock.withLock {
+                    pendingPackets.removeAll(keepingCapacity: false)
+                    pendingProtocols.removeAll(keepingCapacity: false)
+                    isFlushScheduled = false
+                }
+                return
+            }
+
+            let (packets, protocols): ([Data], [NSNumber]) = outgoingPacketLock.withLock {
+                if pendingPackets.isEmpty {
+                    isFlushScheduled = false
+                    return ([], [])
+                }
+                let batchPackets = pendingPackets
+                let batchProtocols = pendingProtocols
+                pendingPackets.removeAll(keepingCapacity: true)
+                pendingProtocols.removeAll(keepingCapacity: true)
+                return (batchPackets, batchProtocols)
+            }
+
+            if packets.isEmpty {
+                return
+            }
+
             autoreleasepool {
-                let family = NSNumber(
-                    value: ipVersion == 6 ? AF_INET6 : AF_INET
-                )
                 _ = self.packetFlow.writePackets(
-                    [data],
-                    withProtocols: [family]
+                    packets,
+                    withProtocols: protocols
                 )
             }
         }

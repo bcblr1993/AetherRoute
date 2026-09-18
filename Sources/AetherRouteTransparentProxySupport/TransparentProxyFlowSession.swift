@@ -267,9 +267,15 @@ final class TransparentTCPProxySession:
                 "transport=tcp session=\(self.sessionID.uuidString) stage=coreActivate success"
             )
         case let .failure(error):
-            TransparentSessionRuntimeLog.log.failure(
-                "transport=tcp session=\(self.sessionID.uuidString) stage=coreActivate failed error=\(String(reflecting: error))"
-            )
+            if error == .closed || error == .cancelled {
+                TransparentSessionRuntimeLog.log.verbose(
+                    "transport=tcp session=\(self.sessionID.uuidString) stage=coreActivate ended early error=\(String(reflecting: error))"
+                )
+            } else {
+                TransparentSessionRuntimeLog.log.failure(
+                    "transport=tcp session=\(self.sessionID.uuidString) stage=coreActivate failed error=\(String(reflecting: error))"
+                )
+            }
         }
         let action = lock.withLock { () -> ActivationAction in
             guard phase == .activating else { return .none }
@@ -652,9 +658,15 @@ final class TransparentUDPProxySession:
                 "transport=udp session=\(self.sessionID.uuidString) stage=coreActivate success"
             )
         case let .failure(error):
-            TransparentSessionRuntimeLog.log.failure(
-                "transport=udp session=\(self.sessionID.uuidString) stage=coreActivate failed error=\(String(reflecting: error))"
-            )
+            if error == .closed || error == .cancelled {
+                TransparentSessionRuntimeLog.log.verbose(
+                    "transport=udp session=\(self.sessionID.uuidString) stage=coreActivate ended early error=\(String(reflecting: error))"
+                )
+            } else {
+                TransparentSessionRuntimeLog.log.failure(
+                    "transport=udp session=\(self.sessionID.uuidString) stage=coreActivate failed error=\(String(reflecting: error))"
+                )
+            }
         }
         let action = lock.withLock { () -> ActivationAction in
             guard phase == .activating else { return .none }

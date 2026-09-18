@@ -687,6 +687,7 @@ final class TunnelManager: ObservableObject {
             if state == .disconnected {
                 await refreshSubscriptionIfDue()
             }
+            isPreparing = false
             await restorePreviousConnectionIfRequested()
             await connectForQAAutomationIfRequested()
         } catch {
@@ -699,9 +700,9 @@ final class TunnelManager: ObservableObject {
         guard !isUIReviewMode else { return }
         guard wasConnectedBeforeTermination else { return }
         guard state == .disconnected else { return }
-        guard canConnect else {
+        guard canRestorePreviousConnection else {
             Self.runtimeLogger.info(
-                "stage=startup autoReconnect skipped reason=cannotConnect"
+                "stage=startup autoReconnect skipped reason=cannotConnect isPreparing=\(self.isPreparing, privacy: .public) profile=\(self.activeProfile != nil, privacy: .public) approvalRequired=\(self.systemExtensionApprovalRequired, privacy: .public) permitsStart=\(self.managerConnectionPermitsStart, privacy: .public)"
             )
             return
         }
@@ -709,6 +710,28 @@ final class TunnelManager: ObservableObject {
             "stage=startup autoReconnect restoring previous connection"
         )
         await setEnabled(true)
+    }
+
+    private var canRestorePreviousConnection: Bool {
+#if AETHERROUTE_DEVELOPMENT_PREVIEW
+        false
+#else
+        hasAcceptedPrivacyDisclosure
+            && activeProfile != nil
+            && distributionConnectionAccess.permitsNewConnection
+            && !systemExtensionApprovalRequired
+            && managerConnectionPermitsStart
+            && !managerConnectionIsTransitioning
+            && !isTransitioning
+            && !isImportingProfile
+            && !isUpdatingProfiles
+            && !isUpdatingRoutingResources
+            && !isUpdatingBypassPolicy
+            && !isUpdatingDNSRuntimePolicy
+            && !isUpdatingRoutingMode
+            && !isSwitchingNetworkEngine
+            && proxySelectionRequests.isEmpty
+#endif
     }
 
     /// Starts the tunnel without UI so an acceptance run can be unattended.

@@ -123,6 +123,7 @@ public actor TCPFlowStateMachine {
     private var flowOutputFinished = false
     private var bridgeOutputFinished = false
     private var didReportTermination = false
+    private var halfCloseTimeoutTask: Task<Void, Never>?
 
     public init(
         flow: any TransparentTCPFlowIO,
@@ -164,6 +165,8 @@ public actor TCPFlowStateMachine {
         guard lifecycle == .idle || lifecycle == .running else {
             return
         }
+        halfCloseTimeoutTask?.cancel()
+        halfCloseTimeoutTask = nil
         lifecycle = .cancelled
         invalidateOperations()
         cancelTransports()
@@ -248,6 +251,8 @@ public actor TCPFlowStateMachine {
         case .success(.endOfStream):
             Self.pumpLog.verbose("stage=flowRead outcome=endOfStream")
             flowInputEnded = true
+            halfCloseTimeoutTask?.cancel()
+            halfCloseTimeoutTask = nil
             issueBridgeFinish()
         case let .success(.bytes(data)):
             Self.pumpLog.verbose(
@@ -428,17 +433,39 @@ public actor TCPFlowStateMachine {
             flowOutputFinished,
             bridgeOutputFinished
         else {
+            if bridgeInputEnded, flowOutputFinished, !flowInputEnded, halfCloseTimeoutTask == nil {
+                halfCloseTimeoutTask = Task { [weak self] in
+                    do {
+                        try await Task.sleep(for: .seconds(15))
+                    } catch {
+                        return
+                    }
+                    await self?.handleHalfCloseTimeout()
+                }
+            }
             return
         }
+        halfCloseTimeoutTask?.cancel()
+        halfCloseTimeoutTask = nil
         lifecycle = .finished
         invalidateOperations()
         reportTermination()
+    }
+
+    private func handleHalfCloseTimeout() {
+        guard lifecycle == .running, bridgeInputEnded, flowOutputFinished, !flowInputEnded else {
+            return
+        }
+        Self.pumpLog.verbose("stage=halfCloseTimeout expired")
+        cancel()
     }
 
     private func fail(_ error: FlowIOError) {
         guard lifecycle == .running else {
             return
         }
+        halfCloseTimeoutTask?.cancel()
+        halfCloseTimeoutTask = nil
         lifecycle = .failed(error)
         invalidateOperations()
         cancelTransports()
