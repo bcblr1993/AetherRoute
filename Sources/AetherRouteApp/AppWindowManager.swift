@@ -30,6 +30,7 @@ final class AppWindowManager: NSObject, NSWindowDelegate {
         Self.logger.info(
             "showMainWindow requested. mainWindow exists=\(self.mainWindow != nil)"
         )
+        AppDockVisibilityController.shared.apply()
         if let window = mainWindow {
             if window.isMiniaturized {
                 window.deminiaturize(nil)

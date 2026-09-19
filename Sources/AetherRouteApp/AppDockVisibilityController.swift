@@ -1,11 +1,14 @@
 import AppKit
+import AetherRouteKit
 import Combine
 import Foundation
+import OSLog
 
 @MainActor
 final class AppDockVisibilityController: ObservableObject {
     static let shared = AppDockVisibilityController()
     static let storageKey = "AetherRouteHideDockIcon"
+    private static let logger = AppLog.logger(category: AppLog.Category.appLifecycle)
 
     @Published private(set) var isDockIconHidden: Bool
     private let defaults: UserDefaults
@@ -23,7 +26,7 @@ final class AppDockVisibilityController: ObservableObject {
         apply()
     }
 
-    func apply() {
+    func apply(force: Bool = false) {
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
         if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] != nil {
             NSApplication.shared.setActivationPolicy(.regular)
@@ -31,11 +34,16 @@ final class AppDockVisibilityController: ObservableObject {
         }
 #endif
         let targetPolicy: NSApplication.ActivationPolicy = isDockIconHidden ? .accessory : .regular
-        if NSApplication.shared.activationPolicy() != targetPolicy {
-            NSApplication.shared.setActivationPolicy(targetPolicy)
+        let currentPolicy = NSApplication.shared.activationPolicy()
+        if force || currentPolicy != targetPolicy {
+            let changed = NSApplication.shared.setActivationPolicy(targetPolicy)
+            Self.logger.info(
+                "stage=dockVisibility apply isDockIconHidden=\(self.isDockIconHidden, privacy: .public) targetPolicy=\(targetPolicy.rawValue, privacy: .public) previousPolicy=\(currentPolicy.rawValue, privacy: .public) result=\(changed, privacy: .public) force=\(force, privacy: .public)"
+            )
         }
         if !isDockIconHidden {
             NSApplication.shared.activate(ignoringOtherApps: true)
         }
     }
 }
+

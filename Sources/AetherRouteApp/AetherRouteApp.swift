@@ -13,7 +13,15 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
     private var signalTerminationPending = false
     private var terminationSignalSource: (any DispatchSourceSignal)?
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        AppDockVisibilityController.shared.apply()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppDockVisibilityController.shared.apply(force: true)
+        DispatchQueue.main.async {
+            AppDockVisibilityController.shared.apply(force: true)
+        }
         installTerminationSignalSource()
         Task { @MainActor [weak self] in
             await self?.tunnel?.prepare()
@@ -30,6 +38,7 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
+        AppDockVisibilityController.shared.apply(force: true)
         AppWindowManager.shared.showMainWindow()
         return true
     }
