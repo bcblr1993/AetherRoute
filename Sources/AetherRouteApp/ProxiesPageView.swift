@@ -578,7 +578,7 @@ private struct ActiveProxyGroupView: View {
     // MARK: - 节点网格展示 (现代卡片布局)
     private var nodeGrid: some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 270, maximum: 380), spacing: AetherVisual.s3)],
+            columns: [GridItem(.adaptive(minimum: 250, maximum: 380), spacing: AetherVisual.s3)],
             spacing: AetherVisual.s3
         ) {
             ForEach(visibleMembers, id: \.self) { member in

@@ -694,6 +694,54 @@ extension TunnelManager {
         }
     }
 
+    func updateSubscriptionInterval(id: UUID, interval: TimeInterval?) async {
+        guard canModifyProfile(id: id),
+              let index = profiles.firstIndex(where: { $0.id == id }),
+              let sub = profiles[index].profile.subscription else { return }
+        isUpdatingProfiles = true
+        defer { isUpdatingProfiles = false }
+        do {
+            let updatedSub = try ProfileSubscription(
+                url: sub.url,
+                etag: sub.etag,
+                lastModified: sub.lastModified,
+                lastCheckedAt: sub.lastCheckedAt,
+                lastUpdatedAt: sub.lastUpdatedAt,
+                autoUpdateInterval: interval
+            )
+            let existing = profiles[index].profile
+            let updatedProfile = ActiveProfile(
+                name: existing.name,
+                yaml: existing.yaml,
+                importedAt: existing.importedAt,
+                subscription: updatedSub,
+                nativeNodes: existing.nativeNodes
+            )
+            if isUIReviewMode {
+                var updatedProfiles = profiles
+                updatedProfiles[index] = ManagedProfile(id: id, profile: updatedProfile)
+                installReviewProfileCatalog(
+                    ProfileCatalog(
+                        activeProfileID: activeProfileID,
+                        profiles: updatedProfiles
+                    )
+                )
+            } else {
+                try await performProductionProfileCatalogOperation {
+                    try ProfileCatalogStore.applicationGroup().replace(
+                        id: id,
+                        with: updatedProfile
+                    )
+                }
+            }
+            profileMessage = AppLocalization.string("Auto-update interval updated.")
+            profileMessageIsError = false
+        } catch {
+            profileMessage = error.localizedDescription
+            profileMessageIsError = true
+        }
+    }
+
     func removeProfile(id: UUID) async {
         guard canModifyProfile(id: id) else { return }
         isUpdatingProfiles = true

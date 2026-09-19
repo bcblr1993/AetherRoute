@@ -1033,7 +1033,7 @@ private struct ManagedProfileRow: View {
 
             Spacer(minLength: AetherVisual.s2)
 
-            // 4. 右侧操作区：如果是激活的订阅，展示检查更新按钮；如果是未激活项，展示使用按钮
+            // 4. 右侧操作区：如果是激活的订阅，展示检查更新按钮
             if isActive && isSubscription {
                 Button {
                     Task { await tunnel.refreshSubscription() }
@@ -1049,14 +1049,6 @@ private struct ManagedProfileRow: View {
                 .disabled(!canModify || tunnel.isRefreshingSubscription)
             }
 
-            if !isActive {
-                Button(AppLocalization.string("Use"), action: activate)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(!canActivate)
-                    .accessibilityIdentifier("activate-profile-\(managed.id.uuidString)")
-            }
-
             Menu {
                 if let editNative {
                     Button(action: editNative) {
@@ -1069,6 +1061,24 @@ private struct ManagedProfileRow: View {
                     Label(AppLocalization.string("Rename…"), systemImage: "pencil")
                 }
                 .disabled(!canModify)
+
+                if isSubscription {
+                    Menu(AppLocalization.string("Auto Update")) {
+                        Button(AppLocalization.string("Manual only")) {
+                            Task { await tunnel.updateSubscriptionInterval(id: managed.id, interval: nil) }
+                        }
+                        Button(AppLocalization.string("Every 6 Hours")) {
+                            Task { await tunnel.updateSubscriptionInterval(id: managed.id, interval: 6 * 3600) }
+                        }
+                        Button(AppLocalization.string("Every 12 Hours")) {
+                            Task { await tunnel.updateSubscriptionInterval(id: managed.id, interval: 12 * 3600) }
+                        }
+                        Button(AppLocalization.string("Every 24 Hours")) {
+                            Task { await tunnel.updateSubscriptionInterval(id: managed.id, interval: 24 * 3600) }
+                        }
+                    }
+                    .disabled(!canModify)
+                }
 
                 if !isActive {
                     Divider()
@@ -1094,6 +1104,13 @@ private struct ManagedProfileRow: View {
         }
         .padding(.horizontal, AetherVisual.s5)
         .padding(.vertical, AetherVisual.sRow)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !isActive && canActivate {
+                activate()
+            }
+        }
+        .accessibilityIdentifier("activate-profile-\(managed.id.uuidString)")
         .background(
             isActive
                 ? Color.accentColor.opacity(colorScheme == .dark ? 0.08 : 0.04)

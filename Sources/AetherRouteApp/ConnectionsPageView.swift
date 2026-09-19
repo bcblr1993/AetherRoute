@@ -10,6 +10,7 @@ struct ConnectionsView: View {
     @ObservedObject var telemetry: NetworkTelemetryViewModel
     @State private var filter: ConnectionOutletFilter = .all
     @State private var sort: ConnectionSort = .traffic
+    @State private var showingDisconnectConfirmation = false
 
     var body: some View {
         let rows = connectionRows
@@ -115,7 +116,7 @@ struct ConnectionsView: View {
                 TableColumn(AppLocalization.string("Outlet")) { row in
                     ConnectionOutletCell(connection: row.connection)
                 }
-                .width(min: 70, ideal: 80, max: 130)
+                .width(min: 100, ideal: 160, max: 320)
                 TableColumn(AppLocalization.string("Traffic")) { row in
                     ConnectionTrafficCell(connection: row.connection)
                 }
@@ -161,11 +162,23 @@ struct ConnectionsView: View {
 
             if tunnel.isConnected {
                 Button(AppLocalization.string("Disconnect all"), systemImage: "xmark.circle") {
-                    Task { await tunnel.setEnabled(false) }
+                    showingDisconnectConfirmation = true
                 }
                 .buttonStyle(.bordered)
                 .disabled(tunnel.isTransitioning || telemetry.snapshot.connections.isEmpty)
                 .accessibilityIdentifier("disconnect-all-connections")
+                .confirmationDialog(
+                    AppLocalization.string("Disconnect Tunnel"),
+                    isPresented: $showingDisconnectConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button(AppLocalization.string("Disconnect"), role: .destructive) {
+                        Task { await tunnel.setEnabled(false) }
+                    }
+                    Button(AppLocalization.string("Cancel"), role: .cancel) {}
+                } message: {
+                    Text(AppLocalization.string("Disconnecting the tunnel will stop proxy routing and terminate all active connections."))
+                }
             }
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -429,6 +442,8 @@ private struct ConnectionOutletCell: View {
             .font(.body.weight(.semibold))
             .foregroundStyle(.primary)
             .lineLimit(1)
+            .truncationMode(.middle)
+            .help(outlet.localizedTitle)
     }
 
     private var outlet: ConnectionOutlet {

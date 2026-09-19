@@ -4,6 +4,44 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.20] - 2026-09-19
+
+### Added
+
+- Menu Bar Popover Fast Node Search (`AetherRouteApp.swift`):
+  integrated instant keyword search and real-time node filtering (`searchText`, `isFiltering`) into `MenuNodeListInline`, enabling swift proxy node lookup by keyword or protocol without navigating submenus.
+- Profile Subscription Auto-Update Interval (`TunnelManager+Profiles.swift` & `ProfilesPageView.swift`):
+  added configurable subscription refresh schedules (1h, 6h, 12h, 24h, or manual) with persistent storage and scheduled background timer synchronization.
+- Rule Simulator Quick Domain Presets (`RulesPageView.swift`):
+  added quick preset chips (`google.com`, `apple.com`, `github.com`, `bilibili.com`) inside the Rule Simulator test panel for one-click route diagnostics.
+
+### Changed
+
+- Connections Page Outlet Column Expansion (`ConnectionsPageView.swift`):
+  expanded Outlet column width (`min: 100, ideal: 160, max: 320`) and added `.truncationMode(.middle)` with `.help(outlet.localizedTitle)` tooltips, completely resolving proxy outlet name truncation.
+- Proxies Page Responsive Grid Adaptation (`ProxiesPageView.swift`):
+  fine-tuned adaptive card column widths (`min: 250, max: 380`) to provide an optimal multi-column layout on wide screens while maintaining compact density on 13" laptop displays.
+- Profile Row Activation Simplification (`ProfilesPageView.swift`):
+  eliminated the redundant "使用" (Use) button on inactive profile rows, allowing whole-row click activation while retaining radio-button status indicators and full accessibility identifiers.
+- Accidental Tunnel Teardown Guard (`ConnectionsPageView.swift`):
+  added a modal confirmation dialog (`confirmationDialog`) to "全部断开" (Disconnect All) to prevent accidental VPN disconnection.
+
+### Fixed
+
+- AppKit Termination Responder Validation & Re-Entrant Termination (`AetherRouteApp.swift`):
+  conformed `AetherRouteApplicationDelegate` to `NSMenuItemValidation` and `NSUserInterfaceValidations`, installed an explicit AppleEvent handler for `kCoreEventClass` / `kAEQuitApplication`, and guarded termination entry points against re-entrant calls (`terminationReplyPending`, `signalTerminationPending`), guaranteeing clean Network Extension route restoration before exit.
+- Core Artifact Hashes Synchronization (`ProtocolCoreEvidence.json` & `ThirdPartyLicenses.json`):
+  synchronized flow core and packet tunnel static library SHA-256 evidence hashes with rebuilt release binaries, passing strict protocol matrix verification.
+
+### Verified
+
+- Tart Virtual Machine Matrix Acceptance (`aether-diag-1434`):
+  verified 100% pass rate across all 6 engine and routing permutations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`), confirming zero leaks, immediate route tear-down, and baseline route restoration.
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`):
+  executed `test_remote_arm64.sh fast` over SSH, successfully validating all Network Extensions, core bridges, and proxy protocols with 100% pass rate.
+- Product Test Suite (`scripts/test.sh`):
+  passed all 280+ unit, integration, memory budget, and design token guard tests with 0 failures.
+
 ## [1.0.19] - 2026-09-19
 
 ### Added

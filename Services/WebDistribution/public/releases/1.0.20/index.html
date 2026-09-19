@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hans" data-language="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AetherRoute 1.0.20 正式版本说明、更新日志、安装包下载与 SHA-256 校验和。">
+  <title>AetherRoute 1.0.20 正式版</title>
+  <link rel="icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="icon" href="/assets/favicon-dark.png?v=20260914.08" type="image/png" media="(prefers-color-scheme: dark)">
+  <link rel="alternate icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=20260914.08">
+  <link rel="stylesheet" href="/assets/site.css?v=20260914.08">
+  <script src="/assets/site.js?v=20260916.05" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content"><span data-lang="zh">跳到正文</span><span data-lang="en">Skip to content</span></a>
+  
+  <header class="site-header"><nav class="nav wrap" aria-label="Main navigation"><a class="brand" href="/"><img src="/assets/aetherroute-mark.png?v=20260914.08" srcset="/assets/aetherroute-mark.png?v=20260914.08 1x, /assets/aetherroute-mark-1024.png?v=20260914.08 2x" width="34" height="34" alt="">AetherRoute</a><div class="navlinks"><a href="/#experience"><span data-lang="zh">使用体验</span><span data-lang="en">Experience</span></a><a href="/releases/"><span data-lang="zh">版本更新</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">使用帮助</span><span data-lang="en">Support</span></a></div><div class="nav-actions"><button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button><a class="small-button" href="/releases/"><span data-lang="zh">获取 Mac 版</span><span data-lang="en">Get for Mac</span> <span aria-hidden="true">↗</span></a></div></nav></header>
+
+  <main id="content" class="shell">
+    <div class="page-hero">
+      <span class="eyebrow"><span data-lang="zh">正式版 · 已通过 Apple 公证</span><span data-lang="en">Release · Apple notarized</span></span>
+      <h1>AetherRoute 1.0.20</h1>
+      <p>Build 2026091904 · 2026-09-19 · Apple silicon · macOS 15.0+</p>
+      <div class="hero-actions"><a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.20/AetherRoute-1.0.20-build-2026091904-arm64.dmg"><span data-lang="zh">下载 1.0.20 正式版</span><span data-lang="en">Download 1.0.20 Release</span></a><a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.20">GitHub Release ↗</a><a class="button" href="/releases/1.0.19/"><span data-lang="zh">获取 1.0.19 历史版本</span><span data-lang="en">Get 1.0.19 previous release</span></a></div>
+    </div>
+
+    <article class="prose">
+<section><h2><span data-lang="zh">菜单栏与节点检索体验升级</span><span data-lang="en">Menu Bar & Node Search Enhancements</span></h2><ul><li><span data-lang="zh">菜单栏 Popover 节点即时搜索：在菜单栏弹窗中集成关键字快速搜索与实时筛选（searchText / isFiltering），支持按节点名与协议快速定位，无需层层翻找。</span><span data-lang="en">Instant keyword search and live node filtering in the menu bar popover, enabling fast proxy node lookup by keyword or protocol without navigating submenus.</span></li><li><span data-lang="zh">订阅配置自动更新调度周期：新增 1 小时、6 小时、12 小时、24 小时及手动更新周期配置，定时器在后台平滑触发自动拉取与热重载。</span><span data-lang="en">Configurable subscription refresh schedules (1h, 6h, 12h, 24h, or manual) with persistent storage and scheduled background timer synchronization.</span></li><li><span data-lang="zh">分流规则模拟器一键域名预设：规则测试面板内置 Google、Apple、GitHub、Bilibili 等高频预设标签，一键点选模拟分流决策。</span><span data-lang="en">Quick preset chips (google.com, apple.com, github.com, bilibili.com) in Rule Simulator for rapid routing decision verification.</span></li></ul></section>
+<section><h2><span data-lang="zh">页面交互与视觉自适应优化</span><span data-lang="en">Page Interaction & Responsive Grid</span></h2><ul><li><span data-lang="zh">连接页面 Outlet 出口名称自适应拓展：扩大 Outlet 最小与建议列宽（100~320px），结合中间截断与原生 Tooltip 浮窗提示，彻底解决节点名称省略号截断。</span><span data-lang="en">Expanded Outlet column width with middle truncation and full tooltips in Connections view, eliminating proxy node title clipping.</span></li><li><span data-lang="zh">代理卡片多端自适应网格：微调网格卡片列宽边界（250~380px），适配 13 寸 MacBook 至 32 寸 4K 宽屏显示器。</span><span data-lang="en">Fine-tuned adaptive proxy card column widths for optimal reading comfort across all display sizes.</span></li><li><span data-lang="zh">配置整行点击极速切换：移除多余的“使用”按钮，点击未激活配置整行即可直接切换激活，交互更加简洁高效。</span><span data-lang="en">Whole-row click activation for inactive configuration profiles without redundant buttons.</span></li><li><span data-lang="zh">全部断开二次确认防误触：在“全部断开”操作增加原生确认对话框，有效防止误触断开 VPN。</span><span data-lang="en">Added confirmation dialog to Disconnect All action to prevent unintended tunnel teardowns.</span></li></ul></section>
+<section><h2><span data-lang="zh">生命周期与网络扩展退出自愈</span><span data-lang="en">Lifecycle & Extension Clean Exit</span></h2><ul><li><span data-lang="zh">AppKit 退出响应者链校验修复：遵循 AppKit 响应者规范并显式实现协议代理，安装专用 AppleEvent 退出拦截器，彻底解决自动化与 AppleScript 退出异常。</span><span data-lang="en">Resolved AppKit responder chain validation failures during Quit AppleEvent handling with dedicated AppleEvent dispatcher.</span></li><li><span data-lang="zh">退出过程防重入保护：退出进行中自动丢弃重复退出信号，防止外部重入打断网络扩展与路由恢复流程。</span><span data-lang="en">Re-entrancy guards prevent redundant quit events from interrupting graceful network extension teardown.</span></li></ul></section>
+<section><h2><span data-lang="zh">虚拟机与物理真机三级验证全绿</span><span data-lang="en">Hardware & VM Verification</span></h2><ul><li><span data-lang="zh">真实 Apple Silicon Mac mini 硬件实机验证：通过 SSH 远程测试门禁，全量协议与性能指标 100% 通过。</span><span data-lang="en">Verified on physical Apple Silicon Mac mini via remote automated test gate with 100% pass rate.</span></li><li><span data-lang="zh">Tart 虚拟机全模式矩阵（TUN / 透明代理 x 规则 / 全局 / 直连）6 项矩阵验收 100% 通过，0 崩溃 0 失败。</span><span data-lang="en">Passed all 6 Tart VM matrix configurations across TUN and Transparent Proxy modes with 0 failures and 0 crashes.</span></li><li><span data-lang="zh">本地产品套件 280+ 自动化测试用例 100% 通过。</span><span data-lang="en">Full product test suite of 280+ tests passed cleanly with 0 failures.</span></li></ul></section>
+<section><h2><span data-lang="zh">发布说明</span><span data-lang="en">Release Information</span></h2><ul><li><span data-lang="zh">此正式包使用正常生产核心，经过 Developer ID 签名及 Apple 官方双重公证装订，不包含 QA 自动化标记。</span><span data-lang="en">This stable package uses the normal production core, is Developer ID signed and Apple double-notarized (app + dmg stapled), and contains no QA automation flags.</span></li><li><span data-lang="zh">经维护者要求，在真实物理机与虚拟机矩阵实测闭环通过后发布 v1.0.20 正式版。</span><span data-lang="en">Authorized by the maintainer for stable release following real hardware and VM matrix verification.</span></li></ul></section><section><h2><span data-lang="zh">下载与校验</span><span data-lang="en">Download and Verify</span></h2><div class="checksum">AetherRoute-1.0.20-build-2026091904-arm64.dmg</div><p>SHA-256</p><div class="checksum">9d806cace555d40df5f5f9f1610319521881cad9a8bf87b609445f26117080a6</div></section>
+</article>
+  </main>
+
+  <footer class="wrap site-footer"><span>© 2026 AetherRoute <span class="footer-note"><span data-lang="zh">由编程不良人用心打造。</span><span data-lang="en">Made by BianChengBuLiangRen.</span></span></span><div><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">帮助</span><span data-lang="en">Support</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可</span><span data-lang="en">License</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub ↗</a></div></footer>
+</body>
+</html>

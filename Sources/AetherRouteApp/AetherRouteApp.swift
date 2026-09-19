@@ -5,7 +5,7 @@ import OSLog
 import SwiftUI
 
 @MainActor
-final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
+final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSUserInterfaceValidations {
     private static let lifecycleLogger = AppLog.logger(category: AppLog.Category.appLifecycle)
 
     weak var tunnel: TunnelManager?
@@ -23,6 +23,7 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
             AppDockVisibilityController.shared.apply(force: true)
         }
         installTerminationSignalSource()
+        installQuitAppleEventHandler()
         Task { @MainActor [weak self] in
             await self?.tunnel?.prepare()
         }
@@ -69,21 +70,49 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func terminate(_ sender: Any?) {
+        guard !terminationReplyPending && !signalTerminationPending else {
+            Self.lifecycleLogger.info(
+                "stage=applicationTermination terminateAction ignored reason=pending"
+            )
+            return
+        }
         NSApplication.shared.terminate(sender)
     }
 
     @objc func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
-        if item.action == #selector(terminate(_:)) {
-            return true
-        }
-        return true
+        true
     }
 
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(terminate(_:)) {
-            return true
+        true
+    }
+
+    private func installQuitAppleEventHandler() {
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleQuitAppleEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kCoreEventClass),
+            andEventID: AEEventID(kAEQuitApplication)
+        )
+        Self.lifecycleLogger.info(
+            "stage=applicationTermination quitAppleEventHandler armed"
+        )
+    }
+
+    @objc func handleQuitAppleEvent(
+        _ event: NSAppleEventDescriptor,
+        withReplyEvent replyEvent: NSAppleEventDescriptor
+    ) {
+        guard !terminationReplyPending && !signalTerminationPending else {
+            Self.lifecycleLogger.info(
+                "stage=applicationTermination quitAppleEvent ignored reason=pending"
+            )
+            return
         }
-        return true
+        Self.lifecycleLogger.info(
+            "stage=applicationTermination quitAppleEvent received"
+        )
+        NSApplication.shared.terminate(nil)
     }
 
     private func installTerminationSignalSource() {
@@ -1060,6 +1089,7 @@ private struct MenuNodeListInline: View {
     let onClose: () -> Void
     @State private var orderedMembers: [String] = []
     @State private var selecting = false
+    @State private var searchText = ""
 
     private var selectedMember: String? {
         tunnel.proxySelections[group.name]?.selectedMember
@@ -1070,10 +1100,50 @@ private struct MenuNodeListInline: View {
             .filter { !$0.recognition.isSelectable }.map(\.name))
     }
 
+    private var filteredMembers: [String] {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return orderedMembers }
+        return orderedMembers.filter { $0.localizedCaseInsensitiveContains(query) }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            if orderedMembers.count > 4 {
+                HStack(spacing: AetherVisual.s1) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    TextField(AppLocalization.string("Search nodes"), text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 11.5))
+                        .accessibilityIdentifier("menu-node-search-field")
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, AetherVisual.s2)
+                .padding(.vertical, AetherVisual.sCompact)
+                .background(
+                    Color.secondary.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+                )
+            }
+
             if orderedMembers.isEmpty {
-                Text("No nodes available")
+                Text(AppLocalization.string("No nodes available"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, AetherVisual.s2)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            } else if filteredMembers.isEmpty {
+                Text(AppLocalization.string("No matching nodes"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, AetherVisual.s2)
@@ -1081,7 +1151,7 @@ private struct MenuNodeListInline: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: AetherVisual.s1) {
-                        ForEach(orderedMembers, id: \.self) { member in
+                        ForEach(filteredMembers, id: \.self) { member in
                             Button {
                                 if member == selectedMember {
                                     onClose()
@@ -1131,7 +1201,7 @@ private struct MenuNodeListInline: View {
                     }
                     .padding(AetherVisual.s1)
                 }
-                .frame(height: min(CGFloat(orderedMembers.count) * 36, 216))
+                .frame(height: min(CGFloat(max(filteredMembers.count, 1)) * 36, 216))
                 .background(
                     Color(nsColor: .controlBackgroundColor).opacity(0.4),
                     in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)

@@ -310,6 +310,24 @@ struct RulesView: View {
                                             .stroke(Color.accentColor.opacity(0.4), lineWidth: 0.5)
                                     }
 
+                                    HStack(spacing: AetherVisual.s1) {
+                                        Text(AppLocalization.string("Quick Test:"))
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundStyle(.secondary)
+                                        ForEach(["google.com", "apple.com", "github.com", "bilibili.com"], id: \.self) { domain in
+                                            Button(domain) {
+                                                testQuery = domain
+                                                performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .font(.system(size: 11))
+                                            .padding(.horizontal, AetherVisual.s2)
+                                            .padding(.vertical, AetherVisual.sMicro)
+                                            .background(Color.secondary.opacity(0.1), in: Capsule())
+                                            .accessibilityIdentifier("rule-quick-test-\(domain)")
+                                        }
+                                    }
+
                                     if let result = testResult {
                                         HStack(spacing: AetherVisual.s3) {
                                             Image(systemName: "checkmark.circle.fill")
