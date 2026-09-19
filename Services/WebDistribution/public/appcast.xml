@@ -120,9 +120,40 @@
 
 <div class="release-header">
   <span class="release-title">AetherRoute 1.0.20 更新要点</span>
-  <span class="release-badge">Build 2026091904 · 建议更新</span>
+  <span class="release-badge">Build 2026091904 · 正式发布</span>
 </div>
-<div class="release-header"><span class="release-title">AetherRoute 1.0.20 更新要点</span><span class="release-badge">Build 2026091904 · 正式发布</span></div><div class="section"><span class="section-tag tag-feature">🚀 菜单栏与节点检索体验升级</span><ul><li><strong>菜单栏 Popover 节点秒级搜索</strong>：在菜单栏弹窗中集成即时搜索栏与动态过滤，支持直接按节点名或协议快速检索，无需展开层层子菜单。</li><li><strong>订阅配置自动更新调度周期</strong>：新增 1h、6h、12h、24h 及手动多档位定时更新间隔配置，后台定时器无缝调度，配置随时保持最新。</li><li><strong>分流规则模拟器一键域名预设</strong>：在规则测试器中内置 Google、Apple、GitHub、Bilibili 等高频预设标签，一键点选模拟分流决策。</li></ul></div><div class="section"><span class="section-tag tag-improve">⚡️ 页面交互与视觉自适应优化</span><ul><li><strong>连接页面 Outlet 出口名称完整显示</strong>：拓宽 Outlet 列宽预算，引入中间截断与原生 Tooltip 悬浮提示，彻底消除长节点名省略号截断。</li><li><strong>代理卡片多端自适应网格</strong>：调优栅格最小与最大列宽，在从 13 寸 MacBook 到 32 寸 4K 外接显示器上均能呈现最佳卡片密度与阅读比例。</li><li><strong>配置整行点击极速切换</strong>：移除多余的“使用”按钮，点击未激活配置整行即可直接切换激活，交互更加平滑纯粹。</li><li><strong>全部断开二次确认防误触</strong>：在“全部断开”动作上增加原生确认弹窗，防止用户在连接状态下误触导致网络中断。</li></ul></div><div class="section"><span class="section-tag tag-fix">🐞 生命周期与网络扩展退出自愈</span><ul><li><strong>AppKit 退出响应者链校验修复</strong>：遵循 AppKit 响应者规范并显式实现协议代理，安装专用 AppleEvent 退出拦截器，消除 AppleScript 与自动化退出异常。</li><li><strong>防重入退出保护</strong>：退出过程中屏蔽重复退出信号，确保网络扩展与系统路由彻底平滑恢复后再完成进程退出。</li><li><strong>生产核心与协议矩阵哈希对齐</strong>：重新校验并固化生产核心静态库证据，全量通过协议矩阵与第三方许可审计。</li></ul></div><div class="section"><span class="section-tag tag-improve">✨ 虚拟机与物理真机三级回归全绿</span><ul><li><strong>Tart 虚拟机 6 维全矩阵通过</strong>：TUN/透明代理 x 规则/全局/直连共 6 项矩阵场景 100% 通过（0 fail，0 crash）。</li><li><strong>Mac mini 物理真机实机验证通过</strong>：SSH 远程门禁一次性全绿通过，所有系统扩展与代理协议稳健运行。</li></ul></div><div class="footer-bar"><span>已通过 Apple 官方公证 · Ed25519 签名验证</span><a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.20/" target="_blank">查看网页完整更新日志 ↗</a></div>
+<div class="section">
+  <span class="section-tag tag-feature">🚀 菜单栏与节点检索体验升级</span>
+  <ul>
+    <li><strong>菜单栏 Popover 节点秒级搜索</strong>：在菜单栏弹窗中集成即时搜索栏与动态过滤，支持直接按节点名或协议快速检索，无需展开层层子菜单。</li>
+    <li><strong>订阅配置自动更新调度周期</strong>：新增 1h、6h、12h、24h 及手动多档位定时更新间隔配置，后台定时器无缝调度，配置随时保持最新。</li>
+    <li><strong>分流规则模拟器一键域名预设</strong>：在规则测试器中内置 Google、Apple、GitHub、Bilibili 等高频预设标签，一键点选模拟分流决策。</li>
+  </ul>
+</div>
+<div class="section">
+  <span class="section-tag tag-improve">⚡️ 页面交互与视觉自适应优化</span>
+  <ul>
+    <li><strong>连接页面 Outlet 出口名称完整显示</strong>：拓宽 Outlet 列宽预算，引入中间截断与原生 Tooltip 悬浮提示，彻底消除长节点名省略号截断。</li>
+    <li><strong>代理卡片多端自适应网格</strong>：调优栅格最小与最大列宽，在从 13 寸 MacBook 到 32 寸 4K 外接显示器上均能呈现最佳卡片密度与阅读比例。</li>
+    <li><strong>配置整行点击极速切换</strong>：移除多余的“使用”按钮，点击未激活配置整行即可直接切换激活，交互更加平滑纯粹。</li>
+    <li><strong>全部断开二次确认防误触</strong>：在“全部断开”动作上增加原生确认弹窗，防止用户在连接状态下误触导致网络中断。</li>
+  </ul>
+</div>
+<div class="section">
+  <span class="section-tag tag-fix">🐞 生命周期与网络扩展退出自愈</span>
+  <ul>
+    <li><strong>AppKit 退出响应者链校验修复</strong>：遵循 AppKit 响应者规范并显式实现协议代理，安装专用 AppleEvent 退出拦截器，消除 AppleScript 与自动化退出异常。</li>
+    <li><strong>防重入退出保护</strong>：退出过程中屏蔽重复退出信号，确保网络扩展与系统路由彻底平滑恢复后再完成进程退出。</li>
+    <li><strong>生产核心与协议矩阵哈希对齐</strong>：重新校验并固化生产核心静态库证据，全量通过协议矩阵与第三方许可审计。</li>
+  </ul>
+</div>
+<div class="section">
+  <span class="section-tag tag-improve">✨ 虚拟机与物理真机三级回归全绿</span>
+  <ul>
+    <li><strong>Tart 虚拟机 6 维全矩阵通过</strong>：TUN/透明代理 x 规则/全局/直连共 6 项矩阵场景 100% 通过（0 fail，0 crash）。</li>
+    <li><strong>Mac mini 物理真机实机验证通过</strong>：SSH 远程门禁一次性全绿通过，所有系统扩展与代理协议稳健运行。</li>
+  </ul>
+</div>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
   <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.20/" target="_blank">查看网页完整更新日志 ↗</a>

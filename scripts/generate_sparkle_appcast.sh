@@ -132,6 +132,24 @@ func wrapWithAppleStyle(content: String, version: String, build: String) -> Stri
     if content.contains("<style>") {
         return content
     }
+    let hasHeader = content.contains("release-header")
+    let hasFooter = content.contains("footer-bar")
+
+    let headerBlock = hasHeader ? "" : """
+<div class="release-header">
+  <span class="release-title">AetherRoute \(version) 更新要点</span>
+  <span class="release-badge">Build \(build) · 正式发布</span>
+</div>
+
+"""
+    let footerBlock = hasFooter ? "" : """
+
+<div class="footer-bar">
+  <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
+  <a class="footer-link" href="https://aetherroute.pages.dev/releases/\(version)/" target="_blank">查看网页完整更新日志 ↗</a>
+</div>
+"""
+
     return """
 <style>
   :root {
@@ -239,15 +257,7 @@ func wrapWithAppleStyle(content: String, version: String, build: String) -> Stri
   }
 </style>
 
-<div class="release-header">
-  <span class="release-title">AetherRoute \(version) 更新要点</span>
-  <span class="release-badge">Build \(build) · 建议更新</span>
-</div>
-\(content)
-<div class="footer-bar">
-  <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aetherroute.pages.dev/releases/\(version)/" target="_blank">查看网页完整更新日志 ↗</a>
-</div>
+\(headerBlock)\(content)\(footerBlock)
 """
 }
 
