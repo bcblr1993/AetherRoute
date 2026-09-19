@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hans" data-language="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AetherRoute 1.0.19 正式版本说明、更新日志、安装包下载与 SHA-256 校验和。">
+  <title>AetherRoute 1.0.19 正式版</title>
+  <link rel="icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="icon" href="/assets/favicon-dark.png?v=20260914.08" type="image/png" media="(prefers-color-scheme: dark)">
+  <link rel="alternate icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=20260914.08">
+  <link rel="stylesheet" href="/assets/site.css?v=20260914.08">
+  <script src="/assets/site.js?v=20260916.05" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content"><span data-lang="zh">跳到正文</span><span data-lang="en">Skip to content</span></a>
+  
+  <header class="site-header"><nav class="nav wrap" aria-label="Main navigation"><a class="brand" href="/"><img src="/assets/aetherroute-mark.png?v=20260914.08" srcset="/assets/aetherroute-mark.png?v=20260914.08 1x, /assets/aetherroute-mark-1024.png?v=20260914.08 2x" width="34" height="34" alt="">AetherRoute</a><div class="navlinks"><a href="/#experience"><span data-lang="zh">使用体验</span><span data-lang="en">Experience</span></a><a href="/releases/"><span data-lang="zh">版本更新</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">使用帮助</span><span data-lang="en">Support</span></a></div><div class="nav-actions"><button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button><a class="small-button" href="/releases/"><span data-lang="zh">获取 Mac 版</span><span data-lang="en">Get for Mac</span> <span aria-hidden="true">↗</span></a></div></nav></header>
+
+  <main id="content" class="shell">
+    <div class="page-hero">
+      <span class="eyebrow"><span data-lang="zh">正式版 · 已通过 Apple 公证</span><span data-lang="en">Release · Apple notarized</span></span>
+      <h1>AetherRoute 1.0.19</h1>
+      <p>Build 2026091901 · 2026-09-19 · Apple silicon · macOS 15.0+</p>
+      <div class="hero-actions"><a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.19/AetherRoute-1.0.19-build-2026091901-arm64.dmg"><span data-lang="zh">下载 1.0.19 正式版</span><span data-lang="en">Download 1.0.19 Release</span></a><a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.19">GitHub Release ↗</a><a class="button" href="/releases/1.0.18/"><span data-lang="zh">获取 1.0.18 历史版本</span><span data-lang="en">Get 1.0.18 previous release</span></a></div>
+    </div>
+
+    <article class="prose">
+<section><h2><span data-lang="zh">核心功能与体验演进</span><span data-lang="en">Core Features & Architecture Evolution</span></h2><ul><li><span data-lang="zh">国内与 Apple 加速界面开关：在配置与通用设置中支持随时启用/关闭零配置内存优化引擎，设置即时平滑生效。</span><span data-lang="en">User-facing toggle for domestic routing optimization in Settings and Profiles, reloading seamlessly on change.</span></li><li><span data-lang="zh">双引擎网络自愈机制统一：透明代理对齐 Packet Tunnel 的系统级 NWPathMonitor 与 SCDynamicStore 监听，Wi-Fi 与手机热点切换时零重启无感自愈。</span><span data-lang="en">Symmetrical dual-engine physical interface recovery via NWPathMonitor and SCDynamicStore, enabling zero-restart healing across Wi-Fi and hotspot handovers.</span></li><li><span data-lang="zh">规则优化器健壮容错：增强对空配置、空白行、行内注释及畸形规则符号的容错清洗能力。</span><span data-lang="en">Enhanced fault tolerance for blank lines, comments, and malformed empty items in profile optimization.</span></li></ul></section>
+<section><h2><span data-lang="zh">核心架构治理与超大对象解耦</span><span data-lang="en">Architecture Refactoring & Decoupling</span></h2><ul><li><span data-lang="zh">TunnelManager 领域驱动分拆：保持公共外观 API 不变，将 6,400+ 行单体拆分为 7 个高内聚扩展模块（连接生命周期、扩展注册、配置管理、路由资源、节点选择、流量遥测、并发测速）。</span><span data-lang="en">Decoupled monolithic TunnelManager into 7 high-cohesion domain extensions while preserving 100% backward API compatibility.</span></li><li><span data-lang="zh">UI 视图组件化重构：拆分 ProfilesPageView、RulesPageView 与 DNSPageView，全面推行 DesignSystem 语义 Token 并消除内存强引用循环。</span><span data-lang="en">Modularized UI into dedicated Profiles, Rules, and DNS page views with DesignSystem tokens and retain cycle prevention.</span></li></ul></section>
+<section><h2><span data-lang="zh">物理真机硬件与虚拟机矩阵全绿验证</span><span data-lang="en">Physical Hardware & VM Matrix Verification</span></h2><ul><li><span data-lang="zh">真实 Apple Silicon Mac mini 硬件实机验证：系统扩展稳定加载，协议与底层网络流门禁 100% 通过。</span><span data-lang="en">Verified on physical Apple Silicon Mac mini via remote automated test gate with 100% pass rate.</span></li><li><span data-lang="zh">Tart 虚拟机全模式矩阵（TUN / 透明代理 x 规则 / 全局 / 直连）6 项矩阵验收 100% 通过，0 崩溃 0 失败。</span><span data-lang="en">Passed all 6 Tart VM matrix configurations across TUN and Transparent Proxy modes with 0 failures and 0 crashes.</span></li></ul></section>
+<section><h2><span data-lang="zh">Apple 芯片专属底层深度调优与极致能效</span><span data-lang="en">Apple Silicon M-Series Deep Optimization</span></h2><ul><li><span data-lang="zh">ARMv8 硬件加解密扩展指令加速：直接调用 M 芯片内部专用 AES 与 SHA 指令流水线，吞吐过程 CPU 负载降低至 0.7% ~ 1.7%。</span><span data-lang="en">ARMv8 Cryptography Extensions: hardware-accelerated AES and SHA instructions execute directly on-chip, reducing CPU load to 0.7% ~ 1.7%.</span></li><li><span data-lang="zh">异构内核休眠调度与统一内存：折叠菜单栏时 100% 线程进入 mach_msg2_trap 内核深睡，后台静默 CPU 0.0% ~ 0.1%，物理内存 footprint 控制在 ~210MB。</span><span data-lang="en">Heterogeneous sleep scheduling & unified memory: 100% of threads enter mach_msg2_trap deep sleep when idle, yielding 0.0% ~ 0.1% CPU and ~210MB total memory footprint.</span></li></ul></section>
+<section><h2><span data-lang="zh">发布说明</span><span data-lang="en">Release Information</span></h2><ul><li><span data-lang="zh">此正式包使用正常生产核心，经过 Developer ID 签名及 Apple 官方双重公证装订，不包含 QA 自动化标记。</span><span data-lang="en">This stable package uses the normal production core, is Developer ID signed and Apple double-notarized (app + dmg stapled), and contains no QA automation flags.</span></li><li><span data-lang="zh">经维护者要求，在真实物理机与虚拟机矩阵实测闭环通过后发布 v1.0.19 正式版。</span><span data-lang="en">Authorized by the maintainer for stable release following real hardware and VM matrix verification.</span></li></ul></section><section><h2><span data-lang="zh">下载与校验</span><span data-lang="en">Download and Verify</span></h2><div class="checksum">AetherRoute-1.0.19-build-2026091901-arm64.dmg</div><p>SHA-256</p><div class="checksum">daa7767fa1c6b3638fc25119ebb12095c1c30f717633aad448cc8ea67fbd0553</div></section>
+</article>
+  </main>
+
+  <footer class="wrap site-footer"><span>© 2026 AetherRoute <span class="footer-note"><span data-lang="zh">由编程不良人用心打造。</span><span data-lang="en">Made by BianChengBuLiangRen.</span></span></span><div><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">帮助</span><span data-lang="en">Support</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可</span><span data-lang="en">License</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub ↗</a></div></footer>
+</body>
+</html>
