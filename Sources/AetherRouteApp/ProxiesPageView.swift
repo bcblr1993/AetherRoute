@@ -172,7 +172,7 @@ struct ProxiesView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     HStack(spacing: AetherVisual.s1) {
                         Text(AppLocalization.string("Raw Node Inventory & Providers"))
                             .font(.caption.weight(.semibold))
@@ -227,10 +227,10 @@ private struct ProxyGroupTabButton: View {
                     .frame(width: 24, height: 24)
                     .background(
                         (isSelected ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08)),
-                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
                     )
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     HStack(spacing: AetherVisual.s1) {
                         Text(group.name)
                             .font(.system(size: 13, weight: isSelected ? .bold : .medium))
@@ -239,8 +239,8 @@ private struct ProxyGroupTabButton: View {
 
                         Text(group.strategy.uppercased())
                             .font(.system(size: 8.5, weight: .bold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
+                            .padding(.horizontal, AetherVisual.s1)
+                            .padding(.vertical, AetherVisual.sMicro)
                             .background(
                                 (isSelected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.1)),
                                 in: Capsule()
@@ -249,7 +249,7 @@ private struct ProxyGroupTabButton: View {
                     }
 
                     if let currentMember {
-                        HStack(spacing: 3.5) {
+                        HStack(spacing: AetherVisual.s1) {
                             Circle()
                                 .fill(Color.green)
                                 .frame(width: 4.5, height: 4.5)
@@ -270,11 +270,11 @@ private struct ProxyGroupTabButton: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(Color.accentColor)
-                        .padding(.leading, 2)
+                        .padding(.leading, AetherVisual.sMicro)
                 }
             }
             .padding(.horizontal, AetherVisual.s3)
-            .padding(.vertical, 6)
+            .padding(.vertical, AetherVisual.sCompact)
             .contentShape(RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous))
             .background(
                 isSelected
@@ -396,8 +396,8 @@ private struct ActiveProxyGroupView: View {
 
                     Text(group.strategy.uppercased())
                         .font(.system(size: 9, weight: .bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, AetherVisual.sCompact)
+                        .padding(.vertical, AetherVisual.sMicro)
                         .background(Color.accentColor.opacity(0.12), in: Capsule())
                         .foregroundStyle(Color.accentColor)
                 }

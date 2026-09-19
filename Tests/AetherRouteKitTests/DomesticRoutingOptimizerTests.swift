@@ -217,4 +217,51 @@ final class DomesticRoutingOptimizerTests: XCTestCase {
         // Must pass ProfileImportValidator
         try ProfileImportValidator.validate(data: Data(output.utf8))
     }
+
+    func testDomesticOptimizationToggleState() {
+        let original = DomesticRoutingOptimizer.isEnabled
+        defer { DomesticRoutingOptimizer.setEnabled(original) }
+
+        DomesticRoutingOptimizer.setEnabled(false)
+        XCTAssertFalse(DomesticRoutingOptimizer.isEnabled)
+
+        DomesticRoutingOptimizer.setEnabled(true)
+        XCTAssertTrue(DomesticRoutingOptimizer.isEnabled)
+    }
+
+    func testOptimizeEmptyAndWhitespaceYAML() {
+        XCTAssertEqual(DomesticRoutingOptimizer.optimizedProfile(for: ""), "")
+        XCTAssertEqual(DomesticRoutingOptimizer.optimizedProfile(for: "   \n\n  \t  "), "   \n\n  \t  ")
+    }
+
+    func testOptimizeRulesWithInlineCommentsAndEmptyTokens() throws {
+        let input = """
+        mode: rule
+        proxies:
+          - name: S1
+            type: socks5
+            server: 127.0.0.1
+            port: 1080
+        proxy-groups:
+          - name: G1
+            type: select
+            proxies:
+              - S1
+        rules:
+          - DOMAIN-SUFFIX,github.com,G1 # GitHub traffic
+          - -
+          - ''
+          - ""
+          - MATCH,G1 # Default route
+        """
+
+        let output = DomesticRoutingOptimizer.optimizedProfile(for: input)
+        XCTAssertTrue(output.contains("DOMAIN-SUFFIX,github.com,G1"))
+        XCTAssertTrue(output.contains("MATCH,G1"))
+        XCTAssertFalse(output.contains("# GitHub traffic"))
+        XCTAssertFalse(output.contains("  - -"))
+        XCTAssertFalse(output.contains("  - ''"))
+
+        try ProfileImportValidator.validate(data: Data(output.utf8))
+    }
 }

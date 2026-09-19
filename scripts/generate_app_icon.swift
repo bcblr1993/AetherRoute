@@ -15,8 +15,20 @@ private let outputDirectory: URL = {
         .appendingPathComponent("Sources/AetherRouteApp/Assets.xcassets/AppIcon.appiconset")
 }()
 
-let masterURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-    .appendingPathComponent("Sources/AetherRouteApp/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png")
+private let repoRoot: URL = {
+    let current = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    if FileManager.default.fileExists(atPath: current.appendingPathComponent("Sources/AetherRouteApp/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png").path) {
+        return current
+    }
+    let scriptURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    let candidate = scriptURL.deletingLastPathComponent().deletingLastPathComponent()
+    if FileManager.default.fileExists(atPath: candidate.appendingPathComponent("Sources/AetherRouteApp/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png").path) {
+        return candidate
+    }
+    return current
+}()
+
+let masterURL = repoRoot.appendingPathComponent("Sources/AetherRouteApp/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png")
 
 guard let masterImage = NSImage(contentsOf: masterURL),
       let rep = masterImage.representations.first as? NSBitmapImageRep,

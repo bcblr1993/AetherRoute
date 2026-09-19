@@ -6,7 +6,18 @@ import Foundation
 
 // Package the user-selected Silver Flight artwork without redrawing it.
 // The checked-in original is the single source for Dock and in-app branding.
-let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+let root: URL = {
+    let current = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    if FileManager.default.fileExists(atPath: current.appendingPathComponent("Design/AppIcon/SilverFlight.png").path) {
+        return current
+    }
+    let scriptURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    let candidate = scriptURL.deletingLastPathComponent().deletingLastPathComponent()
+    if FileManager.default.fileExists(atPath: candidate.appendingPathComponent("Design/AppIcon/SilverFlight.png").path) {
+        return candidate
+    }
+    return current
+}()
 let args = CommandLine.arguments
 precondition(args.count == 1 || (args.count == 3 && args[1] == "--output-directory"))
 let output = args.count == 3 ? URL(fileURLWithPath: args[2]) : root

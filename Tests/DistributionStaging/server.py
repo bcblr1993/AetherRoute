@@ -2,6 +2,7 @@
 import base64
 import json
 import pathlib
+import socketserver
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -113,6 +114,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_bytes(400)
 
 
-server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+class StagingServer(ThreadingHTTPServer):
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = self.server_address[0]
+        self.server_port = self.server_address[1]
+
+
+server = StagingServer(("127.0.0.1", 0), Handler)
 port_file.write_text(str(server.server_address[1]), encoding="ascii")
 server.serve_forever()
+

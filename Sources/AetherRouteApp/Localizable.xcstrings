@@ -1,6 +1,26 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Accelerate domestic network & Apple services": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加速国内网络与 Apple 服务"
+          }
+        }
+      }
+    },
+    "Injects high-speed direct routing and domestic DNS policy for Apple CDN, updates, and domestic websites.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为 Apple CDN、系统更新及国内主流网站注入高速直连分流规则与国内 DNS 解析策略。"
+          }
+        }
+      }
+    },
     "Startup": {
       "localizations": {
         "zh-Hans": {

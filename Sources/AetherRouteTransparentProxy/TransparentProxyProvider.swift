@@ -5,6 +5,7 @@ import Foundation
 import Network
 @preconcurrency import NetworkExtension
 import OSLog
+import SystemConfiguration
 
 /// Native direct-flow provider embedded beside the Packet Tunnel extension.
 /// Compile/link, synthetic lifecycle, and loopback flow gates exercise this
@@ -14,6 +15,10 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     @unchecked Sendable
 {
     private static let runtimeLog = DiagnosticLogCenter.current.log(
+        category: "transparent-runtime"
+    )
+    private static let osLogger = Logger(
+        subsystem: "com.aetherroute.desktop",
         category: "transparent-runtime"
     )
     /// Standard-level summary of the data plane. Counting is O(1) per flow and
@@ -41,6 +46,21 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     // Accessed only on the recovery coordinator's serial queue.
     private var recoveryDownloadBaseline: UInt64?
 
+    private var pathMonitor: NWPathMonitor?
+    private var uplinkStore: SCDynamicStore?
+    private final class UplinkObserverContext {
+        weak var provider: TransparentProxyProvider?
+        init(_ provider: TransparentProxyProvider) { self.provider = provider }
+    }
+    private let pathMonitorQueue = DispatchQueue(
+        label: "com.aetherroute.desktop.transparent-proxy.path",
+        qos: .utility
+    )
+    private var lastPathSignature: String?
+    private let uplinkLock = NSLock()
+    private var physicalInterfaces: [NWInterface] = []
+    private var providerStopping = false
+
     override init() {
         let identityGuard = TransparentProxySelfIdentityGuard()
         let diagnostics = ProviderDiagnosticAccumulator()
@@ -59,7 +79,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     decoding: input.profile,
                     as: UTF8.self
                 )
-                let profileYAML = DomesticRoutingOptimizer.optimizedProfile(for: rawYAML)
+                let profileYAML = DomesticRoutingOptimizer.isEnabled
+                    ? DomesticRoutingOptimizer.optimizedProfile(for: rawYAML)
+                    : rawYAML
                 let engineProfile = Data(profileYAML.utf8)
                 let engine = try FlowCoreEngine(
                     profile: engineProfile,
@@ -117,7 +139,10 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 )
                 // Later attempts only probe. Repeated resets destroy flows
                 // opened while the uplink is still becoming usable.
-                if attempt == 0 { self?.runtimeController.resetNetworkState() }
+                if attempt == 0 {
+                    self?.runtimeController.resetNetworkState()
+                    Self.osLogger.info("stage=networkRecovery coreReset success")
+                }
             },
             verify: { [weak self] in self?.dataPathIsHealthy() ?? false },
             observer: { [weak self] event in
@@ -277,6 +302,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 } else {
                     DiagnosticFlowOpenObserver.shared.attach(Self.aggregator)
                     Self.aggregator.start()
+                    self.startPathMonitoring()
                     Self.runtimeLog.lifecycle("stage=startProxy success")
                 }
                 completion.call(error)
@@ -289,6 +315,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         completionHandler: @escaping () -> Void
     ) {
         Self.runtimeLog.lifecycle("stage=stopProxy requested")
+        uplinkLock.withLock { providerStopping = true }
+        stopPathMonitoring()
+        recovery.cancel(reason: "stopProxy")
         let completion = ProxyStopCompletion(completionHandler)
         runtimeController.stop {
             // NETransparentProxyProvider accepts only
@@ -332,6 +361,84 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             )
             return state.results.contains { $0.delayMilliseconds != nil }
         }
+    }
+
+    private func startPathMonitoring() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        pathMonitor = monitor
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard let self else { return }
+            Self.osLogger.info(
+                "stage=pathUpdate status=\(String(describing: path.status), privacy: .public) isExpensive=\(path.isExpensive, privacy: .public)"
+            )
+            self.uplinkLock.withLock { self.physicalInterfaces = path.availableInterfaces }
+            self.physicalPathDidChange(reason: "pathChanged")
+        }
+        let observerContext = UplinkObserverContext(self)
+        var context = SCDynamicStoreContext(
+            version: 0,
+            info: Unmanaged.passUnretained(observerContext).toOpaque(),
+            retain: { pointer in
+                _ = Unmanaged<UplinkObserverContext>.fromOpaque(pointer).retain()
+                return pointer
+            },
+            release: { pointer in
+                Unmanaged<UplinkObserverContext>.fromOpaque(pointer).release()
+            },
+            copyDescription: nil
+        )
+        uplinkStore = SCDynamicStoreCreate(
+            nil,
+            "AetherRoute transparent uplink changes" as CFString,
+            { _, _, context in
+                guard let context else { return }
+                guard let provider = Unmanaged<UplinkObserverContext>.fromOpaque(context)
+                    .takeUnretainedValue().provider else { return }
+                guard !provider.uplinkLock.withLock({ provider.providerStopping }) else { return }
+                provider.physicalPathDidChange(reason: "physicalLinkChanged")
+            },
+            &context
+        )
+        if let uplinkStore {
+            SCDynamicStoreSetNotificationKeys(
+                uplinkStore,
+                nil,
+                [
+                    "State:/Network/Interface/en[0-9]+/(Link|IPv4|IPv6)",
+                    "State:/Network/Interface/pdp_ip[0-9]+/(Link|IPv4|IPv6)",
+                    "State:/Network/Global/IPv4",
+                ] as CFArray
+            )
+            SCDynamicStoreSetDispatchQueue(uplinkStore, pathMonitorQueue)
+        }
+        monitor.start(queue: pathMonitorQueue)
+    }
+
+    private func stopPathMonitoring() {
+        if let uplinkStore { SCDynamicStoreSetDispatchQueue(uplinkStore, nil) }
+        uplinkStore = nil
+        pathMonitor?.cancel()
+        pathMonitor = nil
+    }
+
+    private func physicalPathDidChange(reason: String) {
+        guard !uplinkLock.withLock({ providerStopping }) else { return }
+        guard let store = SCDynamicStoreCreate(nil, "AetherRoute transparent uplink identity" as CFString, nil, nil)
+        else { return }
+        let cached = uplinkLock.withLock { physicalInterfaces }
+        let uplink = PhysicalUplinkDetector.currentPhysicalUplink(
+            store: store,
+            cachedPathInterfaces: cached
+        )
+        let signature = PhysicalUplinkDetector.pathSignature(store: store, uplink: uplink)
+        let previous = lastPathSignature
+        lastPathSignature = signature
+        guard let previous, previous != signature else { return }
+        Self.osLogger.info(
+            "stage=physicalUplinkChanged scheduling recovery reason=\(reason, privacy: .public) signature=\(signature, privacy: .public) previous=\(previous, privacy: .public)"
+        )
+        recovery.trigger(reason: reason, supersedes: true)
     }
 
     override func handleNewFlow(_ flow: NEAppProxyFlow) -> Bool {

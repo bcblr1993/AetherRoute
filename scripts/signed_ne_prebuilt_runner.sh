@@ -969,7 +969,7 @@ run_prepared_runner() {
     service_id=$("$resolver" "$EXPECTED_HOST_BUNDLE" \
       "$EXPECTED_PACKET_BUNDLE" AetherRoute /usr/sbin/scutil) \
       || return 1
-    /usr/sbin/scutil --nc stop "$service_id" >/dev/null 2>&1 || return 1
+    (/usr/sbin/scutil --nc stop "$service_id") >/dev/null 2>&1 || return 1
     stop_attempt=0
     while [ "$stop_attempt" -lt 20 ]; do
       state=$(/usr/sbin/scutil --nc status "$service_id" 2>/dev/null \

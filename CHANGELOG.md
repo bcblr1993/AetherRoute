@@ -4,6 +4,57 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.19] - 2026-09-19
+
+### Added
+
+- UI Toggle for Domestic & Apple Routing Optimization (`TunnelManager` & Settings Views):
+  integrated a user-facing toggle (`isDomesticRoutingOptimizationEnabled`) in Profiles and General settings,
+  enabling users to dynamically enable or disable lossless in-memory domestic routing optimization with immediate reload.
+- Dual-Engine Symmetrical Physical Network Recovery (`TransparentProxyProvider`):
+  introduced system-level `NWPathMonitor` and `SCDynamicStore` physical interface monitors to `TransparentProxyProvider`,
+  matching `PacketTunnelProvider`'s interface signature change detection and triggering seamless core resets on Wi-Fi/cellular transitions.
+- Robust YAML List and Token Sanitization (`DomesticRoutingOptimizer`):
+  enhanced fault tolerance for empty inputs, inline comments, blank lines, and malformed empty rule items (`- -`, `- ''`, `- ""`).
+
+### Changed
+
+- Core Architecture Refactoring & Large Object Modularization (`TunnelManager`):
+  decoupled the 6,408-line monolithic `TunnelManager` into 7 high-cohesion, single-responsibility domain extensions
+  while preserving 100% backward API compatibility:
+  - `TunnelManager+ConnectionLifecycle.swift`: connection establishment, teardown, and abnormal termination handling;
+  - `TunnelManager+ProviderManagement.swift`: Network Extension registration, state synchronization, and IPC communication;
+  - `TunnelManager+Profiles.swift`: profile import, activation, and hot-reload workflows;
+  - `TunnelManager+RoutingResources.swift`: GeoSite, GeoIP, and domestic rule asset management;
+  - `TunnelManager+ProxySelection.swift`: proxy node selection and policy group switching;
+  - `TunnelManager+Telemetry.swift`: real-time throughput metrics and connection statistics;
+  - `TunnelManager+Latency.swift`: concurrent latency benchmarking and health probes.
+- UI Page Extraction & Component Modularization:
+  - `ContentView.swift`: extracted 1,360 lines of profile management logic into dedicated `ProfilesPageView.swift`;
+  - `FeatureViews.swift`: decoupled into specialized `RulesPageView.swift` (794 lines) and `DNSPageView.swift` (860 lines).
+- UI Design System Token Enforcement:
+  eliminated hardcoded system colors and fonts across Views, standardizing on `DesignSystem` semantic tokens and
+  reinforcing weak reference captures to prevent retain cycles.
+
+### Fixed
+
+- Single Test Sandbox File Flush Race Condition (`CancellationTests.swift`):
+  ensured python test subprocess flushes and fsyncs PID files before returning, eliminating intermittent JSON decoding errors in unattended CI/CD test gates.
+- Dock Icon Visibility & Window Reopen Lifecycle:
+  resolved an issue where dock icon concealment policy was lost upon application restart or window recreation.
+- Automatic Update Check Debounce & Cooldown Protection:
+  prevented rapid duplicate update checks when enabling automatic updates in settings.
+
+### Verified
+
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`):
+  executed `test_remote_arm64.sh fast` over SSH, successfully validating all Network Extensions, core bridges,
+  and proxy protocols with 100% pass rate.
+- Tart Virtual Machine 6-Dimensional Matrix (`aether-diag-1434`):
+  unattended end-to-end matrix across TUN and Transparent engines under Rule, Global, and Direct modes passed cleanly (0 failures, 0 crashes).
+- Product Test Suite (`scripts/test.sh`):
+  full product test suite containing 280+ unit, integration, and performance boundary tests passed cleanly with 0 failures.
+
 ## [1.0.18] - 2026-09-18
 
 ### Added

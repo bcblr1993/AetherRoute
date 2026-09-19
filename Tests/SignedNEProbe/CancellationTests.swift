@@ -26,7 +26,7 @@ final class CancellationTests: XCTestCase, @unchecked Sendable {
 
     func waitForFile(_ url: URL) async throws {
         let deadline = DispatchTime.now().uptimeNanoseconds + 2_000_000_000
-        while !FileManager.default.fileExists(atPath: url.path) {
+        while !FileManager.default.fileExists(atPath: url.path) || ((try? Data(contentsOf: url))?.isEmpty ?? true) {
             guard DispatchTime.now().uptimeNanoseconds < deadline else {
                 throw SignedNEProbeError.timedOut
             }
@@ -66,10 +66,16 @@ final class CancellationTests: XCTestCase, @unchecked Sendable {
         def stop(a,b):
          child.terminate(); child.wait(timeout=1)
          time.sleep(.1)
-         open(\(try quote(cleaned.path)),'w').write('child-reaped')
+         with open(\(try quote(cleaned.path)),'w') as fc:
+          fc.write('child-reaped')
+          fc.flush()
+          os.fsync(fc.fileno())
          sys.exit(0)
         signal.signal(signal.SIGTERM,stop)
-        open(\(try quote(started.path)),'w').write(json.dumps([os.getpid(),child.pid]))
+        with open(\(try quote(started.path)),'w') as fs:
+         fs.write(json.dumps([os.getpid(),child.pid]))
+         fs.flush()
+         os.fsync(fs.fileno())
         time.sleep(20)
         """
         let probe = probe(source: source)
@@ -91,7 +97,10 @@ final class CancellationTests: XCTestCase, @unchecked Sendable {
         let source = """
         import os,signal,time
         signal.signal(signal.SIGTERM,signal.SIG_IGN)
-        open(\(try quote(started.path)),'w').write(str(os.getpid()))
+        with open(\(try quote(started.path)),'w') as f:
+         f.write(str(os.getpid()))
+         f.flush()
+         os.fsync(f.fileno())
         time.sleep(20)
         """
         let probe = probe(source: source)

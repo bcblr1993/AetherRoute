@@ -146,9 +146,9 @@ export TMPDIR="$TMP_ROOT"
 export AETHERROUTE_DERIVED_DATA_PATH="$DERIVED_DATA"
 export AETHERROUTE_INTEROP_TEST_BINARY="$BASE/payload/references/interop-tools/clash-rs-2272555/clash-lib-protocol-tests"
 
-"$ROOT/scripts/test.sh"
+(cd "$ROOT" && "$ROOT/scripts/test.sh")
 if [ "$MODE" = full ]; then
-  "$ROOT/scripts/test_sanitizers.sh"
+  (cd "$ROOT" && "$ROOT/scripts/test_sanitizers.sh")
 fi
 
 network_after=$(network_control_hash)

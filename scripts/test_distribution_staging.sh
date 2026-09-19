@@ -60,7 +60,7 @@ python3 "$ROOT/Tests/DistributionStaging/server.py" \
 SERVER_PID=$!
 
 attempt=0
-while [ ! -s "$PORT_FILE" ] && [ "$attempt" -lt 50 ]; do
+while [ ! -s "$PORT_FILE" ] && [ "$attempt" -lt 200 ]; do
   kill -0 "$SERVER_PID" 2>/dev/null || {
     echo "distribution staging service exited before readiness" >&2
     exit 1
@@ -69,7 +69,8 @@ while [ ! -s "$PORT_FILE" ] && [ "$attempt" -lt 50 ]; do
   attempt=$((attempt + 1))
 done
 test -s "$PORT_FILE" || {
-  echo "distribution staging service readiness timed out" >&2
+  echo "distribution staging service readiness timed out; server.log:" >&2
+  cat "$TEMP_DIR/server.log" >&2 || true
   exit 1
 }
 PORT=$(cat "$PORT_FILE")

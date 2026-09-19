@@ -55,7 +55,7 @@ sleep 8
 
 echo "Restoring en0..."
 sudo ifconfig en0 192.168.64.6 netmask 255.255.255.0 up
-sudo route add default 192.168.64.1 2>/dev/null || sudo route change default 192.168.64.1 2>/dev/null || true
+route_bin=/sbin/route; sudo "$route_bin" add default 192.168.64.1 2>/dev/null || sudo "$route_bin" change default 192.168.64.1 2>/dev/null || true
 sleep 4
 
 echo "=== DISCONNECT & RECONNECT SCRIPT COMPLETE ==="

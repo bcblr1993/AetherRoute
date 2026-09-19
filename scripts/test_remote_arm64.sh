@@ -94,12 +94,12 @@ trap cleanup EXIT HUP INT TERM
 for relative_path in \
   .github \
   .gitmodules \
+  AetherRoute.xcodeproj \
   Artifacts/Validation \
   CHANGELOG.md \
   CONTRIBUTING.md \
   Config \
-  Core/Headers \
-  Core/Artifacts/macos-arm64 \
+  Design \
   Docs \
   Licenses \
   Services \
@@ -125,6 +125,19 @@ do
     rsync -a "$source_path" "$destination_path"
   fi
 done
+
+mkdir -p "$STAGED_ROOT/Core"
+rsync -a --exclude '/Engine/target/' "$ROOT/Core/" "$STAGED_ROOT/Core/"
+if [ -d "$ROOT/.git/modules/Core/Engine" ]; then
+  mkdir -p "$STAGED_ROOT/.git/modules/Core"
+  rsync -a "$ROOT/.git/modules/Core/Engine" "$STAGED_ROOT/.git/modules/Core/"
+fi
+
+local_commit=$(git -C "$ROOT" rev-parse HEAD)
+git -C "$STAGED_ROOT" init -q
+mkdir -p "$STAGED_ROOT/.git/refs/heads"
+printf '%s\n' "$local_commit" > "$STAGED_ROOT/.git/refs/heads/main"
+printf 'ref: refs/heads/main\n' > "$STAGED_ROOT/.git/HEAD"
 
 test -f "$INTEROP_TEST_SOURCE" || {
   echo "Pinned protocol interoperability verifier is missing" >&2

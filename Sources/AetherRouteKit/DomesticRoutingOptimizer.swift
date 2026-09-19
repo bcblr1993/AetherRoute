@@ -19,6 +19,24 @@ import Foundation
 /// 6. Operates losslessly: disk storage remains 100% untouched.
 public enum DomesticRoutingOptimizer {
 
+    public static let userDefaultsKey = "AetherRoute.DomesticOptimizationEnabled"
+
+    public static var isEnabled: Bool {
+        if let appGroupDefaults = UserDefaults(suiteName: AppConstants.appGroup),
+           let value = appGroupDefaults.object(forKey: userDefaultsKey) as? Bool {
+            return value
+        }
+        if let standardValue = UserDefaults.standard.object(forKey: userDefaultsKey) as? Bool {
+            return standardValue
+        }
+        return true
+    }
+
+    public static func setEnabled(_ enabled: Bool) {
+        UserDefaults(suiteName: AppConstants.appGroup)?.set(enabled, forKey: userDefaultsKey)
+        UserDefaults.standard.set(enabled, forKey: userDefaultsKey)
+    }
+
     // MARK: - Predefined Rule Lists
 
     public static let highPriorityBypassRules: [String] = [
@@ -208,6 +226,7 @@ public enum DomesticRoutingOptimizer {
     /// Optimizes the provided raw YAML configuration for domestic download speed and
     /// Apple services acceleration while preserving proxy routing for foreign domains.
     public static func optimizedProfile(for yaml: String) -> String {
+        guard !yaml.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return yaml }
         let lines = yaml.components(separatedBy: "\n")
         guard !lines.isEmpty else { return yaml }
 
@@ -552,9 +571,13 @@ public enum DomesticRoutingOptimizer {
             for line in lines.dropFirst() { // Skip "rules:"
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 if trimmed.hasPrefix("-") {
-                    let ruleContent = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+                    var ruleContent = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+                    if !ruleContent.hasPrefix("'") && !ruleContent.hasPrefix("\""),
+                       let hashIdx = ruleContent.firstIndex(of: "#") {
+                        ruleContent = String(ruleContent[..<hashIdx]).trimmingCharacters(in: .whitespaces)
+                    }
                     let clean = unquote(ruleContent)
-                    if !clean.isEmpty {
+                    if !clean.isEmpty && clean != "-" && clean != "''" && clean != "\"\"" {
                         rawRules.append(clean)
                     }
                 }

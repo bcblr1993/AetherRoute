@@ -2,6 +2,7 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$ROOT"
 ICON_DIRECTORY="$ROOT/Sources/AetherRouteApp/Assets.xcassets/AppIcon.appiconset"
 COMPOSER_DIRECTORY="$ROOT/Sources/AetherRouteApp/AppIcon.icon"
 GENERATED_DIRECTORY=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-icon.XXXXXX")

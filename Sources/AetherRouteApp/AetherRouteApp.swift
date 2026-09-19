@@ -1471,6 +1471,24 @@ private struct SettingsView: View {
                     .accessibilityLabel(Text("Default routing mode"))
                     .disabled(!tunnel.canChangeRoutingMode)
                 }
+
+                Toggle(
+                    AppLocalization.string("Accelerate domestic network & Apple services"),
+                    isOn: Binding(
+                        get: { tunnel.isDomesticOptimizationEnabled },
+                        set: { tunnel.setDomesticOptimizationEnabled($0) }
+                    )
+                )
+                .accessibilityIdentifier("domestic-optimization-toggle")
+
+                Text(
+                    AppLocalization.string(
+                        "Injects high-speed direct routing and domestic DNS policy for Apple CDN, updates, and domestic websites."
+                    )
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
 
 #if AETHERROUTE_INDEPENDENT

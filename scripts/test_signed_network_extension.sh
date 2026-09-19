@@ -369,7 +369,7 @@ safe_stop_aetherroute_tun() {
     echo "refusing to stop an unverified AetherRoute TUN service" >&2
     return 1
   }
-  /usr/sbin/scutil --nc stop "$service_id" >/dev/null 2>&1 || {
+  (/usr/sbin/scutil --nc stop "$service_id") >/dev/null 2>&1 || {
     echo "failed to request a safe AetherRoute TUN stop" >&2
     return 1
   }

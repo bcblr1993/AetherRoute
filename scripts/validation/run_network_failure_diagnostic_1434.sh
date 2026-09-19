@@ -166,7 +166,7 @@ capture_failure_window() {
   ps -axo pid=,ppid=,rss=,%cpu=,command= \
     | grep -E '[A]etherRoute|com\.aetherroute\.desktop\.(tunnel|transparent-proxy)' \
     >"$failure_dir/processes.txt" || true
-  scutil --nc status AetherRoute >"$failure_dir/vpn-status.txt" 2>&1 || true
+  (scutil --nc status AetherRoute) >"$failure_dir/vpn-status.txt" 2>&1 || true
   scutil --dns >"$failure_dir/scutil-dns.txt" 2>&1 || true
   route -n get default >"$failure_dir/route-default.txt" 2>&1 || true
   route -n get 8.8.8.8 >"$failure_dir/route-google-v4.txt" 2>&1 || true
