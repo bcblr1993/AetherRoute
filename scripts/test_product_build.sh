@@ -50,3 +50,5 @@ do
 done
 AETHERROUTE_PRODUCTS_DIR="$DERIVED_DATA_PATH/Build/Products/Debug" \
   sh "$ROOT/Tests/LicenseExpiry/run.sh"
+AETHERROUTE_PRODUCTS_DIR="$DERIVED_DATA_PATH/Build/Products/Debug" \
+  sh "$ROOT/Tests/SparkleAutoUpdateDebounce/run.sh"
