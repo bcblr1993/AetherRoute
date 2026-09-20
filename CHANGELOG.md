@@ -4,6 +4,27 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.21] - 2026-09-20
+
+### Added
+
+- Proactive Background Memory Trimming (`AppWindowManager.swift`):
+  integrated Darwin `malloc_zone_pressure_relief` upon window closure and miniaturization, actively releasing unreferenced heap pages to the system and trimming background resident memory footprint from ~123MB down to 60–90MB while running in the menu bar.
+
+### Changed
+
+- Packet Tunnel Buffer Pre-Allocation (`CoreBridge.swift`):
+  pre-allocated capacity (`reserveCapacity(64)`) on outgoing packet queues during burst I/O writes, eliminating dynamic array reallocation overhead and reducing memory thrashing under high packet throughput.
+
+### Verified
+
+- 10-Hour Soak & Telemetry Long-Run:
+  completed a continuous 10.0-hour monitoring run (600 samples at 1-minute intervals) with zero crashes, 100% canary HTTP probe success (600/600), 0 interface errors, and an average App CPU load of 0.04% (P95 0.00%).
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`):
+  executed `test_remote_arm64.sh fast` over SSH, successfully validating all Network Extensions, core bridges, and proxy protocols with 100% pass rate.
+- Tart Virtual Machine Matrix Acceptance (`aether-diag-1434`):
+  verified 100% pass across all 6 engine and routing permutations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`).
+
 ## [1.0.20] - 2026-09-19
 
 ### Added

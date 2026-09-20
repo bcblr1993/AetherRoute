@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.20 (Build 2026091904)</title>
-            <pubDate>Sat, 19 Sep 2026 16:42:40 +0800</pubDate>
-            <sparkle:version>2026091904</sparkle:version>
-            <sparkle:shortVersionString>1.0.20</sparkle:shortVersionString>
+            <title>Version 1.0.21 (Build 2026092001)</title>
+            <pubDate>Sun, 20 Sep 2026 10:26:34 +0800</pubDate>
+            <sparkle:version>2026092001</sparkle:version>
+            <sparkle:shortVersionString>1.0.21</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,50 +119,40 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.0.20 更新要点</span>
-  <span class="release-badge">Build 2026091904 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.0.21 更新要点</span>
+  <span class="release-badge">Build 2026092001 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🚀 菜单栏与节点检索体验升级</span>
+  <span class="section-tag tag-feature">🚀 核心优化：常驻后台内存主动释放与 I/O 缓冲加固</span>
   <ul>
-    <li><strong>菜单栏 Popover 节点秒级搜索</strong>：在菜单栏弹窗中集成即时搜索栏与动态过滤，支持直接按节点名或协议快速检索，无需展开层层子菜单。</li>
-    <li><strong>订阅配置自动更新调度周期</strong>：新增 1h、6h、12h、24h 及手动多档位定时更新间隔配置，后台定时器无缝调度，配置随时保持最新。</li>
-    <li><strong>分流规则模拟器一键域名预设</strong>：在规则测试器中内置 Google、Apple、GitHub、Bilibili 等高频预设标签，一键点选模拟分流决策。</li>
+    <li><strong>常驻内存主动回收</strong>：引入 Darwin <code>malloc_zone_pressure_relief</code>，在主窗口关闭或最小化时主动通知系统回收空闲堆分页，物理内存占用自 ~123MB 回收至 60–90MB。</li>
+    <li><strong>数据包突发批处理缓冲预留</strong>：为网络发包队列预留容量（<code>reserveCapacity(64)</code>），消除高吞吐流量下的动态数组反复扩容与内存抖动。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">⚡️ 页面交互与视觉自适应优化</span>
+  <span class="section-tag tag-fix">📊 10 小时长周期监控指标实测</span>
   <ul>
-    <li><strong>连接页面 Outlet 出口名称完整显示</strong>：拓宽 Outlet 列宽预算，引入中间截断与原生 Tooltip 悬浮提示，彻底消除长节点名省略号截断。</li>
-    <li><strong>代理卡片多端自适应网格</strong>：调优栅格最小与最大列宽，在从 13 寸 MacBook 到 32 寸 4K 外接显示器上均能呈现最佳卡片密度与阅读比例。</li>
-    <li><strong>配置整行点击极速切换</strong>：移除多余的“使用”按钮，点击未激活配置整行即可直接切换激活，交互更加平滑纯粹。</li>
-    <li><strong>全部断开二次确认防误触</strong>：在“全部断开”动作上增加原生确认弹窗，防止用户在连接状态下误触导致网络中断。</li>
+    <li><strong>长周期 0 异常验证</strong>：连续 10.0 小时高频采样（600 组样本，1 分钟/次），0 崩溃、0 接口错误，Canary 连通性探针 100% 成功。</li>
+    <li><strong>超低系统资源开销</strong>：App 平均 CPU 负载仅 0.04%（P95 0.00%），PacketTunnel 均值 0.27%（P95 1.00%）。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 生命周期与网络扩展退出自愈</span>
+  <span class="section-tag tag-improve">✨ 真机与虚拟机全矩阵验收通过</span>
   <ul>
-    <li><strong>AppKit 退出响应者链校验修复</strong>：遵循 AppKit 响应者规范并显式实现协议代理，安装专用 AppleEvent 退出拦截器，消除 AppleScript 与自动化退出异常。</li>
-    <li><strong>防重入退出保护</strong>：退出过程中屏蔽重复退出信号，确保网络扩展与系统路由彻底平滑恢复后再完成进程退出。</li>
-    <li><strong>生产核心与协议矩阵哈希对齐</strong>：重新校验并固化生产核心静态库证据，全量通过协议矩阵与第三方许可审计。</li>
+    <li><strong>Apple Silicon Mac mini 物理真机实测</strong>：通过远程硬件全量自动化门禁（<code>test_remote_arm64.sh fast</code>），100% 通过。</li>
+    <li><strong>Tart 虚拟机 6 维矩阵与链路自愈</strong>：TUN / 透明代理 x 规则 / 全局 / 直连 6 项矩阵全绿通过，网卡断开与重连秒级恢复。</li>
   </ul>
 </div>
-<div class="section">
-  <span class="section-tag tag-improve">✨ 虚拟机与物理真机三级回归全绿</span>
-  <ul>
-    <li><strong>Tart 虚拟机 6 维全矩阵通过</strong>：TUN/透明代理 x 规则/全局/直连共 6 项矩阵场景 100% 通过（0 fail，0 crash）。</li>
-    <li><strong>Mac mini 物理真机实机验证通过</strong>：SSH 远程门禁一次性全绿通过，所有系统扩展与代理协议稳健运行。</li>
-  </ul>
-</div>
+
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.20/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.21/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.20/AetherRoute-1.0.20-build-2026091904-arm64.dmg"
-                sparkle:edSignature="Z6sfKxD7WVTzj2tnVuKZ+otfR9xUjtVNvuvgn63g6h9xoYB2XRokgmEIrZnnKo68P0NhbUn01rIb2EBhTeelCQ=="
-                length="24335921"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.21/AetherRoute-1.0.21-build-2026092001-arm64.dmg"
+                sparkle:edSignature="jNrVv2ZOj00m0tzAoBla+zgNiWYJRS8uGdfcR11ODLORed6tAPoYEY+xfXEp/cNrAchwXQij0xrv0zFb8ORjCw=="
+                length="25682143"
                 type="application/octet-stream" />
         </item>
     </channel>

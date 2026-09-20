@@ -635,6 +635,10 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         let proto = ipVersion == 6 ? Self.ipv6Protocol : Self.ipv4Protocol
 
         let shouldSchedule: Bool = outgoingPacketLock.withLock {
+            if pendingPackets.isEmpty && pendingPackets.capacity < 64 {
+                pendingPackets.reserveCapacity(64)
+                pendingProtocols.reserveCapacity(64)
+            }
             pendingPackets.append(data)
             pendingProtocols.append(proto)
             if !isFlushScheduled {

@@ -1,5 +1,6 @@
 import AetherRouteKit
 import AppKit
+import Darwin
 import OSLog
 import SwiftUI
 
@@ -68,6 +69,17 @@ final class AppWindowManager: NSObject, NSWindowDelegate {
             return true
         }
         sender.orderOut(nil)
+        trimMemoryFootprint()
         return false
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) {
+        trimMemoryFootprint()
+    }
+
+    private func trimMemoryFootprint() {
+        #if canImport(Darwin)
+        malloc_zone_pressure_relief(malloc_default_zone(), 0)
+        #endif
     }
 }
