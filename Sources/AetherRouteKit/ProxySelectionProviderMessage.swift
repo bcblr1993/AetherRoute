@@ -21,6 +21,7 @@ public enum ProxySelectionProviderRequest: Sendable, Equatable {
     case diagnostics
     case setRoutingMode(RoutingMode)
     case resetNetwork
+    case reloadProfile(Data)
 }
 
 public enum ProxySelectionProviderFailure: UInt8, Sendable, Equatable {
@@ -38,6 +39,7 @@ public enum ProxySelectionProviderResponse: Sendable, Equatable {
     case diagnostics(ProviderDiagnosticSnapshot)
     case routingMode(RoutingMode)
     case networkReset
+    case profileReloaded
     case failure(ProxySelectionProviderFailure)
 }
 
@@ -164,6 +166,11 @@ public enum ProxySelectionProviderMessageCodec {
             group = Data()
             member = Data()
             reserved = [0, 0, 0]
+        case let .reloadProfile(payload):
+            operation = 9
+            group = payload
+            member = Data()
+            reserved = [0, 0, 0]
         }
 
         var output = Data(requestMagic)
@@ -284,6 +291,15 @@ public enum ProxySelectionProviderMessageCodec {
                 memberLength == 0
             else { throw ProxySelectionProviderMessageError.malformed }
             return .resetNetwork
+        case 9:
+            guard
+                bytes[5] == 0,
+                bytes[6] == 0,
+                bytes[7] == 0,
+                memberLength == 0
+            else { throw ProxySelectionProviderMessageError.malformed }
+            let payload = Data(bytes[groupStart..<memberStart])
+            return .reloadProfile(payload)
         default:
             throw ProxySelectionProviderMessageError.malformed
         }
@@ -397,6 +413,13 @@ public enum ProxySelectionProviderMessageCodec {
             appendUInt32(noSelection, to: &output)
             appendUInt32(0, to: &output)
             return output
+        case .profileReloaded:
+            var output = Data(responseMagic)
+            output.append(8)
+            output.append(contentsOf: [0, 0, 0])
+            appendUInt32(noSelection, to: &output)
+            appendUInt32(0, to: &output)
+            return output
         }
     }
 
@@ -457,7 +480,7 @@ public enum ProxySelectionProviderMessageCodec {
                 data.count == responseHeaderBytes,
                 routingMode(code: bytes[5]) != nil
             else { throw ProxySelectionProviderMessageError.malformed }
-        case 7:
+        case 7, 8:
             guard
                 bytes[5] == 0,
                 selectedIndex == noSelection,
@@ -469,6 +492,9 @@ public enum ProxySelectionProviderMessageCodec {
         }
 
         var offset = responseHeaderBytes
+        if bytes[4] == 8 {
+            return .profileReloaded
+        }
         if bytes[4] == 7 {
             return .networkReset
         }
@@ -691,3 +717,58 @@ public enum ProxySelectionProviderMessageCodec {
             | UInt64(bytes[offset + 7])
     }
 }
+
+/// Lightweight payload sent over the bounded IPC message channel to reload an
+/// active profile in-place without tearing down the virtual tunnel interface or
+/// resetting active sockets.
+///
+/// Routing resource databases (`Country.mmdb`, `GeoSite.dat`) are deliberately
+/// excluded from this wire payload to keep IPC transmissions well below the
+/// 128 KB Jetsam/IPC boundary. The provider retrieves existing verified
+/// resources from its local runtime store.
+public struct ReloadProfilePayload: Codable, Equatable, Sendable {
+    public let profileYAML: String
+    public let routingMode: RoutingMode
+    public let bypassPolicy: BypassPolicy
+    public let dnsPolicy: DNSRuntimePolicy
+    public let proxySelections: [String: String]
+
+    public init(
+        profileYAML: String,
+        routingMode: RoutingMode,
+        bypassPolicy: BypassPolicy,
+        dnsPolicy: DNSRuntimePolicy,
+        proxySelections: [String: String]
+    ) {
+        self.profileYAML = profileYAML
+        self.routingMode = routingMode
+        self.bypassPolicy = bypassPolicy
+        self.dnsPolicy = dnsPolicy
+        self.proxySelections = proxySelections
+    }
+}
+
+public enum ReloadProfilePayloadCodec {
+    public static let maximumPayloadBytes = 512 * 1_024
+
+    public static func encode(_ payload: ReloadProfilePayload) throws -> Data {
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        let data = try encoder.encode(payload)
+        guard data.count <= maximumPayloadBytes else {
+            throw ProxySelectionProviderMessageError.tooLarge
+        }
+        return data
+    }
+
+    public static func decode(_ data: Data) throws -> ReloadProfilePayload {
+        guard data.count <= maximumPayloadBytes else {
+            throw ProxySelectionProviderMessageError.tooLarge
+        }
+        return try PropertyListDecoder().decode(
+            ReloadProfilePayload.self,
+            from: data
+        )
+    }
+}
+

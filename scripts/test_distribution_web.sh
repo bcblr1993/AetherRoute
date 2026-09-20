@@ -19,6 +19,7 @@ for required in \
   "$PUBLIC/support/index.html" \
   "$PUBLIC/license/index.html" \
   "$PUBLIC/releases/index.html" \
+  "$PUBLIC/releases/1.0.22/index.html" \
   "$PUBLIC/releases/1.0.21/index.html" \
   "$PUBLIC/releases/1.0.20/index.html" \
   "$PUBLIC/releases/1.0.19/index.html" \
@@ -64,8 +65,8 @@ do
   }
 done
 
-rg -F 'AetherRoute 1.0.21' "$PUBLIC/index.html" >/dev/null
-rg -F 'b110e9348cadcc8fca2da2ad503ecc80b4868ed00591819d1b23712dda30c1a1' "$PUBLIC/index.html" >/dev/null
+rg -F 'AetherRoute 1.0.22' "$PUBLIC/index.html" >/dev/null
+rg -F '7ba7028b2d52f3fbe43bd764e292d78bcda64943049a6800cb9ec9303774c005' "$PUBLIC/index.html" >/dev/null
 
 test "$(rg -c 'data-localized-image' "$PUBLIC/index.html")" -ge 1 || {
   echo "homepage must expose localized product screenshots" >&2
@@ -114,11 +115,11 @@ find "$PUBLIC" -name '*.html' -type f -print0 | while IFS= read -r -d '' html; d
     echo "missing language switch: $html" >&2
     exit 1
   }
-  rg -F '/assets/site.css?v=20260914.08' "$html" >/dev/null || {
+  rg -F '/assets/site.css?v=20260920.05' "$html" >/dev/null || {
     echo "missing versioned stylesheet URL: $html" >&2
     exit 1
   }
-  rg -F '/assets/site.js?v=20260916.05' "$html" >/dev/null || {
+  rg -F '/assets/site.js?v=20260920.02' "$html" >/dev/null || {
     echo "missing versioned script URL: $html" >&2
     exit 1
   }

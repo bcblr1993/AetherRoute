@@ -326,6 +326,23 @@ extension TunnelManager {
                     }
                 }
                 return
+            case "profile":
+                if let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                    if let idString = components.queryItems?.first(where: { $0.name.lowercased() == "id" })?.value,
+                       let id = UUID(uuidString: idString) {
+                        Self.runtimeLogger.info("stage=handleExternalURL targetID=\(id)")
+                        Task { await activateProfile(id: id) }
+                    } else if let name = components.queryItems?.first(where: { $0.name.lowercased() == "name" })?.value {
+                        let availableNames = profiles.map { "\($0.profile.name)[\($0.id)]" }.joined(separator: ", ")
+                        Self.runtimeLogger.info("stage=handleExternalURL targetName=\(name, privacy: .public) activeID=\(String(describing: self.activeProfileID)) profiles=[\(availableNames, privacy: .public)]")
+                        if let target = profiles.first(where: { $0.profile.name == name }) {
+                            Task { await activateProfile(id: target.id) }
+                        } else {
+                            Self.runtimeLogger.error("stage=handleExternalURL targetName=\(name, privacy: .public) notFound")
+                        }
+                    }
+                }
+                return
             default:
                 break
             }
@@ -546,8 +563,13 @@ extension TunnelManager {
     }
 
     func activateProfile(id: UUID) async {
-        guard id != activeProfileID else { return }
+        Self.runtimeLogger.info("stage=activateProfile requested id=\(id.uuidString, privacy: .public) activeProfileID=\(String(describing: self.activeProfileID), privacy: .public) canActivate=\(self.canActivateProfile)")
+        guard id != activeProfileID else {
+            Self.runtimeLogger.info("stage=activateProfile alreadyActive id=\(id.uuidString, privacy: .public)")
+            return
+        }
         guard canActivateProfile else {
+            Self.runtimeLogger.error("stage=activateProfile blocked by canActivateProfile")
             profileMessage = AppLocalization.string(
                 "Wait for the current network operation to finish before changing profiles."
             )
@@ -558,6 +580,41 @@ extension TunnelManager {
         let shouldReconnect = isEnabled || managerConnectionIsActive
         isUpdatingProfiles = true
         defer { isUpdatingProfiles = false }
+
+        if !isUIReviewMode, state == .connected {
+            do {
+                profileMessage = AppLocalization.string("Switching profile…")
+                profileMessageIsError = false
+                try await applyProfileActivation(id: id)
+                let currentRoutingMode = sessionRoutingMode ?? routingMode
+                let reloadPayloadData = try await prepareReloadProfilePayload(
+                    requestedMode: currentRoutingMode
+                )
+                let client = makeProxySelectionProviderClient()
+                Self.runtimeLogger.info("stage=activateProfile sending live reload payload bytes=\(reloadPayloadData.count)")
+                try await client.reloadActiveProfile(payload: reloadPayloadData)
+                Self.runtimeLogger.info("stage=activateProfile live reload succeeded")
+                clearProxySelectionRuntimeState()
+                let readinessGroups = activeProfileSummary.map {
+                    ProxyConnectionReadinessPolicy.groupsToVerify(summary: $0)
+                } ?? []
+                if let connectionID = providerConnectionID, !readinessGroups.isEmpty {
+                    startConnectionReadinessCheck(
+                        groups: readinessGroups,
+                        connectionID: connectionID
+                    )
+                }
+                profileMessage = AppLocalization.string(
+                    "Profile switched without manual disconnection."
+                )
+                profileMessageIsError = false
+                return
+            } catch {
+                Self.runtimeLogger.error(
+                    "stage=activateProfile liveReloadFailed error=\(String(reflecting: error), privacy: .public), falling back to reconnect"
+                )
+            }
+        }
 
         do {
             if shouldReconnect {
@@ -640,6 +697,45 @@ extension TunnelManager {
         try await performProductionProfileCatalogOperation {
             try ProfileCatalogStore.applicationGroup().activate(id: id)
         }
+    }
+
+    func prepareReloadProfilePayload(
+        requestedMode: RoutingMode
+    ) async throws -> Data {
+        guard let activeProfile else {
+            throw ActiveProfileStoreError.noActiveProfile
+        }
+        let rawProfileYAML = activeProfile.yaml
+        let profileYAML = isDomesticOptimizationEnabled
+            ? DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML)
+            : rawProfileYAML
+#if AETHERROUTE_QA_AUTOMATION
+        if let appGroupDir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup)?
+            .appendingPathComponent("Library/Application Support/AetherRoute", isDirectory: true) {
+            try? FileManager.default.createDirectory(at: appGroupDir, withIntermediateDirectories: true)
+            try? rawProfileYAML.write(to: appGroupDir.appendingPathComponent("debug_profile_raw.yaml"), atomically: true, encoding: .utf8)
+            try? profileYAML.write(to: appGroupDir.appendingPathComponent("debug_profile_optimized.yaml"), atomically: true, encoding: .utf8)
+        }
+#endif
+        let persistedSelections = (try? ProxySelectionStore
+            .applicationGroup()
+            .selections(forProfileYAML: rawProfileYAML)) ?? [:]
+        let profileSummary = ProfileConfigurationInspector.inspect(
+            yaml: profileYAML
+        )
+        let initialSelections = InitialProxySelectionPolicy
+            .selections(
+                persisted: persistedSelections,
+                summary: profileSummary
+            )
+        let payload = ReloadProfilePayload(
+            profileYAML: profileYAML,
+            routingMode: requestedMode,
+            bypassPolicy: bypassPolicy,
+            dnsPolicy: dnsRuntimePolicy,
+            proxySelections: initialSelections
+        )
+        return try ReloadProfilePayloadCodec.encode(payload)
     }
 
     @discardableResult

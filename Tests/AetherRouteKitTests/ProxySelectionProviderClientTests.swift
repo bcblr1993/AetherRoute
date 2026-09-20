@@ -172,4 +172,19 @@ final class ProxySelectionProviderClientTests: XCTestCase {
 
         try await client.resetNetwork()
     }
+
+    func testReloadActiveProfileSendsValidWireRequestAndAcceptsProfileReloadedResponse() async throws {
+        let expectedPayload = Data([10, 20, 30])
+        let client = ProxySelectionProviderClient { data in
+            XCTAssertEqual(
+                try ProxySelectionProviderMessageCodec.decodeRequest(data),
+                .reloadProfile(expectedPayload)
+            )
+            return try ProxySelectionProviderMessageCodec.encode(
+                response: .profileReloaded
+            )
+        }
+
+        try await client.reloadActiveProfile(payload: expectedPayload)
+    }
 }

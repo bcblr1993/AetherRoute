@@ -93,13 +93,14 @@ submit_for_notarization() {
   artifact=$1
   result_path=$2
   attempt=1
-  while test "$attempt" -le 5; do
+  while test "$attempt" -le 8; do
     output=
     if [ -n "$NOTARY_KEYCHAIN" ]; then
       if output=$(xcrun notarytool submit "$artifact" \
         --keychain-profile "$NOTARY_PROFILE" \
         --keychain "$NOTARY_KEYCHAIN" \
         --wait \
+        --timeout 30m \
         --output-format json 2>&1); then
         printf '%s\n' "$output" >"$result_path"
         test "$(jq -r '.status' "$result_path")" = Accepted || {
@@ -112,6 +113,7 @@ submit_for_notarization() {
       if output=$(xcrun notarytool submit "$artifact" \
         --keychain-profile "$NOTARY_PROFILE" \
         --wait \
+        --timeout 30m \
         --output-format json 2>&1); then
         printf '%s\n' "$output" >"$result_path"
         test "$(jq -r '.status' "$result_path")" = Accepted || {
@@ -121,10 +123,10 @@ submit_for_notarization() {
         return 0
       fi
     fi
-    if test "$attempt" -lt 5 \
+    if test "$attempt" -lt 8 \
       && printf '%s\n' "$output" \
         | grep -Eiq 'abortedUpload|deadlineExceeded|HTTPClientError|timed out|network connection was lost|connection reset|temporarily unavailable|service unavailable'; then
-      echo "Apple notarization upload unavailable; retrying submission ($attempt/5)" >&2
+      echo "Apple notarization upload unavailable; retrying submission ($attempt/8)" >&2
       attempt=$((attempt+1))
       sleep 15
       continue

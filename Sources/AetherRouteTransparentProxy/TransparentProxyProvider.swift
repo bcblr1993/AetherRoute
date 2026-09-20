@@ -471,6 +471,34 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             ? probeMessageQueue
             : providerMessageQueue
         targetQueue.async { [self, runtimeController, diagnostics] in
+            if case let .reloadProfile(payloadData) = request {
+                self.handleReloadProfile(payloadData: payloadData) { response in
+                    if case let .failure(failure) = response {
+                        Self.runtimeLog.failure(
+                            "stage=providerMessage response=failure code=\(failure.rawValue)"
+                        )
+                        diagnostics.record(failure)
+                    } else {
+                        Self.runtimeLog.verbose("stage=providerMessage response=success")
+                    }
+                    do {
+                        completion.call(
+                            try ProxySelectionProviderMessageCodec.encode(
+                                response: response
+                            )
+                        )
+                    } catch {
+                        diagnostics.record(.oversizedControlResponse)
+                        completion.call(
+                            try? ProxySelectionProviderMessageCodec.encode(
+                                response: .failure(.responseTooLarge)
+                            )
+                        )
+                    }
+                }
+                return
+            }
+
             let response: ProxySelectionProviderResponse
             do {
                 Self.runtimeLog.verbose(
@@ -514,6 +542,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     try self.applyRoutingMode(mode)
                 case .resetNetwork:
                     self.handleResetNetwork()
+                case .reloadProfile:
+                    fatalError("Handled above")
                 }
             } catch is ProxySelectionProviderMessageError {
                 response = .failure(.invalidRequest)
@@ -567,6 +597,121 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         // best-effort reset.
         recovery.trigger(reason: "appMessage", supersedes: true)
         return .networkReset
+    }
+
+    private func handleReloadProfile(
+        payloadData: Data,
+        completion: @escaping @Sendable (ProxySelectionProviderResponse) -> Void
+    ) {
+        Self.runtimeLog.lifecycle("stage=handleReloadProfile requested")
+        guard !uplinkLock.withLock({ providerStopping }) else {
+            completion(.failure(.unavailable))
+            return
+        }
+        do {
+            let store = try ActiveProfileStore.applicationGroup()
+            let snapshot: ProviderLaunchSnapshot
+            if !payloadData.isEmpty {
+                let reloadPayload = try ReloadProfilePayloadCodec.decode(payloadData)
+                let resourceStore = RoutingResourceStore(
+                    applicationSupportDirectory: store.directoryURL
+                )
+                let resources = try resourceStore.launchResourceSnapshot(
+                    for: reloadPayload.profileYAML
+                )
+                snapshot = try ProviderLaunchSnapshot(
+                    profileYAML: reloadPayload.profileYAML,
+                    routingMode: reloadPayload.routingMode,
+                    bypassPolicy: reloadPayload.bypassPolicy,
+                    dnsPolicy: reloadPayload.dnsPolicy,
+                    proxySelections: reloadPayload.proxySelections,
+                    routingResources: resources
+                )
+            } else {
+                let activeProfile = try store.loadValidated()
+                let routingMode: RoutingMode = .rule
+                let resourceStore = RoutingResourceStore(applicationSupportDirectory: store.directoryURL)
+                let resources = (try? resourceStore.launchResourceSnapshot(for: activeProfile.yaml)) ?? [:]
+                snapshot = try ProviderLaunchSnapshot(
+                    profileYAML: activeProfile.yaml,
+                    routingMode: routingMode,
+                    bypassPolicy: (try? BypassPolicyStore.applicationGroup().load()) ?? .empty,
+                    dnsPolicy: .inherited,
+                    proxySelections: [:],
+                    routingResources: resources
+                )
+            }
+
+            let bypassPlan = try BypassNetworkSettingsPlan(policy: snapshot.bypassPolicy)
+            let upstreamExclusions = try TransparentProxyUpstreamEndpointResolver.resolve(profileYAML: snapshot.profileYAML)
+
+            runtimeController.stop { [weak self, identityGuard, diagnostics] in
+                guard let self else {
+                    completion(.failure(.unavailable))
+                    return
+                }
+                self.runtimeController.start(
+                    runtimeFactory: {
+                        let input = try TransparentProxyRuntimeInputLoader.load(snapshot: snapshot)
+                        let engine = try FlowCoreEngine(
+                            profile: input.profile,
+                            runtimeDirectory: input.runtimeDirectory,
+                            configuration: FlowCoreEngineConfiguration(routingMode: snapshot.routingMode)
+                        )
+                        for (group, member) in snapshot.proxySelections.sorted(by: { $0.key < $1.key }) {
+                            _ = try? engine.selectProxy(group: group, member: member)
+                        }
+                        if snapshot.proxySelections["GLOBAL"] == nil {
+                            _ = try? engine.selectProxy(group: "GLOBAL", member: "DIRECT")
+                        }
+                        return try TransparentProxyFlowRuntime(
+                            engine: engine,
+                            identityGuard: identityGuard,
+                            failureObserver: { failure in
+                                Self.runtimeLog.failure("stage=flowIngress failed point=\(String(describing: failure))")
+                                Self.aggregator.record(.admissionRejected)
+                                diagnostics.record(.flowAdmissionFailure)
+                            }
+                        )
+                    },
+                    installNetworkSettings: { [weak self] installed in
+                        guard let self else {
+                            installed(false)
+                            return
+                        }
+                        let once = ProxySettingsCompletion(installed)
+                        let settings: NETransparentProxyNetworkSettings
+                        do {
+                            settings = try Self.makeNetworkSettings(
+                                bypassPlan: bypassPlan,
+                                upstreamExclusions: upstreamExclusions
+                            )
+                        } catch {
+                            once.call(false)
+                            return
+                        }
+                        self.setTunnelNetworkSettings(settings) { error in
+                            once.call(error == nil)
+                        }
+                    },
+                    completion: { [weak self] error in
+                        guard self != nil else {
+                            completion(.failure(.unavailable))
+                            return
+                        }
+                        if let error {
+                            Self.runtimeLog.failure("stage=handleReloadProfile startFailed error=\(String(reflecting: error))")
+                            completion(.failure(.internalFailure))
+                            return
+                        }
+                        completion(.profileReloaded)
+                    }
+                )
+            }
+        } catch {
+            Self.runtimeLog.failure("stage=handleReloadProfile failed error=\(String(reflecting: error))")
+            completion(.failure(.internalFailure))
+        }
     }
 
     private func handleAdmittedFlow(_ flow: NEAppProxyFlow) -> Bool {
@@ -869,6 +1014,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         case .diagnostics: "diagnostics"
         case .setRoutingMode: "setRoutingMode"
         case .resetNetwork: "resetNetwork"
+        case .reloadProfile: "reloadProfile"
         }
     }
 }

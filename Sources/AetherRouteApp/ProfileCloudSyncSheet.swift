@@ -64,7 +64,11 @@ struct ProfileCloudSyncSheet: View {
                     HStack(spacing: AetherVisual.s3) {
                         Button {
                             Task {
-                                _ = try? await cloudSync.sync()
+                                do {
+                                    _ = try await cloudSync.sync()
+                                } catch {
+                                    cloudSync.statusMessage = error.localizedDescription
+                                }
                             }
                         } label: {
                             HStack(spacing: AetherVisual.sCompact) {
@@ -83,7 +87,11 @@ struct ProfileCloudSyncSheet: View {
 
                         Button {
                             Task {
-                                _ = try? await cloudSync.forcePullFromCloud()
+                                do {
+                                    _ = try await cloudSync.forcePullFromCloud()
+                                } catch {
+                                    cloudSync.statusMessage = error.localizedDescription
+                                }
                             }
                         } label: {
                             HStack(spacing: AetherVisual.sCompact) {
@@ -97,7 +105,11 @@ struct ProfileCloudSyncSheet: View {
 
                         Button {
                             Task {
-                                _ = try? await cloudSync.forcePushToCloud()
+                                do {
+                                    _ = try await cloudSync.forcePushToCloud()
+                                } catch {
+                                    cloudSync.statusMessage = error.localizedDescription
+                                }
                             }
                         } label: {
                             HStack(spacing: AetherVisual.sCompact) {

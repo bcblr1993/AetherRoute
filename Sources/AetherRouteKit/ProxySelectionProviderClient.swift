@@ -15,7 +15,7 @@ public struct ProxySelectionProviderClient: Sendable {
     public func snapshot(group: String) async throws -> ProxySelectionState {
         switch try await send(.snapshot(group: group)) {
         case let .snapshot(snapshot): snapshot
-        case .latency, .telemetry, .diagnostics, .routingMode, .networkReset:
+        case .latency, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -52,7 +52,7 @@ public struct ProxySelectionProviderClient: Sendable {
             )
         ) {
         case let .latency(state): state
-        case .snapshot, .telemetry, .diagnostics, .routingMode, .networkReset:
+        case .snapshot, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -72,7 +72,7 @@ public struct ProxySelectionProviderClient: Sendable {
             )
         ) {
         case let .latency(state): state
-        case .snapshot, .telemetry, .diagnostics, .routingMode, .networkReset:
+        case .snapshot, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -86,7 +86,7 @@ public struct ProxySelectionProviderClient: Sendable {
             .telemetry(maximumConnections: maximumConnections)
         ) {
         case let .telemetry(snapshot): snapshot
-        case .snapshot, .latency, .diagnostics, .routingMode, .networkReset:
+        case .snapshot, .latency, .diagnostics, .routingMode, .networkReset, .profileReloaded:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -96,7 +96,7 @@ public struct ProxySelectionProviderClient: Sendable {
     public func diagnostics() async throws -> ProviderDiagnosticSnapshot {
         switch try await send(.diagnostics) {
         case let .diagnostics(snapshot): snapshot
-        case .snapshot, .latency, .telemetry, .routingMode, .networkReset:
+        case .snapshot, .latency, .telemetry, .routingMode, .networkReset, .profileReloaded:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -112,7 +112,7 @@ public struct ProxySelectionProviderClient: Sendable {
             return applied
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
-        case .snapshot, .latency, .telemetry, .diagnostics, .networkReset:
+        case .snapshot, .latency, .telemetry, .diagnostics, .networkReset, .profileReloaded:
             throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
@@ -121,7 +121,18 @@ public struct ProxySelectionProviderClient: Sendable {
         switch try await send(.resetNetwork) {
         case .networkReset:
             return
-        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode:
+        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .profileReloaded:
+            throw ProxySelectionProviderClientError.unexpectedResponse
+        case let .failure(failure):
+            throw ProxySelectionProviderClientError.providerFailure(failure)
+        }
+    }
+
+    public func reloadActiveProfile(payload: Data = Data()) async throws {
+        switch try await send(.reloadProfile(payload)) {
+        case .profileReloaded:
+            return
+        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .networkReset:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)

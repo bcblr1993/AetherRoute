@@ -9,8 +9,8 @@
   <link rel="icon" href="/assets/favicon-dark.png?v=20260914.08" type="image/png" media="(prefers-color-scheme: dark)">
   <link rel="alternate icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
   <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=20260914.08">
-  <link rel="stylesheet" href="/assets/site.css?v=20260914.08">
-  <script src="/assets/site.js?v=20260916.05" defer></script>
+  <link rel="stylesheet" href="/assets/site.css?v=20260920.05">
+  <script src="/assets/site.js?v=20260920.02" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#content"><span data-lang="zh">跳到正文</span><span data-lang="en">Skip to content</span></a>
@@ -25,8 +25,13 @@
     </div>
 
     <div class="prose">
+<section id="ios-setup"><h2><span data-lang="zh">iPhone：系统要求与测试进度</span><span data-lang="en">iPhone: requirements and beta availability</span></h2><p><span data-lang="zh">iPhone 版仅支持 iOS 26 及以上版本，不支持更早的 iOS 系统。适用机型为 iPhone 12 系列及后续机型，设备需升级至受支持的系统版本后才能安装使用。即将上架，部分功能仍在测试与优化中，暂未开放公开下载。具体上架时间与下载方式将在官网公布。</span><span data-lang="en">The iPhone app requires iOS 26 or later. Earlier iOS versions are not supported. Supported devices are the iPhone 12 family and later, and must be updated to a supported iOS version before installation. The app is coming soon. Some features are still being tested and refined, and public downloads are not yet available. Release timing and download details will be announced on this website.</span></p><p><a href="/#ios"><span data-lang="zh">了解 iOS 版 →</span><span data-lang="en">Explore the iOS app →</span></a></p></section>
+<section id="icloud-sync"><p><span data-lang="zh">例如：在 Mac 整理好订阅后，将配置同步到日常使用的 iPhone 与备用 iPhone。多台设备共享配置，但连接开关仍独立控制；不会因为一台设备连接或断开，就要求其他设备做相同操作。</span><span data-lang="en">For example, organize subscriptions on your Mac, then sync profiles to your everyday and spare iPhones. Devices share profiles but retain independent connection controls; connecting or disconnecting one does not require the others to follow.</span></p><p><span data-lang="zh">功能预告：iPhone 端同步仍在测试与完善，以下为预期使用方式，以正式发布版本为准。</span><span data-lang="en">Feature preview: iPhone sync is still being tested and refined. The intended setup below is subject to the final release.</span></p><h2><span data-lang="zh">Mac 与多台 iPhone：iCloud 加密配置同步</span><span data-lang="en">Mac and multiple iPhones: encrypted iCloud profile sync</span></h2>
+<ol><li><span data-lang="zh">在 Mac 和每台 iPhone 上安装支持 iCloud 同步的 AetherRoute 版本，并登录同一 Apple 账户。</span><span data-lang="en">Install versions of AetherRoute that support iCloud sync and sign in to the same Apple Account on every device.</span></li><li><span data-lang="zh">在系统设置中开启「iCloud 密码与钥匙串」，并在每台设备的 App 中分别启用 iCloud 同步。</span><span data-lang="en">Enable iCloud Passwords & Keychain in system settings, then enable iCloud sync in each app.</span></li><li><span data-lang="zh">先在已有配置的设备上传，再在其他 Mac 或 iPhone 上拉取配置。云端与本地已有配置会合并，每台设备保留自己的活动配置和连接控制。</span><span data-lang="en">Upload from the device with your existing profiles, then pull on your other Macs or iPhones. Cloud and local profiles are merged, while each device keeps its own connection controls.</span></li></ol>
+<p><span data-lang="zh">配置使用 AES-256-GCM 加密后写入 iCloud。若提示密钥不可用，请检查相关设备的 Apple 账户及 iCloud 钥匙串设置，等待系统完成同步后重试。</span><span data-lang="en">Profiles are encrypted with AES-256-GCM before being stored in iCloud. If the key is unavailable, check the Apple Account and iCloud Keychain settings on the affected devices, allow time for system sync, and retry.</span></p></section>
+
       <section>
-        <h2><span data-lang="zh">三步开始使用</span><span data-lang="en">Get started in three steps</span></h2>
+        <h2><span data-lang="zh">Mac：三步开始使用</span><span data-lang="en">Mac: get started in three steps</span></h2>
         <ol>
           <li><span data-lang="zh">下载免费 Beta 或稳定版，打开 DMG，将 AetherRoute 拖入“应用程序”，再从“应用程序”打开。</span><span data-lang="en">Download the free beta, open the DMG, drag AetherRoute into Applications, and launch it from there.</span></li>
           <li><span data-lang="zh">在“配置”中添加自己的订阅、节点或本地配置。路由资源已随应用提供，无需单独下载数据库。</span><span data-lang="en">Add your own subscription, nodes, or local configuration in Profiles. Routing resources are bundled with the app; no separate database download is needed.</span></li>
@@ -37,7 +42,7 @@
       </section>
 
       <section>
-        <h2><span data-lang="zh">首次启用网络扩展</span><span data-lang="en">Enable the Network Extension</span></h2>
+        <h2><span data-lang="zh">Mac：首次启用网络扩展</span><span data-lang="en">Mac: enable the Network Extension</span></h2>
         <p><span data-lang="zh">透明代理和 TUN 可以路由网络流量，因此 macOS 15 或更高版本要求您亲自批准。AetherRoute 会把您带到正确的系统设置页面，但不会绕过、自动点击或模拟这项安全授权。</span><span data-lang="en">Transparent Proxy and TUN can route network traffic, so macOS 15 or later requires your approval. AetherRoute takes you to the correct System Settings page but never bypasses, auto-clicks, or simulates this security authorization.</span></p>
         <ol>
           <li><span data-lang="zh">将 AetherRoute 拖到“应用程序”，打开后导入或选择一个有效配置，再点击连接。</span><span data-lang="en">Move AetherRoute to Applications, open it, import or select a valid profile, then click Connect.</span></li>
@@ -120,6 +125,6 @@
     </div>
   </main>
 
-  <footer class="wrap site-footer"><span>© 2026 AetherRoute <span class="footer-note"><span data-lang="zh">由编程不良人用心打造。</span><span data-lang="en">Made by BianChengBuLiangRen.</span></span></span><div><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">帮助</span><span data-lang="en">Support</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可</span><span data-lang="en">License</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub ↗</a></div></footer>
+  <footer class="wrap site-footer"><span>© 2026 AetherRoute <span class="footer-note"><span data-lang="zh">由编程不良人用心打造。</span><span data-lang="en">Made by BianChengBuLiangRen.</span></span></span><div><a href="/#ios"><span data-lang="zh">iOS 版</span><span data-lang="en">For iOS</span></a><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">帮助</span><span data-lang="en">Support</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可</span><span data-lang="en">License</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub ↗</a></div></footer>
 </body>
 </html>

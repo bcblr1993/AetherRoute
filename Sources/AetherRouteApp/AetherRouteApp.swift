@@ -40,7 +40,11 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSM
         hasVisibleWindows flag: Bool
     ) -> Bool {
         AppDockVisibilityController.shared.apply(force: true)
-        AppWindowManager.shared.showMainWindow()
+        if !flag {
+            AppWindowManager.shared.showMainWindow()
+        } else {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
         return true
     }
 

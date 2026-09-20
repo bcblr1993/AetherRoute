@@ -3,13 +3,14 @@
   const key = "aetherroute-language";
   const titles = {
     "/": {
-      zh: "AetherRoute — 为 Mac 精心设计的私密路由",
-      en: "AetherRoute — Private routing, designed for Mac"
+      zh: "AetherRoute — 为 Mac 与 iPhone 精心设计的私密路由",
+      en: "AetherRoute — Private routing for Mac and iPhone"
     },
     "/releases/": {
       zh: "版本与更新日志 — AetherRoute",
       en: "Releases and changelog — AetherRoute"
     },
+    "/releases/1.0.22/": {zh: "AetherRoute 1.0.22 正式版", en: "AetherRoute 1.0.22 Release"},
     "/releases/1.0.21/": {zh: "AetherRoute 1.0.21 正式版", en: "AetherRoute 1.0.21 Release"},
     "/releases/1.0.20/": {zh: "AetherRoute 1.0.20 正式版", en: "AetherRoute 1.0.20 Release"},
     "/releases/1.0.19/": {zh: "AetherRoute 1.0.19 正式版", en: "AetherRoute 1.0.19 Release"},

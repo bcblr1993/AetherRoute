@@ -77,6 +77,8 @@ public enum AppConstants {
         return try validateKeychainAccessGroup(value)
     }
 
+    public static let sharedKeychainAccessGroupSuffix = "com.aetherroute.shared"
+
     static func validateKeychainAccessGroup(_ value: String) throws -> String {
         guard !value.isEmpty else {
             throw KeychainAccessGroupResolutionError.emptyValue
@@ -91,12 +93,18 @@ public enum AppConstants {
             )
         }
 
-        let qualifiedSuffix = ".\(keychainAccessGroupSuffix)"
-        guard value.hasSuffix(qualifiedSuffix) else {
+        let localSuffix = ".\(keychainAccessGroupSuffix)"
+        let sharedSuffix = ".\(sharedKeychainAccessGroupSuffix)"
+        let matchedSuffix: String
+        if value.hasSuffix(localSuffix) {
+            matchedSuffix = localSuffix
+        } else if value.hasSuffix(sharedSuffix) {
+            matchedSuffix = sharedSuffix
+        } else {
             throw KeychainAccessGroupResolutionError.unexpectedSuffix(value)
         }
 
-        let prefix = value.dropLast(qualifiedSuffix.count)
+        let prefix = value.dropLast(matchedSuffix.count)
         let validPrefixCharacters = CharacterSet(
             charactersIn:
                 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
@@ -127,7 +135,7 @@ public enum AppConstants {
            !value.isEmpty,
            !value.contains("$("),
            !value.contains("${") {
-            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return try validateKeychainAccessGroup(value.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return try keychainAccessGroup(infoDictionary: infoDictionary)
     }

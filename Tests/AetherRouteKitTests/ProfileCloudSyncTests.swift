@@ -107,4 +107,39 @@ final class ProfileCloudSyncTests: XCTestCase {
             "com.aetherroute.cloudSyncDidUpdateProfiles"
         )
     }
+
+    func testValidateSharedKeychainAccessGroupSuccess() throws {
+        let validated = try AppConstants.validateKeychainAccessGroup("5984KQD4D7.com.aetherroute.shared")
+        XCTAssertEqual(validated, "5984KQD4D7.com.aetherroute.shared")
+
+        let localValidated = try AppConstants.validateKeychainAccessGroup("5984KQD4D7.com.aetherroute.desktop.shared")
+        XCTAssertEqual(localValidated, "5984KQD4D7.com.aetherroute.desktop.shared")
+    }
+
+    func testValidateSharedKeychainAccessGroupRejectsInvalidSuffix() {
+        XCTAssertThrowsError(
+            try AppConstants.validateKeychainAccessGroup("5984KQD4D7.com.aetherroute.unknown")
+        ) { error in
+            XCTAssertEqual(
+                error as? KeychainAccessGroupResolutionError,
+                .unexpectedSuffix("5984KQD4D7.com.aetherroute.unknown")
+            )
+        }
+    }
+
+    func testCloudSyncPayloadSHA256IntegrityFailure() throws {
+        let fakeData = "Encrypted-Ciphertext-Payload".data(using: .utf8)!
+        let correctSHA = SHA256.hash(data: fakeData).map { String(format: "%02x", $0) }.joined()
+        let corruptedSHA = "0000000000000000000000000000000000000000000000000000000000000000"
+
+        let payload = CloudSyncPayload(
+            deviceIdentifier: "test-device",
+            encryptedData: fakeData,
+            sha256: corruptedSHA
+        )
+
+        let actualSHA = SHA256.hash(data: payload.encryptedData).map { String(format: "%02x", $0) }.joined()
+        XCTAssertNotEqual(actualSHA, payload.sha256)
+        XCTAssertEqual(actualSHA, correctSHA)
+    }
 }

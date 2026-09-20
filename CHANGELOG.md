@@ -4,6 +4,34 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.22] - 2026-09-20
+
+### Added
+
+- Cross-Platform iCloud Profile Catalog Sync (`ProfileCloudSyncManager.swift`, `ProfileCloudSyncSheet.swift`, `ProfilesPageView.swift`):
+  introduced end-to-end encrypted profile catalog synchronization between macOS and iOS devices through iCloud Private Database and synchronizable Keychain, supporting conflict resolution, manual sync triggers, and real-time status reporting.
+
+### Changed
+
+- Live Profile Reload via Direct IPC Payload (`ProxySelectionProviderMessage.swift`, `ProviderMessageRouting.swift`, `ProxySelectionProviderClient.swift`, `TunnelManager+Profiles.swift`):
+  replaced disk-based snapshot sharing (`pending-reload-snapshot.bin`) with lightweight binary PropertyList transmission directly over `ProxySelectionProviderRequest.reloadProfile(Data)`, complying strictly with Zero-Bundle security and iOS/macOS Jetsam IPC guidelines (< 128 KB, actual payload ~5–35 KB).
+
+### Fixed
+
+- Cross-UID Sandbox Container Isolation on macOS:
+  resolved live profile reload failure where root-owned Network Extensions (`com.aetherroute.desktop.tunnel` / `transparent-proxy`) running in `/private/var/root/Library/Group Containers` could not access user-owned profile archives or Keychain keys in `~/Library/Group Containers`. Completely eliminated tunnel teardown, process restart, or dropped TCP connections during live profile switching.
+
+### Verified
+
+- Live Profile Reload in Tart Virtual Machine (`aether-diag-1434`):
+  verified 100% seamless profile reload during active tunnel connection with 10/10 HTTP 200 requests, 0 dropped connections, identical tunnel process PID, and continuous `utun` interface persistence.
+- Tart Virtual Machine Matrix Acceptance (`test_vm_acceptance_matrix.sh`):
+  verified 100% pass rate across all 6 engine and routing permutations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`).
+- Network Disconnect & Reconnect Recovery (`test_vm_network_recovery.sh`):
+  verified automatic uplink recovery and core reset when physical network link `en0` is interrupted for 8 seconds, confirming zero process restarts and immediate resumption of traffic.
+- Physical Apple Silicon Host Validation (`chenxu@100.64.0.3`):
+  verified 100% pass across all 50+ test suites (TCP throughput > 8500 Mbps, UDP integrity 10,000 datagrams with 0 drops, Go distribution race tests, DMG upgrade/rollback).
+
 ## [1.0.21] - 2026-09-20
 
 ### Added

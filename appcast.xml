@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.21 (Build 2026092001)</title>
-            <pubDate>Sun, 20 Sep 2026 10:26:34 +0800</pubDate>
-            <sparkle:version>2026092001</sparkle:version>
-            <sparkle:shortVersionString>1.0.21</sparkle:shortVersionString>
+            <title>Version 1.0.22 (Build 2026092008)</title>
+            <pubDate>Sun, 20 Sep 2026 21:14:51 +0800</pubDate>
+            <sparkle:version>2026092008</sparkle:version>
+            <sparkle:shortVersionString>1.0.22</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,40 +119,41 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.0.21 更新要点</span>
-  <span class="release-badge">Build 2026092001 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.0.22 更新要点</span>
+  <span class="release-badge">Build 2026092008 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🚀 核心优化：常驻后台内存主动释放与 I/O 缓冲加固</span>
+  <span class="section-tag tag-fix">🐞 核心修复：活动连接下的配置热重载（Live Profile Reload）无损生效</span>
   <ul>
-    <li><strong>常驻内存主动回收</strong>：引入 Darwin <code>malloc_zone_pressure_relief</code>，在主窗口关闭或最小化时主动通知系统回收空闲堆分页，物理内存占用自 ~123MB 回收至 60–90MB。</li>
-    <li><strong>数据包突发批处理缓冲预留</strong>：为网络发包队列预留容量（<code>reserveCapacity(64)</code>），消除高吞吐流量下的动态数组反复扩容与内存抖动。</li>
+    <li><strong>内存直接 IPC 载荷传输</strong>：彻底移除基于磁盘共享快照文件（<code>pending-reload-snapshot.bin</code>）的旧逻辑，改为直接通过 <code>ProxySelectionProviderRequest.reloadProfile(Data)</code> 传输紧凑二进制 PropertyList（5~35 KB），完美契合 iOS/macOS Jetsam 标准（&lt; 128 KB）。</li>
+    <li><strong>解决 macOS 跨 UID 沙盒隔离问题</strong>：解决 root 权限系统扩展无法读取用户目录配置的问题，热重载过程无需断开连接、不重建 utun 网卡、不重启进程，实现 TCP 长连接 0 中断。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">📊 10 小时长周期监控指标实测</span>
+  <span class="section-tag tag-feature">🚀 新增功能：跨平台 iCloud 订阅与配置目录同步</span>
   <ul>
-    <li><strong>长周期 0 异常验证</strong>：连续 10.0 小时高频采样（600 组样本，1 分钟/次），0 崩溃、0 接口错误，Canary 连通性探针 100% 成功。</li>
-    <li><strong>超低系统资源开销</strong>：App 平均 CPU 负载仅 0.04%（P95 0.00%），PacketTunnel 均值 0.27%（P95 1.00%）。</li>
+    <li><strong>端到端加密云端同步</strong>：引入 <code>ProfileCloudSyncManager</code>，支持 macOS 与 iOS 设备间通过 iCloud 私有数据库与钥匙串进行配置目录端到端加密同步。</li>
+    <li><strong>冲突自动解决与状态反馈</strong>：内置冲突检测与版本合并机制，支持手动/自动触发同步，并在设置面板提供实时同步状态及详细日志展示。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">✨ 真机与虚拟机全矩阵验收通过</span>
+  <span class="section-tag tag-improve">✨ 严苛真机与虚拟机全矩阵验证</span>
   <ul>
-    <li><strong>Apple Silicon Mac mini 物理真机实测</strong>：通过远程硬件全量自动化门禁（<code>test_remote_arm64.sh fast</code>），100% 通过。</li>
-    <li><strong>Tart 虚拟机 6 维矩阵与链路自愈</strong>：TUN / 透明代理 x 规则 / 全局 / 直连 6 项矩阵全绿通过，网卡断开与重连秒级恢复。</li>
+    <li><strong>Tart 虚拟机热重载与 6 维矩阵实测</strong>：在持续压测流量下热重载 10/10 次 HTTP 200 成功；TUN/透明代理 x 规则/全局/直连全部 6 项模式矩阵 100% 通过；网卡断开 8 秒自愈测试 0 异常。</li>
+    <li><strong>Apple Silicon Mac mini 物理真机验证</strong>：全量通过 50+ 项门禁与性能测试（TCP 吞吐速率 &gt; 8500 Mbps，UDP 10,000 数据包 0 丢包）。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.21/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.22/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
+
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.21/AetherRoute-1.0.21-build-2026092001-arm64.dmg"
-                sparkle:edSignature="jNrVv2ZOj00m0tzAoBla+zgNiWYJRS8uGdfcR11ODLORed6tAPoYEY+xfXEp/cNrAchwXQij0xrv0zFb8ORjCw=="
-                length="25682143"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.22/AetherRoute-1.0.22-build-2026092008-arm64.dmg"
+                sparkle:edSignature="rCG+ocy2oYw+fy2YH2hshQskkvZDz5XBzTHLZ74M6RuBq+1sh43EnjjSspz99DNowo4KmLCzhrLFm7rrh71sAg=="
+                length="24466923"
                 type="application/octet-stream" />
         </item>
     </channel>

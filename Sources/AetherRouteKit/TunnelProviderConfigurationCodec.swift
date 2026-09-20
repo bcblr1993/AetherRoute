@@ -113,11 +113,8 @@ public enum ProviderLaunchSnapshotCodec {
     }
 
     public static func decode(
-        options: [String: Any]?
+        data compressed: Data
     ) throws -> ProviderLaunchSnapshot {
-        guard let compressed = options?[startOptionsKey] as? Data else {
-            throw ProviderLaunchSnapshotError.missingPayload
-        }
         guard compressed.count <= maximumCompressedBytes else {
             throw ProviderLaunchSnapshotError.payloadTooLarge(compressed.count)
         }
@@ -137,6 +134,15 @@ public enum ProviderLaunchSnapshotCodec {
         }
         try snapshot.validate()
         return snapshot
+    }
+
+    public static func decode(
+        options: [String: Any]?
+    ) throws -> ProviderLaunchSnapshot {
+        guard let compressed = options?[startOptionsKey] as? Data else {
+            throw ProviderLaunchSnapshotError.missingPayload
+        }
+        return try decode(data: compressed)
     }
 }
 

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-Hans" data-language="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AetherRoute 1.0.22 正式版本说明、更新日志、安装包下载与 SHA-256 校验和。">
+  <title>AetherRoute 1.0.22 正式版</title>
+  <link rel="icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="icon" href="/assets/favicon-dark.png?v=20260914.08" type="image/png" media="(prefers-color-scheme: dark)">
+  <link rel="alternate icon" href="/assets/favicon.png?v=20260914.08" type="image/png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=20260914.08">
+  <link rel="stylesheet" href="/assets/site.css?v=20260920.05">
+  <script src="/assets/site.js?v=20260920.02" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content"><span data-lang="zh">跳到正文</span><span data-lang="en">Skip to content</span></a>
+  
+  <header class="site-header"><nav class="nav wrap" aria-label="Main navigation"><a class="brand" href="/"><img src="/assets/aetherroute-mark.png?v=20260914.08" srcset="/assets/aetherroute-mark.png?v=20260914.08 1x, /assets/aetherroute-mark-1024.png?v=20260914.08 2x" width="34" height="34" alt="">AetherRoute</a><div class="navlinks"><a href="/#experience"><span data-lang="zh">使用体验</span><span data-lang="en">Experience</span></a><a href="/releases/"><span data-lang="zh">版本更新</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">使用帮助</span><span data-lang="en">Support</span></a></div><div class="nav-actions"><button class="language-button" type="button" data-language-toggle aria-label="Switch to English">EN</button><a class="small-button" href="/releases/"><span data-lang="zh">获取 Mac 版</span><span data-lang="en">Get for Mac</span> <span aria-hidden="true">↗</span></a></div></nav></header>
+
+  <main id="content" class="shell">
+    <div class="page-hero">
+      <span class="eyebrow"><span data-lang="zh">正式版 · 已通过 Apple 公证</span><span data-lang="en">Release · Apple notarized</span></span>
+      <h1>AetherRoute 1.0.22</h1>
+      <p>Build 2026092008 · 2026-09-20 · Apple silicon · macOS 15.0+</p>
+      <div class="hero-actions"><a class="button primary" href="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.22/AetherRoute-1.0.22-build-2026092008-arm64.dmg"><span data-lang="zh">下载 1.0.22 正式版</span><span data-lang="en">Download 1.0.22 Release</span></a><a class="button" href="https://github.com/bcblr1993/AetherRoute/releases/tag/v1.0.22">GitHub Release ↗</a><a class="button" href="/releases/1.0.21/"><span data-lang="zh">获取 1.0.21 历史版本</span><span data-lang="en">Get 1.0.21 previous release</span></a></div>
+    </div>
+
+    <article class="prose">
+<section><h2><span data-lang="zh">活动连接下的配置热重载（Live Profile Reload）无损生效</span><span data-lang="en">Live Profile Reload Without Connection Drops</span></h2><ul><li><span data-lang="zh">直接内存 IPC 载荷传输：彻底移除基于磁盘共享快照文件（<code>pending-reload-snapshot.bin</code>）的旧设计，改用 <code>ProxySelectionProviderRequest.reloadProfile(Data)</code> 直接在内存中传输轻量二进制 PropertyList（5~35 KB），完美契合 iOS/macOS Jetsam 标准（&lt; 128 KB）。</span><span data-lang="en">Direct in-memory IPC payload transmission over <code>reloadProfile(Data)</code> via binary PropertyList, complying strictly with Jetsam IPC boundaries (&lt; 128 KB).</span></li><li><span data-lang="zh">解决 macOS 跨 UID 沙盒隔离问题：根除了 root 权限系统扩展无法读取用户目录配置的问题，热重载过程无需断开连接、不重建 utun 网卡、不重启进程，实现 TCP 长连接 0 中断。</span><span data-lang="en">Resolved cross-UID sandbox container isolation on macOS, eliminating tunnel teardown, process restarts, and dropped TCP connections during live profile reload.</span></li></ul></section>
+<section><h2><span data-lang="zh">跨平台 iCloud 订阅与配置目录同步</span><span data-lang="en">Cross-Platform iCloud Profile Catalog Sync</span></h2><ul><li><span data-lang="zh">端到端加密云端同步：引入 <code>ProfileCloudSyncManager</code>，支持 macOS 与 iOS 设备间通过 iCloud 私有数据库与钥匙串进行配置目录端到端加密同步。</span><span data-lang="en">End-to-end encrypted profile catalog synchronization between macOS and iOS devices through iCloud Private Database and synchronizable Keychain.</span></li><li><span data-lang="zh">冲突自动解决与状态反馈：内置冲突检测与版本合并机制，支持手动/自动触发同步，并在设置面板提供实时同步状态及详细日志展示。</span><span data-lang="en">Built-in conflict resolution and automatic version merging, manual sync triggers, and real-time status reporting.</span></li></ul></section>
+<section><h2><span data-lang="zh">虚拟机与物理真机全矩阵验证通过</span><span data-lang="en">Hardware & VM Matrix Verification</span></h2><ul><li><span data-lang="zh">Tart 虚拟机热重载与 6 维矩阵实测：在持续压测流量下热重载 10/10 次 HTTP 200 成功；TUN/透明代理 x 规则/全局/直连全部 6 项模式矩阵 100% 通过；网卡断开 8 秒自愈测试 0 异常。</span><span data-lang="en">Verified live reload in Tart VM with 10/10 HTTP 200 success, passed all 6 matrix permutations, and verified 8-second network drop recovery.</span></li><li><span data-lang="zh">真实 Apple Silicon Mac mini 硬件实机验证：通过 SSH 远程测试门禁，全量协议与性能指标 100% 通过（TCP 吞吐速率 &gt; 8500 Mbps，UDP 10,000 数据包 0 丢包）。</span><span data-lang="en">Verified on physical Apple Silicon Mac mini via remote automated test gate with 100% pass rate (TCP &gt; 8500 Mbps, UDP 0 drops).</span></li></ul></section>
+<section><h2><span data-lang="zh">发布说明</span><span data-lang="en">Release Information</span></h2><ul><li><span data-lang="zh">此正式包使用正常生产核心，经过 Developer ID 签名及 Apple 官方双重公证装订，不包含 QA 自动化标记。</span><span data-lang="en">This stable package uses the normal production core, is Developer ID signed and Apple double-notarized (app + dmg stapled), and contains no QA automation flags.</span></li><li><span data-lang="zh">经维护者要求，在真实物理机与虚拟机矩阵实测闭环通过后发布 v1.0.22 正式版。</span><span data-lang="en">Authorized by the maintainer for stable release following real hardware and VM matrix verification.</span></li></ul></section><section><h2><span data-lang="zh">下载与校验</span><span data-lang="en">Download and Verify</span></h2><div class="checksum">AetherRoute-1.0.22-build-2026092008-arm64.dmg</div><p>SHA-256</p><div class="checksum">7ba7028b2d52f3fbe43bd764e292d78bcda64943049a6800cb9ec9303774c005</div></section>
+</article>
+  </main>
+
+  <footer class="wrap site-footer"><span>© 2026 AetherRoute <span class="footer-note"><span data-lang="zh">由编程不良人用心打造。</span><span data-lang="en">Made by BianChengBuLiangRen.</span></span></span><div><a href="/#ios"><span data-lang="zh">iOS 版</span><span data-lang="en">For iOS</span></a><a href="/releases/"><span data-lang="zh">版本</span><span data-lang="en">Releases</span></a><a href="/support/"><span data-lang="zh">帮助</span><span data-lang="en">Support</span></a><a href="/privacy/"><span data-lang="zh">隐私</span><span data-lang="en">Privacy</span></a><a href="/license/"><span data-lang="zh">许可</span><span data-lang="en">License</span></a><a href="https://github.com/bcblr1993/AetherRoute">GitHub ↗</a></div></footer>
+</body>
+</html>

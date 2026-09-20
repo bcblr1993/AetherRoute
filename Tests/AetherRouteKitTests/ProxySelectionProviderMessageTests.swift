@@ -52,6 +52,8 @@ final class ProxySelectionProviderMessageTests: XCTestCase {
             .setRoutingMode(.global),
             .setRoutingMode(.direct),
             .resetNetwork,
+            .reloadProfile(Data()),
+            .reloadProfile(Data([1, 2, 3, 4])),
         ]
         for request in requests {
             XCTAssertEqual(
@@ -61,6 +63,30 @@ final class ProxySelectionProviderMessageTests: XCTestCase {
                 request
             )
         }
+    }
+
+    func testReloadProfilePayloadCodecRoundTrip() throws {
+        let payload = ReloadProfilePayload(
+            profileYAML: "proxies:\n  - name: test\n    type: direct\n",
+            routingMode: .rule,
+            bypassPolicy: BypassPolicy(rules: []),
+            dnsPolicy: .inherited,
+            proxySelections: ["GLOBAL": "test"]
+        )
+        let encoded = try ReloadProfilePayloadCodec.encode(payload)
+        let decoded = try ReloadProfilePayloadCodec.decode(encoded)
+        XCTAssertEqual(decoded, payload)
+    }
+
+    func testProfileReloadedResponseRoundTrips() throws {
+        let encoded = try ProxySelectionProviderMessageCodec.encode(
+            response: .profileReloaded
+        )
+        XCTAssertEqual(encoded.count, 16)
+        XCTAssertEqual(
+            try ProxySelectionProviderMessageCodec.decodeResponse(encoded),
+            .profileReloaded
+        )
     }
 
     func testNetworkResetResponseRoundTrips() throws {

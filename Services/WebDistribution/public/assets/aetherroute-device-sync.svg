@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480" fill="none">
+  <title>Mac and multiple iPhones share encrypted profiles through iCloud</title>
+  <desc>A Mac connects to iCloud with a bidirectional arrow. Two branches connect iCloud to two iPhones. Matching abstract profile cards illustrate shared configuration without personal data.</desc>
+  <defs>
+    <linearGradient id="screen" x1="140" y1="120" x2="360" y2="310" gradientUnits="userSpaceOnUse"><stop stop-color="#f8fafb"/><stop offset="1" stop-color="#e6edf2"/></linearGradient>
+    <marker id="arrow" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto-start-reverse"><path d="m1 1 3.5 2.5L1 6" stroke="#6885ae" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <g id="profile"><rect width="108" height="32" rx="8" fill="#fff" stroke="#dce3e8"/><rect x="10" y="9" width="14" height="14" rx="4" fill="#dce6fb"/><path d="M33 12h48M33 20h29" stroke="#94a3b0" stroke-width="3" stroke-linecap="round"/><circle cx="94" cy="16" r="3" fill="#7e9b89"/></g>
+    <g id="phone"><rect width="128" height="244" rx="28" fill="#edf0f1" stroke="#66747e" stroke-width="3"/><rect x="7" y="7" width="114" height="230" rx="22" fill="#f7f9fa"/><rect x="43" y="14" width="42" height="12" rx="6" fill="#48545e"/><rect x="16" y="46" width="40" height="5" rx="2.5" fill="#53616e"/><use href="#profile" x="10" y="70"/><use href="#profile" x="10" y="112"/><use href="#profile" x="10" y="154"/><path d="M47 223h34" stroke="#9cabb4" stroke-width="4" stroke-linecap="round"/></g>
+  </defs>
+  <rect width="1200" height="480" rx="24" fill="#f4f5f1"/>
+  <ellipse cx="243" cy="357" rx="159" ry="12" fill="#e3e7e3"/>
+  <rect x="98" y="119" width="290" height="213" rx="15" fill="#dce2e5" stroke="#66747e" stroke-width="3"/>
+  <rect x="108" y="129" width="270" height="192" rx="7" fill="url(#screen)"/>
+  <circle cx="243" cy="124" r="2" fill="#84929d"/>
+  <path d="M80 333h326l-12 14a13 13 0 0 1-10 4H102a13 13 0 0 1-10-4z" fill="#cbd4d9" stroke="#7c8b95" stroke-width="2"/>
+  <path d="M214 334h58" stroke="#9caab3" stroke-width="4" stroke-linecap="round"/>
+  <rect x="119" y="142" width="62" height="167" rx="5" fill="#e4e9eb"/>
+  <circle cx="132" cy="153" r="3" fill="#c1cbd2"/><circle cx="143" cy="153" r="3" fill="#c1cbd2"/>
+  <path d="M131 178h33M131 193h25M131 208h30" stroke="#adbac4" stroke-width="4" stroke-linecap="round"/>
+  <use href="#profile" transform="translate(204 162) scale(1.35)"/><use href="#profile" transform="translate(204 218) scale(1.35)"/>
+  <path d="M422 231h81" stroke="#6885ae" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <circle cx="600" cy="231" r="83" fill="#e8edf3"/>
+  <circle cx="600" cy="231" r="70" stroke="#d4dfe9"/>
+  <path d="M558 243c-20 0-27-27-11-38 6-5 13-6 20-4 5-28 45-34 59-10 25-6 45 15 39 37-3 10-12 15-24 15z" fill="#fafcfe" stroke="#7f97b6" stroke-width="2.5"/>
+  <rect x="587" y="221" width="27" height="24" rx="6" fill="#315cce"/>
+  <path d="M593 222v-5a7.5 7.5 0 0 1 15 0v5" stroke="#315cce" stroke-width="3"/>
+  <circle cx="600.5" cy="232" r="2.5" fill="#fff"/>
+  <path d="M600.5 233v5" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <path d="M698 231h35q14 0 14-14v-39q0-14 14-14h45M747 231v66q0 14 14 14h235" stroke="#6885ae" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <path d="M789 164h17" stroke="#6885ae" stroke-width="2" marker-end="url(#arrow)"/>
+  <use href="#phone" x="824" y="54"/>
+  <use href="#phone" x="1014" y="178"/>
+  <g fill="#4c606d" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="17" text-anchor="middle"><text x="243" y="391">Mac</text><text x="600" y="341">iCloud</text><text x="888" y="328">iPhone</text><text x="1078" y="454">iPhone</text></g>
+</svg>

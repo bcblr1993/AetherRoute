@@ -9746,6 +9746,116 @@
           }
         }
       }
+    },
+    "iCloud Profile Sync": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iCloud 配置同步"
+          }
+        }
+      }
+    },
+    "End-to-end encrypted synchronization across your Mac and iPhone devices.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在您的 Mac 与 iPhone 设备间实现端到端加密同步。"
+          }
+        }
+      }
+    },
+    "Enable iCloud Sync": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用 iCloud 同步"
+          }
+        }
+      }
+    },
+    "Profiles are encrypted with AES-256-GCM before being stored in iCloud. The encryption key is protected by iCloud Keychain and synchronizes across devices with the same Apple ID.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置在存储至 iCloud 前均使用 AES-256-GCM 强加密。加密密钥受 iCloud 钥匙串保护，并在登录相同 Apple ID 的设备间安全同步。"
+          }
+        }
+      }
+    },
+    "Last Synced:": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次同步时间："
+          }
+        }
+      }
+    },
+    "Sync Now": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即同步"
+          }
+        }
+      }
+    },
+    "Force Pull": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "强制云端拉取"
+          }
+        }
+      }
+    },
+    "Force Push": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "强制推送到云端"
+          }
+        }
+      }
+    },
+    "Done": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成"
+          }
+        }
+      }
+    },
+    "iCloud Sync…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iCloud 同步…"
+          }
+        }
+      }
+    },
+    "Sync profiles from your iPhone or Mac.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从您的 iPhone 或 Mac 设备同步配置。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

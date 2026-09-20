@@ -55,6 +55,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
 
         if let updaterController {
             configureUpdaterSubscriptions(for: updaterController.updater)
+            setupSparkleWindowObserver()
         } else if startUpdater {
             let controller = SPUStandardUpdaterController(
                 startingUpdater: true,
@@ -63,6 +64,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             )
             self.updaterController = controller
             configureUpdaterSubscriptions(for: controller.updater)
+            setupSparkleWindowObserver()
         }
     }
 
@@ -181,6 +183,45 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             Self.logger.info("stage=updateCheck executing immediate update check")
             self.checkForUpdates()
         }
+    }
+
+    // MARK: - Window Level Coordination
+
+    private func setupSparkleWindowObserver() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWindowNotification(_:)),
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWindowNotification(_:)),
+            name: NSWindow.didChangeOcclusionStateNotification,
+            object: nil
+        )
+        for window in NSApplication.shared.windows {
+            elevateSparkleWindowIfNeeded(window)
+        }
+    }
+
+    @objc private func handleWindowNotification(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        elevateSparkleWindowIfNeeded(window)
+    }
+
+    private func elevateSparkleWindowIfNeeded(_ window: NSWindow) {
+        guard window.level != .floating,
+              let controller = window.windowController,
+              Bundle(for: type(of: controller)) == Bundle(for: SPUUpdater.self)
+        else { return }
+
+        window.level = .floating
+        window.hidesOnDeactivate = true
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     #if DEBUG
