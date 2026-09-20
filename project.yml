@@ -23,6 +23,8 @@ settings:
     AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID: $(AETHERROUTE_BUNDLE_ID).transparent-proxy
     AETHERROUTE_APP_GROUP: group.$(AETHERROUTE_BUNDLE_ID)
     AETHERROUTE_KEYCHAIN_GROUP_SUFFIX: $(AETHERROUTE_BUNDLE_ID).shared
+    AETHERROUTE_SHARED_KEYCHAIN_GROUP_SUFFIX: com.aetherroute.shared
+    AETHERROUTE_SHARED_KVS_IDENTIFIER: $(TeamIdentifierPrefix)com.aetherroute.shared.kvstore
     AETHERROUTE_PROFILE_ARCHIVE_TYPE: $(AETHERROUTE_BUNDLE_ID).profile-archive
     AETHERROUTE_SUBSCRIPTION_URL_NAME: $(AETHERROUTE_BUNDLE_ID).subscription
     AETHERROUTE_RELEASE_CHANNEL: development
@@ -41,6 +43,8 @@ settings:
     AETHERROUTE_TRANSPARENT_PROXY_ENTITLEMENTS: Config/AetherRouteTransparentProxy.entitlements
     INFOPLIST_KEY_AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)
     INFOPLIST_KEY_AetherRouteKeychainAccessGroupSuffix: $(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+    INFOPLIST_KEY_AetherRouteSharedKeychainAccessGroup: $(AppIdentifierPrefix)$(AETHERROUTE_SHARED_KEYCHAIN_GROUP_SUFFIX)
+    INFOPLIST_KEY_AetherRouteSharedKVSIdentifier: $(AETHERROUTE_SHARED_KVS_IDENTIFIER)
     INFOPLIST_KEY_AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
     INFOPLIST_KEY_AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
     INFOPLIST_KEY_AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
@@ -86,6 +90,8 @@ targets:
       properties:
         AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)
         AetherRouteKeychainAccessGroupSuffix: $(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteSharedKeychainAccessGroup: $(AppIdentifierPrefix)$(AETHERROUTE_SHARED_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteSharedKVSIdentifier: $(AETHERROUTE_SHARED_KVS_IDENTIFIER)
         AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
         AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
         AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
@@ -292,6 +298,8 @@ targets:
         AetherRouteDistributionSigningPublicKey: $(AETHERROUTE_DISTRIBUTION_PUBLIC_KEY)
         AetherRouteKeychainAccessGroup: $(AppIdentifierPrefix)$(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
         AetherRouteKeychainAccessGroupSuffix: $(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteSharedKeychainAccessGroup: $(AppIdentifierPrefix)$(AETHERROUTE_SHARED_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteSharedKVSIdentifier: $(AETHERROUTE_SHARED_KVS_IDENTIFIER)
         AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
         AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
         AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
@@ -345,6 +353,8 @@ targets:
       properties:
         AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)
         AetherRouteKeychainAccessGroupSuffix: $(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteSharedKeychainAccessGroup: $(AppIdentifierPrefix)$(AETHERROUTE_SHARED_KEYCHAIN_GROUP_SUFFIX)
+        AetherRouteSharedKVSIdentifier: $(AETHERROUTE_SHARED_KVS_IDENTIFIER)
         AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
         AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
         AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)

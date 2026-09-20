@@ -9,6 +9,10 @@ public enum AppConstants {
         "AetherRouteKeychainAccessGroup"
     public static let keychainAccessGroupSuffixInfoKey =
         "AetherRouteKeychainAccessGroupSuffix"
+    public static let sharedKeychainAccessGroupInfoKey =
+        "AetherRouteSharedKeychainAccessGroup"
+    public static let sharedKVSIdentifierInfoKey =
+        "AetherRouteSharedKVSIdentifier"
     public static let tunnelBundleIdentifierInfoKey =
         "AetherRouteTunnelBundleIdentifier"
     public static let transparentProxyBundleIdentifierInfoKey =
@@ -104,6 +108,40 @@ public enum AppConstants {
             throw KeychainAccessGroupResolutionError.invalidValue(value)
         }
         return value
+    }
+
+    /// Returns the fully qualified cross-platform shared Keychain access group
+    /// (e.g. `$(AppIdentifierPrefix)com.aetherroute.shared`) for multi-device sync.
+    public static func sharedKeychainAccessGroup(
+        bundle: Bundle = .main
+    ) throws -> String {
+        try sharedKeychainAccessGroup(
+            infoDictionary: bundle.infoDictionary ?? [:]
+        )
+    }
+
+    static func sharedKeychainAccessGroup(
+        infoDictionary: [String: Any]
+    ) throws -> String {
+        if let value = infoDictionary[sharedKeychainAccessGroupInfoKey] as? String,
+           !value.isEmpty,
+           !value.contains("$("),
+           !value.contains("${") {
+            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return try keychainAccessGroup(infoDictionary: infoDictionary)
+    }
+
+    public static func sharedKVSIdentifier(
+        bundle: Bundle = .main
+    ) -> String? {
+        if let value = (bundle.infoDictionary ?? [:])[sharedKVSIdentifierInfoKey] as? String,
+           !value.isEmpty,
+           !value.contains("$("),
+           !value.contains("${") {
+            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return nil
     }
 }
 

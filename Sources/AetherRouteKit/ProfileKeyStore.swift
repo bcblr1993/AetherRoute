@@ -32,13 +32,15 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
     public static let keySizeBytes = 32
     private static let runtimeLogger = AppLog.logger(category: AppLog.Category.profileKeys)
 
+    public let isSynchronizable: Bool
     private let accessGroupResolver: @Sendable () throws -> String
     private let service: String
     private let operations: ProfileKeyStoreOperations
 
     public init(
         accessGroup: String? = nil,
-        service: String = Self.defaultService
+        service: String = Self.defaultService,
+        isSynchronizable: Bool = false
     ) {
         if let accessGroup {
             self.init(
@@ -46,6 +48,7 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
                     try AppConstants.validateKeychainAccessGroup(accessGroup)
                 },
                 service: service,
+                isSynchronizable: isSynchronizable,
                 operations: .system
             )
         } else {
@@ -54,6 +57,7 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
                     try AppConstants.keychainAccessGroup()
                 },
                 service: service,
+                isSynchronizable: isSynchronizable,
                 operations: .system
             )
         }
@@ -62,6 +66,7 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
     init(
         accessGroup: String,
         service: String,
+        isSynchronizable: Bool = false,
         operations: ProfileKeyStoreOperations
     ) {
         self.init(
@@ -69,6 +74,7 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
                 try AppConstants.validateKeychainAccessGroup(accessGroup)
             },
             service: service,
+            isSynchronizable: isSynchronizable,
             operations: operations
         )
     }
@@ -76,8 +82,10 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
     init(
         accessGroupResolver: @escaping @Sendable () throws -> String,
         service: String,
+        isSynchronizable: Bool = false,
         operations: ProfileKeyStoreOperations
     ) {
+        self.isSynchronizable = isSynchronizable
         self.accessGroupResolver = accessGroupResolver
         self.service = service
         self.operations = operations
@@ -137,8 +145,9 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
         try Self.validateKey(candidate)
 
         var attributes = try baseQuery(keyID: keyID)
-        attributes[kSecAttrAccessible as String] =
-            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        attributes[kSecAttrAccessible as String] = isSynchronizable
+            ? kSecAttrAccessibleAfterFirstUnlock
+            : kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         attributes[kSecValueData as String] = candidate
 
         switch operations.add(attributes) {
@@ -173,7 +182,7 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
             kSecAttrService as String: service,
             kSecAttrAccount as String: keyID,
             kSecAttrAccessGroup as String: accessGroup,
-            kSecAttrSynchronizable as String: false,
+            kSecAttrSynchronizable as String: isSynchronizable ? (kCFBooleanTrue as Any) : (kCFBooleanFalse as Any),
             kSecUseDataProtectionKeychain as String: true,
         ]
     }

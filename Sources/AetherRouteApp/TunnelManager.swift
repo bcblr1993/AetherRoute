@@ -335,6 +335,7 @@ final class TunnelManager: ObservableObject {
     var manager: NEVPNManager?
     var statusObserver: NSObjectProtocol?
     var configurationObserver: NSObjectProtocol?
+    nonisolated(unsafe) var cloudSyncObserver: (any NSObjectProtocol)?
     var isPreparing = false
     var isPersistingConfiguration = false
     var isReloadingConfiguration = false
@@ -616,6 +617,30 @@ final class TunnelManager: ObservableObject {
         hasAcceptedPrivacyDisclosure =
             privacyConsentStore.hasAcceptedCurrentDisclosure
         state = hasAcceptedPrivacyDisclosure ? .loading : .privacyConsentRequired
+
+        cloudSyncObserver = NotificationCenter.default.addObserver(
+            forName: .aetherRouteCloudSyncDidUpdateProfiles,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, !self.isUIReviewMode else { return }
+                do {
+                    let catalog = try ProfileCatalogStore.applicationGroup().loadOrMigrate()
+                    await self.applyProductionProfileCatalog(catalog)
+                } catch {
+                    Self.runtimeLogger.error(
+                        "stage=cloudSyncReload failed error=\(String(reflecting: error), privacy: .public)"
+                    )
+                }
+            }
+        }
+    }
+
+    deinit {
+        if let cloudSyncObserver {
+            NotificationCenter.default.removeObserver(cloudSyncObserver)
+        }
     }
 
     func acceptPrivacyDisclosure() async {

@@ -579,6 +579,7 @@ private struct OverviewView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     let openProfiles: () -> Void
     @State private var isSubscriptionEditorPresented = false
+    @State private var isCloudSyncSheetPresented = false
     @State private var subscriptionURL = ""
 
     var body: some View {
@@ -607,6 +608,10 @@ private struct OverviewView: View {
         }
         .sheet(isPresented: $isSubscriptionEditorPresented) {
             SubscriptionEditorSheet(urlText: $subscriptionURL)
+                .environmentObject(tunnel)
+        }
+        .sheet(isPresented: $isCloudSyncSheetPresented) {
+            ProfileCloudSyncSheet()
                 .environmentObject(tunnel)
         }
         .onAppear {
@@ -660,6 +665,10 @@ private struct OverviewView: View {
                     },
                     onImportProfile: {
                         openProfiles()
+                    },
+                    onCloudSync: {
+                        tunnel.clearProfileMessage()
+                        isCloudSyncSheetPresented = true
                     }
                 )
             } else {

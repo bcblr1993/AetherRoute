@@ -6,6 +6,7 @@ struct EmptyProfileOnboardingCard: View {
     @EnvironmentObject private var tunnel: TunnelManager
     let onAddSubscription: () -> Void
     let onImportProfile: () -> Void
+    var onCloudSync: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
@@ -68,6 +69,22 @@ struct EmptyProfileOnboardingCard: View {
                 .buttonStyle(.bordered)
                 .controlSize(.large)
                 .accessibilityIdentifier("onboarding-import-profile-button")
+
+                if let onCloudSync {
+                    Button {
+                        onCloudSync()
+                    } label: {
+                        HStack(spacing: AetherVisual.sCompact) {
+                            Image(systemName: "icloud")
+                                .font(.system(size: 13, weight: .medium))
+                            Text(AppLocalization.string("iCloud Sync…"))
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .accessibilityIdentifier("onboarding-icloud-sync-button")
+                }
 
                 Spacer()
             }
@@ -250,6 +267,7 @@ struct ProfilesView: View {
     @State private var isArchiveExporterPresented = false
     @State private var isExportPasswordPresented = false
     @State private var routingResourceImportKind: RoutingResourceKind?
+    @State private var isCloudSyncSheetPresented = false
     @State private var archiveImportURL: URL?
     @State private var pendingArchiveData: Data?
     @State private var archiveDocument = ProfileArchiveDocument()
@@ -316,6 +334,10 @@ struct ProfilesView: View {
         }
         .sheet(isPresented: $isManualNodeEditorPresented) {
             ManualNodeEditorSheet()
+                .environmentObject(tunnel)
+        }
+        .sheet(isPresented: $isCloudSyncSheetPresented) {
+            ProfileCloudSyncSheet()
                 .environmentObject(tunnel)
         }
         .sheet(item: $profileToRename) { managed in
@@ -389,6 +411,12 @@ struct ProfilesView: View {
                 .disabled(!tunnel.canImportOrAddProfile)
 
                 Menu("More", systemImage: "ellipsis.circle") {
+                    Button(AppLocalization.string("iCloud Sync…"), systemImage: "icloud") {
+                        tunnel.clearProfileMessage()
+                        isCloudSyncSheetPresented = true
+                    }
+                    .accessibilityIdentifier("profiles-icloud-sync-button")
+
                     Button("Add Node…", systemImage: "plus") {
                         tunnel.clearProfileMessage()
                         isManualNodeEditorPresented = true
@@ -581,6 +609,48 @@ struct ProfilesView: View {
                     }
                 }
                 .buttonStyle(.plain)
+
+                Button {
+                    tunnel.clearProfileMessage()
+                    isCloudSyncSheetPresented = true
+                } label: {
+                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                        HStack {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                                    .fill(Color.teal.opacity(0.12))
+                                Image(systemName: "icloud.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(Color.teal)
+                            }
+                            .frame(width: 34, height: 34)
+
+                            Spacer(minLength: 0)
+
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Text(AppLocalization.string("iCloud Sync…"))
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+
+                        Text(AppLocalization.string("Sync profiles from your iPhone or Mac."))
+                            .font(.caption)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(AetherVisual.s4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.6), in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                            .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("onboarding-icloud-sync-card-button")
             }
             .padding(.horizontal, AetherVisual.s2)
 

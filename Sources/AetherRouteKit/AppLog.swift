@@ -33,6 +33,7 @@ public enum AppLog {
         public static let profileKeys = "kit.profile-keys"
         public static let activeProfile = "kit.active-profile"
         public static let diagnostics = "kit.diagnostics"
+        public static let cloudSync = "kit.cloud-sync"
     }
 
     /// Creates an `os.Logger` bound to the standard subsystem and specified category.

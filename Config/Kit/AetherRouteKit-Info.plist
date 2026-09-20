@@ -8,6 +8,10 @@
 	<string>$(AETHERROUTE_KEYCHAIN_GROUP_SUFFIX)</string>
 	<key>AetherRouteProfileArchiveTypeIdentifier</key>
 	<string>$(AETHERROUTE_PROFILE_ARCHIVE_TYPE)</string>
+	<key>AetherRouteSharedKVSIdentifier</key>
+	<string>$(AETHERROUTE_SHARED_KVS_IDENTIFIER)</string>
+	<key>AetherRouteSharedKeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)$(AETHERROUTE_SHARED_KEYCHAIN_GROUP_SUFFIX)</string>
 	<key>AetherRouteTransparentProxyBundleIdentifier</key>
 	<string>$(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)</string>
 	<key>AetherRouteTunnelBundleIdentifier</key>

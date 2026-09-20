@@ -8,10 +8,10 @@
 	<string>编程不良人</string>
 	<key>AetherRouteAuthorRomanizedName</key>
 	<string>BianChengBuLiangRen</string>
-	<key>AetherRouteDistributionProductIdentifier</key>
-	<string>$(AETHERROUTE_DISTRIBUTION_PRODUCT_ID)</string>
 	<key>AetherRouteDistributionMode</key>
 	<string>$(AETHERROUTE_DISTRIBUTION_MODE)</string>
+	<key>AetherRouteDistributionProductIdentifier</key>
+	<string>$(AETHERROUTE_DISTRIBUTION_PRODUCT_ID)</string>
 	<key>AetherRouteDistributionSigningPublicKey</key>
 	<string>$(AETHERROUTE_DISTRIBUTION_PUBLIC_KEY)</string>
 	<key>AetherRouteKeychainAccessGroup</key>
@@ -26,6 +26,10 @@
 	<string>$(AETHERROUTE_RELEASE_CHANNEL)</string>
 	<key>AetherRouteReleaseTimestamp</key>
 	<string>$(AETHERROUTE_RELEASE_TIMESTAMP)</string>
+	<key>AetherRouteSharedKVSIdentifier</key>
+	<string>$(AETHERROUTE_SHARED_KVS_IDENTIFIER)</string>
+	<key>AetherRouteSharedKeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)$(AETHERROUTE_SHARED_KEYCHAIN_GROUP_SUFFIX)</string>
 	<key>AetherRouteTransparentProxyBundleIdentifier</key>
 	<string>$(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)</string>
 	<key>AetherRouteTunnelBundleIdentifier</key>
@@ -91,14 +95,14 @@
 	<string>AetherRoute accesses the local network only when you route traffic to a proxy, DNS server, or destination on your local network.</string>
 	<key>NSSystemExtensionUsageDescription</key>
 	<string>AetherRoute installs signed network extensions to provide transparent proxy and TUN routing.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/bcblr1993/AetherRoute/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>hVgNMayXzdIN2G5V0aeepQYjD2moJQ/ANUy14lqMtEM=</string>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 	<key>UTExportedTypeDeclarations</key>

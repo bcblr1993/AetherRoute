@@ -405,6 +405,21 @@ public struct ProfileCatalogStore: Sendable {
         return merged
     }
 
+    public func replaceCatalog(
+        _ catalog: ProfileCatalog,
+        fileManager: FileManager = .default
+    ) throws {
+        try catalog.validateForStorage()
+        let current = try? load(fileManager: fileManager)
+        let mirror = catalog.activeProfile?.profile
+        try commit(
+            catalog,
+            previous: current,
+            mirrorProfile: mirror,
+            fileManager: fileManager
+        )
+    }
+
     private func load(fileManager: FileManager) throws -> ProfileCatalog {
         // Reading attributes can block indefinitely on macOS 26 when the
         // encrypted catalog carries provenance and backup-exclusion xattrs.
