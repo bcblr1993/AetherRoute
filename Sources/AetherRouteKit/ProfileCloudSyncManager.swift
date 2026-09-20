@@ -38,6 +38,7 @@ public enum CloudSyncError: LocalizedError, Equatable {
     case decryptionFailed
     case catalogCorrupted
     case keychainUnavailable
+    case payloadTooLarge
 
     public var errorDescription: String? {
         switch self {
@@ -48,9 +49,11 @@ public enum CloudSyncError: LocalizedError, Equatable {
         case .decryptionFailed:
             "配置解密失败，密钥不匹配 / Failed to decrypt profile from iCloud"
         case .catalogCorrupted:
-            "云端配置损坏 / Cloud profile catalog corrupted"
+            "云端配置损坏或校验和不匹配 / Cloud profile catalog corrupted or checksum mismatch"
         case .keychainUnavailable:
             "安全密钥不可用 / Security keychain key unavailable"
+        case .payloadTooLarge:
+            "云端配置超出容量限制 (1MB) / Cloud profile catalog exceeds 1MB limit"
         }
     }
 }
@@ -160,11 +163,15 @@ public final class ProfileCloudSyncManager: ObservableObject {
     // MARK: - Sync Engine
     @discardableResult
     public func sync() async throws -> Bool {
-        guard isCloudSyncEnabled else { return false }
+        guard isCloudSyncEnabled else {
+            self.statusMessage = "请先开启 iCloud 端到端加密同步"
+            return false
+        }
         guard !isSyncing else { return false }
 
         isSyncing = true
         defer { isSyncing = false }
+        self.statusMessage = "正在同步 iCloud 配置..."
 
         let catalogStore = try ProfileCatalogStore.applicationGroup()
         let localCatalog = try catalogStore.loadOrMigrate()
@@ -178,54 +185,99 @@ public final class ProfileCloudSyncManager: ObservableObject {
 
             // If remote is newer, or local is empty while remote has profiles
             if (remotePayload.updatedAtUnixMilliseconds > lastLocalMillis && remotePayload.deviceIdentifier != deviceID)
-                || (localCatalog.profiles.isEmpty && remotePayload.updatedAtUnixMilliseconds > 0) {
-                Self.logger.info("Newer remote catalog found in iCloud. Pulling and merging...")
-                let appliedCatalog = try await applyRemotePayload(remotePayload, to: catalogStore)
-                self.lastSyncedAt = Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0)
-                self.statusMessage = "已从 iCloud 同步最新配置 (\(appliedCatalog.profiles.count) 个配置)"
-                return true
+                || (localCatalog.profiles.isEmpty && remotePayload.updatedAtUnixMilliseconds > 0)
+                || (!localCatalog.profiles.isEmpty && remotePayload.deviceIdentifier != deviceID) {
+                Self.logger.info("Remote catalog found in iCloud. Pulling and merging...")
+                do {
+                    let (appliedCatalog, didMergeNewLocal) = try await applyRemotePayload(remotePayload, to: catalogStore)
+                    self.lastSyncedAt = Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0)
+                    if didMergeNewLocal {
+                        Self.logger.info("Local profiles merged into cloud catalog; pushing merged union back to iCloud...")
+                        try await pushLocalToCloud(appliedCatalog)
+                        self.lastSyncedAt = Date()
+                        self.statusMessage = "已合并并双向同步至 iCloud (\(appliedCatalog.profiles.count) 个配置)"
+                    } else {
+                        self.statusMessage = "已从 iCloud 同步最新配置 (\(appliedCatalog.profiles.count) 个配置)"
+                    }
+                    return true
+                } catch CloudSyncError.keychainUnavailable {
+                    self.statusMessage = "未获取到加密密钥：请在系统设置中开启「iCloud 密码与钥匙串」并稍候"
+                    throw CloudSyncError.keychainUnavailable
+                } catch CloudSyncError.decryptionFailed {
+                    self.statusMessage = "解密失败：请确保设备登录同一 Apple ID 并开启 iCloud 钥匙串"
+                    throw CloudSyncError.decryptionFailed
+                } catch {
+                    self.statusMessage = "同步失败: \(error.localizedDescription)"
+                    throw error
+                }
             }
         }
 
         // 2. Otherwise push local catalog to iCloud if local has profiles
         if !localCatalog.profiles.isEmpty {
-            try await pushLocalToCloud(localCatalog)
-            self.lastSyncedAt = Date()
-            self.statusMessage = "本地配置已加密同步至 iCloud (\(localCatalog.profiles.count) 个配置)"
-            return true
+            do {
+                try await pushLocalToCloud(localCatalog)
+                self.lastSyncedAt = Date()
+                self.statusMessage = "本地配置已加密同步至 iCloud (\(localCatalog.profiles.count) 个配置)"
+                return true
+            } catch {
+                self.statusMessage = "上传至 iCloud 失败: \(error.localizedDescription)"
+                throw error
+            }
         }
 
+        // 3. Both local and remote are empty or no remote data yet
+        self.statusMessage = "iCloud 云端暂无配置数据 (请在已配置设备上开启同步并上传)"
         return false
     }
 
     /// Explicit manual pull from iCloud, bypassing timestamp check.
     @discardableResult
     public func forcePullFromCloud() async throws -> Bool {
-        guard isCloudSyncEnabled else { return false }
+        guard isCloudSyncEnabled else {
+            self.statusMessage = "请先开启 iCloud 端到端加密同步"
+            return false
+        }
         guard !isSyncing else { return false }
         isSyncing = true
         defer { isSyncing = false }
+        self.statusMessage = "正在从 iCloud 拉取配置..."
 
         kvStore.synchronize()
         guard let remoteData = kvStore.data(forKey: CloudSyncPayload.storageKey),
               let remotePayload = try? JSONDecoder().decode(CloudSyncPayload.self, from: remoteData) else {
-            self.statusMessage = "iCloud 云端暂无配置归档"
+            self.statusMessage = "iCloud 云端暂无配置归档 (或云端数据尚未同步到本机缓存，请稍候再试)"
             return false
         }
-        let catalogStore = try ProfileCatalogStore.applicationGroup()
-        let applied = try await applyRemotePayload(remotePayload, to: catalogStore)
-        self.lastSyncedAt = Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0)
-        self.statusMessage = "已强制从 iCloud 拉取配置 (\(applied.profiles.count) 个配置)"
-        return true
+        do {
+            let catalogStore = try ProfileCatalogStore.applicationGroup()
+            let (applied, _) = try await applyRemotePayload(remotePayload, to: catalogStore)
+            self.lastSyncedAt = Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0)
+            self.statusMessage = "已强制从 iCloud 拉取配置 (\(applied.profiles.count) 个配置)"
+            return true
+        } catch CloudSyncError.keychainUnavailable {
+            self.statusMessage = "未获取到加密密钥：请在系统设置中开启「iCloud 密码与钥匙串」并稍候"
+            throw CloudSyncError.keychainUnavailable
+        } catch CloudSyncError.decryptionFailed {
+            self.statusMessage = "解密失败：请确保设备登录同一 Apple ID 并开启 iCloud 钥匙串"
+            throw CloudSyncError.decryptionFailed
+        } catch {
+            self.statusMessage = "拉取失败: \(error.localizedDescription)"
+            throw error
+        }
     }
 
     /// Explicit manual push to iCloud.
     @discardableResult
     public func forcePushToCloud() async throws -> Bool {
-        guard isCloudSyncEnabled else { return false }
+        guard isCloudSyncEnabled else {
+            self.statusMessage = "请先开启 iCloud 端到端加密同步"
+            return false
+        }
         guard !isSyncing else { return false }
         isSyncing = true
         defer { isSyncing = false }
+        self.statusMessage = "正在上传配置至 iCloud..."
 
         let catalogStore = try ProfileCatalogStore.applicationGroup()
         let localCatalog = try catalogStore.loadOrMigrate()
@@ -234,10 +286,15 @@ public final class ProfileCloudSyncManager: ObservableObject {
             return false
         }
 
-        try await pushLocalToCloud(localCatalog)
-        self.lastSyncedAt = Date()
-        self.statusMessage = "已强制推送至 iCloud (\(localCatalog.profiles.count) 个配置)"
-        return true
+        do {
+            try await pushLocalToCloud(localCatalog)
+            self.lastSyncedAt = Date()
+            self.statusMessage = "已强制推送至 iCloud (\(localCatalog.profiles.count) 个配置)"
+            return true
+        } catch {
+            self.statusMessage = "上传失败: \(error.localizedDescription)"
+            throw error
+        }
     }
 
     private func handleExternalChange() async throws {
@@ -268,12 +325,27 @@ public final class ProfileCloudSyncManager: ObservableObject {
         )
 
         let payloadData = try JSONEncoder().encode(payload)
+        guard payloadData.count <= 1_000_000 else {
+            Self.logger.error("Cloud sync payload size exceeds 1MB limit: \(payloadData.count) bytes")
+            throw CloudSyncError.payloadTooLarge
+        }
+
         kvStore.set(payloadData, forKey: CloudSyncPayload.storageKey)
         kvStore.synchronize()
     }
 
     @discardableResult
-    private func applyRemotePayload(_ payload: CloudSyncPayload, to store: ProfileCatalogStore) async throws -> ProfileCatalog {
+    private func applyRemotePayload(
+        _ payload: CloudSyncPayload,
+        to store: ProfileCatalogStore
+    ) async throws -> (catalog: ProfileCatalog, didMergeNewLocalProfiles: Bool) {
+        // Verify SHA-256 integrity
+        let actualSHA256 = SHA256.hash(data: payload.encryptedData).map { String(format: "%02x", $0) }.joined()
+        guard actualSHA256.caseInsensitiveCompare(payload.sha256) == .orderedSame else {
+            Self.logger.error("Cloud sync payload SHA256 integrity verification failed: expected \(payload.sha256), got \(actualSHA256)")
+            throw CloudSyncError.catalogCorrupted
+        }
+
         let key: Data
         do {
             key = try keyStore.loadKey(keyID: Self.cloudSyncKeyID)
@@ -301,6 +373,8 @@ public final class ProfileCloudSyncManager: ObservableObject {
 
         let localCatalog = (try? store.loadOrMigrate()) ?? ProfileCatalog()
         let resultCatalog: ProfileCatalog
+        var didMergeNewLocalProfiles = false
+
         if localCatalog.profiles.isEmpty {
             try store.replaceCatalog(remoteCatalog)
             resultCatalog = remoteCatalog
@@ -309,11 +383,13 @@ public final class ProfileCloudSyncManager: ObservableObject {
             if !remoteCatalog.profiles.isEmpty {
                 let merged = try store.mergeValidated(remoteCatalog)
                 resultCatalog = merged
+                didMergeNewLocalProfiles = (resultCatalog != remoteCatalog)
             } else {
                 resultCatalog = localCatalog
+                didMergeNewLocalProfiles = true
             }
         }
         NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateProfiles, object: resultCatalog)
-        return resultCatalog
+        return (resultCatalog, didMergeNewLocalProfiles)
     }
 }

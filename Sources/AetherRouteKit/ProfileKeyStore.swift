@@ -148,6 +148,9 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
         attributes[kSecAttrAccessible as String] = isSynchronizable
             ? kSecAttrAccessibleAfterFirstUnlock
             : kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        attributes[kSecAttrSynchronizable as String] = isSynchronizable
+            ? (kCFBooleanTrue as Any)
+            : (kCFBooleanFalse as Any)
         attributes[kSecValueData as String] = candidate
 
         switch operations.add(attributes) {
@@ -182,7 +185,7 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
             kSecAttrService as String: service,
             kSecAttrAccount as String: keyID,
             kSecAttrAccessGroup as String: accessGroup,
-            kSecAttrSynchronizable as String: isSynchronizable ? (kCFBooleanTrue as Any) : (kCFBooleanFalse as Any),
+            kSecAttrSynchronizable as String: isSynchronizable ? (kSecAttrSynchronizableAny as Any) : (kCFBooleanFalse as Any),
             kSecUseDataProtectionKeychain as String: true,
         ]
     }
