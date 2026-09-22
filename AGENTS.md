@@ -55,14 +55,24 @@
 ### 5. 正式构建发布与官网同步 (Release & Site Deployment)
 - 执行正式公证发布构建：
   ```bash
-  ./scripts/release.sh
+  ./scripts/release.sh Config/Signing.json "<NOTARY_PROFILE>" <VERSION> <BUILD> <OUTPUT_DIR>
   ```
 - 更新并签名 Sparkle 自动更新清单：
   ```bash
-  ./scripts/generate_sparkle_appcast.sh
+  ./scripts/generate_sparkle_appcast.sh <DMG_PATH>
   ```
 - 同步/部署官方网站与分发通道：
   ```bash
   ./scripts/deploy_cloudflare_pages.sh
   ```
-- 提交 Git 变更并打上对应版本 Tag。
+- 提交 Git 变更、打对应版本 Tag，并推送到远端仓库：
+  ```bash
+  git commit -m "chore(release): 发布 v<VERSION> 正式版、Appcast 及官网分发源"
+  git tag -a "v<VERSION>" -m "Release v<VERSION>"
+  git push origin main --tags
+  ```
+- 发布 GitHub Release 并上传公证 DMG 及校验文件：
+  ```bash
+  gh release create "v<VERSION>" <DMG_PATH> <SHA256SUMS_PATH> --title "v<VERSION>" --notes-file <NOTES_FILE>
+  ```
+
