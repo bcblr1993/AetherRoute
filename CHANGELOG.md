@@ -4,6 +4,32 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.23] - 2026-09-22
+
+### Added
+
+- Engineering & Verification Standards Codification (`AGENTS.md`):
+  established a mandatory 5-step Standard Operating Procedure (SOP) covering local regressions, unattended Tart VM 6-dimensional network matrix acceptance with guaranteed post-run VM cleanup, remote Apple Silicon physical hardware validation on `chenxu@100.64.0.3`, semantic versioning with changelog tracking, and notarized release deployment with Cloudflare Pages sync.
+
+### Changed
+
+- Core Engine Memory-Mapping & Jetsam Budget Optimization (`Core/Engine`):
+  migrated MaxMind GeoIP MMDB resolution to zero-copy memory-mapped I/O via `memmap2`, eliminating heap duplication and bringing resident memory well within the strict 15MB iOS Network Extension Jetsam threshold while substantially reducing macOS provider heap footprint.
+- Bounded Tokio Asynchronous Runtime (`Core/Engine`):
+  clamped Tokio worker thread pools to conservative boundaries to minimize multi-threaded context switching overhead and memory thrashing in background network extensions.
+
+### Fixed
+
+- Network Configuration Notification Flooding (`PacketTunnelProvider.swift` & `TransparentProxyProvider.swift`):
+  resolved high-frequency Darwin CoreFoundation notification churn (>220 events/sec) during tunnel establishment and network interface transitions (`installNetworkSettings`) by introducing a 150ms debounce window and reusing persistent `SCDynamicStore` sessions, eliminating CF network framework throttling warnings.
+
+### Verified
+
+- Tart Virtual Machine 6-Dimensional Matrix Acceptance (`aether-diag-1434`):
+  verified 100% pass rate across all 6 engine and routing configurations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`) with automated teardown and clean VM state restoration.
+- Physical Apple Silicon Mac mini Validation (`chenxu@100.64.0.3`):
+  executed `test_remote_arm64.sh fast` on macOS 27.0 arm64, verifying all 50+ test suites including TCP throughput (7490–8264 Mbps), UDP integrity (10,000 datagrams with 0 drops), Go distribution service race tests, and seamless DMG upgrade/rollback.
+
 ## [1.0.22] - 2026-09-20
 
 ### Added
