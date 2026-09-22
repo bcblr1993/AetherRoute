@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.22 (Build 2026092008)</title>
-            <pubDate>Sun, 20 Sep 2026 21:14:51 +0800</pubDate>
-            <sparkle:version>2026092008</sparkle:version>
-            <sparkle:shortVersionString>1.0.22</sparkle:shortVersionString>
+            <title>Version 1.0.23 (Build 2026092202)</title>
+            <pubDate>Tue, 22 Sep 2026 13:31:34 +0800</pubDate>
+            <sparkle:version>2026092202</sparkle:version>
+            <sparkle:shortVersionString>1.0.23</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,41 +119,40 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.0.22 更新要点</span>
-  <span class="release-badge">Build 2026092008 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.0.23 更新要点</span>
+  <span class="release-badge">Build 2026092202 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 核心修复：活动连接下的配置热重载（Live Profile Reload）无损生效</span>
+  <span class="section-tag tag-feature">🚀 核心功能：全透明零配置国内与 Apple 服务加速</span>
   <ul>
-    <li><strong>内存直接 IPC 载荷传输</strong>：彻底移除基于磁盘共享快照文件（<code>pending-reload-snapshot.bin</code>）的旧逻辑，改为直接通过 <code>ProxySelectionProviderRequest.reloadProfile(Data)</code> 传输紧凑二进制 PropertyList（5~35 KB），完美契合 iOS/macOS Jetsam 标准（&lt; 128 KB）。</li>
-    <li><strong>解决 macOS 跨 UID 沙盒隔离问题</strong>：解决 root 权限系统扩展无法读取用户目录配置的问题，热重载过程无需断开连接、不重建 utun 网卡、不重启进程，实现 TCP 长连接 0 中断。</li>
+    <li><strong>零配置透明分流与加速</strong>：引入内存无损配置优化引擎，在不改写用户本地配置的前提下，运行时自动注入 Apple 服务与国内高优规则，达成“国内直连丝滑、国外自动代理”。</li>
+    <li><strong>Apple 服务线速直连与 CDN 保护</strong>：针对 swcdn.apple.com、updates.cdn-apple.com 等关键服务智能过滤 fake-ip 劫持，国内 DNS 直接解析就近 Anycast IP，下载速度满带宽线速饱和（实测 34.9 MB/s）。</li>
+    <li><strong>国内智能 DNS 优化</strong>：针对国内域名自动路由至国内高速 DNS（223.5.5.5），有效规避海外 DNS 污染与解析延迟。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🚀 新增功能：跨平台 iCloud 订阅与配置目录同步</span>
+  <span class="section-tag tag-fix">🐞 稳定性与自愈修复</span>
   <ul>
-    <li><strong>端到端加密云端同步</strong>：引入 <code>ProfileCloudSyncManager</code>，支持 macOS 与 iOS 设备间通过 iCloud 私有数据库与钥匙串进行配置目录端到端加密同步。</li>
-    <li><strong>冲突自动解决与状态反馈</strong>：内置冲突检测与版本合并机制，支持手动/自动触发同步，并在设置面板提供实时同步状态及详细日志展示。</li>
+    <li><strong>网络重置防振荡治理</strong>：消除应用层重复触发 resetNetwork 导致的无限重连振荡循环，保障休眠唤醒与 Wi-Fi 热点切换无感自愈。</li>
+    <li><strong>配置解析兼容性强化</strong>：完美支持顶层非缩进列表项及不规范大小写/复数配置键名，杜绝解析崩溃。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">✨ 严苛真机与虚拟机全矩阵验证</span>
+  <span class="section-tag tag-improve">✨ 严苛真机与多环境验证</span>
   <ul>
-    <li><strong>Tart 虚拟机热重载与 6 维矩阵实测</strong>：在持续压测流量下热重载 10/10 次 HTTP 200 成功；TUN/透明代理 x 规则/全局/直连全部 6 项模式矩阵 100% 通过；网卡断开 8 秒自愈测试 0 异常。</li>
-    <li><strong>Apple Silicon Mac mini 物理真机验证</strong>：全量通过 50+ 项门禁与性能测试（TCP 吞吐速率 &gt; 8500 Mbps，UDP 10,000 数据包 0 丢包）。</li>
+    <li><strong>物理真机 Mac mini 实测验证通过</strong>：在 Apple Silicon 物理设备上实测国内测速拉满、Apple 域名直连、Google 走代理，0 振荡 100% 稳定运行。</li>
+    <li><strong>Tart 虚拟机全量模式矩阵通过</strong>：TUN/透明代理 x 规则/全局/直连共 6 项大类矩阵全部通过（0 crash，0 fail）。</li>
   </ul>
 </div>
-
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.22/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.23/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
-
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.22/AetherRoute-1.0.22-build-2026092008-arm64.dmg"
-                sparkle:edSignature="rCG+ocy2oYw+fy2YH2hshQskkvZDz5XBzTHLZ74M6RuBq+1sh43EnjjSspz99DNowo4KmLCzhrLFm7rrh71sAg=="
-                length="24466923"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.23/AetherRoute-1.0.23-build-2026092202-arm64.dmg"
+                sparkle:edSignature="EJhkobIy1B2daEjXKPSwfxrB4gE4TJVRVdPhYY/FG9t59gDavQDtWty6NwFxtT+uW+lhTbDnZI3bnFi+VkHxDA=="
+                length="23862688"
                 type="application/octet-stream" />
         </item>
     </channel>

@@ -19,6 +19,7 @@ for required in \
   "$PUBLIC/support/index.html" \
   "$PUBLIC/license/index.html" \
   "$PUBLIC/releases/index.html" \
+  "$PUBLIC/releases/1.0.23/index.html" \
   "$PUBLIC/releases/1.0.22/index.html" \
   "$PUBLIC/releases/1.0.21/index.html" \
   "$PUBLIC/releases/1.0.20/index.html" \
@@ -65,8 +66,8 @@ do
   }
 done
 
-rg -F 'AetherRoute 1.0.22' "$PUBLIC/index.html" >/dev/null
-rg -F '7ba7028b2d52f3fbe43bd764e292d78bcda64943049a6800cb9ec9303774c005' "$PUBLIC/index.html" >/dev/null
+rg -F 'AetherRoute 1.0.23' "$PUBLIC/index.html" >/dev/null
+rg -F '809d40b74ff2148ada5a99ed1a4d9a4cfb5b7cdbe4ba50e63cb8e631ae6cc34d' "$PUBLIC/index.html" >/dev/null
 
 test "$(rg -c 'data-localized-image' "$PUBLIC/index.html")" -ge 1 || {
   echo "homepage must expose localized product screenshots" >&2
