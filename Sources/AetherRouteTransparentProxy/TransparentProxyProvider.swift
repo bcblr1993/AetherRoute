@@ -56,6 +56,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         label: "com.aetherroute.desktop.transparent-proxy.path",
         qos: .utility
     )
+    private static let pathChangeDebounceMilliseconds: Int = 150
+    // Accessed only on pathMonitorQueue.
+    private var pendingPathChangeWorkItem: DispatchWorkItem?
     private var lastPathSignature: String?
     private let uplinkLock = NSLock()
     private var physicalInterfaces: [NWInterface] = []
@@ -416,16 +419,38 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     }
 
     private func stopPathMonitoring() {
+        pendingPathChangeWorkItem?.cancel()
+        pendingPathChangeWorkItem = nil
         if let uplinkStore { SCDynamicStoreSetDispatchQueue(uplinkStore, nil) }
         uplinkStore = nil
         pathMonitor?.cancel()
         pathMonitor = nil
     }
 
+    /// Both notification sources run on pathMonitorQueue. A secondary link or
+    /// duplicate DHCP notification must not destroy a healthy active transport.
+    ///
+    /// Coalesces rapid successive notifications within a 150ms window to prevent
+    /// notification storms during network reconfiguration and avoid redundant
+    /// dynamic store queries.
     private func physicalPathDidChange(reason: String) {
         guard !uplinkLock.withLock({ providerStopping }) else { return }
-        guard let store = SCDynamicStoreCreate(nil, "AetherRoute transparent uplink identity" as CFString, nil, nil)
-        else { return }
+        pendingPathChangeWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, !self.uplinkLock.withLock({ self.providerStopping }) else { return }
+            self.evaluatePhysicalPathChange(reason: reason)
+        }
+        pendingPathChangeWorkItem = workItem
+        pathMonitorQueue.asyncAfter(
+            deadline: .now() + .milliseconds(Self.pathChangeDebounceMilliseconds),
+            execute: workItem
+        )
+    }
+
+    private func evaluatePhysicalPathChange(reason: String) {
+        guard !uplinkLock.withLock({ providerStopping }) else { return }
+        let store = uplinkStore ?? SCDynamicStoreCreate(nil, "AetherRoute transparent uplink identity" as CFString, nil, nil)
+        guard let store else { return }
         let cached = uplinkLock.withLock { physicalInterfaces }
         let uplink = PhysicalUplinkDetector.currentPhysicalUplink(
             store: store,
