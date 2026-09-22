@@ -56,7 +56,7 @@ for required in \
   'test candidate contains non-arm64 Mach-O' \
   'xcrun notarytool submit' \
   'Apple notarization upload unavailable; retrying submission' \
-  'while test "$attempt" -le 5' \
+  'while test "$attempt" -le 8' \
   'abortedUpload|deadlineExceeded|HTTPClientError' \
   'create_finalized_dmg' \
   'write_once="${finalized%.dmg}.write-once.dmg"' \
