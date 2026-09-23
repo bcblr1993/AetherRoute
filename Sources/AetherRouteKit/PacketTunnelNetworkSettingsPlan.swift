@@ -86,25 +86,16 @@ public struct PacketTunnelNetworkSettingsPlan: Equatable, Sendable {
 
     public init(
         configuration: TunnelConfiguration,
-        bypassPlan: BypassNetworkSettingsPlan,
-        customRules: [CustomRule] = []
+        bypassPlan: BypassNetworkSettingsPlan
     ) {
         tunnelRemoteAddress = configuration.ipv4Address
         mtu = configuration.mtu
 
-        var customIPv4Routes = bypassPlan.ipv4Routes.map {
+        let customIPv4Routes = bypassPlan.ipv4Routes.map {
             IPv4Route(
                 destinationAddress: $0.destinationAddress,
                 subnetMask: $0.subnetMask
             )
-        }
-        for rule in customRules where rule.isEnabled && rule.target.isDirect && rule.kind == .ipCIDR {
-            let parts = rule.value.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
-            if parts.count == 2, let prefix = Int(parts[1]), (0...32).contains(prefix) {
-                let mask = prefix == 0 ? 0 : UInt32.max << (32 - prefix)
-                let subnetMask = "\((mask >> 24) & 0xff).\((mask >> 16) & 0xff).\((mask >> 8) & 0xff).\(mask & 0xff)"
-                customIPv4Routes.append(IPv4Route(destinationAddress: String(parts[0]), subnetMask: subnetMask))
-            }
         }
         ipv4 = IPv4Settings(
             addresses: [configuration.ipv4Address],
@@ -123,17 +114,11 @@ public struct PacketTunnelNetworkSettingsPlan: Equatable, Sendable {
         )
 
         if configuration.enableIPv6 {
-            var customIPv6Routes = bypassPlan.ipv6Routes.map {
+            let customIPv6Routes = bypassPlan.ipv6Routes.map {
                 IPv6Route(
                     destinationAddress: $0.destinationAddress,
                     prefixLength: $0.prefixLength
                 )
-            }
-            for rule in customRules where rule.isEnabled && rule.target.isDirect && rule.kind == .ipCIDR6 {
-                let parts = rule.value.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
-                if parts.count == 2, let prefix = Int(parts[1]), (0...128).contains(prefix) {
-                    customIPv6Routes.append(IPv6Route(destinationAddress: String(parts[0]), prefixLength: prefix))
-                }
             }
             ipv6 = IPv6Settings(
                 addresses: [configuration.ipv6Address],
@@ -159,10 +144,6 @@ public struct PacketTunnelNetworkSettingsPlan: Equatable, Sendable {
 
     private static let localIPv4Routes = [
         IPv4Route(destinationAddress: "10.0.0.0", subnetMask: "255.0.0.0"),
-        IPv4Route(
-            destinationAddress: "100.64.0.0",
-            subnetMask: "255.192.0.0"
-        ),
         IPv4Route(
             destinationAddress: "169.254.0.0",
             subnetMask: "255.255.0.0"

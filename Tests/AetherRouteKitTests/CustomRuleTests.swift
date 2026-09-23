@@ -106,22 +106,27 @@ final class CustomRuleTests: XCTestCase {
         XCTAssertTrue(customIdx < subIdx)
     }
 
-    func testCustomRulesInPacketTunnelNetworkSettingsPlan() {
-        let customCIDR = CustomRule(kind: .ipCIDR, value: "192.168.100.0/24", target: .direct)
+    func testOverlayNetworksNotExcludedInPacketTunnelNetworkSettingsPlan() {
         let plan = PacketTunnelNetworkSettingsPlan(
             configuration: TunnelConfiguration(),
-            bypassPlan: try! BypassNetworkSettingsPlan(policy: BypassPolicy()),
-            customRules: [customCIDR]
+            bypassPlan: try! BypassNetworkSettingsPlan(policy: BypassPolicy())
         )
 
-        // Verifies 100.64.0.0/10 is present by default
-        XCTAssertTrue(plan.ipv4.excludedRoutes.contains {
-            $0.destinationAddress == "100.64.0.0" && $0.subnetMask == "255.192.0.0"
+        // Verifies 100.64.0.0/10 (Tailscale CGNAT) is NOT in excludedRoutes,
+        // preventing Darwin kernel static gateway route hijack to the physical router.
+        XCTAssertFalse(plan.ipv4.excludedRoutes.contains {
+            $0.destinationAddress == "100.64.0.0"
         })
 
-        // Verifies custom direct CIDR is also present
+        // Standard RFC 1918 LAN routes must still be excluded
         XCTAssertTrue(plan.ipv4.excludedRoutes.contains {
-            $0.destinationAddress == "192.168.100.0" && $0.subnetMask == "255.255.255.0"
+            $0.destinationAddress == "10.0.0.0" && $0.subnetMask == "255.0.0.0"
+        })
+        XCTAssertTrue(plan.ipv4.excludedRoutes.contains {
+            $0.destinationAddress == "192.168.0.0" && $0.subnetMask == "255.255.0.0"
+        })
+        XCTAssertTrue(plan.ipv4.excludedRoutes.contains {
+            $0.destinationAddress == "172.16.0.0" && $0.subnetMask == "255.240.0.0"
         })
     }
 }

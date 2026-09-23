@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.24 (Build 2026092301)</title>
-            <pubDate>Wed, 23 Sep 2026 07:57:25 +0800</pubDate>
-            <sparkle:version>2026092301</sparkle:version>
-            <sparkle:shortVersionString>1.0.24</sparkle:shortVersionString>
+            <title>Version 1.0.25 (Build 2026092302)</title>
+            <pubDate>Wed, 23 Sep 2026 18:36:14 +0800</pubDate>
+            <sparkle:version>2026092302</sparkle:version>
+            <sparkle:shortVersionString>1.0.25</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,40 +119,40 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.0.24 更新要点</span>
-  <span class="release-badge">Build 2026092301 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.0.25 更新要点</span>
+  <span class="release-badge">Build 2026092302 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🚀 核心功能：全透明零配置国内与 Apple 服务加速</span>
+  <span class="section-tag tag-fix">🐞 核心修复：Tailscale 与虚拟覆盖网络冲突彻底根治</span>
   <ul>
-    <li><strong>零配置透明分流与加速</strong>：引入内存无损配置优化引擎，在不改写用户本地配置的前提下，运行时自动注入 Apple 服务与国内高优规则，达成“国内直连丝滑、国外自动代理”。</li>
-    <li><strong>Apple 服务线速直连与 CDN 保护</strong>：针对 swcdn.apple.com、updates.cdn-apple.com 等关键服务智能过滤 fake-ip 劫持，国内 DNS 直接解析就近 Anycast IP，下载速度满带宽线速饱和（实测 34.9 MB/s）。</li>
-    <li><strong>国内智能 DNS 优化</strong>：针对国内域名自动路由至国内高速 DNS（223.5.5.5），有效规避海外 DNS 污染与解析延迟。</li>
+    <li><strong>移除内核排除路由冲突</strong>：从 NetworkExtension 的 <code>excludedRoutes</code> 中彻底移除 <code>100.64.0.0/10</code> 与自定义 CIDR，消除 macOS Darwin 内核对物理网关静态路由的错误绑定（不再劫持 <code>utun4</code> 流量），彻底恢复与 Tailscale 原生网卡并行工作。</li>
+    <li><strong>引擎层内置直连保护</strong>：Tailscale CGNAT 直连与 Fake-IP 避让全面交由分流引擎内核优化规则处理，彻底消除 Tailscale 内网节点通信及 SSH 远程终端超时。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 稳定性与自愈修复</span>
+  <span class="section-tag tag-improve">⚡️ 引擎内核睡眠唤醒时钟健壮性优化</span>
   <ul>
-    <li><strong>网络重置防振荡治理</strong>：消除应用层重复触发 resetNetwork 导致的无限重连振荡循环，保障休眠唤醒与 Wi-Fi 热点切换无感自愈。</li>
-    <li><strong>配置解析兼容性强化</strong>：完美支持顶层非缩进列表项及不规范大小写/复数配置键名，杜绝解析崩溃。</li>
+    <li><strong>单调时钟防 Panic 治理</strong>：合并核心引擎提交 <code>7bb5f30</code>，在系统休眠与唤醒跨周期场景下采用 <code>saturating_duration_since</code>，底层彻底免疫时钟回退引发的 panic。</li>
+    <li><strong>供应链与协议证据链闭环</strong>：同步锁定生产核心 SHA-256 哈希值与 12 种代理协议矩阵测试证据。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">✨ 严苛真机与多环境验证</span>
+  <span class="section-tag tag-improve">✨ 严苛真机与虚拟机全矩阵验证</span>
   <ul>
-    <li><strong>物理真机 Mac mini 实测验证通过</strong>：在 Apple Silicon 物理设备上实测国内测速拉满、Apple 域名直连、Google 走代理，0 振荡 100% 稳定运行。</li>
-    <li><strong>Tart 虚拟机全量模式矩阵通过</strong>：TUN/透明代理 x 规则/全局/直连共 6 项大类矩阵全部通过（0 crash，0 fail）。</li>
+    <li><strong>Tart 虚拟机 6 维网络矩阵通过</strong>：TUN/透明代理 x 规则/全局/直连共 6 项大类矩阵全部通过（0 crash，0 fail），测试后 VM 全量清理。</li>
+    <li><strong>物理真机 Mac mini 实测验证通过</strong>：Apple Silicon 物理设备全量自动化测试通过，TCP 吞吐达 7579 Mbps，UDP 10,000 数据包 0 丢包。</li>
   </ul>
 </div>
+
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.24/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.25/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.24/AetherRoute-1.0.24-build-2026092301-arm64.dmg"
-                sparkle:edSignature="Jy6h4zR4zKFCUk7KmoKcK+8D8Mb3+uMP6B9Gisn9Z0gr5yI6xruRtpYgeR608MJV7XECHmCwvNIL8l+7o5h7Dw=="
-                length="24638426"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.25/AetherRoute-1.0.25-build-2026092302-arm64.dmg"
+                sparkle:edSignature="9sjWjbpPrj+1pb3rsDKEQAF64cViUpeeBLjaRWvJOk66QB9rEAlfNG7yaDUynxFzzVN0XCguGC5Gk39j8qkICg=="
+                length="24633154"
                 type="application/octet-stream" />
         </item>
     </channel>

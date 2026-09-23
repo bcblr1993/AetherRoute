@@ -160,11 +160,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
 
                 Self.runtimeLogger.info("stage=startCore success")
                 Self.runtimeLogger.info("stage=makeNetworkSettings begin")
-                let customRules = (try? CustomRuleStore.applicationGroup().load()) ?? []
                 let settingsPlan = PacketTunnelNetworkSettingsPlan(
                     configuration: configuration,
-                    bypassPlan: bypassPlan,
-                    customRules: customRules
+                    bypassPlan: bypassPlan
                 )
                 let settings = self.makeNetworkSettings(settingsPlan)
                 Self.runtimeLogger.info("stage=makeNetworkSettings success")
@@ -663,11 +661,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                         }
 
                         Self.runtimeLogger.info("stage=handleReloadProfile updating network settings")
-                        let customRules = (try? CustomRuleStore.applicationGroup().load()) ?? []
                         let settingsPlan = PacketTunnelNetworkSettingsPlan(
                             configuration: configuration,
-                            bypassPlan: bypassPlan,
-                            customRules: customRules
+                            bypassPlan: bypassPlan
                         )
                         let settings = self.makeNetworkSettings(settingsPlan)
                         self.setTunnelNetworkSettings(settings) { [weak self] settingsError in

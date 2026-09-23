@@ -4,6 +4,22 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.25] - 2026-09-23
+
+### Fixed
+
+- Tailscale Virtual Overlay Network Routing Collision (`PacketTunnelNetworkSettingsPlan.swift`, `PacketTunnelProvider.swift`):
+  resolved an architectural flaw where Tailscale CGNAT subnet `100.64.0.0/10` and custom direct CIDRs were previously placed into Apple NetworkExtension's `NEIPv4Settings.excludedRoutes`. In macOS Darwin, `excludedRoutes` forcibly installs a global static gateway route pointing to the physical LAN interface gateway (e.g. `10.8.7.254` on `en11`), which superseded Tailscale's scoped interface route on `utun4` and dropped all Tailscale peer and SSH traffic to `100.64.0.x`. Removed `100.64.0.0/10` and custom CIDRs from kernel `excludedRoutes` while maintaining native direct routing and Fake-IP filtering at the Clash engine layer (`DomesticRoutingOptimizer.swift`), allowing Tailscale and other overlay mesh networks to function natively with zero interference.
+- Core Engine Monotonic Clock Skew & Sleep/Wake Resilience (`Core/Engine`):
+  updated clash core submodule (`7bb5f30`) to avoid potential panics from monotonic clock skew during system sleep/wake cycles across UDP and session timers (`saturating_duration_since`), synchronized `ProtocolCoreEvidence.json` commit and binary hashes, and updated `ThirdPartyLicenses.json`.
+
+### Verified
+
+- Tart Virtual Machine 6-Dimensional Matrix Acceptance (`aether-diag-1434`):
+  verified 100% pass rate across all 6 configurations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`) on build 2026092302 with complete post-test VM disk and log cleanup.
+- Physical Apple Silicon Mac mini Remote Validation (`chenxu@100.64.0.3`):
+  executed `test_remote_arm64.sh fast` on macOS 27.0 arm64, verifying 100% pass across all 50+ test suites (TCP flow throughput 7579 Mbps, packet engine 4484 Mbps, UDP integrity 10,000 datagrams with 0 drops). Tailscale connections and direct routing verified functional and stable.
+
 ## [1.0.24] - 2026-09-23
 
 ### Added
