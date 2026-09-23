@@ -48,6 +48,10 @@ public enum DomesticRoutingOptimizer {
         "IP-CIDR6,::1/128,DIRECT,no-resolve",
         "IP-CIDR6,fc00::/7,DIRECT,no-resolve",
         "IP-CIDR6,fe80::/10,DIRECT,no-resolve",
+        // Tailscale & P2P / VPN Control Plane
+        "DOMAIN-SUFFIX,tailscale.com,DIRECT",
+        "DOMAIN-SUFFIX,ts.net,DIRECT",
+        "DOMAIN-KEYWORD,tailscale,DIRECT",
         // Apple update & software delivery endpoints (high-bandwidth CDNs)
         "DOMAIN-SUFFIX,swcdn.apple.com,DIRECT",
         "DOMAIN-SUFFIX,updates.cdn-apple.com,DIRECT",
@@ -114,6 +118,8 @@ public enum DomesticRoutingOptimizer {
         "*.test",
         "*.local",
         "*.home.arpa",
+        "*.tailscale.com",
+        "*.ts.net",
         "captive.apple.com",
         "*.captive.apple.com",
         "time.*.com",
@@ -224,8 +230,9 @@ public enum DomesticRoutingOptimizer {
     // MARK: - Optimization API
 
     /// Optimizes the provided raw YAML configuration for domestic download speed and
-    /// Apple services acceleration while preserving proxy routing for foreign domains.
-    public static func optimizedProfile(for yaml: String) -> String {
+    /// Apple services acceleration while preserving proxy routing for foreign domains,
+    /// with user custom rules injected at top priority.
+    public static func optimizedProfile(for yaml: String, customRules: [CustomRule] = []) -> String {
         guard !yaml.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return yaml }
         let lines = yaml.components(separatedBy: "\n")
         guard !lines.isEmpty else { return yaml }
@@ -234,8 +241,8 @@ public enum DomesticRoutingOptimizer {
 
         var resultLines: [String] = []
 
-        let optimizedDNSLines = optimizeDNSSection(sections["dns"])
-        let optimizedRuleLines = optimizeRulesSection(sections["rules"])
+        let optimizedDNSLines = optimizeDNSSection(sections["dns"], customRules: customRules)
+        let optimizedRuleLines = optimizeRulesSection(sections["rules"], customRules: customRules)
 
         var emittedSections = Set<String>()
 
@@ -358,9 +365,9 @@ public enum DomesticRoutingOptimizer {
 
     // MARK: - DNS Section Optimization
 
-    private static func optimizeDNSSection(_ existingLines: [String]?) -> [String] {
+    private static func optimizeDNSSection(_ existingLines: [String]?, customRules: [CustomRule] = []) -> [String] {
         guard let lines = existingLines, !lines.isEmpty else {
-            return defaultDNSBlock()
+            return defaultDNSBlock(customRules: customRules)
         }
 
         var existingNameservers: [String] = []
@@ -486,6 +493,21 @@ public enum DomesticRoutingOptimizer {
                 mergedFakeIP.append(domain)
             }
         }
+        for rule in customRules where rule.isEnabled && rule.target.isDirect {
+            let directDomain: String?
+            switch rule.kind {
+            case .domain:
+                directDomain = rule.value
+            case .domainSuffix:
+                directDomain = rule.value.hasPrefix(".") ? "*\(rule.value)" : "*.\(rule.value)"
+            default:
+                directDomain = nil
+            }
+            if let d = directDomain, !fakeIPSet.contains(d) {
+                fakeIPSet.insert(d)
+                mergedFakeIP.append(d)
+            }
+        }
         for domain in existingFakeIPFilters {
             if !fakeIPSet.contains(domain) {
                 fakeIPSet.insert(domain)
@@ -529,7 +551,7 @@ public enum DomesticRoutingOptimizer {
         return output
     }
 
-    private static func defaultDNSBlock() -> [String] {
+    private static func defaultDNSBlock(customRules: [CustomRule] = []) -> [String] {
         var output: [String] = [
             "dns:",
             "  enable: true",
@@ -544,7 +566,30 @@ public enum DomesticRoutingOptimizer {
         output.append("    - 1.1.1.1")
         output.append("    - 8.8.8.8")
         output.append("  fake-ip-filter:")
+        var mergedFakeIP: [String] = []
+        var fakeIPSet = Set<String>()
         for domain in fakeIPFilterDomains {
+            if !fakeIPSet.contains(domain) {
+                fakeIPSet.insert(domain)
+                mergedFakeIP.append(domain)
+            }
+        }
+        for rule in customRules where rule.isEnabled && rule.target.isDirect {
+            let directDomain: String?
+            switch rule.kind {
+            case .domain:
+                directDomain = rule.value
+            case .domainSuffix:
+                directDomain = rule.value.hasPrefix(".") ? "*\(rule.value)" : "*.\(rule.value)"
+            default:
+                directDomain = nil
+            }
+            if let d = directDomain, !fakeIPSet.contains(d) {
+                fakeIPSet.insert(d)
+                mergedFakeIP.append(d)
+            }
+        }
+        for domain in mergedFakeIP {
             output.append("    - '\(domain)'")
         }
         output.append("  nameserver-policy:")
@@ -564,7 +609,7 @@ public enum DomesticRoutingOptimizer {
 
     // MARK: - Rules Section Optimization
 
-    private static func optimizeRulesSection(_ existingLines: [String]?) -> [String] {
+    private static func optimizeRulesSection(_ existingLines: [String]?, customRules: [CustomRule] = []) -> [String] {
         var rawRules: [String] = []
 
         if let lines = existingLines {
@@ -584,18 +629,25 @@ public enum DomesticRoutingOptimizer {
             }
         }
 
-        var normalizedExisting = Set<String>()
-        for r in rawRules {
-            normalizedExisting.insert(normalizedRuleString(r))
-        }
-
+        var seenNormalized = Set<String>()
         var newRules: [String] = []
 
+        // 1. User custom rules injected at top priority
+        for rule in customRules where rule.isEnabled {
+            let clashRule = rule.toClashRuleString()
+            let norm = normalizedRuleString(clashRule)
+            if !seenNormalized.contains(norm) {
+                newRules.append(clashRule)
+                seenNormalized.insert(norm)
+            }
+        }
+
+        // 2. High priority domestic / VPN bypass rules
         for rule in highPriorityBypassRules {
             let norm = normalizedRuleString(rule)
-            if !normalizedExisting.contains(norm) {
+            if !seenNormalized.contains(norm) {
                 newRules.append(rule)
-                normalizedExisting.insert(norm)
+                seenNormalized.insert(norm)
             }
         }
 
@@ -604,21 +656,23 @@ public enum DomesticRoutingOptimizer {
 
         for r in rawRules {
             let norm = normalizedRuleString(r)
+            if seenNormalized.contains(norm) {
+                continue
+            }
             if norm.hasPrefix("MATCH,") || norm == "MATCH" {
                 matchRules.append(r)
             } else {
-                if !newRules.contains(where: { normalizedRuleString($0) == norm }) {
-                    preMatchRules.append(r)
-                }
+                preMatchRules.append(r)
+                seenNormalized.insert(norm)
             }
         }
 
         newRules.append(contentsOf: preMatchRules)
 
         let normFallback = normalizedRuleString(fallbackDirectRule)
-        if !normalizedExisting.contains(normFallback) {
+        if !seenNormalized.contains(normFallback) {
             newRules.append(fallbackDirectRule)
-            normalizedExisting.insert(normFallback)
+            seenNormalized.insert(normFallback)
         }
 
         newRules.append(contentsOf: matchRules)

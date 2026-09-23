@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.23 (Build 2026092202)</title>
-            <pubDate>Tue, 22 Sep 2026 13:31:34 +0800</pubDate>
-            <sparkle:version>2026092202</sparkle:version>
-            <sparkle:shortVersionString>1.0.23</sparkle:shortVersionString>
+            <title>Version 1.0.24 (Build 2026092301)</title>
+            <pubDate>Wed, 23 Sep 2026 07:57:25 +0800</pubDate>
+            <sparkle:version>2026092301</sparkle:version>
+            <sparkle:shortVersionString>1.0.24</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,8 +119,8 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.0.23 更新要点</span>
-  <span class="release-badge">Build 2026092202 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.0.24 更新要点</span>
+  <span class="release-badge">Build 2026092301 · 正式发布</span>
 </div>
 <div class="section">
   <span class="section-tag tag-feature">🚀 核心功能：全透明零配置国内与 Apple 服务加速</span>
@@ -146,13 +146,13 @@
 </div>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.23/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.24/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.23/AetherRoute-1.0.23-build-2026092202-arm64.dmg"
-                sparkle:edSignature="EJhkobIy1B2daEjXKPSwfxrB4gE4TJVRVdPhYY/FG9t59gDavQDtWty6NwFxtT+uW+lhTbDnZI3bnFi+VkHxDA=="
-                length="23862688"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.24/AetherRoute-1.0.24-build-2026092301-arm64.dmg"
+                sparkle:edSignature="Jy6h4zR4zKFCUk7KmoKcK+8D8Mb3+uMP6B9Gisn9Z0gr5yI6xruRtpYgeR608MJV7XECHmCwvNIL8l+7o5h7Dw=="
+                length="24638426"
                 type="application/octet-stream" />
         </item>
     </channel>

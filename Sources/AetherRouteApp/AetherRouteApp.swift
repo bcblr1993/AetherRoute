@@ -63,6 +63,7 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSM
         }
 
         terminationReplyPending = true
+        tunnel.prepareForApplicationTermination()
         Task { @MainActor [weak self, weak sender] in
             guard let self else { return }
             let disconnected = await tunnel
@@ -116,6 +117,7 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSM
         Self.lifecycleLogger.info(
             "stage=applicationTermination quitAppleEvent received"
         )
+        tunnel?.prepareForApplicationTermination()
         NSApplication.shared.terminate(nil)
     }
 
@@ -156,6 +158,7 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSM
         Self.lifecycleLogger.info(
             "stage=applicationTermination signal=SIGTERM received"
         )
+        tunnel?.prepareForApplicationTermination()
 
         let disconnected = if let tunnel {
             await tunnel.disconnectForApplicationTermination()

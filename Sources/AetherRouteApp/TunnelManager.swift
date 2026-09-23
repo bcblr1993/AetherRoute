@@ -240,6 +240,10 @@ final class TunnelManager: ObservableObject {
     @Published var bypassPolicy: BypassPolicy = .empty
     @Published var bypassPolicyMessage: String?
     @Published var bypassPolicyMessageIsError = false
+    @Published var customRules: [CustomRule] = []
+    @Published var customRuleMessage: String?
+    @Published var customRuleMessageIsError = false
+    @Published var isUpdatingCustomRules = false
     @Published var dnsRuntimePolicy: DNSRuntimePolicy = .inherited
     @Published var dnsRuntimePolicyMessage: String?
     @Published var dnsRuntimePolicyMessageIsError = false
@@ -428,6 +432,11 @@ final class TunnelManager: ObservableObject {
         localProxySettingsStore = LocalProxySettingsStore(defaults: userDefaults)
         localProxySettings = localProxySettingsStore.load()
         self.isDomesticOptimizationEnabled = DomesticRoutingOptimizer.isEnabled
+        do {
+            self.customRules = try CustomRuleStore.applicationGroup().load()
+        } catch {
+            self.customRules = []
+        }
 
         var initialNetworkEngine: NetworkEngineMode = .transparent
 #if AETHERROUTE_INDEPENDENT
@@ -1039,9 +1048,10 @@ final class TunnelManager: ObservableObject {
         isUpdatingRoutingResources = true
         defer { isUpdatingRoutingResources = false }
         let rawProfileYAML = activeProfile.yaml
+        let currentCustomRules = customRules
         let profileYAML = isDomesticOptimizationEnabled
-            ? DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML)
-            : rawProfileYAML
+            ? DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML, customRules: currentCustomRules)
+            : (currentCustomRules.isEmpty ? rawProfileYAML : DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML, customRules: currentCustomRules))
 #if AETHERROUTE_QA_AUTOMATION
         if let appGroupDir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup)?
             .appendingPathComponent("Library/Application Support/AetherRoute", isDirectory: true) {
@@ -1072,7 +1082,8 @@ final class TunnelManager: ObservableObject {
                 .applicationGroup()
                 .selections(forProfileYAML: rawProfileYAML)
             let profileSummary = ProfileConfigurationInspector.inspect(
-                yaml: profileYAML
+                yaml: profileYAML,
+                customRules: currentCustomRules
             )
             let initialSelections = InitialProxySelectionPolicy
                 .selections(
@@ -1134,12 +1145,7 @@ final class TunnelManager: ObservableObject {
         managerConnectionIsActive
     }
 
-    /// A VPN or transparent proxy must not outlive an intentional App quit.
-    /// AppKit defers termination while this completes so NetworkExtension has
-    /// time to restore the system route and DNS state. If shutdown does not
-    /// settle, the delegate cancels termination instead of leaving an
-    /// unmanaged network extension active in the background.
-    func disconnectForApplicationTermination() async -> Bool {
+    func prepareForApplicationTermination() {
         isApplicationTerminating = true
         let wasActive = managerConnectionIsActive || userIntendsToConnect
         if wasActive && !isUIReviewMode {
@@ -1150,9 +1156,22 @@ final class TunnelManager: ObservableObject {
         cancelAutomaticReconnect(reason: "applicationTermination")
         stopTelemetryPolling()
         cancelConnectionReadiness()
+        cancelConnectionWatchdog()
+        cancelDisconnectionWatchdog()
+        cancelRecoveryWatchdog()
         runtimeEnvironmentResetTask?.cancel()
         runtimeEnvironmentResetTask = nil
+    }
+
+    /// A VPN or transparent proxy must not outlive an intentional App quit.
+    /// AppKit defers termination while this completes so NetworkExtension has
+    /// time to restore the system route and DNS state. If shutdown does not
+    /// settle, the delegate cancels termination instead of leaving an
+    /// unmanaged network extension active in the background.
+    func disconnectForApplicationTermination() async -> Bool {
+        prepareForApplicationTermination()
         guard managerConnectionIsActive else { return true }
+        let wasActive = managerConnectionIsActive || userIntendsToConnect
         Self.runtimeLogger.info(
             "stage=applicationTermination disconnect begin wasActive=\(wasActive, privacy: .public)"
         )

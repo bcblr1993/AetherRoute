@@ -4,6 +4,33 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.24] - 2026-09-23
+
+### Added
+
+- User Custom Routing Rules & Syntax Validation (`CustomRule.swift`, `CustomRuleStore.swift`, `RulesPageView.swift`):
+  introduced full user custom routing rules capability supporting `DOMAIN`, `DOMAIN-SUFFIX`, `DOMAIN-KEYWORD`, `IP-CIDR`, `IP-CIDR6`, and `GEOIP` rules with custom targets (`DIRECT`, `REJECT`, `PROXY`, or custom proxy groups). Features dual-mode editing (visual form or standard Clash text line syntax), real-time syntax checking via `CustomRuleValidator`, and atomic persistence in App Group (`custom-rules.v1.json`).
+- Live Custom Rule Simulation & Real-time Verification (`RulesPageView.swift`, `ProfileConfigurationSummary.swift`):
+  added one-click rule verification and dry-run simulation in the rule editor and main rules page, displaying custom rule matches with distinctive green `CUSTOM` badges and detailed rule trigger rationale.
+- Seamless Live Reload for Custom Rules (`TunnelManager+CustomRules.swift`):
+  rule addition, updating, deletion, or toggle operations dynamically reconfigure the running engine via lightweight IPC payloads (`reloadProfile`) without restarting network extensions or dropping active connections.
+
+### Fixed
+
+- Tailscale CGNAT Routing & Private Headscale Timeout (`PacketTunnelNetworkSettingsPlan.swift`, `DomesticRoutingOptimizer.swift`):
+  added Tailscale CGNAT IPv4 address block `100.64.0.0/10` (`255.192.0.0`) to the kernel default excluded routes, preventing the TUN network extension from capturing Tailscale subnet and DERP traffic. Added pre-configured bypass and Fake-IP avoidance for Tailscale domains (`tailscale.com`, `ts.net`), resolving connection and SSH timeouts permanently.
+- Application Termination Synchronization & Shutdown Lag (`AetherRouteApp.swift`, `TunnelManager.swift`):
+  added synchronous `prepareForApplicationTermination()` cleanup during application quit events, immediately cancelling active connection readiness tasks, periodic route telemetry, and URLSession probes. Completely eliminated MainActor task queue starvation, reducing graceful disconnect and quit latency from 60s to < 0.5s.
+- Protocol Evidence Hash Synchronization (`Config/ProtocolCoreEvidence.json`):
+  aligned `flowCoreSHA256` and `packetFlowCoreSHA256` in ProtocolCoreEvidence.json with the production core artifacts (`libclashrs.a` and `libclashrs-direct.a`), passing protocol release matrix verification.
+
+### Verified
+
+- Tart Virtual Machine 6-Dimensional Matrix Acceptance (`aether-diag-1434`):
+  verified 100% pass rate across all 6 permutations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`) with automated cleanup and Tart VM shutdown.
+- Physical Apple Silicon Mac mini Validation (`chenxu@100.64.0.3`):
+  executed `test_remote_arm64.sh fast` on macOS 27.0 arm64, verifying all 50+ test suites with 100% pass (TCP throughput 8032–9670 Mbps, UDP integrity 10,000 datagrams with 0 drops). Tailscale SSH connection verified fast and persistent without timeout.
+
 ## [1.0.23] - 2026-09-22
 
 ### Added

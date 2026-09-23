@@ -707,8 +707,8 @@ extension TunnelManager {
         }
         let rawProfileYAML = activeProfile.yaml
         let profileYAML = isDomesticOptimizationEnabled
-            ? DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML)
-            : rawProfileYAML
+            ? DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML, customRules: customRules)
+            : (customRules.isEmpty ? rawProfileYAML : DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML, customRules: customRules))
 #if AETHERROUTE_QA_AUTOMATION
         if let appGroupDir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup)?
             .appendingPathComponent("Library/Application Support/AetherRoute", isDirectory: true) {
@@ -721,7 +721,8 @@ extension TunnelManager {
             .applicationGroup()
             .selections(forProfileYAML: rawProfileYAML)) ?? [:]
         let profileSummary = ProfileConfigurationInspector.inspect(
-            yaml: profileYAML
+            yaml: profileYAML,
+            customRules: customRules
         )
         let initialSelections = InitialProxySelectionPolicy
             .selections(
@@ -1121,7 +1122,14 @@ extension TunnelManager {
         profiles = projection.catalog.profiles
         activeProfileID = projection.catalog.activeProfileID
         activeProfile = projection.catalog.activeProfile?.profile
-        activeProfileSummary = projection.summary
+        if let active = projection.catalog.activeProfile?.profile, !customRules.isEmpty {
+            let optimized = isDomesticOptimizationEnabled
+                ? DomesticRoutingOptimizer.optimizedProfile(for: active.yaml, customRules: customRules)
+                : DomesticRoutingOptimizer.optimizedProfile(for: active.yaml, customRules: customRules)
+            activeProfileSummary = ProfileConfigurationInspector.inspect(yaml: optimized, customRules: customRules)
+        } else {
+            activeProfileSummary = projection.summary
+        }
         automaticProxySelectionGroups = Set(
             projection.summary?.proxyGroups.filter { group in
                 group.strategy.caseInsensitiveCompare("select") == .orderedSame

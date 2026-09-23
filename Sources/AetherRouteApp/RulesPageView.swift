@@ -147,6 +147,8 @@ struct RulesView: View {
     @State private var hasAttemptedMatch: Bool = false
     @State private var matchExplanation = ""
     @State private var highlightedRuleID: Int? = nil
+    @State private var showAddRuleSheet: Bool = false
+    @State private var editingRule: CustomRule? = nil
 
     var body: some View {
         Group {
@@ -336,6 +338,15 @@ struct RulesView: View {
 
                                             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                                                 HStack(spacing: AetherVisual.s2) {
+                                                    if result.isCustomRule {
+                                                        Text(verbatim: "CUSTOM RULE")
+                                                            .font(.system(size: 9, weight: .black, design: .rounded))
+                                                            .foregroundStyle(Color.white)
+                                                            .padding(.horizontal, AetherVisual.sCompact)
+                                                            .padding(.vertical, AetherVisual.sMicro)
+                                                            .background(Color.teal, in: Capsule())
+                                                    }
+
                                                     Text(String.localizedStringWithFormat(AppLocalization.string("Matched Rule #%lld"), Int64(result.order)))
                                                         .font(.system(size: 12.5, weight: .bold))
 
@@ -352,9 +363,9 @@ struct RulesView: View {
                                                     TargetPillView(target: result.target)
                                                 }
 
-                                                Text(AppLocalization.string("Destination-only preview; the target may be a policy group."))
+                                                Text(result.reason)
                                                     .font(.caption)
-                                                    .foregroundStyle(.secondary)
+                                                    .foregroundStyle(result.isCustomRule ? Color.teal : Color.secondary)
                                             }
 
                                             Spacer()
@@ -372,10 +383,13 @@ struct RulesView: View {
                                             .controlSize(.small)
                                         }
                                         .padding(AetherVisual.s3)
-                                        .background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
+                                        .background(
+                                            result.isCustomRule ? Color.teal.opacity(0.1) : Color.green.opacity(0.08),
+                                            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
+                                        )
                                         .overlay {
                                             RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
-                                                .stroke(Color.green.opacity(0.25), lineWidth: 0.5)
+                                                .stroke(result.isCustomRule ? Color.teal.opacity(0.4) : Color.green.opacity(0.25), lineWidth: 0.5)
                                         }
                                     } else if hasAttemptedMatch && !testQuery.isEmpty {
                                         HStack(spacing: AetherVisual.s2) {
@@ -392,6 +406,102 @@ struct RulesView: View {
                                 .padding(AetherVisual.s4)
                                 .featureCard()
                                 .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+
+                            // 2.5 用户自定义分流规则 (Custom Rules - Top Priority)
+                            FeatureSection(
+                                title: AppLocalization.string("Custom rules (Top priority)"),
+                                symbol: "slider.horizontal.3"
+                            ) {
+                                VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                                            HStack(spacing: AetherVisual.s2) {
+                                                Text(AppLocalization.string("Custom routing rules"))
+                                                    .font(.headline.weight(.semibold))
+                                                Text(verbatim: "\(tunnel.customRules.count)")
+                                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                                    .foregroundStyle(Color.teal)
+                                                    .padding(.horizontal, AetherVisual.sCompact)
+                                                    .padding(.vertical, AetherVisual.sMicro)
+                                                    .background(Color.teal.opacity(0.12), in: Capsule())
+                                            }
+                                            Text(AppLocalization.string("Custom rules take absolute top priority. Direct IP-CIDR rules automatically bypass TUN kernel routing."))
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+
+                                        Button {
+                                            editingRule = nil
+                                            showAddRuleSheet = true
+                                        } label: {
+                                            Label(AppLocalization.string("Add Rule"), systemImage: "plus.circle.fill")
+                                                .font(.system(size: 12, weight: .semibold))
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.small)
+                                    }
+
+                                    if let msg = tunnel.customRuleMessage {
+                                        HStack(spacing: AetherVisual.s2) {
+                                            Image(systemName: tunnel.customRuleMessageIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                                                .foregroundStyle(tunnel.customRuleMessageIsError ? Color.red : Color.green)
+                                            Text(msg)
+                                                .font(.caption)
+                                                .foregroundStyle(tunnel.customRuleMessageIsError ? Color.red : Color.primary)
+                                        }
+                                        .padding(.vertical, AetherVisual.sMicro)
+                                    }
+
+                                    if tunnel.customRules.isEmpty {
+                                        VStack(spacing: AetherVisual.s2) {
+                                            Image(systemName: "pencil.and.list.clipboard")
+                                                .font(.system(size: 24))
+                                                .foregroundStyle(.secondary.opacity(0.6))
+                                            Text(AppLocalization.string("No custom rules configured"))
+                                                .font(.subheadline.weight(.medium))
+                                                .foregroundStyle(.secondary)
+                                            Text(AppLocalization.string("Add custom rules to override subscription routing (e.g. bypass Tailscale 100.64.0.0/10 or custom direct domains)."))
+                                                .font(.caption)
+                                                .foregroundStyle(.tertiary)
+                                                .multilineTextAlignment(.center)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, AetherVisual.s4)
+                                    } else {
+                                        VStack(spacing: AetherVisual.sCompact) {
+                                            ForEach(tunnel.customRules) { rule in
+                                                CustomRuleRow(
+                                                    rule: rule,
+                                                    onToggle: {
+                                                        Task {
+                                                            await tunnel.toggleCustomRule(id: rule.id)
+                                                        }
+                                                    },
+                                                    onEdit: {
+                                                        editingRule = rule
+                                                        showAddRuleSheet = true
+                                                    },
+                                                    onDelete: {
+                                                        Task {
+                                                            await tunnel.deleteCustomRule(id: rule.id)
+                                                        }
+                                                    },
+                                                    onTest: {
+                                                        testQuery = rule.value
+                                                        showSimulator = true
+                                                        if let s = tunnel.activeProfileSummary {
+                                                            performMatch(rules: s.rules, totalRuleCount: s.ruleCount)
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(AetherVisual.s4)
+                                .featureCard()
                             }
 
                             // 3. 规则集 Rule providers
@@ -598,6 +708,21 @@ struct RulesView: View {
             }
         }
         .accessibilityIdentifier("rules-page")
+        .sheet(isPresented: $showAddRuleSheet) {
+            CustomRuleEditorSheet(
+                initialRule: editingRule,
+                onSave: { rule in
+                    Task {
+                        if editingRule != nil {
+                            await tunnel.updateCustomRule(rule)
+                        } else {
+                            await tunnel.addCustomRule(rule)
+                        }
+                    }
+                }
+            )
+            .environmentObject(tunnel)
+        }
     }
 
     private func performMatch(rules: [RuleConfigurationSummary], totalRuleCount: Int) {
@@ -648,6 +773,19 @@ private struct RuleRow: View {
                     RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
                         .fill(Color.secondary.opacity(0.08))
                 )
+
+            if rule.isCustom {
+                Text(verbatim: "CUSTOM")
+                    .font(.system(size: 8.5, weight: .black, design: .rounded))
+                    .foregroundStyle(Color.teal)
+                    .padding(.horizontal, AetherVisual.s1)
+                    .padding(.vertical, AetherVisual.sMicro)
+                    .background(Color.teal.opacity(0.18), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: AetherVisual.badgeRadius)
+                            .stroke(Color.teal.opacity(0.4), lineWidth: 0.5)
+                    }
+            }
 
             // 规则类型徽章
             HStack(spacing: AetherVisual.s1) {
@@ -808,5 +946,494 @@ private struct RuleRow: View {
         if upper.contains("GEO") { return .purple }
         if upper.contains("MATCH") { return .secondary }
         return .teal
+    }
+}
+
+struct CustomRuleRow: View {
+    let rule: CustomRule
+    let onToggle: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    let onTest: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: AetherVisual.s3) {
+            Toggle("", isOn: Binding(
+                get: { rule.isEnabled },
+                set: { _ in onToggle() }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .labelsHidden()
+
+            Text(verbatim: "CUSTOM")
+                .font(.system(size: 8.5, weight: .black, design: .rounded))
+                .foregroundStyle(Color.teal)
+                .padding(.horizontal, AetherVisual.s1)
+                .padding(.vertical, AetherVisual.sMicro)
+                .background(Color.teal.opacity(0.15), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
+                .overlay {
+                    RoundedRectangle(cornerRadius: AetherVisual.badgeRadius)
+                        .stroke(Color.teal.opacity(0.3), lineWidth: 0.5)
+                }
+
+            Text(rule.kind.rawValue)
+                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(Color.blue)
+                .padding(.horizontal, AetherVisual.sCompact)
+                .padding(.vertical, AetherVisual.sMicro)
+                .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
+
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                HStack(spacing: AetherVisual.s1) {
+                    Text(rule.value)
+                        .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(rule.isEnabled ? .primary : .secondary)
+                        .lineLimit(1)
+
+                    if rule.noResolve {
+                        Text(verbatim: "no-resolve")
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, AetherVisual.sMicro)
+                            .background(Color.secondary.opacity(0.12), in: Capsule())
+                    }
+                }
+
+                if let comment = rule.comment, !comment.isEmpty {
+                    Text(comment)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: AetherVisual.s2)
+
+            Image(systemName: "arrow.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.tertiary)
+
+            TargetPillView(target: rule.target.rawString, isHovered: isHovered)
+                .frame(maxWidth: 160, alignment: .trailing)
+
+            HStack(spacing: AetherVisual.sMicro) {
+                Button {
+                    onTest()
+                } label: {
+                    Image(systemName: "bolt.badge.clock")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 24, height: 24)
+                        .background(Color.accentColor.opacity(0.1), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help(AppLocalization.string("Verify rule"))
+
+                Button {
+                    onEdit()
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                        .background(Color.secondary.opacity(0.1), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help(AppLocalization.string("Edit rule"))
+
+                Button {
+                    onDelete()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.red.opacity(0.85))
+                        .frame(width: 24, height: 24)
+                        .background(Color.red.opacity(0.1), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help(AppLocalization.string("Delete rule"))
+            }
+        }
+        .padding(.horizontal, AetherVisual.sRow)
+        .padding(.vertical, AetherVisual.sCompact)
+        .background(
+            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                .fill(isHovered ? Color(nsColor: .controlBackgroundColor).opacity(0.95) : Color(nsColor: .controlBackgroundColor).opacity(0.55))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                .stroke(isHovered ? Color.teal.opacity(0.4) : Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
+        }
+        .opacity(rule.isEnabled ? 1.0 : 0.6)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
+    }
+}
+
+struct CustomRuleEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var tunnel: TunnelManager
+
+    var initialRule: CustomRule?
+    var onSave: (CustomRule) -> Void
+
+    @State private var mode: InputMode = .form
+    @State private var rawClashString: String = ""
+    @State private var selectedKind: CustomRuleKind = .domainSuffix
+    @State private var ruleValue: String = ""
+    @State private var selectedTargetKind: TargetKind = .direct
+    @State private var customTargetName: String = ""
+    @State private var noResolve: Bool = false
+    @State private var comment: String = ""
+
+    @State private var testResult: RouteMatchResult? = nil
+    @State private var hasTested: Bool = false
+    @State private var testExplanation: String = ""
+
+    enum InputMode: String, CaseIterable, Identifiable {
+        case form = "Form Mode"
+        case raw = "Clash Format"
+        var id: String { rawValue }
+    }
+
+    enum TargetKind: String, CaseIterable, Identifiable {
+        case direct = "DIRECT"
+        case reject = "REJECT"
+        case proxy = "Proxy Node / Group"
+        var id: String { rawValue }
+    }
+
+    init(initialRule: CustomRule? = nil, onSave: @escaping (CustomRule) -> Void) {
+        self.initialRule = initialRule
+        self.onSave = onSave
+        _rawClashString = State(initialValue: initialRule?.toClashRuleString() ?? "")
+        _selectedKind = State(initialValue: initialRule?.kind ?? .domainSuffix)
+        _ruleValue = State(initialValue: initialRule?.value ?? "")
+        _noResolve = State(initialValue: initialRule?.noResolve ?? false)
+        _comment = State(initialValue: initialRule?.comment ?? "")
+        if let initial = initialRule {
+            switch initial.target {
+            case .direct:
+                _selectedTargetKind = State(initialValue: .direct)
+            case .reject:
+                _selectedTargetKind = State(initialValue: .reject)
+            case let .proxy(name):
+                _selectedTargetKind = State(initialValue: .proxy)
+                _customTargetName = State(initialValue: name)
+            }
+        }
+    }
+
+    private var currentRuleTarget: CustomRuleTarget {
+        switch selectedTargetKind {
+        case .direct: return .direct
+        case .reject: return .reject
+        case .proxy:
+            let trimmed = customTargetName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .proxy(trimmed.isEmpty ? "Proxy" : trimmed)
+        }
+    }
+
+    private var validationResult: RuleValidationResult {
+        if mode == .raw {
+            do {
+                let parsed = try CustomRule.parse(rawClashString)
+                return CustomRuleValidator.validate(parsed)
+            } catch {
+                return .invalid(reason: error.localizedDescription)
+            }
+        } else {
+            return CustomRuleValidator.validate(kind: selectedKind, value: ruleValue, target: currentRuleTarget)
+        }
+    }
+
+    private var candidateRule: CustomRule? {
+        if mode == .raw {
+            return try? CustomRule.parse(
+                rawClashString,
+                id: initialRule?.id ?? UUID(),
+                comment: comment.isEmpty ? nil : comment
+            )
+        } else {
+            guard validationResult.isValid else { return nil }
+            return CustomRule(
+                id: initialRule?.id ?? UUID(),
+                kind: selectedKind,
+                value: ruleValue,
+                target: currentRuleTarget,
+                noResolve: noResolve,
+                isEnabled: initialRule?.isEnabled ?? true,
+                comment: comment.isEmpty ? nil : comment
+            )
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            // Header
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                    Text(initialRule == nil ? AppLocalization.string("Add Custom Routing Rule") : AppLocalization.string("Edit Custom Routing Rule"))
+                        .font(.headline.weight(.bold))
+                    Text(AppLocalization.string("Custom rules take top priority in traffic matching."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+
+                Picker("", selection: $mode) {
+                    ForEach(InputMode.allCases) { m in
+                        Text(m.rawValue).tag(m)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+            }
+
+            Divider().opacity(0.6)
+
+            // Body Fields
+            if mode == .form {
+                VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                    HStack(spacing: AetherVisual.s3) {
+                        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                            Text(AppLocalization.string("Rule kind"))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                            Picker("", selection: $selectedKind) {
+                                ForEach(CustomRuleKind.allCases, id: \.self) { kind in
+                                    Text(kind.displayName).tag(kind)
+                                }
+                            }
+                            .labelsHidden()
+                        }
+                        .frame(width: 170)
+
+                        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                            Text(AppLocalization.string("Match criteria / Target address"))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                            TextField(placeholderForKind(selectedKind), text: $ruleValue)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12.5, design: .monospaced))
+                        }
+                    }
+
+                    HStack(spacing: AetherVisual.s3) {
+                        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                            Text(AppLocalization.string("Action (Target)"))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                            Picker("", selection: $selectedTargetKind) {
+                                ForEach(TargetKind.allCases) { t in
+                                    Text(t.rawValue).tag(t)
+                                }
+                            }
+                            .labelsHidden()
+                        }
+                        .frame(width: 170)
+
+                        if selectedTargetKind == .proxy {
+                            VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                                Text(AppLocalization.string("Specify proxy node or group name"))
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                                TextField(AppLocalization.string("e.g. PROXY, Node Select, Auto…"), text: $customTargetName)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.system(size: 12.5))
+                            }
+                        } else {
+                            Spacer()
+                        }
+                    }
+
+                    if selectedKind == .ipCIDR || selectedKind == .ipCIDR6 || selectedKind == .geoIP {
+                        Toggle(AppLocalization.string("no-resolve (Skip DNS resolution and match by existing IP)"), isOn: $noResolve)
+                            .font(.caption)
+                    }
+
+                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                        Text(AppLocalization.string("Note (Optional)"))
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        TextField(AppLocalization.string("e.g. Tailscale node / local service"), text: $comment)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                        Text(AppLocalization.string("Clash format rule text"))
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        TextField(AppLocalization.string("e.g. DOMAIN-SUFFIX,baizhiedu.xin,DIRECT or IP-CIDR,100.64.0.0/10,DIRECT,no-resolve"), text: $rawClashString)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12, design: .monospaced))
+                    }
+
+                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                        Text(AppLocalization.string("Note (Optional)"))
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        TextField(AppLocalization.string("e.g. Direct private subnet"), text: $comment)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
+                    }
+                }
+            }
+
+            // 实时校验提示 (Validation Status)
+            HStack(spacing: AetherVisual.s2) {
+                switch validationResult {
+                case .valid:
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(Color.green)
+                    Text(AppLocalization.string("Rule syntax is valid and active"))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.green)
+                case let .invalid(reason):
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Color.orange)
+                    Text(reason)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.orange)
+                }
+                Spacer()
+
+                Button {
+                    verifyRule()
+                } label: {
+                    Label(AppLocalization.string("Verify rule"), systemImage: "bolt.badge.clock.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!validationResult.isValid)
+            }
+            .padding(.horizontal, AetherVisual.s3)
+            .padding(.vertical, AetherVisual.s2)
+            .background(
+                validationResult.isValid ? Color.green.opacity(0.08) : Color.orange.opacity(0.08),
+                in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+            )
+
+            // 规则验证结果 (Dry-run Result)
+            if hasTested {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                    if let res = testResult {
+                        HStack(spacing: AetherVisual.s2) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Color.green)
+                            Text(String.localizedStringWithFormat(AppLocalization.string("Simulated match: %@ -> %@"), res.matchedRule.kind, res.target))
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Color.green)
+                        }
+                    } else if !testExplanation.isEmpty {
+                        HStack(spacing: AetherVisual.s2) {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundStyle(Color.secondary)
+                            Text(testExplanation)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(.horizontal, AetherVisual.s3)
+                .padding(.vertical, AetherVisual.s2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius))
+            }
+
+            Divider().opacity(0.6)
+
+            // Action Buttons
+            HStack {
+                Button(AppLocalization.string("Cancel")) {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button(AppLocalization.string("Save rule")) {
+                    if let rule = candidateRule {
+                        onSave(rule)
+                        dismiss()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!validationResult.isValid)
+            }
+        }
+        .padding(AetherVisual.s5)
+        .frame(minWidth: 500, maxWidth: 540)
+    }
+
+    private func placeholderForKind(_ kind: CustomRuleKind) -> String {
+        switch kind {
+        case .domainSuffix: return "e.g. baizhiedu.xin or google.com"
+        case .domain: return "e.g. my.server.com"
+        case .domainKeyword: return "e.g. tailscale or internal"
+        case .ipCIDR: return "e.g. 100.64.0.0/10 or 192.168.1.0/24"
+        case .ipCIDR6: return "e.g. fd7a:115c:a1e0::/48"
+        case .geoIP: return "e.g. CN or US"
+        }
+    }
+
+    private func verifyRule() {
+        hasTested = true
+        testResult = nil
+        testExplanation = ""
+        guard let rule = candidateRule else {
+            testExplanation = AppLocalization.string("Rule validation failed")
+            return
+        }
+
+        let ruleSummary = RuleConfigurationSummary(
+            id: -1,
+            order: 1,
+            kind: rule.kind.rawValue,
+            criteria: rule.value,
+            target: rule.target.rawString,
+            isCustom: true
+        )
+
+        let existingRules = tunnel.activeProfileSummary?.rules ?? []
+        let simulatedList = [ruleSummary] + existingRules
+
+        let destination: String
+        switch rule.kind {
+        case .domain, .domainSuffix:
+            destination = rule.value
+        case .domainKeyword:
+            destination = "service.\(rule.value).com"
+        case .ipCIDR:
+            let ipPart = rule.value.split(separator: "/").first.map(String.init) ?? rule.value
+            destination = ipPart
+        case .ipCIDR6:
+            let ipPart = rule.value.split(separator: "/").first.map(String.init) ?? rule.value
+            destination = ipPart
+        case .geoIP:
+            destination = "223.5.5.5"
+        }
+
+        switch RouteMatchEngine.assess(destination: destination, against: simulatedList, totalRuleCount: simulatedList.count) {
+        case let .matched(res):
+            testResult = res
+        case .indeterminate:
+            testExplanation = AppLocalization.string("Rule created; IP/GEO rules are evaluated at runtime by core DNS resolution.")
+        case .noMatch:
+            testExplanation = AppLocalization.string("No match found for simulated destination; please verify rule.")
+        case .invalidDestination:
+            testExplanation = AppLocalization.string("Invalid simulated destination address.")
+        }
     }
 }

@@ -9856,6 +9856,336 @@
           }
         }
       }
+    },
+    "Custom rules (Top priority)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义规则 (最高优先级)"
+          }
+        }
+      }
+    },
+    "Custom routing rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义分流规则"
+          }
+        }
+      }
+    },
+    "Custom rules take absolute top priority. Direct IP-CIDR rules automatically bypass TUN kernel routing.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义规则拥有最高优先级，且目标为 DIRECT 的 IP-CIDR 将自动在内核层绕过 TUN 网卡。"
+          }
+        }
+      }
+    },
+    "Add Rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加规则"
+          }
+        }
+      }
+    },
+    "No custom rules configured": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂未配置自定义规则"
+          }
+        }
+      }
+    },
+    "Add custom rules to override subscription routing (e.g. bypass Tailscale 100.64.0.0/10 or custom direct domains).": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加自定义规则可覆盖订阅分流（如直连 Tailscale 100.64.0.0/10 或自定义直连域名）。"
+          }
+        }
+      }
+    },
+    "Verify rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证规则"
+          }
+        }
+      }
+    },
+    "Edit rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑规则"
+          }
+        }
+      }
+    },
+    "Delete rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除规则"
+          }
+        }
+      }
+    },
+    "Add Custom Routing Rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加自定义分流规则"
+          }
+        }
+      }
+    },
+    "Edit Custom Routing Rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑自定义分流规则"
+          }
+        }
+      }
+    },
+    "Custom rules take top priority in traffic matching.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义规则置于最顶端生效，且目标为直连的网段自动在内核层直连。"
+          }
+        }
+      }
+    },
+    "Rule kind": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则种类"
+          }
+        }
+      }
+    },
+    "Match criteria / Target address": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匹配条件 / 目标地址"
+          }
+        }
+      }
+    },
+    "Action (Target)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分流动作 (Target)"
+          }
+        }
+      }
+    },
+    "Specify proxy node or group name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指定代理节点或策略组名称"
+          }
+        }
+      }
+    },
+    "e.g. PROXY, Node Select, Auto…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如 PROXY, 节点选择, 自动选择…"
+          }
+        }
+      }
+    },
+    "no-resolve (Skip DNS resolution and match by existing IP)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no-resolve (跳过 DNS 解析，直接根据已有 IP 判定)"
+          }
+        }
+      }
+    },
+    "Note (Optional)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备注说明 (可选)"
+          }
+        }
+      }
+    },
+    "e.g. Tailscale node / local service": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如: Tailscale 内网节点 / 本地私有服务"
+          }
+        }
+      }
+    },
+    "Clash format rule text": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clash 格式规则文本"
+          }
+        }
+      }
+    },
+    "e.g. DOMAIN-SUFFIX,baizhiedu.xin,DIRECT or IP-CIDR,100.64.0.0/10,DIRECT,no-resolve": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如: DOMAIN-SUFFIX,baizhiedu.xin,DIRECT 或 IP-CIDR,100.64.0.0/10,DIRECT,no-resolve"
+          }
+        }
+      }
+    },
+    "e.g. Direct private subnet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如: 私有网段直连"
+          }
+        }
+      }
+    },
+    "Rule syntax is valid and active": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则格式合法，可正常生效"
+          }
+        }
+      }
+    },
+    "Simulated match: %@ -> %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分流测试命中: %@ -> %@"
+          }
+        }
+      }
+    },
+    "Save rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存规则"
+          }
+        }
+      }
+    },
+    "Rule validation failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则格式未通过检验"
+          }
+        }
+      }
+    },
+    "Rule created; IP/GEO rules are evaluated at runtime by core DNS resolution.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则已创建，属于 IP/GEO 规则，在运行时依据核心 DNS 解析匹配。"
+          }
+        }
+      }
+    },
+    "No match found for simulated destination; please verify rule.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未能匹配模拟目标，请检查规则配置。"
+          }
+        }
+      }
+    },
+    "Invalid simulated destination address.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模拟目标地址格式不合法。"
+          }
+        }
+      }
+    },
+    "Custom rule added and active at top priority": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义规则已添加并置顶生效"
+          }
+        }
+      }
+    },
+    "Custom rule updated": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义规则已更新"
+          }
+        }
+      }
+    },
+    "Custom rule deleted": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义规则已删除"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -369,6 +369,9 @@ extension TunnelManager {
     func cancelConnectionReadiness() {
         connectionReadinessTask?.cancel()
         connectionReadinessTask = nil
+        Self.probeSession.getAllTasks { tasks in
+            tasks.forEach { $0.cancel() }
+        }
         isVerifyingProxyReadiness = false
         connectionQuality = .unknown
     }

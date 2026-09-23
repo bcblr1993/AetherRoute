@@ -19,6 +19,7 @@ for required in \
   "$PUBLIC/support/index.html" \
   "$PUBLIC/license/index.html" \
   "$PUBLIC/releases/index.html" \
+  "$PUBLIC/releases/1.0.24/index.html" \
   "$PUBLIC/releases/1.0.23/index.html" \
   "$PUBLIC/releases/1.0.22/index.html" \
   "$PUBLIC/releases/1.0.21/index.html" \
@@ -66,8 +67,8 @@ do
   }
 done
 
-rg -F 'AetherRoute 1.0.23' "$PUBLIC/index.html" >/dev/null
-rg -F '809d40b74ff2148ada5a99ed1a4d9a4cfb5b7cdbe4ba50e63cb8e631ae6cc34d' "$PUBLIC/index.html" >/dev/null
+rg -F 'AetherRoute 1.0.24' "$PUBLIC/index.html" >/dev/null
+rg -F 'd726825ce0efd8bd5c97ea1776e81bbd15309294a1fab54826828aa2b9ac48c5' "$PUBLIC/index.html" >/dev/null
 
 test "$(rg -c 'data-localized-image' "$PUBLIC/index.html")" -ge 1 || {
   echo "homepage must expose localized product screenshots" >&2
@@ -128,6 +129,9 @@ done
 
 for route in \
   /releases/ \
+  /releases/1.0.24/ \
+  /releases/1.0.23/ \
+  /releases/1.0.22/ \
   /releases/1.0.21/ \
   /releases/1.0.20/ \
   /releases/1.0.19/ \
@@ -162,6 +166,9 @@ done
 
 # Check SEO and sitemap
 rg -F 'https://aetherroute.pages.dev/sitemap.xml' "$PUBLIC/robots.txt" >/dev/null
+rg -F 'https://aetherroute.pages.dev/releases/1.0.24/' "$PUBLIC/sitemap.xml" >/dev/null
+rg -F 'https://aetherroute.pages.dev/releases/1.0.23/' "$PUBLIC/sitemap.xml" >/dev/null
+rg -F 'https://aetherroute.pages.dev/releases/1.0.22/' "$PUBLIC/sitemap.xml" >/dev/null
 rg -F 'https://aetherroute.pages.dev/releases/1.0.21/' "$PUBLIC/sitemap.xml" >/dev/null
 rg -F 'https://aetherroute.pages.dev/releases/1.0.20/' "$PUBLIC/sitemap.xml" >/dev/null
 rg -F 'https://aetherroute.pages.dev/releases/1.0.19/' "$PUBLIC/sitemap.xml" >/dev/null

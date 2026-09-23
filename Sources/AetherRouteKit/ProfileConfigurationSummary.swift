@@ -233,19 +233,22 @@ public struct RuleConfigurationSummary: Identifiable, Equatable, Sendable {
     public let kind: String
     public let criteria: String?
     public let target: String
+    public let isCustom: Bool
 
     public init(
         id: Int,
         order: Int,
         kind: String,
         criteria: String?,
-        target: String
+        target: String,
+        isCustom: Bool = false
     ) {
         self.id = id
         self.order = order
         self.kind = kind
         self.criteria = criteria
         self.target = target
+        self.isCustom = isCustom
     }
 }
 
@@ -255,6 +258,10 @@ public struct RouteMatchResult: Identifiable, Equatable, Sendable {
     public let reason: String
     public let order: Int
     public let target: String
+
+    public var isCustomRule: Bool {
+        matchedRule.isCustom
+    }
 
     public init(
         id: UUID = UUID(),
@@ -324,9 +331,12 @@ public enum RouteMatchEngine {
                 return .indeterminate(ruleOrder: rule.order)
             }
             if matches {
+                let reason = rule.isCustom
+                    ? "命中用户自定义规则 (优先级最高)"
+                    : "Matched destination preview rule"
                 return .matched(RouteMatchResult(
                     matchedRule: rule,
-                    reason: "Matched destination preview rule",
+                    reason: reason,
                     order: rule.order,
                     target: rule.target
                 ))
@@ -386,8 +396,8 @@ public enum RouteMatchEngine {
 public enum ProfileConfigurationInspector {
     public static let maximumDisplayedItemsPerSection = 500
 
-    public static func inspect(yaml: String) -> ProfileConfigurationSummary {
-        var parser = Parser(yaml: yaml)
+    public static func inspect(yaml: String, customRules: [CustomRule] = []) -> ProfileConfigurationSummary {
+        var parser = Parser(yaml: yaml, customRules: customRules)
         return parser.parse()
     }
 }
@@ -491,8 +501,15 @@ private struct Parser {
     private var requiresCountryMMDB = false
     private var requiresGeoSiteDatabase = false
     private var allowsIPv6 = false
+    private let customRuleSignatures: Set<String>
 
-    init(yaml: String) {
+    init(yaml: String, customRules: [CustomRule] = []) {
+        var sigs = Set<String>()
+        for rule in customRules where rule.isEnabled {
+            sigs.insert(rule.toClashRuleString().filter { !$0.isWhitespace }.uppercased())
+        }
+        self.customRuleSignatures = sigs
+
         // A complete JSON mapping is also a valid profile. Decode it before
         // the line-oriented YAML projection so compact and pretty JSON have
         // the same summary and recursion exclusions. Import validation still
@@ -1103,13 +1120,17 @@ private struct Parser {
         let criteriaFields = targetIndex.map { fields[1..<$0] } ?? []
         let criteria = criteriaFields.isEmpty ? nil : criteriaFields.joined(separator: ", ")
         let order = rules.count + 1
+        let compactValue = value.filter { !$0.isWhitespace }.uppercased()
+        let synthesizedKey = [kind, criteria ?? "", target].filter { !$0.isEmpty }.joined(separator: ",").filter { !$0.isWhitespace }.uppercased()
+        let isCustom = customRuleSignatures.contains(compactValue) || customRuleSignatures.contains(synthesizedKey)
         rules.append(
             RuleConfigurationSummary(
                 id: rules.count,
                 order: order,
                 kind: kind,
                 criteria: criteria,
-                target: target
+                target: target,
+                isCustom: isCustom
             )
         )
     }
