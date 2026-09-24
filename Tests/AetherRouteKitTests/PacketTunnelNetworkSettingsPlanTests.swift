@@ -5,7 +5,10 @@ final class PacketTunnelNetworkSettingsPlanTests: XCTestCase {
     func testDefaultFullTunnelPlanIncludesTailscaleBypassAndSyntheticDNS() throws {
         let bypassPlan = try BypassNetworkSettingsPlan(
             policy: BypassPolicy(
-                rules: [try BypassRule.parse("100.64.0.0/10")]
+                rules: [
+                    try BypassRule.parse("100.64.0.0/10"),
+                    try BypassRule.parse("192.168.100.0/24"),
+                ]
             )
         )
 
@@ -23,11 +26,21 @@ final class PacketTunnelNetworkSettingsPlanTests: XCTestCase {
                 ),
             ]
         )
-        XCTAssertTrue(
+        // 100.64.0.0/10 MUST NOT be in excludedRoutes to avoid Darwin static gateway route hijack
+        XCTAssertFalse(
             plan.ipv4.excludedRoutes.contains(
                 .init(
                     destinationAddress: "100.64.0.0",
                     subnetMask: "255.192.0.0"
+                )
+            )
+        )
+        // Non-overlay custom subnet MUST still be in excludedRoutes
+        XCTAssertTrue(
+            plan.ipv4.excludedRoutes.contains(
+                .init(
+                    destinationAddress: "192.168.100.0",
+                    subnetMask: "255.255.255.0"
                 )
             )
         )
@@ -113,7 +126,7 @@ final class PacketTunnelNetworkSettingsPlanTests: XCTestCase {
     func testPlanOmitsLocalRoutesWhenConfigurationDisablesThem() throws {
         let bypassPlan = try BypassNetworkSettingsPlan(
             policy: BypassPolicy(
-                rules: [try BypassRule.parse("100.64.0.0/10")]
+                rules: [try BypassRule.parse("192.168.100.0/24")]
             )
         )
 
@@ -129,8 +142,8 @@ final class PacketTunnelNetworkSettingsPlanTests: XCTestCase {
             plan.ipv4.excludedRoutes,
             [
                 .init(
-                    destinationAddress: "100.64.0.0",
-                    subnetMask: "255.192.0.0"
+                    destinationAddress: "192.168.100.0",
+                    subnetMask: "255.255.255.0"
                 ),
             ]
         )

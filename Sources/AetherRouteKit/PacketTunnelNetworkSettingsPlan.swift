@@ -91,12 +91,14 @@ public struct PacketTunnelNetworkSettingsPlan: Equatable, Sendable {
         tunnelRemoteAddress = configuration.ipv4Address
         mtu = configuration.mtu
 
-        let customIPv4Routes = bypassPlan.ipv4Routes.map {
-            IPv4Route(
-                destinationAddress: $0.destinationAddress,
-                subnetMask: $0.subnetMask
-            )
-        }
+        let customIPv4Routes = bypassPlan.ipv4Routes
+            .filter { !Self.isVirtualOverlayRoute(destinationAddress: $0.destinationAddress) }
+            .map {
+                IPv4Route(
+                    destinationAddress: $0.destinationAddress,
+                    subnetMask: $0.subnetMask
+                )
+            }
         ipv4 = IPv4Settings(
             addresses: [configuration.ipv4Address],
             subnetMasks: [configuration.ipv4SubnetMask],
@@ -114,12 +116,14 @@ public struct PacketTunnelNetworkSettingsPlan: Equatable, Sendable {
         )
 
         if configuration.enableIPv6 {
-            let customIPv6Routes = bypassPlan.ipv6Routes.map {
-                IPv6Route(
-                    destinationAddress: $0.destinationAddress,
-                    prefixLength: $0.prefixLength
-                )
-            }
+            let customIPv6Routes = bypassPlan.ipv6Routes
+                .filter { !Self.isVirtualOverlayRoute(destinationAddress: $0.destinationAddress) }
+                .map {
+                    IPv6Route(
+                        destinationAddress: $0.destinationAddress,
+                        prefixLength: $0.prefixLength
+                    )
+                }
             ipv6 = IPv6Settings(
                 addresses: [configuration.ipv6Address],
                 prefixLengths: [configuration.ipv6PrefixLength],
@@ -183,5 +187,30 @@ public struct PacketTunnelNetworkSettingsPlan: Equatable, Sendable {
                 "\($0.destinationAddress)/\($0.prefixLength)"
             ).inserted
         }
+    }
+
+    /// Determines whether an IP address belongs to a virtual overlay mesh network
+    /// (e.g. Tailscale CGNAT 100.64.0.0/10 or IPv6 ULA fd00::/8).
+    ///
+    /// Such networks must NEVER be placed in NetworkExtension's `excludedRoutes`,
+    /// because in macOS Darwin, `excludedRoutes` forces the kernel to install a
+    /// static route pointing to the physical LAN interface gateway, hijacking traffic
+    /// intended for virtual network interfaces (like `utun*`).
+    public static func isVirtualOverlayRoute(destinationAddress: String) -> Bool {
+        let parts = destinationAddress.split(separator: ".")
+        if parts.count == 4,
+           let b0 = UInt8(parts[0]),
+           let b1 = UInt8(parts[1]) {
+            // RFC 6598 Carrier-Grade NAT (CGNAT) 100.64.0.0/10 (100.64.0.0 - 100.127.255.255)
+            // Used by Tailscale, WireGuard overlays, etc.
+            if b0 == 100 && (b1 >= 64 && b1 <= 127) {
+                return true
+            }
+        }
+        let lower = destinationAddress.lowercased()
+        if lower.hasPrefix("fd") || lower.hasPrefix("fc") {
+            return true
+        }
+        return false
     }
 }

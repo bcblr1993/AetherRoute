@@ -718,12 +718,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 subnetMask: $0.subnetMask
             )
         }
-        ipv4.excludedRoutes = plan.ipv4.excludedRoutes.map {
-            NEIPv4Route(
-                destinationAddress: $0.destinationAddress,
-                subnetMask: $0.subnetMask
-            )
-        }
+        ipv4.excludedRoutes = plan.ipv4.excludedRoutes
+            .filter { !PacketTunnelNetworkSettingsPlan.isVirtualOverlayRoute(destinationAddress: $0.destinationAddress) }
+            .map {
+                NEIPv4Route(
+                    destinationAddress: $0.destinationAddress,
+                    subnetMask: $0.subnetMask
+                )
+            }
         settings.ipv4Settings = ipv4
 
         // Leaving `ipv6Settings` nil keeps the system's own IPv6 routing in
@@ -740,12 +742,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     networkPrefixLength: NSNumber(value: $0.prefixLength)
                 )
             }
-            ipv6.excludedRoutes = plannedIPv6.excludedRoutes.map {
-                NEIPv6Route(
-                    destinationAddress: $0.destinationAddress,
-                    networkPrefixLength: NSNumber(value: $0.prefixLength)
-                )
-            }
+            ipv6.excludedRoutes = plannedIPv6.excludedRoutes
+                .filter { !PacketTunnelNetworkSettingsPlan.isVirtualOverlayRoute(destinationAddress: $0.destinationAddress) }
+                .map {
+                    NEIPv6Route(
+                        destinationAddress: $0.destinationAddress,
+                        networkPrefixLength: NSNumber(value: $0.prefixLength)
+                    )
+                }
             settings.ipv6Settings = ipv6
         }
 

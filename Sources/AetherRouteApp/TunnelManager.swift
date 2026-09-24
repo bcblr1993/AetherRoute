@@ -677,8 +677,14 @@ final class TunnelManager: ObservableObject {
                 )
             }.value
             if let loadedBypassPolicy = startup.bypassPolicy {
-                bypassPolicy = loadedBypassPolicy
+                let sanitized = Self.sanitizeBypassPolicy(loadedBypassPolicy)
+                bypassPolicy = sanitized
                 hasLoadedBypassPolicy = true
+                if sanitized.rules.count != loadedBypassPolicy.rules.count {
+                    Task { [weak self] in
+                        _ = try? await self?.persistBypassPolicy(sanitized)
+                    }
+                }
             }
             installProfileProjection(startup.profileProjection)
             try await systemExtensionActivator.activate(
@@ -1063,7 +1069,7 @@ final class TunnelManager: ObservableObject {
         let storeFactory = routingResourceStoreFactory
         let downloadClient = routingResourceDownloadClient
         let bundleDirectory = bundledResourceDirectoryURL
-        let requestedBypassPolicy = bypassPolicy
+        let requestedBypassPolicy = Self.sanitizeBypassPolicy(bypassPolicy)
         let requestedDNSPolicy = dnsRuntimePolicy
         let launchInput = try await Task.detached(
             priority: .userInitiated
@@ -1723,6 +1729,19 @@ final class TunnelManager: ObservableObject {
 
     static var diagnosticDistribution: DiagnosticReport.Distribution {
         .independent
+    }
+
+    static func sanitizeBypassPolicy(_ policy: BypassPolicy) -> BypassPolicy {
+        let filtered = policy.rules.filter { rule in
+            if rule.kind == .ipv4CIDR || rule.kind == .ipv6CIDR {
+                let addr = rule.value.split(separator: "/").first.map(String.init) ?? rule.value
+                if PacketTunnelNetworkSettingsPlan.isVirtualOverlayRoute(destinationAddress: addr) {
+                    return false
+                }
+            }
+            return true
+        }
+        return BypassPolicy(rules: filtered)
     }
 }
 

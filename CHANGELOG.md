@@ -4,6 +4,24 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.27] - 2026-09-24
+
+### Fixed
+
+- Virtual Overlay Network (Tailscale CGNAT) Kernel Route Hijack Prevention (`PacketTunnelNetworkSettingsPlan.swift`, `PacketTunnelProvider.swift`, `TunnelManager.swift`):
+  resolved a critical Darwin routing conflict where user-defined bypass CIDRs or custom rules containing `100.64.0.0/10` or IPv6 overlay subnets (`fd00::/8`, `fc00::/7`) were passed to `NEIPv4Settings.excludedRoutes` / `NEIPv6Settings.excludedRoutes`. In macOS Darwin, `excludedRoutes` instructs `nesessionmanager` to install an unscoped physical gateway route on `en0`, which causes Darwin kernel to create cloned `/32` host routes (e.g. `100.64.0.1 -> 192.168.50.1 on en0`), hijacking traffic away from Tailscale's `utun*` interface and freezing active SSH/TUN sessions. Added `isVirtualOverlayRoute` guard to strictly prevent virtual overlay routes from ever entering kernel `excludedRoutes`, added defense-in-depth filtering in `PacketTunnelProvider`, and added automatic sanitization in `TunnelManager`.
+- System Extension Upgrade & Version Bumping (`project.yml`):
+  incremented build number to `2026092402` to ensure Darwin `sysextd` cleanly detects and upgrades existing resident system extensions without binary hash discrepancies.
+
+### Verified
+
+- Tart Virtual Machine 6-Dimensional Matrix Acceptance (`aether-diag-1434`):
+  verified 100% pass rate across all 6 configurations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`) on build 2026092402, with automatic post-test VM disk, temporary artifacts, and log cleanup.
+- Physical Apple Silicon Mac mini Remote Gate (`chenxu@100.64.0.3`):
+  executed `test_remote_arm64.sh fast` on macOS 27.0 arm64, verifying 100% pass across all 50+ test suites (TCP flow throughput > 7500 Mbps, UDP 10,000 datagrams 0 drops).
+- Live Physical Mac mini Verification:
+  installed and ran official notarized build on `chenxu@100.64.0.3`. Verified AetherRoute connected (`流量路由已启用`), verified `route -n get 100.64.0.1` stably routes through `utun2` (Tailscale), and verified ping to `100.64.0.1` achieves 0.0% packet loss with ~25ms latency with zero SSH disconnection.
+
 ## [1.0.26] - 2026-09-24
 
 ### Fixed
