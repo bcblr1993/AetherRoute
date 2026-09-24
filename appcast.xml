@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.25 (Build 2026092302)</title>
-            <pubDate>Wed, 23 Sep 2026 18:36:14 +0800</pubDate>
-            <sparkle:version>2026092302</sparkle:version>
-            <sparkle:shortVersionString>1.0.25</sparkle:shortVersionString>
+            <title>Version 1.0.26 (Build 2026092401)</title>
+            <pubDate>Thu, 24 Sep 2026 09:03:35 +0800</pubDate>
+            <sparkle:version>2026092401</sparkle:version>
+            <sparkle:shortVersionString>1.0.26</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,40 +119,40 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.0.25 更新要点</span>
-  <span class="release-badge">Build 2026092302 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.0.26 更新要点</span>
+  <span class="release-badge">Build 2026092401 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 核心修复：Tailscale 与虚拟覆盖网络冲突彻底根治</span>
+  <span class="section-tag tag-fix">🐞 核心修复：Tailscale 虚拟覆盖网络物理网卡绑定穿透修复</span>
   <ul>
-    <li><strong>移除内核排除路由冲突</strong>：从 NetworkExtension 的 <code>excludedRoutes</code> 中彻底移除 <code>100.64.0.0/10</code> 与自定义 CIDR，消除 macOS Darwin 内核对物理网关静态路由的错误绑定（不再劫持 <code>utun4</code> 流量），彻底恢复与 Tailscale 原生网卡并行工作。</li>
-    <li><strong>引擎层内置直连保护</strong>：Tailscale CGNAT 直连与 Fake-IP 避让全面交由分流引擎内核优化规则处理，彻底消除 Tailscale 内网节点通信及 SSH 远程终端超时。</li>
+    <li><strong>底层物理网卡绑定跳过</strong>：深度修复 Core 代理引擎在发起 DIRECT 出站连接时强制将 socket 绑定（<code>IP_BOUND_IF</code>）至物理出口网卡（<code>en0</code>）的缺陷，底层增加 <code>is_overlay_network_address</code> 判断，针对发往 <code>100.64.0.0/10</code> 及 <code>fd7a:115c:a1e0::/48</code> 的连接跳过物理网卡绑定，使 Darwin 内核顺利将数据包路由至 Tailscale 虚拟网卡（<code>utun*</code>）。</li>
+    <li><strong>Tailscale 与 Headscale DERP 基础设施放行</strong>：自动注入 Tailscale 协调服务器与 DERP 中继节点的直连放行与 Fake-IP 避让规则，确保在开启 AetherRoute 时 Tailscale P2P 直连与 SSH 毫秒级稳定互通。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">⚡️ 引擎内核睡眠唤醒时钟健壮性优化</span>
+  <span class="section-tag tag-improve">⚡️ 自定义分流规则安全防护与核心证据链锁定</span>
   <ul>
-    <li><strong>单调时钟防 Panic 治理</strong>：合并核心引擎提交 <code>7bb5f30</code>，在系统休眠与唤醒跨周期场景下采用 <code>saturating_duration_since</code>，底层彻底免疫时钟回退引发的 panic。</li>
-    <li><strong>供应链与协议证据链闭环</strong>：同步锁定生产核心 SHA-256 哈希值与 12 种代理协议矩阵测试证据。</li>
+    <li><strong>自定义规则掩码校验防护</strong>：阻断 <code>/0</code> 无效掩码输入，杜绝意外生成 <code>0.0.0.0/0</code> 全局捕获规则造成流量误拦截。</li>
+    <li><strong>核心引擎提交锁定</strong>：核心引擎同步锁定 <code>c23370da96b70e6282f04254b4a93761e2a54fee</code>，完成协议证据链与许可证哈希闭环。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">✨ 严苛真机与虚拟机全矩阵验证</span>
   <ul>
-    <li><strong>Tart 虚拟机 6 维网络矩阵通过</strong>：TUN/透明代理 x 规则/全局/直连共 6 项大类矩阵全部通过（0 crash，0 fail），测试后 VM 全量清理。</li>
-    <li><strong>物理真机 Mac mini 实测验证通过</strong>：Apple Silicon 物理设备全量自动化测试通过，TCP 吞吐达 7579 Mbps，UDP 10,000 数据包 0 丢包。</li>
+    <li><strong>Tart 虚拟机 6 维网络矩阵通过</strong>：TUN/透明代理 x 规则/全局/直连共 6 项大类矩阵全部 100% 通过，测试后 VM 彻底清理。</li>
+    <li><strong>物理真机 Mac mini 实测验证通过</strong>：Apple Silicon 物理设备全量自动化测试通过，TCP 吞吐达 7579 Mbps，UDP 10,000 数据包 0 丢包，AetherRoute 运行中 Tailscale 持续稳定运行。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.25/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.26/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.25/AetherRoute-1.0.25-build-2026092302-arm64.dmg"
-                sparkle:edSignature="9sjWjbpPrj+1pb3rsDKEQAF64cViUpeeBLjaRWvJOk66QB9rEAlfNG7yaDUynxFzzVN0XCguGC5Gk39j8qkICg=="
-                length="24633154"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.26/AetherRoute-1.0.26-build-2026092401-arm64.dmg"
+                sparkle:edSignature="77gQKIFpXB9VO/4B/Wb+kduDghARglJJz4IK5Fz02rP4x0SHqotUCWuZ7kbIcWI69nLDetzwhNVWjcryKkOGCQ=="
+                length="25937175"
                 type="application/octet-stream" />
         </item>
     </channel>

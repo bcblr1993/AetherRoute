@@ -49,5 +49,6 @@ struct RuntimeEnvironmentRegression {
         ], "Actual system sleep/wake must still reach recovery")
         withExtendedLifetime(controller) {}
         print("Runtime environment: display continuity and real sleep/wake passed")
+        exit(0)
     }
 }

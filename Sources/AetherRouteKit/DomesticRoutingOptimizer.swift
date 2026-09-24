@@ -52,6 +52,9 @@ public enum DomesticRoutingOptimizer {
         "DOMAIN-SUFFIX,tailscale.com,DIRECT",
         "DOMAIN-SUFFIX,ts.net,DIRECT",
         "DOMAIN-KEYWORD,tailscale,DIRECT",
+        "DOMAIN-KEYWORD,headscale,DIRECT",
+        "DOMAIN-SUFFIX,baizhiedu.xin,DIRECT",
+        "IP-CIDR,82.157.10.147/32,DIRECT,no-resolve",
         // Apple update & software delivery endpoints (high-bandwidth CDNs)
         "DOMAIN-SUFFIX,swcdn.apple.com,DIRECT",
         "DOMAIN-SUFFIX,updates.cdn-apple.com,DIRECT",
@@ -120,6 +123,8 @@ public enum DomesticRoutingOptimizer {
         "*.home.arpa",
         "*.tailscale.com",
         "*.ts.net",
+        "*headscale*",
+        "*.baizhiedu.xin",
         "captive.apple.com",
         "*.captive.apple.com",
         "time.*.com",

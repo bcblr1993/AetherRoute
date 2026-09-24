@@ -256,14 +256,24 @@ public enum CustomRuleValidator {
         guard parts.count == 2 else {
             return .invalid(reason: "IPv4 CIDR 必须包含斜杠前缀，例如 100.64.0.0/10")
         }
-        guard let prefix = Int(parts[1]), (0...32).contains(prefix) else {
-            return .invalid(reason: "IPv4 CIDR 前缀必须为 0 到 32 之间的整数")
+        guard let prefix = Int(parts[1]), (1...32).contains(prefix) else {
+            return .invalid(reason: "IPv4 CIDR 前缀必须为 1 到 32 之间的整数 (不支持 /0 全网劫持)")
         }
 
         var addr = in_addr()
         let ipString = String(parts[0])
         guard ipString.withCString({ inet_pton(AF_INET, $0, &addr) }) == 1 else {
             return .invalid(reason: "无效的 IPv4 地址: \(ipString)")
+        }
+
+        let hostOrderIP = UInt32(bigEndian: addr.s_addr)
+        let mask: UInt32 = prefix == 32 ? 0xFFFF_FFFF : ~((1 << (32 - prefix)) - 1)
+        if (hostOrderIP & ~mask) != 0 {
+            var canonicalIP = in_addr(s_addr: (hostOrderIP & mask).bigEndian)
+            var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            let canonicalStr = inet_ntop(AF_INET, &canonicalIP, &buffer, socklen_t(INET_ADDRSTRLEN))
+                .map { String(cString: $0) } ?? ipString
+            return .invalid(reason: "CIDR 主机位必须为 0，建议使用规范网络前缀: \(canonicalStr)/\(prefix)")
         }
         return .valid
     }
@@ -273,8 +283,8 @@ public enum CustomRuleValidator {
         guard parts.count == 2 else {
             return .invalid(reason: "IPv6 CIDR 必须包含斜杠前缀，例如 fd7a:115c:a1e0::/48")
         }
-        guard let prefix = Int(parts[1]), (0...128).contains(prefix) else {
-            return .invalid(reason: "IPv6 CIDR 前缀必须为 0 到 128 之间的整数")
+        guard let prefix = Int(parts[1]), (1...128).contains(prefix) else {
+            return .invalid(reason: "IPv6 CIDR 前缀必须为 1 到 128 之间的整数 (不支持 /0 全网劫持)")
         }
 
         var addr = in6_addr()
@@ -284,6 +294,7 @@ public enum CustomRuleValidator {
         }
         return .valid
     }
+
 
     private static func validateGeoIP(_ input: String) -> RuleValidationResult {
         let code = input.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()

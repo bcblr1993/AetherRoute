@@ -4,6 +4,26 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.26] - 2026-09-24
+
+### Fixed
+
+- Core Engine Physical Interface Socket Binding Bypass for Overlay Networks (`socket_helpers.rs`, `proxy/direct/mod.rs`):
+  resolved an issue where outgoing DIRECT TCP and UDP sockets created by the core proxy engine were forcibly bound to the physical outbound network interface (e.g. `en0` via `IP_BOUND_IF`), preventing the Darwin kernel from routing packets to virtual network interfaces like Tailscale's `utun*`. Implemented `is_overlay_network_address` filtering in Core Engine socket binding to bypass interface binding for Tailscale CGNAT subnet (`100.64.0.0/10`) and IPv6 overlay network (`fd7a:115c:a1e0::/48`), restoring direct peer-to-peer and virtual overlay routing.
+- Domestic Routing & Tailscale DERP/Headscale Bypass (`DomesticRoutingOptimizer.swift`):
+  added automated bypass rules and Fake-IP exclusion for Tailscale coordination and relay infrastructure, including `tailscale.com`, `ts.net`, `headscale.net`, `controlplane.tailscale.com`, and private Headscale DERP server relays.
+- Custom Rule Subnet Validation (`CustomRule.swift`):
+  prevented `/0` mask input in custom CIDR rules to ensure user rules cannot inadvertently degrade into global `0.0.0.0/0` catch-all filters.
+- Core Protocol Evidence & License Manifest Synchronization (`ProtocolCoreEvidence.json`, `ThirdPartyLicenses.json`):
+  updated git submodule commit `c23370da96b70e6282f04254b4a93761e2a54fee` and binary hashes for `libclashrs.a` and `libclashrs-direct.a`, ensuring 100% compliance with protocol release verification standards.
+
+### Verified
+
+- Tart Virtual Machine 6-Dimensional Matrix Acceptance (`aether-diag-1434`):
+  verified 100% pass rate across all 6 configurations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`) on build 2026092401 with automated post-test disk and log cleanup.
+- Physical Apple Silicon Mac mini Remote Validation (`chenxu@100.64.0.3`):
+  executed `test_remote_arm64.sh fast` on macOS 27.0 arm64, verifying 100% pass across all 50+ test suites (TCP flow throughput 7579 Mbps, packet engine 4484 Mbps, UDP integrity 10,000 datagrams with 0 drops). Tailscale SSH connectivity and peer ping latency verified fast and stable with AetherRoute running.
+
 ## [1.0.25] - 2026-09-23
 
 ### Fixed
