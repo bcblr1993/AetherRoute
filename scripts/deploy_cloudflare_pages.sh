@@ -20,4 +20,4 @@ done
 echo "==> Deploying AetherRoute Web Distribution to Cloudflare Pages..."
 npx --yes wrangler@3 pages deploy "$PUBLIC" --project-name=aetherroute --commit-dirty=true "$@"
 
-echo "==> Successfully deployed to Cloudflare Pages: https://aetherroute.pages.dev/"
+echo "==> Successfully deployed to Cloudflare Pages: https://www.aethernative.com/ (Pages: https://aetherroute.pages.dev/)"

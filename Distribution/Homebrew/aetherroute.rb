@@ -7,10 +7,10 @@ cask "aetherroute" do
   url "https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.1-build-2026091301/AetherRoute-1.0.1-build-2026091301-#{arch}-Notarized-Test-Normal-Core.dmg"
   name "AetherRoute"
   desc "Native, private routing client engineered exclusively for Apple silicon macOS"
-  homepage "https://aetherroute.pages.dev/"
+  homepage "https://www.aethernative.com/"
 
   livecheck do
-    url "https://aetherroute.pages.dev/releases/"
+    url "https://www.aethernative.com/releases/"
     regex(/AetherRoute\s+v?(\d+(?:\.\d+)+)/i)
   end
 

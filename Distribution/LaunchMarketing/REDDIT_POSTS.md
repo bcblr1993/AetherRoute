@@ -25,7 +25,7 @@ I spent months building **AetherRoute**—a 100% native macOS client written ent
 - **Privacy-First**: Profiles are encrypted with AES-GCM in your Apple Data Protection Keychain. Zero telemetry, no cloud accounts, no data collection.
 - **Apple Notarized**: Signed with Apple Developer ID and passed Apple Notarization.
 
-**Download & Info**: https://aetherroute.pages.dev/  
+**Download & Info**: https://www.aethernative.com/  
 **Homebrew**: `brew install --cask aetherroute`
 
 Feedback and feature requests are very welcome!
@@ -53,5 +53,5 @@ I built **AetherRoute** as a dedicated, native macOS routing client.
 - **Strict Configuration Sanitization**: When importing subscription YAMLs, script execution, external plug-ins, or remote WebUI downloads are completely disallowed to protect host integrity.
 - **No telemetry / No telemetry servers**: All configuration data is stored locally with AES-GCM authenticated encryption.
 
-Website: https://aetherroute.pages.dev/  
+Website: https://www.aethernative.com/  
 Would love feedback from fellow self-hosters managing modern VPS protocol nodes!

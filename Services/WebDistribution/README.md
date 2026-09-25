@@ -2,8 +2,8 @@
 
 This directory contains the official, static web distribution site for AetherRoute. It is deployed to and hosted exclusively on **Cloudflare Pages**:
 
-- **Official Web Site**: `https://aetherroute.pages.dev/`
-- **Releases Directory**: `https://aetherroute.pages.dev/releases/`
+- **Official Web Site**: `https://www.aethernative.com/`
+- **Releases Directory**: `https://www.aethernative.com/releases/`
 - **Artifact Downloads**: Distributed directly via GitHub Releases (`https://github.com/bcblr1993/AetherRoute/releases`) with Apple Notarized DMGs and published SHA-256 checksums.
 
 ## Architecture

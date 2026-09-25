@@ -7,7 +7,7 @@
         <language>en</language>
         <item>
             <title>Version 1.0.28 (Build 2026092501)</title>
-            <pubDate>Fri, 25 Sep 2026 20:34:03 +0800</pubDate>
+            <pubDate>Fri, 25 Sep 2026 21:19:32 +0800</pubDate>
             <sparkle:version>2026092501</sparkle:version>
             <sparkle:shortVersionString>1.0.28</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
@@ -146,7 +146,7 @@
 </div>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aetherroute.pages.dev/releases/1.0.28/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://www.aethernative.com/releases/1.0.28/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
