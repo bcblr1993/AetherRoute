@@ -55,7 +55,7 @@
 ### 1. 密钥与配置基准
 - **应用内置公钥**：`Config/sparkle_ed25519_pub.key`，内容必须与 `Config/App-Info.plist` 中的 `SUPublicEDKey` 严格一致（当前值为 `hVgNMayXzdIN2G5V0aeepQYjD2moJQ/ANUy14lqMtEM=`）。
 - **更新签名私钥**：`Config/sparkle_ed25519_priv.key`（受版本库安全保护，仅用于项目官方签名）。
-- **更新源清单地址**：`https://raw.githubusercontent.com/bcblr1993/AetherRoute/main/appcast.xml`。
+- **更新源清单地址**：`https://aethernative.com/apps/aetherroute/appcast.xml`。
 
 ### 2. 严禁事项（Forbidden Actions）
 - **严禁直接运行 `sign_update` 从系统钥匙串（Keychain）读取私钥**：
