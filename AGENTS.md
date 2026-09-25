@@ -61,18 +61,16 @@
   ```bash
   ./scripts/generate_sparkle_appcast.sh <DMG_PATH>
   ```
-- 同步/部署官方网站与分发通道：
-  ```bash
-  ./scripts/deploy_cloudflare_pages.sh
-  ```
 - 提交 Git 变更、打对应版本 Tag，并推送到远端仓库：
   ```bash
-  git commit -m "chore(release): 发布 v<VERSION> 正式版、Appcast 及官网分发源"
+  git commit -m "chore(release): 发布 v<VERSION> 正式版及 Appcast"
   git tag -a "v<VERSION>" -m "Release v<VERSION>"
   git push origin main --tags
   ```
-- 发布 GitHub Release 并上传公证 DMG 及校验文件：
+- 准备包含官方双语元数据隐藏块的 Release 说明文件（`<NOTES_FILE>` 末尾必须包含 `<!-- aethernative ... -->` 结构化配置，用于同步到新官网 `https://www.aethernative.com`）。
+- 发布 GitHub Release 并上传公证 DMG 及校验文件（发布后 GitHub Actions 自动触发 `aethernative-sync.yml` 通知新官网部署更新）：
   ```bash
   gh release create "v<VERSION>" <DMG_PATH> <SHA256SUMS_PATH> --title "v<VERSION>" --notes-file <NOTES_FILE>
   ```
+
 
