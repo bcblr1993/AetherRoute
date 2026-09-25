@@ -53,13 +53,13 @@
 - 编写 `Docs/ReleaseExceptions/<VERSION>.md`（如适用）。
 
 ### 5. 正式构建发布与官网同步 (Release & Site Deployment)
-- 执行正式公证发布构建：
+- 执行纯净正式发布 DMG 打包（强制执行零测试说明校验，磁盘卷标统一为 `AetherRoute <VERSION>`，完成 Developer ID 签名、Apple 官方公证与装订）：
   ```bash
-  ./scripts/release.sh Config/Signing.json "<NOTARY_PROFILE>" <VERSION> <BUILD> <OUTPUT_DIR>
+  ./scripts/package_release_dmg.sh outputs/notarized-candidate-<VERSION>-<BUILD>/<CANDIDATE_DMG> Config/Signing.json "<NOTARY_PROFILE>" <VERSION> <BUILD> outputs/release-<VERSION>-<BUILD>
   ```
 - 更新并签名 Sparkle 自动更新清单：
   ```bash
-  ./scripts/generate_sparkle_appcast.sh <DMG_PATH>
+  ./scripts/generate_sparkle_appcast.sh outputs/release-<VERSION>-<BUILD>/<DMG_FILE>
   ```
 - 提交 Git 变更、打对应版本 Tag，并推送到远端仓库：
   ```bash
@@ -68,9 +68,10 @@
   git push origin main --tags
   ```
 - 准备包含官方双语元数据隐藏块的 Release 说明文件（`<NOTES_FILE>` 末尾必须包含 `<!-- aethernative ... -->` 结构化配置，用于同步到新官网 `https://www.aethernative.com`）。
-- 发布 GitHub Release 并上传公证 DMG 及校验文件（发布后 GitHub Actions 自动触发 `aethernative-sync.yml` 通知新官网部署更新）：
+- 发布 GitHub Release 并上传公证纯净 DMG 及校验文件（发布后 GitHub Actions 自动触发 `aethernative-sync.yml` 通知新官网部署更新）：
   ```bash
   gh release create "v<VERSION>" <DMG_PATH> <SHA256SUMS_PATH> --title "v<VERSION>" --notes-file <NOTES_FILE>
   ```
+
 
 
