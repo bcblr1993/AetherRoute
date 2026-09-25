@@ -18,6 +18,10 @@ public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
     public let dnsPolicy: DNSRuntimePolicy
     public let proxySelections: [String: String]
     public let routingResources: [RoutingResourceKind: Data]
+    /// The host owns the user Keychain; a Developer ID system extension does
+    /// not share its data-protection Keychain context. Transport this key only
+    /// in the ephemeral start options, alongside the profile credentials.
+    public let fakeIPCacheKey: Data?
 
     public init(
         profileYAML: String,
@@ -25,7 +29,8 @@ public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
         bypassPolicy: BypassPolicy,
         dnsPolicy: DNSRuntimePolicy,
         proxySelections: [String: String],
-        routingResources: [RoutingResourceKind: Data]
+        routingResources: [RoutingResourceKind: Data],
+        fakeIPCacheKey: Data? = nil
     ) throws {
         formatVersion = Self.currentFormatVersion
         self.profileYAML = profileYAML
@@ -34,6 +39,7 @@ public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
         self.dnsPolicy = dnsPolicy
         self.proxySelections = proxySelections
         self.routingResources = routingResources
+        self.fakeIPCacheKey = fakeIPCacheKey
         try validate()
     }
 
@@ -69,6 +75,10 @@ public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
             guard !data.isEmpty, data.count <= kind.maximumBytes else {
                 throw ProviderLaunchSnapshotError.invalidRoutingResource(kind)
             }
+        }
+        if let fakeIPCacheKey,
+           fakeIPCacheKey.count != DataProtectionProfileKeyStore.keySizeBytes {
+            throw ProfileKeyStoreError.invalidKeyLength(fakeIPCacheKey.count)
         }
     }
 

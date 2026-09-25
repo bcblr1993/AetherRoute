@@ -44,7 +44,7 @@ cleanup() {
   if [ "$IS_MOUNTED" -eq 1 ]; then
     hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
   fi
-  rm -rf "$TEMPORARY" 2>/dev/null || true
+  find "$TEMPORARY" -depth -delete 2>/dev/null || true
 }
 trap cleanup EXIT HUP INT TERM
 

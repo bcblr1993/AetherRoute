@@ -306,7 +306,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                         )
                     )
                 case .diagnostics:
-                    .diagnostics(diagnostics.snapshot())
+                    .diagnostics(diagnostics.snapshot().attachingDataPlane(
+                        try? activeCore.dataPlaneDiagnosticsSnapshot()
+                    ))
                 case let .setRoutingMode(mode):
                     try applyRoutingMode(mode)
                 case .resetNetwork:

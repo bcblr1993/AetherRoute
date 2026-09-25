@@ -149,6 +149,20 @@ char *clash_start_packet_flow_with_policy_and_local_proxy_v1(
     const clash_packet_local_proxy_v1_t *local_proxy,
     int32_t multithread
 );
+/* key is exactly 32 bytes from the extension Keychain. The core writes only
+ * encrypted Fake-IP mappings beneath cwd; it never retains the caller buffer. */
+char *clash_start_packet_flow_with_policy_local_proxy_and_cache_v2(
+    const char *profile,
+    const char *log,
+    const char *cwd,
+    int32_t mtu,
+    int32_t routing_mode,
+    const clash_packet_dns_policy_v1_t *dns_policy,
+    const clash_packet_local_proxy_v1_t *local_proxy,
+    const uint8_t *cache_key,
+    size_t cache_key_length,
+    int32_t multithread
+);
 int32_t clash_shutdown(void);
 void clash_free_string(char *value);
 

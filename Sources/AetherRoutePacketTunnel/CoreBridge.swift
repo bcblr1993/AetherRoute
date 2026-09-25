@@ -30,6 +30,7 @@ protocol CoreBridge: Sendable {
     func telemetrySnapshot(
         maximumConnections: UInt16
     ) throws -> NetworkTelemetrySnapshot
+    func dataPlaneDiagnosticsSnapshot() throws -> DataPlaneDiagnosticSnapshot
     func resetNetworkState(interfaceIndex: UInt32) throws
     /// Signals the engine to stop and calls `completion` as soon as the tunnel
     /// is safe to tear down — it does **not** wait for the engine to unwind.
@@ -164,6 +165,12 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             throw error
         }
         PacketCoreRuntimeLog.logger.info("stage=prepareRuntimeDirectory success")
+        // The host supplies the stable key in ephemeral start options because
+        // the Developer ID system extension cannot read the user's Keychain.
+        let fakeIPCacheKey = snapshot.fakeIPCacheKey ?? Data()
+        guard fakeIPCacheKey.count == DataProtectionProfileKeyStore.keySizeBytes else {
+            throw ProfileKeyStoreError.invalidKeyLength(fakeIPCacheKey.count)
+        }
 
         // Admission is process-wide, not per-bridge. A replacement provider
         // instance starts with pristine state but inherits whatever engine the
@@ -237,6 +244,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             routingMode: configuration.mode,
             dnsPolicy: dnsPolicy,
             localProxy: configuration.localProxy,
+            fakeIPCacheKey: fakeIPCacheKey,
             generation: engineGeneration,
             completionGroup: engineCompletion
         )
@@ -576,6 +584,41 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         }
     }
 
+    func dataPlaneDiagnosticsSnapshot() throws -> DataPlaneDiagnosticSnapshot {
+        try controlLock.withLock {
+            guard isRunning(), clash_packet_flow_ready() == 1 else {
+                throw PacketTunnelSelectorError.unavailable
+            }
+            var requiredLength = 0
+            let sizeStatus = clash_packet_diagnostics_snapshot_v1(nil, 0, &requiredLength)
+            guard sizeStatus == CLASH_FLOW_OK, requiredLength == 104 else {
+                throw PacketTunnelSelectorError.responseTooLarge
+            }
+            var output = Data(count: requiredLength)
+            let status = output.withUnsafeMutableBytes { bytes in
+                clash_packet_diagnostics_snapshot_v1(
+                    bytes.bindMemory(to: UInt8.self).baseAddress,
+                    bytes.count,
+                    &requiredLength
+                )
+            }
+            guard status == CLASH_FLOW_OK, requiredLength == output.count else {
+                throw PacketTunnelSelectorError.unavailable
+            }
+            let bytes = [UInt8](output)
+            guard Array(bytes[0..<4]) == [0x41, 0x52, 0x44, 0x31],
+                  Array(bytes[4..<8]) == [0, 0, 0, 12] else {
+                throw PacketTunnelSelectorError.rejected
+            }
+            let values = (0..<12).map { index -> UInt64 in
+                bytes[(8 + index * 8)..<(16 + index * 8)].reduce(0) {
+                    ($0 << 8) | UInt64($1)
+                }
+            }
+            return try DataPlaneDiagnosticSnapshot(values: values)
+        }
+    }
+
     /// Rebuilds the engine's view of the host network after the path moved.
     ///
     /// The readiness check runs under `controlLock` like every other engine
@@ -722,6 +765,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         routingMode: RoutingMode,
         dnsPolicy: DNSRuntimePolicy,
         localProxy: LocalProxySettings,
+        fakeIPCacheKey: Data,
         generation: UInt64,
         completionGroup: DispatchGroup
     ) {
@@ -762,16 +806,20 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                         // Rust never opens or writes a packet-flow log file.
                         "".withCString { logPointer in
                             cwd.withCString { cwdPointer in
-                                clash_start_packet_flow_with_policy_and_local_proxy_v1(
-                                    profilePointer,
-                                    logPointer,
-                                    cwdPointer,
-                                    Int32(mtu),
-                                    routingModeABI,
-                                    policyPointer,
-                                    localProxyPointer,
-                                    1
-                                )
+                                fakeIPCacheKey.withUnsafeBytes { keyBytes in
+                                    clash_start_packet_flow_with_policy_local_proxy_and_cache_v2(
+                                        profilePointer,
+                                        logPointer,
+                                        cwdPointer,
+                                        Int32(mtu),
+                                        routingModeABI,
+                                        policyPointer,
+                                        localProxyPointer,
+                                        keyBytes.bindMemory(to: UInt8.self).baseAddress,
+                                        keyBytes.count,
+                                        1
+                                    )
+                                }
                             }
                         }
                     }

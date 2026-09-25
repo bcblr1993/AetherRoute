@@ -1071,6 +1071,7 @@ final class TunnelManager: ObservableObject {
         let bundleDirectory = bundledResourceDirectoryURL
         let requestedBypassPolicy = Self.sanitizeBypassPolicy(bypassPolicy)
         let requestedDNSPolicy = dnsRuntimePolicy
+        let requestedEngine = networkEngineMode
         let launchInput = try await Task.detached(
             priority: .userInitiated
         ) {
@@ -1102,7 +1103,12 @@ final class TunnelManager: ObservableObject {
                 bypassPolicy: requestedBypassPolicy,
                 dnsPolicy: requestedDNSPolicy,
                 proxySelections: initialSelections,
-                routingResources: try store.launchResourceSnapshot(for: profileYAML)
+                routingResources: try store.launchResourceSnapshot(for: profileYAML),
+                fakeIPCacheKey: requestedEngine == .tun
+                    ? try DataProtectionProfileKeyStore(
+                        service: "com.aetherroute.fake-ip-cache"
+                    ).loadOrCreateKey(keyID: "fake-ip-cache.v1")
+                    : nil
             )
             return (
                 snapshot,
@@ -1786,4 +1792,3 @@ enum TunnelManagerError: LocalizedError, Sendable, Equatable {
         }
     }
 }
-

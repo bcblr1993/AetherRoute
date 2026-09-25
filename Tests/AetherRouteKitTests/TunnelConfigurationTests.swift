@@ -257,7 +257,8 @@ final class TunnelConfigurationTests: XCTestCase {
             bypassPolicy: .empty,
             dnsPolicy: .inherited,
             proxySelections: ["Main": "Local Test"],
-            routingResources: [:]
+            routingResources: [:],
+            fakeIPCacheKey: Data(repeating: 0x53, count: 32)
         )
 
         let options = try ProviderLaunchSnapshotCodec.startOptions(

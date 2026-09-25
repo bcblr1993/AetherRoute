@@ -257,6 +257,21 @@ final class ProxySelectionProviderMessageTests: XCTestCase {
         )
     }
 
+    func testDiagnosticsResponseCarriesDataPlaneCounters() throws {
+        let core = try DataPlaneDiagnosticSnapshot(values: Array(0..<12).map(UInt64.init))
+        let snapshot = ProviderDiagnosticSnapshot(dataPlane: core)
+        let encoded = try ProxySelectionProviderMessageCodec.encode(
+            response: .diagnostics(snapshot)
+        )
+        XCTAssertEqual(encoded.count, 128)
+        XCTAssertEqual(
+            try ProxySelectionProviderMessageCodec.decodeResponse(encoded),
+            .diagnostics(snapshot)
+        )
+        XCTAssertEqual(core.fakeIpMappingMissingCount, 10)
+        XCTAssertEqual(core.tcpConnectErrorCount, 7)
+    }
+
     func testResponseRejectsInvalidSelectionAndOversizedNames() throws {
         XCTAssertThrowsError(
             try ProxySelectionProviderMessageCodec.encode(

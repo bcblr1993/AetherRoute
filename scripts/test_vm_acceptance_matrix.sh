@@ -23,6 +23,7 @@ SSH_KEY=${AETHERROUTE_VM_SSH_KEY:-$HOME/.ssh/id_ed25519}
 VM_USER=${AETHERROUTE_VM_USER:-chenxu}
 ENGINES=${AETHERROUTE_MATRIX_ENGINES:-tun transparent}
 ROUTING_MODES=${AETHERROUTE_MATRIX_ROUTING:-rule global direct}
+QA_PROFILE=${AETHERROUTE_VM_QA_PROFILE:-}
 MIN_FREE_KB=${AETHERROUTE_VM_MIN_FREE_KB:-2097152}
 
 # Values below become remote shell arguments. Reject unknown modes before any
@@ -39,6 +40,7 @@ for routing in $ROUTING_MODES; do
 done
 case "$MIN_FREE_KB" in ''|*[!0-9]*) echo "invalid disk budget" >&2; exit 64 ;; esac
 test "$engine_count" -gt 0 && test "$routing_count" -gt 0 || exit 64
+case "$QA_PROFILE" in ''|debug-optimized) ;; *) echo "invalid QA profile fixture" >&2; exit 64 ;; esac
 
 usage() {
   echo "usage: $0 /absolute/candidate.zip [vm-name] [/absolute/report-dir]" >&2
@@ -345,7 +347,13 @@ for engine in $ENGINES; do
         -data \"\$(printf '%s' \"\$JSON\" | xxd -p | tr -d '\n')\"
       test \"\$(defaults read \"\$PREF\" AetherRoute.NetworkEngineMode)\" = $engine
       test \"\$(defaults read \"\$PREF\" defaultRoutingMode)\" = $routing
-      open -a /Applications/AetherRoute.app --env AETHERROUTE_QA_AUTOCONNECT=1"
+      if [ '$QA_PROFILE' = debug-optimized ]; then
+        fixture=\$HOME/Library/Group\ Containers/group.com.aetherroute.desktop/Library/Application\ Support/AetherRoute/debug_profile_optimized.yaml
+        test -f "\$fixture"
+        open -a /Applications/AetherRoute.app --env AETHERROUTE_QA_AUTOCONNECT=1 --env AETHERROUTE_QA_PROFILE_PATH="\$fixture"
+      else
+        open -a /Applications/AetherRoute.app --env AETHERROUTE_QA_AUTOCONNECT=1
+      fi"
 
     # A resident transparent provider may already be stopped. Require current
     # candidate startup evidence rather than counting an idle process as ready.

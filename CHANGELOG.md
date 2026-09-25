@@ -4,6 +4,21 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Preserved Packet Tunnel Fake-IP mappings across provider and VM restarts in an authenticated encrypted cache. The desktop app supplies the cache key through the ephemeral provider launch snapshot because the Developer ID system extension cannot read the user's Keychain.
+- Recovered HTTPS destinations from TLS ClientHello SNI when a client keeps a Fake-IP assigned by a version before the encrypted cache existed. Replayed the ClientHello unchanged and stopped unmapped Fake-IP addresses from being treated as public destinations.
+- Exposed Fake-IP mapping and reverse-lookup failures alongside TCP connection and network-reset counters in provider diagnostics.
+- Updated the local DMG cleanup guard and the Tart matrix fixture so QA runs can explicitly import the current test profile.
+
+### Verified
+
+- `cargo test -p clash-lib --lib`: 337 passed, 12 ignored; `./scripts/test.sh`: passed.
+- Developer ID signed local QA build `2026092601` passed all six Tart VM network configurations using the new-server profile. The previously failing `198.18.0.11` HTTPS request returned HTTP 404 before and after a VM reboot; the encrypted cache remained mode `600` without a plaintext hostname.
+- Candidate was installed only inside `aether-diag-1434`. No local host installation, physical Mac gate, tag, push, or release was performed.
+
 ## [1.0.28] - 2026-09-25
 
 ### Fixed

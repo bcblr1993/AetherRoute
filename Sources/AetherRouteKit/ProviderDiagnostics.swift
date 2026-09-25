@@ -1,5 +1,43 @@
 import Foundation
 
+/// Aggregate TUN core counters. Missing means the engine did not provide a snapshot.
+public struct DataPlaneDiagnosticSnapshot: Codable, Equatable, Sendable {
+    public let outboundInterfaceIndex: UInt64
+    public let tcpBindFailedCount: UInt64
+    public let tcpConnectErrorCount: UInt64
+    public let networkStateResetCount: UInt64
+    public let fakeIpMappingMissingCount: UInt64
+    public let fakeIpReverseLookupFailedCount: UInt64
+
+    public init(values: [UInt64]) throws {
+        guard values.count == 12 else { throw ProxySelectionProviderMessageError.malformed }
+        outboundInterfaceIndex = values[0]
+        tcpBindFailedCount = values[6]
+        tcpConnectErrorCount = values[7]
+        networkStateResetCount = values[8]
+        fakeIpMappingMissingCount = values[10]
+        fakeIpReverseLookupFailedCount = values[11]
+    }
+
+    public init(selectedValues: [UInt64]) throws {
+        guard selectedValues.count == 6 else {
+            throw ProxySelectionProviderMessageError.malformed
+        }
+        outboundInterfaceIndex = selectedValues[0]
+        tcpBindFailedCount = selectedValues[1]
+        tcpConnectErrorCount = selectedValues[2]
+        networkStateResetCount = selectedValues[3]
+        fakeIpMappingMissingCount = selectedValues[4]
+        fakeIpReverseLookupFailedCount = selectedValues[5]
+    }
+
+    public var values: [UInt64] {
+        [outboundInterfaceIndex, tcpBindFailedCount, tcpConnectErrorCount,
+         networkStateResetCount, fakeIpMappingMissingCount,
+         fakeIpReverseLookupFailedCount]
+    }
+}
+
 /// Fixed, aggregate provider counters. No field can contain profile, endpoint,
 /// rule, credential, or free-form error data.
 public struct ProviderDiagnosticSnapshot: Codable, Equatable, Sendable {
@@ -13,6 +51,7 @@ public struct ProviderDiagnosticSnapshot: Codable, Equatable, Sendable {
     public let oversizedControlResponseCount: UInt64
     public let internalControlFailureCount: UInt64
     public let flowAdmissionFailureCount: UInt64
+    public let dataPlane: DataPlaneDiagnosticSnapshot?
 
     public init(
         startupFailureCount: UInt64 = 0,
@@ -22,7 +61,8 @@ public struct ProviderDiagnosticSnapshot: Codable, Equatable, Sendable {
         rejectedControlRequestCount: UInt64 = 0,
         oversizedControlResponseCount: UInt64 = 0,
         internalControlFailureCount: UInt64 = 0,
-        flowAdmissionFailureCount: UInt64 = 0
+        flowAdmissionFailureCount: UInt64 = 0,
+        dataPlane: DataPlaneDiagnosticSnapshot? = nil
     ) {
         self.startupFailureCount = startupFailureCount
         self.networkSettingsFailureCount = networkSettingsFailureCount
@@ -32,6 +72,23 @@ public struct ProviderDiagnosticSnapshot: Codable, Equatable, Sendable {
         self.oversizedControlResponseCount = oversizedControlResponseCount
         self.internalControlFailureCount = internalControlFailureCount
         self.flowAdmissionFailureCount = flowAdmissionFailureCount
+        self.dataPlane = dataPlane
+    }
+
+    public func attachingDataPlane(
+        _ dataPlane: DataPlaneDiagnosticSnapshot?
+    ) -> ProviderDiagnosticSnapshot {
+        ProviderDiagnosticSnapshot(
+            startupFailureCount: startupFailureCount,
+            networkSettingsFailureCount: networkSettingsFailureCount,
+            invalidControlRequestCount: invalidControlRequestCount,
+            unavailableControlRequestCount: unavailableControlRequestCount,
+            rejectedControlRequestCount: rejectedControlRequestCount,
+            oversizedControlResponseCount: oversizedControlResponseCount,
+            internalControlFailureCount: internalControlFailureCount,
+            flowAdmissionFailureCount: flowAdmissionFailureCount,
+            dataPlane: dataPlane
+        )
     }
 }
 

@@ -384,7 +384,7 @@ public enum ProxySelectionProviderMessageCodec {
             output.append(5)
             output.append(contentsOf: [0, 0, 0])
             appendUInt32(noSelection, to: &output)
-            appendUInt32(diagnosticCounterCount, to: &output)
+            appendUInt32(diagnosticCounterCount + (snapshot.dataPlane == nil ? 0 : 6), to: &output)
             for value in [
                 snapshot.startupFailureCount,
                 snapshot.networkSettingsFailureCount,
@@ -396,6 +396,9 @@ public enum ProxySelectionProviderMessageCodec {
                 snapshot.flowAdmissionFailureCount,
             ] {
                 appendUInt64(value, to: &output)
+            }
+            if let dataPlane = snapshot.dataPlane {
+                for value in dataPlane.values { appendUInt64(value, to: &output) }
             }
             return output
         case let .routingMode(mode):
@@ -469,9 +472,9 @@ public enum ProxySelectionProviderMessageCodec {
             guard
                 bytes[5] == 0,
                 selectedIndex == noSelection,
-                memberCount == diagnosticCounterCount,
+                memberCount == diagnosticCounterCount || memberCount == diagnosticCounterCount + 6,
                 data.count == responseHeaderBytes
-                    + Int(diagnosticCounterCount) * MemoryLayout<UInt64>.size
+                    + Int(memberCount) * MemoryLayout<UInt64>.size
             else { throw ProxySelectionProviderMessageError.malformed }
         case 6:
             guard
@@ -506,8 +509,8 @@ public enum ProxySelectionProviderMessageCodec {
         }
         if bytes[4] == 5 {
             var counters: [UInt64] = []
-            counters.reserveCapacity(Int(diagnosticCounterCount))
-            for _ in 0..<diagnosticCounterCount {
+            counters.reserveCapacity(Int(memberCount))
+            for _ in 0..<memberCount {
                 guard let value = readUInt64(bytes, at: offset) else {
                     throw ProxySelectionProviderMessageError.malformed
                 }
@@ -526,7 +529,10 @@ public enum ProxySelectionProviderMessageCodec {
                     rejectedControlRequestCount: counters[4],
                     oversizedControlResponseCount: counters[5],
                     internalControlFailureCount: counters[6],
-                    flowAdmissionFailureCount: counters[7]
+                    flowAdmissionFailureCount: counters[7],
+                    dataPlane: memberCount == diagnosticCounterCount + 6
+                        ? try DataPlaneDiagnosticSnapshot(selectedValues: Array(counters[8..<14]))
+                        : nil
                 )
             )
         }
@@ -771,4 +777,3 @@ public enum ReloadProfilePayloadCodec {
         )
     }
 }
-
