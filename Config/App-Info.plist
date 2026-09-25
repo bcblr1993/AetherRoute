@@ -100,7 +100,7 @@
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/bcblr1993/AetherRoute/main/appcast.xml</string>
+	<string>https://aethernative.com/apps/aetherroute/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>hVgNMayXzdIN2G5V0aeepQYjD2moJQ/ANUy14lqMtEM=</string>
 	<key>SUScheduledCheckInterval</key>

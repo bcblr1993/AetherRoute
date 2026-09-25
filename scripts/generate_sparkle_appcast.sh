@@ -146,7 +146,7 @@ func wrapWithAppleStyle(content: String, version: String, build: String) -> Stri
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aetherroute.pages.dev/releases/\(version)/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/\(version)/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
 """
 
