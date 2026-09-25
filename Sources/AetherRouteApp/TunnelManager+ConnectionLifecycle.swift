@@ -369,16 +369,25 @@ extension TunnelManager {
     func cancelConnectionReadiness() {
         connectionReadinessTask?.cancel()
         connectionReadinessTask = nil
-        Self.probeSession.getAllTasks { tasks in
-            tasks.forEach { $0.cancel() }
+        Self.probeSessionLock.withLock {
+            Self.activeProbeSession?.getAllTasks { tasks in
+                tasks.forEach { $0.cancel() }
+            }
         }
         isVerifyingProxyReadiness = false
         connectionQuality = .unknown
     }
 
     func verifyCurrentRouteDataPlane() async throws {
-        let statusCode = try await currentRouteDataPlaneStatus()
-        guard ProxyConnectionReadinessPolicy.acceptsProbeStatus(statusCode) else {
+        var statusCode: Int?
+        do {
+            statusCode = try await currentRouteDataPlaneStatus()
+        } catch {
+            // Give a second attempt with refreshed probe session before failing.
+            Self.refreshProbeSession()
+            statusCode = try await currentRouteDataPlaneStatus()
+        }
+        guard let code = statusCode, ProxyConnectionReadinessPolicy.acceptsProbeStatus(code) else {
             throw TunnelManagerError.noResponsiveProxy
         }
     }
@@ -413,28 +422,46 @@ extension TunnelManager {
         throw lastError
     }
 
-    /// One shared session for every data-plane probe.
+    /// Dynamic, self-healing session for data-plane probes.
     ///
-    /// A fresh `URLSession` per probe rebuilt the connection pool and repeated
-    /// the TLS handshake on each health tick, which made the probe slower than
-    /// the route it was measuring. Cache policy and a unique query item keep
-    /// each request honest without paying that cost. The resource timeout is
-    /// the outer bound for the slowest caller; individual requests still carry
-    /// their own, shorter `timeoutInterval`.
-    private static let probeSession: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.timeoutIntervalForRequest =
-            TimeInterval(TunnelStartupTimingPolicy
-                .automaticRouteCandidateProbeTimeoutSeconds) + 5
-        configuration.timeoutIntervalForResource =
-            TimeInterval(TunnelStartupTimingPolicy
-                .automaticRouteCandidateProbeTimeoutSeconds) + 10
-        configuration.waitsForConnectivity = false
-        configuration.httpMaximumConnectionsPerHost = 1
-        configuration.httpShouldSetCookies = false
-        return URLSession(configuration: configuration)
-    }()
+    /// Preserves connection reuse during steady-state probing while allowing
+    /// safe recreation when network topology, sleep/wake, or interface routing changes.
+    private static let probeSessionLock = NSLock()
+    private static var activeProbeSession: URLSession?
+
+    private static func resolveProbeSession(recreate: Bool = false) -> URLSession {
+        probeSessionLock.withLock {
+            if recreate, let existing = activeProbeSession {
+                existing.invalidateAndCancel()
+                activeProbeSession = nil
+            }
+            if let activeProbeSession {
+                return activeProbeSession
+            }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+            configuration.timeoutIntervalForRequest =
+                TimeInterval(TunnelStartupTimingPolicy
+                    .automaticRouteCandidateProbeTimeoutSeconds) + 5
+            configuration.timeoutIntervalForResource =
+                TimeInterval(TunnelStartupTimingPolicy
+                    .automaticRouteCandidateProbeTimeoutSeconds) + 10
+            configuration.waitsForConnectivity = false
+            configuration.httpMaximumConnectionsPerHost = 1
+            configuration.httpShouldSetCookies = false
+            let session = URLSession(configuration: configuration)
+            activeProbeSession = session
+            return session
+        }
+    }
+
+    static func refreshProbeSession() {
+        _ = resolveProbeSession(recreate: true)
+    }
+
+    private static var probeSession: URLSession {
+        resolveProbeSession(recreate: false)
+    }
 
     func currentRouteDataPlaneStatus(
         timeoutInterval: TimeInterval = 10
@@ -455,15 +482,33 @@ extension TunnelManager {
         request.timeoutInterval = timeoutInterval
         request.assumesHTTP3Capable = false
         request.httpMethod = "GET"
-        let (_, response) = try await Self.probeSession.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw TunnelManagerError.noResponsiveProxy
+
+        let session = Self.resolveProbeSession()
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw TunnelManagerError.noResponsiveProxy
+            }
+            return http.statusCode
+        } catch let urlError as URLError where urlError.code == .notConnectedToInternet
+            || urlError.code == .networkConnectionLost
+            || urlError.code == .cannotConnectToHost
+            || urlError.code == .dnsLookupFailed
+            || urlError.code == .timedOut {
+            // Path was stale or invalidated by interface/route change. Recreate session and retry once.
+            Self.refreshProbeSession()
+            let freshSession = Self.resolveProbeSession()
+            let (_, response) = try await freshSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw TunnelManagerError.noResponsiveProxy
+            }
+            return http.statusCode
         }
-        return http.statusCode
     }
 
     func resetConnectionReadiness() {
         cancelConnectionReadiness()
+        Self.refreshProbeSession()
         if providerConnectionID != nil {
             proxySelectionRequests = []
         }

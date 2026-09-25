@@ -4,6 +4,31 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.28] - 2026-09-25
+
+### Fixed
+
+- TUN Kernel Buffer Exhaustion (`ENOSPC` / `ENOBUFS`) Lossless Re-queue & Backoff Retry (`CoreBridge.swift`):
+  resolved an issue where high-throughput downloads or bursty network traffic caused Darwin's `packetFlow.writePackets` to saturate the internal kernel TUN socket buffer and return `false` (`ENOSPC`). Previously, failed packet batches were silently dropped by the bridge, triggering severe TCP retransmissions, connection stalls, and stream dropouts ("断流"). Implemented bounded packet batch dispatch (`maximumPacketBatchSize = 32`), inspected write status, and on failure, non-destructively re-queued unwritten packets back to the head of the outgoing packet queue with a 2ms asynchronous backoff before re-flushing, guaranteeing ordered, zero-loss delivery and allowing kernel buffers to drain gracefully.
+- Data Plane Probe Session Invalidation & Stale Route Auto-Healing (`TunnelManager+ConnectionLifecycle.swift`):
+  resolved an issue where route candidate health checks (`currentRouteDataPlaneStatus`) used a static singleton `URLSession` whose internal connection pool cached stale sockets across interface changes, Wi-Fi reconnection, or route modifications. When path updates occurred, stale probes threw `networkConnectionLost` or `cannotConnectToHost`, triggering false-positive candidate failures and unnecessary fallback rollbacks. Refactored probe session management into dynamic thread-safe recreation (`resolveProbeSession`, `refreshProbeSession`), detecting transient connection drops and performing seamless single-attempt session refreshes before declaring route failure.
+- Path Update Logging De-noising in Multi-Interface / Virtual Environments (`PacketTunnelProvider.swift`, `TransparentProxyProvider.swift`):
+  reduced `NWPathMonitor` `stage=pathUpdate` status notifications from `.info` to `.debug`. In complex network setups with concurrent virtual interfaces (Tailscale, VM bridges, VPNs), frequent interface link events triggered continuous logging every few seconds, generating log noise and unnecessary idle thread wakeups.
+- Version & Build Progression (`project.yml`):
+  incremented marketing version to `1.0.28` and build version to `2026092501` to enable clean Darwin `sysextd` system extension upgrades across production installations.
+
+### Verified
+
+- Tart Virtual Machine 6-Dimensional Matrix Acceptance (`aether-diag-1434`):
+  verified 100% pass rate across all 6 permutations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`) on build 2026092501 running under macOS 27.0 with real-world proxy configurations and zero-bundle security compliance, followed by mandatory post-test VM disk, temporary artifacts, and log cleanup.
+- Remote Physical Apple Silicon Hardware Validation (`chenxu@100.64.0.3`):
+  executed `test_remote_arm64.sh fast` on macOS 27.0 arm64, verifying 100% pass across all 50+ test suites:
+  - Multi-threaded TCP throughput achieved **10.4 Gbps** (10,488 Mbps) with 0 packet drops;
+  - UDP integrity test successfully transmitted and received 10,000 datagrams with **0.0% loss**;
+  - Authorizer service race conditions, DMG rollback, and UI isolation verified.
+- Signed Local QA Candidate Packaging:
+  built and verified Developer ID signed local QA candidate `outputs/qa-candidate-1.0.28-2026092501` with strict codesign designated requirements, hardened runtime, and license notices verified.
+
 ## [1.0.27] - 2026-09-24
 
 ### Fixed

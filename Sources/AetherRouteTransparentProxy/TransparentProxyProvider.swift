@@ -372,7 +372,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         pathMonitor = monitor
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
-            Self.osLogger.info(
+            Self.osLogger.debug(
                 "stage=pathUpdate status=\(String(describing: path.status), privacy: .public) isExpensive=\(path.isExpensive, privacy: .public)"
             )
             self.uplinkLock.withLock { self.physicalInterfaces = path.availableInterfaces }

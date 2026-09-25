@@ -349,7 +349,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         pathMonitor = monitor
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
-            Self.runtimeLogger.info(
+            Self.runtimeLogger.debug(
                 "stage=pathUpdate status=\(String(describing: path.status), privacy: .public) isExpensive=\(path.isExpensive, privacy: .public)"
             )
             self.uplinkLock.withLock { self.physicalInterfaces = path.availableInterfaces }

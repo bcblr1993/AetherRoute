@@ -627,6 +627,9 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         resetLock.withLock { resetInFlight = false }
     }
 
+    private static let maximumPacketBatchSize: Int = 32
+    private static let maximumPendingPackets: Int = 4_096
+
     fileprivate func writePacket(
         _ data: Data,
         ipVersion: UInt8
@@ -635,6 +638,11 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         let proto = ipVersion == 6 ? Self.ipv6Protocol : Self.ipv4Protocol
 
         let shouldSchedule: Bool = outgoingPacketLock.withLock {
+            if pendingPackets.count >= Self.maximumPendingPackets {
+                // Drop oldest packet under extreme high water mark to bound memory.
+                pendingPackets.removeFirst()
+                pendingProtocols.removeFirst()
+            }
             if pendingPackets.isEmpty && pendingPackets.capacity < 64 {
                 pendingPackets.reserveCapacity(64)
                 pendingProtocols.reserveCapacity(64)
@@ -671,10 +679,11 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                     isFlushScheduled = false
                     return ([], [])
                 }
-                let batchPackets = pendingPackets
-                let batchProtocols = pendingProtocols
-                pendingPackets.removeAll(keepingCapacity: true)
-                pendingProtocols.removeAll(keepingCapacity: true)
+                let batchCount = min(pendingPackets.count, Self.maximumPacketBatchSize)
+                let batchPackets = Array(pendingPackets.prefix(batchCount))
+                let batchProtocols = Array(pendingProtocols.prefix(batchCount))
+                pendingPackets.removeFirst(batchCount)
+                pendingProtocols.removeFirst(batchCount)
                 return (batchPackets, batchProtocols)
             }
 
@@ -682,11 +691,26 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                 return
             }
 
-            autoreleasepool {
-                _ = self.packetFlow.writePackets(
+            let success = autoreleasepool {
+                self.packetFlow.writePackets(
                     packets,
                     withProtocols: protocols
                 )
+            }
+
+            if !success {
+                // Darwin utun kernel buffer exhausted (ENOSPC / ENOBUFS).
+                // Re-queue the failed batch at the head so no packet is lost,
+                // and back off for 2ms to allow kernel socket buffer to drain.
+                outgoingPacketLock.withLock {
+                    pendingPackets.insert(contentsOf: packets, at: 0)
+                    pendingProtocols.insert(contentsOf: protocols, at: 0)
+                    isFlushScheduled = true
+                }
+                packetQueue.asyncAfter(deadline: .now() + .milliseconds(2)) { [weak self] in
+                    self?.flushPendingPackets()
+                }
+                return
             }
         }
     }
