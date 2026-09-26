@@ -177,6 +177,7 @@ vm "set -e
   if pgrep -x AetherRoute >/dev/null; then
     echo 'previous app did not quit cleanly; refusing replacement' >&2; exit 1
   fi
+  sudo killall -9 com.aetherroute.desktop.tunnel com.aetherroute.desktop.transparent-proxy 2>/dev/null || true
   sleep 2
   ditto -x -k candidate.zip extract
   codesign --verify --deep --strict extract/AetherRoute.app
@@ -230,6 +231,7 @@ stop_app() {
     fi
     sleep 1
   done
+  sudo killall -9 com.aetherroute.desktop.tunnel com.aetherroute.desktop.transparent-proxy 2>/dev/null || true
 }
 
 restore_engine() {

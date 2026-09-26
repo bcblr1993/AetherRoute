@@ -163,10 +163,10 @@ codesign_with_timestamp_retry() {
       test -z "$output" || printf '%s\n' "$output"
       return 0
     fi
-    if test "$attempt" -lt 3 \
+    if test "$attempt" -lt 5 \
       && printf '%s\n' "$output" \
-        | grep -Eiq 'timestamp service is not available'; then
-      echo "Apple timestamp service unavailable; retrying codesign ($attempt/3)" >&2
+        | grep -Eiq '(timestamp service is not available|A timestamp was expected but was not found|resource temporarily unavailable)'; then
+      echo "Apple timestamp service unavailable; retrying codesign ($attempt/5)" >&2
       attempt=$((attempt+1))
       sleep 5
       continue

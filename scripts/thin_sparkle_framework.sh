@@ -24,11 +24,31 @@ find "$SPARKLE" -type f | while read -r binary_file; do
   fi
 done
 
+codesign_with_retry() {
+  attempt=1
+  while [ "$attempt" -le 5 ]; do
+    output=
+    if output=$(codesign "$@" 2>&1); then
+      [ -z "$output" ] || printf '%s\n' "$output"
+      return 0
+    fi
+    if [ "$attempt" -lt 5 ] && printf '%s\n' "$output" | grep -Eiq '(timestamp service is not available|A timestamp was expected but was not found|resource temporarily unavailable)'; then
+      echo "Apple timestamp service unavailable; retrying codesign ($attempt/5)..." >&2
+      attempt=$((attempt + 1))
+      sleep 3
+      continue
+    fi
+    printf '%s\n' "$output" >&2
+    return 1
+  done
+  return 1
+}
+
 find "$SPARKLE" -name "*.xpc" -o -name "Updater.app" -o -name "Autoupdate" | while read -r helper; do
   if [ "$IDENTITY" = "-" ]; then
     codesign -f -s - "$helper"
   else
-    codesign -f -s "$IDENTITY" -o runtime --timestamp "$helper"
+    codesign_with_retry -f -s "$IDENTITY" -o runtime --timestamp=http://timestamp.apple.com/ts01 "$helper"
   fi
 done
 
@@ -43,8 +63,8 @@ else
     echo "Extracted entitlements contain unexpanded template variables: $(grep '\$(' "$ENTITLEMENTS")" >&2
     exit 1
   fi
-  codesign -f -s "$IDENTITY" -o runtime --timestamp "$SPARKLE"
-  codesign -f -s "$IDENTITY" --entitlements "$ENTITLEMENTS" -o runtime --timestamp "$APP"
+  codesign_with_retry -f -s "$IDENTITY" -o runtime --timestamp=http://timestamp.apple.com/ts01 "$SPARKLE"
+  codesign_with_retry -f -s "$IDENTITY" --entitlements "$ENTITLEMENTS" -o runtime --timestamp=http://timestamp.apple.com/ts01 "$APP"
   rm -f "$ENTITLEMENTS"
   trap - EXIT HUP INT TERM
 fi

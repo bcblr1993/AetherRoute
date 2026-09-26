@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.28 (Build 2026092501)</title>
-            <pubDate>Fri, 25 Sep 2026 22:20:25 +0800</pubDate>
-            <sparkle:version>2026092501</sparkle:version>
-            <sparkle:shortVersionString>1.0.28</sparkle:shortVersionString>
+            <title>Version 1.0.29 (Build 2026092601)</title>
+            <pubDate>Sat, 26 Sep 2026 08:59:43 +0800</pubDate>
+            <sparkle:version>2026092601</sparkle:version>
+            <sparkle:shortVersionString>1.0.29</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,8 +119,8 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.0.28 更新要点</span>
-  <span class="release-badge">Build 2026092501 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.0.29 更新要点</span>
+  <span class="release-badge">Build 2026092601 · 正式发布</span>
 </div>
 <div class="section">
   <span class="section-tag tag-feature">🚀 核心功能：全透明零配置国内与 Apple 服务加速</span>
@@ -146,13 +146,13 @@
 </div>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.0.28/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.0.29/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.28/AetherRoute-1.0.28-build-2026092501-arm64.dmg"
-                sparkle:edSignature="g+HpFCZFXUszCRfvFTUmXM6gnXFg9SH6QfPeY546v//FP0lhofqvcKdh1AttwLofqoJsjjN2Ws63O+jXle9eAQ=="
-                length="25879675"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.29/AetherRoute-1.0.29-build-2026092601-arm64.dmg"
+                sparkle:edSignature="r51lIfgzW+ydwL7oKOZHo8eiaY/zYobXzT9aOjpNHcELtryUGshC4XGmRcwda7/5YEJ81kXeFkuAmSl/AgJJDw=="
+                length="25945260"
                 type="application/octet-stream" />
         </item>
     </channel>

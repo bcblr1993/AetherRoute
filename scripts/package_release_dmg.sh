@@ -122,7 +122,15 @@ ditto "$WRITE_ONCE_DMG" "$FINAL_LOCAL_DMG"
 hdiutil verify "$FINAL_LOCAL_DMG" >/dev/null
 
 echo "==> Signing DMG with Developer ID"
-codesign --force --timestamp=http://timestamp.apple.com/ts01 --sign "$IDENTITY" "$FINAL_LOCAL_DMG"
+attempt=1
+while [ "$attempt" -le 5 ]; do
+  if codesign --force --timestamp=http://timestamp.apple.com/ts01 --sign "$IDENTITY" "$FINAL_LOCAL_DMG"; then
+    break
+  fi
+  echo "Timestamp busy; retrying codesign ($attempt/5)..." >&2
+  attempt=$((attempt + 1))
+  sleep 3
+done
 
 echo "==> Submitting DMG to Apple Notarization (profile: $NOTARY_PROFILE)..."
 NOTARY_RESULT="$TEMPORARY/dmg-notary-result.json"

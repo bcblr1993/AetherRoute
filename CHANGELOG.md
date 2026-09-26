@@ -6,18 +6,29 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.0.29] - 2026-09-26
+
 ### Fixed
 
-- Preserved Packet Tunnel Fake-IP mappings across provider and VM restarts in an authenticated encrypted cache. The desktop app supplies the cache key through the ephemeral provider launch snapshot because the Developer ID system extension cannot read the user's Keychain.
+- Preserved Packet Tunnel Fake-IP mappings across provider and VM restarts in an authenticated encrypted cache. The desktop app supplies the cache key through the ephemeral provider launch snapshot because the Developer ID system extension cannot read the user's Keychain (`CoreBridge.swift`, `TunnelManager.swift`, Rust Core commit `4bf21dc`).
 - Recovered HTTPS destinations from TLS ClientHello SNI when a client keeps a Fake-IP assigned by a version before the encrypted cache existed. Replayed the ClientHello unchanged and stopped unmapped Fake-IP addresses from being treated as public destinations.
 - Exposed Fake-IP mapping and reverse-lookup failures alongside TCP connection and network-reset counters in provider diagnostics.
-- Updated the local DMG cleanup guard and the Tart matrix fixture so QA runs can explicitly import the current test profile.
+- Updated the local DMG cleanup guard and established the zero-test-note release packaging standard (`scripts/package_release_dmg.sh`), enforcing that production DMGs carry volume name `AetherRoute <VERSION>` and strictly prohibit `测试版本说明.txt` or `README.txt`.
+- Enhanced Apple codesign timestamp retry and robustness in build scripts (`scripts/build_notarized_test_candidate.sh`, `scripts/thin_sparkle_framework.sh`).
 
 ### Verified
 
-- `cargo test -p clash-lib --lib`: 337 passed, 12 ignored; `./scripts/test.sh`: passed.
-- Developer ID signed local QA build `2026092601` passed all six Tart VM network configurations using the new-server profile. The previously failing `198.18.0.11` HTTPS request returned HTTP 404 before and after a VM reboot; the encrypted cache remained mode `600` without a plaintext hostname.
-- Candidate was installed only inside `aether-diag-1434`. No local host installation, physical Mac gate, tag, push, or release was performed.
+- Tart Virtual Machine 6-Dimensional Matrix Acceptance (`aether-diag-1434`):
+  verified 100% pass across all 6 configurations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`) on build 2026092601, followed by clean VM storage and log cleanup.
+- Remote Physical Apple Silicon Hardware Validation (`chenxu@100.64.0.3` / `192.168.50.226`):
+  executed `test_remote_arm64.sh fast` on macOS 27.0 arm64, verifying 100% pass across all 50+ test suites:
+  - Multi-threaded TCP throughput reached **10.0+ Gbps** (Direct 10,047 Mbps, Engine 6,500 Mbps, 64.7% raw ratio, +0.040ms P95 latency);
+  - UDP integrity test successfully transmitted and received 10,000 datagrams with **0 missing and 0 duplicates**;
+  - Go distribution service race tests, DMG upgrade rollback, and UI isolation verified.
+- Production Developer ID & Apple Notarization:
+  - App notarization submission `15b22049-eed1-4cc8-badd-e3d4a7e79940`: Accepted & Stapled.
+  - Final Release DMG notarization: Accepted & Stapled (`spctl --assess` passed).
+  - Sparkle Appcast signed with official Ed25519 signature.
 
 ## [1.0.28] - 2026-09-25
 
