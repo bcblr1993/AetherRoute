@@ -142,7 +142,8 @@ struct ProfileArchivePasswordSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(width: 500)
+        .frame(minWidth: 440, idealWidth: 500, maxWidth: 680)
+        .interactiveDismissDisabled(isWorking)
     }
 
     private var canSubmit: Bool {

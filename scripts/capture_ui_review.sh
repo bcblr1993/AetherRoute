@@ -263,6 +263,8 @@ overview-en-light-disconnected|en|light|overview|940x640|disconnected|tun|accept
 overview-zh-light-connecting|zh-Hans|light|overview|940x640|connecting|tun|accepted|standard|-
 overview-zh-light-recovering|zh-Hans|light|overview|940x640|recovering|tun|accepted|standard|-
 overview-en-dark-recovering|en|dark|overview|940x640|recovering|transparent|accepted|standard|-
+overview-en-dark-failed|en|dark|overview|940x640|failed|tun|accepted|standard|-
+overview-zh-light-failed|zh-Hans|light|overview|940x640|failed|transparent|accepted|standard|-
 proxies-en-dark|en|dark|proxies|940x640|connected|tun|accepted|standard|-
 proxies-zh-light|zh-Hans|light|proxies|940x640|connected|transparent|accepted|standard|-
 proxies-disconnected-zh-light|zh-Hans|light|proxies|940x640|disconnected|transparent|accepted|standard|-
@@ -281,6 +283,10 @@ minimum-en-expanded|en|light|overview|780x560|connected|tun|accepted|expanded|-
 minimum-zh-expanded|zh-Hans|dark|overview|780x560|connected|tun|accepted|expanded|-
 privacy-en-light|en|light|overview|780x560|loading|tun|pending|standard|-
 privacy-zh-dark|zh-Hans|dark|overview|780x560|loading|tun|pending|standard|-
+settings-network-en-light|en|light|overview|960x640|disconnected|tun|accepted|standard|network
+settings-network-zh-dark|zh-Hans|dark|overview|960x640|disconnected|tun|accepted|standard|network
+settings-automation-en-light|en|light|overview|960x640|disconnected|tun|accepted|standard|automation
+settings-automation-zh-dark|zh-Hans|dark|overview|960x640|disconnected|tun|accepted|standard|automation
 settings-general-en-light|en|light|overview|960x640|disconnected|tun|accepted|standard|general
 settings-general-zh-dark|zh-Hans|dark|overview|960x640|disconnected|tun|accepted|standard|general
 settings-privacy-en-dark|en|dark|overview|960x640|disconnected|tun|accepted|standard|privacy

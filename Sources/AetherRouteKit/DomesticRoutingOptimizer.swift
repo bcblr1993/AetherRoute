@@ -22,10 +22,6 @@ public enum DomesticRoutingOptimizer {
     public static let userDefaultsKey = "AetherRoute.DomesticOptimizationEnabled"
 
     public static var isEnabled: Bool {
-        if let appGroupDefaults = UserDefaults(suiteName: AppConstants.appGroup),
-           let value = appGroupDefaults.object(forKey: userDefaultsKey) as? Bool {
-            return value
-        }
         if let standardValue = UserDefaults.standard.object(forKey: userDefaultsKey) as? Bool {
             return standardValue
         }
@@ -33,7 +29,6 @@ public enum DomesticRoutingOptimizer {
     }
 
     public static func setEnabled(_ enabled: Bool) {
-        UserDefaults(suiteName: AppConstants.appGroup)?.set(enabled, forKey: userDefaultsKey)
         UserDefaults.standard.set(enabled, forKey: userDefaultsKey)
     }
 

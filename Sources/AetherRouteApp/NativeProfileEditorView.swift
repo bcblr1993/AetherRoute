@@ -10,6 +10,8 @@ struct NativeProfileEditorSheet: View {
     @State private var nodeToEdit: AetherNode?
     @State private var isAddingNode = false
     @State private var isSaving = false
+    @State private var requestsCancel = false
+    @State private var removedNode: (index: Int, node: AetherNode)?
 
     init(profile: ManagedProfile) {
         self.profile = profile
@@ -25,13 +27,15 @@ struct NativeProfileEditorSheet: View {
             footer
         }
         .frame(
-            minWidth: 680,
+            minWidth: 560,
             idealWidth: 680,
-            maxWidth: 680,
+            maxWidth: 900,
             minHeight: 480,
             idealHeight: 600,
             maxHeight: 760
         )
+        .disabled(isSaving)
+        .modifier(DiscardChangesModifier(isDirty: nodes != (profile.profile.nativeNodes ?? []), isSaving: isSaving, requested: $requestsCancel))
         .background(Color(nsColor: .windowBackgroundColor))
         .sheet(isPresented: $isAddingNode) {
             ManualNodeEditorSheet(save: append)
@@ -115,6 +119,7 @@ struct NativeProfileEditorSheet: View {
                     .accessibilityLabel(AppLocalization.string("Edit Node"))
 
                     Button(AppLocalization.string("Remove"), systemImage: "trash", role: .destructive) {
+                        removedNode = (index, nodes[index])
                         nodes.remove(at: index)
                     }
                     .labelStyle(.iconOnly)
@@ -155,8 +160,18 @@ struct NativeProfileEditorSheet: View {
                 .foregroundStyle(.secondary)
             }
 
+            if let removedNode {
+                Button("Undo removal") {
+                    nodes.insert(removedNode.node, at: min(removedNode.index, nodes.count))
+                    self.removedNode = nil
+                }
+            }
+            if let message = tunnel.profileMessage, tunnel.profileMessageIsError {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
             HStack {
-                Button(AppLocalization.string("Cancel"), role: .cancel) { dismiss() }
+                Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
                     .keyboardShortcut(.cancelAction)
                     .disabled(isSaving)
                 Spacer()

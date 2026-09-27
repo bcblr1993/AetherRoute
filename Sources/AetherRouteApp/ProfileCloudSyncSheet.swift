@@ -37,6 +37,14 @@ struct ProfileCloudSyncSheet: View {
             .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
 
             if cloudSync.isCloudSyncEnabled {
+                if cloudSync.isSyncing {
+                    Label("Syncing profiles…", systemImage: "arrow.triangle.2.circlepath.icloud")
+                } else if cloudSync.lastSyncedAt == nil {
+                    Label("Enabled · no completed sync yet", systemImage: "clock")
+                }
+                Text("Enabling sync does not confirm completion. Automatic sync merges profiles; review the result before using Force Pull or Force Push.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 VStack(alignment: .leading, spacing: AetherVisual.s3) {
                     if let status = cloudSync.statusMessage {
                         HStack(spacing: AetherVisual.s2) {
@@ -134,9 +142,11 @@ struct ProfileCloudSyncSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("icloud-sync-done-button")
+                .disabled(cloudSync.isSyncing)
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(width: 520)
+        .frame(minWidth: 460, idealWidth: 520, maxWidth: 680)
+        .interactiveDismissDisabled(cloudSync.isSyncing)
     }
 }

@@ -261,6 +261,7 @@ struct ProfilesView: View {
     @State private var isManualNodeEditorPresented = false
     @State private var isSubscriptionEditorPresented = false
     @State private var subscriptionURL = ""
+    @State private var searchText = ""
     @State private var profileToRename: ManagedProfile?
     @State private var nativeProfileToEdit: ManagedProfile?
     @State private var isArchivePasswordPresented = false
@@ -276,6 +277,16 @@ struct ProfilesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: AetherVisual.s5) {
                 pageHeader
+
+                if !tunnel.profiles.isEmpty {
+                    HStack {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField(AppLocalization.string("Search profiles"), text: $searchText)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel(AppLocalization.string("Search profiles"))
+                            .accessibilityIdentifier("profiles-search-field")
+                    }
+                }
 
                 if let message = tunnel.profileMessage, !tunnel.isImportingProfile {
                     profileMessageBanner(message: message, isError: tunnel.profileMessageIsError)
@@ -668,6 +679,14 @@ struct ProfilesView: View {
     }
 
 
+    private var filteredProfiles: [ManagedProfile] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return tunnel.profiles.filter {
+            query.isEmpty || $0.profile.name.localizedCaseInsensitiveContains(query)
+                || $0.profile.importedAt.formatted(date: .abbreviated, time: .omitted).localizedCaseInsensitiveContains(query)
+        }
+    }
+
     private var profileLibraryCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center) {
@@ -696,7 +715,11 @@ struct ProfilesView: View {
             Divider()
                 .padding(.horizontal, AetherVisual.s5)
 
-            ForEach(Array(tunnel.profiles.enumerated()), id: \.element.id) { index, managed in
+            if filteredProfiles.isEmpty {
+                ContentUnavailableView.search(text: searchText)
+                    .padding(AetherVisual.s4)
+            }
+            ForEach(Array(filteredProfiles.enumerated()), id: \.element.id) { index, managed in
                 ManagedProfileRow(
                     managed: managed,
                     isActive: managed.id == tunnel.activeProfileID,
@@ -714,7 +737,7 @@ struct ProfilesView: View {
                     }
                 )
 
-                if index < tunnel.profiles.count - 1 {
+                if index < filteredProfiles.count - 1 {
                     Divider()
                         .padding(.leading, AetherVisual.tableContentIndent)
                         .padding(.trailing, AetherVisual.s5)
@@ -1023,6 +1046,7 @@ private struct ManagedProfileRow: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var isHovered = false
     @State private var isActionHovered = false
+    @State private var inspectedNodeCount: Int?
     let managed: ManagedProfile
     let isActive: Bool
     let canActivate: Bool
@@ -1076,6 +1100,7 @@ private struct ManagedProfileRow: View {
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 HStack(spacing: AetherVisual.s2) {
                     Text(managed.profile.name)
+                        .help(managed.profile.name)
                         .font(.system(size: 13.5, weight: isActive ? .bold : .semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
@@ -1096,8 +1121,8 @@ private struct ManagedProfileRow: View {
                 }
 
                 Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.primary)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
                     .lineLimit(1)
             }
 
@@ -1180,18 +1205,21 @@ private struct ManagedProfileRow: View {
                 activate()
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("activate-profile-\(managed.id.uuidString)")
+        .task(id: managed.profile.yaml) {
+            let yaml = managed.profile.yaml
+            let count = await Task.detached(priority: .utility) {
+                ProfileConfigurationInspector.inspect(yaml: yaml).proxyCount
+            }.value
+            guard !Task.isCancelled else { return }
+            inspectedNodeCount = count
+        }
         .background(
             isActive
                 ? Color.accentColor.opacity(colorScheme == .dark ? 0.08 : 0.04)
                 : (isHovered ? Color.primary.opacity(0.03) : Color.clear)
         )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if !isActive && canActivate {
-                activate()
-            }
-        }
         .onHover { isHovered = $0 }
         .contextMenu {
             if !isActive {
@@ -1264,16 +1292,23 @@ private struct ManagedProfileRow: View {
             date: .abbreviated,
             time: .omitted
         )
-        return "\(source) · \(importedAt)"
+        let updatedAt = managed.profile.subscription?.lastUpdatedAt
+        let updateDetail = updatedAt.map { " · " + AppLocalization.string("Updated") + " " + $0.formatted(date: .abbreviated, time: .shortened) } ?? ""
+        let count = managed.profile.nativeNodes?.count ?? inspectedNodeCount
+        let nodeDetail = count.map { " · \($0) " + AppLocalization.string("nodes") } ?? ""
+        return "\(source) · \(importedAt)\(nodeDetail)\(updateDetail)"
     }
 }
 
 private struct ProfileRenameSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var tunnel: TunnelManager
     let profile: ManagedProfile
     let save: (String) async -> Bool
     @State private var name: String
     @State private var isSaving = false
+    @State private var saveFailed = false
+    @State private var requestsCancel = false
 
     init(
         profile: ManagedProfile,
@@ -1297,16 +1332,22 @@ private struct ProfileRenameSheet: View {
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("profile-name-field")
 
+            if saveFailed {
+                Text(tunnel.profileMessage ?? AppLocalization.string("Could not save the profile. Try again."))
+                    .foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
             HStack {
-                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Cancel", role: .cancel) { requestsCancel = true }
                     .keyboardShortcut(.cancelAction)
                     .disabled(isSaving)
                 Spacer()
                 Button {
+                    guard !isSaving else { return }
+                    isSaving = true
+                    saveFailed = false
                     Task {
-                        isSaving = true
                         defer { isSaving = false }
-                        if await save(name) { dismiss() }
+                        if await save(name) { dismiss() } else { saveFailed = true }
                     }
                 } label: {
                     AetherProgressButtonLabel(
@@ -1323,7 +1364,9 @@ private struct ProfileRenameSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(width: 460)
+        .frame(minWidth: 400, idealWidth: 460, maxWidth: 600)
+        .disabled(isSaving)
+        .modifier(DiscardChangesModifier(isDirty: name != profile.profile.name, isSaving: isSaving, requested: $requestsCancel))
     }
 }
 
@@ -1331,6 +1374,7 @@ struct SubscriptionEditorSheet: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.dismiss) private var dismiss
     @Binding var urlText: String
+    @State private var requestsCancel = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s5) {
@@ -1408,7 +1452,7 @@ struct SubscriptionEditorSheet: View {
             .fixedSize(horizontal: false, vertical: true)
 
             HStack {
-                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Cancel", role: .cancel) { requestsCancel = true }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button {
@@ -1434,7 +1478,9 @@ struct SubscriptionEditorSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(width: 540)
+        .frame(minWidth: 460, idealWidth: 540, maxWidth: 680)
+        .disabled(tunnel.isRefreshingSubscription)
+        .modifier(DiscardChangesModifier(isDirty: !urlText.isEmpty, isSaving: tunnel.isRefreshingSubscription, requested: $requestsCancel))
         .onAppear {
             if urlText.isEmpty,
                let pasted = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),

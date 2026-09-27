@@ -56,7 +56,7 @@ enum AetherVisual {
     static let sectionSpacing = s4
     static let contentMaxWidth: CGFloat = 704
     static let formMaxWidth: CGFloat = 704
-    static let sidebarWidth: CGFloat = 236
+    static let sidebarWidth: CGFloat = 200
     static let windowWidth: CGFloat = 960
     static let windowHeight: CGFloat = 680
     static let popoverWidth: CGFloat = 380

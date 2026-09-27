@@ -80,7 +80,7 @@ struct ThirdPartyLicensesView: View {
                     AppLocalization.string("License notices unavailable"),
                     systemImage: "doc.text.magnifyingglass",
                     description: Text(
-                        AppLocalization.string("The bundled notice file could not be verified. Reinstall AetherRoute before distribution.")
+                        AppLocalization.string("The bundled notice file could not be verified. Reinstall AetherRoute or contact support.")
                     )
                 )
             }

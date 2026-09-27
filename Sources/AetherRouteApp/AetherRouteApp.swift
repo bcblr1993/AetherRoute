@@ -616,7 +616,7 @@ private final class MenuBarVisibilityTrackerView: NSView {
         super.viewDidMoveToWindow()
         stopObserving()
         guard let window else {
-            onVisibilityChanged?(false)
+            notifyVisibility(false)
             return
         }
         observedWindow = window
@@ -643,11 +643,18 @@ private final class MenuBarVisibilityTrackerView: NSView {
 
     @objc private func checkVisibility() {
         guard let window = observedWindow ?? window else {
-            onVisibilityChanged?(false)
+            notifyVisibility(false)
             return
         }
         let isVisible = window.isVisible && window.occlusionState.contains(.visible)
-        onVisibilityChanged?(isVisible)
+        notifyVisibility(isVisible)
+    }
+
+    private func notifyVisibility(_ isVisible: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.onVisibilityChanged?(isVisible)
+        }
     }
 
     private func stopObserving() {
@@ -728,7 +735,7 @@ private struct MenuBarContent: View {
                         )
                     }
 
-                    Text(tunnel.isSwitchingNetworkEngine ? tunnel.statusTitle : (tunnel.isConnected ? AppLocalization.string("Tunnel Protected") : tunnel.statusTitle))
+                    Text(tunnel.statusTitle)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(tunnel.isConnected ? Color.green : Color.secondary)
                         .lineLimit(1)
@@ -1115,7 +1122,7 @@ private struct MenuNodeListInline: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            if orderedMembers.count > 4 {
+            if !orderedMembers.isEmpty {
                 HStack(spacing: AetherVisual.s1) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 11))
@@ -1336,6 +1343,8 @@ private struct MenuStaticTrafficValue: View {
 
 private enum SettingsTab: String, CaseIterable, Identifiable {
     case general
+    case network
+    case automation
     case privacy
     case bypass
     case diagnostics
@@ -1348,10 +1357,12 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     var title: LocalizedStringKey {
         switch self {
         case .general: "General"
+        case .network: "Network Settings"
+        case .automation: "Shortcuts & Notifications"
         case .privacy: "Privacy"
         case .bypass: "Bypass"
         case .diagnostics: "Diagnostics"
-        case .account: "Account"
+        case .account: "Version & Updates"
         case .licenses: "Licenses"
         case .about: "About"
         }
@@ -1360,6 +1371,8 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .general: "gearshape"
+        case .network: "network"
+        case .automation: "keyboard"
         case .privacy: "hand.raised"
         case .bypass: "arrow.trianglehead.branch"
         case .diagnostics: "stethoscope"
@@ -1398,8 +1411,21 @@ private struct SettingsView: View {
         NavigationSplitView {
             List(selection: $selectedTab) {
                 ForEach(SettingsTab.allCases) { tab in
-                    Label(tab.title, systemImage: tab.symbol)
-                        .font(.system(size: 14, weight: .semibold))
+                    HStack(spacing: AetherVisual.s2) {
+                        Image(systemName: tab.symbol)
+                            .foregroundStyle(selectedTab == tab ? Color(nsColor: .alternateSelectedControlTextColor) : Color.accentColor)
+                            .accessibilityHidden(true)
+                        Text(tab == .account
+                            ? LocalizedStringKey(distribution.isFreeDistribution ? "Version & Updates" : "License & Updates")
+                            : tab.title)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(selectedTab == tab
+                                ? Color(nsColor: .alternateSelectedControlTextColor)
+                                : Color(nsColor: .labelColor))
+                            .accessibilityIdentifier("settings-tab-\(tab.rawValue)")
+                    }
+                        .accessibilityElement(children: .contain)
+                        .listRowBackground(selectedTab == tab ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
                         .tag(Optional(tab))
                         .accessibilityIdentifier("settings-tab-\(tab.rawValue)")
                 }
@@ -1430,7 +1456,10 @@ private struct SettingsView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("AetherRoute settings")
         .accessibilityIdentifier("aetherroute-settings-root")
-        .frame(width: 960, height: 640)
+        .frame(minWidth: 780, idealWidth: 960, minHeight: 560, idealHeight: 640)
+        .onReceive(NotificationCenter.default.publisher(for: .aetherRouteNavigateToSettings)) { notification in
+            if let raw = notification.object as? String, let tab = SettingsTab(rawValue: raw) { selectedTab = tab }
+        }
         .onChange(of: selectedTab) { _, tab in
             guard let tab else { return }
             UIResponsivenessProbe.begin("settings.\(tab.rawValue)")
@@ -1454,6 +1483,10 @@ private struct SettingsView: View {
         switch selectedTab ?? .general {
         case .general:
             generalSettings
+        case .network:
+            networkSettings
+        case .automation:
+            shortcutsSettings
         case .privacy:
             PrivacyDisclosureView(isOnboarding: false)
                 .environmentObject(tunnel)
@@ -1498,6 +1531,27 @@ private struct SettingsView: View {
             startupSettings
             languageSettings
 
+
+            if !tunnel.hasAcceptedPrivacyDisclosure {
+                Section {
+                    Label(
+                        "Network settings remain locked until the privacy disclosure is accepted.",
+                        systemImage: "lock.fill"
+                    )
+                    .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.horizontal, 20, for: .scrollContent)
+        .contentMargins(.vertical, 16, for: .scrollContent)
+        .contentMargins(.trailing, 10, for: .scrollIndicators)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var networkSettings: some View {
+        Form {
 #if AETHERROUTE_INDEPENDENT
             Section("Network engine") {
                 HStack(spacing: AetherVisual.s3) {
@@ -1525,7 +1579,7 @@ private struct SettingsView: View {
 
             Section("Routing") {
                 HStack(spacing: AetherVisual.s3) {
-                    Text("Default routing mode")
+                    Text("Routing mode")
                         .foregroundStyle(.primary)
 
                     Spacer(minLength: 12)
@@ -1545,7 +1599,7 @@ private struct SettingsView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .accessibilityLabel(Text("Default routing mode"))
+                    .accessibilityLabel(Text("Routing mode"))
                     .disabled(!tunnel.canChangeRoutingMode)
                 }
 
@@ -1572,18 +1626,20 @@ private struct SettingsView: View {
             localProxySection
 #endif
 
-            automationSettings
-
-            if !tunnel.hasAcceptedPrivacyDisclosure {
-                Section {
-                    Label(
-                        "Network settings remain locked until the privacy disclosure is accepted.",
-                        systemImage: "lock.fill"
-                    )
-                    .foregroundStyle(.secondary)
-                }
-            }
+            Text("Routing mode changes apply immediately when connected. Switching engines reconnects automatically. Network optimization applies on the next connection or profile reload.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.horizontal, 20, for: .scrollContent)
+        .contentMargins(.vertical, 16, for: .scrollContent)
+        .contentMargins(.trailing, 10, for: .scrollIndicators)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var shortcutsSettings: some View {
+        Form { automationSettings }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .contentMargins(.horizontal, 20, for: .scrollContent)

@@ -90,11 +90,12 @@ struct TargetPillView: View {
     var body: some View {
         HStack(spacing: AetherVisual.s1) {
             Image(systemName: iconName)
-                .font(.system(size: 9, weight: .bold))
+                .font(.system(size: 11, weight: .semibold))
                 .accessibilityHidden(true)
 
             Text(target)
                 .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color(nsColor: .labelColor))
         }
         .foregroundStyle(foregroundColor)
         .padding(.horizontal, AetherVisual.s2)
@@ -131,18 +132,21 @@ struct TargetPillView: View {
 }
 
 struct StatePill: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let title: String
     let color: Color
     let symbol: String
 
     var body: some View {
-        Label {
-            Text(title)
-                .foregroundStyle(color)
-        } icon: {
+        HStack(spacing: AetherVisual.s1) {
             Image(systemName: symbol)
                 .foregroundStyle(color)
+                .accessibilityHidden(true)
+            Text(title)
+                .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
         }
+        .accessibilityElement(children: .contain)
         .font(.caption.weight(.semibold))
         .padding(.horizontal, AetherVisual.s3)
         .padding(.vertical, AetherVisual.s1)
@@ -195,5 +199,44 @@ struct TruncationNotice: View {
 extension View {
     func featureCard() -> some View {
         aetherPanel()
+    }
+}
+
+/// The result remains visible, but its age must not imply current availability.
+struct MeasurementAgeLabel: View {
+    let measuredAt: Date
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            HStack(spacing: AetherVisual.s2) {
+                Text("Last measurement")
+                Text(measuredAt, format: .dateTime.hour().minute().second())
+                if context.date.timeIntervalSince(measuredAt) >= 300 {
+                    Text("Older than 5 minutes · test again").foregroundStyle(.orange)
+                }
+            }
+            .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct DiscardChangesModifier: ViewModifier {
+    @Environment(\.dismiss) private var dismiss
+    let isDirty: Bool
+    let isSaving: Bool
+    @Binding var requested: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .interactiveDismissDisabled(isDirty || isSaving)
+            .confirmationDialog("Discard unsaved changes?", isPresented: Binding(
+                get: { requested && isDirty },
+                set: { requested = $0 }
+            ), titleVisibility: .visible) {
+                Button("Discard Changes", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) { requested = false }
+            }
+            .onChange(of: requested) { _, value in
+                if value && !isDirty && !isSaving { dismiss() }
+            }
     }
 }

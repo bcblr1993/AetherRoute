@@ -60,7 +60,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             let controller = SPUStandardUpdaterController(
                 startingUpdater: true,
                 updaterDelegate: self,
-                userDriverDelegate: nil
+                userDriverDelegate: self
             )
             self.updaterController = controller
             configureUpdaterSubscriptions(for: controller.updater)
@@ -241,6 +241,15 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
 
 extension SparkleUpdaterController: SPUUpdaterDelegate {
     // SPUUpdaterDelegate hooks can be extended here for custom telemetry if desired.
+}
+
+extension SparkleUpdaterController: SPUStandardUserDriverDelegate {
+    nonisolated func standardUserDriverShouldHandleShowingScheduledUpdate(
+        _ update: SUAppcastItem,
+        andInImmediateFocus immediateFocus: Bool
+    ) -> Bool {
+        true
+    }
 }
 
 /// A standard Check for Updates button suitable for SwiftUI Menu commands.

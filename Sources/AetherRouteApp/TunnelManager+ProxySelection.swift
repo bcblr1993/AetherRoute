@@ -575,6 +575,8 @@ extension TunnelManager {
     }
 
     func clearProxySelectionRuntimeState() {
+        latencyMeasuredAt = [:]
+        pendingLatencyMeasuredAt = [:]
         stopTelemetryPolling()
         connectionQuality = .unknown
         automaticReadinessGroupNames = []

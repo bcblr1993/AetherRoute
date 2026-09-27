@@ -14,6 +14,13 @@ struct BypassRulesView: View {
             VStack(alignment: .leading, spacing: AetherVisual.s5) {
                 header
                 editor
+                Label("Bypass changes apply on the next connection. CIDR exclusions can bypass routing rules at the system layer.", systemImage: "info.circle")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("View routing rules") {
+                    NotificationCenter.default.post(name: .aetherRouteNavigateToSection, object: AppSection.rules.rawValue)
+                    AppWindowManager.shared.showMainWindow()
+                }
                 providerSemantics
                 ruleList
             }

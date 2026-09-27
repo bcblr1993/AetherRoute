@@ -6,6 +6,31 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.0.30] - 2026-09-27
+
+### Added
+
+- Comprehensive Connectivity Diagnostic Engine (`SupportDiagnosticsView.swift`):
+  introduced a 5-stage automated connectivity testing pipeline (Engine Initialization, Node Selection & Protocol Verification, Local Proxy Listeners, Data-Plane Path Probing, and External Reachability), featuring millisecond latency metrics, stage status badges, and intelligent verdict cards (Healthy, Degraded, Blocked, Offline) with actionable troubleshooting recommendations.
+- Full Bilingual UI Localization (`Localizable.xcstrings`):
+  expanded complete English and Simplified Chinese localizations across all newly introduced diagnostic cards, tooltips, status badges, and edge-case error states.
+
+### Changed
+
+- Modernized UI Visual System & High-Contrast Navigation (`AetherRouteVisualSystem.swift`, `ContentView.swift`, `DNSPageView.swift`):
+  enhanced sidebar selection highlight, border radii, and visual contrast across light and dark system appearances; refined DNS status pill layout, server cards, and latency display tags.
+- Responsive Footer & Single-Line Accessibility Layout (`ContentView.swift`, `AetherRouteApp.swift`):
+  re-architected the main window bottom status bar layout constraints to strictly prevent text wrapping and truncation across minimum window dimensions (<= 960px width) and large accessibility font scales (Expanded Text / Large Content Size), ensuring the version indicator (`v1.0.30`) and settings button remain cleanly aligned on a single row.
+
+### Verified
+
+- Remote Physical Apple Silicon Mac mini 6-Dimensional Matrix Acceptance (`100.64.0.3` / `192.168.50.226`):
+  executed `physical-network-transaction.sh` on macOS 27.0 arm64 across all 6 proxy engines and routing modes (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`), achieving 100% pass across all data path, DNS, local proxy (:7890 HTTP, :7891 SOCKS5, mixed), captive portal, and Anthropic API penetration checks, followed by clean network baseline restoration.
+- Automated UI Visual Regression Matrix:
+  passed all 44 test cases (`capture_ui_review.sh`) across combinations of English/Chinese, Light/Dark appearance, and minimum window widths with Expanded Text without a single layout defect or overflow regression.
+- Zero-Bundle & Release Packaging Gate Compliance:
+  verified strict absence of private credentials or test configurations from distribution artifacts; Developer ID signed and Apple notarized with double ticket stapling.
+
 ## [1.0.29] - 2026-09-26
 
 ### Fixed

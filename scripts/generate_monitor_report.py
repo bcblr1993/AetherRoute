@@ -291,6 +291,11 @@ def main() -> int:
 
     out_dir = Path(args.dir)
     csv_path = out_dir / "metrics_minute.csv"
+    if not csv_path.exists():
+        for candidate in [out_dir / "metrics_30s.csv", out_dir / "metrics_60s.csv"]:
+            if candidate.exists():
+                csv_path = candidate
+                break
     inc_path = out_dir / "incidents.jsonl"
     report_path = Path(args.out) if args.out else (out_dir / "REPORT.md")
 

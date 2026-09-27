@@ -111,7 +111,7 @@ say "[PASS] $IDENTIFIER activated at build $BUILD"
 say "connecting with autoconnect"
 vm "osascript -e 'tell application \"AetherRoute\" to quit' 2>/dev/null || true
   for i in \$(seq 1 30); do pgrep -x AetherRoute >/dev/null || break; sleep 1; done
-  open -a /Applications/AetherRoute.app --env AETHERROUTE_QA_AUTOCONNECT=1"
+  open -a /Applications/AetherRoute.app --env AETHERROUTE_QA_AUTOCONNECT=1 --env AETHERROUTE_QA_POWER_EVENTS=1"
 
 CONNECTED=0
 i=0

@@ -3,13 +3,23 @@ import SwiftUI
 struct PrivacyDisclosureView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     let isOnboarding: Bool
+    @State private var showsPrivacyDetails = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .center, spacing: AetherVisual.s5) {
                 disclosureHeader
-                disclosurePoints
-                destinationNotice
+                Text("Your configuration stays encrypted on this Mac. Network data is processed locally; diagnostic reports are exported only when you choose.")
+                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+                Button { showsPrivacyDetails.toggle() } label: {
+                    Label("Privacy details", systemImage: showsPrivacyDetails ? "chevron.down" : "chevron.right")
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("privacy-details-toggle")
+                if showsPrivacyDetails {
+                    disclosurePoints
+                    destinationNotice
+                }
                 if !usesPinnedConsent {
                     consentStatus
                 }

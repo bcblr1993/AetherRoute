@@ -302,7 +302,17 @@ final class TunnelManager: ObservableObject {
     /// Quality of the route behind an already-usable tunnel. The tunnel being
     /// up and the selected route being fast are two different questions; this
     /// reports the second without gating the first.
-    @Published var connectionQuality: ConnectionQuality = .unknown
+    @Published var connectionQualityCheckedAt: Date?
+    @Published var connectionQuality: ConnectionQuality = .unknown {
+        didSet {
+            switch connectionQuality {
+            case .unknown, .verifying: connectionQualityCheckedAt = nil
+            case .verified, .degraded: connectionQualityCheckedAt = .now
+            }
+        }
+    }
+    @Published var latencyMeasuredAt: [String: [String: Date]] = [:]
+    var pendingLatencyMeasuredAt: [String: [String: Date]] = [:]
     @Published var connectionStage: ConnectionStage = .systemAuthorization
     let telemetryViewModel = NetworkTelemetryViewModel()
     var telemetry: NetworkTelemetrySnapshot { telemetryViewModel.snapshot }
@@ -1239,7 +1249,7 @@ final class TunnelManager: ObservableObject {
             }
             dnsRuntimePolicy = policy
             dnsRuntimePolicyMessage = policy.isInherited
-                ? AppLocalization.string("DNS behavior now follows the active profile.")
+                ? AppLocalization.string("DNS behavior will follow the active profile on the next TUN connection.")
                 : AppLocalization.string("DNS overrides will apply on the next TUN connection.")
             dnsRuntimePolicyMessageIsError = false
         } catch {
@@ -1626,21 +1636,21 @@ final class TunnelManager: ObservableObject {
     private var distributionConnectionAccessDetail: String {
         switch distributionConnectionAccess {
         case .authorizedUntil where !distributionConnectionAccess.permitsNewConnection:
-            AppLocalization.string("The saved license has expired. Review Settings > Account.")
+            AppLocalization.string("The saved license has expired. Review Settings > License & Updates.")
         case .free, .unrestrictedDevelopment, .authorized, .authorizedUntil:
             AppLocalization.string("Traffic is using the normal network path")
         case .activationRequired:
-            AppLocalization.string("Activate AetherRoute in Settings > Account before connecting.")
+            AppLocalization.string("Activate AetherRoute in Settings > License & Updates before connecting.")
         case .restricted(.expired):
-            AppLocalization.string("The saved license has expired. Review Settings > Account.")
+            AppLocalization.string("The saved license has expired. Review Settings > License & Updates.")
         case .restricted(.revoked):
-            AppLocalization.string("The saved license was revoked. Review Settings > Account.")
+            AppLocalization.string("The saved license was revoked. Review Settings > License & Updates.")
         case .restricted(.deviceLimit):
-            AppLocalization.string("This license reached its device limit. Review Settings > Account.")
+            AppLocalization.string("This license reached its device limit. Review Settings > License & Updates.")
         case .restricted(.active):
-            AppLocalization.string("The saved license cannot authorize a connection. Review Settings > Account.")
+            AppLocalization.string("The saved license cannot authorize a connection. Review Settings > License & Updates.")
         case .verificationUnavailable:
-            AppLocalization.string("The saved license cannot be verified. Review Settings > Account.")
+            AppLocalization.string("The saved license cannot be verified. Review Settings > License & Updates.")
         }
     }
 

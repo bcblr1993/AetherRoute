@@ -110,7 +110,7 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
             Self.runtimeLogger.info("stage=keychainLoad success")
             return result
         case errSecItemNotFound:
-            Self.runtimeLogger.error(
+            Self.runtimeLogger.info(
                 "stage=keychainLoad missing status=\(status, privacy: .public)"
             )
             throw ProfileKeyStoreError.keyNotFound

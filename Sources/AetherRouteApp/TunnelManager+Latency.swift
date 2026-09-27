@@ -74,6 +74,7 @@ extension TunnelManager {
         lastLatencyFlushAt = ContinuousClock.now
         for group in pendingLatencyFlush {
             proxyLatencies[group] = latencyIndex.state(for: group)
+            latencyMeasuredAt[group] = pendingLatencyMeasuredAt[group]
         }
         pendingLatencyFlush.removeAll(keepingCapacity: true)
     }
@@ -90,6 +91,7 @@ extension TunnelManager {
             member: member,
             measurement: measurement
         )
+        for group in affected { pendingLatencyMeasuredAt[group, default: [:]][member] = .now }
         publishLatency(groups: affected, force: force)
     }
 

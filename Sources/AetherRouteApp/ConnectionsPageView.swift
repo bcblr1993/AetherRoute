@@ -1,3 +1,4 @@
+import AppKit
 import AetherRouteKit
 import SwiftUI
 
@@ -11,6 +12,13 @@ struct ConnectionsView: View {
     @State private var filter: ConnectionOutletFilter = .all
     @State private var sort: ConnectionSort = .traffic
     @State private var showingDisconnectConfirmation = false
+    @State private var searchText = ""
+    @State private var pausedConnections: [ConnectionTelemetry]?
+    @State private var inspectedConnection: ConnectionTableItem?
+
+    private var displayedConnections: [ConnectionTelemetry] {
+        pausedConnections ?? telemetry.snapshot.connections
+    }
 
     var body: some View {
         let rows = connectionRows
@@ -20,7 +28,16 @@ struct ConnectionsView: View {
                 .padding(.horizontal, AetherVisual.s4)
                 .padding(.top, AetherVisual.s3)
 
-            if telemetry.snapshot.connections.isEmpty {
+            HStack {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField(AppLocalization.string("Search connections"), text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("connections-search-field")
+            }
+            .padding(.horizontal, AetherVisual.s4)
+            .padding(.vertical, AetherVisual.s2)
+
+            if displayedConnections.isEmpty {
                 emptyState
             } else {
                 connectionList(rows: rows)
@@ -47,10 +64,19 @@ struct ConnectionsView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AppLocalization.string("Connections"))
         .accessibilityIdentifier("connections-page")
+        .sheet(item: $inspectedConnection) { row in
+            ConnectionInspector(connection: row.connection)
+        }
+        .onChange(of: tunnel.isConnected) { _, connected in
+            if !connected { pausedConnections = nil }
+        }
     }
 
     @ViewBuilder
     private func footerContents(visibleCount: Int) -> some View {
+        if pausedConnections != nil {
+            Label("List paused · session counters are live", systemImage: "pause.circle")
+        }
         Text(footerText(visibleCount: visibleCount))
             .accessibilityIdentifier("connections-count-summary")
         Text(AppLocalization.string("Only connections visible on this Mac are counted, and nothing is reported anywhere."))
@@ -104,9 +130,19 @@ struct ConnectionsView: View {
             .padding(.horizontal, AetherVisual.s4)
             .padding(.vertical, AetherVisual.s2)
 
+            if rows.isEmpty {
+                ContentUnavailableView.search(text: searchText)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             Table(rows) {
                 TableColumn(AppLocalization.string("Destination")) { row in
                     ConnectionDestinationCell(connection: row.connection)
+                        .help(Text(verbatim: row.connection.destinationAddress))
+                        .contextMenu {
+                            Button("Copy destination") { copyDestination(row.connection) }
+                            Button("Connection details") { inspectedConnection = row }
+                        }
+                        .onTapGesture(count: 2) { inspectedConnection = row }
                 }
                 .width(min: 124, ideal: 144, max: 400)
                 TableColumn(AppLocalization.string("Matched rule")) { row in
@@ -151,6 +187,15 @@ struct ConnectionsView: View {
 
     private var connectionActions: some View {
         HStack(spacing: AetherVisual.s2) {
+            Button {
+                pausedConnections = pausedConnections == nil ? telemetry.snapshot.connections : nil
+            } label: {
+                Label(AppLocalization.string(pausedConnections == nil ? "Pause list" : "Resume list"),
+                      systemImage: pausedConnections == nil ? "pause" : "play")
+            }
+            .buttonStyle(.bordered)
+            .help("Pauses the connection list only. Traffic and session counters remain live.")
+            .accessibilityIdentifier("connections-pause-button")
             Picker(AppLocalization.string("Sort"), selection: $sort) {
                 ForEach(ConnectionSort.allCases) { option in
                     Text(option.localizedTitle).tag(option)
@@ -185,9 +230,14 @@ struct ConnectionsView: View {
     }
 
     private var connectionRows: [ConnectionTableItem] {
-        ConnectionTableItem.identify(telemetry.snapshot.connections)
+        ConnectionTableItem.identify(displayedConnections)
             .filter {
                 ConnectionOutlet(proxyChain: $0.connection.proxyChain).matches(filter)
+                    && (searchText.isEmpty
+                        || $0.connection.destination.localizedCaseInsensitiveContains(searchText)
+                        || $0.connection.rule.localizedCaseInsensitiveContains(searchText)
+                        || $0.connection.rulePayload.localizedCaseInsensitiveContains(searchText)
+                        || $0.connection.proxyChain.localizedCaseInsensitiveContains(searchText))
             }
             .sorted { lhs, rhs in
                 switch sort {
@@ -203,11 +253,16 @@ struct ConnectionsView: View {
             }
     }
 
+    private func copyDestination(_ connection: ConnectionTelemetry) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(connection.destinationAddress, forType: .string)
+    }
+
     private func footerText(visibleCount: Int) -> String {
         String.localizedStringWithFormat(
             AppLocalization.string("Showing %lld of %lld connections"),
             Int64(visibleCount),
-            Int64(telemetry.snapshot.connections.count)
+            Int64(displayedConnections.count)
         )
     }
 
@@ -226,7 +281,7 @@ struct ConnectionsView: View {
     }
 
     private func label(for option: ConnectionOutletFilter) -> String {
-        let count = telemetry.snapshot.connections.filter {
+        let count = displayedConnections.filter {
             ConnectionOutlet(proxyChain: $0.proxyChain).matches(option)
         }.count
         return "\(option.localizedTitle) \(count)"
@@ -390,7 +445,7 @@ private struct ConnectionDestinationCell: View {
                 .frame(width: 7, height: 7)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text(verbatim: "\(connection.destination):\(connection.destinationPort)")
+                Text(verbatim: connection.destinationAddress)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -509,5 +564,48 @@ private struct ConnectionDurationCell: View {
             return String(format: "%dm%02ds", elapsed / 60, elapsed % 60)
         }
         return "\(elapsed)s"
+    }
+}
+
+private struct ConnectionInspector: View {
+    @Environment(\.dismiss) private var dismiss
+    let connection: ConnectionTelemetry
+
+    private var destination: String { connection.destinationAddress }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            Text("Connection details").font(.title2.weight(.semibold))
+            Text("Snapshot captured when opened. Values do not refresh here.")
+                .font(.caption).foregroundStyle(.secondary)
+            Form {
+                LabeledContent("Destination", value: destination)
+                LabeledContent("Transport", value: connection.transport == .tcp ? "TCP" : "UDP")
+                LabeledContent("Matched rule", value: connection.rule)
+                LabeledContent("Rule payload", value: connection.rulePayload)
+                LabeledContent("Outlet chain", value: connection.proxyChain)
+                LabeledContent("Download", value: ByteCountFormatter.string(fromByteCount: Int64(clamping: connection.downloadTotal), countStyle: .file))
+                LabeledContent("Upload", value: ByteCountFormatter.string(fromByteCount: Int64(clamping: connection.uploadTotal), countStyle: .file))
+            }
+            .textSelection(.enabled)
+            HStack {
+                Button("Copy destination") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(connection.destinationAddress, forType: .string)
+                }
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(AetherVisual.dialogPadding)
+        .frame(minWidth: 460, idealWidth: 540, maxWidth: 680)
+    }
+}
+
+private extension ConnectionTelemetry {
+    var destinationAddress: String {
+        let host = destination.contains(":") && !destination.hasPrefix("[")
+            ? "[\(destination)]" : destination
+        return "\(host):\(destinationPort)"
     }
 }

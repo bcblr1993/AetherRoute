@@ -7,7 +7,7 @@ struct ProxiesView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var searchText = ""
     @State private var selectedGroupId: Int?
-    @AppStorage("proxies-view-display-mode") private var isGridView: Bool = true
+    @AppStorage("proxies-view-display-mode") private var isGridView: Bool = false
     @State private var showAdvancedInventory: Bool = false
 
     var body: some View {
@@ -180,12 +180,12 @@ struct ProxiesView: View {
 
                         Text(verbatim: "(\(summary.proxyCount) \(AppLocalization.string("Endpoints")))")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(nsColor: .labelColor))
                     }
 
                     Text(AppLocalization.string("Diagnostic use only; inspects kernel protocol validation and raw endpoints."))
                         .font(.caption2)
-                        .foregroundStyle(.secondary.opacity(0.85))
+                        .foregroundStyle(Color(nsColor: .labelColor))
                 }
 
                 Spacer()
@@ -223,7 +223,8 @@ private struct ProxyGroupTabButton: View {
             HStack(spacing: AetherVisual.s2) {
                 Image(systemName: proxyGroupSymbol(group.strategy))
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .accessibilityHidden(true)
                     .frame(width: 24, height: 24)
                     .background(
                         (isSelected ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08)),
@@ -234,7 +235,7 @@ private struct ProxyGroupTabButton: View {
                     HStack(spacing: AetherVisual.s1) {
                         Text(group.name)
                             .font(.system(size: 13, weight: isSelected ? .bold : .medium))
-                            .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                            .foregroundStyle(Color(nsColor: .labelColor))
                             .lineLimit(1)
 
                         Text(group.strategy.uppercased())
@@ -245,7 +246,7 @@ private struct ProxyGroupTabButton: View {
                                 (isSelected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.1)),
                                 in: Capsule()
                             )
-                            .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                            .foregroundStyle(Color(nsColor: .labelColor))
                     }
 
                     if let currentMember {
@@ -255,13 +256,13 @@ private struct ProxyGroupTabButton: View {
                                 .frame(width: 4.5, height: 4.5)
                             Text(currentMember)
                                 .font(.system(size: 10.5))
-                                .foregroundStyle(isSelected ? Color.primary.opacity(0.8) : Color.secondary.opacity(0.7))
+                                .foregroundStyle(Color(nsColor: .labelColor))
                                 .lineLimit(1)
                         }
                     } else {
                         Text(group.strategy.lowercased() == "url-test" ? AppLocalization.string("Auto select fastest") : group.strategy.uppercased())
                             .font(.system(size: 10.5))
-                            .foregroundStyle(Color.secondary.opacity(0.65))
+                            .foregroundStyle(Color(nsColor: .labelColor))
                             .lineLimit(1)
                     }
                 }
@@ -343,6 +344,9 @@ private struct ActiveProxyGroupView: View {
                     .foregroundStyle(.red)
             }
 
+            if let selectedMember, let measuredAt = tunnel.latencyMeasuredAt[group.name]?[selectedMember] {
+                MeasurementAgeLabel(measuredAt: measuredAt)
+            }
             // 3. 节点内容
             if visibleMembers.isEmpty {
                 FeatureEmptyState(
@@ -389,17 +393,18 @@ private struct ActiveProxyGroupView: View {
                     Image(systemName: proxyGroupSymbol(group.strategy))
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
 
                     Text(group.name)
                         .font(.headline.weight(.bold))
                         .foregroundStyle(.primary)
 
                     Text(group.strategy.uppercased())
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 11, weight: .semibold))
                         .padding(.horizontal, AetherVisual.sCompact)
                         .padding(.vertical, AetherVisual.sMicro)
                         .background(Color.accentColor.opacity(0.12), in: Capsule())
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Color(nsColor: .labelColor))
                 }
 
                 Spacer()
@@ -459,7 +464,7 @@ private struct ActiveProxyGroupView: View {
                             : AppLocalization.string("Keeps the selected node pinned")
                     )
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(nsColor: .labelColor))
                     .lineLimit(1)
                 }
 
@@ -548,7 +553,7 @@ private struct ActiveProxyGroupView: View {
                         Text(option.localizedTitle)
                             .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
                         Text(verbatim: "\(count)")
-                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .padding(.horizontal, AetherVisual.s1)
                             .padding(.vertical, AetherVisual.sMicro)
                             .background(
@@ -585,7 +590,7 @@ private struct ActiveProxyGroupView: View {
                 let isSelected = (member == selectedMember)
                 let isBusy = tunnel.proxySelectionRequests.contains(group.name)
                 let nodeStatus = status(for: member)
-                let proto = protocols[member] ?? "PROXY"
+                let proto = memberType(member)
 
                 ProxyNodeModernCard(
                     name: member,
@@ -626,6 +631,7 @@ private struct ActiveProxyGroupView: View {
                     }
                 } label: {
                     Text(row.member)
+                        .help(row.member)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -639,13 +645,14 @@ private struct ActiveProxyGroupView: View {
                     .font(.subheadline.monospaced().weight(.semibold))
                     .foregroundStyle(.primary)
             }
-            .width(84)
+            .width(min: 84, ideal: 110, max: 160)
             TableColumn(AppLocalization.string("Latency")) { row in
                 ProxyLatencyBadge(
                     status: row.status,
                     name: nil,
                     confidence: row.confidence
                 )
+                .help(tunnel.latencyMeasuredAt[group.name]?[row.member]?.formatted(date: .abbreviated, time: .standard) ?? AppLocalization.string("Untested"))
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .width(88)
@@ -666,11 +673,24 @@ private struct ActiveProxyGroupView: View {
         .frame(height: min(CGFloat(memberRows.count * 28 + 34), 280))
     }
 
+    private func memberType(_ member: String) -> String {
+        switch member.uppercased() {
+        case "DIRECT": return AppLocalization.string("Direct")
+        case "REJECT", "REJECT-DROP": return AppLocalization.string("Reject")
+        default:
+            if let protocolName = protocols[member] { return protocolName.uppercased() }
+            if tunnel.activeProfileSummary?.proxyGroups.contains(where: { $0.name == member }) == true {
+                return AppLocalization.string("Proxy group")
+            }
+            return AppLocalization.string("Unknown")
+        }
+    }
+
     private var memberRows: [ProxyMemberTableItem] {
         visibleMembers.map { member in
             ProxyMemberTableItem(
                 member: member,
-                protocolName: protocols[member],
+                protocolName: memberType(member),
                 status: status(for: member),
                 confidence: tunnel.latencyConfidence(
                     group: group.name,
@@ -786,7 +806,7 @@ private struct ProxyNodeModernCard: View {
                                     .fill(Color.green)
                                     .frame(width: 5, height: 5)
                                 Text(AppLocalization.string("Active"))
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(.primary)
                             }
                         } else {

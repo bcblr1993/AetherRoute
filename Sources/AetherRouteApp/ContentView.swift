@@ -69,6 +69,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 }
 
 extension Notification.Name {
+    static let aetherRouteNavigateToSettings = Notification.Name("com.aetherroute.desktop.navigate-to-settings")
     static let aetherRouteNavigateToSection = Notification.Name(
         "com.aetherroute.desktop.navigate-to-section"
     )
@@ -339,7 +340,7 @@ struct ContentView: View {
                             isConnecting: tunnel.state == .connecting || tunnel.state == .recovering || tunnel.isSwitchingNetworkEngine,
                             size: 6
                         )
-                        Text(tunnel.state == .recovering || tunnel.isSwitchingNetworkEngine ? tunnel.statusTitle : (tunnel.isConnected ? AppLocalization.string("Protected") : AppLocalization.string("Idle")))
+                        Text(tunnel.statusTitle)
                             .font(.system(size: 10.5, weight: .semibold))
                             .foregroundStyle(.primary)
                     }
@@ -397,38 +398,56 @@ struct ContentView: View {
                     .opacity(0.3)
                     .padding(.horizontal, AetherVisual.s3)
 
-                HStack(spacing: AetherVisual.s2) {
-                    Button {
-                        openSettings()
-                    } label: {
-                        HStack(spacing: AetherVisual.sCompact) {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 13, weight: .medium))
-                            Text(AppLocalization.string("Settings"))
-                                .font(.system(size: 12.5, weight: .medium))
-                        }
-                        .foregroundStyle(isSettingsHovered ? Color.primary : Color.secondary)
-                        .padding(.vertical, AetherVisual.s2)
-                        .padding(.horizontal, AetherVisual.sCompact)
-                        .aetherHoverHighlight(isHovered: isSettingsHovered)
-                        .contentShape(Rectangle())
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: AetherVisual.s2) {
+                        sidebarSettingsButton
+                        Spacer(minLength: AetherVisual.s2)
+                        sidebarVersionLabel
                     }
-                    .buttonStyle(.plain)
-                    .onHover { isSettingsHovered = $0 }
-                    .accessibilityIdentifier("sidebar-settings-button")
-
-                    Spacer()
-
-                    Text(verbatim: currentAppVersion)
-                        .font(.system(size: 10.5, weight: .regular, design: .monospaced))
-                        .foregroundStyle(.primary)
-                        .padding(.trailing, AetherVisual.s2)
+                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                        sidebarSettingsButton
+                        sidebarVersionLabel
+                            .padding(.leading, AetherVisual.sCompact)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.horizontal, AetherVisual.s3)
                 .padding(.vertical, AetherVisual.s1)
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var sidebarSettingsButton: some View {
+        Button {
+            openSettings()
+        } label: {
+            HStack(spacing: AetherVisual.sCompact) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13, weight: .medium))
+                Text(AppLocalization.string("Settings"))
+                    .font(.system(size: 12.5, weight: .medium))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .foregroundStyle(isSettingsHovered ? Color.primary : Color.secondary)
+            .padding(.vertical, AetherVisual.s2)
+            .padding(.horizontal, AetherVisual.sCompact)
+            .aetherHoverHighlight(isHovered: isSettingsHovered)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isSettingsHovered = $0 }
+        .accessibilityIdentifier("sidebar-settings-button")
+    }
+
+    private var sidebarVersionLabel: some View {
+        Text(verbatim: currentAppVersion)
+            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.trailing, AetherVisual.s2)
     }
 
     @ViewBuilder
@@ -577,6 +596,7 @@ private struct ConnectionToolbarButton: View {
 
 private struct OverviewView: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    @Environment(\.openSettings) private var openSettings
     let openProfiles: () -> Void
     @State private var isSubscriptionEditorPresented = false
     @State private var isCloudSyncSheetPresented = false
@@ -685,13 +705,6 @@ private struct OverviewView: View {
             VStack(spacing: AetherVisual.s3) {
                 // 顶部四大指标项
                 HStack(spacing: 0) {
-                    MetricTile(
-                        label: "Latency",
-                        value: bestLatency,
-                        unit: bestLatencyUnit,
-                        symbol: "waveform.path.ecg"
-                    )
-                    Divider().frame(height: 48)
                     LiveTelemetryMetricTile(
                         label: "Download",
                         unit: "",
@@ -747,8 +760,8 @@ private struct OverviewView: View {
                         .padding(.horizontal, AetherVisual.s4)
 
                         Text(AppLocalization.string(tunnel.isRealtimeTelemetryPreferred ? "Refresh: every 3 seconds" : "Refresh: every 10 seconds"))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color(nsColor: .labelColor))
                             .padding(.horizontal, AetherVisual.s4)
                         LiveTrafficHistoryGraph(
                             model: tunnel.telemetryViewModel,
@@ -764,25 +777,14 @@ private struct OverviewView: View {
             if let quality = ConnectionQualityPolicy.displayedQuality(
                 tunnel.connectionQuality, isConnected: tunnel.isConnected
             ) {
-                SafetyNotice(quality: quality)
+                SafetyNotice(quality: quality, checkedAt: tunnel.connectionQualityCheckedAt)
+            } else if tunnel.isConnected {
+                Label("Route not checked", systemImage: "questionmark.circle")
+                    .font(.callout)
+                    .foregroundStyle(Color(nsColor: .labelColor))
             }
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private var bestLatency: String {
-        let values = tunnel.proxyLatencies.values
-            .flatMap(\.results)
-            .compactMap(\.delayMilliseconds)
-        return values.min().map(String.init)
-            ?? AppLocalization.string("Not measured")
-    }
-
-    private var bestLatencyUnit: LocalizedStringKey {
-        let values = tunnel.proxyLatencies.values
-            .flatMap(\.results)
-            .compactMap(\.delayMilliseconds)
-        return values.isEmpty ? "" : "ms"
     }
 
     @ViewBuilder
@@ -823,7 +825,11 @@ private struct OverviewView: View {
                             .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
                     }
 
+                    if let profile = tunnel.activeProfile {
+                        Text(profile.name).font(.caption).foregroundStyle(Color(nsColor: .labelColor)).lineLimit(1).help(profile.name)
+                    }
                     Text(activeNode)
+                        .help(activeNode)
                         .font(.system(size: 13.5, weight: .semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
@@ -835,6 +841,25 @@ private struct OverviewView: View {
                     if let ms = latencyResult {
                         AetherLatencyPill(latency: Int(ms))
                     }
+
+                    Button {
+                        openSettings()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            NotificationCenter.default.post(
+                                name: .aetherRouteNavigateToSettings,
+                                object: "diagnostics"
+                            )
+                        }
+                    } label: {
+                        HStack(spacing: AetherVisual.s1) {
+                            Image(systemName: "stethoscope")
+                            Text(AppLocalization.string("Diagnose"))
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("overview-diagnose-button")
+                    .help(AppLocalization.string("Run end-to-end network connectivity diagnostics."))
 
                     Button {
                         NotificationCenter.default.post(
@@ -1046,29 +1071,6 @@ private struct ConnectionHero: View {
             )
 
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                HStack(spacing: AetherVisual.s2) {
-                    AetherStatusBeacon(
-                        isConnected: tunnel.isConnected,
-                        isConnecting: tunnel.state == .connecting || tunnel.isSwitchingNetworkEngine,
-                        size: 7
-                    )
-                    Text(stateBadgeTitle)
-                        .foregroundStyle(.primary)
-                        .font(.caption.weight(.semibold))
-                        .contentTransition(.opacity)
-                }
-                .padding(.horizontal, AetherVisual.s3)
-                .padding(.vertical, AetherVisual.s2)
-                .background(
-                    stateBadgeBackground,
-                    in: Capsule()
-                )
-                .overlay {
-                    Capsule()
-                        .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-                }
-                .accessibilityHidden(true)
-
                 Text(tunnel.statusTitle)
                     .font(.title.weight(.semibold))
                     .tracking(-0.45)
@@ -1081,39 +1083,16 @@ private struct ConnectionHero: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .contentTransition(.opacity)
                     .accessibilityHidden(true)
-                Label(nextStep, systemImage: nextStepSymbol)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .contentTransition(.opacity)
+                if !tunnel.isConnected || tunnel.isAutomaticRouteRecovering || tunnel.isSwitchingNetworkEngine {
+                    Label(nextStep, systemImage: nextStepSymbol)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .contentTransition(.opacity)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var stateBadgeTitle: String {
-        if tunnel.systemExtensionApprovalRequired {
-            return AppLocalization.string("Approval needed")
-        }
-        if tunnel.isSwitchingNetworkEngine {
-            return AppLocalization.string("Switching network engine…")
-        }
-        return switch tunnel.state {
-        case .privacyConsentRequired: AppLocalization.string("Privacy")
-        case .loading: AppLocalization.string("Preparing")
-        case .disconnected: AppLocalization.string("Standby")
-        case .connecting: AppLocalization.string("Starting")
-        case .recovering: AppLocalization.string("Recovering network")
-        case .connected where tunnel.isAutomaticRouteRecovering:
-            AppLocalization.string("Recovering")
-        case .connected: AppLocalization.string("Protected")
-        case .disconnecting: AppLocalization.string("Stopping")
-        case .failed: AppLocalization.string("Attention")
-        }
-    }
-
-    private var stateBadgeBackground: Color {
-        Color(nsColor: .controlBackgroundColor)
     }
 
     private var nextStep: String {
@@ -1141,7 +1120,7 @@ private struct ConnectionHero: View {
                 "The tunnel remains active while AetherRoute retries the fastest available node."
             )
         case .connected:
-            AppLocalization.string("Readiness checks passed. Open Connections for per-flow details.")
+            AppLocalization.string("Open Connections for per-flow details. Route checks are shown separately below.")
         case .disconnecting:
             AppLocalization.string("Wait while the normal network path is restored.")
         case .failed:
@@ -1629,6 +1608,7 @@ private struct LiveTelemetryMetricValue: View {
 /// rather than as a failure.
 private struct SafetyNotice: View {
     let quality: ConnectionQuality
+    let checkedAt: Date?
 
     var body: some View {
         HStack(alignment: .top, spacing: AetherVisual.s3) {
@@ -1641,6 +1621,10 @@ private struct SafetyNotice: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                     .accessibilityHint(Text(detail))
+                if let checkedAt {
+                    Text(checkedAt, format: .dateTime.hour().minute().second())
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Text(detail)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
@@ -1675,10 +1659,10 @@ private struct SafetyNotice: View {
 
     private var title: LocalizedStringKey {
         switch quality {
-        case .unknown: "Verified connection status"
+        case .unknown: "Route not checked"
         case .verifying: "Checking route quality"
         case .verified: "Route verified"
-        case .degraded: "Route is slow"
+        case .degraded: "Route check incomplete"
         }
     }
 
@@ -1687,11 +1671,11 @@ private struct SafetyNotice: View {
         case .unknown:
             "Traffic is routed as soon as the network extension installs its settings."
         case .verifying:
-            "You are already online. AetherRoute is measuring the selected route in the background."
+            "The tunnel is connected. AetherRoute is checking the selected route in the background."
         case .verified:
             "The selected route answered the latency and data-plane checks."
         case .degraded:
-            "You are still connected. The selected route was slow to answer, and AetherRoute keeps looking for a faster node."
+            "Still connected. The route did not complete its checks within the time limit; target availability is not confirmed."
         }
     }
 }

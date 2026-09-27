@@ -8,6 +8,7 @@ struct ManualNodeEditorSheet: View {
 
     private let save: ((AetherNode) -> Bool)?
     private let isEditing: Bool
+    private let initialNode: AetherNode
     @State private var node: AetherNode
     @State private var portText: String
     @State private var uploadText: String
@@ -17,6 +18,8 @@ struct ManualNodeEditorSheet: View {
     @State private var isPrivateKeyImporterPresented = false
     @State private var isSaving = false
     @State private var isRealityExpanded = true
+    @State private var requestsCancel = false
+    @State private var showsAdvanced = false
 
     init(
         initialNode: AetherNode? = nil,
@@ -29,6 +32,7 @@ struct ManualNodeEditorSheet: View {
             port: 443,
             tls: .init(enabled: true)
         )
+        self.initialNode = seed
         self.save = save
         self.isEditing = initialNode != nil
         _node = State(initialValue: seed)
@@ -51,9 +55,18 @@ struct ManualNodeEditorSheet: View {
             Form {
                 connectionSection
                 credentialsSection
-                if supportsTransport { transportSection }
-                if showsSecuritySection { securitySection }
-                if showsProtocolOptionsSection { protocolOptionsSection }
+                Button {
+                    showsAdvanced.toggle()
+                } label: {
+                    Label("Advanced connection options", systemImage: showsAdvanced ? "chevron.down" : "chevron.right")
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("manual-node-advanced-toggle")
+                if showsAdvanced {
+                    if supportsTransport { transportSection }
+                    if showsSecuritySection { securitySection }
+                    if showsProtocolOptionsSection { protocolOptionsSection }
+                }
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
@@ -61,13 +74,15 @@ struct ManualNodeEditorSheet: View {
             footer
         }
         .frame(
-            minWidth: 620,
+            minWidth: 520,
             idealWidth: 620,
-            maxWidth: 620,
-            minHeight: 620,
+            maxWidth: 760,
+            minHeight: 480,
             idealHeight: 720,
             maxHeight: 820
         )
+        .disabled(isSaving)
+        .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
         .background(Color(nsColor: .windowBackgroundColor))
         .onChange(of: node.protocolID) { _, protocolID in
             applyDefaults(for: protocolID)
@@ -119,6 +134,13 @@ struct ManualNodeEditorSheet: View {
         .padding(AetherVisual.s6)
     }
 
+    private var hasChanges: Bool {
+        node != initialNode || portText != String(initialNode.port)
+            || uploadText != (initialNode.uploadMbps.map(String.init) ?? "")
+            || downloadText != (initialNode.downloadMbps.map(String.init) ?? "")
+            || allowedIPsText != (isEditing ? initialNode.allowedIPs.joined(separator: ", ") : "0.0.0.0/0, ::/0")
+    }
+
     private var connectionSection: some View {
         Section("Connection") {
             Picker("Protocol", selection: $node.protocolID) {
@@ -130,11 +152,17 @@ struct ManualNodeEditorSheet: View {
             TextField("Node name", text: $node.name)
                 .textContentType(.name)
                 .accessibilityIdentifier("manual-node-name")
+            if node.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("Enter a node name.").font(.caption).foregroundStyle(.secondary)
+            }
             TextField("Server", text: $node.server)
                 .textContentType(.URL)
                 .accessibilityIdentifier("manual-node-server")
             TextField("Port", text: $portText)
                 .accessibilityIdentifier("manual-node-port")
+            if UInt16(portText) == nil || UInt16(portText) == 0 {
+                Text("Port must be between 1 and 65535.").font(.caption).foregroundStyle(.orange)
+            }
         }
     }
 
@@ -386,7 +414,7 @@ struct ManualNodeEditorSheet: View {
             HStack {
                 storageStatusLabel
                 Spacer()
-                Button(AppLocalization.string("Cancel"), role: .cancel) { dismiss() }
+                Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
                     .keyboardShortcut(.cancelAction)
                     .disabled(isSaving)
                 Button {
@@ -497,14 +525,14 @@ struct ManualNodeEditorSheet: View {
         do {
             let candidate = try candidateForSubmission()
             if let save {
-                if save(candidate) { dismiss() }
+                if save(candidate) { dismiss() } else { errorMessage = AppLocalization.string("Could not save the node. Check the configuration and try again.") }
                 return
             }
             isSaving = true
             Task {
                 let didSave = await tunnel.createNativeProfile(node: candidate)
                 isSaving = false
-                if didSave { dismiss() }
+                if didSave { dismiss() } else { errorMessage = tunnel.profileMessage ?? AppLocalization.string("Could not save the node. Check the configuration and try again.") }
             }
         } catch {
             errorMessage = error.localizedDescription

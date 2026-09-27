@@ -4,6 +4,7 @@ import SwiftUI
 struct DNSView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var tunnel: TunnelManager
+    @State private var showsAdvancedDNS = false
 
     var body: some View {
         Group {
@@ -104,6 +105,7 @@ struct DNSView: View {
         resolutionBehaviorSection(dns)
 #endif
 
+        DisclosureGroup("Advanced DNS details", isExpanded: $showsAdvancedDNS) {
         if dns.mode == .fakeIP || dns.fakeIPFilterCount > 0 {
             HStack(alignment: .top, spacing: AetherVisual.s4) {
                 upstreamPrivacySection(dns)
@@ -115,12 +117,14 @@ struct DNSView: View {
             upstreamPrivacySection(dns)
         }
 
+        }
+
         Label(
             AppLocalization.string("This page is a privacy-safe view of the imported profile. The protocol core remains authoritative and validates DNS semantics when a session starts."),
             systemImage: "info.circle"
         )
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(.primary)
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, AetherVisual.s1)
     }
@@ -134,7 +138,7 @@ struct DNSView: View {
                             .font(.subheadline.weight(.semibold))
                         Text(AppLocalization.string("Server addresses stay hidden in this summary."))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
@@ -145,13 +149,13 @@ struct DNSView: View {
                         )
                     )
                     .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                 }
 
                 if dns.upstreamTransports.isEmpty {
                     Label(AppLocalization.string("No explicit upstream transport"), systemImage: "minus.circle")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                 } else {
                     HStack(spacing: AetherVisual.s2) {
                         ForEach(dns.upstreamTransports, id: \.self) { transport in
@@ -225,7 +229,7 @@ struct DNSView: View {
                                 : AppLocalization.string("Core default")
                         )
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
@@ -384,7 +388,7 @@ struct DNSView: View {
                                 : AppLocalization.string("Select the TUN engine on Overview to edit runtime overrides.")
                         )
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                     }
                     Spacer(minLength: 12)
                     StatePill(
@@ -467,7 +471,7 @@ struct DNSView: View {
                             : AppLocalization.string("Off")
                     )
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(dns.usesHosts ? Color.blue : Color.secondary)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, AetherVisual.s3)
                     .padding(.vertical, AetherVisual.s1)
                     .background(
@@ -476,6 +480,19 @@ struct DNSView: View {
                     )
                 }
 
+                Divider().padding(.leading, AetherVisual.s4)
+                HStack {
+                    Text("DNS changes apply on the next TUN connection, including restoring profile defaults.")
+                        .font(.caption).foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button("Restore profile defaults") {
+                        Task { await tunnel.setDNSRuntimePolicy(DNSRuntimePolicy()) }
+                    }
+                    .disabled(tunnel.dnsRuntimePolicy.isInherited || !tunnel.canModifyDNSRuntimePolicy || tunnel.networkEngineMode != .tun)
+                    .accessibilityIdentifier("dns-restore-defaults")
+                }
+                .padding(AetherVisual.s4)
                 if let message = tunnel.dnsRuntimePolicyMessage {
                     Divider().padding(.leading, AetherVisual.s4)
                     Label(
@@ -515,10 +532,10 @@ struct DNSView: View {
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color(nsColor: .labelColor))
                 Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color(nsColor: .labelColor))
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 16)
@@ -618,7 +635,7 @@ struct DNSView: View {
             Label(AppLocalization.string("System resolver"), systemImage: "macbook.and.iphone")
                 .font(.headline)
             Text(AppLocalization.string("The active profile has no DNS section. The core therefore uses the system resolver behavior available to the selected network engine."))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
             Label(
                 AppLocalization.string("No resolver address or browsing-domain value is collected for this screen."),
@@ -854,7 +871,7 @@ private struct DNSCountLabel: View {
 
     var body: some View {
         Text(title)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.primary)
             .frame(minWidth: 80, alignment: .leading)
     }
 }

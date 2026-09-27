@@ -89,9 +89,13 @@ def inspect_processes() -> Dict[str, Optional[Dict[str, Any]]]:
             continue
         pid_s, ppid_s, cpu_s, mem_s, rss_s, vsz_s, command = parts
         cmd_lower = command.lower()
-
-        is_app = ("/applications/aetherroute.app" in cmd_lower or "/aetherroute" in cmd_lower) and "systemextension" not in cmd_lower
-        is_tunnel = "com.aetherroute.desktop.tunnel" in cmd_lower
+        executable = parts[6].split()[0].lower()
+        is_app = (
+            ("aetherroute.app/contents/macos/aetherroute" in cmd_lower or executable.endswith("/aetherroute") or executable == "aetherroute")
+            and "systemextension" not in cmd_lower
+            and not any(x in executable for x in ["node", "python", "git", "sh", "grep"])
+        )
+        is_tunnel = "com.aetherroute.desktop.tunnel" in cmd_lower and not any(x in executable for x in ["node", "python", "git", "sh", "grep"])
 
         if not (is_app or is_tunnel):
             continue
@@ -279,7 +283,7 @@ def probe_dns(host: str = DNS_HOST) -> Dict[str, Any]:
         }
 
 
-def inspect_unified_logs(window_minutes: int = 1) -> Dict[str, Any]:
+def inspect_unified_logs(window_seconds: int = 30) -> Dict[str, Any]:
     """Scrapes Unified Log (os_log) for errors and faults in AetherRoute subsystem/processes."""
     predicate = (
         '(process == "AetherRoute" OR process == "com.aetherroute.desktop.tunnel" '
@@ -289,7 +293,7 @@ def inspect_unified_logs(window_minutes: int = 1) -> Dict[str, Any]:
     cmd = [
         "/usr/bin/log", "show",
         "--predicate", predicate,
-        "--last", f"{window_minutes}m",
+        "--last", f"{window_seconds}s",
         "--style", "compact",
     ]
     code, stdout, stderr = run_command(cmd, timeout=20.0)
@@ -301,6 +305,8 @@ def inspect_unified_logs(window_minutes: int = 1) -> Dict[str, Any]:
         "tcp_copy_failures": 0,
         "adapter_send_failures": 0,
         "panics_or_asserts": 0,
+        "swiftui_view_update_faults": 0,
+        "cfprefs_container_errors": 0,
         "samples": [],
     }
 
@@ -317,6 +323,10 @@ def inspect_unified_logs(window_minutes: int = 1) -> Dict[str, Any]:
             summary["total_faults"] += 1
 
         clean_lower = clean.lower()
+        if "publishing changes from within view updates" in clean_lower:
+            summary["swiftui_view_update_faults"] += 1
+        if "domain: group.com.aetherroute.desktop" in clean_lower and "detaching from cfprefsd" in clean_lower:
+            summary["cfprefs_container_errors"] += 1
         if "on unconnected nw_connection" in clean_lower:
             summary["nw_unconnected_calls"] += 1
         if "tcp_copy" in clean_lower and "failed" in clean_lower:
@@ -544,14 +554,24 @@ class AnomalyEngine:
             flags.append("UTUN_PACKET_ERRORS")
 
         # 9. Logs critical errors
+        if logs.get("swiftui_view_update_faults", 0) > 0:
+            if verdict != "CRITICAL":
+                verdict = "WARNING"
+            issues.append(f"Detected {logs['swiftui_view_update_faults']} SwiftUI view update publishing fault(s)!")
+            flags.append("SWIFTUI_FAULT_DETECTED")
+        if logs.get("cfprefs_container_errors", 0) > 0:
+            if verdict != "CRITICAL":
+                verdict = "WARNING"
+            issues.append(f"Detected {logs['cfprefs_container_errors']} CFPreferences AppGroup container error(s)!")
+            flags.append("CFPREFS_CONTAINER_ERROR")
         if logs.get("panics_or_asserts", 0) > 0:
             verdict = "CRITICAL"
             issues.append(f"Detected {logs['panics_or_asserts']} panic/assert logs in unified log!")
             flags.append("PANIC_LOG_DETECTED")
-        elif (logs.get("total_errors", 0) + logs.get("total_faults", 0)) > 30:
+        elif (logs.get("total_errors", 0) + logs.get("total_faults", 0)) > 20:
             if verdict != "CRITICAL":
                 verdict = "WARNING"
-            issues.append(f"High error frequency: {logs['total_errors']} errors/faults in last minute")
+            issues.append(f"High error frequency: {logs['total_errors']} errors and {logs['total_faults']} faults in last window")
             flags.append("HIGH_LOG_ERRORS")
 
         if not issues:
@@ -774,6 +794,7 @@ def perform_single_sample(
     engine: AnomalyEngine,
     output_dir: Path,
     last_crash_check: float,
+    sample_interval: int = 30,
 ) -> Tuple[Dict[str, Any], str, List[str], List[str]]:
     now_ts = time.time()
     iso_str = datetime.now(timezone.utc).isoformat()
@@ -786,7 +807,7 @@ def perform_single_sample(
     proxy_probe = probe_path(PROXIED_URL)
     direct_probe = probe_path(DIRECT_URL)
     dns_probe = probe_dns(DNS_HOST)
-    logs_info = inspect_unified_logs(window_minutes=1)
+    logs_info = inspect_unified_logs(window_seconds=sample_interval)
     crashes = scan_recent_crashes(cutoff_timestamp=last_crash_check)
 
     sample = {
@@ -811,11 +832,13 @@ def perform_single_sample(
     sample["anomaly_flags"] = flags
 
     # Persistence
-    csv_path = output_dir / "metrics_minute.csv"
+    csv_path = output_dir / f"metrics_{sample_interval}s.csv"
     jsonl_path = output_dir / "timeseries.jsonl"
     incidents_path = output_dir / "incidents.jsonl"
 
     write_csv_row(csv_path, sample, verdict, flags)
+    if sample_interval != 60:
+        write_csv_row(output_dir / "metrics_minute.csv", sample, verdict, flags)
     write_jsonl_row(jsonl_path, sample)
 
     # Trigger forensic incident capture if needed
@@ -837,12 +860,12 @@ def perform_single_sample(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="AetherRoute 1-minute runtime performance and anomaly monitor daemon.")
-    parser.add_argument("--interval", type=int, default=60, help="Sampling interval in seconds (default: 60)")
-    parser.add_argument("--hours", type=float, default=0, help="Total hours to run (0 = run indefinitely until Ctrl-C)")
+    parser = argparse.ArgumentParser(description="AetherRoute runtime performance and anomaly monitor daemon.")
+    parser.add_argument("--interval", type=int, default=30, help="Sampling interval in seconds (default: 30)")
+    parser.add_argument("--hours", type=float, default=4.0, help="Total hours to run (default: 4.0, 0 = indefinite)")
     parser.add_argument("--output-dir", type=str, default=str(DEFAULT_OUT_DIR), help=f"Directory to save metrics (default: {DEFAULT_OUT_DIR})")
     parser.add_argument("--once", action="store_true", help="Take a single sample and display complete health check")
-    parser.add_argument("--quiet", action="store_true", help="Quiet output (suppress standard per-minute line)")
+    parser.add_argument("--quiet", action="store_true", help="Quiet output (suppress standard per-sample line)")
     args = parser.parse_args()
 
     out_dir = Path(args.output_dir)
@@ -854,7 +877,7 @@ def main() -> int:
     deadline = start_time + (args.hours * 3600.0) if args.hours > 0 else None
 
     if args.once:
-        sample, verdict, issues, flags = perform_single_sample(engine, out_dir, last_crash_check)
+        sample, verdict, issues, flags = perform_single_sample(engine, out_dir, last_crash_check, sample_interval=args.interval)
         print_terminal_line(sample, verdict, issues, flags)
         print("\n--- Detailed Health Findings ---")
         for iss in issues:
@@ -864,19 +887,64 @@ def main() -> int:
     print(f"================================================================================")
     print(f" AetherRoute Monitor Daemon Started")
     print(f" Output Directory : {out_dir}")
-    print(f" Sampling Rate    : Every {args.interval}s (1 minute)")
+    print(f" Sampling Rate    : Every {args.interval}s")
     print(f" Planned Duration : {'Indefinite (Ctrl-C to stop)' if args.hours == 0 else f'{args.hours} hours'}")
     print(f"================================================================================")
 
     try:
+        sample_index = 0
         while True:
             t0 = time.time()
             if deadline and t0 >= deadline:
                 print(f"\nCompleted specified duration of {args.hours} hours. Exiting.")
                 break
 
-            sample, verdict, issues, flags = perform_single_sample(engine, out_dir, last_crash_check)
+            sample_index += 1
+            sample, verdict, issues, flags = perform_single_sample(engine, out_dir, last_crash_check, sample_interval=args.interval)
             last_crash_check = t0
+
+            # Update live status.json
+            now_iso = sample["timestamp_iso"]
+            elapsed = time.time() - start_time
+            status_data = {
+                "start_time_iso": datetime.fromtimestamp(start_time, tz=timezone.utc).isoformat(),
+                "latest_sample_iso": now_iso,
+                "elapsed_seconds": round(elapsed, 1),
+                "elapsed_hours": round(elapsed / 3600.0, 3),
+                "target_hours": args.hours,
+                "progress_percent": round(min(100.0, (elapsed / (args.hours * 3600.0)) * 100.0), 1) if args.hours > 0 else None,
+                "sample_count": sample_index,
+                "latest_verdict": verdict,
+                "latest_issues": issues,
+                "latest_flags": flags,
+                "app": {
+                    "pid": sample["app"]["pid"] if sample["app"] else None,
+                    "cpu_percent": sample["app"]["cpu_percent"] if sample["app"] else 0.0,
+                    "footprint_mb": sample["app"]["footprint_mb"] if sample["app"] else None,
+                    "rss_mb": sample["app"]["rss_mb"] if sample["app"] else 0.0,
+                    "fd_count": sample["app"]["fd_count"] if sample["app"] else 0,
+                } if sample["app"] else None,
+                "tunnel": {
+                    "pid": sample["tunnel"]["pid"] if sample["tunnel"] else None,
+                    "cpu_percent": sample["tunnel"]["cpu_percent"] if sample["tunnel"] else 0.0,
+                    "rss_mb": sample["tunnel"]["rss_mb"] if sample["tunnel"] else 0.0,
+                    "fd_count": sample["tunnel"]["fd_count"] if sample["tunnel"] else 0,
+                } if sample["tunnel"] else None,
+                "network": {
+                    "proxy_probe_ok": sample["network"]["proxy_probe"]["ok"],
+                    "proxy_http_code": sample["network"]["proxy_probe"]["http_code"],
+                    "proxy_total_s": sample["network"]["proxy_probe"]["total_s"],
+                    "dns_latency_ms": sample["dns"]["latency_ms"],
+                },
+                "logs": {
+                    "errors": sample["logs"]["total_errors"],
+                    "faults": sample["logs"]["total_faults"],
+                },
+            }
+            try:
+                (out_dir / "status.json").write_text(json.dumps(status_data, indent=2), encoding="utf-8")
+            except Exception:
+                pass
 
             if not args.quiet:
                 print_terminal_line(sample, verdict, issues, flags)
@@ -887,6 +955,14 @@ def main() -> int:
 
     except KeyboardInterrupt:
         print("\nMonitoring stopped by user.")
+
+    # Generate final report upon completion
+    print(f"\nGenerating final analysis report...")
+    report_script = ROOT / "scripts" / "generate_monitor_report.py"
+    report_path = out_dir / "AetherRoute_Monitoring_Report.md"
+    if report_script.exists():
+        run_command([sys.executable, str(report_script), "--dir", str(out_dir), "--out", str(report_path)])
+        print(f"Final report saved to: {report_path}")
 
     return 0
 
