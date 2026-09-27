@@ -87,11 +87,13 @@ final class AppAutomationController: ObservableObject {
             }
         licenseAccessObservation = distribution.$connectionAccess
             .removeDuplicates()
+            .receive(on: DispatchQueue.main)
             .sink { [weak tunnel] access in
                 tunnel?.setDistributionConnectionAccess(access)
             }
         privacyObservation = tunnel.$hasAcceptedPrivacyDisclosure
             .removeDuplicates()
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] isAccepted in
                 if isAccepted {
                     self?.startLicenseRefreshLoopIfNeeded()

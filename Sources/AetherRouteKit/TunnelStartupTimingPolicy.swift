@@ -22,6 +22,8 @@ public enum TunnelStartupTimingPolicy {
     /// degraded), a longer budget costs the user nothing and stops healthy but
     /// distant nodes from being reported as dead.
     public static let selectorReadinessPerMemberTimeoutMilliseconds: UInt32 = 10_000
+    /// Responsive timeout for probing the currently selected route during routine health checks.
+    public static let activeRouteProbeTimeoutMilliseconds: UInt32 = 3_500
     public static let selectorReadinessMaximumMemberCount = 64
     public static let selectorReadinessMaximumConcurrency = 8
     public static let selectorReadinessResponseGraceSeconds = 2

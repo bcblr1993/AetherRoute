@@ -84,6 +84,13 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSM
         NSApplication.shared.terminate(sender)
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        Self.lifecycleLogger.info("stage=applicationTermination willTerminate")
+        terminationSignalSource?.cancel()
+        terminationSignalSource = nil
+        tunnel?.prepareForApplicationTermination()
+    }
+
     @objc func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         true
     }
@@ -989,7 +996,9 @@ private struct MenuBarContent: View {
                 .help(AppLocalization.string("Check for Updates…"))
                 .disabled(!SparkleUpdaterController.shared.canCheckForUpdates)
 
-                Button(AppLocalization.string("Quit")) { NSApplication.shared.terminate(nil) }
+                Button(AppLocalization.string("Quit")) {
+                    DispatchQueue.main.async { NSApplication.shared.terminate(nil) }
+                }
             }
             .buttonStyle(.borderless)
             .font(.caption)
@@ -1054,7 +1063,9 @@ private struct MenuBarContent: View {
 
             HStack {
                 Spacer()
-                Button("Quit") { NSApplication.shared.terminate(nil) }
+                Button("Quit") {
+                    DispatchQueue.main.async { NSApplication.shared.terminate(nil) }
+                }
             }
             .buttonStyle(.borderless)
             .padding(AetherVisual.s4)

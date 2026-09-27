@@ -6,6 +6,32 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.0.31] - 2026-09-27
+
+### Fixed
+
+- Eliminated SwiftUI View Lifecycle State Update Faults (`ContentView.swift`):
+  resolved runtime warnings regarding publishing changes from within view updates by dispatching `setRealtimeTelemetryPreferred` and related telemetry state synchronization via `DispatchQueue.main.async`.
+- Decoupled Combine Pipeline Initial Subscriptions (`AppAutomationController.swift`):
+  routed license and privacy observation subscriptions via `.receive(on: DispatchQueue.main)` to avoid re-entrant state modifications during app initialization.
+- Graceful MenuBarExtra Quit & Fixed XPC Termination Assertions (`AetherRouteApp.swift`):
+  isolated the Quit action from the AppKit menu event tracking loop via asynchronous dispatch, eliminating `0x7d` assertions, and added proper `applicationWillTerminate(_:)` cleanup hooks for tunnel resources and dispatch sources.
+- Resilient Tunnel Reconnection & State Recovery (`TunnelManager+ConnectionLifecycle.swift`):
+  introduced transient `.recovering` state indicator during automatic reconnect attempts following unexpected network extension termination (e.g. system route conflict NEVPNConnectionErrorDomain Code 12), preventing premature false-alarm error notifications.
+- High-Sensitivity Active Route Probe Timeout (`TunnelStartupTimingPolicy.swift`, `TunnelManager+Telemetry.swift`):
+  reduced active route probe timeout to 3.5s (`activeRouteProbeTimeoutMilliseconds = 3_500`), expediting node failure perception and failover.
+
+### Verified
+
+- 6-Hour Production Runtime Benchmark & Telemetry Profiling:
+  verified 720 continuous 30-second telemetry cycles (5.99 hours), maintaining an average CPU usage of 0.28%, resident memory rock-solid between 66.8 MB and 68.2 MB (+1.4 MB drift, zero memory leaks), and stable 31 file descriptors with zero crashes.
+- Local Full Regression Test Suites:
+  passed `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, and `./scripts/test.sh`.
+- Tart Virtual Machine 6-Dimensional Matrix Acceptance (`aether-diag-1434`):
+  verified 100% pass across all 6 configurations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`), followed by clean VM storage and log cleanup.
+- Remote Physical Apple Silicon Hardware Validation (`chenxu@100.64.0.3`):
+  verified all remote suites via `test_remote_arm64.sh fast` with high throughput and zero packet loss.
+
 ## [1.0.30] - 2026-09-27
 
 ### Added

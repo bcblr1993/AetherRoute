@@ -665,11 +665,13 @@ private struct OverviewView: View {
     }
 
     private func updateOverviewTelemetryState() {
-        let hasVisibleWindow = NSApplication.shared.isActive && NSApplication.shared.windows.contains { window in
-            window.isVisible && !window.isMiniaturized && !(window is NSPanel)
-                && window.occlusionState.contains(.visible)
+        DispatchQueue.main.async {
+            let hasVisibleWindow = NSApplication.shared.isActive && NSApplication.shared.windows.contains { window in
+                window.isVisible && !window.isMiniaturized && !(window is NSPanel)
+                    && window.occlusionState.contains(.visible)
+            }
+            tunnel.setRealtimeTelemetryPreferred(hasVisibleWindow, for: "overview")
         }
-        tunnel.setRealtimeTelemetryPreferred(hasVisibleWindow, for: "overview")
     }
 
     private var overviewDetails: some View {

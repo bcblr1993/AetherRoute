@@ -568,14 +568,24 @@ extension TunnelManager {
         sessionRoutingMode = nil
         sessionNetworkEngineMode = nil
         clearProxySelectionRuntimeState()
-        recordFailure(
-            LocalizedConnectionError(
-                message: AppLocalization.string(
-                    "The network extension stopped before it became ready. Another active proxy or VPN may be using the required network channel, or the active profile may have failed. Turn off conflicting network extensions, then retry."
-                )
-            ),
-            context: .provider
+        let willAttemptAutoReconnect = ProviderAutoReconnectPolicy.shouldReconnect(
+            terminationWasUnexpected: true,
+            userWantsConnection: userIntendsToConnect,
+            attempt: automaticReconnectAttempt
         )
+
+        if willAttemptAutoReconnect {
+            state = .recovering
+        } else {
+            recordFailure(
+                LocalizedConnectionError(
+                    message: AppLocalization.string(
+                        "The network extension stopped before it became ready. Another active proxy or VPN may be using the required network channel, or the active profile may have failed. Turn off conflicting network extensions, then retry."
+                    )
+                ),
+                context: .provider
+            )
+        }
         connection.fetchLastDisconnectError { [weak self] error in
             let nsError = error as NSError?
             let kind = ProviderDisconnectErrorClassifier.classify(nsError)

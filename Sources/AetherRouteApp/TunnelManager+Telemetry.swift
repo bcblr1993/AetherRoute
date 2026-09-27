@@ -213,7 +213,7 @@ extension TunnelManager {
                         group: group,
                         url: Self.selectorLatencyTestURL,
                         timeoutMilliseconds: TunnelStartupTimingPolicy
-                            .selectorReadinessPerMemberTimeoutMilliseconds
+                            .activeRouteProbeTimeoutMilliseconds
                     )
                     if latency.results.count == 1,
                        latency.results[0].delayMilliseconds != nil {
