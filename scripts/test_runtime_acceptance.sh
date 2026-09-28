@@ -24,6 +24,20 @@ APP=${AETHERROUTE_APP_PATH:-/Applications/AetherRoute.app}
 EXPECTED_BUILD=${1:-}
 REPORT=${2:-}
 PRIVILEGED_OBSERVATION=${AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION:-NO}
+# Shipped next to this script, both in the repository and in the VM work dir.
+IDLE_REUSE_SCRIPT=${AETHERROUTE_ACCEPTANCE_IDLE_REUSE_SCRIPT:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/test_idle_keepalive_reuse.sh"}
+IDLE_REUSE_OUT=
+IDLE_REUSE_PID=
+cleanup_idle_reuse() {
+  if [ -n "$IDLE_REUSE_PID" ]; then
+    kill "$IDLE_REUSE_PID" 2>/dev/null || true
+  fi
+  if [ -n "$IDLE_REUSE_OUT" ]; then
+    rm -f -- "$IDLE_REUSE_OUT"
+  fi
+}
+trap cleanup_idle_reuse EXIT
+trap 'exit 130' HUP INT TERM
 
 usage() {
   echo "usage: $0 [expected-build-number] [/absolute/report-path]" >&2
@@ -407,6 +421,13 @@ emit ""
 
 # --------------------------------------------------------------- data path ---
 emit "data path"
+# The idle keep-alive check waits more than a minute on one connection, so it
+# runs alongside the short probes and is collected after them.
+if [ "$CONNECTED" = yes ] && [ -f "$IDLE_REUSE_SCRIPT" ]; then
+  IDLE_REUSE_OUT=$(mktemp "${TMPDIR:-/tmp}/aetherroute-idle-reuse.XXXXXX")
+  sh "$IDLE_REUSE_SCRIPT" >"$IDLE_REUSE_OUT" 2>&1 &
+  IDLE_REUSE_PID=$!
+fi
 # needs_proxy marks a destination that is only expected to answer when traffic
 # is actually leaving through a node. In direct mode those requests go out over
 # the local network, so a failure describes that network, not AetherRoute.
@@ -433,6 +454,27 @@ probe() {
 probe "captive portal probe" http://cp.cloudflare.com/generate_204 "204"
 probe "anthropic reachable"  https://api.anthropic.com/v1/messages "405 403 401" yes
 probe "china site direct"    https://www.baidu.com/ "200"
+
+if [ "$CONNECTED" != yes ]; then
+  check "idle keep-alive reuse" "candidate not connected" skip
+elif [ -z "$IDLE_REUSE_PID" ]; then
+  check "idle keep-alive reuse" "helper missing: $IDLE_REUSE_SCRIPT" fail
+else
+  idle_status=0
+  wait "$IDLE_REUSE_PID" || idle_status=$?
+  IDLE_REUSE_PID=
+  idle_detail=$(tail -1 "$IDLE_REUSE_OUT" 2>/dev/null || true)
+  case "$idle_status" in
+    0) check "idle keep-alive reuse" "$idle_detail" pass ;;
+    2)
+      if [ "$ROUTING" = direct ]; then
+        check "idle keep-alive reuse" "$idle_detail (direct mode bypasses nodes)" skip
+      else
+        check "idle keep-alive reuse" "$idle_detail" fail
+      fi ;;
+    *) check "idle keep-alive reuse" "${idle_detail:-exit $idle_status}" fail ;;
+  esac
+fi
 
 egress=$(clean_curl --proxy '' -s --max-time 20 \
   https://api.ipify.org 2>/dev/null || true)

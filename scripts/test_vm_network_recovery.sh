@@ -5,7 +5,7 @@ umask 077
 # Verifies that AetherRoute in a Tart VM cleanly recovers from physical uplink
 # disconnect and reconnect without dropping the tunnel or restarting the app.
 
-VM=${1:-aether-diag-1434}
+VM=${1:-macos27}
 SSH_KEY=${AETHERROUTE_VM_SSH_KEY:-$HOME/.ssh/id_ed25519}
 VM_USER=${AETHERROUTE_VM_USER:-chenxu}
 PROBE_URL=${AETHERROUTE_PROBE_URL:-http://cp.cloudflare.com/generate_204}

@@ -17,7 +17,7 @@ umask 077
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 CANDIDATE=${1:-}
-VM=${2:-aether-diag-1434}
+VM=${2:-macos27}
 REPORT_DIR=${3:-}
 SSH_KEY=${AETHERROUTE_VM_SSH_KEY:-$HOME/.ssh/id_ed25519}
 VM_USER=${AETHERROUTE_VM_USER:-chenxu}
@@ -166,6 +166,7 @@ fi
 log "installing $(basename "$CANDIDATE")"
 send "$CANDIDATE" "$REMOTE_WORK/candidate.zip"
 send "$ROOT/scripts/test_runtime_acceptance.sh" "$REMOTE_WORK/test_runtime_acceptance.sh"
+send "$ROOT/scripts/test_idle_keepalive_reuse.sh" "$REMOTE_WORK/test_idle_keepalive_reuse.sh"
 send "$ROOT/scripts/vm_matrix_lifecycle.sh" "$REMOTE_WORK/vm_matrix_lifecycle.sh"
 actual_sha=$(vm "shasum -a 256 '$REMOTE_WORK/candidate.zip'" | awk '{print $1}')
 test "$actual_sha" = "$candidate_sha" || { echo "VM candidate checksum mismatch" >&2; exit 1; }

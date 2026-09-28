@@ -35,7 +35,7 @@ umask 077
 #   reclaims it on resume — observed once at a 300s freeze, taking the guest
 #   down with it and making the run inconclusive.
 
-VM=${1:-aether-diag-1434}
+VM=${1:-macos27}
 FREEZE_SECONDS=${AETHERROUTE_FREEZE_SECONDS:-300}
 RECOVERY_DEADLINE_SECONDS=${AETHERROUTE_RECOVERY_DEADLINE_SECONDS:-120}
 SSH_KEY=${AETHERROUTE_VM_SSH_KEY:-$HOME/.ssh/id_ed25519}

@@ -16,7 +16,7 @@ umask 077
 # suspends the virtual machine monitor long enough for upstream connections to
 # time out for real.
 
-VM=${1:-aether-diag-1434}
+VM=${1:-macos27}
 SSH_KEY=${AETHERROUTE_VM_SSH_KEY:-$HOME/.ssh/id_ed25519}
 VM_USER=${AETHERROUTE_VM_USER:-chenxu}
 

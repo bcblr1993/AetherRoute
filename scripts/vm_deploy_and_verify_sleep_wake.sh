@@ -10,7 +10,7 @@ umask 077
 # connected tunnel so `test_sleep_wake_recovery.sh` has something to suspend.
 
 CANDIDATE=${1:-}
-VM=${2:-aether-diag-1434}
+VM=${2:-macos27}
 ENGINE=${AETHERROUTE_ENGINE:-tun}
 SSH_KEY=${AETHERROUTE_VM_SSH_KEY:-$HOME/.ssh/id_ed25519}
 VM_USER=${AETHERROUTE_VM_USER:-chenxu}

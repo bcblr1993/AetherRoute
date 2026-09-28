@@ -4,7 +4,7 @@ umask 077
 
 # TUN interface-address-change test. This is not a default-route handoff or
 # physical sleep test. Require a proxy-only HTTPS canary returning 204.
-VM=${1:-aether-diag-1434}
+VM=${1:-macos27}
 SSH_KEY=${AETHERROUTE_VM_SSH_KEY:-$HOME/.ssh/id_ed25519}
 VM_USER=${AETHERROUTE_VM_USER:-chenxu}
 PROBE_URL=${AETHERROUTE_SWITCH_PROXY_CANARY_URL:-}

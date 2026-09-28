@@ -161,6 +161,13 @@ for command_name in codesign spctl defaults systemextensionsctl pgrep ps scutil 
   ln -s command-fixture "$MOCK_BIN/$command_name"
 done
 printf 'not the installed provider\n' >"$MOCK_ROOT/live/other-provider"
+# The real idle check holds a connection open for over a minute; the stub
+# reports whatever outcome a case asks for.
+cat >"$MOCK_ROOT/idle-reuse.sh" <<'MOCK'
+#!/bin/sh
+echo "idle keep-alive reuse: mock outcome ${MOCK_IDLE_REUSE_EXIT:-0}"
+exit "${MOCK_IDLE_REUSE_EXIT:-0}"
+MOCK
 
 CASES=0
 run_case() {
@@ -172,6 +179,7 @@ run_case() {
   status=0
   env PATH="$MOCK_BIN:$PATH" HOME="$MOCK_ROOT/home" MOCK_ROOT="$MOCK_ROOT" \
     AETHERROUTE_APP_PATH="$APP" AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=NO \
+    AETHERROUTE_ACCEPTANCE_IDLE_REUSE_SCRIPT="$MOCK_ROOT/idle-reuse.sh" \
     HTTP_PROXY=http://invalid HTTPS_PROXY=http://invalid ALL_PROXY=http://invalid NO_PROXY='*' \
     http_proxy=http://invalid https_proxy=http://invalid all_proxy=http://invalid no_proxy='*' \
     "$@" sh "$ROOT/scripts/test_runtime_acceptance.sh" 2026081470 \
@@ -195,6 +203,14 @@ run_case() {
 }
 
 run_case healthy-tun pass '0 failed'
+run_case idle-reuse-closed-tun fail '[FAIL] idle keep-alive reuse' MOCK_IDLE_REUSE_EXIT=1
+run_case idle-reuse-closed-transparent fail '[FAIL] idle keep-alive reuse' \
+  MOCK_ENGINE=transparent MOCK_IDLE_REUSE_EXIT=1
+run_case idle-reuse-unreached-rule fail '[FAIL] idle keep-alive reuse' MOCK_IDLE_REUSE_EXIT=2
+run_case idle-reuse-unreached-direct pass '[SKIP] idle keep-alive reuse' \
+  MOCK_ROUTING=direct MOCK_IDLE_REUSE_EXIT=2
+run_case idle-reuse-helper-missing fail 'helper missing' \
+  AETHERROUTE_ACCEPTANCE_IDLE_REUSE_SCRIPT="$MOCK_ROOT/absent.sh"
 run_case stale-extension fail '2026081467, expected installed build 2026081470' MOCK_OLD_EXTENSION=YES
 run_case duplicate-extension fail '2 registrations; expected exactly one' MOCK_DUPLICATE_EXTENSION=YES
 run_case disconnected fail 'candidate is not connected' MOCK_VPN_STATUS=Disconnected
@@ -238,6 +254,8 @@ for name in mapped-ipv4-tls-error ipv6-tls-handshake-error; do
   grep -F '[SKIP] native IPv6 HTTPS coverage' "$TEMP/$name.txt" >/dev/null
 done
 grep -F '[PASS] native IPv6 HTTPS coverage' "$TEMP/healthy-tun.txt" >/dev/null
+grep -F '[PASS] idle keep-alive reuse' "$TEMP/healthy-tun.txt" >/dev/null
+grep -F '[PASS] idle keep-alive reuse' "$TEMP/healthy-transparent.txt" >/dev/null
 grep -F '[SKIP] IPv6 probe HTTPS' "$TEMP/fast-ipv6-unavailable.txt" >/dev/null
 grep -F '[SKIP] native IPv6 HTTPS coverage' "$TEMP/fast-ipv6-unavailable.txt" >/dev/null
 printf 'Runtime acceptance regressions passed: %s cases\n' "$CASES"

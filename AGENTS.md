@@ -24,15 +24,16 @@
   ```
 
 ### 2. Tart 虚拟机矩阵自动化测试与清理 (VM Matrix Acceptance)
-- 虚拟机名称标准：`aether-diag-1434`（本地 Tart VM）。
+- 虚拟机名称标准：`macos27`（本地 Tart VM，统一使用；不再使用 `aether-diag-1434`）。
 - 构建 QA 自动化测试候选包：
   ```bash
   ./scripts/build_signed_local_test_candidate.sh Config/Signing.json <VERSION> <BUILD> outputs/qa-candidate-<VERSION>-<BUILD>
   ```
 - 运行 6 维网络矩阵与生命周期测试：
   ```bash
-  ./scripts/test_vm_acceptance_matrix.sh outputs/qa-candidate-<VERSION>-<BUILD>/<ZIP_FILE> aether-diag-1434 outputs/vm-acceptance-<VERSION>-<BUILD>
+  ./scripts/test_vm_acceptance_matrix.sh outputs/qa-candidate-<VERSION>-<BUILD>/<ZIP_FILE> macos27 outputs/vm-acceptance-<VERSION>-<BUILD>
   ```
+- 矩阵的每个"引擎 × 路由"组合都包含 **空闲 keep-alive 复用检查**（`scripts/test_idle_keepalive_reuse.sh`，由 `test_runtime_acceptance.sh` 调用）：同一条 TLS 连接空闲 75 秒后再次请求必须成功。`tun` 与 `transparent` 两个引擎都必须 PASS，任一 FAIL 即阻断发布。
 - **清理规范（Mandatory）**：
   - 测试完成后必须立即清理虚拟机内的安装包、解压临时目录及相关日志记录，保持 VM 干净。
 
@@ -43,6 +44,11 @@
   AETHERROUTE_ALLOW_REMOTE_GATE=YES ./scripts/test_remote_arm64.sh chenxu@100.64.0.3 fast
   ```
 - 将构建包/测试用例无损同步至该物理机，在物理机上直接执行多场景协议与网络状态测试，并在该机器分析测试报告，确保 100% 通过。
+- **空闲 keep-alive 复用（Mandatory，TUN 与透明代理各一次）**：在物理机上安装候选包，分别以 TUN 模式和透明代理模式连接后执行：
+  ```bash
+  sh scripts/test_idle_keepalive_reuse.sh
+  ```
+  两种模式都必须输出 `both requests answered` 并以 0 退出。该检查防止引擎再次在 60 秒空闲后关闭本机客户端连接（曾导致 Claude Desktop / Claude Code 会话 `ECONNRESET` 中断）。
 
 ### 4. 版本迭代与 CHANGELOG 维护
 - 依据语义化版本推进（如当前版本至下一版本）。
