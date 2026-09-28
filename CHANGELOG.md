@@ -6,6 +6,19 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Idle keep-alive connections no longer die after 60 seconds (`Core/Engine` dispatcher):
+  TUN and local HTTP/SOCKS flows used the upstream relay policy, which closed any connection that was silent for 60 seconds. Clients that pool connections reused one the relay had already closed and got `ECONNRESET`; Claude Desktop / Claude Code sessions stalled or failed between tool calls while Clash Verge worked. Every local client inbound now keeps idle connections open like the transparent proxy already did; the packet stack's TCP keep-alive still reclaims dead peers.
+- Tracked connections no longer poll a completed close notification (`Core/Engine` tracked stream), which could panic once the manager had closed a connection.
+- A live profile or custom-rule reload in TUN mode no longer leaves the tunnel connected with a stopped engine: the reload snapshot now carries the Fake-IP cache key from the launch snapshot instead of failing the key-length check.
+- The diagnostic log level now reaches both Network System Extensions. They run as root and cannot read the level file in the user's App Group container, so the app passes the level in the launch snapshot.
+
+### Added
+
+- Packet Tunnel data-plane sampling: with diagnostics at standard level the extension records a line every 30 seconds with connection count, traffic, TCP connect errors, Fake-IP mapping and reverse-lookup failures, network resets, memory footprint and open descriptors; verbose level also lists the live connections with their proxy chain.
+- Release gate `scripts/test_idle_keepalive_reuse.sh`: one TLS connection must answer a second request after 75 seconds idle. It runs in every VM matrix combination for both the TUN and transparent-proxy engines, and on the physical Mac for both engines.
+
 ## [1.0.31] - 2026-09-27
 
 ### Fixed
