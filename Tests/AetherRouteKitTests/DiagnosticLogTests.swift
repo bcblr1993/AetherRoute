@@ -181,6 +181,28 @@ final class DiagnosticLogTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(statistics.written + statistics.dropped, 400)
     }
 
+    // MARK: - Launch level override
+
+    /// The root-run extension cannot read the app's level file, so the level
+    /// from the launch snapshot must win for every log the process owns,
+    /// including ones created before the override arrived.
+    func testLaunchOverrideAppliesToExistingLogsAndClears() {
+        let center = DiagnosticLogCenter.current
+        defer { center.applyLevelOverride(nil) }
+        let log = center.log(category: "test.override")
+        let fileBacked = center.level
+
+        center.applyLevelOverride(.verbose)
+        XCTAssertEqual(center.level, .verbose)
+        XCTAssertEqual(log.level, .verbose)
+
+        center.applyLevelOverride(.off)
+        XCTAssertEqual(log.level, .off)
+
+        center.applyLevelOverride(nil)
+        XCTAssertEqual(log.level, fileBacked)
+    }
+
     // MARK: - Shared level store
 
     func testStoreRoundTripAndUnreadableFileFallsBackToOff() throws {

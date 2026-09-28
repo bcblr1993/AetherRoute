@@ -179,6 +179,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         do {
             Self.runtimeLog.aggregate("stage=decodeLaunchSnapshot begin")
             snapshot = try ProviderLaunchSnapshotCodec.decode(options: options)
+            DiagnosticLogCenter.current.applyLevelOverride(
+                snapshot.diagnosticLogLevel
+            )
             Self.runtimeLog.aggregate(
                 "stage=decodeLaunchSnapshot success mode=\(snapshot.routingMode.rawValue) selections=\(snapshot.proxySelections.count) resources=\(snapshot.routingResources.count)"
             )

@@ -22,6 +22,10 @@ public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
     /// not share its data-protection Keychain context. Transport this key only
     /// in the ephemeral start options, alongside the profile credentials.
     public let fakeIPCacheKey: Data?
+    /// The root-run system extension cannot see the level file the app writes
+    /// in the user's App Group container, so the host carries it here.
+    /// Optional so a snapshot from an older host still decodes.
+    public let diagnosticLogLevel: DiagnosticLogLevel?
 
     public init(
         profileYAML: String,
@@ -30,7 +34,8 @@ public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
         dnsPolicy: DNSRuntimePolicy,
         proxySelections: [String: String],
         routingResources: [RoutingResourceKind: Data],
-        fakeIPCacheKey: Data? = nil
+        fakeIPCacheKey: Data? = nil,
+        diagnosticLogLevel: DiagnosticLogLevel? = nil
     ) throws {
         formatVersion = Self.currentFormatVersion
         self.profileYAML = profileYAML
@@ -40,6 +45,7 @@ public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
         self.proxySelections = proxySelections
         self.routingResources = routingResources
         self.fakeIPCacheKey = fakeIPCacheKey
+        self.diagnosticLogLevel = diagnosticLogLevel
         try validate()
     }
 

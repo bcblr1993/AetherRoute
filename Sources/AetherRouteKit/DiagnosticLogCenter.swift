@@ -19,6 +19,7 @@ public final class DiagnosticLogCenter: @unchecked Sendable {
     private let levelCache: DiagnosticLogLevelCache?
     private let lock = NSLock()
     private var logs: [String: DiagnosticLog] = [:]
+    private var levelOverride: DiagnosticLogLevel?
 
     /// Derived from the bundle identifier so each process lands in its own
     /// file without any caller having to name itself.
@@ -64,7 +65,22 @@ public final class DiagnosticLogCenter: @unchecked Sendable {
         return "app"
     }
 
-    public var level: DiagnosticLogLevel { levelCache?.level() ?? .off }
+    public var level: DiagnosticLogLevel {
+        lock.lock()
+        let override = levelOverride
+        lock.unlock()
+        return override ?? levelCache?.level() ?? .off
+    }
+
+    /// A Developer ID system extension runs as root, so its App Group
+    /// container is not the one the app writes the level file into. The host
+    /// sends the level in the launch snapshot instead; `nil` returns to the
+    /// file-backed level.
+    public func applyLevelOverride(_ level: DiagnosticLogLevel?) {
+        lock.lock()
+        defer { lock.unlock() }
+        levelOverride = level
+    }
 
     public func statistics() -> RotatingLogSinkStatistics? {
         sink?.statistics()
@@ -81,7 +97,7 @@ public final class DiagnosticLogCenter: @unchecked Sendable {
         let created = DiagnosticLog(
             category: category,
             sink: sink,
-            levelProvider: { [levelCache] in levelCache?.level() ?? .off }
+            levelProvider: { [unowned self] in self.level }
         )
         lock.lock()
         defer { lock.unlock() }

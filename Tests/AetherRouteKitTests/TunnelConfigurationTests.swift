@@ -258,17 +258,42 @@ final class TunnelConfigurationTests: XCTestCase {
             dnsPolicy: .inherited,
             proxySelections: ["Main": "Local Test"],
             routingResources: [:],
-            fakeIPCacheKey: Data(repeating: 0x53, count: 32)
+            fakeIPCacheKey: Data(repeating: 0x53, count: 32),
+            diagnosticLogLevel: .verbose
         )
 
         let options = try ProviderLaunchSnapshotCodec.startOptions(
             for: snapshot
         )
 
-        XCTAssertEqual(
-            try ProviderLaunchSnapshotCodec.decode(options: options),
-            snapshot
+        let decoded = try ProviderLaunchSnapshotCodec.decode(options: options)
+        XCTAssertEqual(decoded, snapshot)
+        XCTAssertEqual(decoded.diagnosticLogLevel, .verbose)
+    }
+
+    /// A host from before the level field existed must still start the
+    /// provider; the missing level means "no override", not a decode failure.
+    func testProviderLaunchSnapshotWithoutDiagnosticLevelStillDecodes() throws {
+        let snapshot = try ProviderLaunchSnapshot(
+            profileYAML: "proxies:\n  - {name: Node, type: direct}\n",
+            routingMode: .direct,
+            bypassPolicy: .empty,
+            dnsPolicy: .inherited,
+            proxySelections: [:],
+            routingResources: [:]
         )
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .xml
+        let xml = try XCTUnwrap(
+            String(data: try encoder.encode(snapshot), encoding: .utf8)
+        )
+        XCTAssertFalse(xml.contains("diagnosticLogLevel"))
+        let payload = try (Data(xml.utf8) as NSData).compressed(using: .zlib)
+            as Data
+
+        let decoded = try ProviderLaunchSnapshotCodec.decode(data: payload)
+        XCTAssertNil(decoded.diagnosticLogLevel)
+        XCTAssertEqual(decoded, snapshot)
     }
 
     func testProviderLaunchSnapshotRejectsMissingPayload() {

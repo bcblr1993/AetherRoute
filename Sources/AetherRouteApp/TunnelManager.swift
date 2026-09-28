@@ -1118,7 +1118,9 @@ final class TunnelManager: ObservableObject {
                     ? try DataProtectionProfileKeyStore(
                         service: "com.aetherroute.fake-ip-cache"
                     ).loadOrCreateKey(keyID: "fake-ip-cache.v1")
-                    : nil
+                    : nil,
+                diagnosticLogLevel: (try? DiagnosticLogLevelStore
+                    .applicationGroup())?.load() ?? .off
             )
             return (
                 snapshot,

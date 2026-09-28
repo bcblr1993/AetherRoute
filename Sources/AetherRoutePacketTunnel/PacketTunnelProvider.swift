@@ -60,6 +60,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private var lastResetSignature: String?
     private var providerStopping = false
     private var recoveryRoutingMode: RoutingMode = .rule
+    /// Launch-only inputs a live profile reload must carry forward: the
+    /// reload payload comes from the app without them, and the root-run
+    /// extension has no other way to obtain either. Guarded by `uplinkLock`.
+    private var launchFakeIPCacheKey: Data?
+    private var launchDiagnosticLogLevel: DiagnosticLogLevel?
+    private var dataPlaneSampler: DataPlaneSampler!
     /// Built in `init`, not lazily. `wake`, `sleep`, the path monitor and the
     /// provider message queue can all reach it first, and a `lazy var` has no
     /// synchronisation on that first access.
@@ -67,6 +73,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
 
     override init() {
         super.init()
+        dataPlaneSampler = DataPlaneSampler(core: { [weak self] in
+            self?.currentCore()
+        })
         recovery = NetworkRecoveryCoordinator(
             perform: { [weak self] reason, attempt in
                 self?.performNetworkRecovery(reason: reason, attempt: attempt)
@@ -113,6 +122,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             let snapshot = try ProviderLaunchSnapshotCodec.decode(
                 options: options
             )
+            DiagnosticLogCenter.current.applyLevelOverride(
+                snapshot.diagnosticLogLevel
+            )
+            uplinkLock.withLock {
+                launchFakeIPCacheKey = snapshot.fakeIPCacheKey
+                launchDiagnosticLogLevel = snapshot.diagnosticLogLevel
+            }
             Self.runtimeLogger.info(
                 "stage=decodeLaunchSnapshot success selections=\(snapshot.proxySelections.count, privacy: .public) resources=\(snapshot.routingResources.count, privacy: .public)"
             )
@@ -182,6 +198,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     }
                     Self.runtimeLogger.info("stage=installNetworkSettings success")
                     self.startPathMonitoring()
+                    self.dataPlaneSampler.start()
                     completion.call(nil)
                 }
             }
@@ -203,6 +220,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             "stage=stopTunnel requested reason=\(reason.rawValue, privacy: .public)"
         )
         stopPathMonitoring()
+        dataPlaneSampler.stop()
         uplinkLock.withLock { providerStopping = true }
         recovery.cancel(reason: "stopTunnel")
         // macOS keeps the tunnel's interface, routes and DNS installed until
@@ -579,6 +597,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
 
         do {
             let store = try ActiveProfileStore.applicationGroup()
+            let (fakeIPCacheKey, diagnosticLogLevel) = uplinkLock.withLock {
+                (launchFakeIPCacheKey, launchDiagnosticLogLevel)
+            }
             let snapshot: ProviderLaunchSnapshot
             if !payloadData.isEmpty {
                 Self.runtimeLogger.info("stage=handleReloadProfile decoding payload from message")
@@ -595,7 +616,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     bypassPolicy: reloadPayload.bypassPolicy,
                     dnsPolicy: reloadPayload.dnsPolicy,
                     proxySelections: reloadPayload.proxySelections,
-                    routingResources: resources
+                    routingResources: resources,
+                    fakeIPCacheKey: fakeIPCacheKey,
+                    diagnosticLogLevel: diagnosticLogLevel
                 )
             } else {
                 Self.runtimeLogger.info("stage=handleReloadProfile loading active profile from store")
@@ -612,7 +635,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     bypassPolicy: (try? BypassPolicyStore.applicationGroup().load()) ?? .empty,
                     dnsPolicy: .inherited,
                     proxySelections: [:],
-                    routingResources: resources
+                    routingResources: resources,
+                    fakeIPCacheKey: fakeIPCacheKey,
+                    diagnosticLogLevel: diagnosticLogLevel
                 )
             }
 
