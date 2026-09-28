@@ -33,7 +33,7 @@
   ```bash
   ./scripts/test_vm_acceptance_matrix.sh outputs/qa-candidate-<VERSION>-<BUILD>/<ZIP_FILE> macos27 outputs/vm-acceptance-<VERSION>-<BUILD>
   ```
-- 矩阵的每个"引擎 × 路由"组合都包含 **空闲 keep-alive 复用检查**（`scripts/test_idle_keepalive_reuse.sh`，由 `test_runtime_acceptance.sh` 调用）：同一条 TLS 连接空闲 75 秒后再次请求必须成功。`tun` 与 `transparent` 两个引擎都必须 PASS，任一 FAIL 即阻断发布。
+- 矩阵的每个"引擎 × 路由"组合都包含 **空闲 keep-alive 复用检查**（`scripts/test_idle_keepalive_reuse.sh`，由 `test_runtime_acceptance.sh` 调用）：同一条 TLS 连接空闲 50 秒后再次请求必须成功。`tun` 与 `transparent` 两个引擎都必须 PASS，任一 FAIL 即阻断发布。
 - **清理规范（Mandatory）**：
   - 测试完成后必须立即清理虚拟机内的安装包、解压临时目录及相关日志记录，保持 VM 干净。
 

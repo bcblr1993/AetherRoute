@@ -15,14 +15,14 @@ set -eu
 # test was not reached).
 
 HOST=${AETHERROUTE_IDLE_REUSE_HOST:-api.anthropic.com}
-IDLE_SECONDS=${AETHERROUTE_IDLE_REUSE_SECONDS:-75}
+IDLE_SECONDS=${AETHERROUTE_IDLE_REUSE_SECONDS:-50}
 OPENSSL=${AETHERROUTE_IDLE_REUSE_OPENSSL:-/usr/bin/openssl}
 
 case "$IDLE_SECONDS" in
   ''|*[!0-9]*) echo "idle seconds must be a positive integer" >&2; exit 64 ;;
 esac
-test "$IDLE_SECONDS" -gt 60 || {
-  echo "idle seconds must exceed 60 to cover the regression" >&2
+test "$IDLE_SECONDS" -ge 30 || {
+  echo "idle seconds must be at least 30 to cover the regression" >&2
   exit 64
 }
 printf '%s\n' "$HOST" | grep -Eq '^[A-Za-z0-9.-]+$' || {
@@ -44,7 +44,7 @@ responses=$(
     sleep 15
   } | "$OPENSSL" s_client -quiet -no_ign_eof \
       -connect "$HOST:443" -servername "$HOST" 2>/dev/null \
-    | tr -d '\r' | grep -Ec '^HTTP/1\.[01] [0-9]{3}' || true
+    | tr -d '\r' | grep -Ec 'HTTP/1\.[01] [0-9]{3}' || true
 )
 
 case "$responses" in

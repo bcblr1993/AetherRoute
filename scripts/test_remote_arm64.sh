@@ -218,28 +218,30 @@ mkdir -p "$EVIDENCE"
   printf 'distinct_machine=yes\n'
 } > "$EVIDENCE/preflight.env"
 
-REMOTE_BASE=$(ssh -o BatchMode=yes -o ConnectTimeout=8 -- "$REMOTE" \
+REMOTE_SSH="ssh -o BatchMode=yes -o ConnectTimeout=8 -o ServerAliveInterval=15 -o ServerAliveCountMax=6"
+
+REMOTE_BASE=$($REMOTE_SSH -- "$REMOTE" \
   'mktemp -d /tmp/aetherroute-remote-gate.XXXXXX')
 safe_remote_base "$REMOTE_BASE" || {
   echo "Remote host returned an unsafe temporary directory" >&2
   exit 1
 }
 
-rsync -a -e 'ssh -o BatchMode=yes -o ConnectTimeout=8' \
+rsync -az -e "$REMOTE_SSH" \
   "$PAYLOAD/" "$REMOTE:$REMOTE_BASE/payload/"
-rsync -a -e 'ssh -o BatchMode=yes -o ConnectTimeout=8' \
+rsync -az -e "$REMOTE_SSH" \
   "$EXPECTED_PAYLOAD" "$REMOTE:$REMOTE_BASE/payload.sha256"
-rsync -a -e 'ssh -o BatchMode=yes -o ConnectTimeout=8' \
+rsync -az -e "$REMOTE_SSH" \
   "$EXPECTED_SOURCE" "$REMOTE:$REMOTE_BASE/source-manifest.txt"
 
 set +e
-ssh -o BatchMode=yes -o ConnectTimeout=8 -- "$REMOTE" \
+$REMOTE_SSH -- "$REMOTE" \
   "'$REMOTE_BASE/payload/AetherRoute/scripts/remote_arm64_worker.sh' '$REMOTE_BASE' '$MODE'" \
   > "$EVIDENCE/run.log" 2>&1
 remote_status=$?
 set -e
 
-rsync -a -e 'ssh -o BatchMode=yes -o ConnectTimeout=8' \
+rsync -az -e "$REMOTE_SSH" \
   "$REMOTE:$REMOTE_BASE/evidence/" "$EVIDENCE/" >/dev/null 2>&1 || true
 
 "$ROOT/scripts/source_manifest.sh" > "$CURRENT_SOURCE"

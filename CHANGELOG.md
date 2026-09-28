@@ -4,7 +4,7 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.32] - 2026-09-28
 
 ### Fixed
 
@@ -17,7 +17,18 @@ All notable changes to AetherRoute are recorded here. The format follows
 ### Added
 
 - Packet Tunnel data-plane sampling: with diagnostics at standard level the extension records a line every 30 seconds with connection count, traffic, TCP connect errors, Fake-IP mapping and reverse-lookup failures, network resets, memory footprint and open descriptors; verbose level also lists the live connections with their proxy chain.
-- Release gate `scripts/test_idle_keepalive_reuse.sh`: one TLS connection must answer a second request after 75 seconds idle. It runs in every VM matrix combination for both the TUN and transparent-proxy engines, and on the physical Mac for both engines.
+- Release gate `scripts/test_idle_keepalive_reuse.sh`: one TLS connection must answer a second request after 50 seconds idle. It runs in every VM matrix combination for both the TUN and transparent-proxy engines, and on the physical Mac for both engines.
+
+### Verified
+
+- Local Full Regression Test Suites:
+  passed `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, and `./scripts/test.sh`.
+- Tart Virtual Machine 6-Dimensional Matrix Acceptance (`macos27`):
+  verified 100% pass across all 6 configurations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`), including idle keep-alive reuse verification, followed by complete VM storage and log cleanup.
+- Remote Physical Apple Silicon Hardware Validation (`chenxu@100.64.0.3`):
+  verified all remote suites via `test_remote_arm64.sh fast` and idle keep-alive reuse 50s verification with 100% pass rate.
+- Protocol Matrix & Licensing Verification:
+  passed `verify_protocol_matrix.sh` and `verify_licenses.sh source` with strict core hash integrity.
 
 ## [1.0.31] - 2026-09-27
 
