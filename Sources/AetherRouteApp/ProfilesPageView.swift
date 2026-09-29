@@ -275,7 +275,7 @@ struct ProfilesView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: AetherVisual.s5) {
+            VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
                 pageHeader
 
                 if !tunnel.profiles.isEmpty {
@@ -313,11 +313,7 @@ struct ProfilesView: View {
                     }
                 }
             }
-            .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-            .padding(.top, AetherVisual.pageTopPadding)
-            .padding(.bottom, AetherVisual.pageBottomPadding)
-            .frame(maxWidth: AetherVisual.formMaxWidth)
-            .frame(maxWidth: .infinity)
+            .aetherPageContent(.reading)
         }
         .fileImporter(
             isPresented: $isFileImporterPresented,
@@ -389,71 +385,56 @@ struct ProfilesView: View {
     }
 
     private var pageHeader: some View {
-        HStack(alignment: .center, spacing: AetherVisual.s3) {
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text("Profiles")
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(.primary)
-
-                Text(AppLocalization.string("Manage proxy subscriptions, local files, and routing profiles."))
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
+        AetherPageHeader(.profiles) {
+            Button("Add Subscription…", systemImage: "link.badge.plus") {
+                tunnel.clearProfileMessage()
+                subscriptionURL = ""
+                isSubscriptionEditorPresented = true
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+            .disabled(!tunnel.canImportOrAddProfile)
+            .accessibilityIdentifier("add-subscription")
 
-            Spacer(minLength: AetherVisual.s2)
-
-            HStack(spacing: AetherVisual.s2) {
-                Button("Add Subscription…", systemImage: "link.badge.plus") {
-                    tunnel.clearProfileMessage()
-                    subscriptionURL = ""
-                    isSubscriptionEditorPresented = true
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
-                .disabled(!tunnel.canImportOrAddProfile)
-                .accessibilityIdentifier("add-subscription")
-
-                Button("Import Profile…", systemImage: "square.and.arrow.down") {
-                    tunnel.clearProfileMessage()
-                    presentFileImporter(.profile)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-                .disabled(!tunnel.canImportOrAddProfile)
-
-                Menu("More", systemImage: "ellipsis.circle") {
-                    Button(AppLocalization.string("iCloud Sync…"), systemImage: "icloud") {
-                        tunnel.clearProfileMessage()
-                        isCloudSyncSheetPresented = true
-                    }
-                    .accessibilityIdentifier("profiles-icloud-sync-button")
-
-                    Button("Add Node…", systemImage: "plus") {
-                        tunnel.clearProfileMessage()
-                        isManualNodeEditorPresented = true
-                    }
-                    .disabled(!tunnel.canImportOrAddProfile)
-
-                    Divider()
-
-                    Button("Export Portable Archive…", systemImage: "square.and.arrow.up") {
-                        tunnel.clearProfileMessage()
-                        isExportPasswordPresented = true
-                    }
-                    .disabled(tunnel.profiles.isEmpty || tunnel.isTransferringProfiles)
-
-                    Button("Import Portable Archive…", systemImage: "square.and.arrow.down") {
-                        tunnel.clearProfileMessage()
-                        presentFileImporter(.portableArchive)
-                    }
-                    .disabled(!tunnel.canModifyProfiles)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-                .accessibilityIdentifier("profiles-more-menu")
+            Button("Import Profile…", systemImage: "square.and.arrow.down") {
+                tunnel.clearProfileMessage()
+                presentFileImporter(.profile)
             }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+            .disabled(!tunnel.canImportOrAddProfile)
+
+            Menu("More", systemImage: "ellipsis.circle") {
+                Button(AppLocalization.string("iCloud Sync…"), systemImage: "icloud") {
+                    tunnel.clearProfileMessage()
+                    isCloudSyncSheetPresented = true
+                }
+                .accessibilityIdentifier("profiles-icloud-sync-button")
+
+                Button("Add Node…", systemImage: "plus") {
+                    tunnel.clearProfileMessage()
+                    isManualNodeEditorPresented = true
+                }
+                .disabled(!tunnel.canImportOrAddProfile)
+
+                Divider()
+
+                Button("Export Portable Archive…", systemImage: "square.and.arrow.up") {
+                    tunnel.clearProfileMessage()
+                    isExportPasswordPresented = true
+                }
+                .disabled(tunnel.profiles.isEmpty || tunnel.isTransferringProfiles)
+
+                Button("Import Portable Archive…", systemImage: "square.and.arrow.down") {
+                    tunnel.clearProfileMessage()
+                    presentFileImporter(.portableArchive)
+                }
+                .disabled(!tunnel.canModifyProfiles)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+            .accessibilityIdentifier("profiles-more-menu")
         }
-        .padding(.bottom, AetherVisual.s1)
     }
 
     private func profileMessageBanner(message: String, isError: Bool) -> some View {
@@ -1122,7 +1103,7 @@ private struct ManagedProfileRow: View {
 
                 Text(detail)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
             }
 

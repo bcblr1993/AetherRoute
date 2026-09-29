@@ -604,7 +604,8 @@ private struct OverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: AetherVisual.s3 + 2) {
+            VStack(spacing: AetherVisual.sectionSpacing) {
+                AetherPageHeader(.overview)
                 ConnectionHero()
                 ConnectionControlBar(
                     networkEngineMode: tunnel.networkEngineMode,
@@ -620,11 +621,7 @@ private struct OverviewView: View {
                 )
                 overviewDetails
             }
-            .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-            .padding(.top, AetherVisual.s3)
-            .padding(.bottom, AetherVisual.s4)
-            .frame(maxWidth: AetherVisual.contentMaxWidth)
-            .frame(maxWidth: .infinity)
+            .aetherPageContent(.wide)
         }
         .sheet(isPresented: $isSubscriptionEditorPresented) {
             SubscriptionEditorSheet(urlText: $subscriptionURL)
@@ -675,7 +672,7 @@ private struct OverviewView: View {
     }
 
     private var overviewDetails: some View {
-        VStack(spacing: AetherVisual.s3 + 2) {
+        VStack(spacing: AetherVisual.sectionSpacing) {
             if tunnel.isConnected {
                 activeNodeCard
             } else if tunnel.activeProfile == nil {

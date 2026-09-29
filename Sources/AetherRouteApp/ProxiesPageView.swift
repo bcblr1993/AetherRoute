@@ -16,11 +16,17 @@ struct ProxiesView: View {
                let summary = tunnel.activeProfileSummary {
                 content(summary: summary)
             } else {
-                FeatureEmptyState(
-                    symbol: "point.3.connected.trianglepath.dotted",
-                    title: AppLocalization.string("No proxies yet"),
-                    detail: AppLocalization.string("Import a validated profile to inspect its endpoints and proxy groups.")
-                )
+                ScrollView {
+                    VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
+                        AetherPageHeader(.proxies)
+                        FeatureEmptyState(
+                            symbol: "point.3.connected.trianglepath.dotted",
+                            title: AppLocalization.string("No proxies yet"),
+                            detail: AppLocalization.string("Import a validated profile to inspect its endpoints and proxy groups.")
+                        )
+                    }
+                    .aetherPageContent(.wide)
+                }
             }
         }
         .accessibilityIdentifier("proxies-page")
@@ -28,7 +34,9 @@ struct ProxiesView: View {
 
     private func content(summary: ProfileConfigurationSummary) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: AetherVisual.s5) {
+            VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
+                AetherPageHeader(.proxies)
+
                 if !summary.proxyGroups.isEmpty {
                     // 1. 顶部策略组水平 Tab 分段选择栏
                     proxyGroupTabBar(groups: summary.proxyGroups)
@@ -61,10 +69,7 @@ struct ProxiesView: View {
                     )
                 }
             }
-            .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-            .padding(.top, AetherVisual.pageTopPadding)
-            .padding(.bottom, AetherVisual.pageBottomPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .aetherPageContent(.wide)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(AppLocalization.string("Proxy configuration"))
             .accessibilityIdentifier("proxies-page-content")

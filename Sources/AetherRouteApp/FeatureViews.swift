@@ -132,8 +132,6 @@ struct TargetPillView: View {
 }
 
 struct StatePill: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     let title: String
     let color: Color
     let symbol: String
@@ -144,7 +142,7 @@ struct StatePill: View {
                 .foregroundStyle(color)
                 .accessibilityHidden(true)
             Text(title)
-                .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
+                .foregroundStyle(.primary)
         }
         .accessibilityElement(children: .contain)
         .font(.caption.weight(.semibold))

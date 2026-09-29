@@ -23,10 +23,16 @@ struct ConnectionsView: View {
     var body: some View {
         let rows = connectionRows
         VStack(spacing: 0) {
+            // Tables use the full width, so the header and bars carry the
+            // page margins themselves instead of `aetherPageContent`.
+            AetherPageHeader(.connections)
+                .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+                .padding(.top, AetherVisual.pageTopPadding)
+                .padding(.bottom, AetherVisual.s3)
+
             SessionBar(telemetry: telemetry)
                 .environmentObject(tunnel)
-                .padding(.horizontal, AetherVisual.s4)
-                .padding(.top, AetherVisual.s3)
+                .padding(.horizontal, AetherVisual.pageHorizontalPadding)
 
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -34,7 +40,7 @@ struct ConnectionsView: View {
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("connections-search-field")
             }
-            .padding(.horizontal, AetherVisual.s4)
+            .padding(.horizontal, AetherVisual.pageHorizontalPadding)
             .padding(.vertical, AetherVisual.s2)
 
             if displayedConnections.isEmpty {
@@ -57,7 +63,7 @@ struct ConnectionsView: View {
                 .font(.body)
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, AetherVisual.s4)
+                .padding(.horizontal, AetherVisual.pageHorizontalPadding)
                 .padding(.vertical, AetherVisual.s2)
                 .overlay(alignment: .top) { Divider() }
         }
@@ -127,7 +133,7 @@ struct ConnectionsView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, AetherVisual.s4)
+            .padding(.horizontal, AetherVisual.pageHorizontalPadding)
             .padding(.vertical, AetherVisual.s2)
 
             if rows.isEmpty {

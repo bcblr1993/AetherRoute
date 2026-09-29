@@ -10,7 +10,7 @@ struct DNSView: View {
         Group {
             if let summary = tunnel.activeProfileSummary {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: AetherVisual.s5) {
+                    LazyVStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
                         header(summary.dns)
                         if usesAutomaticTUNDNS(summary.dns) {
 #if AETHERROUTE_INDEPENDENT
@@ -23,54 +23,36 @@ struct DNSView: View {
                             systemResolverContent
                         }
                     }
-                    .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-                    .padding(.top, AetherVisual.pageTopPadding)
-                    .padding(.bottom, AetherVisual.pageBottomPadding)
-                    .frame(maxWidth: AetherVisual.contentMaxWidth)
-                    .frame(maxWidth: .infinity)
+                    .aetherPageContent(.reading)
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel(AppLocalization.string("DNS configuration details"))
                     .accessibilityIdentifier("dns-page-content")
                 }
             } else {
-                FeatureEmptyState(
-                    symbol: "network.badge.shield.half.filled",
-                    title: AppLocalization.string("No DNS policy loaded"),
-                    detail: AppLocalization.string("Import a validated profile to inspect its resolver behavior without exposing server addresses.")
-                )
+                ScrollView {
+                    VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
+                        AetherPageHeader(.dns)
+                        FeatureEmptyState(
+                            symbol: "network.badge.shield.half.filled",
+                            title: AppLocalization.string("No DNS policy loaded"),
+                            detail: AppLocalization.string("Import a validated profile to inspect its resolver behavior without exposing server addresses.")
+                        )
+                    }
+                    .aetherPageContent(.reading)
+                }
             }
         }
         .accessibilityIdentifier("dns-page")
     }
 
     private func header(_ dns: DNSConfigurationSummary) -> some View {
-        HStack(spacing: AetherVisual.s5) {
-            ZStack {
-                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                    .fill(headerColor(dns).opacity(0.10))
-                Image(systemName: headerSymbol(dns))
-                    .font(.system(size: 25, weight: .medium))
-                    .foregroundStyle(headerColor(dns))
-            }
-            .frame(width: 58, height: 58)
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                Text(AppLocalization.string("DNS & Fake-IP"))
-                    .font(.title3.weight(.semibold))
-                Text(headerDetail(dns))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 16)
+        AetherPageHeader(.dns, subtitle: headerDetail(dns)) {
             StatePill(
                 title: statusTitle(dns),
                 color: headerColor(dns),
                 symbol: headerSymbol(dns)
             )
         }
-        .padding(AetherVisual.s5)
-        .featureCard()
     }
 
     @ViewBuilder

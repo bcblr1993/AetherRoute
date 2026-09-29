@@ -193,7 +193,7 @@ final class AetherRouteUITests: XCTestCase {
     }
 
     func testDNSPassesAccessibilityAuditInLightAndDark() throws {
-        try auditPrimaryPage(button: "DNS", landmark: "DNS & Fake-IP")
+        try auditPrimaryPage(button: "DNS", landmark: "page-header-title-dns")
     }
 
     func testPrimaryNavigationExposesReachableDestinations() {
@@ -220,7 +220,7 @@ final class AetherRouteUITests: XCTestCase {
             ).firstMatch.exists
         )
         app.buttons["DNS"].click()
-        XCTAssertTrue(app.staticTexts["DNS & Fake-IP"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["page-header-title-dns"].waitForExistence(timeout: 2))
         XCTAssertTrue(
             app.staticTexts.matching(
                 NSPredicate(format: "value CONTAINS %@", "Fake-IP")
@@ -260,7 +260,7 @@ final class AetherRouteUITests: XCTestCase {
             ("Connections", "Only connections visible on this Mac are counted, and nothing is reported anywhere."),
             ("Profiles", "Import Profile…"),
             ("Rules", "Ordered routing policy"),
-            ("DNS", "DNS & Fake-IP"),
+            ("DNS", "page-header-title-dns"),
         ] {
             navigationButton(in: app, title: button).click()
             XCTAssertTrue(
@@ -723,7 +723,7 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["overview-page"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Traffic routing active"].exists)
         app.typeKey("6", modifierFlags: .command)
-        XCTAssertTrue(app.staticTexts["DNS & Fake-IP"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["page-header-title-dns"].waitForExistence(timeout: 2))
     }
 
     func testSimplifiedChineseCoreExperienceAtMinimumWindowSize() throws {
@@ -764,7 +764,7 @@ final class AetherRouteUITests: XCTestCase {
                 ("Connections", "Only connections visible on this Mac are counted, and nothing is reported anywhere.", "connections-page"),
                 ("Profiles", "Import Profile…", "profiles-page"),
                 ("Rules", "Ordered routing policy", "rules-page"),
-                ("DNS", "DNS & Fake-IP", "dns-page"),
+                ("DNS", "DNS", "dns-page"),
             ]
         )
     }
@@ -779,7 +779,7 @@ final class AetherRouteUITests: XCTestCase {
                 ("连接", "只统计本机可见的连接，不上报", "connections-page"),
                 ("配置", "导入配置…", "profiles-page"),
                 ("规则", "有序路由策略", "rules-page"),
-                ("DNS", "DNS 与 Fake-IP", "dns-page"),
+                ("DNS", "DNS", "dns-page"),
             ]
         )
     }

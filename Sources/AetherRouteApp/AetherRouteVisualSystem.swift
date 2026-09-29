@@ -53,9 +53,14 @@ enum AetherVisual {
     static let pageHorizontalPadding = s5
     static let pageTopPadding = s5
     static let pageBottomPadding = s6
+    /// Space between top-level blocks of a page, including after its header.
     static let sectionSpacing = s4
-    static let contentMaxWidth: CGFloat = 704
-    static let formMaxWidth: CGFloat = 704
+    /// Reading width for forms and settings-like pages.
+    static let contentMaxWidth: CGFloat = 720
+    static let formMaxWidth: CGFloat = 720
+    /// Dashboard and list pages use more of a large window before centering,
+    /// so a maximized window does not read as half-loaded.
+    static let wideContentMaxWidth: CGFloat = 960
     static let sidebarWidth: CGFloat = 200
     static let windowWidth: CGFloat = 960
     static let windowHeight: CGFloat = 680
@@ -265,6 +270,127 @@ struct AetherContentCanvas: View {
         }
         .ignoresSafeArea()
         .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Page skeleton
+//
+// Every primary page uses the same grammar: a header naming the page (the
+// same word as its sidebar row) with page-level actions on the trailing edge,
+// followed by content constrained by one of three width classes. Deciding the
+// width here instead of per page is what keeps navigation from visibly
+// reflowing the window.
+
+enum AetherPageWidth {
+    /// Forms and configuration: a comfortable reading measure.
+    case reading
+    /// Dashboards and card lists.
+    case wide
+    /// Tables that benefit from every available column.
+    case full
+
+    var maxWidth: CGFloat? {
+        switch self {
+        case .reading: AetherVisual.contentMaxWidth
+        case .wide: AetherVisual.wideContentMaxWidth
+        case .full: nil
+        }
+    }
+
+    /// The centered column that holds the page. Reading content sits at the
+    /// leading edge of the same column a wide page uses.
+    var columnWidth: CGFloat? {
+        switch self {
+        case .reading, .wide: AetherVisual.wideContentMaxWidth
+        case .full: nil
+        }
+    }
+}
+
+struct AetherPageHeader<Accessory: View>: View {
+    let section: AppSection
+    var subtitle: String?
+    @ViewBuilder var accessory: Accessory
+
+    init(
+        _ section: AppSection,
+        subtitle: String? = nil,
+        @ViewBuilder accessory: () -> Accessory
+    ) {
+        self.section = section
+        self.subtitle = subtitle
+        self.accessory = accessory()
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: AetherVisual.s3) {
+                titles
+                Spacer(minLength: AetherVisual.s2)
+                accessoryRow
+            }
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                titles
+                accessoryRow
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("page-header-\(section.rawValue)")
+    }
+
+    private var titles: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+            Text(section.title)
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.primary)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("page-header-title-\(section.rawValue)")
+            Text(subtitle ?? section.subtitle)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.opacity)
+                .animation(AetherVisual.animation(AetherVisual.quickFade), value: subtitle)
+        }
+    }
+
+    private var accessoryRow: some View {
+        HStack(spacing: AetherVisual.s2) {
+            accessory
+        }
+        .fixedSize()
+    }
+}
+
+extension AetherPageHeader where Accessory == EmptyView {
+    init(_ section: AppSection, subtitle: String? = nil) {
+        self.init(section, subtitle: subtitle) { EmptyView() }
+    }
+}
+
+private struct AetherPageContentModifier: ViewModifier {
+    let width: AetherPageWidth
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+            .padding(.top, AetherVisual.pageTopPadding)
+            .padding(.bottom, AetherVisual.pageBottomPadding)
+            .frame(maxWidth: width.maxWidth, alignment: .leading)
+            // Reading pages narrow only their trailing edge: every page title
+            // starts on the same leading line, so switching pages never
+            // shifts the header sideways.
+            .frame(maxWidth: width.columnWidth, alignment: .leading)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+extension View {
+    /// Applies the shared page margins and width class to a page's scroll
+    /// content. Use exactly once per primary page.
+    func aetherPageContent(_ width: AetherPageWidth) -> some View {
+        modifier(AetherPageContentModifier(width: width))
     }
 }
 

@@ -161,19 +161,13 @@ struct RulesView: View {
 
                 ScrollViewReader { scrollProxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: AetherVisual.s4) {
+                        LazyVStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
+                            AetherPageHeader(.rules) {
+                                simulatorToggle
+                            }
+
                             VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                                ViewThatFits(in: .horizontal) {
-                                    HStack {
-                                        ruleHeading(count: summary.ruleCount)
-                                        Spacer()
-                                        simulatorToggle
-                                    }
-                                    VStack(alignment: .leading) {
-                                        ruleHeading(count: summary.ruleCount)
-                                        simulatorToggle
-                                    }
-                                }
+                                ruleHeading(count: summary.ruleCount)
                                 DisclosureGroup("Rule sources & scope") {
                                     VStack(alignment: .leading, spacing: AetherVisual.s2) {
                                         Text("Custom rules take precedence in the core rule list. Imported rules retain their order; optimization may add direct rules at runtime.")
@@ -627,21 +621,23 @@ struct RulesView: View {
                                 totalCount: summary.ruleProviderCount
                             )
                         }
-                        .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-                        .padding(.top, AetherVisual.pageTopPadding)
-                        .padding(.bottom, AetherVisual.pageBottomPadding)
-                        .frame(maxWidth: AetherVisual.contentMaxWidth)
-                        .frame(maxWidth: .infinity)
+                        .aetherPageContent(.wide)
                         .accessibilityElement(children: .contain)
                         .accessibilityLabel(AppLocalization.string("Routing rules content"))
                     }
                 }
             } else {
-                FeatureEmptyState(
-                    symbol: "list.bullet.rectangle.portrait",
-                    title: AppLocalization.string("No rule set loaded"),
-                    detail: AppLocalization.string("Import a validated profile to inspect routing order and targets.")
-                )
+                ScrollView {
+                    VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
+                        AetherPageHeader(.rules)
+                        FeatureEmptyState(
+                            symbol: "list.bullet.rectangle.portrait",
+                            title: AppLocalization.string("No rule set loaded"),
+                            detail: AppLocalization.string("Import a validated profile to inspect routing order and targets.")
+                        )
+                    }
+                    .aetherPageContent(.wide)
+                }
             }
         }
         .accessibilityIdentifier("rules-page")
@@ -659,11 +655,23 @@ struct RulesView: View {
         }
     }
 
+    /// The page header already names the page; the card heading only
+    /// qualifies what the distribution below summarizes.
     private func ruleHeading(count: Int) -> some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s1) {
-            Text("Ordered routing policy").font(.title3.weight(.semibold))
-            Text(verbatim: "\(count) · \(tunnel.routingMode.localizedTitle)")
-                .font(.subheadline).foregroundStyle(.primary)
+        HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
+            Text("Ordered routing policy").font(.headline)
+            Spacer(minLength: AetherVisual.s2)
+            Text(verbatim: "\(String.localizedStringWithFormat(AppLocalization.string("%lld rules"), Int64(count))) · \(routingModeTitle)")
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var routingModeTitle: String {
+        switch tunnel.routingMode {
+        case .rule: AppLocalization.string("Rule mode")
+        case .global: AppLocalization.string("Global mode")
+        case .direct: AppLocalization.string("Direct mode")
         }
     }
 
