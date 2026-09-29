@@ -29,6 +29,7 @@ IDLE_REUSE_SCRIPT=${AETHERROUTE_ACCEPTANCE_IDLE_REUSE_SCRIPT:-"$(CDPATH= cd -- "
 IDLE_REUSE_OUT=
 IDLE_REUSE_PID=
 SNI_RECOVERY_SCRIPT=${AETHERROUTE_ACCEPTANCE_SNI_RECOVERY_SCRIPT:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/test_transparent_sni_recovery.sh"}
+LARGE_UPLOAD_SCRIPT=${AETHERROUTE_ACCEPTANCE_LARGE_UPLOAD_SCRIPT:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/test_large_upload.sh"}
 cleanup_idle_reuse() {
   if [ -n "$IDLE_REUSE_PID" ]; then
     kill "$IDLE_REUSE_PID" 2>/dev/null || true
@@ -473,6 +474,26 @@ else
   else
     check "transparent SNI recovery" "${sni_detail:-exit $sni_status}" fail
   fi
+fi
+
+if [ "$CONNECTED" != yes ]; then
+  check "large upload" "candidate not connected" skip
+elif [ ! -f "$LARGE_UPLOAD_SCRIPT" ]; then
+  check "large upload" "helper missing: $LARGE_UPLOAD_SCRIPT" fail
+else
+  upload_status=0
+  upload_detail=$(sh "$LARGE_UPLOAD_SCRIPT" 2>&1) || upload_status=$?
+  upload_detail=$(printf '%s\n' "$upload_detail" | tail -1)
+  case "$upload_status" in
+    0) check "large upload" "$upload_detail" pass ;;
+    2)
+      if [ "$ROUTING" = direct ]; then
+        check "large upload" "$upload_detail (direct mode bypasses nodes)" skip
+      else
+        check "large upload" "$upload_detail" fail
+      fi ;;
+    *) check "large upload" "${upload_detail:-exit $upload_status}" fail ;;
+  esac
 fi
 
 if [ "$CONNECTED" != yes ]; then

@@ -40,6 +40,7 @@
   ```
 - 矩阵的每个"引擎 × 路由"组合都包含 **空闲 keep-alive 复用检查**（`scripts/test_idle_keepalive_reuse.sh`，由 `test_runtime_acceptance.sh` 调用）：同一条 TLS 连接空闲 50 秒后再次请求必须成功。`tun` 与 `transparent` 两个引擎都必须 PASS，任一 FAIL 即阻断发布。
 - `transparent` 引擎的组合还包含 **SNI 目标恢复检查**（`scripts/test_transparent_sni_recovery.sh`）：用 `curl --connect-to` 把 `www.apple.com` 故意拨到无关 IP（默认 `1.1.1.1`），必须按 ClientHello 的 SNI 转发并通过证书校验。该检查防止透明代理再次按应用自行解析出的（被污染的）IP 转发，曾导致 Chrome 无法打开 Google。FAIL 即阻断发布；`tun` 引擎记为 SKIP。
+- 矩阵的每个组合还包含 **大请求上传检查**（`scripts/test_large_upload.sh`）：经代理向 `httpbin.org/post` 上传 2 MiB 随机数据，必须 HTTP 200 且完整送达。该检查防止出站协议在客户端写入快于节点上行时破坏分帧（曾因 VLESS Vision 帧长 u16 溢出，导致 Claude Code 等大上下文请求 `ECONNRESET`）。`tun` 与 `transparent` 都必须 PASS；`direct` 路由下若连小请求都不通记为 SKIP。
 - **清理规范（Mandatory）**：
   - 测试完成后必须立即清理虚拟机内的安装包、解压临时目录及相关日志记录，保持 VM 干净。
 
@@ -55,6 +56,7 @@
   sh scripts/test_idle_keepalive_reuse.sh
   ```
   两种模式都必须输出 `both requests answered` 并以 0 退出。该检查防止引擎再次在 60 秒空闲后关闭本机客户端连接（曾导致 Claude Desktop / Claude Code 会话 `ECONNRESET` 中断）。
+- **大请求上传（Mandatory，TUN 与透明代理各一次）**：同样在两种模式下执行 `sh scripts/test_large_upload.sh`，必须输出 `bytes delivered` 并以 0 退出。
 
 ### 4. 版本迭代与 CHANGELOG 维护
 - 依据语义化版本推进（如当前版本至下一版本）。

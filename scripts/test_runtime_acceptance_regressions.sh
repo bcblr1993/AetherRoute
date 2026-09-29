@@ -173,6 +173,11 @@ cat >"$MOCK_ROOT/sni-recovery.sh" <<'MOCK'
 echo "transparent SNI recovery: mock outcome ${MOCK_SNI_RECOVERY_EXIT:-0}"
 exit "${MOCK_SNI_RECOVERY_EXIT:-0}"
 MOCK
+cat >"$MOCK_ROOT/large-upload.sh" <<'MOCK'
+#!/bin/sh
+echo "large upload: mock outcome ${MOCK_LARGE_UPLOAD_EXIT:-0}"
+exit "${MOCK_LARGE_UPLOAD_EXIT:-0}"
+MOCK
 
 CASES=0
 run_case() {
@@ -186,6 +191,7 @@ run_case() {
     AETHERROUTE_APP_PATH="$APP" AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=NO \
     AETHERROUTE_ACCEPTANCE_IDLE_REUSE_SCRIPT="$MOCK_ROOT/idle-reuse.sh" \
     AETHERROUTE_ACCEPTANCE_SNI_RECOVERY_SCRIPT="$MOCK_ROOT/sni-recovery.sh" \
+    AETHERROUTE_ACCEPTANCE_LARGE_UPLOAD_SCRIPT="$MOCK_ROOT/large-upload.sh" \
     HTTP_PROXY=http://invalid HTTPS_PROXY=http://invalid ALL_PROXY=http://invalid NO_PROXY='*' \
     http_proxy=http://invalid https_proxy=http://invalid all_proxy=http://invalid no_proxy='*' \
     "$@" sh "$ROOT/scripts/test_runtime_acceptance.sh" 2026081470 \
@@ -225,6 +231,15 @@ run_case sni-recovery-skipped-tun pass '[SKIP] transparent SNI recovery' \
   MOCK_SNI_RECOVERY_EXIT=1
 run_case sni-recovery-helper-missing fail 'helper missing' \
   MOCK_ENGINE=transparent AETHERROUTE_ACCEPTANCE_SNI_RECOVERY_SCRIPT="$MOCK_ROOT/absent.sh"
+run_case large-upload-delivered pass '[PASS] large upload'
+run_case large-upload-cut-off-tun fail '[FAIL] large upload' MOCK_LARGE_UPLOAD_EXIT=1
+run_case large-upload-cut-off-transparent fail '[FAIL] large upload' \
+  MOCK_ENGINE=transparent MOCK_LARGE_UPLOAD_EXIT=1
+run_case large-upload-unreached-rule fail '[FAIL] large upload' MOCK_LARGE_UPLOAD_EXIT=2
+run_case large-upload-unreached-direct pass '[SKIP] large upload' \
+  MOCK_ROUTING=direct MOCK_LARGE_UPLOAD_EXIT=2
+run_case large-upload-helper-missing fail 'helper missing' \
+  AETHERROUTE_ACCEPTANCE_LARGE_UPLOAD_SCRIPT="$MOCK_ROOT/absent.sh"
 run_case stale-extension fail '2026081467, expected installed build 2026081470' MOCK_OLD_EXTENSION=YES
 run_case duplicate-extension fail '2 registrations; expected exactly one' MOCK_DUPLICATE_EXTENSION=YES
 run_case disconnected fail 'candidate is not connected' MOCK_VPN_STATUS=Disconnected
