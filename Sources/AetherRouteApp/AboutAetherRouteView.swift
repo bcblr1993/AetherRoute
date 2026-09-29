@@ -49,14 +49,7 @@ struct AboutAetherRouteView: View {
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
                 HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s3) {
                     Text(productDisplayName)
-                        .font(
-                            .system(
-                                size: 30,
-                                weight: .semibold,
-                                design: .rounded
-                            )
-                        )
-                        .tracking(-0.7)
+                        .font(.largeTitle.weight(.semibold))
 
                     releaseStatusBadge
                 }
@@ -208,7 +201,7 @@ struct AboutAetherRouteView: View {
     ) -> some View {
         HStack(spacing: AetherVisual.s2) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(Color.accentColor)
                 .accessibilityHidden(true)
             Text(title)
@@ -249,7 +242,7 @@ struct AboutAetherRouteView: View {
                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                     .fill(Color(nsColor: .windowBackgroundColor))
                 Image(systemName: "signature")
-                    .font(.system(size: 20, weight: .medium))
+                    .font(.title.weight(.medium))
                     .foregroundStyle(AetherVisual.brandGradient)
             }
             .frame(width: 48, height: 48)

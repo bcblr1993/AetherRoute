@@ -181,7 +181,8 @@ struct AetherRouteStatusLens: View {
     }
 }
 
-/// 精致的顶部微型能量流光条：在连接中提供行云流水般的高级微动效，卡片高度零跳动
+/// Indeterminate progress sweep shown while connecting. It is an overlay
+/// strip, so the card height never changes when it appears.
 struct ConnectionLuminousBar: View {
     @State private var phase: CGFloat = -0.5
 
@@ -195,7 +196,6 @@ struct ConnectionLuminousBar: View {
                             .init(color: .clear, location: 0.0),
                             .init(color: Color.accentColor.opacity(0.3), location: 0.2),
                             .init(color: Color.accentColor, location: 0.5),
-                            .init(color: Color.cyan, location: 0.7),
                             .init(color: Color.accentColor.opacity(0.3), location: 0.8),
                             .init(color: .clear, location: 1.0),
                         ],
@@ -499,13 +499,6 @@ private struct AetherModernCardModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(borderColor, lineWidth: isSelected ? 1.5 : (isHovered ? 1.0 : 0.5))
             }
-            .shadow(
-                color: isSelected
-                    ? Color.accentColor.opacity(colorScheme == .dark ? 0.35 : 0.22)
-                    : (isHovered ? Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08) : Color.clear),
-                radius: isSelected ? 6 : 4,
-                y: isSelected ? 2 : 1
-            )
     }
 
     private var cardFill: Color {
@@ -529,17 +522,17 @@ private struct AetherModernCardModifier: ViewModifier {
     }
 }
 
-/// 协议微章组件：展示 SS, VMess, VLESS, Trojan, Hysteria2 等协议类型
+/// Protocol label for a node (SS, VMess, VLESS, Trojan, Hysteria2, ...).
 struct AetherProtocolBadge: View {
     let type: String
 
     var body: some View {
         Text(displayType)
-            .font(.system(size: 9.5, weight: .bold, design: .rounded))
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2.5)
-            .background(badgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .font(.caption2.weight(.semibold).monospaced())
+            .foregroundStyle(badgeColor == .secondary ? Color.secondary : badgeColor)
+            .padding(.horizontal, AetherVisual.s1)
+            .padding(.vertical, AetherVisual.sMicro)
+            .background(badgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
     }
 
     private var displayType: String {
@@ -550,16 +543,11 @@ struct AetherProtocolBadge: View {
         return trimmed
     }
 
+    /// A protocol is not a state, so protocols share one neutral badge and
+    /// leave colour to latency and connection state. DIRECT and REJECT are
+    /// routing outcomes and keep the same colours the rule targets use.
     private var badgeColor: Color {
         switch displayType {
-        case "SS", "SHADOWSOCKS": return .purple
-        case "VMESS": return .blue
-        case "VLESS": return .cyan
-        case "TROJAN": return .pink
-        case "HYSTERIA", "HYSTERIA2", "HY2": return .orange
-        case "TUIC": return .indigo
-        case "WIREGUARD", "WG": return .teal
-        case "SOCKS5", "HTTP": return .gray
         case "DIRECT": return .green
         case "REJECT": return .red
         default: return .secondary
@@ -567,7 +555,7 @@ struct AetherProtocolBadge: View {
     }
 }
 
-/// 现代测速延迟胶囊
+/// Latency result for one node; tapping it re-tests when an action is given.
 struct AetherLatencyPill: View {
     let status: ProxyLatencyStatus
     /// Qualifies a measured number: a TCP handshake and a number measured
@@ -613,18 +601,18 @@ struct AetherLatencyPill: View {
                     Circle()
                         .fill(pillColor)
                         .frame(width: 5, height: 5)
-                        .shadow(color: pillColor.opacity(0.4), radius: 2)
                 }
 
                 Text(displayText)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(.system(.caption, design: .monospaced, weight: .semibold))
                     .foregroundStyle(.primary)
 
                 if status.isMeasured, confidence == .verified {
                     // Only the stronger claim is marked. Reachability is the
                     // default, so badging it too would add noise to every row.
                     Image(systemName: confidence.symbol)
-                        .font(.system(size: 8, weight: .semibold))
+                        .font(.caption2.weight(.semibold))
+                        .imageScale(.small)
                         .foregroundStyle(Color.accentColor)
                         .accessibilityHidden(true)
                 }
@@ -649,36 +637,18 @@ struct AetherLatencyPill: View {
     }
 
     private var displayText: String {
-        switch status {
-        case .testing:
-            return AppLocalization.string("Testing")
-        case let .responded(ms):
-            return "\(ms) ms"
-        case .timedOut:
-            return AppLocalization.string("Timeout")
-        case .untested:
-            return AppLocalization.string("Untested")
-        }
+        status.localizedTitle
     }
 
+    /// Shares the latency bands every other latency surface uses, so a node
+    /// never reads as fast in one place and slow in another.
     private var pillColor: Color {
-        switch status {
-        case .testing:
-            return .secondary
-        case let .responded(latency):
-            if latency < 200 { return Color(red: 0.20, green: 0.78, blue: 0.42) } // 翡翠绿 (高速)
-            if latency < 500 { return Color(red: 0.18, green: 0.68, blue: 0.98) } // 科技蓝 (良好)
-            if latency < 900 { return Color(red: 0.96, green: 0.64, blue: 0.18) } // 琥珀橙 (普通)
-            return Color(red: 0.94, green: 0.40, blue: 0.38) // 珊瑚红 (慢速)
-        case .timedOut:
-            return Color(red: 0.94, green: 0.40, blue: 0.38).opacity(0.85)
-        case .untested:
-            return Color.secondary.opacity(0.6)
-        }
+        status.tint
     }
 }
 
-/// 现代节点晶核图标：优先匹配真实地域旗帜，未识别时呈现高质感协议几何微晶
+/// Node icon: the region flag when the name states one, otherwise a
+/// protocol symbol.
 public struct AetherNodeIcon: View {
     let name: String
     let protocolName: String
@@ -710,18 +680,14 @@ public struct AetherNodeIcon: View {
             let config = iconConfig
             ZStack {
                 RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [config.color.opacity(0.24), config.color.opacity(0.08)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
                     .overlay {
                         RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
-                            .stroke(config.color.opacity(0.4), lineWidth: 0.5)
+                            .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
                     }
 
+                // The symbol still tells protocols apart; colour is left to
+                // state, so the list does not read as a rainbow.
                 Image(systemName: config.symbol)
                     .font(.system(size: size * 0.44, weight: .semibold))
                     .foregroundStyle(config.color)
@@ -735,33 +701,34 @@ public struct AetherNodeIcon: View {
         let upperProto = protocolName.uppercased()
 
         if upperProto.contains("HY2") || upperProto.contains("HYSTERIA") || upperName.contains("HY2") || upperName.contains("HYSTERIA") {
-            return ("bolt.fill", Color.orange)
+            return ("bolt.fill", Color.secondary)
         }
         if upperProto.contains("VLESS") || upperName.contains("VLESS") {
-            return ("shield.checkered", Color.cyan)
+            return ("shield.checkered", Color.secondary)
         }
         if upperProto.contains("VMESS") || upperName.contains("VMESS") {
-            return ("cube.fill", Color.blue)
+            return ("cube.fill", Color.secondary)
         }
         if upperProto.contains("TROJAN") || upperName.contains("TROJAN") {
-            return ("lock.shield.fill", Color.pink)
+            return ("lock.shield.fill", Color.secondary)
         }
         if upperProto.contains("DIRECT") || upperName.contains("DIRECT") {
             return ("arrow.trianglehead.branch", Color.green)
         }
         if upperProto.contains("SS") || upperProto.contains("SHADOWSOCKS") || upperName.contains("SS") {
-            return ("paperplane.fill", Color.purple)
+            return ("paperplane.fill", Color.secondary)
         }
         if upperProto.contains("WIREGUARD") || upperProto.contains("WG") {
-            return ("shield.lefthalf.filled", Color.teal)
+            return ("shield.lefthalf.filled", Color.secondary)
         }
-        return ("point.3.filled.connected.trianglepath.dotted", Color.accentColor)
+        return ("point.3.filled.connected.trianglepath.dotted", Color.secondary)
     }
 }
 
-// MARK: - Aether Design System 2.0 核心基础组件
+// MARK: - Shared components
 
-/// 现代网络状态呼吸信标：展示连通性、呼吸发光动画与微环形指示
+/// Connection state dot: steady when connected, a rotating ring while
+/// connecting.
 public struct AetherStatusBeacon: View {
     @Environment(\.colorScheme) private var colorScheme
     let isConnected: Bool
@@ -796,7 +763,6 @@ public struct AetherStatusBeacon: View {
             Circle()
                 .fill(statusColor)
                 .frame(width: size, height: size)
-                .shadow(color: statusColor.opacity(0.5), radius: isConnected ? 4 : 1)
         }
         .frame(width: size * 2.2, height: size * 2.2)
         .onAppear {
@@ -843,7 +809,7 @@ struct AetherNodeFlag: View {
     }
 }
 
-/// 实时上下行迷你双波形走势图 (30秒平滑动态波形图)
+/// Download and upload over the last 30 seconds.
 public struct AetherTrafficMiniGraph: View {
     @Environment(\.colorScheme) private var colorScheme
     let downloadSamples: [Double]
@@ -882,7 +848,7 @@ public struct AetherTrafficMiniGraph: View {
                     smoothWaveformPath(samples: downloadSamples, width: width, height: actualHeight, maxVal: maxVal)
                         .fill(
                             LinearGradient(
-                                colors: [Color.cyan.opacity(0.38), Color.cyan.opacity(0.08), Color.cyan.opacity(0.0)],
+                                colors: [Color.cyan.opacity(0.22), Color.cyan.opacity(0.0)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -890,14 +856,9 @@ public struct AetherTrafficMiniGraph: View {
 
                     smoothWaveformLine(samples: downloadSamples, width: width, height: actualHeight, maxVal: maxVal)
                         .stroke(
-                            LinearGradient(
-                                colors: [Color.cyan.opacity(0.7), Color.cyan],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ),
-                            style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+                            Color.cyan,
+                            style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
                         )
-                        .shadow(color: Color.cyan.opacity(0.4), radius: 3, x: 0, y: 1)
                 }
 
                 // 上行平滑面积波形 (紫粉霓虹渐变)
@@ -905,7 +866,7 @@ public struct AetherTrafficMiniGraph: View {
                     smoothWaveformPath(samples: uploadSamples, width: width, height: actualHeight, maxVal: maxVal)
                         .fill(
                             LinearGradient(
-                                colors: [Color.purple.opacity(0.30), Color.purple.opacity(0.06), Color.purple.opacity(0.0)],
+                                colors: [Color.purple.opacity(0.18), Color.purple.opacity(0.0)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -913,14 +874,9 @@ public struct AetherTrafficMiniGraph: View {
 
                     smoothWaveformLine(samples: uploadSamples, width: width, height: actualHeight, maxVal: maxVal)
                         .stroke(
-                            LinearGradient(
-                                colors: [Color.purple.opacity(0.6), Color.purple.opacity(0.95)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ),
+                            Color.purple,
                             style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
                         )
-                        .shadow(color: Color.purple.opacity(0.35), radius: 2.5, x: 0, y: 1)
                 }
             }
         }

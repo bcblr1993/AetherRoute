@@ -227,7 +227,7 @@ private struct ProxyGroupTabButton: View {
         Button(action: onSelect) {
             HStack(spacing: AetherVisual.s2) {
                 Image(systemName: proxyGroupSymbol(group.strategy))
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(Color(nsColor: .labelColor))
                     .accessibilityHidden(true)
                     .frame(width: 24, height: 24)
@@ -239,12 +239,12 @@ private struct ProxyGroupTabButton: View {
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     HStack(spacing: AetherVisual.s1) {
                         Text(group.name)
-                            .font(.system(size: 13, weight: isSelected ? .bold : .medium))
+                            .font(.body.weight(isSelected ? .bold : .medium))
                             .foregroundStyle(Color(nsColor: .labelColor))
                             .lineLimit(1)
 
                         Text(group.strategy.uppercased())
-                            .font(.system(size: 8.5, weight: .bold))
+                            .font(.caption2.weight(.bold))
                             .padding(.horizontal, AetherVisual.s1)
                             .padding(.vertical, AetherVisual.sMicro)
                             .background(
@@ -260,13 +260,13 @@ private struct ProxyGroupTabButton: View {
                                 .fill(Color.green)
                                 .frame(width: 4.5, height: 4.5)
                             Text(currentMember)
-                                .font(.system(size: 10.5))
+                                .font(.caption)
                                 .foregroundStyle(Color(nsColor: .labelColor))
                                 .lineLimit(1)
                         }
                     } else {
                         Text(group.strategy.lowercased() == "url-test" ? AppLocalization.string("Auto select fastest") : group.strategy.uppercased())
-                            .font(.system(size: 10.5))
+                            .font(.caption)
                             .foregroundStyle(Color(nsColor: .labelColor))
                             .lineLimit(1)
                     }
@@ -274,7 +274,7 @@ private struct ProxyGroupTabButton: View {
 
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.subheadline.weight(.bold))
                         .foregroundStyle(Color.accentColor)
                         .padding(.leading, AetherVisual.sMicro)
                 }
@@ -294,12 +294,6 @@ private struct ProxyGroupTabButton: View {
                         .stroke(Color.accentColor.opacity(0.6), lineWidth: 1.2)
                 }
             }
-            .shadow(
-                color: isSelected ? Color.black.opacity(colorScheme == .dark ? 0.3 : 0.08) : Color.clear,
-                radius: 2.5,
-                x: 0,
-                y: 1
-            )
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -396,7 +390,7 @@ private struct ActiveProxyGroupView: View {
                 // 左侧：当前选中的策略组身份标识与名称
                 HStack(spacing: AetherVisual.s2) {
                     Image(systemName: proxyGroupSymbol(group.strategy))
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.title3.weight(.bold))
                         .foregroundStyle(Color.accentColor)
                         .accessibilityHidden(true)
 
@@ -405,7 +399,7 @@ private struct ActiveProxyGroupView: View {
                         .foregroundStyle(.primary)
 
                     Text(group.strategy.uppercased())
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, AetherVisual.sCompact)
                         .padding(.vertical, AetherVisual.sMicro)
                         .background(Color.accentColor.opacity(0.12), in: Capsule())
@@ -556,9 +550,9 @@ private struct ActiveProxyGroupView: View {
                 } label: {
                     HStack(spacing: AetherVisual.sCompact) {
                         Text(option.localizedTitle)
-                            .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
+                            .font(.subheadline.weight(isSelected ? .semibold : .regular))
                         Text(verbatim: "\(count)")
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .font(.subheadline.weight(.semibold))
                             .padding(.horizontal, AetherVisual.s1)
                             .padding(.vertical, AetherVisual.sMicro)
                             .background(
@@ -796,7 +790,7 @@ private struct ProxyNodeModernCard: View {
                 // 中间信息：节点名 (单行不折行) + 协议徽标与状态
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text(name)
-                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                        .font(.body.weight(isSelected ? .semibold : .medium))
                         .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.9))
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -811,12 +805,12 @@ private struct ProxyNodeModernCard: View {
                                     .fill(Color.green)
                                     .frame(width: 5, height: 5)
                                 Text(AppLocalization.string("Active"))
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.primary)
                             }
                         } else if let region {
                             Text(verbatim: region.code)
-                                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                                .font(.system(.caption2, design: .monospaced, weight: .medium))
                                 .foregroundStyle(.secondary.opacity(0.8))
                         }
                     }
@@ -850,13 +844,6 @@ private struct ProxyNodeModernCard: View {
                 .stroke(cardBorder, lineWidth: isSelected ? 1.2 : (isHovered ? 0.9 : 0.5))
         }
         .scaleEffect(isHovered ? 1.008 : 1.0)
-        .shadow(
-            color: isSelected
-                ? Color.accentColor.opacity(colorScheme == .dark ? 0.25 : 0.15)
-                : (isHovered ? Color.black.opacity(colorScheme == .dark ? 0.20 : 0.08) : Color.clear),
-            radius: isSelected ? 6 : (isHovered ? 4 : 0),
-            y: isSelected ? 1.5 : (isHovered ? 1.5 : 0)
-        )
         .animation(AetherVisual.gentleSpring, value: isHovered)
         .animation(AetherVisual.gentleSpring, value: isSelected)
         .onHover { hovering in
@@ -929,7 +916,8 @@ private struct ProxyLatencyBadge: View {
                     .controlSize(.small)
             } else {
                 Image(systemName: status.symbol)
-                    .font(.system(size: 7))
+                    .font(.caption2)
+                    .imageScale(.small)
                     .foregroundStyle(status.tint)
                     .accessibilityHidden(true)
             }
@@ -940,7 +928,8 @@ private struct ProxyLatencyBadge: View {
 
             if status.isMeasured {
                 Image(systemName: confidence.symbol)
-                    .font(.system(size: 8))
+                    .font(.caption2)
+                    .imageScale(.small)
                     .foregroundStyle(
                         confidence == .verified ? Color.accentColor : .secondary
                     )
@@ -953,16 +942,7 @@ private struct ProxyLatencyBadge: View {
     }
 
     private var text: String {
-        switch status {
-        case let .responded(milliseconds):
-            String.localizedStringWithFormat(
-                AppLocalization.string("%lld ms"),
-                Int64(milliseconds)
-            )
-        case .timedOut: AppLocalization.string("Timed out")
-        case .testing: AppLocalization.string("Testing")
-        case .untested: AppLocalization.string("Untested")
-        }
+        status.localizedTitle
     }
 
     /// The badge's colour and glyph are never the only cue: the qualifier is

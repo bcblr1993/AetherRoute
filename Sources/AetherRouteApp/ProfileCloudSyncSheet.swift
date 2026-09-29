@@ -10,7 +10,7 @@ struct ProfileCloudSyncSheet: View {
         VStack(alignment: .leading, spacing: AetherVisual.s5) {
             HStack(spacing: AetherVisual.s4) {
                 Image(systemName: "icloud.fill")
-                    .font(.system(size: 26, weight: .medium))
+                    .font(.largeTitle.weight(.medium))
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 52, height: 52)
                     .background(Color.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))

@@ -80,6 +80,28 @@ printf '\n.padding(15)\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView
 expect_failure 1 'UI design-token violation:' \
   "$FIXTURE/scripts/verify_ui_design_tokens.sh"
 
+write_valid_source
+printf '\n.font(.system(size: 12.5, weight: .medium))\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'literal font sizes are forbidden' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
+write_valid_source
+printf '\n.fill(Color(red: 0.2, green: 0.8, blue: 0.4))\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'custom RGB colors are forbidden outside AetherVisual' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
+write_valid_source
+printf '\n.shadow(color: .black, radius: 4)\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'shadows and glows are forbidden' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
+# A size relative to its container is how a scalable icon is drawn, not a
+# stray literal, and must keep passing.
+write_valid_source
+printf '\n.font(.system(size: size * 0.44, weight: .semibold))\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+"$FIXTURE/scripts/verify_ui_design_tokens.sh" >"$TEMP/output.log"
+grep -Fq 'UI design tokens verified.' "$TEMP/output.log"
+
 write_unlocalized_source
 expect_failure 1 'localized Duration header needs its 64...76pt column budget' \
   "$FIXTURE/scripts/verify_ui_design_tokens.sh"
@@ -88,4 +110,4 @@ printf 'Text("Duration")\n' >"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageVie
 expect_failure 1 'localized Duration header needs its 64...76pt column budget' \
   "$FIXTURE/scripts/verify_ui_design_tokens.sh"
 
-echo 'UI design-token guards passed: valid source, missing rg, scan failure, PCRE2 failure, forbidden token, unlocalized header and missing column budget.'
+echo 'UI design-token guards passed: valid source, missing rg, scan failure, PCRE2 failure, forbidden token, literal font size, custom RGB colour, shadow, relative icon size, unlocalized header and missing column budget.'

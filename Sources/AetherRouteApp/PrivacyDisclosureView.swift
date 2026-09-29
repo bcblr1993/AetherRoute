@@ -53,7 +53,6 @@ struct PrivacyDisclosureView: View {
         VStack(spacing: AetherVisual.s3) {
             ZStack(alignment: .bottomTrailing) {
                 AetherRouteBrandTile(size: 72)
-                    .shadow(color: Color.accentColor.opacity(0.2), radius: 10, x: 0, y: 5)
 
                 ZStack {
                     Circle()
@@ -62,14 +61,14 @@ struct PrivacyDisclosureView: View {
                     Circle()
                         .fill(
                             LinearGradient(
-                                colors: [Color.blue, Color(red: 0.0, green: 0.55, blue: 1.0)],
+                                colors: [AetherVisual.portalLight, AetherVisual.portalMid],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
                         .frame(width: 24, height: 24)
                     Image(systemName: "checkmark.shield.fill")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.body.weight(.bold))
                         .foregroundStyle(.white)
                 }
                 .offset(x: 5, y: 5)
@@ -79,7 +78,7 @@ struct PrivacyDisclosureView: View {
 
             VStack(spacing: AetherVisual.s2) {
                 Text(AppLocalization.string("Your Network Privacy"))
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .font(.largeTitle.weight(.bold))
                     .foregroundStyle(.primary)
                 Text(disclosureSubtitle)
                     .font(.subheadline)
@@ -125,7 +124,7 @@ struct PrivacyDisclosureView: View {
                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                     .fill(Color.orange.opacity(0.12))
                 Image(systemName: "arrow.up.right.square.fill")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.title2.weight(.medium))
                     .foregroundStyle(.orange)
             }
             .frame(width: 32, height: 32)
@@ -133,13 +132,13 @@ struct PrivacyDisclosureView: View {
 
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(AppLocalization.string("Your selected services receive traffic"))
-                    .font(.system(size: 13.5, weight: .semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
                     .accessibilityValue(
                         Text(AppLocalization.string("When you connect, traffic and DNS queries may be sent to the proxy and DNS services in your profile. Subscription updates contact your provider; routing rule updates contact public data sources after connection. These services may observe your IP address. Review and trust a provider before importing it."))
                     )
                 Text(AppLocalization.string("When you connect, traffic and DNS queries may be sent to the proxy and DNS services in your profile. Subscription updates contact your provider; routing rule updates contact public data sources after connection. These services may observe your IP address. Review and trust a provider before importing it."))
-                    .font(.system(size: 12))
+                    .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -175,7 +174,7 @@ struct PrivacyDisclosureView: View {
                         Image(systemName: "checkmark.shield.fill")
                         Text(AppLocalization.string("I Understand and Continue"))
                     }
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.title3.weight(.semibold))
                     .frame(minWidth: 220)
                     .padding(.vertical, AetherVisual.s1)
                 }
@@ -215,11 +214,11 @@ private enum NetworkPrivacyPoint: CaseIterable, Identifiable {
     var colors: [Color] {
         switch self {
         case .onDevice:
-            [Color(red: 0.12, green: 0.53, blue: 1.0), Color(red: 0.0, green: 0.68, blue: 0.95)]
+            [Color.blue, Color.blue.opacity(0.75)]
         case .noTracking:
-            [Color(red: 0.48, green: 0.38, blue: 0.96), Color(red: 0.68, green: 0.38, blue: 0.92)]
+            [Color.indigo, Color.indigo.opacity(0.75)]
         case .userControlled:
-            [Color(red: 0.02, green: 0.72, blue: 0.62), Color(red: 0.15, green: 0.82, blue: 0.50)]
+            [Color.teal, Color.teal.opacity(0.75)]
         }
     }
 
@@ -258,20 +257,19 @@ private struct PrivacyPointRow: View {
                         )
                     )
                 Image(systemName: point.symbol)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.title2.weight(.semibold))
                     .foregroundStyle(.white)
             }
             .frame(width: 38, height: 38)
-            .shadow(color: point.colors[0].opacity(0.3), radius: 4, x: 0, y: 2)
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(point.title)
-                    .font(.system(size: 14.5, weight: .semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
                     .accessibilityValue(Text(point.detail))
                 Text(point.detail)
-                    .font(.system(size: 12.5))
+                    .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)

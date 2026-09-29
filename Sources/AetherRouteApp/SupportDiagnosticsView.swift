@@ -602,7 +602,7 @@ struct SupportDiagnosticsView: View {
                     RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                         .fill(Color.accentColor.opacity(0.12))
                     Image(systemName: "stethoscope")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.title2.weight(.semibold))
                         .foregroundStyle(Color.accentColor)
                 }
                 .frame(width: 36, height: 36)
@@ -722,14 +722,14 @@ struct SupportDiagnosticsView: View {
     ) -> some View {
         HStack(spacing: AetherVisual.s3) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(Color.secondary)
                 .frame(width: 22, alignment: .center)
 
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 HStack(spacing: AetherVisual.s2) {
                     Text(title)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.body.weight(.medium))
                     Spacer()
                     stageStatusBadge(status: status)
                 }
@@ -754,15 +754,15 @@ struct SupportDiagnosticsView: View {
                 .controlSize(.mini)
         case .passed:
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 13))
+                .font(.body)
                 .foregroundStyle(.green)
         case .warning:
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 13))
+                .font(.body)
                 .foregroundStyle(.orange)
         case .failed:
             Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 13))
+                .font(.body)
                 .foregroundStyle(.red)
         }
     }
@@ -797,10 +797,10 @@ struct SupportDiagnosticsView: View {
         return VStack(alignment: .leading, spacing: AetherVisual.s2) {
             HStack(spacing: AetherVisual.s2) {
                 Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.title3.weight(.bold))
                     .foregroundStyle(tintColor)
                 Text(AppLocalization.string(report.verdict.titleKey))
-                    .font(.system(size: 13.5, weight: .bold))
+                    .font(.body.weight(.bold))
                     .foregroundStyle(tintColor)
                 Spacer()
                 Text(String(format: "%.0f ms", report.totalDurationMs))

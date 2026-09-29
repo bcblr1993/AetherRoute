@@ -216,7 +216,7 @@ struct RulesView: View {
                                             text: $testQuery
                                         )
                                         .textFieldStyle(.plain)
-                                        .font(.system(size: 12.5, design: .monospaced))
+                                        .font(.system(.callout, design: .monospaced))
                                         .onSubmit {
                                             performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
                                         }
@@ -253,7 +253,7 @@ struct RulesView: View {
 
                                     HStack(spacing: AetherVisual.s1) {
                                         Text(AppLocalization.string("Quick Test:"))
-                                            .font(.system(size: 11, weight: .semibold))
+                                            .font(.subheadline.weight(.semibold))
                                             .foregroundStyle(.primary)
                                         ForEach(["google.com", "apple.com", "github.com", "bilibili.com"], id: \.self) { domain in
                                             Button(domain) {
@@ -261,7 +261,7 @@ struct RulesView: View {
                                                 performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
                                             }
                                             .buttonStyle(.plain)
-                                            .font(.system(size: 11))
+                                            .font(.subheadline)
                                             .padding(.horizontal, AetherVisual.s2)
                                             .padding(.vertical, AetherVisual.sMicro)
                                             .background(Color.secondary.opacity(0.1), in: Capsule())
@@ -272,14 +272,14 @@ struct RulesView: View {
                                     if let result = testResult {
                                         HStack(spacing: AetherVisual.s3) {
                                             Image(systemName: "checkmark.circle.fill")
-                                                .font(.system(size: 20))
+                                                .font(.title)
                                                 .foregroundStyle(Color.green)
 
                                             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                                                 HStack(spacing: AetherVisual.s2) {
                                                     if result.isCustomRule {
                                                         Text(verbatim: "CUSTOM RULE")
-                                                            .font(.system(size: 9, weight: .black, design: .rounded))
+                                                            .font(.caption2.weight(.black))
                                                             .foregroundStyle(Color.white)
                                                             .padding(.horizontal, AetherVisual.sCompact)
                                                             .padding(.vertical, AetherVisual.sMicro)
@@ -287,10 +287,10 @@ struct RulesView: View {
                                                     }
 
                                                     Text(String.localizedStringWithFormat(AppLocalization.string("Matched Rule #%lld"), Int64(result.order)))
-                                                        .font(.system(size: 12.5, weight: .bold))
+                                                        .font(.callout.weight(.bold))
 
                                                     Text(result.matchedRule.kind)
-                                                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                                        .font(.system(.caption2, design: .monospaced, weight: .bold))
                                                         .padding(.horizontal, AetherVisual.s1)
                                                         .padding(.vertical, AetherVisual.sMicro)
                                                         .background(Color.blue.opacity(0.15), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
@@ -316,7 +316,7 @@ struct RulesView: View {
                                                 }
                                             } label: {
                                                 Label(AppLocalization.string("Locate"), systemImage: "scope")
-                                                    .font(.system(size: 11, weight: .semibold))
+                                                    .font(.subheadline.weight(.semibold))
                                             }
                                             .buttonStyle(.bordered)
                                             .controlSize(.small)
@@ -359,14 +359,14 @@ struct RulesView: View {
                                                 Text(AppLocalization.string("Custom routing rules"))
                                                     .font(.headline.weight(.semibold))
                                                 Text(String.localizedStringWithFormat(AppLocalization.string("%lld rules"), Int64(tunnel.customRules.count)))
-                                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                                    .font(.system(.callout, design: .monospaced, weight: .semibold))
                                                     .foregroundStyle(Color(nsColor: .labelColor))
                                                     .padding(.horizontal, AetherVisual.sCompact)
                                                     .padding(.vertical, AetherVisual.sMicro)
                                                     .background(Color.teal.opacity(0.12), in: Capsule())
                                             }
                                             Text(AppLocalization.string("Custom rules take absolute top priority. Direct IP-CIDR rules automatically bypass TUN kernel routing."))
-                                                .font(.system(size: 12, weight: .medium))
+                                                .font(.callout.weight(.medium))
                                                 .foregroundStyle(Color(nsColor: .labelColor))
                                         }
                                         Spacer()
@@ -376,7 +376,7 @@ struct RulesView: View {
                                             showAddRuleSheet = true
                                         } label: {
                                             Label(AppLocalization.string("Add Rule"), systemImage: "plus.circle.fill")
-                                                .font(.system(size: 12, weight: .semibold))
+                                                .font(.callout.weight(.semibold))
                                         }
                                         .buttonStyle(.borderedProminent)
                                         .controlSize(.small)
@@ -500,7 +500,7 @@ struct RulesView: View {
                                                 Image(systemName: "line.3.horizontal.decrease.circle")
                                                 Text(selectedAction.localizedTitle)
                                             }
-                                            .font(.system(size: 12, weight: .medium))
+                                            .font(.callout.weight(.medium))
                                         }
                                         .menuStyle(.borderedButton)
                                         .accessibilityLabel(selectedAction.localizedTitle)
@@ -521,11 +521,11 @@ struct RulesView: View {
                                                 } label: {
                                                     HStack(spacing: AetherVisual.s1) {
                                                         Image(systemName: filter.icon)
-                                                            .font(.system(size: 10))
+                                                            .font(.caption)
                                                         Text(filter.localizedTitle)
-                                                            .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
+                                                            .font(.subheadline.weight(isSelected ? .semibold : .regular))
                                                         Text(verbatim: "\(count)")
-                                                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                                            .font(.system(.callout, design: .monospaced, weight: .semibold))
                                                             .foregroundStyle(Color(nsColor: .labelColor))
                                                             .padding(.horizontal, AetherVisual.s1)
                                                             .padding(.vertical, AetherVisual.sMicro)
@@ -725,7 +725,7 @@ private struct RuleRow: View {
         HStack(spacing: AetherVisual.s3) {
             // 规则序号
             Text(verbatim: "\(rule.order)")
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .font(.system(.subheadline, design: .monospaced, weight: .bold))
                 .foregroundStyle(.primary)
                 .frame(width: 32, height: 26)
                 .background(
@@ -735,7 +735,7 @@ private struct RuleRow: View {
 
             if rule.isCustom {
                 Text(verbatim: "CUSTOM")
-                    .font(.system(size: 8.5, weight: .black, design: .rounded))
+                    .font(.caption2.weight(.black))
                     .foregroundStyle(Color.teal)
                     .padding(.horizontal, AetherVisual.s1)
                     .padding(.vertical, AetherVisual.sMicro)
@@ -749,10 +749,11 @@ private struct RuleRow: View {
             // 规则类型徽章
             HStack(spacing: AetherVisual.s1) {
                 Image(systemName: kindIcon(rule.kind))
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.caption2.weight(.bold))
+                    .imageScale(.small)
                     .accessibilityHidden(true)
                 Text(rule.kind)
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.system(.subheadline, design: .monospaced, weight: .bold))
                     .foregroundStyle(Color(nsColor: .labelColor))
             }
             .foregroundStyle(ruleKindColor(rule.kind))
@@ -770,7 +771,7 @@ private struct RuleRow: View {
             // 规则条件
             if let criteria = rule.criteria {
                 Text(criteria)
-                    .font(.system(size: 12.5, weight: .medium, design: .monospaced))
+                    .font(.system(.callout, design: .monospaced, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -778,7 +779,7 @@ private struct RuleRow: View {
                     .help(criteria)
             } else {
                 Text(AppLocalization.string("Any remaining traffic (Fallback)"))
-                    .font(.system(size: 12, weight: .regular))
+                    .font(.callout.weight(.regular))
                     .foregroundStyle(.primary)
             }
 
@@ -790,7 +791,7 @@ private struct RuleRow: View {
                     copyCriteria()
                 } label: {
                     Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 10.5))
+                        .font(.caption)
                         .foregroundStyle(showCopied ? Color.green : Color.secondary)
                         .frame(width: 22, height: 22)
                         .background(Color.secondary.opacity(0.1), in: Circle())
@@ -801,7 +802,7 @@ private struct RuleRow: View {
             }
 
             Image(systemName: "arrow.right")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
 
@@ -827,11 +828,6 @@ private struct RuleRow: View {
                     lineWidth: isHighlighted ? 1.5 : 0.5
                 )
         }
-        .shadow(
-            color: isHighlighted ? Color.accentColor.opacity(0.25) : (isHovered ? Color.black.opacity(0.04) : Color.clear),
-            radius: isHighlighted ? 5 : 2,
-            y: 1
-        )
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovered = hovering
@@ -900,13 +896,11 @@ private struct RuleRow: View {
         return "number"
     }
 
-    private func ruleKindColor(_ kind: String) -> Color {
-        let upper = kind.uppercased()
-        if upper.contains("DOMAIN") { return .blue }
-        if upper.contains("IP") || upper.contains("CIDR") { return .orange }
-        if upper.contains("GEO") { return .purple }
-        if upper.contains("MATCH") { return .secondary }
-        return .teal
+    /// Rule kinds are told apart by their symbol and label. Colour stays
+    /// with the target (direct, proxy, reject), which is what a reader
+    /// scanning the list is actually looking for.
+    private func ruleKindColor(_: String) -> Color {
+        .secondary
     }
 }
 
@@ -930,7 +924,7 @@ struct CustomRuleRow: View {
             .labelsHidden()
 
             Text(verbatim: "CUSTOM")
-                .font(.system(size: 8.5, weight: .black, design: .rounded))
+                .font(.caption2.weight(.black))
                 .foregroundStyle(Color.teal)
                 .padding(.horizontal, AetherVisual.s1)
                 .padding(.vertical, AetherVisual.sMicro)
@@ -941,7 +935,7 @@ struct CustomRuleRow: View {
                 }
 
             Text(rule.kind.rawValue)
-                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                .font(.system(.caption2, design: .monospaced, weight: .bold))
                 .foregroundStyle(Color.blue)
                 .padding(.horizontal, AetherVisual.sCompact)
                 .padding(.vertical, AetherVisual.sMicro)
@@ -950,13 +944,13 @@ struct CustomRuleRow: View {
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 HStack(spacing: AetherVisual.s1) {
                     Text(rule.value)
-                        .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                        .font(.system(.callout, design: .monospaced, weight: .semibold))
                         .foregroundStyle(rule.isEnabled ? .primary : .secondary)
                         .lineLimit(1)
 
                     if rule.noResolve {
                         Text(verbatim: "no-resolve")
-                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .font(.system(.caption2, design: .monospaced, weight: .medium))
                             .foregroundStyle(.primary)
                             .padding(.horizontal, AetherVisual.sMicro)
                             .background(Color.secondary.opacity(0.12), in: Capsule())
@@ -974,7 +968,7 @@ struct CustomRuleRow: View {
             Spacer(minLength: AetherVisual.s2)
 
             Image(systemName: "arrow.right")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
 
             TargetPillView(target: rule.target.rawString, isHovered: isHovered)
@@ -985,7 +979,7 @@ struct CustomRuleRow: View {
                     onTest()
                 } label: {
                     Image(systemName: "bolt.badge.clock")
-                        .font(.system(size: 11))
+                        .font(.subheadline)
                         .foregroundStyle(Color.accentColor)
                         .frame(width: 24, height: 24)
                         .background(Color.accentColor.opacity(0.1), in: Circle())
@@ -997,7 +991,7 @@ struct CustomRuleRow: View {
                     onEdit()
                 } label: {
                     Image(systemName: "pencil")
-                        .font(.system(size: 11))
+                        .font(.subheadline)
                         .foregroundStyle(.primary)
                         .frame(width: 24, height: 24)
                         .background(Color.secondary.opacity(0.1), in: Circle())
@@ -1009,7 +1003,7 @@ struct CustomRuleRow: View {
                     onDelete()
                 } label: {
                     Image(systemName: "trash")
-                        .font(.system(size: 11))
+                        .font(.subheadline)
                         .foregroundStyle(Color.red.opacity(0.85))
                         .frame(width: 24, height: 24)
                         .background(Color.red.opacity(0.1), in: Circle())
@@ -1185,7 +1179,7 @@ struct CustomRuleEditorSheet: View {
                                 .foregroundStyle(.primary)
                             TextField(placeholderForKind(selectedKind), text: $ruleValue)
                                 .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 12.5, design: .monospaced))
+                                .font(.system(.callout, design: .monospaced))
                         }
                     }
 
@@ -1210,7 +1204,7 @@ struct CustomRuleEditorSheet: View {
                                     .foregroundStyle(.primary)
                                 TextField(AppLocalization.string("e.g. PROXY, Node Select, Auto…"), text: $customTargetName)
                                     .textFieldStyle(.roundedBorder)
-                                    .font(.system(size: 12.5))
+                                    .font(.callout)
                             }
                         } else {
                             Spacer()
@@ -1228,7 +1222,7 @@ struct CustomRuleEditorSheet: View {
                             .foregroundStyle(.primary)
                         TextField(AppLocalization.string("e.g. Tailscale node / local service"), text: $comment)
                             .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12))
+                            .font(.callout)
                     }
                 }
             } else {
@@ -1239,7 +1233,7 @@ struct CustomRuleEditorSheet: View {
                             .foregroundStyle(.primary)
                         TextField(AppLocalization.string("e.g. DOMAIN-SUFFIX,baizhiedu.xin,DIRECT or IP-CIDR,100.64.0.0/10,DIRECT,no-resolve"), text: $rawClashString)
                             .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(.system(.callout, design: .monospaced))
                     }
 
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
@@ -1248,7 +1242,7 @@ struct CustomRuleEditorSheet: View {
                             .foregroundStyle(.primary)
                         TextField(AppLocalization.string("e.g. Direct private subnet"), text: $comment)
                             .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12))
+                            .font(.callout)
                     }
                 }
             }
@@ -1275,7 +1269,7 @@ struct CustomRuleEditorSheet: View {
                     verifyRule()
                 } label: {
                     Label(AppLocalization.string("Verify rule"), systemImage: "bolt.badge.clock.fill")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -1296,7 +1290,7 @@ struct CustomRuleEditorSheet: View {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(Color.green)
                             Text(String.localizedStringWithFormat(AppLocalization.string("Simulated match: %@ -> %@"), res.matchedRule.kind, res.target))
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.callout.weight(.bold))
                                 .foregroundStyle(Color.green)
                         }
                     } else if !testExplanation.isEmpty {

@@ -73,7 +73,7 @@ struct ProfileArchivePasswordSheet: View {
         VStack(alignment: .leading, spacing: AetherVisual.s6) {
             HStack(alignment: .top, spacing: AetherVisual.s4) {
                 Image(systemName: "lock.shield.fill")
-                    .font(.system(size: 25, weight: .medium))
+                    .font(.largeTitle.weight(.medium))
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 48, height: 48)
                     .background(

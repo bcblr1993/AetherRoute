@@ -48,6 +48,19 @@ fail_if_found \
   '\.(padding|cornerRadius)\([^\n)]*(?<![A-Za-z0-9_.])\d|cornerRadius:[[:space:]]*\d|spacing:[[:space:]]*[1-9][0-9]*' \
   --pcre2 -g '!AetherRouteVisualSystem.swift'
 
+fail_if_found \
+  "literal font sizes are forbidden; use a system text style such as .caption or .body (sizes relative to a container are allowed)" \
+  '\.system\([[:space:]]*size:[[:space:]]*[0-9]'
+
+fail_if_found \
+  "custom RGB colors are forbidden outside AetherVisual; use system semantic colors" \
+  'Color\([[:space:]]*red:' \
+  -g '!AetherRouteVisualSystem.swift'
+
+fail_if_found \
+  "shadows and glows are forbidden; use fills, separators and motion for emphasis" \
+  '\.shadow\('
+
 # The header must be localized *and* carry the column budget. Matching a bare
 # "Duration" literal here meant the guard demanded the untranslated string, so
 # localizing the header turned this into a false failure that blocked main even

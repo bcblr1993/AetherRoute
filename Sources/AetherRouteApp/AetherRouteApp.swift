@@ -732,7 +732,7 @@ private struct MenuBarContent: View {
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     HStack(spacing: AetherVisual.sCompact) {
                         Text("AetherRoute")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.body.weight(.bold))
                             .foregroundStyle(.primary)
 
                         AetherStatusBeacon(
@@ -743,7 +743,7 @@ private struct MenuBarContent: View {
                     }
 
                     Text(tunnel.statusTitle)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(tunnel.isConnected ? Color.green : Color.secondary)
                         .lineLimit(1)
                 }
@@ -1090,7 +1090,8 @@ private struct MenuNodeLatency: View {
 
             if status.isMeasured, confidence == .verified {
                 Image(systemName: confidence.symbol)
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.caption2.weight(.semibold))
+                    .imageScale(.small)
                     .foregroundStyle(Color.accentColor)
                     .accessibilityHidden(true)
             }
@@ -1099,12 +1100,7 @@ private struct MenuNodeLatency: View {
     }
 
     private var title: String {
-        switch status {
-        case .responded(let milliseconds): "\(milliseconds) ms"
-        case .testing: AppLocalization.string("Testing latency…")
-        case .untested: AppLocalization.string("Untested")
-        case .timedOut: AppLocalization.string("Unavailable")
-        }
+        status.localizedTitle
     }
 }
 
@@ -1136,18 +1132,18 @@ private struct MenuNodeListInline: View {
             if !orderedMembers.isEmpty {
                 HStack(spacing: AetherVisual.s1) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11))
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                     TextField(AppLocalization.string("Search nodes"), text: $searchText)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 11.5))
+                        .font(.subheadline)
                         .accessibilityIdentifier("menu-node-search-field")
                     if !searchText.isEmpty {
                         Button {
                             searchText = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 11))
+                                .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
@@ -1190,7 +1186,7 @@ private struct MenuNodeListInline: View {
                             } label: {
                                 HStack(spacing: AetherVisual.s2) {
                                     Image(systemName: "checkmark")
-                                        .font(.system(size: 11, weight: .bold))
+                                        .font(.subheadline.weight(.bold))
                                         .foregroundStyle(Color.accentColor)
                                         .opacity(member == selectedMember ? 1 : 0)
                                         .frame(width: 14)
@@ -1429,7 +1425,7 @@ private struct SettingsView: View {
                         Text(tab == .account
                             ? LocalizedStringKey(distribution.isFreeDistribution ? "Version & Updates" : "License & Updates")
                             : tab.title)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.title3.weight(.semibold))
                             .foregroundStyle(selectedTab == tab
                                 ? Color(nsColor: .alternateSelectedControlTextColor)
                                 : Color(nsColor: .labelColor))

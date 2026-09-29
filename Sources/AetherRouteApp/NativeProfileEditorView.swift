@@ -50,7 +50,7 @@ struct NativeProfileEditorSheet: View {
     private var header: some View {
         HStack(spacing: AetherVisual.s4) {
             Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 24, weight: .medium))
+                .font(.largeTitle.weight(.medium))
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 50, height: 50)
                 .background(

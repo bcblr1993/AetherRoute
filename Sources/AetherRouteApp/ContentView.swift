@@ -341,7 +341,7 @@ struct ContentView: View {
                             size: 6
                         )
                         Text(tunnel.statusTitle)
-                            .font(.system(size: 10.5, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(.primary)
                     }
                 }
@@ -366,7 +366,7 @@ struct ContentView: View {
                         } label: {
                             HStack(spacing: AetherVisual.sCompact) {
                                 Image(systemName: section.symbol)
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.title3.weight(.semibold))
                                     .frame(width: 18)
                                     .foregroundStyle(
                                         selectedSection == section
@@ -424,9 +424,9 @@ struct ContentView: View {
         } label: {
             HStack(spacing: AetherVisual.sCompact) {
                 Image(systemName: "gearshape")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.body.weight(.medium))
                 Text(AppLocalization.string("Settings"))
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(.callout.weight(.medium))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
@@ -443,7 +443,7 @@ struct ContentView: View {
 
     private var sidebarVersionLabel: some View {
         Text(verbatim: currentAppVersion)
-            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            .font(.system(.callout, design: .monospaced, weight: .semibold))
             .foregroundStyle(.primary)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
@@ -455,31 +455,16 @@ struct ContentView: View {
         switch section {
         case .proxies:
             if let summary = tunnel.activeProfileSummary, summary.proxyCount > 0 {
-                Text(verbatim: "\(summary.proxyCount)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, AetherVisual.sCompact)
-                    .padding(.vertical, AetherVisual.sMicro)
-                    .background(Color.secondary.opacity(0.12), in: Capsule())
+                SidebarCountBadge(count: summary.proxyCount)
             }
         case .connections:
             let count = tunnel.telemetryViewModel.snapshot.connections.count
             if count > 0 {
-                Text(verbatim: "\(count)")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, AetherVisual.sCompact)
-                    .padding(.vertical, AetherVisual.sMicro)
-                    .background(Color.cyan.opacity(0.12), in: Capsule())
+                SidebarCountBadge(count: count)
             }
         case .rules:
             if let summary = tunnel.activeProfileSummary, summary.ruleCount > 0 {
-                Text(verbatim: "\(summary.ruleCount)")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, AetherVisual.sCompact)
-                    .padding(.vertical, AetherVisual.sMicro)
-                    .background(Color.secondary.opacity(0.1), in: Capsule())
+                SidebarCountBadge(count: summary.ruleCount)
             }
         default:
             EmptyView()
@@ -539,6 +524,23 @@ struct ContentView: View {
             await Task.yield()
             UIResponsivenessProbe.rendered("main.\(section.rawValue)")
         }
+    }
+}
+
+/// One badge style for every sidebar count; counts are information, not
+/// state, so none of them is tinted.
+private struct SidebarCountBadge: View {
+    let count: Int
+
+    var body: some View {
+        Text(verbatim: "\(count)")
+            .font(.caption.weight(.medium).monospacedDigit())
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, AetherVisual.sCompact)
+            .padding(.vertical, AetherVisual.sMicro)
+            .background(Color.secondary.opacity(0.12), in: Capsule())
+            .contentTransition(.numericText())
+            .animation(AetherVisual.animation(AetherVisual.quickFade), value: count)
     }
 }
 
@@ -738,20 +740,20 @@ private struct OverviewView: View {
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
                         HStack {
                             Label(AppLocalization.string("Traffic · Last 30 seconds"), systemImage: "chart.xyaxis.line")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.primary)
                             Spacer()
                             HStack(spacing: AetherVisual.s3) {
                                 HStack(spacing: AetherVisual.s1) {
                                     Circle().fill(Color.cyan).frame(width: 6, height: 6)
                                     Text("Down")
-                                        .font(.system(size: 10, weight: .medium))
+                                        .font(.caption.weight(.medium))
                                         .foregroundStyle(.primary)
                                 }
                                 HStack(spacing: AetherVisual.s1) {
                                     Circle().fill(Color.purple).frame(width: 6, height: 6)
                                     Text("Up")
-                                        .font(.system(size: 10, weight: .medium))
+                                        .font(.caption.weight(.medium))
                                         .foregroundStyle(.primary)
                                 }
                             }
@@ -759,7 +761,7 @@ private struct OverviewView: View {
                         .padding(.horizontal, AetherVisual.s4)
 
                         Text(AppLocalization.string(tunnel.isRealtimeTelemetryPreferred ? "Refresh: every 3 seconds" : "Refresh: every 10 seconds"))
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.callout.weight(.medium))
                             .foregroundStyle(Color(nsColor: .labelColor))
                             .padding(.horizontal, AetherVisual.s4)
                         LiveTrafficHistoryGraph(
@@ -802,14 +804,14 @@ private struct OverviewView: View {
                     RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                         .fill(Color.accentColor.opacity(0.12))
                     AetherNodeFlag(name: activeNode)
-                        .font(.system(size: 18))
+                        .font(.title2)
                 }
                 .frame(width: 38, height: 38)
 
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     HStack(spacing: AetherVisual.sCompact) {
                         Text(primaryGroup.name)
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.subheadline.weight(.bold))
                             .foregroundStyle(.primary)
                             .textCase(.uppercase)
 
@@ -817,7 +819,7 @@ private struct OverviewView: View {
 
                         if let region {
                             Text(verbatim: region.code)
-                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                .font(.system(.caption2, design: .monospaced, weight: .bold))
                                 .foregroundStyle(.primary)
                                 .padding(.horizontal, AetherVisual.s1)
                                 .padding(.vertical, AetherVisual.sMicro)
@@ -830,7 +832,7 @@ private struct OverviewView: View {
                     }
                     Text(activeNode)
                         .help(activeNode)
-                        .font(.system(size: 13.5, weight: .semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                 }
@@ -870,7 +872,7 @@ private struct OverviewView: View {
                         HStack(spacing: AetherVisual.s1) {
                             Text(AppLocalization.string("Switch"))
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.caption.weight(.bold))
                         }
                     }
                     .buttonStyle(.bordered)
@@ -891,17 +893,17 @@ private struct ConnectionRecoveryCard: View {
     var body: some View {
         HStack(alignment: .center, spacing: AetherVisual.s3) {
             Image(systemName: "wrench.and.screwdriver.fill")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(.orange)
                 .frame(width: 28, height: 28)
                 .background(Color.orange.opacity(0.12), in: Circle())
 
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 Text("Recovery Assistant")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(.primary)
                 Text(recoveryDetail)
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.subheadline.weight(.regular))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -1181,11 +1183,11 @@ private struct ConnectionControlBar: View {
         VStack(alignment: .leading, spacing: AetherVisual.sCompact) {
             HStack(spacing: AetherVisual.sCompact) {
                 Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.accentColor)
                     .accessibilityHidden(true)
                 Text(AppLocalization.string("Routing mode"))
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(.primary)
             }
             RoutingModeSegmentedControl(
@@ -1204,11 +1206,11 @@ private struct ConnectionControlBar: View {
         VStack(alignment: .leading, spacing: AetherVisual.sCompact) {
             HStack(spacing: AetherVisual.sCompact) {
                 Image(systemName: networkEngineMode == .tun ? "bolt.shield.fill" : "network")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.accentColor)
                     .accessibilityHidden(true)
                 Text(AppLocalization.string("Network engine"))
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(.primary)
             }
             NetworkEngineSegmentedControl(
@@ -1440,7 +1442,7 @@ private struct RouteStop: View {
                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                     .fill(Color.accentColor.opacity(0.12))
                 Image(systemName: symbol)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(Color.accentColor)
             }
             .frame(width: 32, height: 32)
@@ -1448,11 +1450,11 @@ private struct RouteStop: View {
 
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 Text(caption)
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                 Text(value)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .help(value)
@@ -1492,7 +1494,8 @@ private struct RouteConnector: View {
                         .frame(height: 1.5)
                         .frame(minWidth: 10)
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.caption2.weight(.bold))
+                        .imageScale(.small)
                         .foregroundStyle(Color.accentColor.opacity(0.55))
                 }
                 .frame(maxWidth: 36)
@@ -1502,7 +1505,8 @@ private struct RouteConnector: View {
                         .fill(Color.accentColor.opacity(0.3))
                         .frame(width: 1.5, height: 8)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.caption2.weight(.bold))
+                        .imageScale(.small)
                         .foregroundStyle(Color.accentColor.opacity(0.55))
                 }
                 .frame(height: 14)

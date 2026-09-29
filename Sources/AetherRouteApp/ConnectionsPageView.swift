@@ -342,7 +342,7 @@ private struct SessionBar: View {
                 Divider().frame(height: 18).opacity(0.4)
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     Text(AppLocalization.string("Outlet"))
-                        .font(.system(size: 9.5, weight: .bold))
+                        .font(.caption2.weight(.bold))
                         .foregroundStyle(.primary)
                     Text(outlet)
                         .font(.body.weight(.medium))

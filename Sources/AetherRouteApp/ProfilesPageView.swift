@@ -21,7 +21,7 @@ struct EmptyProfileOnboardingCard: View {
                             )
                         )
                     Image(systemName: "sparkles")
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(.title.weight(.semibold))
                         .foregroundStyle(Color.accentColor)
                 }
                 .frame(width: 48, height: 48)
@@ -46,9 +46,9 @@ struct EmptyProfileOnboardingCard: View {
                 } label: {
                     HStack(spacing: AetherVisual.sCompact) {
                         Image(systemName: "link.badge.plus")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.body.weight(.semibold))
                         Text(AppLocalization.string("Add Subscription…"))
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.body.weight(.semibold))
                     }
                     .padding(.horizontal, AetherVisual.s1)
                 }
@@ -61,9 +61,9 @@ struct EmptyProfileOnboardingCard: View {
                 } label: {
                     HStack(spacing: AetherVisual.sCompact) {
                         Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.body.weight(.medium))
                         Text(AppLocalization.string("Import Profile…"))
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.body.weight(.medium))
                     }
                 }
                 .buttonStyle(.bordered)
@@ -76,9 +76,9 @@ struct EmptyProfileOnboardingCard: View {
                     } label: {
                         HStack(spacing: AetherVisual.sCompact) {
                             Image(systemName: "icloud")
-                                .font(.system(size: 13, weight: .medium))
+                                .font(.body.weight(.medium))
                             Text(AppLocalization.string("iCloud Sync…"))
-                                .font(.system(size: 13, weight: .medium))
+                                .font(.body.weight(.medium))
                         }
                     }
                     .buttonStyle(.bordered)
@@ -118,7 +118,7 @@ struct ExternalSubscriptionConfirmationSheet: View {
         VStack(alignment: .leading, spacing: AetherVisual.s5) {
             HStack(alignment: .top, spacing: AetherVisual.s4) {
                 Image(systemName: "link.badge.plus")
-                    .font(.system(size: 27, weight: .medium))
+                    .font(.largeTitle.weight(.medium))
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 54, height: 54)
                     .background(
@@ -440,7 +440,7 @@ struct ProfilesView: View {
     private func profileMessageBanner(message: String, isError: Bool) -> some View {
         HStack(spacing: AetherVisual.s3) {
             Image(systemName: isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                .font(.system(size: 14, weight: .medium))
+                .font(.title3.weight(.medium))
                 .foregroundStyle(isError ? Color.orange : Color.green)
 
             Text(message)
@@ -453,7 +453,7 @@ struct ProfilesView: View {
                 tunnel.clearProfileMessage()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
@@ -501,7 +501,7 @@ struct ProfilesView: View {
                             )
                         )
                     Image(systemName: "doc.badge.plus")
-                        .font(.system(size: 28, weight: .semibold))
+                        .font(.largeTitle.weight(.semibold))
                         .foregroundStyle(Color.accentColor)
                 }
                 .frame(width: 60, height: 60)
@@ -530,7 +530,7 @@ struct ProfilesView: View {
                                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                                     .fill(Color.blue.opacity(0.12))
                                 Image(systemName: "link.badge.plus")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.title2.weight(.semibold))
                                     .foregroundStyle(Color.blue)
                             }
                             .frame(width: 34, height: 34)
@@ -538,7 +538,7 @@ struct ProfilesView: View {
                             Spacer(minLength: 0)
 
                             Image(systemName: "arrow.right")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         }
 
@@ -571,7 +571,7 @@ struct ProfilesView: View {
                                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                                     .fill(Color.indigo.opacity(0.12))
                                 Image(systemName: "square.and.arrow.down")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.title2.weight(.semibold))
                                     .foregroundStyle(Color.indigo)
                             }
                             .frame(width: 34, height: 34)
@@ -579,7 +579,7 @@ struct ProfilesView: View {
                             Spacer(minLength: 0)
 
                             Image(systemName: "arrow.right")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         }
 
@@ -612,7 +612,7 @@ struct ProfilesView: View {
                                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                                     .fill(Color.teal.opacity(0.12))
                                 Image(systemName: "icloud.fill")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.title2.weight(.semibold))
                                     .foregroundStyle(Color.teal)
                             }
                             .frame(width: 34, height: 34)
@@ -620,7 +620,7 @@ struct ProfilesView: View {
                             Spacer(minLength: 0)
 
                             Image(systemName: "arrow.right")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         }
 
@@ -734,7 +734,7 @@ struct ProfilesView: View {
                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                     .fill(Color.teal.opacity(0.12))
                 Image(systemName: "doc.text.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(Color.teal)
             }
             .frame(width: 32, height: 32)
@@ -938,7 +938,7 @@ private struct RoutingResourcesCard: View {
     private func resourceRow(_ kind: RoutingResourceKind) -> some View {
         HStack(spacing: AetherVisual.s4) {
             Image(systemName: resourceSymbol(kind))
-                .font(.system(size: 17, weight: .semibold))
+                .font(.title2.weight(.semibold))
                 .foregroundStyle(resourceColor(kind))
                 .frame(width: 42, height: 42)
                 .background(
@@ -1071,7 +1071,7 @@ private struct ManagedProfileRow: View {
                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                     .fill(iconGradient)
                 Image(systemName: iconName)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(iconTint)
             }
             .frame(width: 36, height: 36)
@@ -1082,7 +1082,7 @@ private struct ManagedProfileRow: View {
                 HStack(spacing: AetherVisual.s2) {
                     Text(managed.profile.name)
                         .help(managed.profile.name)
-                        .font(.system(size: 13.5, weight: isActive ? .bold : .semibold))
+                        .font(.body.weight(isActive ? .bold : .semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
@@ -1102,7 +1102,7 @@ private struct ManagedProfileRow: View {
                 }
 
                 Text(detail)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.callout.weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
@@ -1165,7 +1165,7 @@ private struct ManagedProfileRow: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(isActionHovered ? Color.primary : Color.secondary)
                     .frame(width: 26, height: 26)
                     .background(isActionHovered ? Color.secondary.opacity(0.18) : Color.clear, in: Circle())
@@ -1361,7 +1361,7 @@ struct SubscriptionEditorSheet: View {
         VStack(alignment: .leading, spacing: AetherVisual.s5) {
             HStack(spacing: AetherVisual.s4) {
                 Image(systemName: "link.badge.plus")
-                    .font(.system(size: 26, weight: .medium))
+                    .font(.largeTitle.weight(.medium))
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 52, height: 52)
                     .background(Color.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))

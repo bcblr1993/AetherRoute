@@ -90,11 +90,11 @@ struct TargetPillView: View {
     var body: some View {
         HStack(spacing: AetherVisual.s1) {
             Image(systemName: iconName)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.subheadline.weight(.semibold))
                 .accessibilityHidden(true)
 
             Text(target)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color(nsColor: .labelColor))
         }
         .foregroundStyle(foregroundColor)

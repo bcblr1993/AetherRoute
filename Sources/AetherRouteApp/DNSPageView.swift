@@ -516,7 +516,7 @@ struct DNSView: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Color(nsColor: .labelColor))
                 Text(detail)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.callout.weight(.medium))
                     .foregroundStyle(Color(nsColor: .labelColor))
                     .fixedSize(horizontal: false, vertical: true)
             }

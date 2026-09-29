@@ -225,7 +225,7 @@ struct IndependentDistributionView: View {
 
     private func statusIcon(symbol: String, tint: Color) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 17, weight: .semibold))
+            .font(.title2.weight(.semibold))
             .foregroundStyle(tint)
             .frame(width: 36, height: 36)
             .background(

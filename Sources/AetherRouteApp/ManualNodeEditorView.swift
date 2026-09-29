@@ -107,7 +107,7 @@ struct ManualNodeEditorSheet: View {
                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                     .fill(Color.accentColor.opacity(0.10))
                 Image(systemName: "point.3.connected.trianglepath.dotted")
-                    .font(.system(size: 24, weight: .medium))
+                    .font(.largeTitle.weight(.medium))
                     .foregroundStyle(Color.accentColor)
                     .accessibilityHidden(true)
             }

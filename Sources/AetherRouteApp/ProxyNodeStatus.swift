@@ -48,6 +48,22 @@ enum ProxyLatencyStatus: Equatable {
         }
     }
 
+    /// The one wording for a latency result. The node list, the overview
+    /// pill and the menu bar previously each had their own ("ms"/"毫秒",
+    /// "Timeout"/"Timed out"/"Unavailable").
+    var localizedTitle: String {
+        switch self {
+        case let .responded(milliseconds):
+            String.localizedStringWithFormat(
+                AppLocalization.string("%lld ms"),
+                Int64(milliseconds)
+            )
+        case .timedOut: AppLocalization.string("Timed out")
+        case .testing: AppLocalization.string("Testing")
+        case .untested: AppLocalization.string("Untested")
+        }
+    }
+
     var isMeasured: Bool {
         if case .responded = self { return true }
         return false

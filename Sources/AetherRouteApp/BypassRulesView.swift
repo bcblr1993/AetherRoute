@@ -215,7 +215,7 @@ private struct BypassRuleRowView: View {
     var body: some View {
         HStack(spacing: AetherVisual.s4) {
             Image(systemName: symbol(for: rule.kind))
-                .font(.system(size: 15, weight: .semibold))
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(color(for: rule.kind))
                 .frame(width: 34, height: 34)
                 .background(color(for: rule.kind).opacity(0.09), in: Circle())
