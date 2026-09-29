@@ -4,6 +4,18 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Local client connections left half-closed by the proxy server are reclaimed (`Core/Engine` relay):
+  1.0.32 removed every relay timeout for TUN, transparent-proxy and local HTTP/SOCKS flows so idle keep-alive connections survive, which also removed the half-close bound. When the client closed, the engine shut down its side toward the node and waited for the node's FIN; a node that acknowledged but never answered held the relay and its socket in `FIN_WAIT_2` until the extension restarted. On a Mac mini using a VLESS node, all 249 such sockets outlived the kernel's 60 s orphan timeout and the count grew by about 15 a minute. Once either direction has finished, the flow now ends after 60 s without traffic on the other; the timer resets on every byte, so a response still streaming after the client's FIN is not cut, and fully open idle connections still have no timeout.
+
+### Verified
+
+- Engine `cargo test -p clash-lib --lib`: 345 passed, 0 failed, including two new relay tests (an unanswered half-close is reclaimed after 60 s, which failed before the fix; a download still flowing 150 s after the client's FIN is not cut).
+- Not yet validated on the VM matrix or physical hardware.
+
 ## [1.0.34] - 2026-09-29
 
 ### Fixed
