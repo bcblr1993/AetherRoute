@@ -23,6 +23,11 @@
   ./scripts/test.sh
   ```
 
+> **第 2 步与第 3 步并行执行**：QA 候选包构建完成后，立即在后台同时启动虚拟机矩阵与物理真机门禁，不要串行等待。两者使用不同机器与目录，互不影响。注意：
+> - 启动前先把引擎静态库与许可证清单恢复为正常版（QA 候选包构建会留下诊断版核心，真机门禁会因 `protocol evidence SHA-256 mismatch` 失败）；
+> - 真机门禁结束时会重新核对本机源码清单，两者运行期间**不得修改任何受跟踪文件**；需要随发布提交的文档改动（版本号、CHANGELOG、例外说明、本文件）应在启动前完成；
+> - 物理真机只能加载已公证的系统扩展，真机安装使用公证候选包（`build_notarized_test_candidate.sh`），本地 QA 包仅用于开启了开发者模式的虚拟机。
+
 ### 2. Tart 虚拟机矩阵自动化测试与清理 (VM Matrix Acceptance)
 - 虚拟机名称标准：`macos27`（本地 Tart VM，统一使用；不再使用 `aether-diag-1434`）。
 - 构建 QA 自动化测试候选包：
@@ -34,6 +39,7 @@
   ./scripts/test_vm_acceptance_matrix.sh outputs/qa-candidate-<VERSION>-<BUILD>/<ZIP_FILE> macos27 outputs/vm-acceptance-<VERSION>-<BUILD>
   ```
 - 矩阵的每个"引擎 × 路由"组合都包含 **空闲 keep-alive 复用检查**（`scripts/test_idle_keepalive_reuse.sh`，由 `test_runtime_acceptance.sh` 调用）：同一条 TLS 连接空闲 50 秒后再次请求必须成功。`tun` 与 `transparent` 两个引擎都必须 PASS，任一 FAIL 即阻断发布。
+- `transparent` 引擎的组合还包含 **SNI 目标恢复检查**（`scripts/test_transparent_sni_recovery.sh`）：用 `curl --connect-to` 把 `www.apple.com` 故意拨到无关 IP（默认 `1.1.1.1`），必须按 ClientHello 的 SNI 转发并通过证书校验。该检查防止透明代理再次按应用自行解析出的（被污染的）IP 转发，曾导致 Chrome 无法打开 Google。FAIL 即阻断发布；`tun` 引擎记为 SKIP。
 - **清理规范（Mandatory）**：
   - 测试完成后必须立即清理虚拟机内的安装包、解压临时目录及相关日志记录，保持 VM 干净。
 

@@ -28,6 +28,7 @@ PRIVILEGED_OBSERVATION=${AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION:-NO}
 IDLE_REUSE_SCRIPT=${AETHERROUTE_ACCEPTANCE_IDLE_REUSE_SCRIPT:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/test_idle_keepalive_reuse.sh"}
 IDLE_REUSE_OUT=
 IDLE_REUSE_PID=
+SNI_RECOVERY_SCRIPT=${AETHERROUTE_ACCEPTANCE_SNI_RECOVERY_SCRIPT:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/test_transparent_sni_recovery.sh"}
 cleanup_idle_reuse() {
   if [ -n "$IDLE_REUSE_PID" ]; then
     kill "$IDLE_REUSE_PID" 2>/dev/null || true
@@ -454,6 +455,25 @@ probe() {
 probe "captive portal probe" http://cp.cloudflare.com/generate_204 "204"
 probe "anthropic reachable"  https://api.anthropic.com/v1/messages "405 403 401" yes
 probe "china site direct"    https://www.baidu.com/ "200"
+
+# Only the transparent engine receives bare IPs from apps that resolve names
+# themselves; the Packet Tunnel answers every lookup with a Fake-IP.
+if [ "$CONNECTED" != yes ]; then
+  check "transparent SNI recovery" "candidate not connected" skip
+elif [ "$ENGINE" != transparent ]; then
+  check "transparent SNI recovery" "Packet Tunnel routes by Fake-IP" skip
+elif [ ! -f "$SNI_RECOVERY_SCRIPT" ]; then
+  check "transparent SNI recovery" "helper missing: $SNI_RECOVERY_SCRIPT" fail
+else
+  sni_status=0
+  sni_detail=$(sh "$SNI_RECOVERY_SCRIPT" 2>&1) || sni_status=$?
+  sni_detail=$(printf '%s\n' "$sni_detail" | tail -1)
+  if [ "$sni_status" -eq 0 ]; then
+    check "transparent SNI recovery" "$sni_detail" pass
+  else
+    check "transparent SNI recovery" "${sni_detail:-exit $sni_status}" fail
+  fi
+fi
 
 if [ "$CONNECTED" != yes ]; then
   check "idle keep-alive reuse" "candidate not connected" skip

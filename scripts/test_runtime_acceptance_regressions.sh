@@ -168,6 +168,11 @@ cat >"$MOCK_ROOT/idle-reuse.sh" <<'MOCK'
 echo "idle keep-alive reuse: mock outcome ${MOCK_IDLE_REUSE_EXIT:-0}"
 exit "${MOCK_IDLE_REUSE_EXIT:-0}"
 MOCK
+cat >"$MOCK_ROOT/sni-recovery.sh" <<'MOCK'
+#!/bin/sh
+echo "transparent SNI recovery: mock outcome ${MOCK_SNI_RECOVERY_EXIT:-0}"
+exit "${MOCK_SNI_RECOVERY_EXIT:-0}"
+MOCK
 
 CASES=0
 run_case() {
@@ -180,6 +185,7 @@ run_case() {
   env PATH="$MOCK_BIN:$PATH" HOME="$MOCK_ROOT/home" MOCK_ROOT="$MOCK_ROOT" \
     AETHERROUTE_APP_PATH="$APP" AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=NO \
     AETHERROUTE_ACCEPTANCE_IDLE_REUSE_SCRIPT="$MOCK_ROOT/idle-reuse.sh" \
+    AETHERROUTE_ACCEPTANCE_SNI_RECOVERY_SCRIPT="$MOCK_ROOT/sni-recovery.sh" \
     HTTP_PROXY=http://invalid HTTPS_PROXY=http://invalid ALL_PROXY=http://invalid NO_PROXY='*' \
     http_proxy=http://invalid https_proxy=http://invalid all_proxy=http://invalid no_proxy='*' \
     "$@" sh "$ROOT/scripts/test_runtime_acceptance.sh" 2026081470 \
@@ -211,6 +217,14 @@ run_case idle-reuse-unreached-direct pass '[SKIP] idle keep-alive reuse' \
   MOCK_ROUTING=direct MOCK_IDLE_REUSE_EXIT=2
 run_case idle-reuse-helper-missing fail 'helper missing' \
   AETHERROUTE_ACCEPTANCE_IDLE_REUSE_SCRIPT="$MOCK_ROOT/absent.sh"
+run_case sni-recovery-transparent pass '[PASS] transparent SNI recovery' \
+  MOCK_ENGINE=transparent
+run_case sni-recovery-routed-by-ip fail '[FAIL] transparent SNI recovery' \
+  MOCK_ENGINE=transparent MOCK_SNI_RECOVERY_EXIT=1
+run_case sni-recovery-skipped-tun pass '[SKIP] transparent SNI recovery' \
+  MOCK_SNI_RECOVERY_EXIT=1
+run_case sni-recovery-helper-missing fail 'helper missing' \
+  MOCK_ENGINE=transparent AETHERROUTE_ACCEPTANCE_SNI_RECOVERY_SCRIPT="$MOCK_ROOT/absent.sh"
 run_case stale-extension fail '2026081467, expected installed build 2026081470' MOCK_OLD_EXTENSION=YES
 run_case duplicate-extension fail '2 registrations; expected exactly one' MOCK_DUPLICATE_EXTENSION=YES
 run_case disconnected fail 'candidate is not connected' MOCK_VPN_STATUS=Disconnected
