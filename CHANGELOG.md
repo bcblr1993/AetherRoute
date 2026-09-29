@@ -4,7 +4,7 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.35] - 2026-09-29
 
 ### Fixed
 
@@ -14,7 +14,9 @@ All notable changes to AetherRoute are recorded here. The format follows
 ### Verified
 
 - Engine `cargo test -p clash-lib --lib`: 345 passed, 0 failed, including two new relay tests (an unanswered half-close is reclaimed after 60 s, which failed before the fix; a download still flowing 150 s after the client's FIN is not cut).
-- Not yet validated on the VM matrix or physical hardware.
+- Local regression suites: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, `./scripts/test.sh`.
+- Tart VM 6-dimension matrix (`macos27`, build 2026092903): all six combinations passed on the first run, including idle keep-alive reuse, transparent SNI recovery, and large-upload gate.
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`): TUN and transparent proxy on-device verification passed (idle keep-alive reuse, large upload gate); remote arm64 gate passed.
 
 ## [1.0.34] - 2026-09-29
 
