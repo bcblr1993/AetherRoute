@@ -4,6 +4,32 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.33] - 2026-09-29
+
+### Fixed
+
+- Transparent-proxy mode routes HTTPS by the ClientHello hostname when the app supplied only an IP (`Core/Engine` dispatcher):
+  apps that resolve names with their own DNS client (Chrome's built-in resolver) or dial a literal address hand the provider a bare IP and no hostname. Under poisoned DNS that IP belongs to an unrelated server (`www.google.com` → a Facebook address), so the engine sent the connection to the wrong host and it hung; Chrome could not open Google while curl and Safari, which resolve through macOS, worked. Port-443 transparent flows with an IP destination now read the TLS SNI, as Fake-IP flows already did, and fall back to the IP after the existing 500 ms wait when there is no readable ClientHello. TUN mode is unchanged.
+
+### Added
+
+- Release gate `scripts/test_transparent_sni_recovery.sh`: `curl --connect-to` dials `www.apple.com` at an unrelated IP (`1.1.1.1`) and must pass certificate verification for `www.apple.com`. It runs in the three transparent-engine VM matrix combinations and is recorded as skipped for TUN, which answers every lookup with a Fake-IP.
+
+### Changed
+
+- Release SOP: the Tart VM matrix and the physical Mac gate run in parallel.
+
+### Verified
+
+- Local regression suites: `test_network_switch_gate.py` (3/3), `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, `./scripts/test.sh`; engine `cargo test -p clash-lib --lib` 341 passed, 0 failed; runtime acceptance regressions 37 cases.
+- Tart VM 6-dimension matrix (`macos27`, build 2026092901): all six combinations pass, including idle keep-alive reuse in all six and SNI recovery in the three transparent ones. The first `tun/direct` run timed out once on the captive-portal probe (the VM's direct path to Cloudflare took 1.4 s even with AetherRoute off); an isolated rerun of `tun/direct` passed.
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`), notarized candidate: `test_remote_arm64.sh fast` passed. Transparent proxy: SNI recovery passed (failed on 1.0.32), headless Chrome loaded Google and YouTube (0 bytes on 1.0.32), idle keep-alive reuse passed. TUN: idle keep-alive reuse passed, Chrome loaded Google.
+- `verify_protocol_matrix.sh` and `verify_licenses.sh source` pass; normal-core hashes match `Config/ProtocolCoreEvidence.json`.
+
+### Performance
+
+- No hot-path cost outside transparent port-443 flows that arrive without a hostname. Those wait for the first ClientHello bytes (already sent by the client immediately after connect), bounded by 500 ms per read and 16 KiB.
+
 ## [1.0.32] - 2026-09-28
 
 ### Fixed
