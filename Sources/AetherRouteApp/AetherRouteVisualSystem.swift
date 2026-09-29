@@ -1,3 +1,4 @@
+import AetherRouteKit
 import SwiftUI
 
 enum AetherVisual {
@@ -690,9 +691,7 @@ public struct AetherNodeIcon: View {
     }
 
     public var body: some View {
-        let flagInfo = AetherRegionFlag.flagAndRegion(from: name)
-
-        if flagInfo.flag != "🌐" {
+        if let region = AetherRegionFlag.region(for: name) {
             // 真实匹配到的国家/地区旗帜
             ZStack {
                 RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
@@ -701,7 +700,7 @@ public struct AetherNodeIcon: View {
                         RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
                             .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
                     }
-                Text(flagInfo.flag)
+                Text(verbatim: region.flag)
                     .font(.system(size: size * 0.55))
                     .accessibilityHidden(true)
             }
@@ -815,44 +814,32 @@ public struct AetherStatusBeacon: View {
     }
 }
 
-/// 智能国旗与地域解析器
-public enum AetherRegionFlag {
-    public static func flagAndRegion(from name: String) -> (flag: String, region: String) {
-        let upper = name.uppercased()
-        if upper.contains("HK") || upper.contains("HONG KONG") || name.contains("香港") {
-            return ("🇭🇰", "HK")
+/// Region lookup for node names. The matching rules live in
+/// `NodeRegion` so they can be unit tested; an unrecognized name yields `nil`
+/// rather than a placeholder region.
+enum AetherRegionFlag {
+    static func region(for name: String) -> NodeRegion? {
+        NodeRegion.resolve(from: name)
+    }
+}
+
+/// A fixed-width flag for list rows: the region flag when the name clearly
+/// states one, otherwise a neutral globe, so rows stay aligned without
+/// claiming a region.
+struct AetherNodeFlag: View {
+    let name: String
+
+    var body: some View {
+        Group {
+            if let region = AetherRegionFlag.region(for: name) {
+                Text(verbatim: region.flag)
+            } else {
+                Image(systemName: "globe")
+                    .foregroundStyle(.secondary)
+            }
         }
-        if upper.contains("JP") || upper.contains("JAPAN") || upper.contains("TOKYO") || name.contains("日本") || name.contains("东京") {
-            return ("🇯🇵", "JP")
-        }
-        if upper.contains("US") || upper.contains("USA") || upper.contains("UNITED STATES") || name.contains("美国") || name.contains("硅谷") {
-            return ("🇺🇸", "US")
-        }
-        if upper.contains("SG") || upper.contains("SINGAPORE") || name.contains("新加坡") || name.contains("狮城") {
-            return ("🇸🇬", "SG")
-        }
-        if upper.contains("TW") || upper.contains("TAIWAN") || name.contains("台湾") {
-            return ("🇹🇼", "TW")
-        }
-        if upper.contains("KR") || upper.contains("KOREA") || upper.contains("SEOUL") || name.contains("韩国") || name.contains("首尔") {
-            return ("🇰🇷", "KR")
-        }
-        if upper.contains("GB") || upper.contains("UK") || upper.contains("LONDON") || name.contains("英国") || name.contains("伦敦") {
-            return ("🇬🇧", "UK")
-        }
-        if upper.contains("DE") || upper.contains("GERMANY") || upper.contains("FRANKFURT") || name.contains("德国") || name.contains("法兰克福") {
-            return ("🇩🇪", "DE")
-        }
-        if upper.contains("FR") || upper.contains("FRANCE") || name.contains("法国") {
-            return ("🇫🇷", "FR")
-        }
-        if upper.contains("CA") || upper.contains("CANADA") || name.contains("加拿大") {
-            return ("🇨🇦", "CA")
-        }
-        if upper.contains("AU") || upper.contains("AUSTRALIA") || name.contains("澳大利亚") || name.contains("悉尼") {
-            return ("🇦🇺", "AU")
-        }
-        return ("🌐", "GLOBAL")
+        .frame(width: AetherVisual.s4)
+        .accessibilityHidden(true)
     }
 }
 

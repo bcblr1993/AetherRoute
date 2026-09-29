@@ -794,16 +794,15 @@ private struct OverviewView: View {
            let activeNode = tunnel.proxySelections[primaryGroup.name]?.selectedMember {
             let protocolName = summary.proxies.first(where: { $0.name == activeNode })?.protocolName ?? "PROXY"
             let latencyResult = tunnel.proxyLatencies[primaryGroup.name]?.results.first(where: { $0.member == activeNode })?.delayMilliseconds
-            let flagInfo = AetherRegionFlag.flagAndRegion(from: activeNode)
+            let region = AetherRegionFlag.region(for: activeNode)
 
             HStack(spacing: AetherVisual.sRow) {
                 // 国旗与图标融合
                 ZStack {
                     RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                         .fill(Color.accentColor.opacity(0.12))
-                    Text(flagInfo.flag)
+                    AetherNodeFlag(name: activeNode)
                         .font(.system(size: 18))
-                        .accessibilityHidden(true)
                 }
                 .frame(width: 38, height: 38)
 
@@ -816,12 +815,14 @@ private struct OverviewView: View {
 
                         AetherProtocolBadge(type: protocolName)
 
-                        Text(flagInfo.region)
-                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, AetherVisual.s1)
-                            .padding(.vertical, AetherVisual.sMicro)
-                            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
+                        if let region {
+                            Text(verbatim: region.code)
+                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                .foregroundStyle(.primary)
+                                .padding(.horizontal, AetherVisual.s1)
+                                .padding(.vertical, AetherVisual.sMicro)
+                                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
+                        }
                     }
 
                     if let profile = tunnel.activeProfile {

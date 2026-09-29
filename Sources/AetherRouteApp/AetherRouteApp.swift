@@ -863,7 +863,7 @@ private struct MenuBarContent: View {
                         } label: {
                             HStack(spacing: AetherVisual.s2) {
                                 let member = tunnel.proxySelections[group.name]?.selectedMember
-                                Text(verbatim: AetherRegionFlag.flagAndRegion(from: member ?? "").flag)
+                                AetherNodeFlag(name: member ?? "")
                                 Text(verbatim: member ?? AppLocalization.string("Select Node"))
                                     .lineLimit(1)
                                     .truncationMode(.middle)
@@ -1194,7 +1194,7 @@ private struct MenuNodeListInline: View {
                                         .foregroundStyle(Color.accentColor)
                                         .opacity(member == selectedMember ? 1 : 0)
                                         .frame(width: 14)
-                                    Text(verbatim: AetherRegionFlag.flagAndRegion(from: member).flag)
+                                    AetherNodeFlag(name: member)
                                     Text(verbatim: member)
                                         .font(.caption)
                                         .lineLimit(1)

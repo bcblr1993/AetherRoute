@@ -777,7 +777,7 @@ private struct ProxyNodeModernCard: View {
     @State private var isHovered = false
 
     var body: some View {
-        let flagInfo = AetherRegionFlag.flagAndRegion(from: name)
+        let region = AetherRegionFlag.region(for: name)
 
         Button {
             if canSelect && !isBusy {
@@ -814,8 +814,8 @@ private struct ProxyNodeModernCard: View {
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(.primary)
                             }
-                        } else {
-                            Text(flagInfo.region)
+                        } else if let region {
+                            Text(verbatim: region.code)
                                 .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                                 .foregroundStyle(.secondary.opacity(0.8))
                         }
