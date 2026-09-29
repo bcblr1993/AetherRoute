@@ -279,7 +279,7 @@ struct RulesView: View {
                                                 HStack(spacing: AetherVisual.s2) {
                                                     if result.isCustomRule {
                                                         Text(verbatim: "CUSTOM RULE")
-                                                            .font(.caption2.weight(.black))
+                                                            .font(.caption2.weight(.semibold))
                                                             .foregroundStyle(Color.white)
                                                             .padding(.horizontal, AetherVisual.sCompact)
                                                             .padding(.vertical, AetherVisual.sMicro)
@@ -725,8 +725,8 @@ private struct RuleRow: View {
         HStack(spacing: AetherVisual.s3) {
             // 规则序号
             Text(verbatim: "\(rule.order)")
-                .font(.system(.subheadline, design: .monospaced, weight: .bold))
-                .foregroundStyle(.primary)
+                .font(.caption.monospacedDigit().weight(.medium))
+                .foregroundStyle(.secondary)
                 .frame(width: 32, height: 26)
                 .background(
                     RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
@@ -735,7 +735,7 @@ private struct RuleRow: View {
 
             if rule.isCustom {
                 Text(verbatim: "CUSTOM")
-                    .font(.caption2.weight(.black))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(Color.teal)
                     .padding(.horizontal, AetherVisual.s1)
                     .padding(.vertical, AetherVisual.sMicro)
@@ -753,8 +753,7 @@ private struct RuleRow: View {
                     .imageScale(.small)
                     .accessibilityHidden(true)
                 Text(rule.kind)
-                    .font(.system(.subheadline, design: .monospaced, weight: .bold))
-                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .font(.caption.monospaced().weight(.medium))
             }
             .foregroundStyle(ruleKindColor(rule.kind))
             .padding(.horizontal, AetherVisual.sCompact)
@@ -801,11 +800,6 @@ private struct RuleRow: View {
                 .transition(.opacity)
             }
 
-            Image(systemName: "arrow.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
-
             TargetPillView(target: rule.target, isHovered: isHovered)
                 .frame(maxWidth: 190, alignment: .trailing)
         }
@@ -829,7 +823,7 @@ private struct RuleRow: View {
                 )
         }
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
                 isHovered = hovering
             }
         }
@@ -924,7 +918,7 @@ struct CustomRuleRow: View {
             .labelsHidden()
 
             Text(verbatim: "CUSTOM")
-                .font(.caption2.weight(.black))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(Color.teal)
                 .padding(.horizontal, AetherVisual.s1)
                 .padding(.vertical, AetherVisual.sMicro)
@@ -1024,7 +1018,7 @@ struct CustomRuleRow: View {
         }
         .opacity(rule.isEnabled ? 1.0 : 0.6)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
                 isHovered = hovering
             }
         }

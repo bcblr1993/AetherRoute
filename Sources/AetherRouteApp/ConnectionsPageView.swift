@@ -150,15 +150,15 @@ struct ConnectionsView: View {
                         }
                         .onTapGesture(count: 2) { inspectedConnection = row }
                 }
-                .width(min: 124, ideal: 144, max: 400)
+                .width(min: 124, ideal: 190, max: 520)
                 TableColumn(AppLocalization.string("Matched rule")) { row in
                     ConnectionRuleCell(connection: row.connection)
                 }
-                .width(min: 100, ideal: 120, max: 400)
+                .width(min: 100, ideal: 110, max: 400)
                 TableColumn(AppLocalization.string("Outlet")) { row in
                     ConnectionOutletCell(connection: row.connection)
                 }
-                .width(min: 100, ideal: 160, max: 320)
+                .width(min: 100, ideal: 124, max: 320)
                 TableColumn(AppLocalization.string("Traffic")) { row in
                     ConnectionTrafficCell(connection: row.connection)
                 }
@@ -452,12 +452,12 @@ private struct ConnectionDestinationCell: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(verbatim: connection.destinationAddress)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.body.weight(.medium))
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(connection.transport == .tcp ? "TCP" : "UDP")
-                    .font(.body.monospaced().weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

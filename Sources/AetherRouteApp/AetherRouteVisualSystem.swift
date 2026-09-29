@@ -122,8 +122,10 @@ struct AetherRouteBrandTile: View {
 }
 
 /// Quiet, theme-matched branding. Connection state is presented with an
-/// ambient breathing aura when connecting, settling into a serene emerald glow when active.
+/// ambient breathing aura when connecting, settling into a soft green halo
+/// when active. With Reduce Motion the aura is shown without breathing.
 struct AetherRouteStatusLens: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var size: CGFloat = 52
     var isActive = false
     var isConnecting = false
@@ -173,10 +175,10 @@ struct AetherRouteStatusLens: View {
         .frame(width: size, height: size)
         .accessibilityHidden(true)
         .onAppear {
-            if isConnecting { pulse = true }
+            if isConnecting && !reduceMotion { pulse = true }
         }
         .onChange(of: isConnecting) { _, newValue in
-            pulse = newValue
+            pulse = newValue && !reduceMotion
         }
     }
 }
@@ -184,6 +186,7 @@ struct AetherRouteStatusLens: View {
 /// Indeterminate progress sweep shown while connecting. It is an overlay
 /// strip, so the card height never changes when it appears.
 struct ConnectionLuminousBar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var phase: CGFloat = -0.5
 
     var body: some View {
@@ -209,6 +212,11 @@ struct ConnectionLuminousBar: View {
         .frame(height: 2.5)
         .clipped()
         .onAppear {
+            // Reduce Motion keeps the strip as a static progress cue.
+            guard !reduceMotion else {
+                phase = 0.275
+                return
+            }
             withAnimation(
                 .linear(duration: 1.3)
                     .repeatForever(autoreverses: false)
@@ -625,7 +633,7 @@ struct AetherLatencyPill: View {
                     .stroke(pillColor.opacity(isHovered ? 0.48 : 0.25), lineWidth: 0.5)
             }
             .scaleEffect(isHovered && onTap != nil ? 1.04 : 1.0)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovered)
+            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: isHovered)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -730,7 +738,7 @@ public struct AetherNodeIcon: View {
 /// Connection state dot: steady when connected, a rotating ring while
 /// connecting.
 public struct AetherStatusBeacon: View {
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isConnected: Bool
     let isConnecting: Bool
     var size: CGFloat = 10
@@ -766,10 +774,10 @@ public struct AetherStatusBeacon: View {
         }
         .frame(width: size * 2.2, height: size * 2.2)
         .onAppear {
-            isPulsing = isConnecting
+            isPulsing = isConnecting && !reduceMotion
         }
         .onChange(of: isConnecting) { _, newValue in
-            isPulsing = newValue
+            isPulsing = newValue && !reduceMotion
         }
     }
 

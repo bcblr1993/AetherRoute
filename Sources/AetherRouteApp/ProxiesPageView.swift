@@ -123,7 +123,7 @@ struct ProxiesView: View {
                             isSelected: isSelected,
                             currentMember: currentMember,
                             onSelect: {
-                                withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                                withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
                                     selectedGroupId = group.id
                                 }
                             }
@@ -787,11 +787,13 @@ private struct ProxyNodeModernCard: View {
                 // 节点图标：匹配国旗或协议科技微晶
                 AetherNodeIcon(name: name, protocolName: protocolName, size: 28)
 
-                // 中间信息：节点名 (单行不折行) + 协议徽标与状态
+                // The name gets the full width of the card; status and the
+                // latency result share the second line, so long subscription
+                // names are no longer squeezed by the pill beside them.
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text(name)
                         .font(.body.weight(isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.9))
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(name)
@@ -805,25 +807,26 @@ private struct ProxyNodeModernCard: View {
                                     .fill(Color.green)
                                     .frame(width: 5, height: 5)
                                 Text(AppLocalization.string("Active"))
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
                             }
+                            .transition(.opacity)
                         } else if let region {
                             Text(verbatim: region.code)
-                                .font(.system(.caption2, design: .monospaced, weight: .medium))
-                                .foregroundStyle(.secondary.opacity(0.8))
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
                         }
+
+                        Spacer(minLength: AetherVisual.s1)
+
+                        AetherLatencyPill(
+                            status: status,
+                            confidence: confidence,
+                            onTap: onTest
+                        )
                     }
                 }
-
-                Spacer(minLength: AetherVisual.s1)
-
-                // 右侧延迟测速胶囊
-                AetherLatencyPill(
-                    status: status,
-                    confidence: confidence,
-                    onTap: onTest
-                )
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.leading, AetherVisual.sCompact)
             .padding(.trailing, AetherVisual.sRow)
@@ -865,10 +868,10 @@ private struct ProxyNodeModernCard: View {
         if isSelected {
             return Color.accentColor.opacity(colorScheme == .dark ? 0.12 : 0.07)
         }
-        if isHovered {
-            return Color(nsColor: .controlBackgroundColor).opacity(0.95)
-        }
-        return Color(nsColor: .controlBackgroundColor).opacity(0.65)
+        // Unselected cards use the same fill and hairline as every other
+        // panel, so they read as cards rather than floating text; hover is
+        // carried by the border.
+        return AetherVisual.panelFill(for: colorScheme)
     }
 
     private var cardBorder: Color {
@@ -878,7 +881,7 @@ private struct ProxyNodeModernCard: View {
         if isHovered {
             return Color.accentColor.opacity(0.35)
         }
-        return Color(nsColor: .separatorColor).opacity(colorScheme == .dark ? 0.45 : 0.25)
+        return AetherVisual.panelBorder(for: colorScheme)
     }
 
 }
