@@ -11666,6 +11666,39 @@
           }
         }
       }
+    },
+    "Collecting traffic samples…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在收集流量数据…"
+          }
+        }
+      }
+    },
+    "Paused while AetherRoute is in the background · updated %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute 在后台时暂停刷新 · 更新于 %@"
+          }
+        }
+      }
+    },
+    "Paused while AetherRoute is in the background": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute 在后台时暂停刷新"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

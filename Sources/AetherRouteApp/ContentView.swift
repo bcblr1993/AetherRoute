@@ -673,27 +673,30 @@ private struct OverviewView: View {
         }
     }
 
+    /// Everything below the hero and the mode controls. The hero already
+    /// carries the active outlet and route check, so this only holds what is
+    /// shown instead of an outlet (onboarding, the idle route) and traffic.
     private var overviewDetails: some View {
         VStack(spacing: AetherVisual.sectionSpacing) {
-            if tunnel.isConnected {
-                activeNodeCard
-            } else if tunnel.activeProfile == nil {
-                EmptyProfileOnboardingCard(
-                    onAddSubscription: {
-                        tunnel.clearProfileMessage()
-                        subscriptionURL = ""
-                        isSubscriptionEditorPresented = true
-                    },
-                    onImportProfile: {
-                        openProfiles()
-                    },
-                    onCloudSync: {
-                        tunnel.clearProfileMessage()
-                        isCloudSyncSheetPresented = true
-                    }
-                )
-            } else {
-                RouteSummary()
+            if !tunnel.isConnected {
+                if tunnel.activeProfile == nil {
+                    EmptyProfileOnboardingCard(
+                        onAddSubscription: {
+                            tunnel.clearProfileMessage()
+                            subscriptionURL = ""
+                            isSubscriptionEditorPresented = true
+                        },
+                        onImportProfile: {
+                            openProfiles()
+                        },
+                        onCloudSync: {
+                            tunnel.clearProfileMessage()
+                            isCloudSyncSheetPresented = true
+                        }
+                    )
+                } else {
+                    RouteSummary()
+                }
             }
             if let recoveryPlan = tunnel.recoveryPlan {
                 ConnectionRecoveryCard(
@@ -702,186 +705,129 @@ private struct OverviewView: View {
                 )
             }
 
-            // 实时网络速率与动态波形看板卡片
-            VStack(spacing: AetherVisual.s3) {
-                // 顶部四大指标项
-                HStack(spacing: 0) {
-                    LiveTelemetryMetricTile(
-                        label: "Download",
-                        unit: "",
-                        symbol: "arrow.down",
-                        metric: .download,
-                        isConnected: tunnel.isConnected,
-                        telemetry: tunnel.telemetryViewModel
-                    )
-                    Divider().frame(height: 48)
-                    LiveTelemetryMetricTile(
-                        label: "Upload",
-                        unit: "",
-                        symbol: "arrow.up",
-                        metric: .upload,
-                        isConnected: tunnel.isConnected,
-                        telemetry: tunnel.telemetryViewModel
-                    )
-                    Divider().frame(height: 48)
-                    LiveTelemetryMetricTile(
-                        label: "Active connections",
-                        unit: "",
-                        symbol: "point.3.connected.trianglepath.dotted",
-                        metric: .connections,
-                        isConnected: tunnel.isConnected,
-                        telemetry: tunnel.telemetryViewModel
-                    )
-                }
-                .padding(.vertical, AetherVisual.s1)
-
-                // 实时 30 秒上下行动态平滑双波形图
-                if tunnel.isConnected {
-                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                        HStack {
-                            Label(AppLocalization.string("Traffic · Last 30 seconds"), systemImage: "chart.xyaxis.line")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            HStack(spacing: AetherVisual.s3) {
-                                HStack(spacing: AetherVisual.s1) {
-                                    Circle().fill(Color.cyan).frame(width: 6, height: 6)
-                                    Text("Down")
-                                        .font(.caption.weight(.medium))
-                                        .foregroundStyle(.primary)
-                                }
-                                HStack(spacing: AetherVisual.s1) {
-                                    Circle().fill(Color.purple).frame(width: 6, height: 6)
-                                    Text("Up")
-                                        .font(.caption.weight(.medium))
-                                        .foregroundStyle(.primary)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, AetherVisual.s4)
-
-                        Text(AppLocalization.string(tunnel.isRealtimeTelemetryPreferred ? "Refresh: every 3 seconds" : "Refresh: every 10 seconds"))
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(Color(nsColor: .labelColor))
-                            .padding(.horizontal, AetherVisual.s4)
-                        LiveTrafficHistoryGraph(
-                            model: tunnel.telemetryViewModel,
-                            isRealtime: tunnel.isRealtimeTelemetryPreferred
-                        )
-                        .padding(.horizontal, AetherVisual.s2)
-                        .padding(.bottom, AetherVisual.s2)
-                    }
-                }
-            }
-            .aetherPanel()
-
-            if let quality = ConnectionQualityPolicy.displayedQuality(
-                tunnel.connectionQuality, isConnected: tunnel.isConnected
-            ) {
-                SafetyNotice(quality: quality, checkedAt: tunnel.connectionQualityCheckedAt)
-            } else if tunnel.isConnected {
-                Label("Route not checked", systemImage: "questionmark.circle")
-                    .font(.callout)
-                    .foregroundStyle(Color(nsColor: .labelColor))
-            }
+            TrafficCard(
+                isConnected: tunnel.isConnected,
+                isRealtime: tunnel.isRealtimeTelemetryPreferred,
+                telemetry: tunnel.telemetryViewModel
+            )
         }
         .frame(maxWidth: .infinity)
     }
+}
 
-    @ViewBuilder
-    private var activeNodeCard: some View {
-        if tunnel.isConnected,
-           let summary = tunnel.activeProfileSummary,
-           let primaryGroup = summary.proxyGroups.first(where: { $0.strategy.lowercased() == "select" }) ?? summary.proxyGroups.first,
-           let activeNode = tunnel.proxySelections[primaryGroup.name]?.selectedMember {
-            let protocolName = summary.proxies.first(where: { $0.name == activeNode })?.protocolName ?? "PROXY"
-            let latencyResult = tunnel.proxyLatencies[primaryGroup.name]?.results.first(where: { $0.member == activeNode })?.delayMilliseconds
-            let region = AetherRegionFlag.region(for: activeNode)
+/// The outlet the active profile is routing through right now: the node, the
+/// group that chose it, and its last latency result.
+private struct ActiveOutlet: Equatable {
+    let groupName: String
+    let node: String
+    let protocolName: String
+    let latency: ProxyLatencyStatus
+    let confidence: ProxyLatencyConfidence
 
-            HStack(spacing: AetherVisual.sRow) {
-                // 国旗与图标融合
-                ZStack {
-                    RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.12))
-                    AetherNodeFlag(name: activeNode)
-                        .font(.title2)
-                }
-                .frame(width: 38, height: 38)
+    @MainActor
+    init?(tunnel: TunnelManager) {
+        guard tunnel.isConnected,
+              let summary = tunnel.activeProfileSummary,
+              let group = summary.proxyGroups.first(where: { $0.strategy.lowercased() == "select" })
+                ?? summary.proxyGroups.first,
+              let node = tunnel.proxySelections[group.name]?.selectedMember
+        else { return nil }
+        groupName = group.name
+        self.node = node
+        protocolName = summary.proxies.first(where: { $0.name == node })?.protocolName ?? "PROXY"
+        latency = ProxyLatencyStatus.status(
+            member: node,
+            results: tunnel.proxyLatencies[group.name]?.results,
+            isTesting: false
+        )
+        confidence = tunnel.latencyConfidence(group: group.name, member: node)
+    }
+}
 
-                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    HStack(spacing: AetherVisual.sCompact) {
-                        Text(primaryGroup.name)
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(.primary)
-                            .textCase(.uppercase)
+/// One row inside the hero: where traffic leaves, how fast that exit last
+/// answered, and the two things people do next (diagnose, switch).
+private struct ActiveOutletRow: View {
+    @Environment(\.openSettings) private var openSettings
+    let outlet: ActiveOutlet
 
-                        AetherProtocolBadge(type: protocolName)
-
-                        if let region {
-                            Text(verbatim: region.code)
-                                .font(.system(.caption2, design: .monospaced, weight: .bold))
-                                .foregroundStyle(.primary)
-                                .padding(.horizontal, AetherVisual.s1)
-                                .padding(.vertical, AetherVisual.sMicro)
-                                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
-                        }
-                    }
-
-                    if let profile = tunnel.activeProfile {
-                        Text(profile.name).font(.caption).foregroundStyle(Color(nsColor: .labelColor)).lineLimit(1).help(profile.name)
-                    }
-                    Text(activeNode)
-                        .help(activeNode)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                HStack(spacing: AetherVisual.s3) {
-                    if let ms = latencyResult {
-                        AetherLatencyPill(latency: Int(ms))
-                    }
-
-                    Button {
-                        openSettings()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                            NotificationCenter.default.post(
-                                name: .aetherRouteNavigateToSettings,
-                                object: "diagnostics"
-                            )
-                        }
-                    } label: {
-                        HStack(spacing: AetherVisual.s1) {
-                            Image(systemName: "stethoscope")
-                            Text(AppLocalization.string("Diagnose"))
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .accessibilityIdentifier("overview-diagnose-button")
-                    .help(AppLocalization.string("Run end-to-end network connectivity diagnostics."))
-
-                    Button {
-                        NotificationCenter.default.post(
-                            name: .aetherRouteNavigateToSection,
-                            object: AppSection.proxies.rawValue
-                        )
-                    } label: {
-                        HStack(spacing: AetherVisual.s1) {
-                            Text(AppLocalization.string("Switch"))
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.bold))
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: AetherVisual.s3) {
+                identity
+                Spacer(minLength: AetherVisual.s2)
+                actions
             }
-            .padding(AetherVisual.s4)
-            .aetherPanel()
+            VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                identity
+                actions
+            }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("overview-active-outlet")
+    }
+
+    private var identity: some View {
+        HStack(spacing: AetherVisual.s3) {
+            AetherNodeIcon(name: outlet.node, protocolName: outlet.protocolName, size: 36)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                Text(AppLocalization.string("Exit"))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Text(outlet.node)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(outlet.node)
+                    .contentTransition(.opacity)
+                HStack(spacing: AetherVisual.sCompact) {
+                    Label(outlet.groupName, systemImage: "square.stack.3d.up")
+                        .labelStyle(.titleAndIcon)
+                        .lineLimit(1)
+                    AetherProtocolBadge(type: outlet.protocolName)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: outlet.node)
+    }
+
+    private var actions: some View {
+        HStack(spacing: AetherVisual.s2) {
+            if outlet.latency != .untested {
+                AetherLatencyPill(status: outlet.latency, confidence: outlet.confidence)
+                    .transition(.opacity)
+            }
+
+            Button {
+                openSettings()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    NotificationCenter.default.post(
+                        name: .aetherRouteNavigateToSettings,
+                        object: "diagnostics"
+                    )
+                }
+            } label: {
+                Label(AppLocalization.string("Diagnose"), systemImage: "stethoscope")
+            }
+            .accessibilityIdentifier("overview-diagnose-button")
+            .help(AppLocalization.string("Run end-to-end network connectivity diagnostics."))
+
+            Button {
+                NotificationCenter.default.post(
+                    name: .aetherRouteNavigateToSection,
+                    object: AppSection.proxies.rawValue
+                )
+            } label: {
+                Label(AppLocalization.string("Switch"), systemImage: "arrow.left.arrow.right")
+            }
+            .accessibilityIdentifier("overview-switch-node-button")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .fixedSize()
     }
 }
 
@@ -992,6 +938,10 @@ private struct ConnectionHero: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let outlet = ActiveOutlet(tunnel: tunnel)
+        let quality = ConnectionQualityPolicy.displayedQuality(
+            tunnel.connectionQuality, isConnected: tunnel.isConnected
+        )
         VStack(spacing: AetherVisual.s4) {
             HStack(spacing: AetherVisual.s6) {
                 connectionIdentity
@@ -1001,6 +951,17 @@ private struct ConnectionHero: View {
             if tunnel.systemExtensionApprovalRequired {
                 approvalControls
                     .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            // State, exit and route check answer one question ("is my
+            // traffic going where I think?"), so they share one card.
+            if let outlet {
+                Divider()
+                ActiveOutletRow(outlet: outlet)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            if tunnel.isConnected {
+                RouteQualityLine(quality: quality, checkedAt: tunnel.connectionQualityCheckedAt)
+                    .transition(.opacity)
             }
         }
         .padding(AetherVisual.s5)
@@ -1258,9 +1219,10 @@ private struct NetworkEngineSegmentedControl: NSViewRepresentable {
         }
         control.selectedSegment = modes.firstIndex(of: selection) ?? -1
         control.isEnabled = isEnabled
-        // The engine names have very different lengths. Equal segments waste
-        // the short TUN segment's space and overflow with longer translations.
-        control.segmentDistribution = .fillProportionally
+        // Equal segments, like the routing-mode control beside it, so the two
+        // controls read as a pair. When a translation no longer fits, the bar
+        // above stacks the controls vertically instead of squeezing them.
+        control.segmentDistribution = .fillEqually
         control.setContentHuggingPriority(.defaultLow, for: .horizontal)
         control.setAccessibilityIdentifier("network-engine-picker")
         control.setAccessibilityLabel(AppLocalization.string("Network engine"))
@@ -1552,30 +1514,29 @@ private enum LiveTelemetryMetricKind {
 /// the numeric text observes high-frequency telemetry updates.
 private struct LiveTelemetryMetricTile: View {
     let label: LocalizedStringKey
-    let unit: LocalizedStringKey
     let symbol: String
+    let tint: Color
     let metric: LiveTelemetryMetricKind
     let isConnected: Bool
     let telemetry: NetworkTelemetryViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            Label(label, systemImage: symbol)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
-                LiveTelemetryMetricValue(
-                    metric: metric,
-                    isConnected: isConnected,
-                    telemetry: telemetry
-                )
-                Text(unit)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            Label {
+                Text(label)
+            } icon: {
+                Image(systemName: symbol).foregroundStyle(tint)
             }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            LiveTelemetryMetricValue(
+                metric: metric,
+                isConnected: isConnected,
+                telemetry: telemetry
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(AetherVisual.s5)
+        .padding(AetherVisual.s4)
     }
 }
 
@@ -1589,6 +1550,8 @@ private struct LiveTelemetryMetricValue: View {
             .font(.title2.weight(.medium))
             .foregroundStyle(.primary)
             .monospacedDigit()
+            .contentTransition(.numericText())
+            .animation(AetherVisual.animation(AetherVisual.quickFade), value: value)
     }
 
     private var value: String {
@@ -1609,35 +1572,38 @@ private struct LiveTelemetryMetricValue: View {
 /// The tunnel being up and the selected route being fast are separate
 /// questions. This answers the second one without ever implying the first is
 /// in doubt, so a slow node reads as "still working, looking for better"
-/// rather than as a failure.
-private struct SafetyNotice: View {
-    let quality: ConnectionQuality
+/// rather than as a failure. It sits at the foot of the hero, next to the
+/// exit it describes.
+private struct RouteQualityLine: View {
+    let quality: ConnectionQuality?
     let checkedAt: Date?
 
     var body: some View {
-        HStack(alignment: .top, spacing: AetherVisual.s3) {
+        HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
             Image(systemName: symbol)
                 .foregroundStyle(tint)
                 .symbolEffect(.pulse, isActive: quality == .verifying)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .accessibilityHint(Text(detail))
-                if let checkedAt {
-                    Text(checkedAt, format: .dateTime.hour().minute().second())
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Text(detail)
-                    .font(.subheadline.weight(.medium))
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+                .accessibilityHint(Text(detail))
+            if let checkedAt, quality != nil {
+                Text(checkedAt, format: .dateTime.hour().minute().second())
+                    .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
             }
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityHidden(true)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, AetherVisual.s1)
-        .padding(.vertical, AetherVisual.s2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("overview-route-quality")
         .animation(
             AetherVisual.animation(AetherVisual.gentleSpring),
             value: quality
@@ -1646,7 +1612,7 @@ private struct SafetyNotice: View {
 
     private var symbol: String {
         switch quality {
-        case .unknown: "lock.shield"
+        case nil, .unknown: "questionmark.circle"
         case .verifying: "gauge.with.dots.needle.bottom.50percent"
         case .verified: "checkmark.shield"
         case .degraded: "exclamationmark.triangle"
@@ -1655,7 +1621,8 @@ private struct SafetyNotice: View {
 
     private var tint: Color {
         switch quality {
-        case .unknown, .verifying: Color.accentColor
+        case nil, .unknown: .secondary
+        case .verifying: Color.accentColor
         case .verified: .green
         case .degraded: .orange
         }
@@ -1663,7 +1630,7 @@ private struct SafetyNotice: View {
 
     private var title: LocalizedStringKey {
         switch quality {
-        case .unknown: "Route not checked"
+        case nil, .unknown: "Route not checked"
         case .verifying: "Checking route quality"
         case .verified: "Route verified"
         case .degraded: "Route check incomplete"
@@ -1672,7 +1639,7 @@ private struct SafetyNotice: View {
 
     private var detail: LocalizedStringKey {
         switch quality {
-        case .unknown:
+        case nil, .unknown:
             "Traffic is routed as soon as the network extension installs its settings."
         case .verifying:
             "The tunnel is connected. AetherRoute is checking the selected route in the background."
@@ -1684,6 +1651,76 @@ private struct SafetyNotice: View {
     }
 }
 
+/// Download, upload and connection count, with the last 30 seconds drawn
+/// underneath. When the window is not frontmost the host stops sampling, so
+/// the card says so and freezes the graph instead of letting it drain empty
+/// beside numbers that look live.
+private struct TrafficCard: View {
+    let isConnected: Bool
+    let isRealtime: Bool
+    let telemetry: NetworkTelemetryViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                LiveTelemetryMetricTile(
+                    label: "Download",
+                    symbol: "arrow.down",
+                    tint: .cyan,
+                    metric: .download,
+                    isConnected: isConnected,
+                    telemetry: telemetry
+                )
+                Divider().frame(height: 40)
+                LiveTelemetryMetricTile(
+                    label: "Upload",
+                    symbol: "arrow.up",
+                    tint: .purple,
+                    metric: .upload,
+                    isConnected: isConnected,
+                    telemetry: telemetry
+                )
+                Divider().frame(height: 40)
+                LiveTelemetryMetricTile(
+                    label: "Active connections",
+                    symbol: "point.3.connected.trianglepath.dotted",
+                    tint: .secondary,
+                    metric: .connections,
+                    isConnected: isConnected,
+                    telemetry: telemetry
+                )
+            }
+
+            if isConnected {
+                Divider()
+                    .padding(.horizontal, AetherVisual.s4)
+                VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                    HStack(spacing: AetherVisual.s3) {
+                        Label(AppLocalization.string("Traffic · Last 30 seconds"), systemImage: "chart.xyaxis.line")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: AetherVisual.s2)
+                        legend(color: .cyan, title: "Down")
+                        legend(color: .purple, title: "Up")
+                    }
+                    LiveTrafficHistoryGraph(model: telemetry, isRealtime: isRealtime)
+                }
+                .padding(AetherVisual.s4)
+                .transition(.opacity)
+            }
+        }
+        .aetherPanel()
+    }
+
+    private func legend(color: Color, title: LocalizedStringKey) -> some View {
+        HStack(spacing: AetherVisual.s1) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(title)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+}
 
 /// Observe high-frequency updates only where the waveform is drawn.
 private struct LiveTrafficHistoryGraph: View {
@@ -1692,14 +1729,52 @@ private struct LiveTrafficHistoryGraph: View {
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 3, paused: !isRealtime)) { context in
-            let now = isRealtime ? context.date : Date()
+            let lastSample = model.history.samples.last?.date
+            // While paused nothing new arrives; anchoring the window at the
+            // last sample keeps the final 30 seconds on screen instead of
+            // sliding them off into an empty chart.
+            let now = isRealtime ? context.date : (lastSample ?? context.date)
             let samples = model.history.visible(at: now)
-            AetherTrafficMiniGraph(
-                downloadSamples: samples.map(\.download),
-                uploadSamples: samples.map(\.upload),
-                samplePositions: samples.map { TrafficHistory.position(of: $0, at: now) },
-                height: 44
-            )
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                ZStack {
+                    AetherTrafficMiniGraph(
+                        downloadSamples: samples.map(\.download),
+                        uploadSamples: samples.map(\.upload),
+                        samplePositions: samples.map { TrafficHistory.position(of: $0, at: now) },
+                        height: 56
+                    )
+                    if samples.count < 2 {
+                        Text(AppLocalization.string("Collecting traffic samples…"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(AetherVisual.animation(AetherVisual.quickFade), value: samples.count < 2)
+                refreshStatus(lastSample: lastSample)
+            }
         }
+    }
+
+    @ViewBuilder
+    private func refreshStatus(lastSample: Date?) -> some View {
+        Group {
+            if isRealtime {
+                Text(AppLocalization.string("Refresh: every 3 seconds"))
+            } else if let lastSample {
+                Text(
+                    String.localizedStringWithFormat(
+                        AppLocalization.string("Paused while AetherRoute is in the background · updated %@"),
+                        lastSample.formatted(.dateTime.hour().minute().second())
+                    )
+                )
+            } else {
+                Text(AppLocalization.string("Paused while AetherRoute is in the background"))
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .contentTransition(.opacity)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isRealtime)
     }
 }
