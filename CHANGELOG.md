@@ -4,6 +4,30 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.34] - 2026-09-29
+
+### Fixed
+
+- Large uploads through VLESS `xtls-rprx-vision` nodes no longer break the connection (`Core/Engine` VLESS Vision):
+  the Vision frame header stores the content length in a u16, but the relay hands the outbound 64 KiB buffers (65536 bytes, one past `u16::MAX`) whenever the client writes faster than the node's uplink drains. The length was truncated to 0 while the full payload followed, so the server parsed payload bytes as the next frame header and closed the connection about two seconds in. Uploads over about 1 MB failed (HTTP/2 framing error, empty reply) while rate-limited uploads and the same node through mihomo worked. This is why long Claude Desktop / Claude Code sessions, whose requests carry the whole conversation, failed on every retry with `ECONNRESET` under AetherRoute and worked under Clash Verge. Vision now frames at most 8 KiB per write, the Xray client buffer size, and reports the accepted count so the caller writes the rest.
+- Hysteria2 is not affected: its TCP payload is written straight into a QUIC stream. Measured on the unfixed 1.0.33 through the same server: 2 MiB and 6 MiB uploads delivered in 3.6–6.3 s.
+
+### Added
+
+- Release gate `scripts/test_large_upload.sh`: a 2 MiB random upload to `httpbin.org/post` through the proxy must arrive intact with HTTP 200. It runs in every VM matrix combination and on the physical Mac for both engines; it failed on 1.0.33 (cut off after 1.9 s) and passed through Clash Verge on the same node.
+
+### Verified
+
+- Engine: `cargo test -p clash-lib --lib` 343 passed, 0 failed, including two new Vision tests that failed before the fix (a 64 KiB write reports at most one 8 KiB frame; a 65 KiB payload round-trips through well-formed frames). Runtime acceptance regressions: 43 cases.
+- Local regression suites: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, `./scripts/test.sh`.
+- Tart VM 6-dimension matrix (`macos27`, build 2026092902): all six combinations passed on the first run, including the large-upload gate (7–11 s through the VLESS node; the two `direct` combinations bypass nodes and took 92–118 s over the VM's direct path), idle keep-alive reuse and transparent SNI recovery.
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`), notarized candidate through the VLESS Vision node: TUN — 2 MiB in 4.0 s, 6 MiB in 6.2 s, idle reuse passed; transparent proxy — 2 MiB in 3.6 s, 6 MiB in 6.1 s, idle reuse and SNI recovery passed.
+- Release exception: `test_remote_arm64.sh fast` ran every suite to completion but ended on its network-state check, because the TUN ↔ transparent switch for the on-device checks happened while it ran. Its rerun was skipped at the maintainer's request; the physical evidence for this release is the on-device checks above.
+
+### Performance
+
+- Frames above 8 KiB are split, adding a 5-byte header per 8 KiB (0.06 %) until Vision switches to direct copy after the inner TLS handshake.
+
 ## [1.0.33] - 2026-09-29
 
 ### Fixed
