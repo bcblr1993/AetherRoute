@@ -4,6 +4,7 @@ import SwiftUI
 struct DNSView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var showsAdvancedDNS = false
+    @State private var isCompactPolicyLayout = false
 
     var body: some View {
         Group {
@@ -362,16 +363,17 @@ struct DNSView: View {
                 HStack(spacing: AetherVisual.s3) {
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
                         Text(AppLocalization.string("Structured core policy"))
-                            .font(.subheadline.weight(.semibold))
+                            .font(.body.weight(.semibold))
                         Text(
                             tunnel.networkEngineMode == .tun
                                 ? AppLocalization.string("Overrides are validated and passed directly to the Rust core when TUN starts.")
                                 : AppLocalization.string("Select the TUN engine on Overview to edit runtime overrides.")
                         )
-                        .font(.caption)
-                        .foregroundStyle(.primary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer(minLength: 12)
+                    Spacer(minLength: AetherVisual.s3)
                     StatePill(
                         title: tunnel.dnsRuntimePolicy.isInherited
                             ? AppLocalization.string("Profile")
@@ -464,7 +466,7 @@ struct DNSView: View {
                 Divider().padding(.leading, AetherVisual.s4)
                 HStack {
                     Text("DNS changes apply on the next TUN connection, including restoring profile defaults.")
-                        .font(.caption).foregroundStyle(.primary)
+                        .font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     Button("Restore profile defaults") {
@@ -493,8 +495,19 @@ struct DNSView: View {
                 }
             }
             .featureCard()
+            .onGeometryChange(for: Bool.self) { proxy in
+                proxy.size.width < Self.compactPolicyWidth
+            } action: { isCompact in
+                isCompactPolicyLayout = isCompact
+            }
         }
     }
+
+    /// Below this card width a row cannot hold its description and the
+    /// four-way resolution picker side by side without wrapping the text
+    /// into a narrow column.
+    nonisolated private static let compactPolicyWidth: CGFloat = 600
+    private static let policyIconSize: CGFloat = 34
 
     private func dnsPolicyRow<Control: View>(
         symbol: String,
@@ -504,31 +517,41 @@ struct DNSView: View {
         canDisable: Bool = true,
         @ViewBuilder control: () -> Control
     ) -> some View {
-        HStack(spacing: AetherVisual.s4) {
-            Image(systemName: symbol)
-                .foregroundStyle(tint)
-                .frame(width: 34, height: 34)
-                .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color(nsColor: .labelColor))
-                Text(detail)
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(Color(nsColor: .labelColor))
-                    .fixedSize(horizontal: false, vertical: true)
+        // In a narrow window the segmented control moves under the text
+        // instead of squeezing the description into a tall column.
+        let layout = isCompactPolicyLayout
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: AetherVisual.s2))
+            : AnyLayout(HStackLayout(spacing: AetherVisual.s4))
+        return layout {
+            HStack(spacing: AetherVisual.s4) {
+                Image(systemName: symbol)
+                    .foregroundStyle(tint)
+                    .frame(width: Self.policyIconSize, height: Self.policyIconSize)
+                    .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                    Text(title)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Spacer(minLength: 16)
-            if canDisable {
-                control()
-                    .disabled(
-                        tunnel.networkEngineMode != .tun
-                            || !tunnel.canModifyDNSRuntimePolicy
-                    )
-            } else {
-                control()
+            Group {
+                if canDisable {
+                    control()
+                        .disabled(
+                            tunnel.networkEngineMode != .tun
+                                || !tunnel.canModifyDNSRuntimePolicy
+                        )
+                } else {
+                    control()
+                }
             }
+            .padding(.leading, isCompactPolicyLayout ? Self.policyIconSize + AetherVisual.s4 : .zero)
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s3)
