@@ -83,7 +83,6 @@ enum AetherVisual {
     )
 
     static let pageBackground = Color(nsColor: .windowBackgroundColor)
-    static let sidebarBackground = Material.regular
 
     static func panelFill(for _: ColorScheme) -> Color {
         Color(nsColor: .controlBackgroundColor)
@@ -294,7 +293,6 @@ private struct AetherHeroPanelModifier: ViewModifier {
 /// A quiet content canvas. Brand color is used as atmosphere, not as another
 /// control layer, and disappears almost entirely when Reduce Transparency is on.
 struct AetherContentCanvas: View {
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
@@ -482,20 +480,6 @@ extension View {
         modifier(AetherHeroPanelModifier())
     }
 
-    func aetherModernCard(
-        isSelected: Bool = false,
-        cornerRadius: CGFloat = 10,
-        isHovered: Bool = false
-    ) -> some View {
-        modifier(
-            AetherModernCardModifier(
-                isSelected: isSelected,
-                cornerRadius: cornerRadius,
-                isHovered: isHovered
-            )
-        )
-    }
-
     func aetherHoverHighlight(
         _ isHovered: Bool,
         cornerRadius: CGFloat = AetherVisual.controlRadius,
@@ -514,45 +498,6 @@ extension View {
             in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         )
         .animation(AetherVisual.quickFade, value: isHovered)
-    }
-}
-
-private struct AetherModernCardModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-    let isSelected: Bool
-    let cornerRadius: CGFloat
-    let isHovered: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(cardFill)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(borderColor, lineWidth: isSelected ? 1.5 : (isHovered ? 1.0 : 0.5))
-            }
-    }
-
-    private var cardFill: Color {
-        if isSelected {
-            return Color.accentColor.opacity(colorScheme == .dark ? 0.12 : 0.07)
-        }
-        if isHovered {
-            return Color(nsColor: .controlBackgroundColor).opacity(0.95)
-        }
-        return Color(nsColor: .controlBackgroundColor).opacity(0.65)
-    }
-
-    private var borderColor: Color {
-        if isSelected {
-            return Color.accentColor
-        }
-        if isHovered {
-            return Color.accentColor.opacity(0.45)
-        }
-        return Color(nsColor: .separatorColor).opacity(0.6)
     }
 }
 
@@ -605,19 +550,6 @@ struct AetherLatencyPill: View {
     ) {
         self.status = status
         self.confidence = confidence
-        self.onTap = onTap
-    }
-
-    init(latency: Int?, isTesting: Bool = false, onTap: (() -> Void)? = nil) {
-        if isTesting {
-            self.status = .testing
-        } else if let ms = latency, ms > 0 {
-            self.status = .responded(UInt32(ms))
-        } else if latency == nil {
-            self.status = .untested
-        } else {
-            self.status = .timedOut
-        }
         self.onTap = onTap
     }
 
@@ -844,7 +776,6 @@ struct AetherNodeFlag: View {
 
 /// Download and upload over the last 30 seconds.
 public struct AetherTrafficMiniGraph: View {
-    @Environment(\.colorScheme) private var colorScheme
     let downloadSamples: [Double]
     let uploadSamples: [Double]
     let samplePositions: [Double]

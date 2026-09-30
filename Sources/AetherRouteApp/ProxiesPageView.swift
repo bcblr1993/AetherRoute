@@ -222,7 +222,6 @@ private struct ProxyGroupTabButton: View {
     let currentMember: String?
     let onSelect: () -> Void
     @State private var isHovered = false
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: onSelect) {

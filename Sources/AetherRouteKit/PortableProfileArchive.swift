@@ -21,7 +21,6 @@ public struct PortableProfileArchivePayload: Codable, Equatable, Sendable {
 /// the device-only Keychain key used for at-rest profile storage. The archive
 /// can therefore move between Macs without weakening local storage.
 public struct PortableProfileArchiveCodec: Sendable {
-    public static let filenameExtension = "aetherroute"
     public static let minimumPasswordCharacters = 6
     public static let productionIterationCount = 600_000
     public static let maximumArchiveBytes = 72 * 1_024 * 1_024

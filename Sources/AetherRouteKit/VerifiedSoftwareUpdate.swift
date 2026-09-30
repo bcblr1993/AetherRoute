@@ -129,52 +129,6 @@ public struct VerifiedSoftwareUpdateDownloader: Sendable {
         self.artifactCommitter = artifactCommitter
     }
 
-    public static func live() -> Self {
-        Self { downloadURL in
-            try IndependentDistributionConfiguration.validateHTTPSURL(
-                downloadURL
-            )
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.urlCache = nil
-            configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-            configuration.httpCookieAcceptPolicy = .never
-            configuration.httpShouldSetCookies = false
-            configuration.timeoutIntervalForRequest = 30
-            configuration.timeoutIntervalForResource = 15 * 60
-            configuration.waitsForConnectivity = false
-            let delegate = SoftwareUpdateNoRedirectDelegate()
-            let session = URLSession(
-                configuration: configuration,
-                delegate: delegate,
-                delegateQueue: nil
-            )
-            defer { session.finishTasksAndInvalidate() }
-
-            var request = URLRequest(url: downloadURL)
-            request.httpMethod = "GET"
-            request.setValue(
-                "application/x-apple-diskimage, application/octet-stream",
-                forHTTPHeaderField: "Accept"
-            )
-            request.setValue(
-                "AetherRoute/1 UpdateDownloader",
-                forHTTPHeaderField: "User-Agent"
-            )
-            let (temporaryFileURL, response) = try await session.download(
-                for: request
-            )
-            guard let response = response as? HTTPURLResponse,
-                  let finalURL = response.url else {
-                throw IndependentDistributionError.invalidHTTPResponse
-            }
-            return SoftwareUpdateDownloadResponse(
-                temporaryFileURL: temporaryFileURL,
-                statusCode: response.statusCode,
-                finalURL: finalURL
-            )
-        }
-    }
-
     public func download(
         manifest: SoftwareUpdateManifest,
         to destinationURL: URL
@@ -252,21 +206,5 @@ public struct VerifiedSoftwareUpdateDownloader: Sendable {
             fileAt: destinationURL,
             expectedSHA256: manifest.sha256
         )
-    }
-}
-
-private final class SoftwareUpdateNoRedirectDelegate:
-    NSObject,
-    URLSessionTaskDelegate,
-    @unchecked Sendable
-{
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest,
-        completionHandler: @escaping (URLRequest?) -> Void
-    ) {
-        completionHandler(nil)
     }
 }

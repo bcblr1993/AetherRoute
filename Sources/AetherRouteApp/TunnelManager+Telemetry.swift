@@ -193,7 +193,6 @@ extension TunnelManager {
             let refreshed = try await client.telemetry(
                 maximumConnections: Self.telemetryConnectionLimit
             )
-            telemetryUpdatedAt = .now
             telemetryViewModel.update(refreshed)
         } catch {
             // A transient provider-message failure must not disconnect a healthy
@@ -408,7 +407,6 @@ extension TunnelManager {
                 ),
             ]
         ))
-        telemetryUpdatedAt = .now
     }
 
 }

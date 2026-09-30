@@ -121,16 +121,6 @@
         }
       }
     },
-    "Manage proxy subscriptions, local files, and routing profiles.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "管理您的代理节点、订阅及本地分流配置。"
-          }
-        }
-      }
-    },
     "Multi-Protocol": {
       "localizations": {
         "zh-Hans": {
@@ -257,16 +247,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 个组件"
-          }
-        }
-      }
-    },
-    "%lld encrypted profiles": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 个加密配置"
           }
         }
       }
@@ -441,36 +421,6 @@
         }
       }
     },
-    "Activate AetherRoute in Settings > Account before connecting.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请先在“设置”>“账户”中激活 AetherRoute，再建立连接。"
-          }
-        }
-      }
-    },
-    "Activated %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "启用于 %@"
-          }
-        }
-      }
-    },
-    "Activating license": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在激活授权"
-          }
-        }
-      }
-    },
     "active": {
       "localizations": {
         "zh-Hans": {
@@ -501,16 +451,6 @@
         }
       }
     },
-    "ACTIVE PROFILE": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前配置"
-          }
-        }
-      }
-    },
     "Add": {
       "localizations": {
         "zh-Hans": {
@@ -527,16 +467,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加目标"
-          }
-        }
-      }
-    },
-    "Add a subscription, add a node, or import a Clash-compatible YAML/JSON profile to get started.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "添加订阅、添加节点，或导入 Clash 兼容的 YAML/JSON 配置即可开始使用。"
           }
         }
       }
@@ -758,16 +688,6 @@
         }
       }
     },
-    "AetherRoute is up to date": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AetherRoute 已是最新版本"
-          }
-        }
-      }
-    },
     "AetherRoute needs attention": {
       "localizations": {
         "zh-Hans": {
@@ -824,16 +744,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "确认之前，AetherRoute 不会访问这个地址。"
-          }
-        }
-      }
-    },
-    "AetherRoute will not create or save a network extension configuration, import a profile, or connect until you agree.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在你同意前，AetherRoute 不会创建或保存网络扩展配置、导入配置或连接。"
           }
         }
       }
@@ -998,16 +908,6 @@
         }
       }
     },
-    "Approval needed": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "需要批准"
-          }
-        }
-      }
-    },
     "Approve the AetherRoute network extension to continue.": {
       "localizations": {
         "zh-Hans": {
@@ -1054,16 +954,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "自动"
-          }
-        }
-      }
-    },
-    "Auto-selected": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自动选择"
           }
         }
       }
@@ -1138,16 +1028,6 @@
         }
       }
     },
-    "Best %lld ms": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最快 %lld 毫秒"
-          }
-        }
-      }
-    },
     "Beta": {
       "localizations": {
         "zh-Hans": {
@@ -1174,26 +1054,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "构建号"
-          }
-        }
-      }
-    },
-    "Build %lld · arm64 · published %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "构建 %lld · arm64 · 发布于 %@"
-          }
-        }
-      }
-    },
-    "Build information": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "构建信息"
           }
         }
       }
@@ -1378,36 +1238,6 @@
         }
       }
     },
-    "Checked %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "检查于 %@"
-          }
-        }
-      }
-    },
-    "Checking for updates": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在检查更新"
-          }
-        }
-      }
-    },
-    "Checking resources": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在检查资源"
-          }
-        }
-      }
-    },
     "Checking route quality": {
       "extractionState": "manual",
       "localizations": {
@@ -1465,16 +1295,6 @@
         }
       }
     },
-    "Choose Normal, Fake-IP, or Redir-host without rewriting imported YAML.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无需改写导入的 YAML，即可选择 Normal、Fake-IP 或 Redir-host。"
-          }
-        }
-      }
-    },
     "Choose Private Key…": {
       "localizations": {
         "zh-Hans": {
@@ -1505,26 +1325,6 @@
         }
       }
     },
-    "Clear Proxy": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "清除代理"
-          }
-        }
-      }
-    },
-    "Cleared": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已清除"
-          }
-        }
-      }
-    },
     "Client fingerprint": {
       "localizations": {
         "zh-Hans": {
@@ -1541,16 +1341,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "配置 REALITY 时必须填写客户端指纹。"
-          }
-        }
-      }
-    },
-    "Complete the network privacy review before importing this subscription.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请先完成网络隐私说明，再导入此订阅。"
           }
         }
       }
@@ -1615,16 +1405,6 @@
         }
       }
     },
-    "Connect before testing or switching nodes": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接后才能测速与切换节点"
-          }
-        }
-      }
-    },
     "Connect or disconnect": {
       "localizations": {
         "zh-Hans": {
@@ -1645,32 +1425,12 @@
         }
       }
     },
-    "Connect to choose": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接后选择"
-          }
-        }
-      }
-    },
     "Connect when ready, or review the active profile first.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "准备好后即可连接，也可以先检查当前配置。"
-          }
-        }
-      }
-    },
-    "Connect with an active profile to start a session. No connection data is fabricated while the secure connection is stopped.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用已启用的配置连接后即可开始会话。安全连接停止时不会生成虚假的连接数据。"
           }
         }
       }
@@ -1731,16 +1491,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "连接通知"
-          }
-        }
-      }
-    },
-    "Connection progress": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接进度"
           }
         }
       }
@@ -1905,16 +1655,6 @@
         }
       }
     },
-    "Create a bounded support report only when you choose to save it. Nothing is uploaded automatically.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "仅在你主动保存时创建有上限的支持报告，不会自动上传任何内容。"
-          }
-        }
-      }
-    },
     "Create a password-encrypted copy of every profile for another Mac. The password is never stored.": {
       "localizations": {
         "zh-Hans": {
@@ -1931,16 +1671,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "创建 AetherRoute 原生配置，无需依赖其他客户端的配置格式。"
-          }
-        }
-      }
-    },
-    "Create Archive": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "创建档案"
           }
         }
       }
@@ -1975,16 +1705,6 @@
         }
       }
     },
-    "Current session": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前会话"
-          }
-        }
-      }
-    },
     "Customized": {
       "localizations": {
         "zh-Hans": {
@@ -2005,42 +1725,12 @@
         }
       }
     },
-    "Debug logging": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "调试日志"
-          }
-        }
-      }
-    },
     "Default": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "默认"
-          }
-        }
-      }
-    },
-    "Default routing mode": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "默认路由模式"
-          }
-        }
-      }
-    },
-    "Delete Recorded Logs": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "删除已记录的日志"
           }
         }
       }
@@ -2185,26 +1875,6 @@
         }
       }
     },
-    "Disconnect before changing the routing mode.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更改路由模式前请先断开连接。"
-          }
-        }
-      }
-    },
-    "Disconnect before importing this subscription.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请先断开连接，再导入此订阅。"
-          }
-        }
-      }
-    },
     "Disconnecting": {
       "localizations": {
         "zh-Hans": {
@@ -2241,16 +1911,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "DNS 与 Fake-IP"
-          }
-        }
-      }
-    },
-    "DNS behavior now follows the active profile.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "DNS 行为现在完全跟随当前配置。"
           }
         }
       }
@@ -2355,52 +2015,12 @@
         }
       }
     },
-    "Download statistics unavailable": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无下载统计"
-          }
-        }
-      }
-    },
-    "Downloaded and verified %lld bytes.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已下载并验证 %lld 字节。"
-          }
-        }
-      }
-    },
     "Downloading and verifying routing resources…": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "正在下载并校验路由资源…"
-          }
-        }
-      }
-    },
-    "Downloading update": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在下载更新"
-          }
-        }
-      }
-    },
-    "Downloads are user-initiated over HTTPS and checksum-verified. Country.mmdb is MaxMind-derived through Loyalsoldier; GeoSite.dat is provided by V2Fly. Their upstream licenses apply.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "下载仅由用户主动发起，使用 HTTPS 并校验哈希。Country.mmdb 由 Loyalsoldier 基于 MaxMind 数据提供；GeoSite.dat 由 V2Fly 提供，并分别适用其上游许可。"
           }
         }
       }
@@ -2585,42 +2205,12 @@
         }
       }
     },
-    "Errors and summaries": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "错误与摘要"
-          }
-        }
-      }
-    },
     "Evaluation order": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "匹配顺序"
-          }
-        }
-      }
-    },
-    "Every connection": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每条连接"
-          }
-        }
-      }
-    },
-    "Every connection is recorded. Use this only while reproducing a problem, then switch back.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "将记录每一条连接。仅在复现问题时使用，完成后请切回。"
           }
         }
       }
@@ -2675,16 +2265,6 @@
         }
       }
     },
-    "Export Debug Log…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "导出调试日志…"
-          }
-        }
-      }
-    },
     "Export Diagnostic Report": {
       "localizations": {
         "zh-Hans": {
@@ -2715,32 +2295,12 @@
         }
       }
     },
-    "Extension lifecycle only": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "仅显示网络扩展生命周期"
-          }
-        }
-      }
-    },
     "Extension ready": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "扩展已就绪"
-          }
-        }
-      }
-    },
-    "Extension startup": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "扩展启动"
           }
         }
       }
@@ -2831,16 +2391,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Flow（可选）"
-          }
-        }
-      }
-    },
-    "Flow details unavailable": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无连接详情"
           }
         }
       }
@@ -3025,26 +2575,6 @@
         }
       }
     },
-    "HTTPS subscription · manual updates": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "HTTPS 订阅 · 手动更新"
-          }
-        }
-      }
-    },
-    "HTTPS subscription · updates every %lld hours": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "HTTPS 订阅 · 每 %lld 小时更新"
-          }
-        }
-      }
-    },
     "HTTPS subscription URL": {
       "localizations": {
         "zh-Hans": {
@@ -3071,16 +2601,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "空闲"
-          }
-        }
-      }
-    },
-    "If this repeats, export a privacy-safe report from Settings › Diagnostics.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "若问题再次发生，请从“设置”›“诊断”导出隐私安全报告。"
           }
         }
       }
@@ -3195,36 +2715,6 @@
         }
       }
     },
-    "Import Profiles": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "导入配置"
-          }
-        }
-      }
-    },
-    "Import required": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "需要导入"
-          }
-        }
-      }
-    },
-    "Import safety checks passed. The core validates protocol semantics when a session starts.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "导入安全检查已通过。会话启动时，核心还会验证协议语义。"
-          }
-        }
-      }
-    },
     "Import…": {
       "localizations": {
         "zh-Hans": {
@@ -3255,16 +2745,6 @@
         }
       }
     },
-    "Importing subscription": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在导入订阅"
-          }
-        }
-      }
-    },
     "In groups": {
       "localizations": {
         "zh-Hans": {
@@ -3291,16 +2771,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "在“系统设置”中打开“通用 > 登录项与扩展 > 网络扩展”，然后启用 AetherRoute。批准后，此窗口会自动更新。"
-          }
-        }
-      }
-    },
-    "In use": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在使用"
           }
         }
       }
@@ -3385,16 +2855,6 @@
         }
       }
     },
-    "IPv4 + IPv6 packets": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "IPv4 + IPv6 数据包"
-          }
-        }
-      }
-    },
     "IPv6 answers": {
       "localizations": {
         "zh-Hans": {
@@ -3411,16 +2871,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "IPv6 应答遵循当前选择的 TUN 策略。"
-          }
-        }
-      }
-    },
-    "JSON · AR1": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "JSON · AR1"
           }
         }
       }
@@ -3625,56 +3075,6 @@
         }
       }
     },
-    "Live bounded telemetry": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "实时受限遥测"
-          }
-        }
-      }
-    },
-    "Live traffic": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "实时流量"
-          }
-        }
-      }
-    },
-    "Live Traffic Waveform (30s)": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "实时网络波形 (30秒)"
-          }
-        }
-      }
-    },
-    "Load choices": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "载入选项"
-          }
-        }
-      }
-    },
-    "Loading proxy choices": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在载入代理选项"
-          }
-        }
-      }
-    },
     "Loading the local network extension configuration": {
       "localizations": {
         "zh-Hans": {
@@ -3771,16 +3171,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "管理本地配置与订阅配置。"
-          }
-        }
-      }
-    },
-    "Manage Profiles…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "管理配置…"
           }
         }
       }
@@ -3882,36 +3272,6 @@
         }
       }
     },
-    "Move encrypted profiles between Macs": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在不同 Mac 之间迁移加密配置"
-          }
-        }
-      }
-    },
-    "Move Node Down": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "下移节点"
-          }
-        }
-      }
-    },
-    "Move Node Up": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上移节点"
-          }
-        }
-      }
-    },
     "Multiple AetherRoute network extension configurations were found. Remove the duplicate in System Settings and try again.": {
       "localizations": {
         "zh-Hans": {
@@ -3948,16 +3308,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "原生节点已更新。"
-          }
-        }
-      }
-    },
-    "Native UI": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "原生界面"
           }
         }
       }
@@ -4058,16 +3408,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有活动连接"
-          }
-        }
-      }
-    },
-    "No active profile": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "尚未启用配置"
           }
         }
       }
@@ -4232,16 +3572,6 @@
         }
       }
     },
-    "No response": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无响应"
-          }
-        }
-      }
-    },
     "No rule set loaded": {
       "localizations": {
         "zh-Hans": {
@@ -4258,16 +3588,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "不出售，也不跟踪"
-          }
-        }
-      }
-    },
-    "No selection": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未选择"
           }
         }
       }
@@ -4332,16 +3652,6 @@
         }
       }
     },
-    "Not available": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无数据"
-          }
-        }
-      }
-    },
     "Not connected": {
       "localizations": {
         "zh-Hans": {
@@ -4352,32 +3662,12 @@
         }
       }
     },
-    "Not measured": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "尚未测量"
-          }
-        }
-      }
-    },
     "Not released": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "尚未发布"
-          }
-        }
-      }
-    },
-    "Not running": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未运行"
           }
         }
       }
@@ -4452,42 +3742,12 @@
         }
       }
     },
-    "On-device": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "本机处理"
-          }
-        }
-      }
-    },
-    "Only a bounded, Ed25519-signed manifest is accepted. Downloads never install automatically.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "仅接受大小受限且通过 Ed25519 签名的清单；下载内容绝不会自动安装。"
-          }
-        }
-      }
-    },
     "Only connections visible on this Mac are counted, and nothing is reported anywhere.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "只统计本机可见的连接，不上报"
-          }
-        }
-      }
-    },
-    "Only the provider host is shown. Private query tokens stay hidden.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "仅显示提供方主机名，私密查询令牌会保持隐藏。"
           }
         }
       }
@@ -4508,36 +3768,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开 AetherRoute"
-          }
-        }
-      }
-    },
-    "Open flow count unavailable": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无活动连接数"
-          }
-        }
-      }
-    },
-    "Open flows": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "活动连接"
-          }
-        }
-      }
-    },
-    "Open Portable Archive": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开便携档案"
           }
         }
       }
@@ -4622,16 +3852,6 @@
         }
       }
     },
-    "Override whether the resolver returns AAAA answers.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "覆盖解析器是否返回 AAAA 记录。"
-          }
-        }
-      }
-    },
     "Overrides are validated and passed directly to the Rust core when TUN starts.": {
       "localizations": {
         "zh-Hans": {
@@ -4668,16 +3888,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "密码（可选）"
-          }
-        }
-      }
-    },
-    "Password authentication is stored only inside the encrypted profile catalog.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "密码仅保存在加密配置库中。"
           }
         }
       }
@@ -4768,16 +3978,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "便携档案已安全保存。"
-          }
-        }
-      }
-    },
-    "Portable profile transfer": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "便携配置迁移"
           }
         }
       }
@@ -4898,16 +4098,6 @@
         }
       }
     },
-    "Privacy first": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "隐私优先"
-          }
-        }
-      }
-    },
     "Privacy review": {
       "localizations": {
         "zh-Hans": {
@@ -4924,16 +4114,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "需要查看隐私说明"
-          }
-        }
-      }
-    },
-    "Private diagnostics": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "隐私诊断"
           }
         }
       }
@@ -5118,16 +4298,6 @@
         }
       }
     },
-    "Profile provider": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "配置提供方"
-          }
-        }
-      }
-    },
     "Profile range": {
       "localizations": {
         "zh-Hans": {
@@ -5178,16 +4348,6 @@
         }
       }
     },
-    "Protect Portable Archive": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保护便携档案"
-          }
-        }
-      }
-    },
     "Protected": {
       "localizations": {
         "zh-Hans": {
@@ -5204,16 +4364,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "协议"
-          }
-        }
-      }
-    },
-    "Protocol handshake": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "协议握手"
           }
         }
       }
@@ -5338,16 +4488,6 @@
         }
       }
     },
-    "Public key (optional)": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "公钥（可选）"
-          }
-        }
-      }
-    },
     "Quit": {
       "localizations": {
         "zh-Hans": {
@@ -5388,72 +4528,12 @@
         }
       }
     },
-    "Test all proxy groups across profile": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "测试配置内所有策略组的节点延迟"
-          }
-        }
-      }
-    },
     "Test latency for current group nodes": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "测试当前策略组内所有节点的延迟"
-          }
-        }
-      }
-    },
-    "Readiness check": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "就绪检查"
-          }
-        }
-      }
-    },
-    "Readiness checks passed. Open Connections for per-flow details.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "就绪检查已通过。可前往“连接”查看每条流的详情。"
-          }
-        }
-      }
-    },
-    "Reading provider diagnostics": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在读取 Provider 诊断"
-          }
-        }
-      }
-    },
-    "Ready to check": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "可以检查更新"
-          }
-        }
-      }
-    },
-    "Ready to connect": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "可以连接"
           }
         }
       }
@@ -5494,16 +4574,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已识别"
-          }
-        }
-      }
-    },
-    "Records what the network extensions do while you reproduce a problem. Logs stay on this Mac, rotate automatically, and never exceed 16 MB per component.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "记录你复现问题期间网络扩展的行为。日志只保存在本机，会自动滚动，每个组件不超过 16 MB。"
           }
         }
       }
@@ -5574,16 +4644,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "拒绝"
-          }
-        }
-      }
-    },
-    "Release builds require a signed HTTPS manifest owned by you.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正式版本需要使用由你管理并签名的 HTTPS 更新清单。"
           }
         }
       }
@@ -5768,42 +4828,12 @@
         }
       }
     },
-    "Resource files are integrity-checked. Country.mmdb is MaxMind-derived through Loyalsoldier; GeoSite.dat is provided by V2Fly. Their upstream licenses apply.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "资源文件均经过完整性校验。Country.mmdb 由 Loyalsoldier 基于 MaxMind 数据提供，GeoSite.dat 由 V2Fly 提供，分别适用其上游许可。"
-          }
-        }
-      }
-    },
     "Restoring the normal network path": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "正在恢复正常网络路径"
-          }
-        }
-      }
-    },
-    "Retest group": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新测速此策略组"
-          }
-        }
-      }
-    },
-    "Retest this group": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新测试此组"
           }
         }
       }
@@ -5874,16 +4904,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "直接返回上游地址，不进行合成映射。"
-          }
-        }
-      }
-    },
-    "Review and Import": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "确认并导入"
           }
         }
       }
@@ -5978,33 +4998,6 @@
         }
       }
     },
-    "Route is slow": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Route is slow"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "线路较慢"
-          }
-        }
-      }
-    },
-    "Route upstream DNS queries through the rule engine.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "让上游 DNS 查询经过规则引擎路由。"
-          }
-        }
-      }
-    },
     "Route verified": {
       "extractionState": "manual",
       "localizations": {
@@ -6072,16 +5065,6 @@
         }
       }
     },
-    "Routing Resources": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "路由资源"
-          }
-        }
-      }
-    },
     "Routing resources are not written by the unsigned UI preview.": {
       "localizations": {
         "zh-Hans": {
@@ -6098,16 +5081,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法安全准备路由资源。请先在“配置”页面检查后再连接。"
-          }
-        }
-      }
-    },
-    "Routing resources required": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "需要路由资源"
           }
         }
       }
@@ -6239,26 +5212,6 @@
         }
       }
     },
-    "Rules are evaluated from top to bottom by the protocol core.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "协议核心会从上到下依次匹配规则。"
-          }
-        }
-      }
-    },
-    "Runtime mode": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "运行模式"
-          }
-        }
-      }
-    },
     "Salamander obfuscation": {
       "localizations": {
         "zh-Hans": {
@@ -6299,16 +5252,6 @@
         }
       }
     },
-    "Save Verified Update": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存已验证的更新"
-          }
-        }
-      }
-    },
     "Search components": {
       "localizations": {
         "zh-Hans": {
@@ -6345,16 +5288,6 @@
         }
       }
     },
-    "Search rules": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "搜索规则"
-          }
-        }
-      }
-    },
     "Secure random data could not be generated.": {
       "localizations": {
         "zh-Hans": {
@@ -6385,32 +5318,12 @@
         }
       }
     },
-    "Selected mode": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "所选模式"
-          }
-        }
-      }
-    },
     "Selected page content": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "所选页面内容"
-          }
-        }
-      }
-    },
-    "Selected proxy": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已选代理"
           }
         }
       }
@@ -6551,16 +5464,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "AetherRoute 运行时全局快捷键即可生效，无需辅助功能权限。通知完全可选，且不会包含配置名称、地址或流量详情。"
-          }
-        }
-      }
-    },
-    "Show live log": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示实时日志"
           }
         }
       }
@@ -6925,32 +5828,12 @@
         }
       }
     },
-    "System authorization": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "系统授权"
-          }
-        }
-      }
-    },
     "System resolver": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "系统解析器"
-          }
-        }
-      }
-    },
-    "TCP + UDP flows": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "TCP + UDP 流"
           }
         }
       }
@@ -7056,16 +5939,6 @@
         }
       }
     },
-    "The active profile uses GEOIP or GEOSITE rules. Required databases must pass integrity checks before connection.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前配置使用 GEOIP 或 GEOSITE 规则。连接前，所需数据库必须通过完整性校验。"
-          }
-        }
-      }
-    },
     "The address is stored inside the encrypted profile. Downloads are size-limited and validated before activation.": {
       "localizations": {
         "zh-Hans": {
@@ -7082,16 +5955,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "档案密码过长。"
-          }
-        }
-      }
-    },
-    "The bundled notice file could not be verified. Reinstall AetherRoute before distribution.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法验证内置许可声明文件。发布前请重新安装 AetherRoute。"
           }
         }
       }
@@ -7142,26 +6005,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前连接未能及时停止。"
-          }
-        }
-      }
-    },
-    "The current core bridge reports lifecycle readiness only. Per-flow destinations, matched rules, and byte counters are not exposed by this build.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前核心桥接仅报告生命周期就绪状态；此版本尚未提供单个连接的目标、命中规则和字节计数。"
-          }
-        }
-      }
-    },
-    "The current network engine did not stop in time. It remains selected.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前网络引擎未能及时停止，已保持原选择。"
           }
         }
       }
@@ -7486,16 +6329,6 @@
         }
       }
     },
-    "The node list is ready — %lld in total.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "节点列表已就绪，共 %lld 个。"
-          }
-        }
-      }
-    },
     "The password is incorrect or the portable archive was modified.": {
       "localizations": {
         "zh-Hans": {
@@ -7717,46 +6550,6 @@
         }
       }
     },
-    "The saved license cannot authorize a connection. Review Settings > Account.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已保存的授权无法允许连接。请检查“设置”>“账户”。"
-          }
-        }
-      }
-    },
-    "The saved license cannot be verified. Review Settings > Account.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法验证已保存的授权。请检查“设置”>“账户”。"
-          }
-        }
-      }
-    },
-    "The saved license has expired. Review Settings > Account.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已保存的授权已过期。请检查“设置”>“账户”。"
-          }
-        }
-      }
-    },
-    "The saved license was revoked. Review Settings > Account.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已保存的授权已被撤销。请检查“设置”>“账户”。"
-          }
-        }
-      }
-    },
     "The saved network extension configuration is invalid.": {
       "localizations": {
         "zh-Hans": {
@@ -7783,16 +6576,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "安全连接无法启动。请检查配置后重试。"
-          }
-        }
-      }
-    },
-    "The secure connection is ready. New flows will appear here without exposing source addresses or account identifiers.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "安全连接已就绪。新连接会显示在这里，且不会暴露源地址或账户标识。"
           }
         }
       }
@@ -8104,16 +6887,6 @@
         }
       }
     },
-    "This edition does not contact a licensing service. Install a newer signed DMG to update; your saved configurations are kept.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此版本无需连接授权服务。安装新版签名 DMG 即可更新，已保存的配置会保留。"
-          }
-        }
-      }
-    },
     "This edition does not contact a licensing service. Software updates are checked and verified automatically.": {
       "localizations": {
         "zh-Hans": {
@@ -8130,26 +6903,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "此策略组由延迟测速自动选择最优节点。"
-          }
-        }
-      }
-    },
-    "This group is chosen by the protocol core from its own latency tests, so it cannot be set by hand. Expand a manual group to choose a node.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此策略组由协议核心根据延迟测试自动选择，不能手动指定。请展开手动策略组选择节点。"
-          }
-        }
-      }
-    },
-    "This license reached its device limit. Review Settings > Account.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此授权已达到设备数量上限。请检查“设置”>“账户”。"
           }
         }
       }
@@ -8200,16 +6953,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "此配置没有可选择的代理成员。"
-          }
-        }
-      }
-    },
-    "This unsigned UI preview cannot start Network Extensions.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此未签名界面预览版不能启动网络扩展。"
           }
         }
       }
@@ -8437,16 +7180,6 @@
         }
       }
     },
-    "Tunnel Protected": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "隧道已连接"
-          }
-        }
-      }
-    },
     "UDP": {
       "localizations": {
         "zh-Hans": {
@@ -8547,16 +7280,6 @@
         }
       }
     },
-    "Update check failed": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "检查更新失败"
-          }
-        }
-      }
-    },
     "Update recommended · %@": {
       "localizations": {
         "zh-Hans": {
@@ -8577,32 +7300,12 @@
         }
       }
     },
-    "Update service not configured": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "尚未配置更新服务"
-          }
-        }
-      }
-    },
     "Update this node in AetherRoute's encrypted native profile.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "在 AetherRoute 的加密原生配置中更新此节点。"
-          }
-        }
-      }
-    },
-    "Updating subscription": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在更新订阅"
           }
         }
       }
@@ -8633,16 +7336,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "上传带宽 (Mbps，可选)"
-          }
-        }
-      }
-    },
-    "Upload statistics unavailable": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无上传统计"
           }
         }
       }
@@ -8787,16 +7480,6 @@
         }
       }
     },
-    "Verified connection status": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已验证的连接状态"
-          }
-        }
-      }
-    },
     "Verifying the network extension": {
       "localizations": {
         "zh-Hans": {
@@ -8907,16 +7590,6 @@
         }
       }
     },
-    "When you connect, traffic and DNS queries may be sent to the proxy and DNS services in the profile you chose. Those providers may observe connection metadata or unencrypted content. Review and trust a profile before importing it.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接后，流量和 DNS 查询可能会发送到所选配置中的代理与 DNS 服务。这些服务提供方可能看到连接元数据或未加密内容。导入前请确认配置来源可信。"
-          }
-        }
-      }
-    },
     "When you connect, traffic and DNS queries may be sent to the proxy and DNS services in your profile. Subscription updates contact your provider; routing rule updates contact public data sources after connection. These services may observe your IP address. Review and trust a provider before importing it.": {
       "localizations": {
         "zh-Hans": {
@@ -8927,56 +7600,12 @@
         }
       }
     },
-    "You are already online. AetherRoute is measuring the selected route in the background.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You are already online. AetherRoute is measuring the selected route in the background."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你已经在线。AetherRoute 正在后台测量所选线路。"
-          }
-        }
-      }
-    },
-    "You are still connected. The selected route was slow to answer, and AetherRoute keeps looking for a faster node.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You are still connected. The selected route was slow to answer, and AetherRoute keeps looking for a faster node."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接仍然有效。所选线路响应较慢，AetherRoute 会继续寻找更快的节点。"
-          }
-        }
-      }
-    },
     "You can cancel safely while readiness checks are running.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "就绪检查期间可以安全取消。"
-          }
-        }
-      }
-    },
-    "You can connect normally. AetherRoute reports connected only after the selected network engine and protocol core have passed readiness checks.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "可以正常连接；所选网络引擎和协议核心通过就绪检查后，AetherRoute 才会显示“已连接”。"
           }
         }
       }
@@ -9208,17 +7837,6 @@
         }
       }
     },
-    "Latency: low to high": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按延迟从低到高"
-          }
-        }
-      }
-    },
     "Back": {
       "extractionState": "manual",
       "localizations": {
@@ -9248,17 +7866,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "网络波形 · 最近 30 秒"
-          }
-        }
-      }
-    },
-    "Refresh: every 1 second": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "刷新间隔：1 秒"
           }
         }
       }
@@ -9345,76 +7952,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "全部动作"
-          }
-        }
-      }
-    },
-    "Matched domain suffix .%@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "命中域名后缀 .%@"
-          }
-        }
-      }
-    },
-    "Matched domain keyword '%@'": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "命中域名关键字 '%@'"
-          }
-        }
-      }
-    },
-    "Matched exact domain '%@'": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "命中完整域名 '%@'"
-          }
-        }
-      }
-    },
-    "Matched subnet %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "命中网段 %@"
-          }
-        }
-      }
-    },
-    "Matched IP address %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "命中 IP 地址 %@"
-          }
-        }
-      }
-    },
-    "Matched Geo category %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "命中地理规则 %@"
-          }
-        }
-      }
-    },
-    "Matched fallback catch-all rule": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "命中兜底全匹配规则"
           }
         }
       }
@@ -9529,16 +8066,6 @@
         }
       }
     },
-    "No rule matched. Traffic will follow default direct path.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未匹配到任何特定规则，流量将走默认策略。"
-          }
-        }
-      }
-    },
     "Filter criteria, targets, or kinds…": {
       "localizations": {
         "zh-Hans": {
@@ -9615,16 +8142,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "复制出口名称"
-          }
-        }
-      }
-    },
-    "Destination-only preview; the target may be a policy group.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "仅预览目标地址规则；出站目标可能是策略组。"
           }
         }
       }
@@ -9915,16 +8432,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "暂未配置自定义规则"
-          }
-        }
-      }
-    },
-    "Add custom rules to override subscription routing (e.g. bypass Tailscale 100.64.0.0/10 or custom direct domains).": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "添加自定义规则可覆盖订阅分流（如直连 Tailscale 100.64.0.0/10 或自定义直连域名）。"
           }
         }
       }
@@ -10499,22 +9006,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "此列表是配置摘要。系统绕过排除与运行时网络优化也会影响实际流量，可能未包含在显示列表中。"
-          }
-        }
-      }
-    },
-    "Bypass and network optimization changes apply on the next connection or profile reload.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bypass and network optimization changes apply on the next connection or profile reload."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "绕过规则在下一次连接生效；网络优化在下一次连接或重新加载配置时生效。"
           }
         }
       }

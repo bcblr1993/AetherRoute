@@ -79,13 +79,6 @@ public final class DiagnosticAggregator: @unchecked Sendable {
         }
     }
 
-    public func recordBytes(toUpstream: Int = 0, toClient: Int = 0) {
-        lock.lock()
-        defer { lock.unlock() }
-        snapshot.bytesToUpstream += toUpstream
-        snapshot.bytesToClient += toClient
-    }
-
     public func start(queue: DispatchQueue = .global(qos: .utility)) {
         lock.lock()
         let alreadyRunning = timer != nil
@@ -122,9 +115,4 @@ public final class DiagnosticAggregator: @unchecked Sendable {
         log.aggregate("stage=aggregate window=\(Int(interval))s \(drained.summary)")
     }
 
-    public func current() -> DiagnosticAggregateSnapshot {
-        lock.lock()
-        defer { lock.unlock() }
-        return snapshot
-    }
 }

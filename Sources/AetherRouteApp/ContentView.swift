@@ -117,7 +117,6 @@ struct ContentView: View {
     @EnvironmentObject private var language: AppLanguageController
     @Environment(\.openSettings) private var openSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedSection: AppSection? = .overview
 
@@ -318,7 +317,6 @@ struct ContentView: View {
 
 #endif
 
-    @State private var copiedTerminalExport: Bool = false
     @State private var isSettingsHovered: Bool = false
 
     private var sidebar: some View {
@@ -610,7 +608,6 @@ private struct ConnectionToolbarButton: View {
 
 private struct OverviewView: View {
     @EnvironmentObject private var tunnel: TunnelManager
-    @Environment(\.openSettings) private var openSettings
     let openProfiles: () -> Void
     @State private var isSubscriptionEditorPresented = false
     @State private var isCloudSyncSheetPresented = false
@@ -1500,32 +1497,6 @@ private struct RouteConnector: View {
             }
         }
         .accessibilityHidden(true)
-    }
-}
-
-private struct MetricTile: View {
-    let label: LocalizedStringKey
-    let value: String
-    let unit: LocalizedStringKey
-    let symbol: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            Label(label, systemImage: symbol)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
-                Text(value)
-                    .font(.title2.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .monospacedDigit()
-                Text(unit)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(AetherVisual.s5)
     }
 }
 

@@ -3,7 +3,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct EmptyProfileOnboardingCard: View {
-    @EnvironmentObject private var tunnel: TunnelManager
     let onAddSubscription: () -> Void
     let onImportProfile: () -> Void
     var onCloudSync: (() -> Void)? = nil
@@ -254,7 +253,6 @@ struct ProfilesView: View {
         }
     }
 
-    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var fileImporterKind: FileImporterKind = .profile
     @State private var isFileImporterPresented = false
@@ -755,17 +753,6 @@ struct ProfilesView: View {
         }
         .padding(AetherVisual.s4)
         .aetherPanel()
-    }
-
-    private func subscriptionUpdateDetail(_ subscription: ProfileSubscription) -> String {
-        guard let interval = subscription.autoUpdateInterval else {
-            return AppLocalization.string("HTTPS subscription · manual updates")
-        }
-        let hours = max(1, Int(interval / 3_600))
-        return String.localizedStringWithFormat(
-            AppLocalization.string("HTTPS subscription · updates every %lld hours"),
-            Int64(hours)
-        )
     }
 
     private func presentFileImporter(_ kind: FileImporterKind) {

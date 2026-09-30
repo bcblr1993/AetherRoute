@@ -132,14 +132,6 @@ extension ProxyConfigurationSummary.Recognition {
         }
     }
 
-    var tint: Color {
-        switch self {
-        case .recognized: .green
-        case .requiresCoreValidation: .orange
-        case .incomplete: .red
-        }
-    }
-
     var symbol: String {
         switch self {
         case .recognized: "checkmark.circle.fill"
@@ -233,14 +225,6 @@ enum ConnectionOutlet: Equatable {
         case let .proxied(name): name
         case .direct: AppLocalization.string("Direct")
         case .rejected: AppLocalization.string("Rejected")
-        }
-    }
-
-    var tint: Color {
-        switch self {
-        case .proxied: .accentColor
-        case .direct: .secondary
-        case .rejected: .red
         }
     }
 

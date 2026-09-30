@@ -459,10 +459,6 @@ extension TunnelManager {
         _ = resolveProbeSession(recreate: true)
     }
 
-    private static var probeSession: URLSession {
-        resolveProbeSession(recreate: false)
-    }
-
     func currentRouteDataPlaneStatus(
         timeoutInterval: TimeInterval = 10
     ) async throws -> Int {

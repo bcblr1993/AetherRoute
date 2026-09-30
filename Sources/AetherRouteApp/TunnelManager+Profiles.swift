@@ -415,11 +415,6 @@ extension TunnelManager {
         }
     }
 
-    func clearBypassPolicyMessage() {
-        bypassPolicyMessage = nil
-        bypassPolicyMessageIsError = false
-    }
-
     @discardableResult
     func confirmExternalSubscriptionImport(
         id: UUID

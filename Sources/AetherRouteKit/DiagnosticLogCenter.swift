@@ -82,10 +82,6 @@ public final class DiagnosticLogCenter: @unchecked Sendable {
         levelOverride = level
     }
 
-    public func statistics() -> RotatingLogSinkStatistics? {
-        sink?.statistics()
-    }
-
     public func log(category: String) -> DiagnosticLog {
         lock.lock()
         if let existing = logs[category] {

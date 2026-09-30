@@ -32,15 +32,6 @@ enum NetworkEngineMode: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var localizedCompactDetail: String {
-        switch self {
-        case .transparent: AppLocalization.string("TCP + UDP flows")
-#if AETHERROUTE_INDEPENDENT
-        case .tun: AppLocalization.string("IPv4 + IPv6 packets")
-#endif
-        }
-    }
-
     var providerBundleIdentifier: String {
         switch self {
         case .transparent: AppConstants.transparentProxyBundleIdentifier
@@ -316,7 +307,6 @@ final class TunnelManager: ObservableObject {
     @Published var connectionStage: ConnectionStage = .systemAuthorization
     let telemetryViewModel = NetworkTelemetryViewModel()
     var telemetry: NetworkTelemetrySnapshot { telemetryViewModel.snapshot }
-    var telemetryUpdatedAt: Date?
     var realtimeTelemetrySources: Set<String> = []
     var backgroundTelemetrySources: Set<String> = []
     /// Some surface showing live traffic is frontmost: poll every 3 seconds.

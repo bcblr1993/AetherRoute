@@ -89,8 +89,6 @@ public struct ProxyLatencyIndex {
         }
     }
 
-    public var groupCount: Int { orderedGroups.count }
-
     /// Members that need probing: every unique member across all groups, minus
     /// the ones that are strategy groups rather than nodes.
     ///

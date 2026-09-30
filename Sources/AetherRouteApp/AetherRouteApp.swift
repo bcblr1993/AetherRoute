@@ -676,7 +676,6 @@ private final class MenuBarVisibilityTrackerView: NSView {
 
 private struct MenuBarContent: View {
     @EnvironmentObject private var tunnel: TunnelManager
-    @EnvironmentObject private var language: AppLanguageController
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var showingNodes = false
@@ -1391,7 +1390,6 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
 }
 
 private struct SettingsView: View {
-    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var tunnel: TunnelManager
     @EnvironmentObject private var automation: AppAutomationController
     @EnvironmentObject private var distribution:

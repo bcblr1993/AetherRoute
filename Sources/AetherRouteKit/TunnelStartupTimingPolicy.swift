@@ -119,10 +119,6 @@ public enum TunnelStartupTimingPolicy {
         .seconds(hostRecoveryWatchdogTimeoutSeconds)
     }
 
-    public static var providerEngineHandoffWaitTimeout: Duration {
-        .seconds(providerEngineHandoffWaitTimeoutSeconds)
-    }
-
     public static var selectorReadinessProviderMessageTimeout: Duration {
         .seconds(selectorReadinessProviderMessageTimeoutSeconds)
     }

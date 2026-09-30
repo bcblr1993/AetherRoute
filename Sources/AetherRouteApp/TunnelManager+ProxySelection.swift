@@ -594,7 +594,6 @@ extension TunnelManager {
         pendingLatencyFlush = []
         lastLatencyFlushAt = nil
         telemetryViewModel.reset()
-        telemetryUpdatedAt = nil
     }
 
 }

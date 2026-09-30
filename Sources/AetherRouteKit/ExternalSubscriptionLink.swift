@@ -20,7 +20,6 @@ public struct ExternalSubscriptionImportRequest: Identifiable, Sendable {
 }
 
 public enum ExternalSubscriptionLinkParser {
-    public static let canonicalScheme = "aetherroute"
     public static let supportedSchemes: Set<String> = ["aetherroute", "clash"]
     public static let supportedActions: Set<String> = [
         "subscribe",

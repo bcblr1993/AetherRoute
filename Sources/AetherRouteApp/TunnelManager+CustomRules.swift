@@ -2,15 +2,6 @@ import Foundation
 import AetherRouteKit
 
 extension TunnelManager {
-    func loadCustomRules() {
-        do {
-            self.customRules = try CustomRuleStore.applicationGroup().load()
-            refreshActiveProfileSummary()
-        } catch {
-            Self.runtimeLogger.error("Failed to load custom rules: \(String(reflecting: error), privacy: .public)")
-            self.customRules = []
-        }
-    }
 
     @discardableResult
     func addCustomRule(_ rule: CustomRule) async -> Bool {

@@ -2,7 +2,6 @@ import AetherRouteKit
 import SwiftUI
 
 struct DNSView: View {
-    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var showsAdvancedDNS = false
 
@@ -748,7 +747,6 @@ struct DNSView: View {
 }
 
 private struct DNSMetricCard: View {
-    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
 
     let title: String
@@ -802,7 +800,6 @@ private struct DNSMetricCard: View {
 }
 
 private struct DNSSettingRow: View {
-    @Environment(\.colorScheme) private var colorScheme
 
     let title: String
     let detail: String

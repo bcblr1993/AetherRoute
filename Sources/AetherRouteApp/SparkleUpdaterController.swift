@@ -91,10 +91,6 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             .store(in: &cancellables)
     }
 
-    var updater: SPUUpdater? {
-        updaterController?.updater
-    }
-
     var canCheckForUpdatesEffective: Bool {
         if let updater = updaterController?.updater {
             return updater.canCheckForUpdates && !updater.sessionInProgress
@@ -229,13 +225,6 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
         canCheckForUpdates = canCheck
     }
 
-    func setLastUpdateCheckDateForTesting(_ date: Date?) {
-        lastUpdateCheckDate = date
-    }
-
-    var pendingAutoCheckTaskForTesting: Task<Void, Never>? {
-        pendingAutoCheckTask
-    }
     #endif
 }
 
