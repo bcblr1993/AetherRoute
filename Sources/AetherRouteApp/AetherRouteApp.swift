@@ -2015,42 +2015,22 @@ private struct SettingsView: View {
             .accessibilityIdentifier("local-proxy-toggle")
 
             LabeledContent("Mixed proxy (HTTP and SOCKS5)") {
-                HStack(spacing: AetherVisual.s3) {
-                    Text(
-                        verbatim:
-                            "127.0.0.1:\(tunnel.localProxySettings.httpPort)"
-                    )
-                    .monospacedDigit()
-                    Stepper(
-                        "HTTP proxy port",
-                        value: Binding(
-                            get: { tunnel.localProxySettings.httpPort },
-                            set: { tunnel.setLocalProxyHTTPPort($0) }
-                        ),
-                        in: LocalProxySettings.permittedPorts
-                    )
-                    .labelsHidden()
-                }
+                LocalProxyPortField(
+                    title: "HTTP proxy port",
+                    port: tunnel.localProxySettings.httpPort,
+                    identifier: "local-proxy-http-port",
+                    commit: { tunnel.setLocalProxyHTTPPort($0) }
+                )
             }
             .disabled(!canEditLocalProxyPorts)
 
             LabeledContent("Additional SOCKS5-only port") {
-                HStack(spacing: AetherVisual.s3) {
-                    Text(
-                        verbatim:
-                            "127.0.0.1:\(tunnel.localProxySettings.socksPort)"
-                    )
-                    .monospacedDigit()
-                    Stepper(
-                        "SOCKS5 proxy port",
-                        value: Binding(
-                            get: { tunnel.localProxySettings.socksPort },
-                            set: { tunnel.setLocalProxySOCKSPort($0) }
-                        ),
-                        in: LocalProxySettings.permittedPorts
-                    )
-                    .labelsHidden()
-                }
+                LocalProxyPortField(
+                    title: "SOCKS5 proxy port",
+                    port: tunnel.localProxySettings.socksPort,
+                    identifier: "local-proxy-socks-port",
+                    commit: { tunnel.setLocalProxySOCKSPort($0) }
+                )
             }
             .disabled(!canEditLocalProxyPorts)
 
@@ -2347,5 +2327,53 @@ private struct ShortcutAssignmentRow: View {
         }
         .padding(AetherVisual.s2)
         .frame(width: 230)
+    }
+}
+
+/// A loopback port typed in full. A stepper needed thousands of clicks to
+/// move between common ports such as 7890 and 1080. The value is committed on
+/// Return or when focus leaves; TunnelManager validates it and reports a bad
+/// port, and the field then shows the port actually in effect.
+private struct LocalProxyPortField: View {
+    let title: LocalizedStringKey
+    let port: Int
+    let identifier: String
+    let commit: (Int) -> Void
+
+    @State private var text = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: AetherVisual.s1) {
+            Text(verbatim: "127.0.0.1:")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            TextField(title, text: $text)
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+                .frame(width: 64)
+                .focused($isFocused)
+                .onSubmit(apply)
+                .accessibilityIdentifier(identifier)
+        }
+        .onAppear { text = String(port) }
+        .onChange(of: port) { _, newPort in text = String(newPort) }
+        .onChange(of: isFocused) { _, focused in
+            if !focused { apply() }
+        }
+    }
+
+    private func apply() {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard let value = Int(trimmed), value != port else {
+            text = String(port)
+            return
+        }
+        commit(value)
+        // A rejected port leaves `port` unchanged, so onChange never fires;
+        // restore it here. An accepted one arrives through onChange.
+        text = String(port)
     }
 }

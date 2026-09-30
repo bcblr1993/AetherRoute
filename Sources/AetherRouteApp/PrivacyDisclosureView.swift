@@ -41,8 +41,6 @@ struct PrivacyDisclosureView: View {
             }
         } header: {
             Text(AppLocalization.string("Privacy"))
-        } footer: {
-            Text(AppLocalization.string("How AetherRoute handles network data"))
         }
     }
 

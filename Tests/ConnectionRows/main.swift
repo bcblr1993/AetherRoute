@@ -47,7 +47,24 @@ enum ConnectionRowsRegression {
             reopened[0].id != initial[0].id,
             "A new session reused the closed session's row identity."
         )
-        print("Connection row regression passed: traffic reorder, filter, concurrent duplicates, transport, and new session.")
+        let named = connection("http-intake.logs.datadoghq.com", downloaded: 0)
+        try expect(
+            named.destinationHost == "http-intake.logs.datadoghq.com"
+                && named.destinationAddress == "http-intake.logs.datadoghq.com:443",
+            "A host name must be shown unchanged before its port."
+        )
+        let ipv6 = connection("2001:db8::1", downloaded: 0)
+        try expect(
+            ipv6.destinationHost == "[2001:db8::1]"
+                && ipv6.destinationAddress == "[2001:db8::1]:443",
+            "An IPv6 literal must be bracketed so its port stays unambiguous."
+        )
+        let bracketed = connection("[2001:db8::1]", downloaded: 0)
+        try expect(
+            bracketed.destinationHost == "[2001:db8::1]",
+            "An already bracketed IPv6 literal must not be bracketed twice."
+        )
+        print("Connection row regression passed: traffic reorder, filter, concurrent duplicates, transport, new session, and host formatting.")
     }
 
     private static func connection(

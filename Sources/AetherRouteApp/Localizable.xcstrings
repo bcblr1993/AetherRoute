@@ -10949,17 +10949,6 @@
         }
       }
     },
-    "Keep a backup provider or a separate work setup, and switch between them from the menu bar.": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保留一个备用服务商或单独的工作配置，随时在菜单栏中切换。"
-          }
-        }
-      }
-    },
     "Test Latency": {
       "extractionState": "manual",
       "localizations": {
@@ -11698,6 +11687,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "跟随配置：沿用配置文件中的设置。"
+          }
+        }
+      }
+    },
+    "Imported %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入于 %@"
+          }
+        }
+      }
+    },
+    "Keep a backup provider or a separate work setup and switch between them from the menu bar. Add one with the buttons above, or enter nodes by hand.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留一个备用服务商或单独的工作配置，随时在菜单栏中切换。可用上方按钮添加，也可以手动录入节点。"
           }
         }
       }

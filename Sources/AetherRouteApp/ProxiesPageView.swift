@@ -191,11 +191,10 @@ struct ProxiesView: View {
                 Spacer()
             }
         }
-        .padding(AetherVisual.s3)
-        .background(
-            Color(nsColor: .controlBackgroundColor).opacity(0.4),
-            in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius)
-        )
+        // Same inset and surface as the group card above, so the disclosure
+        // lines up with it instead of floating on a near-invisible fill.
+        .padding(AetherVisual.s4)
+        .aetherPanel()
     }
 }
 
@@ -589,6 +588,7 @@ private struct ActiveProxyGroupView: View {
                 ProxyNodeModernCard(
                     name: member,
                     protocolName: proto,
+                    showsLatency: !isBuiltInOutlet(member),
                     status: nodeStatus,
                     confidence: tunnel.latencyConfidence(
                         group: group.name,
@@ -669,9 +669,19 @@ private struct ActiveProxyGroupView: View {
                     member: member
                 ),
                 isSelected: member == selectedMember,
-                isBusy: tunnel.proxySelectionRequests.contains(group.name)
+                isBusy: tunnel.proxySelectionRequests.contains(group.name),
+                showsLatency: !isBuiltInOutlet(member)
             )
         }
+    }
+
+    /// DIRECT and REJECT are not servers: a delay measured through them says
+    /// nothing about choosing a node, and a slow direct probe read as a fault.
+    /// A profile node of `type: direct` behaves the same under another name.
+    private func isBuiltInOutlet(_ member: String) -> Bool {
+        let outlets: Set<String> = ["DIRECT", "REJECT", "REJECT-DROP"]
+        return outlets.contains(member.uppercased())
+            || outlets.contains(protocols[member]?.uppercased() ?? "")
     }
 
     private var isAutomaticSelectionMode: Bool {
@@ -733,6 +743,7 @@ private struct ProxyNodeModernCard: View {
     @Environment(\.colorScheme) private var colorScheme
     let name: String
     let protocolName: String
+    let showsLatency: Bool
     let status: ProxyLatencyStatus
     let confidence: ProxyLatencyConfidence
     let isSelected: Bool
@@ -792,11 +803,13 @@ private struct ProxyNodeModernCard: View {
 
                         Spacer(minLength: AetherVisual.s1)
 
-                        AetherLatencyPill(
-                            status: status,
-                            confidence: confidence,
-                            onTap: onTest
-                        )
+                        if showsLatency {
+                            AetherLatencyPill(
+                                status: status,
+                                confidence: confidence,
+                                onTap: onTest
+                            )
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -900,9 +913,17 @@ private struct ProxyNodeRow: View {
             .accessibilityLabel(row.member)
             .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
 
-            AetherLatencyPill(status: row.status, confidence: row.confidence, onTap: onTest)
-                .help(measuredAt?.formatted(date: .abbreviated, time: .standard) ?? AppLocalization.string("Untested"))
-                .frame(minWidth: 76, alignment: .trailing)
+            Group {
+                if row.showsLatency {
+                    AetherLatencyPill(status: row.status, confidence: row.confidence, onTap: onTest)
+                        .help(measuredAt?.formatted(date: .abbreviated, time: .standard) ?? AppLocalization.string("Untested"))
+                } else {
+                    // Keeps the protocol badge where it sits on other rows;
+                    // a bare Color would take all the free width instead.
+                    Color.clear.frame(width: 76, height: 1)
+                }
+            }
+            .frame(minWidth: 76, alignment: .trailing)
         }
         .padding(.horizontal, AetherVisual.s2)
         .padding(.vertical, AetherVisual.s2)
@@ -935,6 +956,7 @@ private struct ProxyMemberTableItem: Identifiable {
     let confidence: ProxyLatencyConfidence
     let isSelected: Bool
     let isBusy: Bool
+    let showsLatency: Bool
 
     var id: String { member }
 }

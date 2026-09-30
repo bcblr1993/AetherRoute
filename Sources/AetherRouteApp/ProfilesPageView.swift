@@ -687,37 +687,25 @@ struct ProfilesView: View {
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 Text(AppLocalization.string("Add another profile"))
                     .font(.headline)
-                Text(AppLocalization.string("Keep a backup provider or a separate work setup, and switch between them from the menu bar."))
+                Text(AppLocalization.string("Keep a backup provider or a separate work setup and switch between them from the menu bar. Add one with the buttons above, or enter nodes by hand."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: AetherVisual.s3)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: AetherVisual.s2) { addProfileButtons }
-                VStack(alignment: .trailing, spacing: AetherVisual.s2) { addProfileButtons }
+            // The header already offers subscriptions and profile files;
+            // manual nodes are only in its More menu, so surface them here.
+            Button("Add Node…", systemImage: "plus") {
+                tunnel.clearProfileMessage()
+                isManualNodeEditorPresented = true
             }
+            .disabled(!tunnel.canImportOrAddProfile)
+            .accessibilityIdentifier("profiles-add-another-node")
         }
         .padding(AetherVisual.s4)
         .featureCard()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profiles-add-another")
-    }
-
-    @ViewBuilder
-    private var addProfileButtons: some View {
-        Button(AppLocalization.string("Add Subscription…")) {
-            isSubscriptionEditorPresented = true
-        }
-        .disabled(!tunnel.canImportOrAddProfile)
-        Button(AppLocalization.string("Import Profile…")) {
-            presentFileImporter(.profile)
-        }
-        .disabled(!tunnel.canImportOrAddProfile)
-        Button(AppLocalization.string("Add Node")) {
-            isManualNodeEditorPresented = true
-        }
-        .disabled(!tunnel.canImportOrAddProfile)
     }
 
     private var profileLibraryCard: some View {
@@ -985,11 +973,28 @@ private struct RoutingResourcesCard: View {
         if tunnel.routingResourceMessageIsError {
             return AppLocalization.string("Routing rules need attention. Try preparing them again.")
         }
+        // "Ready" under a "Routing rules" heading repeated the heading; the
+        // age of the data is the one fact worth showing once it is usable.
+        if resourcesAreReady, let installedAt = oldestResourceInstallDate {
+            return String.localizedStringWithFormat(
+                AppLocalization.string("Verified · updated %@"),
+                AppLocalization.date(installedAt, date: .abbreviated, time: .omitted)
+            )
+        }
         return AppLocalization.string(
             resourcesAreReady
                 ? "Routing rules are ready."
                 : "AetherRoute prepares routing rules automatically when you connect."
         )
+    }
+
+    private var oldestResourceInstallDate: Date? {
+        tunnel.requiredRoutingResources.compactMap { kind -> Date? in
+            switch tunnel.routingResourceStatuses[kind] {
+            case let .ready(record)?, let .stale(record)?: record.installedAt
+            default: nil
+            }
+        }.min()
     }
 
     private func resourceRow(_ kind: RoutingResourceKind) -> some View {
@@ -1315,13 +1320,19 @@ private struct ManagedProfileRow: View {
             : (managed.profile.nativeNodes != nil
                 ? AppLocalization.string("Manual nodes")
                 : AppLocalization.string("Local profile"))
-        let importedAt = AppLocalization.date(
-            managed.profile.importedAt,
-            date: .abbreviated,
-            time: .omitted
+        let importedAt = String.localizedStringWithFormat(
+            AppLocalization.string("Imported %@"),
+            AppLocalization.date(
+                managed.profile.importedAt,
+                date: .abbreviated,
+                time: .omitted
+            )
         )
         let updatedAt = managed.profile.subscription?.lastUpdatedAt
-        let updateDetail = updatedAt.map { " · " + AppLocalization.string("Updated") + " " + $0.formatted(date: .abbreviated, time: .shortened) } ?? ""
+        let updateDetail = updatedAt.map {
+            " · " + AppLocalization.string("Updated") + " "
+                + AppLocalization.date($0, date: .abbreviated, time: .shortened)
+        } ?? ""
         let count = managed.profile.nativeNodes?.count ?? inspectedNodeCount
         let nodeDetail = count.map { " · \($0) " + AppLocalization.string("nodes") } ?? ""
         return "\(source) · \(importedAt)\(nodeDetail)\(updateDetail)"

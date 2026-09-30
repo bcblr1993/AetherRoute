@@ -471,10 +471,18 @@ private struct ConnectionDestinationCell: View {
                 .frame(width: 7, height: 7)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text(verbatim: connection.destinationAddress)
-                    .font(.body.weight(.medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                // The registrable domain sits at the right of a host name,
+                // so truncate from the left and keep the port whole:
+                // "…logs.datadoghq.com:443", not "http-intake.logs….com:443".
+                HStack(spacing: 0) {
+                    Text(verbatim: connection.destinationHost)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                    Text(verbatim: ":\(connection.destinationPort)")
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+                .font(.body.weight(.medium))
                 Text(connection.transport == .tcp ? "TCP" : "UDP")
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
@@ -639,11 +647,5 @@ private extension ConnectionTelemetry {
         let kind = ClashRuleKindName.display(rule)
         let payload = rulePayload.trimmingCharacters(in: .whitespaces)
         return payload.isEmpty ? kind : "\(kind) \(payload)"
-    }
-
-    var destinationAddress: String {
-        let host = destination.contains(":") && !destination.hasPrefix("[")
-            ? "[\(destination)]" : destination
-        return "\(host):\(destinationPort)"
     }
 }

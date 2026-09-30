@@ -41,3 +41,15 @@ struct ConnectionTableItem: Identifiable {
         }
     }
 }
+
+extension ConnectionTelemetry {
+    /// The host as it appears before ":port": IPv6 literals are bracketed.
+    var destinationHost: String {
+        destination.contains(":") && !destination.hasPrefix("[")
+            ? "[\(destination)]" : destination
+    }
+
+    var destinationAddress: String {
+        "\(destinationHost):\(destinationPort)"
+    }
+}

@@ -96,6 +96,9 @@ struct BypassRulesSection: View {
                     AppWindowManager.shared.showMainWindow()
                 }
                 .buttonStyle(.link)
+                // The footer's secondary style otherwise paints the link
+                // gray, so it read as one more line of footnote text.
+                .foregroundStyle(Color.accentColor)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
