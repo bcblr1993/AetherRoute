@@ -1210,7 +1210,7 @@ private struct ConnectionControlBar: View {
 }
 
 #if AETHERROUTE_INDEPENDENT
-private struct NetworkEngineSegmentedControl: NSViewRepresentable {
+struct NetworkEngineSegmentedControl: NSViewRepresentable {
     @Binding var selection: NetworkEngineMode
     let isEnabled: Bool
 
@@ -1266,7 +1266,7 @@ private struct NetworkEngineSegmentedControl: NSViewRepresentable {
 }
 #endif
 
-private struct RoutingModeSegmentedControl: NSViewRepresentable {
+struct RoutingModeSegmentedControl: NSViewRepresentable {
     @Binding var selection: RoutingMode
     let isEnabled: Bool
 

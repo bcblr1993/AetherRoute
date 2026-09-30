@@ -680,8 +680,7 @@ private struct MenuBarContent: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var showingNodes = false
     @State private var isMenuVisible = false
-    @State private var copiedTerminalCommand: Bool = false
-    @State private var clearedTerminalCommand: Bool = false
+    @State private var copiedMessage: String?
     let telemetry: NetworkTelemetryViewModel
 
     var body: some View {
@@ -722,37 +721,13 @@ private struct MenuBarContent: View {
         }
     }
 
+    /// Laid out like a Control Center module: state and the switch first,
+    /// then the exit people change most, then modes; terminal helpers and
+    /// app commands live in the overflow menu.
     private var readyContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 1. 顶部品牌与连接状态指示
-            HStack(spacing: AetherVisual.s3) {
-                AetherRouteBrandTile(size: 28, isActive: tunnel.isConnected)
-
-                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    HStack(spacing: AetherVisual.sCompact) {
-                        Text("AetherRoute")
-                            .font(.body.weight(.bold))
-                            .foregroundStyle(.primary)
-
-                        AetherStatusBeacon(
-                            isConnected: tunnel.isConnected,
-                            isConnecting: tunnel.state == .connecting,
-                            size: 6
-                        )
-                    }
-
-                    Text(tunnel.statusTitle)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(tunnel.isConnected ? Color.green : Color.secondary)
-                        .lineLimit(1)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, AetherVisual.s4)
-            .padding(.top, AetherVisual.sRow)
-            .padding(.bottom, AetherVisual.sRow)
-
-            Divider()
+            header
+                .padding(AetherVisual.s4)
 
             if tunnel.isConnected {
                 HStack(spacing: AetherVisual.s3) {
@@ -760,250 +735,249 @@ private struct MenuBarContent: View {
                     MenuLiveTrafficMetric(title: "Upload", symbol: "arrow.up", metric: .upload, telemetry: telemetry, isLive: isMenuVisible)
                     MenuLiveTrafficMetric(title: "Connections", symbol: "point.3.connected.trianglepath.dotted", metric: .connections, telemetry: telemetry, isLive: isMenuVisible)
                 }
-                .padding(AetherVisual.s4)
-                Divider()
+                .padding(.horizontal, AetherVisual.s4)
+                .padding(.bottom, AetherVisual.s3)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
-            // 3. 核心控制与节点选择
-            VStack(spacing: AetherVisual.s3) {
-#if AETHERROUTE_INDEPENDENT
-                HStack(spacing: AetherVisual.s2) {
-                    Text(AppLocalization.string("Engine"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 52, alignment: .leading)
-                    Picker("Network engine", selection: networkEngineBinding) {
-                        ForEach(NetworkEngineMode.allCases) { mode in
-                            Text(mode.localizedTitleKey).tag(mode)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: .infinity)
-                    .controlSize(.regular)
-                    .disabled(!tunnel.canChangeNetworkEngine)
-                }
-#endif
+            Divider()
 
-                HStack(spacing: AetherVisual.s2) {
-                    Text(AppLocalization.string("Routing"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 52, alignment: .leading)
-                    Picker(
-                        "Routing",
-                        selection: Binding(
-                            get: { tunnel.routingMode },
-                            set: { mode in
-                                Task { await tunnel.setRoutingMode(mode) }
-                            }
-                        )
-                    ) {
-                        ForEach(RoutingMode.allCases, id: \.self) { mode in
-                            Text(mode.localizedTitleKey).tag(mode)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: .infinity)
-                    .controlSize(.regular)
-                    .disabled(!tunnel.canChangeRoutingMode)
-                }
-
-
+            VStack(alignment: .leading, spacing: AetherVisual.s4) {
                 if let group = primaryGroup {
-                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                        HStack(spacing: AetherVisual.s2) {
-                            Text(verbatim: group.name.isEmpty ? AppLocalization.string("Current Node") : group.name)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-
-                            if !group.strategy.isEmpty {
-                                Text(verbatim: group.strategy.uppercased())
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(Color.accentColor)
-                                    .padding(.horizontal, AetherVisual.sCompact)
-                                    .padding(.vertical, AetherVisual.sMicro)
-                                    .background(Color.accentColor.opacity(0.12), in: Capsule())
-                            }
-
-                            Spacer()
-
-                            let isTesting = tunnel.proxyLatencyRequests.contains(group.name)
-                            Button {
-                                Task { await tunnel.testProxyLatency(group: group.name) }
-                            } label: {
-                                HStack(spacing: AetherVisual.sMicro) {
-                                    if isTesting {
-                                        ProgressView()
-                                            .controlSize(.mini)
-                                    } else {
-                                        Image(systemName: "bolt.fill")
-                                            .font(.caption2)
-                                    }
-                                    Text(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
-                                        .font(.caption2.weight(.medium))
-                                }
-                                .foregroundStyle(isTesting ? Color.secondary : Color.primary)
-                                .padding(.horizontal, AetherVisual.sCompact)
-                                .padding(.vertical, AetherVisual.sMicro)
-                                .background(Color.secondary.opacity(0.12), in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isTesting)
-                            .help(AppLocalization.string("Test all"))
-                            .accessibilityIdentifier("menu-proxy-speedtest-button")
-                        }
-                        Button {
-                            withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                                showingNodes.toggle()
-                            }
-                        } label: {
-                            HStack(spacing: AetherVisual.s2) {
-                                let member = tunnel.proxySelections[group.name]?.selectedMember
-                                AetherNodeFlag(name: member ?? "")
-                                Text(verbatim: member ?? AppLocalization.string("Select Node"))
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                if let member {
-                                    MenuNodeLatency(
-                                        status: ProxyLatencyStatus.status(
-                                            member: member,
-                                            results: tunnel.proxyLatencies[group.name]?.results,
-                                            isTesting: tunnel.proxyLatencyRequests.contains(group.name)
-                                        ),
-                                        confidence: tunnel.latencyConfidence(
-                                            group: group.name,
-                                            member: member
-                                        )
-                                    )
-                                }
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .rotationEffect(.degrees(showingNodes ? 90 : 0))
-                            }
-                            .padding(AetherVisual.s3)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help(tunnel.proxySelections[group.name]?.selectedMember ?? AppLocalization.string("Select Node"))
-                        .accessibilityIdentifier("menu-proxy-node-selector")
-                        .task(id: "\(group.name):\(tunnel.isConnected)") {
-                            await tunnel.refreshProxySelection(group: group.name)
-                        }
-
-                        if showingNodes {
-                            MenuNodeListInline(group: group) {
-                                withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                                    showingNodes = false
-                                }
-                            }
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                        }
-                    }
+                    exitSection(group)
                 }
-
-                HStack(spacing: AetherVisual.s2) {
-                    Button {
-                        let command = (try? tunnel.localProxySettings.shellEnvironmentCommand())
-                            ?? [
-                                "export HTTP_PROXY=http://127.0.0.1:\(tunnel.localProxySettings.httpPort)",
-                                "export HTTPS_PROXY=http://127.0.0.1:\(tunnel.localProxySettings.httpPort)",
-                                "export ALL_PROXY=socks5h://127.0.0.1:\(tunnel.localProxySettings.socksPort)",
-                                "export http_proxy=\"$HTTP_PROXY\"",
-                                "export https_proxy=\"$HTTPS_PROXY\"",
-                                "export all_proxy=\"$ALL_PROXY\"",
-                                "export NO_PROXY=localhost,127.0.0.1,::1",
-                                "export no_proxy=\"$NO_PROXY\"",
-                            ].joined(separator: "; ")
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(command, forType: .string)
-                        copiedTerminalCommand = true
-                        Task {
-                            try? await Task.sleep(nanoseconds: 2_000_000_000)
-                            copiedTerminalCommand = false
-                        }
-                    } label: {
-                        HStack(spacing: AetherVisual.s1) {
-                            Image(systemName: copiedTerminalCommand ? "checkmark.circle.fill" : "terminal")
-                                .foregroundStyle(copiedTerminalCommand ? Color.green : Color.primary)
-                            Text(copiedTerminalCommand ? AppLocalization.string("Copied") : AppLocalization.string("Copy Proxy Command"))
-                                .lineLimit(1)
-                        }
-                        .font(.caption)
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help(AppLocalization.string("Copy terminal export command to clipboard"))
-                    .accessibilityIdentifier("copy-terminal-proxy-button")
-
-                    Button {
-                        let command = LocalProxySettings.clearShellEnvironmentCommand
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(command, forType: .string)
-                        clearedTerminalCommand = true
-                        Task {
-                            try? await Task.sleep(nanoseconds: 2_000_000_000)
-                            clearedTerminalCommand = false
-                        }
-                    } label: {
-                        HStack(spacing: AetherVisual.s1) {
-                            Image(systemName: clearedTerminalCommand ? "checkmark.circle.fill" : "terminal.fill")
-                                .foregroundStyle(clearedTerminalCommand ? Color.green : Color.primary)
-                            Text(clearedTerminalCommand ? AppLocalization.string("Copied") : AppLocalization.string("Copy Clear Command"))
-                                .lineLimit(1)
-                        }
-                        .font(.caption)
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help(AppLocalization.string("Copy terminal unset command to clipboard"))
-                    .accessibilityIdentifier("clear-terminal-proxy-button")
-                }
-
-                Button {
-                    Task { await tunnel.setEnabled(!tunnel.isEnabled) }
-                } label: {
-                    Label(tunnel.primaryActionTitle, systemImage: "power")
-                        .frame(maxWidth: .infinity)
-                }
-                .controlSize(.large)
-                .buttonStyle(.borderedProminent)
-                .disabled(!tunnel.canPerformPrimaryAction)
+                modeSection
             }
             .padding(AetherVisual.s4)
 
             Divider()
 
-            HStack(spacing: AetherVisual.s3) {
-                Button(AppLocalization.string("Open AetherRoute")) {
-                    AppWindowManager.shared.showMainWindow()
-                }
+            footer
+                .padding(.horizontal, AetherVisual.s4)
+                .padding(.vertical, AetherVisual.sRow)
+        }
+        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.isConnected)
+    }
+
+    private var header: some View {
+        HStack(spacing: AetherVisual.s3) {
+            AetherRouteStatusLens(
+                size: 36,
+                isActive: tunnel.isConnected,
+                isConnecting: isWorking,
+                isFailed: isFailed
+            )
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                Text(verbatim: "AetherRoute")
+                    .font(.headline)
+                Text(tunnel.compactStatusTitle)
+                    .font(.subheadline)
+                    .foregroundStyle(isFailed ? Color.red : Color.secondary)
+                    .contentTransition(.opacity)
+                    .animation(AetherVisual.animation(AetherVisual.quickFade), value: tunnel.compactStatusTitle)
+            }
+            Spacer(minLength: AetherVisual.s2)
+            Toggle(isOn: Binding(
+                get: { tunnel.isEnabled },
+                set: { _ in Task { await tunnel.setEnabled(!tunnel.isEnabled) } }
+            )) {
+                Text(tunnel.primaryActionTitle)
+            }
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.large)
+            .disabled(!tunnel.canPerformPrimaryAction)
+            .help(tunnel.primaryActionTitle)
+            .accessibilityLabel(tunnel.primaryActionTitle)
+            .accessibilityIdentifier("menu-connection-toggle")
+        }
+    }
+
+    private func exitSection(_ group: ProxyGroupConfigurationSummary) -> some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            HStack(spacing: AetherVisual.s2) {
+                Text(AppLocalization.string("Exit"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(verbatim: group.name)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
                 Spacer()
+                let isTesting = tunnel.proxyLatencyRequests.contains(group.name)
                 Button {
-                    SparkleUpdaterController.shared.checkForUpdates()
+                    Task { await tunnel.testProxyLatency(group: group.name) }
                 } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath")
+                    Label {
+                        Text(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
+                    } icon: {
+                        if isTesting {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "bolt")
+                        }
+                    }
+                    .font(.caption)
                 }
                 .buttonStyle(.borderless)
-                .help(AppLocalization.string("Check for Updates…"))
-                .disabled(!SparkleUpdaterController.shared.canCheckForUpdates)
+                .disabled(isTesting)
+                .accessibilityIdentifier("menu-proxy-speedtest-button")
+            }
 
-                Button(AppLocalization.string("Quit")) {
-                    DispatchQueue.main.async { NSApplication.shared.terminate(nil) }
+            Button {
+                withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                    showingNodes.toggle()
                 }
+            } label: {
+                HStack(spacing: AetherVisual.s2) {
+                    let member = tunnel.proxySelections[group.name]?.selectedMember
+                    AetherNodeFlag(name: member ?? "")
+                    Text(verbatim: member ?? AppLocalization.string("Select Node"))
+                        .font(.body.weight(.medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentTransition(.opacity)
+                    if let member {
+                        MenuNodeLatency(
+                            status: ProxyLatencyStatus.status(
+                                member: member,
+                                results: tunnel.proxyLatencies[group.name]?.results,
+                                isTesting: tunnel.proxyLatencyRequests.contains(group.name)
+                            ),
+                            confidence: tunnel.latencyConfidence(group: group.name, member: member)
+                        )
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(showingNodes ? 90 : 0))
+                }
+                .padding(.horizontal, AetherVisual.s3)
+                .padding(.vertical, AetherVisual.s2)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tunnel.proxySelections[group.name]?.selectedMember ?? AppLocalization.string("Select Node"))
+            .accessibilityIdentifier("menu-proxy-node-selector")
+            .task(id: "\(group.name):\(tunnel.isConnected)") {
+                await tunnel.refreshProxySelection(group: group.name)
+            }
+
+            if showingNodes {
+                MenuNodeListInline(group: group) {
+                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                        showingNodes = false
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private var modeSection: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            Text(AppLocalization.string("Routing mode"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            RoutingModeSegmentedControl(
+                selection: Binding(
+                    get: { tunnel.routingMode },
+                    set: { mode in Task { await tunnel.setRoutingMode(mode) } }
+                ),
+                isEnabled: tunnel.canChangeRoutingMode
+            )
+#if AETHERROUTE_INDEPENDENT
+            Text(AppLocalization.string("Network engine"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.top, AetherVisual.s1)
+            NetworkEngineSegmentedControl(
+                selection: networkEngineBinding,
+                isEnabled: tunnel.canChangeNetworkEngine
+            )
+#endif
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: AetherVisual.s3) {
+            Button(AppLocalization.string("Open AetherRoute")) {
+                AppWindowManager.shared.showMainWindow()
             }
             .buttonStyle(.borderless)
-            .font(.caption)
-            .padding(.horizontal, AetherVisual.s4)
-            .padding(.vertical, AetherVisual.sRow)
+            if let copiedMessage {
+                Label(copiedMessage, systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .transition(.opacity)
+            }
+            Spacer()
+            Menu {
+                Button(AppLocalization.string("Copy Proxy Command"), systemImage: "terminal") {
+                    copy(terminalProxyCommand)
+                }
+                .accessibilityIdentifier("copy-terminal-proxy-button")
+                Button(AppLocalization.string("Copy Clear Command"), systemImage: "terminal.fill") {
+                    copy(LocalProxySettings.clearShellEnvironmentCommand)
+                }
+                .accessibilityIdentifier("clear-terminal-proxy-button")
+                Divider()
+                Button(AppLocalization.string("Check for Updates…"), systemImage: "arrow.triangle.2.circlepath") {
+                    SparkleUpdaterController.shared.checkForUpdates()
+                }
+                .disabled(!SparkleUpdaterController.shared.canCheckForUpdates)
+                Divider()
+                Button(AppLocalization.string("Quit"), systemImage: "power") {
+                    DispatchQueue.main.async { NSApplication.shared.terminate(nil) }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel(AppLocalization.string("More"))
         }
+        .font(.callout)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: copiedMessage)
+    }
+
+    private var terminalProxyCommand: String {
+        (try? tunnel.localProxySettings.shellEnvironmentCommand())
+            ?? [
+                "export HTTP_PROXY=http://127.0.0.1:\(tunnel.localProxySettings.httpPort)",
+                "export HTTPS_PROXY=http://127.0.0.1:\(tunnel.localProxySettings.httpPort)",
+                "export ALL_PROXY=socks5h://127.0.0.1:\(tunnel.localProxySettings.socksPort)",
+                "export http_proxy=\"$HTTP_PROXY\"",
+                "export https_proxy=\"$HTTPS_PROXY\"",
+                "export all_proxy=\"$ALL_PROXY\"",
+                "export NO_PROXY=localhost,127.0.0.1,::1",
+                "export no_proxy=\"$NO_PROXY\"",
+            ].joined(separator: "; ")
+    }
+
+    private func copy(_ command: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+        copiedMessage = AppLocalization.string("Copied")
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            copiedMessage = nil
+        }
+    }
+
+    private var isWorking: Bool {
+        if tunnel.isSwitchingNetworkEngine { return true }
+        switch tunnel.state {
+        case .connecting, .recovering, .disconnecting: return true
+        default: return false
+        }
+    }
+
+    private var isFailed: Bool {
+        if case .failed = tunnel.state { return true }
+        return false
     }
 
     private var primaryGroup: ProxyGroupConfigurationSummary? {

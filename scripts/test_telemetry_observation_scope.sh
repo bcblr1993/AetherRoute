@@ -50,10 +50,10 @@ printf '%s\n' "$control_bar" | grep -E '^[[:space:]]*Picker\(' >/dev/null \
   && fail "overview segmented controls must not use SwiftUI Picker"
 printf '%s\n' "$control_bar" | grep -F '.pickerStyle(.segmented)' >/dev/null \
   && fail "overview segmented controls must not use SwiftUI segmented style"
-grep -F 'private struct NetworkEngineSegmentedControl: NSViewRepresentable' \
+grep -F 'struct NetworkEngineSegmentedControl: NSViewRepresentable' \
   "$CONTENT" >/dev/null \
   || fail "network engine segmented control must use stable AppKit storage"
-grep -F 'private struct RoutingModeSegmentedControl: NSViewRepresentable' \
+grep -F 'struct RoutingModeSegmentedControl: NSViewRepresentable' \
   "$CONTENT" >/dev/null \
   || fail "routing segmented control must use stable AppKit storage"
 test "$(grep -Fc 'let control = NSSegmentedControl(' "$CONTENT")" -eq 2 \
