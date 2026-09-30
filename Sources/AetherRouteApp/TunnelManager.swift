@@ -24,10 +24,10 @@ enum NetworkEngineMode: String, CaseIterable, Identifiable, Sendable {
     var localizedDetail: String {
         switch self {
         case .transparent:
-            AppLocalization.string("Routes supported app traffic as TCP and UDP flows")
+            AppLocalization.string("Takes over each app's connections. Most compatible; recommended for everyday use.")
 #if AETHERROUTE_INDEPENDENT
         case .tun:
-            AppLocalization.string("Routes IPv4 and IPv6 packets through Packet Tunnel")
+            AppLocalization.string("Captures all traffic through a virtual network interface and can offer a local proxy for Terminal.")
 #endif
         }
     }

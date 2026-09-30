@@ -1265,6 +1265,8 @@ private struct ConnectionControlBar: View {
                 Text(AppLocalization.string("Network engine"))
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.primary)
+                AetherHelpButton(topic: .networkEngine)
+                    .controlSize(.small)
             }
             NetworkEngineSegmentedControl(
                 selection: Binding(

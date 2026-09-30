@@ -1421,7 +1421,7 @@ final class AetherRouteUITests: XCTestCase {
         )
         XCTAssertFalse(
             app.staticTexts[
-                "Routes supported app traffic as TCP and UDP flows"
+                "Takes over each app's connections. Most compatible; recommended for everyday use."
             ].exists
         )
         XCTAssertTrue(
@@ -1496,7 +1496,7 @@ final class AetherRouteUITests: XCTestCase {
         selectSettingsTab("Network Settings", in: settingsWindow, app: app)
         XCTAssertTrue(
             app.staticTexts[
-                "Routes supported app traffic as TCP and UDP flows"
+                "Takes over each app's connections. Most compatible; recommended for everyday use."
             ].exists
         )
         XCTAssertFalse(app.staticTexts["应用语言"].exists)

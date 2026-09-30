@@ -1,17 +1,8 @@
 import SwiftUI
 
 struct AboutAetherRouteView: View {
-    @Environment(\.locale) private var locale
     @State private var isLicensesPresented = false
 
-    private let authorName = bundleText(
-        for: "AetherRouteAuthorName",
-        fallback: "编程不良人"
-    )
-    private let authorRomanizedName = bundleText(
-        for: "AetherRouteAuthorRomanizedName",
-        fallback: "BianChengBuLiangRen"
-    )
     private let releaseChannel = bundleText(
         for: "AetherRouteReleaseChannel",
         fallback: "development"
@@ -56,10 +47,21 @@ struct AboutAetherRouteView: View {
 
             IndependentDistributionView(isEmbedded: true)
 
+            // Pages that exist on aethernative.com, opened in the browser.
+            Section {
+                linkRow(AppLocalization.string("AetherRoute Website"), systemImage: "safari", url: AetherLinks.product, identifier: "about-link-website")
+                linkRow(AppLocalization.string("What's New in This Version"), systemImage: "sparkles", url: AetherLinks.releaseNotes(version: marketingVersion), identifier: "about-link-release-notes")
+                linkRow(AppLocalization.string("Release History"), systemImage: "clock.arrow.circlepath", url: AetherLinks.releases, identifier: "about-link-releases")
+                linkRow(AppLocalization.string("Privacy Policy"), systemImage: "hand.raised", url: AetherLinks.privacy, identifier: "about-link-privacy")
+                linkRow(AppLocalization.string("Support & Feedback"), systemImage: "questionmark.bubble", url: AetherLinks.support, identifier: "about-link-support")
+            } header: {
+                Text(AppLocalization.string("Learn More"))
+            }
+
             Section {
                 licensesRow
             } footer: {
-                authorFooter
+                productFooter
                     .padding(.top, AetherVisual.s4)
             }
         }
@@ -77,8 +79,11 @@ struct AboutAetherRouteView: View {
                 .padding(.bottom, AetherVisual.s1)
             Text(productDisplayName)
                 .font(.title.weight(.semibold))
-            Text(AppLocalization.string("Private routing, thoughtfully native."))
+            Text(AppLocalization.string("Connect to the world, a little more easily."))
+                .font(.headline)
+            Text(AppLocalization.string("A native, lightweight network connection experience, tuned for Apple silicon."))
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
@@ -133,17 +138,28 @@ struct AboutAetherRouteView: View {
         }
     }
 
-    private var authorFooter: some View {
-        VStack(spacing: AetherVisual.s2) {
-            HStack(spacing: AetherVisual.s1) {
-                Text(AppLocalization.string("Created by"))
-                    .foregroundStyle(.secondary)
-                Text(localizedAuthorName)
-                    .fontWeight(.semibold)
+    private func linkRow(_ title: String, systemImage: String, url: URL, identifier: String) -> some View {
+        Link(destination: url) {
+            HStack {
+                Label(title, systemImage: systemImage)
                     .foregroundStyle(.primary)
-                    .accessibilityIdentifier("about-author-name")
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
-            .font(.callout)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(url.absoluteString)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private var productFooter: some View {
+        VStack(spacing: AetherVisual.s2) {
+            Text(AppLocalization.string("Aether Native · A little more thought for your Mac and iPhone."))
+                .font(.callout)
+                .foregroundStyle(.secondary)
             HStack(spacing: AetherVisual.s3) {
                 Label(AppLocalization.string("Apple silicon"), systemImage: "apple.logo")
                 Label(AppLocalization.string("Native macOS"), systemImage: "swift")
@@ -152,15 +168,7 @@ struct AboutAetherRouteView: View {
             .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(AppLocalization.string("Created by"))
-    }
-
-    private var localizedAuthorName: String {
-        let languageCode = locale.language.languageCode?.identifier ?? "en"
-        return languageCode == "zh"
-            ? authorName
-            : authorRomanizedName
+        .accessibilityElement(children: .combine)
     }
 
     private var productDisplayName: String {

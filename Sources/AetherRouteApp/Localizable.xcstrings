@@ -4936,26 +4936,6 @@
         }
       }
     },
-    "Routes IPv4 and IPv6 packets through Packet Tunnel": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "通过 Packet Tunnel 转发 IPv4 与 IPv6 数据包"
-          }
-        }
-      }
-    },
-    "Routes supported app traffic as TCP and UDP flows": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按 TCP/UDP 连接转发受支持的应用流量"
-          }
-        }
-      }
-    },
     "Routing": {
       "localizations": {
         "zh-Hans": {
@@ -11123,6 +11103,501 @@
           "stringUnit": {
             "state": "translated",
             "value": "查看详情"
+          }
+        }
+      }
+    },
+    "Takes over each app's connections. Most compatible; recommended for everyday use.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按应用接管网络连接，兼容性最好，推荐日常使用。"
+          }
+        }
+      }
+    },
+    "Captures all traffic through a virtual network interface and can offer a local proxy for Terminal.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过虚拟网卡接管全部流量，可为终端提供本地代理。"
+          }
+        }
+      }
+    },
+    "Transparent Proxy or TUN?": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "透明代理还是 TUN？"
+          }
+        }
+      }
+    },
+    "What are TUN runtime overrides?": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "什么是 TUN 运行时覆盖？"
+          }
+        }
+      }
+    },
+    "Transparent Proxy · recommended for most people": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "透明代理 · 推荐大多数人使用"
+          }
+        }
+      }
+    },
+    "Takes over each app's network connections. The simplest choice.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按应用接管网络连接，最省心。"
+          }
+        }
+      }
+    },
+    "Works more easily alongside a company VPN, Tailscale and other network tools.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "和公司 VPN、Tailscale 等其他网络工具更容易同时使用。"
+          }
+        }
+      }
+    },
+    "Bypass rules can use domains and IP ranges.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "绕过规则支持域名和 IP 网段。"
+          }
+        }
+      }
+    },
+    "No local proxy port, so exporting a proxy in Terminal does not work.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不提供本地代理端口，终端里 export 代理用不了。"
+          }
+        }
+      }
+    },
+    "DNS page overrides do not apply; the system DNS is used.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DNS 页的覆盖设置不生效，使用系统 DNS。"
+          }
+        }
+      }
+    },
+    "TUN · when you need to capture all traffic": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TUN · 需要接管全部流量时用"
+          }
+        }
+      }
+    },
+    "Creates a virtual network interface and captures this Mac's IPv4 and IPv6 traffic at the network layer.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建虚拟网卡，在网络层接管这台 Mac 的 IPv4 与 IPv6 流量。"
+          }
+        }
+      }
+    },
+    "Can offer a local HTTP / SOCKS proxy (127.0.0.1:7890) for Terminal and developer tools.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可开启本地 HTTP / SOCKS 代理（127.0.0.1:7890），终端和开发工具可直接使用。"
+          }
+        }
+      }
+    },
+    "DNS behaviour, such as Fake-IP, can be adjusted on the DNS page.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可在 DNS 页调整解析方式（如 Fake-IP）。"
+          }
+        }
+      }
+    },
+    "Bypass rules use IP ranges only, not domains.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "绕过规则只支持 IP 网段，不支持域名。"
+          }
+        }
+      }
+    },
+    "With other software that also uses a virtual interface, such as Tailscale, domain names may fail to resolve.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与 Tailscale 等同样使用虚拟网卡的软件同时开启时，可能出现无法解析域名。"
+          }
+        }
+      }
+    },
+    "How to choose": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "怎么选"
+          }
+        }
+      }
+    },
+    "If unsure, use Transparent Proxy. Switch to TUN when you need a Terminal proxy, want to adjust DNS, or an app does not go through the proxy. You can switch at any time; while connected, AetherRoute reconnects automatically.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不确定就用透明代理。需要终端代理、调整 DNS，或某个程序不走代理时，切换到 TUN。可以随时切换，连接中切换会自动重连。"
+          }
+        }
+      }
+    },
+    "These options adjust DNS behaviour for the TUN engine without editing your profile.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些选项用于调整 TUN 引擎的 DNS 行为，无需修改配置文件。"
+          }
+        }
+      }
+    },
+    "“Profile” keeps whatever the profile file says.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择“配置”表示沿用配置文件中的设置。"
+          }
+        }
+      }
+    },
+    "Changes apply the next time TUN connects. Restore profile defaults at any time.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改在下一次 TUN 连接时生效，随时可以恢复配置默认值。"
+          }
+        }
+      }
+    },
+    "They have no effect with Transparent Proxy, which uses the system DNS.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用透明代理时这些设置不生效，DNS 使用系统解析。"
+          }
+        }
+      }
+    },
+    "Profile: keep the resolution mode from the profile file.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置：沿用配置文件中的解析模式。"
+          }
+        }
+      }
+    },
+    "Normal: return each domain's real IP address. The most compatible.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "普通：返回域名的真实 IP 地址，兼容性最好。"
+          }
+        }
+      }
+    },
+    "Fake-IP: return a placeholder address (198.18.x.x) and route by domain when the connection starts. Faster first connections and more accurate routing; a few apps that rely on real IPs may not work.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fake-IP：先返回一个虚拟地址（198.18.x.x），建立连接时再按域名分流。首次连接更快、分流更准；少数依赖真实 IP 的程序可能不兼容。"
+          }
+        }
+      }
+    },
+    "Redir-host: return the real IP and remember which domain it belongs to for routing.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Redir-host：返回真实 IP，并记住它对应的域名用于分流。"
+          }
+        }
+      }
+    },
+    "If unsure, keep “Profile”.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不确定就保持“配置”。"
+          }
+        }
+      }
+    },
+    "On: IPv6 addresses (AAAA records) may be returned.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启：允许返回 IPv6 地址（AAAA 记录）。"
+          }
+        }
+      }
+    },
+    "Off: only IPv4 addresses are returned. If your network or node does not support IPv6, turning this off avoids slow or failing connections.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭：只返回 IPv4 地址。网络或节点不支持 IPv6 时，关闭可避免连接变慢或失败。"
+          }
+        }
+      }
+    },
+    "Profile: keep the setting from the profile file.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置：沿用配置文件中的设置。"
+          }
+        }
+      }
+    },
+    "On: DNS lookups themselves follow your routing rules and go through the proxy or directly, which reduces interference with overseas domains.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启：DNS 查询本身也按分流规则走代理或直连，可减少境外域名解析被干扰。"
+          }
+        }
+      }
+    },
+    "Off: DNS lookups use the core's direct path, which is quicker.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭：DNS 查询走核心的直连路径，速度更快。"
+          }
+        }
+      }
+    },
+    "Hosts entries in the profile pin a domain to a fixed IP address, like the system hosts file.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置中的 hosts 条目会把指定域名固定解析到指定 IP，类似系统的 hosts 文件。"
+          }
+        }
+      }
+    },
+    "This follows the profile and is shown here for reference; edit the profile to change it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这一项由配置文件决定，这里仅显示状态；如需修改，请编辑配置。"
+          }
+        }
+      }
+    },
+    "Learn more on the AetherRoute website": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在官网了解 AetherRoute"
+          }
+        }
+      }
+    },
+    "Help: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帮助：%@"
+          }
+        }
+      }
+    },
+    "Connect to the world, a little more easily.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接世界，轻松一点。"
+          }
+        }
+      }
+    },
+    "A native, lightweight network connection experience, tuned for Apple silicon.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原生、轻快的网络连接体验，专为 Apple 芯片深度优化。"
+          }
+        }
+      }
+    },
+    "AetherRoute Website": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute 官网"
+          }
+        }
+      }
+    },
+    "What's New in This Version": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本版本更新说明"
+          }
+        }
+      }
+    },
+    "Release History": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历史版本"
+          }
+        }
+      }
+    },
+    "Privacy Policy": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐私政策"
+          }
+        }
+      }
+    },
+    "Support & Feedback": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支持与反馈"
+          }
+        }
+      }
+    },
+    "Learn More": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "了解更多"
+          }
+        }
+      }
+    },
+    "Aether Native · A little more thought for your Mac and iPhone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aether Native · 为你的 Mac 和 iPhone，多想一点。"
           }
         }
       }

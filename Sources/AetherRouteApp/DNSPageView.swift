@@ -358,7 +358,11 @@ struct DNSView: View {
     private func tunRuntimePolicyContent(
         _ dns: DNSConfigurationSummary
     ) -> some View {
-        FeatureSection(title: AppLocalization.string("TUN runtime overrides"), symbol: "slider.horizontal.3") {
+        FeatureSection(
+            title: AppLocalization.string("TUN runtime overrides"),
+            symbol: "slider.horizontal.3",
+            accessory: { AetherHelpButton(topic: .dnsRuntimeOverrides) }
+        ) {
             VStack(spacing: 0) {
                 HStack(spacing: AetherVisual.s3) {
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
@@ -393,7 +397,8 @@ struct DNSView: View {
                     symbol: modeSymbol(dns.mode),
                     tint: modeColor(dns.mode),
                     title: AppLocalization.string("Resolution mode"),
-                    detail: modeDetail(dns.mode)
+                    detail: modeDetail(dns.mode),
+                    help: .dnsResolutionMode
                 ) {
                     Picker("Resolution mode", selection: resolutionModeBinding) {
                         ForEach(DNSRuntimeResolutionMode.allCases, id: \.self) {
@@ -413,7 +418,8 @@ struct DNSView: View {
                     title: AppLocalization.string("IPv6 answers"),
                     detail: dns.allowsIPv6
                         ? AppLocalization.string("AAAA responses are allowed by this profile.")
-                        : AppLocalization.string("AAAA responses are filtered by this profile.")
+                        : AppLocalization.string("AAAA responses are filtered by this profile."),
+                    help: .dnsIPv6
                 ) {
                     dnsBooleanPicker(
                         AppLocalization.string("IPv6 answers"),
@@ -429,7 +435,8 @@ struct DNSView: View {
                     title: AppLocalization.string("Rule-aware queries"),
                     detail: dns.respectsRules
                         ? AppLocalization.string("Upstream queries follow the routing rule engine.")
-                        : AppLocalization.string("Upstream queries use the core's direct DNS path.")
+                        : AppLocalization.string("Upstream queries use the core's direct DNS path."),
+                    help: .dnsRespectRules
                 ) {
                     dnsBooleanPicker(
                         AppLocalization.string("Rule-aware queries"),
@@ -446,6 +453,7 @@ struct DNSView: View {
                     detail: dns.usesHosts
                         ? AppLocalization.string("Profile hosts entries participate in resolution.")
                         : AppLocalization.string("Profile hosts entries are ignored for DNS."),
+                    help: .dnsHosts,
                     canDisable: false
                 ) {
                     Text(
@@ -515,6 +523,7 @@ struct DNSView: View {
         tint: Color,
         title: String,
         detail: String,
+        help: HelpTopic? = nil,
         canDisable: Bool = true,
         @ViewBuilder control: () -> Control
     ) -> some View {
@@ -531,9 +540,14 @@ struct DNSView: View {
                     .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    Text(title)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
+                    HStack(spacing: AetherVisual.s1) {
+                        Text(title)
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.primary)
+                        if let help {
+                            AetherHelpButton(topic: help)
+                        }
+                    }
                     Text(detail)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)

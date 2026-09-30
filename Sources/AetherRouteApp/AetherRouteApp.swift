@@ -972,10 +972,14 @@ private struct MenuBarContent: View {
                 isEnabled: tunnel.canChangeRoutingMode
             )
 #if AETHERROUTE_INDEPENDENT
-            Text(AppLocalization.string("Network engine"))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.top, AetherVisual.s1)
+            HStack(spacing: AetherVisual.s1) {
+                Text(AppLocalization.string("Network engine"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                AetherHelpButton(topic: .networkEngine)
+                    .controlSize(.small)
+            }
+            .padding(.top, AetherVisual.s1)
             NetworkEngineSegmentedControl(
                 selection: networkEngineBinding,
                 isEnabled: tunnel.canChangeNetworkEngine
@@ -1793,6 +1797,7 @@ private struct SettingsView: View {
                 HStack(spacing: AetherVisual.s3) {
                     Text("Traffic capture")
                         .foregroundStyle(.primary)
+                    AetherHelpButton(topic: .networkEngine)
 
                     Spacer(minLength: 12)
 
