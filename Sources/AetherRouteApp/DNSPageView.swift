@@ -23,7 +23,7 @@ struct DNSView: View {
                             systemResolverContent
                         }
                     }
-                    .aetherPageContent(.reading)
+                    .aetherPageContent(.wide)
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel(AppLocalization.string("DNS configuration details"))
                     .accessibilityIdentifier("dns-page-content")
@@ -38,7 +38,7 @@ struct DNSView: View {
                             detail: AppLocalization.string("Import a validated profile to inspect its resolver behavior without exposing server addresses.")
                         )
                     }
-                    .aetherPageContent(.reading)
+                    .aetherPageContent(.wide)
                 }
             }
         }
@@ -402,7 +402,7 @@ struct DNSView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(width: 250)
+                    .fixedSize()
                     .accessibilityIdentifier("dns-runtime-resolution-mode")
                 }
 
@@ -503,10 +503,11 @@ struct DNSView: View {
         }
     }
 
-    /// Below this card width a row cannot hold its description and the
-    /// four-way resolution picker side by side without wrapping the text
-    /// into a narrow column.
-    nonisolated private static let compactPolicyWidth: CGFloat = 600
+    /// Below this card width a row cannot hold its description beside the
+    /// four-way resolution picker, which keeps its natural width (about 350
+    /// points: "Redir-host" sets every segment's width) rather than
+    /// overflowing the card as a fixed 250-point frame did.
+    nonisolated private static let compactPolicyWidth: CGFloat = 720
     private static let policyIconSize: CGFloat = 34
 
     private func dnsPolicyRow<Control: View>(
@@ -569,7 +570,7 @@ struct DNSView: View {
         }
         .labelsHidden()
         .pickerStyle(.segmented)
-        .frame(width: 174)
+        .fixedSize()
         .accessibilityIdentifier(identifier)
     }
 

@@ -193,7 +193,7 @@ extension TunnelManager {
 #if DEBUG
     /// Isolated screenshot review: "start", "waiting", "failed" or "done".
     func installReviewNetworkSetup(_ scenario: String?) {
-        guard let scenario else { return }
+        guard let scenario, !scenario.isEmpty else { return }
         isNetworkSetupRequired = true
         let engines = networkSetupEngines
         func set(_ states: [NetworkSetupStepState]) {

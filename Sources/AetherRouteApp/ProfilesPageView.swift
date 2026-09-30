@@ -297,7 +297,7 @@ struct ProfilesView: View {
                     }
                 }
             }
-            .aetherPageContent(.reading)
+            .aetherPageContent(.wide)
         }
         .fileImporter(
             isPresented: $isFileImporterPresented,

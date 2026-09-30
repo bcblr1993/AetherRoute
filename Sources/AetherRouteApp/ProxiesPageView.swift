@@ -440,7 +440,7 @@ private struct ActiveProxyGroupView: View {
                         }
                         .pickerStyle(.segmented)
                         .controlSize(.small)
-                        .frame(width: 120)
+                        .fixedSize()
                         .disabled(tunnel.proxySelectionRequests.contains(group.name))
                         .accessibilityIdentifier("proxy-selection-mode-\(group.name)")
                     }
