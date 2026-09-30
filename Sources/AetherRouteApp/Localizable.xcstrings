@@ -10344,6 +10344,28 @@
           }
         }
       }
+    },
+    "Latency: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "延迟：%@"
+          }
+        }
+      }
+    },
+    "Tests this node again": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按重新测速"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

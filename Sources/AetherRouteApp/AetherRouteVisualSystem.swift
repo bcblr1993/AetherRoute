@@ -621,6 +621,7 @@ struct AetherLatencyPill: View {
                 Text(displayText)
                     .font(.system(.caption, design: .monospaced, weight: .semibold))
                     .foregroundStyle(.primary)
+                    .contentTransition(.numericText())
 
                 if status.isMeasured, confidence == .verified {
                     // Only the stronger claim is marked. Reachability is the
@@ -640,8 +641,16 @@ struct AetherLatencyPill: View {
                     .stroke(pillColor.opacity(isHovered ? 0.48 : 0.25), lineWidth: 0.5)
             }
             .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
+            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: status)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(
+            String.localizedStringWithFormat(
+                AppLocalization.string("Latency: %@"),
+                status.localizedTitle
+            )
+        )
+        .accessibilityHint(onTap == nil ? "" : AppLocalization.string("Tests this node again"))
         .onHover { hovering in
             if onTap != nil && status != .testing {
                 isHovered = hovering
