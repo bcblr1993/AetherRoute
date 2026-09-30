@@ -1687,7 +1687,6 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["编程不良人"].exists)
         XCTAssertTrue(app.staticTexts["Original design and native macOS development"].exists)
         XCTAssertTrue(app.staticTexts["about-version"].exists)
-        XCTAssertTrue(app.staticTexts["about-release-version"].exists)
         XCTAssertTrue(app.staticTexts["about-release-build"].exists)
         XCTAssertTrue(app.staticTexts["Development"].exists)
         XCTAssertTrue(app.staticTexts["Not released"].exists)

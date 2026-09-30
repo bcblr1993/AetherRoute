@@ -485,23 +485,6 @@ struct SupportDiagnosticsView: View {
                 // 1. Interactive Live Connectivity Diagnostics Card
                 liveDiagnosticsCard
 
-                // 2. Runtime Status Overview Card
-                VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                    Label(tunnel.statusTitle, systemImage: "network")
-                        .font(.headline)
-                    Text(tunnel.statusDetail).font(.callout)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button(AppLocalization.string("View connections")) {
-                        NotificationCenter.default.post(
-                            name: .aetherRouteNavigateToSection,
-                            object: AppSection.connections.rawValue
-                        )
-                        AppWindowManager.shared.showMainWindow()
-                    }
-                }
-                .padding(AetherVisual.s4)
-                .aetherPanel()
-
                 // 3. Export Support Report Card
                 HStack {
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
@@ -651,6 +634,36 @@ struct SupportDiagnosticsView: View {
                     .controlSize(.small)
                     .accessibilityIdentifier("run-diagnostics")
                 }
+            }
+
+            // Current state, with a way to the live flow list: context for
+            // the checks above rather than a card of its own.
+            HStack(spacing: AetherVisual.s2) {
+                AetherStatusBeacon(
+                    isConnected: tunnel.isConnected,
+                    isConnecting: tunnel.state == .connecting,
+                    size: 6
+                )
+                Text(tunnel.compactStatusTitle)
+                    .font(.callout.weight(.medium))
+                Text(tunnel.statusDetail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: AetherVisual.s2)
+                Button {
+                    NotificationCenter.default.post(
+                        name: .aetherRouteNavigateToSection,
+                        object: AppSection.connections.rawValue
+                    )
+                    AppWindowManager.shared.showMainWindow()
+                } label: {
+                    HStack(spacing: AetherVisual.s1) {
+                        Text(AppLocalization.string("View connections"))
+                        Image(systemName: "chevron.right").imageScale(.small)
+                    }
+                }
+                .buttonStyle(.link)
             }
 
             // Staged Pipeline Visualization

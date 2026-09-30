@@ -7,18 +7,27 @@ struct PrivacyDisclosureView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .center, spacing: AetherVisual.s5) {
+            VStack(alignment: .center, spacing: AetherVisual.s6) {
                 disclosureHeader
-                Text("Your configuration stays encrypted on this Mac. Network data is processed locally; diagnostic reports are exported only when you choose.")
-                    .font(.callout).fixedSize(horizontal: false, vertical: true)
-                Button { showsPrivacyDetails.toggle() } label: {
-                    Label("Privacy details", systemImage: showsPrivacyDetails ? "chevron.down" : "chevron.right")
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("privacy-details-toggle")
-                if showsPrivacyDetails {
-                    disclosurePoints
-                    destinationNotice
+                // The three commitments are the page; hiding them behind a
+                // toggle left two thirds of the first-run window empty.
+                disclosurePoints
+                VStack(spacing: AetherVisual.s3) {
+                    Button {
+                        withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) {
+                            showsPrivacyDetails.toggle()
+                        }
+                    } label: {
+                        Label("Privacy details", systemImage: "chevron.right")
+                            .labelStyle(DisclosureLabelStyle(isExpanded: showsPrivacyDetails))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityIdentifier("privacy-details-toggle")
+                    if showsPrivacyDetails {
+                        destinationNotice
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
                 if !usesPinnedConsent {
                     consentStatus
@@ -99,23 +108,12 @@ struct PrivacyDisclosureView: View {
     }
 
     private var disclosurePoints: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(NetworkPrivacyPoint.allCases.enumerated()), id: \.element.id) { index, point in
+        VStack(alignment: .leading, spacing: AetherVisual.s5) {
+            ForEach(NetworkPrivacyPoint.allCases) { point in
                 PrivacyPointRow(point: point)
-                if index < NetworkPrivacyPoint.allCases.count - 1 {
-                    Divider()
-                        .padding(.leading, AetherVisual.wideListIndent + AetherVisual.s4)
-                }
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.65))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-        )
+        .frame(maxWidth: 520, alignment: .leading)
     }
 
     private var destinationNotice: some View {
@@ -247,37 +245,40 @@ private struct PrivacyPointRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: AetherVisual.s4) {
-            ZStack {
-                RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: point.colors,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                Image(systemName: point.symbol)
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 38, height: 38)
-            .accessibilityHidden(true)
+            Image(systemName: point.symbol)
+                .font(.title.weight(.regular))
+                .foregroundStyle(point.colors[0])
+                .frame(width: 40)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(point.title)
-                    .font(.title3.weight(.semibold))
+                    .font(.headline)
                     .foregroundStyle(.primary)
                     .accessibilityValue(Text(point.detail))
                 Text(point.detail)
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityHidden(true)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, AetherVisual.s4)
-        .padding(.vertical, AetherVisual.s3)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A plain disclosure label whose chevron turns as it opens.
+private struct DisclosureLabelStyle: LabelStyle {
+    let isExpanded: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: AetherVisual.s1) {
+            configuration.title
+            configuration.icon
+                .font(.caption.weight(.semibold))
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .animation(AetherVisual.animation(AetherVisual.quickFade), value: isExpanded)
+        }
     }
 }
