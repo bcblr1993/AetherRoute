@@ -716,6 +716,15 @@ private struct MenuBarContent: View {
             }
         }
         .onChange(of: tunnel.activeProfile?.yaml) { _, _ in showingNodes = false }
+#if DEBUG
+        .task {
+            // Isolated screenshot review only: open the node list on launch.
+            if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_PANEL_NODES"] == "1" {
+                try? await Task.sleep(for: .milliseconds(500))
+                showingNodes = true
+            }
+        }
+#endif
         .onAppear {
             AppWindowManager.shared.openWindowAction = { [openWindow] in
                 openWindow(id: "main")
@@ -1108,7 +1117,8 @@ private struct MenuNodeListInline: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            if !orderedMembers.isEmpty {
+            // A short list is faster to scan than to search.
+            if orderedMembers.count > Self.searchThreshold {
                 HStack(spacing: AetherVisual.s1) {
                     Image(systemName: "magnifyingglass")
                         .font(.subheadline)
@@ -1150,9 +1160,14 @@ private struct MenuNodeListInline: View {
                     .frame(maxWidth: .infinity, alignment: .center)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: AetherVisual.s1) {
+                    LazyVStack(spacing: 0) {
                         ForEach(filteredMembers, id: \.self) { member in
-                            Button {
+                            MenuNodeRow(
+                                member: member,
+                                isSelected: member == selectedMember,
+                                status: status(for: member),
+                                confidence: tunnel.latencyConfidence(group: group.name, member: member)
+                            ) {
                                 if member == selectedMember {
                                     onClose()
                                     return
@@ -1162,57 +1177,17 @@ private struct MenuNodeListInline: View {
                                     await tunnel.selectProxy(group: group.name, member: member)
                                     selecting = false
                                 }
-                            } label: {
-                                HStack(spacing: AetherVisual.s2) {
-                                    Image(systemName: "checkmark")
-                                        .font(.subheadline.weight(.bold))
-                                        .foregroundStyle(Color.accentColor)
-                                        .opacity(member == selectedMember ? 1 : 0)
-                                        .frame(width: 14)
-                                    AetherNodeFlag(name: member)
-                                    Text(verbatim: member)
-                                        .font(.caption)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                    MenuNodeLatency(
-                                        status: status(for: member),
-                                        confidence: tunnel.latencyConfidence(
-                                            group: group.name,
-                                            member: member
-                                        )
-                                    )
-                                }
-                                .padding(.horizontal, AetherVisual.s2)
-                                .padding(.vertical, AetherVisual.sCompact)
-                                .background(
-                                    member == selectedMember ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04),
-                                    in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
-                                )
-                                .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
-                            .help(member)
-                            .accessibilityIdentifier("menu-node-\(member)")
-                            .accessibilityAddTraits(member == selectedMember ? .isSelected : [])
                             .disabled(selecting || tunnel.proxySelectionRequests.contains(group.name)
                                 || group.strategy.lowercased() != "select" || unsupported.contains(member))
                         }
                     }
-                    .padding(AetherVisual.s1)
                 }
-                .frame(height: min(CGFloat(max(filteredMembers.count, 1)) * 36, 216))
-                .background(
-                    Color(nsColor: .controlBackgroundColor).opacity(0.4),
-                    in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
-                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
-                )
+                .frame(height: min(CGFloat(filteredMembers.count) * MenuNodeRow.height, MenuNodeRow.height * Self.visibleRows))
+                .scrollBounceBehavior(.basedOnSize)
             }
             if group.strategy.lowercased() != "select" {
-                Text("This group is automatically managed by latency tests.")
+                Text(AppLocalization.string("This group is automatically managed by latency tests."))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -1237,6 +1212,9 @@ private struct MenuNodeListInline: View {
         }
     }
 
+    private static let searchThreshold = 8
+    private static let visibleRows: CGFloat = 7
+
     private func status(for member: String) -> ProxyLatencyStatus {
         if unsupported.contains(member) { return .timedOut }
         return ProxyLatencyStatus.status(
@@ -1250,6 +1228,54 @@ private struct MenuNodeListInline: View {
         orderedMembers = MenuProxyNodeOrder.sorted(
             members: tunnel.proxySelections[group.name]?.members ?? group.members
         )
+    }
+}
+
+/// One node in the menu bar list, styled like a Control Center menu row:
+/// no fill at rest, a highlight under the pointer, and a check for the
+/// current choice.
+private struct MenuNodeRow: View {
+    static let height: CGFloat = 30
+
+    let member: String
+    let isSelected: Bool
+    let status: ProxyLatencyStatus
+    let confidence: ProxyLatencyConfidence
+    let action: () -> Void
+    @State private var isHovered = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: AetherVisual.s2) {
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.accentColor)
+                    .opacity(isSelected ? 1 : 0)
+                    .frame(width: AetherVisual.s3)
+                    .accessibilityHidden(true)
+                AetherNodeFlag(name: member)
+                Text(verbatim: member)
+                    .font(.callout.weight(isSelected ? .semibold : .regular))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                MenuNodeLatency(status: status, confidence: confidence)
+            }
+            .padding(.horizontal, AetherVisual.s2)
+            .frame(height: Self.height)
+            .background(
+                isHovered && isEnabled ? Color.primary.opacity(0.08) : Color.clear,
+                in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
+        .help(member)
+        .accessibilityIdentifier("menu-node-\(member)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
