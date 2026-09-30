@@ -5,22 +5,56 @@ import NetworkExtension
 import OSLog
 
 extension TunnelManager {
-    func setRealtimeTelemetryPreferred(_ preferred: Bool, for source: String = "overview") {
-        if preferred {
+    /// How often a surface needs traffic numbers.
+    enum TelemetryDemand: Equatable {
+        /// Nothing showing traffic is visible; only route health is checked.
+        case none
+        /// Visible, but the app is not frontmost.
+        case background
+        /// Visible and frontmost.
+        case realtime
+    }
+
+    /// Registers what one surface needs. The strongest demand across all
+    /// surfaces decides the polling cadence: 3 s, 10 s, or health checks only.
+    func setTelemetryDemand(_ demand: TelemetryDemand, for source: String) {
+        if demand == .realtime {
             realtimeTelemetrySources.insert(source)
         } else {
             realtimeTelemetrySources.remove(source)
         }
-        let shouldBeRealtime = !realtimeTelemetrySources.isEmpty
-        guard isRealtimeTelemetryPreferred != shouldBeRealtime else { return }
+        if demand == .background {
+            backgroundTelemetrySources.insert(source)
+        } else {
+            backgroundTelemetrySources.remove(source)
+        }
+        let cadence = TelemetryCadence.resolve(
+            realtimeSources: realtimeTelemetrySources.count,
+            backgroundSources: backgroundTelemetrySources.count
+        )
+        let shouldBeRealtime = cadence == .realtime
+        let shouldBeBackground = cadence == .background
+        guard isRealtimeTelemetryPreferred != shouldBeRealtime
+                || isBackgroundTelemetryPreferred != shouldBeBackground
+        else { return }
+        let gainedCadence = (shouldBeRealtime && !isRealtimeTelemetryPreferred)
+            || (shouldBeBackground && !isRealtimeTelemetryPreferred && !isBackgroundTelemetryPreferred)
         isRealtimeTelemetryPreferred = shouldBeRealtime
-        if shouldBeRealtime && state == .connected {
+        isBackgroundTelemetryPreferred = shouldBeBackground
+        if gainedCadence && state == .connected {
+            // Coming back into view: refresh now rather than showing numbers
+            // that may be minutes old until the next tick.
             Task { [weak self] in
                 await self?.refreshTelemetry()
             }
         }
         restartTelemetryPolling()
     }
+
+    func setRealtimeTelemetryPreferred(_ preferred: Bool, for source: String = "overview") {
+        setTelemetryDemand(preferred ? .realtime : .none, for: source)
+    }
+
     func restartTelemetryPolling() {
         stopTelemetryPolling()
         startTelemetryPollingIfNeeded()
@@ -32,38 +66,27 @@ extension TunnelManager {
             !isUIReviewMode,
             telemetryPollingTask == nil
         else { return }
-        let isRealtime = isRealtimeTelemetryPreferred
+        let cadence: TelemetryCadence = if isRealtimeTelemetryPreferred {
+            .realtime
+        } else if isBackgroundTelemetryPreferred {
+            .background
+        } else {
+            .healthOnly
+        }
         telemetryPollingTask = Task { [weak self] in
-            if isRealtime {
-                var secondsUntilAutomaticHealthCheck =
-                    TunnelStartupTimingPolicy.automaticRouteHealthIntervalSeconds
-                while !Task.isCancelled {
-                    do {
-                        try await Task.sleep(
-                            for: .seconds(TunnelStartupTimingPolicy.activeTelemetryPollingIntervalSeconds)
-                        )
-                    } catch {
-                        break
-                    }
-                    guard let self, !Task.isCancelled else { break }
-                    await self.refreshTelemetry()
-                    secondsUntilAutomaticHealthCheck -= TunnelStartupTimingPolicy.activeTelemetryPollingIntervalSeconds
-                    if secondsUntilAutomaticHealthCheck <= 0 {
-                        await self.refreshAutomaticRouteHealth()
-                        secondsUntilAutomaticHealthCheck =
-                            TunnelStartupTimingPolicy.automaticRouteHealthIntervalSeconds
-                    }
+            var schedule = TelemetryPollingSchedule(cadence: cadence)
+            while !Task.isCancelled {
+                let step = schedule.next()
+                do {
+                    try await Task.sleep(for: .seconds(step.sleepSeconds))
+                } catch {
+                    break
                 }
-            } else {
-                while !Task.isCancelled {
-                    do {
-                        try await Task.sleep(
-                            for: .seconds(TunnelStartupTimingPolicy.automaticRouteHealthIntervalSeconds)
-                        )
-                    } catch {
-                        break
-                    }
-                    guard let self, !Task.isCancelled else { break }
+                guard let self, !Task.isCancelled else { break }
+                if step.refreshesTelemetry {
+                    await self.refreshTelemetry()
+                }
+                if step.checksRouteHealth {
                     await self.refreshAutomaticRouteHealth()
                 }
             }

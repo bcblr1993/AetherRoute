@@ -645,44 +645,8 @@ private struct OverviewView: View {
             ProfileCloudSyncSheet()
                 .environmentObject(tunnel)
         }
-        .onAppear {
-            updateOverviewTelemetryState()
-        }
-        .onDisappear {
-            tunnel.setRealtimeTelemetryPreferred(false, for: "overview")
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didMiniaturizeNotification)) { _ in
-            tunnel.setRealtimeTelemetryPreferred(false, for: "overview")
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didDeminiaturizeNotification)) { _ in
-            updateOverviewTelemetryState()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willHideNotification)) { _ in
-            tunnel.setRealtimeTelemetryPreferred(false, for: "overview")
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didUnhideNotification)) { _ in
-            updateOverviewTelemetryState()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            updateOverviewTelemetryState()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
-            tunnel.setRealtimeTelemetryPreferred(false, for: "overview")
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { _ in
-            updateOverviewTelemetryState()
-        }
+        .telemetryDemand(source: "overview")
         .accessibilityIdentifier("overview-page")
-    }
-
-    private func updateOverviewTelemetryState() {
-        DispatchQueue.main.async {
-            let hasVisibleWindow = NSApplication.shared.isActive && NSApplication.shared.windows.contains { window in
-                window.isVisible && !window.isMiniaturized && !(window is NSPanel)
-                    && window.occlusionState.contains(.visible)
-            }
-            tunnel.setRealtimeTelemetryPreferred(hasVisibleWindow, for: "overview")
-        }
     }
 
     /// Everything below the hero and the mode controls. The hero already
@@ -720,6 +684,7 @@ private struct OverviewView: View {
             TrafficCard(
                 isConnected: tunnel.isConnected,
                 isRealtime: tunnel.isRealtimeTelemetryPreferred,
+                isBackground: tunnel.isBackgroundTelemetryPreferred,
                 telemetry: tunnel.telemetryViewModel
             )
         }
@@ -1680,12 +1645,14 @@ private struct RouteQualityLine: View {
 }
 
 /// Download, upload and connection count, with the last 30 seconds drawn
-/// underneath. When the window is not frontmost the host stops sampling, so
-/// the card says so and freezes the graph instead of letting it drain empty
-/// beside numbers that look live.
+/// underneath. The card states the real refresh cadence: every 3 s when
+/// frontmost, every 10 s when visible behind another app, and paused (graph
+/// frozen at the last sample) when nothing is visible, instead of letting the
+/// graph drain empty beside numbers that look live.
 private struct TrafficCard: View {
     let isConnected: Bool
     let isRealtime: Bool
+    let isBackground: Bool
     let telemetry: NetworkTelemetryViewModel
 
     var body: some View {
@@ -1731,7 +1698,7 @@ private struct TrafficCard: View {
                         legend(color: .cyan, title: "Down")
                         legend(color: .purple, title: "Up")
                     }
-                    LiveTrafficHistoryGraph(model: telemetry, isRealtime: isRealtime)
+                    LiveTrafficHistoryGraph(model: telemetry, isRealtime: isRealtime, isBackground: isBackground)
                 }
                 .padding(AetherVisual.s4)
                 .transition(.opacity)
@@ -1754,6 +1721,7 @@ private struct TrafficCard: View {
 private struct LiveTrafficHistoryGraph: View {
     @ObservedObject var model: NetworkTelemetryViewModel
     let isRealtime: Bool
+    let isBackground: Bool
 
     /// About 24 frames a second: the chart moves roughly one point per
     /// frame, which reads as continuous without redrawing faster than needed.
@@ -1801,6 +1769,8 @@ private struct LiveTrafficHistoryGraph: View {
         Group {
             if isRealtime {
                 Text(AppLocalization.string("Refresh: every 3 seconds"))
+            } else if isBackground {
+                Text(AppLocalization.string("Refresh: every 10 seconds"))
             } else if let lastSample {
                 Text(
                     String.localizedStringWithFormat(
@@ -1816,5 +1786,6 @@ private struct LiveTrafficHistoryGraph: View {
         .foregroundStyle(.secondary)
         .contentTransition(.opacity)
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: isRealtime)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isBackground)
     }
 }

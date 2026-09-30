@@ -318,11 +318,13 @@ final class TunnelManager: ObservableObject {
     var telemetry: NetworkTelemetrySnapshot { telemetryViewModel.snapshot }
     var telemetryUpdatedAt: Date?
     var realtimeTelemetrySources: Set<String> = []
+    var backgroundTelemetrySources: Set<String> = []
+    /// Some surface showing live traffic is frontmost: poll every 3 seconds.
     @Published var isRealtimeTelemetryPreferred = false
+    /// Some surface showing live traffic is visible but the app is not
+    /// frontmost: poll every 10 seconds so the numbers on screen stay true.
+    @Published var isBackgroundTelemetryPreferred = false
 
-    /// Registers or unregisters demand for high-frequency (3s) telemetry.
-    /// When any source demands realtime telemetry, the polling interval switches to 3s
-    /// and immediately triggers a refresh; when all sources clear, it drops back to 10s.
     @Published var localProxySettings: LocalProxySettings
     @Published var localProxySettingsMessage: String? = nil
     @Published var routingMode: RoutingMode {

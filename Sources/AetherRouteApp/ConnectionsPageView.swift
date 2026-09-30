@@ -70,6 +70,9 @@ struct ConnectionsView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AppLocalization.string("Connections"))
         .accessibilityIdentifier("connections-page")
+        // The table and session bar show live traffic too; without this the
+        // list only refreshed while the overview or menu bar was open.
+        .telemetryDemand(source: "connections")
         .sheet(item: $inspectedConnection) { row in
             ConnectionInspector(connection: row.connection)
         }

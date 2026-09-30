@@ -238,3 +238,55 @@ struct DiscardChangesModifier: ViewModifier {
             }
     }
 }
+
+/// Keeps the host's traffic polling matched to what the person can actually
+/// see: every 3 s while this surface is in a frontmost visible window, every
+/// 10 s while it is visible behind another app, and not at all once it is
+/// minimized, hidden, fully covered or navigated away from.
+private struct TelemetryDemandModifier: ViewModifier {
+    @EnvironmentObject private var tunnel: TunnelManager
+    let source: String
+    @State private var isPresented = false
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                isPresented = true
+                update()
+            }
+            .onDisappear {
+                isPresented = false
+                tunnel.setTelemetryDemand(.none, for: source)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didMiniaturizeNotification)) { _ in update() }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didDeminiaturizeNotification)) { _ in update() }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { _ in update() }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didHideNotification)) { _ in update() }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didUnhideNotification)) { _ in update() }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in update() }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in update() }
+    }
+
+    private func update() {
+        // Window and occlusion state settle after the notification that
+        // reported them, so read them on the next turn of the run loop.
+        DispatchQueue.main.async {
+            guard isPresented else { return }
+            let app = NSApplication.shared
+            let hasVisibleWindow = !app.isHidden && app.windows.contains { window in
+                window.isVisible && !window.isMiniaturized && !(window is NSPanel)
+                    && window.occlusionState.contains(.visible)
+            }
+            let demand: TunnelManager.TelemetryDemand =
+                !hasVisibleWindow ? .none : (app.isActive ? .realtime : .background)
+            tunnel.setTelemetryDemand(demand, for: source)
+        }
+    }
+}
+
+extension View {
+    /// Declares that this surface shows live traffic, identified by `source`.
+    func telemetryDemand(source: String) -> some View {
+        modifier(TelemetryDemandModifier(source: source))
+    }
+}
