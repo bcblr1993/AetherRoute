@@ -769,6 +769,29 @@ private struct MenuBarContent: View {
             Divider()
 
             VStack(alignment: .leading, spacing: AetherVisual.s4) {
+                // The switch is disabled in both cases; say why and where to
+                // go instead of leaving a dead end.
+                if tunnel.profiles.isEmpty {
+                    menuNotice(
+                        symbol: "doc.badge.plus",
+                        tint: .secondary,
+                        title: AppLocalization.string("No profile yet"),
+                        detail: AppLocalization.string("Import a profile or add a subscription to connect."),
+                        action: AppLocalization.string("Add Profile"),
+                        section: .profiles
+                    )
+                    .accessibilityIdentifier("menu-no-profile")
+                } else if isFailed {
+                    menuNotice(
+                        symbol: "exclamationmark.triangle.fill",
+                        tint: .red,
+                        title: AppLocalization.string("Could not connect"),
+                        detail: tunnel.statusDetail,
+                        action: AppLocalization.string("Details"),
+                        section: .overview
+                    )
+                    .accessibilityIdentifier("menu-connection-failure")
+                }
                 if let group = primaryGroup {
                     exitSection(group)
                 }
@@ -783,6 +806,43 @@ private struct MenuBarContent: View {
                 .padding(.vertical, AetherVisual.sRow)
         }
         .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.isConnected)
+    }
+
+    /// One line of guidance in the panel's own style: symbol, what is wrong,
+    /// and a link to the page that fixes it.
+    private func menuNotice(
+        symbol: String,
+        tint: Color,
+        title: String,
+        detail: String,
+        action: String,
+        section: AppSection
+    ) -> some View {
+        HStack(alignment: .top, spacing: AetherVisual.s2) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+                .frame(width: AetherVisual.s5)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: AetherVisual.s2)
+            Button(action) {
+                NotificationCenter.default.post(
+                    name: .aetherRouteNavigateToSection,
+                    object: section.rawValue
+                )
+                AppWindowManager.shared.showMainWindow()
+            }
+            .controlSize(.small)
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private var header: some View {

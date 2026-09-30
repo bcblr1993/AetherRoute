@@ -11071,6 +11071,61 @@
           }
         }
       }
+    },
+    "No profile yet": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未导入配置"
+          }
+        }
+      }
+    },
+    "Import a profile or add a subscription to connect.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入配置或添加订阅后即可连接。"
+          }
+        }
+      }
+    },
+    "Add Profile": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加配置"
+          }
+        }
+      }
+    },
+    "Could not connect": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接失败"
+          }
+        }
+      }
+    },
+    "Details": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看详情"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
