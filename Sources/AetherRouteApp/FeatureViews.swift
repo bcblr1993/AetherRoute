@@ -251,6 +251,8 @@ struct DiscardChangesModifier: ViewModifier {
 private struct TelemetryDemandModifier: ViewModifier {
     @EnvironmentObject private var tunnel: TunnelManager
     let source: String
+    /// The strongest demand this surface may ask for.
+    var ceiling: TunnelManager.TelemetryDemand = .realtime
     @State private var isPresented = false
 
     func body(content: Content) -> some View {
@@ -282,8 +284,9 @@ private struct TelemetryDemandModifier: ViewModifier {
                 window.isVisible && !window.isMiniaturized && !(window is NSPanel)
                     && window.occlusionState.contains(.visible)
             }
-            let demand: TunnelManager.TelemetryDemand =
+            var demand: TunnelManager.TelemetryDemand =
                 !hasVisibleWindow ? .none : (app.isActive ? .realtime : .background)
+            if ceiling == .background && demand == .realtime { demand = .background }
             tunnel.setTelemetryDemand(demand, for: source)
         }
     }
@@ -293,5 +296,11 @@ extension View {
     /// Declares that this surface shows live traffic, identified by `source`.
     func telemetryDemand(source: String) -> some View {
         modifier(TelemetryDemandModifier(source: source))
+    }
+
+    /// Keeps a slow (10 s) traffic history while this surface is visible,
+    /// without asking for the 3 s live cadence.
+    func backgroundTelemetryDemand(source: String) -> some View {
+        modifier(TelemetryDemandModifier(source: source, ceiling: .background))
     }
 }

@@ -575,7 +575,10 @@ final class TunnelManager: ObservableObject {
             installReviewProfileCatalog(
                 ProfileCatalog(
                     activeProfileID: managed.id,
-                    profiles: [managed, fallback, office]
+                    // "single" reviews the one-profile library layout.
+                    profiles: environment["AETHERROUTE_UI_REVIEW_PROFILE"] == "single"
+                        ? [managed]
+                        : [managed, fallback, office]
                 )
             )
             if reviewState == "failed" || reviewState == "error" {

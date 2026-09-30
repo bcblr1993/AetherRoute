@@ -13,7 +13,10 @@ enum ProxyLatencyStatus: Equatable {
     case responded(UInt32)
     case timedOut
 
-    /// The handoff keeps the existing 120 / 260 ms thresholds.
+    /// The value is a full URL test through the node (handshake plus a
+    /// request), so a healthy cross-border node reads 250–500 ms. With the
+    /// old 120 / 260 ms bands every such node showed red, which read as a
+    /// fault; red now means genuinely slow.
     enum Band {
         case fast
         case moderate
@@ -22,8 +25,8 @@ enum ProxyLatencyStatus: Equatable {
 
     var band: Band? {
         guard case let .responded(milliseconds) = self else { return nil }
-        if milliseconds <= 120 { return .fast }
-        if milliseconds <= 260 { return .moderate }
+        if milliseconds <= 200 { return .fast }
+        if milliseconds <= 500 { return .moderate }
         return .slow
     }
 

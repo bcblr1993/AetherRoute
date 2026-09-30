@@ -11027,6 +11027,28 @@
           }
         }
       }
+    },
+    "Add another profile": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加更多配置"
+          }
+        }
+      }
+    },
+    "Keep a backup provider or a separate work setup, and switch between them from the menu bar.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留一个备用服务商或单独的工作配置，随时在菜单栏中切换。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

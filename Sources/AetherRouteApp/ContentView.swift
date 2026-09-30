@@ -129,6 +129,10 @@ struct ContentView: View {
                     .transition(.opacity.combined(with: .move(edge: .trailing)))
             } else if tunnel.hasAcceptedPrivacyDisclosure {
                 applicationContent
+                    // Any visible page keeps a 10 s traffic history, so the
+                    // Overview waveform is already drawn when you switch back
+                    // instead of "collecting samples" for several seconds.
+                    .backgroundTelemetryDemand(source: "main-window")
                     .task { await tunnel.prepare() }
                     .task { await tunnel.runSubscriptionUpdateLoop() }
                     .transition(.opacity)

@@ -264,7 +264,8 @@ struct ProfilesView: View {
             VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
                 pageHeader
 
-                if !tunnel.profiles.isEmpty {
+                // A short library is faster to scan than to search.
+                if tunnel.profiles.count > Self.searchThreshold {
                     AetherSearchField(
                         text: $searchText,
                         prompt: AppLocalization.string("Search profiles"),
@@ -285,6 +286,10 @@ struct ProfilesView: View {
                     supportedFormatsCard
                 } else {
                     profileLibraryCard
+
+                    if tunnel.profiles.count == 1 {
+                        addAnotherProfileCard
+                    }
 
                     if !tunnel.requiredRoutingResources.isEmpty {
                         RoutingResourcesCard(
@@ -666,6 +671,55 @@ struct ProfilesView: View {
         }
     }
 
+    private static let searchThreshold = 2
+
+    /// With a single profile the page was mostly empty. Offering the ways
+    /// to add a second one (a backup provider, a work network) fills that
+    /// space with something useful and disappears once there are two.
+    private var addAnotherProfileCard: some View {
+        HStack(alignment: .center, spacing: AetherVisual.s4) {
+            Image(systemName: "square.stack.3d.up.badge.a")
+                .font(.title2)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: AetherVisual.sheetIconSize, height: AetherVisual.sheetIconSize)
+                .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                Text(AppLocalization.string("Add another profile"))
+                    .font(.headline)
+                Text(AppLocalization.string("Keep a backup provider or a separate work setup, and switch between them from the menu bar."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: AetherVisual.s3)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: AetherVisual.s2) { addProfileButtons }
+                VStack(alignment: .trailing, spacing: AetherVisual.s2) { addProfileButtons }
+            }
+        }
+        .padding(AetherVisual.s4)
+        .featureCard()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("profiles-add-another")
+    }
+
+    @ViewBuilder
+    private var addProfileButtons: some View {
+        Button(AppLocalization.string("Add Subscription…")) {
+            isSubscriptionEditorPresented = true
+        }
+        .disabled(!tunnel.canImportOrAddProfile)
+        Button(AppLocalization.string("Import Profile…")) {
+            presentFileImporter(.profile)
+        }
+        .disabled(!tunnel.canImportOrAddProfile)
+        Button(AppLocalization.string("Add Node")) {
+            isManualNodeEditorPresented = true
+        }
+        .disabled(!tunnel.canImportOrAddProfile)
+    }
+
     private var profileLibraryCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center) {
@@ -814,8 +868,8 @@ private struct RoutingResourcesCard: View {
                     Text("Routing rules")
                         .font(.headline)
                     Text(summary)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("routing-rules-summary")
                 }
