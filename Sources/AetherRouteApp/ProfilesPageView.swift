@@ -885,6 +885,7 @@ private struct RoutingResourcesCard: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(!tunnel.canModifyProfiles)
+                    .help(editLockReason ?? "")
                     .accessibilityIdentifier("retry-routing-rules")
                 }
             }
@@ -942,6 +943,15 @@ private struct RoutingResourcesCard: View {
                         !tunnel.canModifyProfiles
                             || tunnel.isUpdatingRoutingResources
                     )
+                    .help(editLockReason ?? "")
+
+                    if let editLockReason {
+                        Label(editLockReason, systemImage: "lock")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("routing-resources-lock-reason")
+                    }
 
                     Text("Bundled rules use DB-IP Lite and V2Fly data. Country rule updates may use MaxMind data through Loyalsoldier. See Open-Source Software for sources and licenses.")
                         .font(.caption)
@@ -954,6 +964,12 @@ private struct RoutingResourcesCard: View {
         .aetherPanel()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("routing-resources-card")
+    }
+
+    /// A running download already shows progress; only explain a lock the
+    /// person cannot see the cause of.
+    private var editLockReason: String? {
+        tunnel.isUpdatingRoutingResources ? nil : tunnel.profileEditLockReason
     }
 
     private var resourcesAreReady: Bool {
@@ -1006,6 +1022,7 @@ private struct RoutingResourcesCard: View {
                 !tunnel.canModifyProfiles
                     || tunnel.isUpdatingRoutingResources
             )
+            .help(editLockReason ?? "")
         }
         .padding(.horizontal, AetherVisual.s5)
         .padding(.vertical, AetherVisual.s3)

@@ -359,18 +359,18 @@ struct DNSView: View {
         _ dns: DNSConfigurationSummary
     ) -> some View {
         FeatureSection(
-            title: AppLocalization.string("TUN runtime overrides"),
+            title: AppLocalization.string("DNS adjustments in TUN mode"),
             symbol: "slider.horizontal.3",
             accessory: { AetherHelpButton(topic: .dnsRuntimeOverrides) }
         ) {
             VStack(spacing: 0) {
                 HStack(spacing: AetherVisual.s3) {
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                        Text(AppLocalization.string("Structured core policy"))
+                        Text(AppLocalization.string("Override the active profile"))
                             .font(.body.weight(.semibold))
                         Text(
                             tunnel.networkEngineMode == .tun
-                                ? AppLocalization.string("Overrides are validated and passed directly to the Rust core when TUN starts.")
+                                ? AppLocalization.string("Changes are validated first and apply the next time you connect with TUN.")
                                 : AppLocalization.string("Select the TUN engine on Overview to edit runtime overrides.")
                         )
                         .font(.subheadline)
@@ -380,7 +380,7 @@ struct DNSView: View {
                     Spacer(minLength: AetherVisual.s3)
                     StatePill(
                         title: tunnel.dnsRuntimePolicy.isInherited
-                            ? AppLocalization.string("Profile")
+                            ? AppLocalization.string("Follow profile")
                             : AppLocalization.string("Customized"),
                         color: tunnel.dnsRuntimePolicy.isInherited
                             ? .secondary
@@ -393,11 +393,16 @@ struct DNSView: View {
                 .padding(AetherVisual.s4)
 
                 Divider().padding(.leading, AetherVisual.s4)
+                let mode = effectiveResolutionMode(dns)
                 dnsPolicyRow(
-                    symbol: modeSymbol(dns.mode),
-                    tint: modeColor(dns.mode),
+                    symbol: modeSymbol(mode),
+                    tint: modeColor(mode),
                     title: AppLocalization.string("Resolution mode"),
-                    detail: modeDetail(dns.mode),
+                    detail: followsProfile(
+                        tunnel.dnsRuntimePolicy.resolutionMode == .inherit,
+                        value: modeTitle(mode),
+                        detail: modeDetail(mode)
+                    ),
                     help: .dnsResolutionMode
                 ) {
                     Picker("Resolution mode", selection: resolutionModeBinding) {
@@ -412,13 +417,22 @@ struct DNSView: View {
                 }
 
                 Divider().padding(.leading, AetherVisual.s4)
+                let allowsIPv6 = tunnel.dnsRuntimePolicy
+                    .effectivePacketTunnelAllowsIPv6(
+                        for: dns,
+                        profileAllowsIPv6: tunnel.activeProfileSummary?.allowsIPv6 == true
+                    )
                 dnsPolicyRow(
                     symbol: "6.circle",
-                    tint: dns.allowsIPv6 ? .accentColor : .secondary,
+                    tint: allowsIPv6 ? .accentColor : .secondary,
                     title: AppLocalization.string("IPv6 answers"),
-                    detail: dns.allowsIPv6
-                        ? AppLocalization.string("AAAA responses are allowed by this profile.")
-                        : AppLocalization.string("AAAA responses are filtered by this profile."),
+                    detail: followsProfile(
+                        tunnel.dnsRuntimePolicy.ipv6 == .inherit,
+                        value: onOffTitle(allowsIPv6),
+                        detail: allowsIPv6
+                            ? AppLocalization.string("AAAA responses are allowed.")
+                            : AppLocalization.string("AAAA responses are filtered.")
+                    ),
                     help: .dnsIPv6
                 ) {
                     dnsBooleanPicker(
@@ -429,13 +443,19 @@ struct DNSView: View {
                 }
 
                 Divider().padding(.leading, AetherVisual.s4)
+                let respectsRules = tunnel.dnsRuntimePolicy.respectsRules
+                    .resolved(profileValue: dns.respectsRules)
                 dnsPolicyRow(
                     symbol: "arrow.triangle.branch",
-                    tint: dns.respectsRules ? .accentColor : .secondary,
+                    tint: respectsRules ? .accentColor : .secondary,
                     title: AppLocalization.string("Rule-aware queries"),
-                    detail: dns.respectsRules
-                        ? AppLocalization.string("Upstream queries follow the routing rule engine.")
-                        : AppLocalization.string("Upstream queries use the core's direct DNS path."),
+                    detail: followsProfile(
+                        tunnel.dnsRuntimePolicy.respectsRules == .inherit,
+                        value: onOffTitle(respectsRules),
+                        detail: respectsRules
+                            ? AppLocalization.string("Upstream queries follow the routing rule engine.")
+                            : AppLocalization.string("Upstream queries use the core's direct DNS path.")
+                    ),
                     help: .dnsRespectRules
                 ) {
                     dnsBooleanPicker(
@@ -450,25 +470,35 @@ struct DNSView: View {
                     symbol: "house.and.flag",
                     tint: dns.usesHosts ? .blue : .secondary,
                     title: AppLocalization.string("Hosts mapping"),
-                    detail: dns.usesHosts
-                        ? AppLocalization.string("Profile hosts entries participate in resolution.")
-                        : AppLocalization.string("Profile hosts entries are ignored for DNS."),
+                    // Hosts has no override: it always follows the profile,
+                    // so it reads as a fact rather than a lone control.
+                    detail: followsProfile(
+                        true,
+                        value: onOffTitle(dns.usesHosts),
+                        detail: dns.usesHosts
+                            ? AppLocalization.string("Profile hosts entries participate in resolution.")
+                            : AppLocalization.string("Profile hosts entries are ignored for DNS.")
+                    ),
                     help: .dnsHosts,
                     canDisable: false
                 ) {
-                    Text(
-                        dns.usesHosts
-                            ? AppLocalization.string("On")
-                            : AppLocalization.string("Off")
-                    )
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, AetherVisual.s3)
-                    .padding(.vertical, AetherVisual.s1)
-                    .background(
-                        (dns.usesHosts ? Color.accentColor : Color.secondary).opacity(0.12),
-                        in: Capsule()
-                    )
+                    EmptyView()
+                }
+
+                // Saving this card's own change locks it for a moment; that
+                // is not a lock the person needs explained.
+                if tunnel.networkEngineMode == .tun,
+                   !tunnel.isUpdatingDNSRuntimePolicy,
+                   let reason = tunnel.profileEditLockReason {
+                    Divider().padding(.leading, AetherVisual.s4)
+                    Label(reason, systemImage: "lock")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, AetherVisual.s4)
+                        .padding(.vertical, AetherVisual.s3)
+                        .accessibilityIdentifier("dns-runtime-lock-reason")
                 }
 
                 Divider().padding(.leading, AetherVisual.s4)
@@ -623,9 +653,35 @@ struct DNSView: View {
         }
     }
 
+    /// The mode the next TUN session uses: the override, or the profile's.
+    private func effectiveResolutionMode(
+        _ dns: DNSConfigurationSummary
+    ) -> DNSResolutionMode {
+        tunnel.dnsRuntimePolicy.effectivePacketTunnelResolutionMode(for: dns)
+    }
+
+    /// Names the profile's value when a row follows it, so "Follow profile"
+    /// never hides what the profile actually says.
+    private func followsProfile(
+        _ inherits: Bool,
+        value: String,
+        detail: String
+    ) -> String {
+        guard inherits else { return detail }
+        return String.localizedStringWithFormat(
+            AppLocalization.string("Follows profile: %@ · %@"),
+            value,
+            detail
+        )
+    }
+
+    private func onOffTitle(_ isOn: Bool) -> String {
+        isOn ? AppLocalization.string("On") : AppLocalization.string("Off")
+    }
+
     private func runtimeModeTitle(_ mode: DNSRuntimeResolutionMode) -> String {
         switch mode {
-        case .inherit: AppLocalization.string("Profile")
+        case .inherit: AppLocalization.string("Follow profile")
         case .normal: AppLocalization.string("Normal")
         case .fakeIP: AppLocalization.string("Fake-IP")
         case .redirHost: AppLocalization.string("Redir-host")
@@ -634,7 +690,7 @@ struct DNSView: View {
 
     private func runtimeBooleanTitle(_ value: DNSRuntimeBoolean) -> String {
         switch value {
-        case .inherit: AppLocalization.string("Profile")
+        case .inherit: AppLocalization.string("Follow profile")
         case .disabled: AppLocalization.string("Off")
         case .enabled: AppLocalization.string("On")
         }
@@ -890,5 +946,15 @@ private struct DNSCountLabel: View {
         Text(title)
             .foregroundStyle(.primary)
             .frame(minWidth: 80, alignment: .leading)
+    }
+}
+
+private extension DNSRuntimeBoolean {
+    func resolved(profileValue: Bool) -> Bool {
+        switch self {
+        case .inherit: profileValue
+        case .disabled: false
+        case .enabled: true
+        }
     }
 }

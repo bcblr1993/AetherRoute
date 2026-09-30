@@ -3813,16 +3813,6 @@
         }
       }
     },
-    "Overrides are validated and passed directly to the Rust core when TUN starts.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "覆盖策略会经过校验，并在 TUN 启动时直接传入 Rust 核心。"
-          }
-        }
-      }
-    },
     "Overview": {
       "localizations": {
         "zh-Hans": {
@@ -4125,16 +4115,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "在此 Mac 上处理"
-          }
-        }
-      }
-    },
-    "Profile": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "配置"
           }
         }
       }
@@ -5555,16 +5535,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存在加密配置库中"
-          }
-        }
-      }
-    },
-    "Structured core policy": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "结构化核心策略"
           }
         }
       }
@@ -7041,16 +7011,6 @@
         }
       }
     },
-    "TUN runtime overrides": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "TUN 运行时覆盖"
-          }
-        }
-      }
-    },
     "Try adjusting the filter or clearing the search text.": {
       "localizations": {
         "zh-Hans": {
@@ -7822,36 +7782,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "全部动作"
-          }
-        }
-      }
-    },
-    "Direct: %lld": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "直连：%lld"
-          }
-        }
-      }
-    },
-    "Proxy: %lld": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "代理：%lld"
-          }
-        }
-      }
-    },
-    "Reject: %lld": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "拦截：%lld"
           }
         }
       }
@@ -11140,17 +11070,6 @@
         }
       }
     },
-    "What are TUN runtime overrides?": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "什么是 TUN 运行时覆盖？"
-          }
-        }
-      }
-    },
     "Transparent Proxy · recommended for most people": {
       "extractionState": "manual",
       "localizations": {
@@ -11316,17 +11235,6 @@
         }
       }
     },
-    "“Profile” keeps whatever the profile file says.": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择“配置”表示沿用配置文件中的设置。"
-          }
-        }
-      }
-    },
     "Changes apply the next time TUN connects. Restore profile defaults at any time.": {
       "extractionState": "manual",
       "localizations": {
@@ -11345,17 +11253,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用透明代理时这些设置不生效，DNS 使用系统解析。"
-          }
-        }
-      }
-    },
-    "Profile: keep the resolution mode from the profile file.": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "配置：沿用配置文件中的解析模式。"
           }
         }
       }
@@ -11393,17 +11290,6 @@
         }
       }
     },
-    "If unsure, keep “Profile”.": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不确定就保持“配置”。"
-          }
-        }
-      }
-    },
     "On: IPv6 addresses (AAAA records) may be returned.": {
       "extractionState": "manual",
       "localizations": {
@@ -11422,17 +11308,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "关闭：只返回 IPv4 地址。网络或节点不支持 IPv6 时，关闭可避免连接变慢或失败。"
-          }
-        }
-      }
-    },
-    "Profile: keep the setting from the profile file.": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "配置：沿用配置文件中的设置。"
           }
         }
       }
@@ -11598,6 +11473,231 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aether Native · 为你的 Mac 和 iPhone，多想一点。"
+          }
+        }
+      }
+    },
+    "Accept the privacy notice to make changes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先接受隐私说明，才能修改。"
+          }
+        }
+      }
+    },
+    "The connection is changing state…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接状态切换中，请稍候…"
+          }
+        }
+      }
+    },
+    "Can't change while connected. Disconnect to adjust; changes apply on the next connection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接中不能修改。断开连接后可调整，下次连接时生效。"
+          }
+        }
+      }
+    },
+    "Saving other changes…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在保存其他更改…"
+          }
+        }
+      }
+    },
+    "DNS adjustments in TUN mode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TUN 模式下的 DNS 调整"
+          }
+        }
+      }
+    },
+    "Override the active profile": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "覆盖当前配置"
+          }
+        }
+      }
+    },
+    "Changes are validated first and apply the next time you connect with TUN.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改会先校验，下次以 TUN 连接时生效。"
+          }
+        }
+      }
+    },
+    "Follow profile": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟随配置"
+          }
+        }
+      }
+    },
+    "Follows profile: %@ · %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟随配置：%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "AAAA responses are allowed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许 AAAA 响应。"
+          }
+        }
+      }
+    },
+    "AAAA responses are filtered.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "过滤 AAAA 响应。"
+          }
+        }
+      }
+    },
+    "By rule count": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按规则数"
+          }
+        }
+      }
+    },
+    "Direct rules: %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直连规则 %lld"
+          }
+        }
+      }
+    },
+    "Proxy rules: %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理规则 %lld"
+          }
+        }
+      }
+    },
+    "Reject rules: %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒绝规则 %lld"
+          }
+        }
+      }
+    },
+    "Global mode does not match rules; all traffic goes through the proxy.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全局模式下不按规则匹配，所有流量都走代理。"
+          }
+        }
+      }
+    },
+    "Direct mode does not match rules; all traffic connects directly.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直连模式下不按规则匹配，所有流量都直接连接。"
+          }
+        }
+      }
+    },
+    "What are DNS adjustments in TUN mode?": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "什么是 TUN 模式下的 DNS 调整？"
+          }
+        }
+      }
+    },
+    "“Follow profile” keeps whatever the profile file says.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择“跟随配置”表示沿用配置文件中的设置。"
+          }
+        }
+      }
+    },
+    "Follow profile: keep the resolution mode from the profile file.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟随配置：沿用配置文件中的解析模式。"
+          }
+        }
+      }
+    },
+    "If unsure, keep “Follow profile”.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不确定就保持“跟随配置”。"
+          }
+        }
+      }
+    },
+    "Follow profile: keep the setting from the profile file.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟随配置：沿用配置文件中的设置。"
           }
         }
       }

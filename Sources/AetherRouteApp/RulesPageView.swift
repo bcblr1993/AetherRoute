@@ -71,67 +71,96 @@ enum RuleActionFilter: String, CaseIterable, Identifiable {
 }
 
 /// 路由策略出口比例分布条
+/// Shares of the rule list by target. It counts rules, not traffic, and
+/// says so: a long direct list does not mean most traffic goes direct.
 struct RuleDistributionBar: View {
     let directCount: Int
     let proxyCount: Int
     let rejectCount: Int
     let totalCount: Int
+    let routingMode: RoutingMode
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            GeometryReader { proxy in
-                let total = max(totalCount, 1)
-                let directWidth = proxy.size.width * CGFloat(directCount) / CGFloat(total)
-                let proxyWidth = proxy.size.width * CGFloat(proxyCount) / CGFloat(total)
-                let rejectWidth = proxy.size.width * CGFloat(rejectCount) / CGFloat(total)
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                GeometryReader { proxy in
+                    let total = max(totalCount, 1)
+                    let directWidth = proxy.size.width * CGFloat(directCount) / CGFloat(total)
+                    let proxyWidth = proxy.size.width * CGFloat(proxyCount) / CGFloat(total)
+                    let rejectWidth = proxy.size.width * CGFloat(rejectCount) / CGFloat(total)
 
-                HStack(spacing: AetherVisual.sMicro) {
-                    if directCount > 0 {
-                        RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
-                            .fill(Color.green)
-                            .frame(width: max(directWidth - 1, 4))
-                    }
-                    if proxyCount > 0 {
-                        RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
-                            .fill(Color.indigo)
-                            .frame(width: max(proxyWidth - 1, 4))
-                    }
-                    if rejectCount > 0 {
-                        RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
-                            .fill(Color.red)
-                            .frame(width: max(rejectWidth - 1, 4))
+                    HStack(spacing: AetherVisual.sMicro) {
+                        if directCount > 0 {
+                            RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+                                .fill(Color.green)
+                                .frame(width: max(directWidth - 1, 4))
+                        }
+                        if proxyCount > 0 {
+                            RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+                                .fill(Color.indigo)
+                                .frame(width: max(proxyWidth - 1, 4))
+                        }
+                        if rejectCount > 0 {
+                            RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+                                .fill(Color.red)
+                                .frame(width: max(rejectWidth - 1, 4))
+                        }
                     }
                 }
-            }
-            .frame(height: 6)
-            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+                .frame(height: 6)
+                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
 
-            HStack(spacing: AetherVisual.s4) {
-                HStack(spacing: AetherVisual.s1) {
-                    Circle().fill(Color.green).frame(width: 6.5, height: 6.5)
-                    Text(String.localizedStringWithFormat(AppLocalization.string("Direct: %lld"), Int64(directCount)))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.primary)
-                }
+                HStack(spacing: AetherVisual.s4) {
+                    Text("By rule count")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
-                HStack(spacing: AetherVisual.s1) {
-                    Circle().fill(Color.indigo).frame(width: 6.5, height: 6.5)
-                    Text(String.localizedStringWithFormat(AppLocalization.string("Proxy: %lld"), Int64(proxyCount)))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.primary)
-                }
-
-                if rejectCount > 0 {
                     HStack(spacing: AetherVisual.s1) {
-                        Circle().fill(Color.red).frame(width: 6.5, height: 6.5)
-                        Text(String.localizedStringWithFormat(AppLocalization.string("Reject: %lld"), Int64(rejectCount)))
+                        Circle().fill(Color.green).frame(width: 6.5, height: 6.5)
+                        Text(String.localizedStringWithFormat(AppLocalization.string("Direct rules: %lld"), Int64(directCount)))
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.primary)
                     }
-                }
 
-                Spacer()
+                    HStack(spacing: AetherVisual.s1) {
+                        Circle().fill(Color.indigo).frame(width: 6.5, height: 6.5)
+                        Text(String.localizedStringWithFormat(AppLocalization.string("Proxy rules: %lld"), Int64(proxyCount)))
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.primary)
+                    }
+
+                    if rejectCount > 0 {
+                        HStack(spacing: AetherVisual.s1) {
+                            Circle().fill(Color.red).frame(width: 6.5, height: 6.5)
+                            Text(String.localizedStringWithFormat(AppLocalization.string("Reject rules: %lld"), Int64(rejectCount)))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.primary)
+                        }
+                    }
+
+                    Spacer()
+                }
             }
+            // Outside Rule mode the list is not consulted, so the shares
+            // describe nothing that happens to traffic right now.
+            .opacity(routingMode == .rule ? 1 : 0.4)
+            .accessibilityElement(children: .combine)
+
+            if let modeNote {
+                Label(modeNote, systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("rule-distribution-mode-note")
+            }
+        }
+    }
+
+    private var modeNote: String? {
+        switch routingMode {
+        case .rule: nil
+        case .global: AppLocalization.string("Global mode does not match rules; all traffic goes through the proxy.")
+        case .direct: AppLocalization.string("Direct mode does not match rules; all traffic connects directly.")
         }
     }
 }
@@ -185,7 +214,8 @@ struct RulesView: View {
                                     .fixedSize(horizontal: false, vertical: true)
                                 }
                                 RuleDistributionBar(directCount: directCount, proxyCount: proxyCount,
-                                                    rejectCount: rejectCount, totalCount: summary.rules.count)
+                                                    rejectCount: rejectCount, totalCount: summary.rules.count,
+                                                    routingMode: tunnel.routingMode)
                             }
                             .padding(AetherVisual.s4)
                             .featureCard()

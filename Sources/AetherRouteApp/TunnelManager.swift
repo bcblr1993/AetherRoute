@@ -1510,6 +1510,22 @@ final class TunnelManager: ObservableObject {
             && !isSavingConnectionConfiguration
     }
 
+    /// Why `canModifyProfiles` is false, for controls that would otherwise
+    /// sit disabled without explanation. Nil when changes are allowed.
+    var profileEditLockReason: String? {
+        guard !canModifyProfiles else { return nil }
+        if !hasAcceptedPrivacyDisclosure {
+            return AppLocalization.string("Accept the privacy notice to make changes.")
+        }
+        if isTransitioning {
+            return AppLocalization.string("The connection is changing state…")
+        }
+        if isEnabled {
+            return AppLocalization.string("Can't change while connected. Disconnect to adjust; changes apply on the next connection.")
+        }
+        return AppLocalization.string("Saving other changes…")
+    }
+
     var canModifyInactiveProfilesRegardlessOfPrivacy: Bool {
         !isTransitioning
             && !isRefreshingSubscription

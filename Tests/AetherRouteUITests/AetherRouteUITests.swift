@@ -1332,10 +1332,10 @@ final class AetherRouteUITests: XCTestCase {
         )
         app.buttons["DNS"].click()
         XCTAssertTrue(
-            app.staticTexts["TUN runtime overrides"]
+            app.staticTexts["DNS adjustments in TUN mode"]
                 .waitForExistence(timeout: 2)
         )
-        XCTAssertTrue(app.staticTexts["Structured core policy"].exists)
+        XCTAssertTrue(app.staticTexts["Override the active profile"].exists)
         let resolutionMode = app.descendants(matching: .any)[
             "dns-runtime-resolution-mode"
         ]
@@ -2952,16 +2952,21 @@ final class AetherRouteUITests: XCTestCase {
                     XCTAssertEqual(filter.title, "All Actions")
                 }
                 if button == "DNS" {
-                    let runtimePolicy = app.staticTexts["TUN runtime overrides"].exists
+                    let runtimePolicy = app.staticTexts["DNS adjustments in TUN mode"].exists
                     let modeTitle = runtimePolicy ? "Resolution mode" : "Enhanced mode"
                     for _ in 0..<3 {
                         if app.staticTexts[modeTitle].exists { break }
                         app.descendants(matching: .any)["dns-page"]
                             .scroll(byDeltaX: 0, deltaY: 300)
                     }
+                    // The runtime card describes the value TUN will use: the
+                    // review fixture's compatibility default filters AAAA.
+                    let ipv6Detail = runtimePolicy
+                        ? "AAAA responses are filtered."
+                        : "AAAA responses are allowed by this profile."
                     for text in [modeTitle,
                         "Maps names into a synthetic range for deterministic domain routing.",
-                        "IPv6 answers", "AAAA responses are allowed by this profile."] {
+                        "IPv6 answers", ipv6Detail] {
                         XCTAssertTrue(app.staticTexts[text].exists)
                     }
                     if runtimePolicy {

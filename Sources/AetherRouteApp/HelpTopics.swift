@@ -22,7 +22,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .networkEngine: AppLocalization.string("Transparent Proxy or TUN?")
-        case .dnsRuntimeOverrides: AppLocalization.string("What are TUN runtime overrides?")
+        case .dnsRuntimeOverrides: AppLocalization.string("What are DNS adjustments in TUN mode?")
         case .dnsResolutionMode: AppLocalization.string("Resolution mode")
         case .dnsIPv6: AppLocalization.string("IPv6 answers")
         case .dnsRespectRules: AppLocalization.string("Rule-aware queries")
@@ -65,7 +65,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
             [
                 Section(heading: nil, lines: [
                     AppLocalization.string("These options adjust DNS behaviour for the TUN engine without editing your profile."),
-                    AppLocalization.string("\u{201C}Profile\u{201D} keeps whatever the profile file says."),
+                    AppLocalization.string("\u{201C}Follow profile\u{201D} keeps whatever the profile file says."),
                     AppLocalization.string("Changes apply the next time TUN connects. Restore profile defaults at any time."),
                     AppLocalization.string("They have no effect with Transparent Proxy, which uses the system DNS."),
                 ]),
@@ -73,11 +73,11 @@ enum HelpTopic: String, CaseIterable, Identifiable {
         case .dnsResolutionMode:
             [
                 Section(heading: nil, lines: [
-                    AppLocalization.string("Profile: keep the resolution mode from the profile file."),
+                    AppLocalization.string("Follow profile: keep the resolution mode from the profile file."),
                     AppLocalization.string("Normal: return each domain's real IP address. The most compatible."),
                     AppLocalization.string("Fake-IP: return a placeholder address (198.18.x.x) and route by domain when the connection starts. Faster first connections and more accurate routing; a few apps that rely on real IPs may not work."),
                     AppLocalization.string("Redir-host: return the real IP and remember which domain it belongs to for routing."),
-                    AppLocalization.string("If unsure, keep \u{201C}Profile\u{201D}."),
+                    AppLocalization.string("If unsure, keep \u{201C}Follow profile\u{201D}."),
                 ]),
             ]
         case .dnsIPv6:
@@ -85,7 +85,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
                 Section(heading: nil, lines: [
                     AppLocalization.string("On: IPv6 addresses (AAAA records) may be returned."),
                     AppLocalization.string("Off: only IPv4 addresses are returned. If your network or node does not support IPv6, turning this off avoids slow or failing connections."),
-                    AppLocalization.string("Profile: keep the setting from the profile file."),
+                    AppLocalization.string("Follow profile: keep the setting from the profile file."),
                 ]),
             ]
         case .dnsRespectRules:
@@ -93,7 +93,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
                 Section(heading: nil, lines: [
                     AppLocalization.string("On: DNS lookups themselves follow your routing rules and go through the proxy or directly, which reduces interference with overseas domains."),
                     AppLocalization.string("Off: DNS lookups use the core's direct path, which is quicker."),
-                    AppLocalization.string("Profile: keep the setting from the profile file."),
+                    AppLocalization.string("Follow profile: keep the setting from the profile file."),
                 ]),
             ]
         case .dnsHosts:
