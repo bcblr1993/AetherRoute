@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.36 (Build 2026093003)</title>
-            <pubDate>Wed, 30 Sep 2026 15:07:57 +0800</pubDate>
-            <sparkle:version>2026093003</sparkle:version>
-            <sparkle:shortVersionString>1.0.36</sparkle:shortVersionString>
+            <title>Version 1.0.37 (Build 2026093005)</title>
+            <pubDate>Wed, 30 Sep 2026 22:28:42 +0800</pubDate>
+            <sparkle:version>2026093005</sparkle:version>
+            <sparkle:shortVersionString>1.0.37</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,43 +119,41 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.0.36 更新要点</span>
-  <span class="release-badge">Build 2026093003 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.0.37 更新要点</span>
+  <span class="release-badge">Build 2026093005 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🚀 全新界面</span>
+  <span class="section-tag tag-feature">🚀 首次启动引导</span>
   <ul>
-    <li><strong>菜单栏面板重做</strong>：按控制中心样式重新组织，顶部状态与大开关、中部出口节点与测速、下方路由模式与网络引擎；底部显示版本号，有新版本时出现提示标签，菜单栏图标同步显示蓝点。</li>
-    <li><strong>命令面板 ⇧⌘P</strong>：键盘即可连接/断开、切换路由模式与引擎、测速、切换节点、跳转页面。</li>
-    <li><strong>设置精简为 4 个分页</strong>：通用、网络、隐私与诊断、关于，绕过规则并入网络，软件更新与开源许可并入关于。</li>
-    <li><strong>自动组显示实际节点</strong>：url-test 等自动策略组直接显示正在使用的节点，如"Singapore Edge · Auto"。</li>
+    <li><strong>一次完成网络权限</strong>：首次打开时在引导中一次性开启透明代理与 TUN 两个网络扩展并允许配置，之后连接或切换引擎不再被系统弹窗打断。老用户升级不受影响。</li>
+    <li><strong>权限被收回可一键修复</strong>：概览提供"重新设置权限"，打开同一引导页面。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 修复</span>
+  <span class="section-tag tag-fix">🐞 界面修复</span>
   <ul>
-    <li><strong>窄窗口布局</strong>：连接页不再被顶出窗口，代理页节点列表不再截断，DNS 设置行窄窗口下自动换行排布。</li>
-    <li><strong>中文界面英文漏译</strong>：保存、下载并保存、检查更新等按钮与多处弹窗文案恢复中文。</li>
-    <li><strong>流量刷新</strong>：窗口可见但不在前台时按 10 秒刷新，不再停在旧值。</li>
+    <li><strong>设置窗口统一</strong>：四个分页改为同一表单样式，侧栏与主窗口一致。</li>
+    <li><strong>正式版不再显示"测试版本"</strong>，DNS 控件不再溢出，配置与 DNS 页宽度与其他页面一致。</li>
+    <li><strong>时长、延迟配色、新版本提示</strong>统一并更易读；跨境节点延迟不再全部显示红色。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">✨ 验证</span>
   <ul>
-    <li><strong>网络引擎与扩展与 1.0.35 相同</strong>：本版只改动界面层。</li>
-    <li><strong>全量验证通过</strong>：Tart 虚拟机 TUN/透明代理 × 规则/全局/直连 6 项矩阵全部通过；Apple Silicon Mac mini 双模式实测大请求上传、空闲连接复用、SNI 恢复全部通过。</li>
+    <li><strong>网络引擎与扩展与 1.0.36 相同</strong>，本版改动集中在引导与界面层。</li>
+    <li><strong>全量验证通过</strong>：Tart 虚拟机 6 项矩阵全部通过；Apple Silicon Mac mini 双模式大请求上传、空闲连接复用、SNI 恢复全部通过。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.0.36/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.0.37/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.36/AetherRoute-1.0.36-build-2026093003-arm64.dmg"
-                sparkle:edSignature="i0gEGmg+h8i9XZsDIipQ72UTzymh1UtxwQCnm9aUWDLBLcfEOKSx9NKdMQj3of1MkyxiILqO51EGMwzDNgZqDw=="
-                length="24821769"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.37/AetherRoute-1.0.37-build-2026093005-arm64.dmg"
+                sparkle:edSignature="1dQyh7ODDWpoK2h17uiqKB7lLss7PYOlIbjQmFzEaok4WcsZ8QdRacmOwR5jbNpiJAHNUa0lJ9F6/WK6842vCg=="
+                length="24527856"
                 type="application/octet-stream" />
         </item>
     </channel>

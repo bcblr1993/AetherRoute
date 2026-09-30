@@ -4,6 +4,45 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.37] - 2026-09-30
+
+First-run network setup, and an interface consistency pass based on a review of 1.0.36 with real profiles and traffic. The network engine and protocol code are unchanged from 1.0.36.
+
+### Added
+
+- First-run network setup: after the privacy disclosure, a new "Set Up Network Permissions" step installs both network engines' system extensions at once (switched on in a single visit to System Settings › General › Login Items & Extensions › Network Extensions) and saves both configurations (macOS asks to allow each). The main window opens only when both are ready, so connecting or switching engines later never stops for a system prompt. Each engine shows live status (checking, not set up, installing, waiting for you, ready, restart needed, not finished, unavailable) and what to do next; returning from System Settings re-reads what was granted without prompting.
+  - Configurations are saved disabled, so creating the TUN configuration does not switch off another app's VPN; connecting enables it.
+  - An engine blocked by organisation policy does not lock the user out; they continue with the other engine.
+  - Existing installs are not sent through setup. Quitting halfway resumes setup at the next launch. The menu bar, global shortcuts and URL imports cannot connect before setup finishes.
+  - When a permission is later withdrawn, the Overview recovery card offers "Set Up Permissions Again", which opens the same page.
+- Profiles: with a single profile, an "Add another profile" card offers subscription, import and manual node shortcuts; the search field appears from three profiles.
+
+### Changed
+
+- Settings: all four tabs share one grouped form (width, margins, section headers); Privacy & Diagnostics and About are form sections instead of standalone cards and headings; the sidebar matches the main window (body text, gray selection) instead of large bold labels on a blue bar.
+- One duration format across Overview, the Connections session bar and table: the two largest units, abbreviated ("2h 11m", "49m 2s") in the app's language, replacing "02:11:26" and "49m02s".
+- Latency colours: green up to 200 ms and orange up to 500 ms (were 120 / 260 ms). The value is a full URL test through the node, so healthy cross-border nodes no longer all show red.
+- Menu bar update pill: solid accent capsule with white text; it was hard to read on dark menus.
+- Section headings (Proxy groups, Custom rules) and status pills share one component; the Rules page no longer repeats "Custom routing rules" inside its section.
+- The main window keeps a 10-second traffic history on every page, so the Overview graph is drawn immediately when you return to it.
+
+### Fixed
+
+- About showed "Beta" on official releases: the published DMG was repackaged from a notarized candidate built with `AETHERROUTE_RELEASE_CHANNEL = beta` (1.0.34–1.0.36). Release candidates are now built with `AETHERROUTE_CANDIDATE_CHANNEL=stable`, and `package_release_dmg.sh` refuses any other channel.
+- DNS: the four-way resolution mode control overflowed its card; segmented controls now keep their natural width and rows stack below the width they need.
+- Profiles and DNS were narrower than the other pages (720 vs 960 points).
+- In the Connections table only the destination column had a filled background.
+- Bypass rule field showed its example as a row label with an empty field.
+
+### Verified
+
+- Local regression suites: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, `./scripts/test.sh`; 472 unit tests.
+- First-run setup on a reset Tart VM (`macos27`, both extensions uninstalled, configurations and preferences cleared): both extension requests submitted together, both switched on in one System Settings visit, configurations created, setup finished and the main window started normally.
+- Upgrade from 1.0.36 on the physical Mac mini: not gated (`existing=true`), reconnected automatically; release channel `stable`.
+- Tart VM 6-dimension matrix (`macos27`, build 2026093005): all six combinations passed, including idle keep-alive reuse, transparent SNI recovery and the large-upload gate. The three TUN combinations were rerun: the first run queried the configuration by name while a stale "AetherRoute" service left by the manual VM reset still held that name (the tunnel itself was up, `utun4` held the default route); after removing the stale service they passed. VM temporary files were cleaned up.
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`), notarized candidate: TUN — 2 MiB upload in 6.0 s, 6 MiB in 7.0 s, idle keep-alive reuse passed; transparent proxy — 2 MiB in 3.7 s, 6 MiB in 6.4 s, idle keep-alive reuse and SNI recovery passed.
+- Remote arm64 gate `test_remote_arm64.sh fast` passed; the Mac mini's proxy, DNS, route and interface state was identical before and after.
+
 ## [1.0.36] - 2026-09-30
 
 A redesign of the app's interface. The network engine, protocols and extensions are unchanged from 1.0.35.
