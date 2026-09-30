@@ -620,56 +620,34 @@ private struct ActiveProxyGroupView: View {
         .accessibilityLabel(AppLocalization.string("Proxy group members"))
     }
 
-    // MARK: - 节点列表展示 (Table 兼容已有测试标识)
+    // MARK: - Node list
+    //
+    // Rows size to their content. The previous Table had a hard-coded height
+    // (28 pt per row) nested inside the page's scroll view, so taller rows were
+    // clipped and a narrow window grew a horizontal scroller.
     private var nodeList: some View {
-        Table(memberRows) {
-            TableColumn(AppLocalization.string("Name")) { row in
-                Button {
-                    Task {
-                        await tunnel.selectProxy(group: group.name, member: row.member)
-                    }
-                } label: {
-                    Text(row.member)
-                        .help(row.member)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
+        VStack(spacing: 0) {
+            ForEach(Array(memberRows.enumerated()), id: \.element.id) { index, row in
+                if index > 0 {
+                    Divider().padding(.leading, AetherVisual.s6 + AetherVisual.s2)
                 }
-                .buttonStyle(.plain)
-                .disabled(row.isBusy || !isManuallySelectable || isAutomaticSelectionMode)
-                .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
-            }
-            TableColumn(AppLocalization.string("Protocol")) { row in
-                Text(row.protocolName?.uppercased() ?? "—")
-                    .font(.subheadline.monospaced().weight(.semibold))
-                    .foregroundStyle(.primary)
-            }
-            .width(min: 84, ideal: 110, max: 160)
-            TableColumn(AppLocalization.string("Latency")) { row in
-                ProxyLatencyBadge(
-                    status: row.status,
-                    name: nil,
-                    confidence: row.confidence
+                ProxyNodeRow(
+                    row: row,
+                    canSelect: isManuallySelectable && !isAutomaticSelectionMode,
+                    measuredAt: tunnel.latencyMeasuredAt[group.name]?[row.member],
+                    onSelect: {
+                        Task { await tunnel.selectProxy(group: group.name, member: row.member) }
+                    },
+                    onTest: {
+                        Task { await tunnel.testSingleProxyLatency(group: group.name, member: row.member) }
+                    }
                 )
-                .help(tunnel.latencyMeasuredAt[group.name]?[row.member]?.formatted(date: .abbreviated, time: .standard) ?? AppLocalization.string("Untested"))
-                .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .width(88)
-            TableColumn("") { row in
-                Image(systemName: "checkmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .opacity(row.isSelected ? 1 : 0)
-                    .accessibilityHidden(true)
-            }
-            .width(14)
         }
-        .tableStyle(.inset(alternatesRowBackgrounds: false))
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: memberRows.map(\.id))
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(AppLocalization.string("Proxy group members"))
         .accessibilityIdentifier("proxy-group-members-table")
-        .scrollIndicators(.hidden, axes: .horizontal)
-        .environment(\.defaultMinListRowHeight, 28)
-        .frame(height: min(CGFloat(memberRows.count * 28 + 34), 280))
     }
 
     private func memberType(_ member: String) -> String {
@@ -889,6 +867,72 @@ private struct ProxyNodeModernCard: View {
 
 // MARK: - 表格模型
 
+/// One node in the list view: selection, name, protocol and latency on a
+/// single line, with the whole row as the selection target.
+private struct ProxyNodeRow: View {
+    let row: ProxyMemberTableItem
+    let canSelect: Bool
+    let measuredAt: Date?
+    let onSelect: () -> Void
+    let onTest: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: AetherVisual.s3) {
+            Button(action: onSelect) {
+                HStack(spacing: AetherVisual.s3) {
+                    Image(systemName: row.isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.body)
+                        .foregroundStyle(row.isSelected ? Color.accentColor : Color.secondary.opacity(0.5))
+                        .contentTransition(.symbolEffect(.replace))
+                        .frame(width: AetherVisual.s5)
+                        .accessibilityHidden(true)
+                    Text(row.member)
+                        .font(.body.weight(row.isSelected ? .semibold : .regular))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(row.member)
+                    Spacer(minLength: AetherVisual.s2)
+                    if let protocolName = row.protocolName {
+                        AetherProtocolBadge(type: protocolName)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(row.isBusy || !canSelect)
+            .accessibilityLabel(row.member)
+            .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
+
+            AetherLatencyPill(status: row.status, confidence: row.confidence, onTap: onTest)
+                .help(measuredAt?.formatted(date: .abbreviated, time: .standard) ?? AppLocalization.string("Untested"))
+                .frame(minWidth: 76, alignment: .trailing)
+        }
+        .padding(.horizontal, AetherVisual.s2)
+        .padding(.vertical, AetherVisual.s2)
+        .background(
+            row.isSelected
+                ? Color.accentColor.opacity(0.08)
+                : (isHovered ? Color.secondary.opacity(0.08) : Color.clear),
+            in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+        )
+        .onHover { isHovered = $0 }
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: row.isSelected)
+        .contextMenu {
+            Button(AppLocalization.string("Switch to this node"), action: onSelect)
+                .disabled(row.isBusy || !canSelect)
+            Button(AppLocalization.string("Test latency"), action: onTest)
+            Divider()
+            Button(AppLocalization.string("Copy node name")) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(row.member, forType: .string)
+            }
+        }
+    }
+}
+
 private struct ProxyMemberTableItem: Identifiable {
     let member: String
     let protocolName: String?
@@ -898,63 +942,6 @@ private struct ProxyMemberTableItem: Identifiable {
     let isBusy: Bool
 
     var id: String { member }
-}
-
-private struct ProxyLatencyBadge: View {
-    let status: ProxyLatencyStatus
-    let name: String?
-    /// Only meaningful for a measured number; an untested or timed-out row has
-    /// nothing to qualify.
-    var confidence: ProxyLatencyConfidence = .reachability
-
-    var body: some View {
-        HStack(spacing: AetherVisual.s2) {
-            if let name {
-                Text(name)
-                    .font(.caption)
-                    .lineLimit(1)
-            }
-
-            if status == .testing {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                Image(systemName: status.symbol)
-                    .font(.caption2)
-                    .imageScale(.small)
-                    .foregroundStyle(status.tint)
-                    .accessibilityHidden(true)
-            }
-
-            Text(text)
-                .font(.subheadline.monospacedDigit().weight(.semibold))
-                .foregroundStyle(status.isMeasured ? .primary : .secondary)
-
-            if status.isMeasured {
-                Image(systemName: confidence.symbol)
-                    .font(.caption2)
-                    .imageScale(.small)
-                    .foregroundStyle(
-                        confidence == .verified ? Color.accentColor : .secondary
-                    )
-                    .help(confidence.localizedHint)
-                    .accessibilityHidden(true)
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityDescription)
-    }
-
-    private var text: String {
-        status.localizedTitle
-    }
-
-    /// The badge's colour and glyph are never the only cue: the qualifier is
-    /// spoken too, so a measured number is not mistaken for a verified one.
-    private var accessibilityDescription: String {
-        guard status.isMeasured else { return text }
-        return "\(text), \(confidence.localizedHint)"
-    }
 }
 
 private struct ProxyNodeInventory: View {

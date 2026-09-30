@@ -337,9 +337,12 @@ struct ContentView: View {
                             isConnecting: tunnel.state == .connecting || tunnel.state == .recovering || tunnel.isSwitchingNetworkEngine,
                             size: 6
                         )
-                        Text(tunnel.statusTitle)
+                        Text(tunnel.compactStatusTitle)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .contentTransition(.opacity)
+                            .animation(AetherVisual.animation(AetherVisual.quickFade), value: tunnel.compactStatusTitle)
                     }
                 }
 
@@ -617,8 +620,16 @@ private struct OverviewView: View {
         ScrollView {
             VStack(spacing: AetherVisual.sectionSpacing) {
                 AetherPageHeader(.overview)
-                ConnectionHero()
-                ConnectionControlBar(
+                // With nothing to connect yet, getting a profile is the one
+                // thing to do, so it leads; mode controls that cannot act
+                // yet stay out of the way.
+                if needsOnboarding {
+                    onboardingCard
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                ConnectionHero(openProfiles: openProfiles)
+                if !needsOnboarding {
+                    ConnectionControlBar(
                     networkEngineMode: tunnel.networkEngineMode,
                     routingMode: tunnel.routingMode,
                     canChangeNetworkEngine: tunnel.canChangeNetworkEngine,
@@ -629,10 +640,12 @@ private struct OverviewView: View {
                     selectRoutingMode: { mode in
                         Task { await tunnel.setRoutingMode(mode) }
                     }
-                )
+                    )
+                }
                 overviewDetails
             }
             .aetherPageContent(.wide)
+            .animation(AetherVisual.animation(AetherVisual.panelSpring), value: needsOnboarding)
         }
         .sheet(isPresented: $isSubscriptionEditorPresented) {
             SubscriptionEditorSheet(urlText: $subscriptionURL)
@@ -649,43 +662,58 @@ private struct OverviewView: View {
     /// Everything below the hero and the mode controls. The hero already
     /// carries the active outlet and route check, so this only holds what is
     /// shown instead of an outlet (onboarding, the idle route) and traffic.
+    private var needsOnboarding: Bool {
+        tunnel.activeProfile == nil
+            && !tunnel.isConnected
+            && !tunnel.systemExtensionApprovalRequired
+            && tunnel.state != .privacyConsentRequired
+    }
+
+    private var onboardingCard: some View {
+        EmptyProfileOnboardingCard(
+            onAddSubscription: {
+                tunnel.clearProfileMessage()
+                subscriptionURL = ""
+                isSubscriptionEditorPresented = true
+            },
+            onImportProfile: {
+                openProfiles()
+            },
+            onCloudSync: {
+                tunnel.clearProfileMessage()
+                isCloudSyncSheetPresented = true
+            }
+        )
+    }
+
+    /// What follows the hero. Each state shows only what adds information:
+    /// the planned route while idle, live traffic while connected. A failed
+    /// connection explains itself inside the hero instead of repeating
+    /// "unavailable" in three more cards.
     private var overviewDetails: some View {
         VStack(spacing: AetherVisual.sectionSpacing) {
-            if !tunnel.isConnected {
-                if tunnel.activeProfile == nil {
-                    EmptyProfileOnboardingCard(
-                        onAddSubscription: {
-                            tunnel.clearProfileMessage()
-                            subscriptionURL = ""
-                            isSubscriptionEditorPresented = true
-                        },
-                        onImportProfile: {
-                            openProfiles()
-                        },
-                        onCloudSync: {
-                            tunnel.clearProfileMessage()
-                            isCloudSyncSheetPresented = true
-                        }
-                    )
-                } else {
-                    RouteSummary()
-                }
+            if showsRouteSummary {
+                RouteSummary()
+                    .transition(.opacity)
             }
-            if let recoveryPlan = tunnel.recoveryPlan {
-                ConnectionRecoveryCard(
-                    plan: recoveryPlan,
-                    openProfiles: openProfiles
+            if tunnel.isConnected {
+                TrafficCard(
+                    isConnected: tunnel.isConnected,
+                    isRealtime: tunnel.isRealtimeTelemetryPreferred,
+                    isBackground: tunnel.isBackgroundTelemetryPreferred,
+                    telemetry: tunnel.telemetryViewModel
                 )
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
-
-            TrafficCard(
-                isConnected: tunnel.isConnected,
-                isRealtime: tunnel.isRealtimeTelemetryPreferred,
-                isBackground: tunnel.isBackgroundTelemetryPreferred,
-                telemetry: tunnel.telemetryViewModel
-            )
         }
         .frame(maxWidth: .infinity)
+        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.isConnected)
+    }
+
+    private var showsRouteSummary: Bool {
+        guard !tunnel.isConnected, tunnel.activeProfile != nil else { return false }
+        if case .failed = tunnel.state { return false }
+        return true
     }
 }
 
@@ -837,48 +865,37 @@ private struct ActiveOutletRow: View {
     }
 }
 
-private struct ConnectionRecoveryCard: View {
-    @EnvironmentObject private var tunnel: TunnelManager
+/// Why the last connection failed and the next step, shown at the foot of
+/// the hero. Retrying is the hero's own primary button, so this section only
+/// adds what that button cannot: the reason, and a way to the profiles.
+private struct RecoverySection: View {
     let plan: ConnectionRecoveryPlan
     let openProfiles: () -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: AetherVisual.s3) {
-            Image(systemName: "wrench.and.screwdriver.fill")
-                .font(.title3.weight(.semibold))
+            Image(systemName: "wrench.and.screwdriver")
+                .font(.body.weight(.semibold))
                 .foregroundStyle(.orange)
-                .frame(width: 28, height: 28)
-                .background(Color.orange.opacity(0.12), in: Circle())
-
-            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                Text("Recovery Assistant")
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text(recoveryDetail)
-                    .font(.subheadline.weight(.regular))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
+                .accessibilityHidden(true)
+            Text(recoveryDetail)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: AetherVisual.s2)
-
-            HStack(spacing: AetherVisual.s2) {
-                recoveryButton(plan.primaryAction, prominent: true)
-                if let secondaryAction = plan.secondaryAction {
-                    recoveryButton(secondaryAction, prominent: false)
+            if plan.primaryAction == .reviewProfiles || plan.secondaryAction == .reviewProfiles {
+                let button = Button(action: openProfiles) {
+                    Label(AppLocalization.string("Review Profiles"), systemImage: "doc.badge.gearshape")
+                }
+                .accessibilityIdentifier("recovery-reviewProfiles")
+                if plan.primaryAction == .reviewProfiles {
+                    button.buttonStyle(.borderedProminent)
+                } else {
+                    button.buttonStyle(.bordered)
                 }
             }
         }
-        .padding(.horizontal, AetherVisual.s4)
-        .padding(.vertical, AetherVisual.sRow)
-        .background(
-            Color.orange.opacity(0.06),
-            in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-                .stroke(Color.orange.opacity(0.2), lineWidth: 1)
-        }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("connection-recovery-card")
     }
 
@@ -895,53 +912,12 @@ private struct ConnectionRecoveryCard: View {
         }
     }
 
-    @ViewBuilder
-    private func recoveryButton(
-        _ action: ConnectionRecoveryAction,
-        prominent: Bool
-    ) -> some View {
-        let button = Button {
-            perform(action)
-        } label: {
-            Label(actionTitle(action), systemImage: actionSymbol(action))
-        }
-        .controlSize(.large)
-        .accessibilityIdentifier("recovery-\(action.rawValue)")
-
-        if prominent {
-            button.buttonStyle(.borderedProminent)
-        } else {
-            button.buttonStyle(.bordered)
-        }
-    }
-
-    private func perform(_ action: ConnectionRecoveryAction) {
-        switch action {
-        case .retry:
-            Task { await tunnel.setEnabled(true) }
-        case .reviewProfiles:
-            openProfiles()
-        }
-    }
-
-    private func actionTitle(_ action: ConnectionRecoveryAction) -> String {
-        switch action {
-        case .retry: AppLocalization.string("Retry Connection")
-        case .reviewProfiles: AppLocalization.string("Review Profiles")
-        }
-    }
-
-    private func actionSymbol(_ action: ConnectionRecoveryAction) -> String {
-        switch action {
-        case .retry: "arrow.clockwise"
-        case .reviewProfiles: "doc.badge.gearshape"
-        }
-    }
 }
 
 private struct ConnectionHero: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let openProfiles: () -> Void
 
     var body: some View {
         let outlet = ActiveOutlet(tunnel: tunnel)
@@ -968,6 +944,11 @@ private struct ConnectionHero: View {
             if tunnel.isConnected {
                 RouteQualityLine(quality: quality, checkedAt: tunnel.connectionQualityCheckedAt)
                     .transition(.opacity)
+            }
+            if let plan = tunnel.recoveryPlan {
+                Divider()
+                RecoverySection(plan: plan, openProfiles: openProfiles)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(AetherVisual.s5)
@@ -1068,7 +1049,8 @@ private struct ConnectionHero: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .contentTransition(.opacity)
                     .accessibilityHidden(true)
-                if !tunnel.isConnected || tunnel.isAutomaticRouteRecovering || tunnel.isSwitchingNetworkEngine {
+                if (!tunnel.isConnected || tunnel.isAutomaticRouteRecovering || tunnel.isSwitchingNetworkEngine)
+                    && tunnel.recoveryPlan == nil {
                     Label(nextStep, systemImage: nextStepSymbol)
                         .font(.body.weight(.medium))
                         .foregroundStyle(.primary)

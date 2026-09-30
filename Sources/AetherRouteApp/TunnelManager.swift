@@ -1587,6 +1587,29 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    /// One or two words for narrow places (sidebar, menu bar header). The
+    /// full sentence stays in `statusTitle`; a 200 pt sidebar wrapped
+    /// "Traffic routing active" onto two lines.
+    var compactStatusTitle: String {
+        if systemExtensionApprovalRequired {
+            return AppLocalization.string("Needs approval")
+        }
+        if isSwitchingNetworkEngine {
+            return AppLocalization.string("Switching")
+        }
+        return switch state {
+        case .privacyConsentRequired: AppLocalization.string("Privacy review")
+        case .loading: AppLocalization.string("Preparing")
+        case .disconnected: AppLocalization.string("Not connected")
+        case .connecting: AppLocalization.string("Connecting")
+        case .recovering: AppLocalization.string("Recovering")
+        case .connected where isAutomaticRouteRecovering: AppLocalization.string("Recovering")
+        case .connected: AppLocalization.string("Connected")
+        case .disconnecting: AppLocalization.string("Disconnecting")
+        case .failed: AppLocalization.string("Unavailable")
+        }
+    }
+
     var statusDetail: String {
         if systemExtensionApprovalRequired {
             return AppLocalization.string(

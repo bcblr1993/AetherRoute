@@ -1780,8 +1780,10 @@ final class AetherRouteUITests: XCTestCase {
             app.descendants(matching: .any)["connection-recovery-card"]
                 .waitForExistence(timeout: 2)
         )
-        XCTAssertTrue(app.staticTexts["Recovery Assistant"].exists)
-        XCTAssertTrue(app.buttons["Retry Connection"].isEnabled)
+        // Retrying is the hero's primary button; the recovery section adds
+        // the reason and the way to the profiles, without a second retry.
+        XCTAssertTrue(app.buttons["primary-connection-button"].isEnabled)
+        XCTAssertFalse(app.buttons["Retry Connection"].exists)
         XCTAssertTrue(app.buttons["Review Profiles"].isEnabled)
 
         app.buttons["Review Profiles"].click()
