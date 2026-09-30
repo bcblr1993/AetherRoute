@@ -69,6 +69,13 @@ struct ConnectionsView: View {
         // The table and session bar show live traffic too; without this the
         // list only refreshed while the overview or menu bar was open.
         .telemetryDemand(source: "connections")
+#if DEBUG
+        .task {
+            if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_SHEET"] == "inspector" {
+                inspectedConnection = connectionRows.first
+            }
+        }
+#endif
         .sheet(item: $inspectedConnection) { row in
             ConnectionInspector(connection: row.connection)
         }
@@ -270,6 +277,7 @@ struct ConnectionsView: View {
                     && (searchText.isEmpty
                         || $0.connection.destination.localizedCaseInsensitiveContains(searchText)
                         || $0.connection.rule.localizedCaseInsensitiveContains(searchText)
+                        || $0.connection.ruleSummary.localizedCaseInsensitiveContains(searchText)
                         || $0.connection.rulePayload.localizedCaseInsensitiveContains(searchText)
                         || $0.connection.proxyChain.localizedCaseInsensitiveContains(searchText))
             }
@@ -505,11 +513,7 @@ private struct ConnectionRuleCell: View {
             .help(ruleText)
     }
 
-    private var ruleText: String {
-        let payload = connection.rulePayload.trimmingCharacters(in: .whitespaces)
-        guard !payload.isEmpty else { return connection.rule }
-        return "\(connection.rule) \(payload)"
-    }
+    private var ruleText: String { connection.ruleSummary }
 }
 
 private struct ConnectionOutletCell: View {
@@ -597,35 +601,59 @@ private struct ConnectionInspector: View {
     private var destination: String { connection.destinationAddress }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s4) {
-            Text("Connection details").font(.title2.weight(.semibold))
-            Text("Snapshot captured when opened. Values do not refresh here.")
-                .font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 0) {
+            AetherSheetHeader(
+                symbol: connection.transport == .tcp ? "arrow.left.arrow.right" : "dot.radiowaves.left.and.right",
+                title: destination,
+                subtitle: AppLocalization.string("Snapshot captured when opened. Values do not refresh here.")
+            )
+            .padding([.horizontal, .top], AetherVisual.dialogPadding)
+
             Form {
-                LabeledContent("Destination", value: destination)
-                LabeledContent("Transport", value: connection.transport == .tcp ? "TCP" : "UDP")
-                LabeledContent("Matched rule", value: connection.rule)
-                LabeledContent("Rule payload", value: connection.rulePayload)
-                LabeledContent("Outlet chain", value: connection.proxyChain)
-                LabeledContent("Download", value: ByteCountFormatter.string(fromByteCount: Int64(clamping: connection.downloadTotal), countStyle: .file))
-                LabeledContent("Upload", value: ByteCountFormatter.string(fromByteCount: Int64(clamping: connection.uploadTotal), countStyle: .file))
+                Section(AppLocalization.string("Route")) {
+                    LabeledContent(AppLocalization.string("Transport"), value: connection.transport == .tcp ? "TCP" : "UDP")
+                    LabeledContent(AppLocalization.string("Matched rule"), value: connection.ruleSummary)
+                    LabeledContent(AppLocalization.string("Outlet chain"), value: connection.proxyChain)
+                }
+                Section(AppLocalization.string("Traffic")) {
+                    LabeledContent(AppLocalization.string("Download"), value: bytes(connection.downloadTotal))
+                    LabeledContent(AppLocalization.string("Upload"), value: bytes(connection.uploadTotal))
+                }
             }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .scrollDisabled(true)
             .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+
             HStack {
-                Button("Copy destination") {
+                Button(AppLocalization.string("Copy destination"), systemImage: "doc.on.doc") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(connection.destinationAddress, forType: .string)
                 }
                 Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                Button(AppLocalization.string("Done")) { dismiss() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
             }
+            .padding([.horizontal, .bottom], AetherVisual.dialogPadding)
         }
-        .padding(AetherVisual.dialogPadding)
-        .frame(minWidth: 460, idealWidth: 540, maxWidth: 680)
+        .frame(minWidth: AetherVisual.sheetMinWidth, idealWidth: AetherVisual.sheetIdealWidth, maxWidth: AetherVisual.sheetMaxWidth)
+    }
+
+    private func bytes(_ value: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .file)
     }
 }
 
 private extension ConnectionTelemetry {
+    /// "DOMAIN-SUFFIX apple.com", spelled the way the Rules page shows it.
+    var ruleSummary: String {
+        let kind = ClashRuleKindName.display(rule)
+        let payload = rulePayload.trimmingCharacters(in: .whitespaces)
+        return payload.isEmpty ? kind : "\(kind) \(payload)"
+    }
+
     var destinationAddress: String {
         let host = destination.contains(":") && !destination.hasPrefix("[")
             ? "[\(destination)]" : destination

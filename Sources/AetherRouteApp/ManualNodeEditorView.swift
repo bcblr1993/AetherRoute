@@ -58,7 +58,7 @@ struct ManualNodeEditorSheet: View {
                 Button {
                     showsAdvanced.toggle()
                 } label: {
-                    Label("Advanced connection options", systemImage: showsAdvanced ? "chevron.down" : "chevron.right")
+                    Label(AppLocalization.string("Advanced connection options"), systemImage: showsAdvanced ? "chevron.down" : "chevron.right")
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("manual-node-advanced-toggle")
@@ -102,35 +102,15 @@ struct ManualNodeEditorSheet: View {
     }
 
     private var header: some View {
-        HStack(spacing: AetherVisual.s4) {
-            ZStack {
-                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.10))
-                Image(systemName: "point.3.connected.trianglepath.dotted")
-                    .font(.largeTitle.weight(.medium))
-                    .foregroundStyle(Color.accentColor)
-                    .accessibilityHidden(true)
-            }
-            .frame(width: 50, height: 50)
-
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text(
-                    isEditing
-                        ? AppLocalization.string("Edit Node")
-                        : AppLocalization.string("Add Node")
-                )
-                    .font(.title3.weight(.semibold))
-                Text(
-                    isEditing
-                        ? AppLocalization.string("Update this node in AetherRoute's encrypted native profile.")
-                        : AppLocalization.string("Create an AetherRoute-native profile without another client's configuration format.")
-                )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
-        }
+        AetherSheetHeader(
+            symbol: "point.3.connected.trianglepath.dotted",
+            title: isEditing
+                ? AppLocalization.string("Edit Node")
+                : AppLocalization.string("Add Node"),
+            subtitle: isEditing
+                ? AppLocalization.string("Update this node in AetherRoute's encrypted native profile.")
+                : AppLocalization.string("Create an AetherRoute-native profile without another client's configuration format.")
+        )
         .padding(AetherVisual.s6)
     }
 

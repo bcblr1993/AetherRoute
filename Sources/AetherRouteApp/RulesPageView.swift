@@ -629,6 +629,15 @@ struct RulesView: View {
             }
         }
         .accessibilityIdentifier("rules-page")
+#if DEBUG
+        .task {
+            // Isolated screenshot review only: open one sheet on launch.
+            switch ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_SHEET"] {
+            case "custom-rule": showAddRuleSheet = true
+            default: break
+            }
+        }
+#endif
         .sheet(isPresented: $showAddRuleSheet) {
             CustomRuleEditorSheet(
                 initialRule: editingRule,
@@ -1037,16 +1046,31 @@ struct CustomRuleEditorSheet: View {
     @State private var testExplanation: String = ""
 
     enum InputMode: String, CaseIterable, Identifiable {
-        case form = "Form Mode"
-        case raw = "Clash Format"
+        case form
+        case raw
         var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .form: AppLocalization.string("Form")
+            case .raw: AppLocalization.string("Clash Rule Text")
+            }
+        }
     }
 
     enum TargetKind: String, CaseIterable, Identifiable {
         case direct = "DIRECT"
         case reject = "REJECT"
-        case proxy = "Proxy Node / Group"
+        case proxy = "PROXY"
         var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .direct: AppLocalization.string("Direct (DIRECT)")
+            case .reject: AppLocalization.string("Reject (REJECT)")
+            case .proxy: AppLocalization.string("Proxy node or group")
+            }
+        }
     }
 
     init(initialRule: CustomRule? = nil, onSave: @escaping (CustomRule) async -> Bool) {
@@ -1116,115 +1140,81 @@ struct CustomRuleEditorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
-            // Header
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    Text(initialRule == nil ? AppLocalization.string("Add Custom Routing Rule") : AppLocalization.string("Edit Custom Routing Rule"))
-                        .font(.headline.weight(.bold))
-                    Text(AppLocalization.string("Custom rules take top priority in traffic matching."))
-                        .font(.caption)
-                        .foregroundStyle(.primary)
-                }
-                Spacer()
+            AetherSheetHeader(
+                symbol: "arrow.triangle.branch",
+                title: initialRule == nil
+                    ? AppLocalization.string("Add Custom Routing Rule")
+                    : AppLocalization.string("Edit Custom Routing Rule"),
+                subtitle: AppLocalization.string("Custom rules take top priority in traffic matching.")
+            )
 
-                Picker("", selection: $mode) {
-                    ForEach(InputMode.allCases) { m in
-                        Text(m.rawValue).tag(m)
-                    }
+            Picker(AppLocalization.string("Input mode"), selection: $mode) {
+                ForEach(InputMode.allCases) { m in
+                    Text(m.title).tag(m)
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 160)
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityIdentifier("custom-rule-input-mode")
 
-            Divider().opacity(0.6)
-
-            // Body Fields
             if mode == .form {
-                VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                    HStack(spacing: AetherVisual.s3) {
-                        VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                            Text(AppLocalization.string("Rule kind"))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.primary)
-                            Picker("", selection: $selectedKind) {
-                                ForEach(CustomRuleKind.allCases, id: \.self) { kind in
-                                    Text(kind.displayName).tag(kind)
-                                }
+                Grid(alignment: .leading, horizontalSpacing: AetherVisual.s3, verticalSpacing: AetherVisual.s3) {
+                    GridRow {
+                        fieldLabel(AppLocalization.string("Rule kind"))
+                        Picker(AppLocalization.string("Rule kind"), selection: $selectedKind) {
+                            ForEach(CustomRuleKind.allCases, id: \.self) { kind in
+                                Text(kind.displayName).tag(kind)
                             }
-                            .labelsHidden()
                         }
-                        .frame(width: 170)
-
-                        VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                            Text(AppLocalization.string("Match criteria / Target address"))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.primary)
-                            TextField(placeholderForKind(selectedKind), text: $ruleValue)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(.callout, design: .monospaced))
-                        }
+                        .labelsHidden()
                     }
-
-                    HStack(spacing: AetherVisual.s3) {
-                        VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                            Text(AppLocalization.string("Action (Target)"))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.primary)
-                            Picker("", selection: $selectedTargetKind) {
-                                ForEach(TargetKind.allCases) { t in
-                                    Text(t.rawValue).tag(t)
-                                }
-                            }
-                            .labelsHidden()
-                        }
-                        .frame(width: 170)
-
-                        if selectedTargetKind == .proxy {
-                            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                                Text(AppLocalization.string("Specify proxy node or group name"))
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(.primary)
-                                TextField(AppLocalization.string("e.g. PROXY, Node Select, Auto…"), text: $customTargetName)
-                                    .textFieldStyle(.roundedBorder)
-                                    .font(.callout)
-                            }
-                        } else {
-                            Spacer()
-                        }
-                    }
-
-                    if selectedKind == .ipCIDR || selectedKind == .ipCIDR6 || selectedKind == .geoIP {
-                        Toggle(AppLocalization.string("no-resolve (Skip DNS resolution and match by existing IP)"), isOn: $noResolve)
-                            .font(.caption)
-                    }
-
-                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                        Text(AppLocalization.string("Note (Optional)"))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.primary)
-                        TextField(AppLocalization.string("e.g. Tailscale node / local service"), text: $comment)
+                    GridRow {
+                        fieldLabel(AppLocalization.string("Match"))
+                        TextField(placeholderForKind(selectedKind), text: $ruleValue)
                             .textFieldStyle(.roundedBorder)
-                            .font(.callout)
+                            .accessibilityIdentifier("custom-rule-value-field")
+                    }
+                    if selectedKind == .ipCIDR || selectedKind == .ipCIDR6 || selectedKind == .geoIP {
+                        GridRow {
+                            Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                            Toggle(AppLocalization.string("Match by IP without DNS lookup (no-resolve)"), isOn: $noResolve)
+                        }
+                    }
+                    GridRow {
+                        fieldLabel(AppLocalization.string("Action"))
+                        Picker(AppLocalization.string("Action"), selection: $selectedTargetKind) {
+                            ForEach(TargetKind.allCases) { t in
+                                Text(t.title).tag(t)
+                            }
+                        }
+                        .labelsHidden()
+                    }
+                    if selectedTargetKind == .proxy {
+                        GridRow {
+                            fieldLabel(AppLocalization.string("Node or group"))
+                            TextField(AppLocalization.string("e.g. PROXY, Node Select, Auto…"), text: $customTargetName)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                    }
+                    GridRow {
+                        fieldLabel(AppLocalization.string("Note"))
+                        TextField(AppLocalization.string("Optional, e.g. Tailscale node / local service"), text: $comment)
+                            .textFieldStyle(.roundedBorder)
                     }
                 }
             } else {
-                VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                        Text(AppLocalization.string("Clash format rule text"))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.primary)
+                Grid(alignment: .leading, horizontalSpacing: AetherVisual.s3, verticalSpacing: AetherVisual.s3) {
+                    GridRow {
+                        fieldLabel(AppLocalization.string("Rule"))
                         TextField(AppLocalization.string("e.g. DOMAIN-SUFFIX,baizhiedu.xin,DIRECT or IP-CIDR,100.64.0.0/10,DIRECT,no-resolve"), text: $rawClashString)
                             .textFieldStyle(.roundedBorder)
-                            .font(.system(.callout, design: .monospaced))
+                            .font(.body.monospaced())
+                            .accessibilityIdentifier("custom-rule-raw-field")
                     }
-
-                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                        Text(AppLocalization.string("Note (Optional)"))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.primary)
-                        TextField(AppLocalization.string("e.g. Direct private subnet"), text: $comment)
+                    GridRow {
+                        fieldLabel(AppLocalization.string("Note"))
+                        TextField(AppLocalization.string("Optional, e.g. Direct private subnet"), text: $comment)
                             .textFieldStyle(.roundedBorder)
-                            .font(.callout)
                     }
                 }
             }
@@ -1291,8 +1281,6 @@ struct CustomRuleEditorSheet: View {
                 .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius))
             }
 
-            Divider().opacity(0.6)
-
             if saveFailed, let message = tunnel.customRuleMessage {
                 Text(message).font(.callout).foregroundStyle(.red).textSelection(.enabled)
             }
@@ -1315,15 +1303,17 @@ struct CustomRuleEditorSheet: View {
                         }
                     }
                 } label: {
-                    AetherProgressButtonLabel("Save rule", isWorking: isSaving)
+                    AetherProgressButtonLabel(AppLocalization.string("Save rule"), isWorking: isSaving)
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!validationResult.isValid || isSaving)
             }
         }
-        .padding(AetherVisual.s5)
-        .frame(minWidth: 460, idealWidth: 540, maxWidth: 680)
+        .padding(AetherVisual.dialogPadding)
+        .frame(minWidth: AetherVisual.sheetMinWidth, idealWidth: AetherVisual.sheetIdealWidth, maxWidth: AetherVisual.sheetMaxWidth)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: mode)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: selectedTargetKind)
         .disabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
     }
@@ -1339,14 +1329,20 @@ struct CustomRuleEditorSheet: View {
             || !customTargetName.isEmpty || noResolve || selectedKind != .domainSuffix || selectedTargetKind != .direct
     }
 
+    private func fieldLabel(_ title: String) -> some View {
+        Text(title)
+            .foregroundStyle(.secondary)
+            .gridColumnAlignment(.trailing)
+    }
+
     private func placeholderForKind(_ kind: CustomRuleKind) -> String {
         switch kind {
-        case .domainSuffix: return "e.g. baizhiedu.xin or google.com"
-        case .domain: return "e.g. my.server.com"
-        case .domainKeyword: return "e.g. tailscale or internal"
-        case .ipCIDR: return "e.g. 100.64.0.0/10 or 192.168.1.0/24"
-        case .ipCIDR6: return "e.g. fd7a:115c:a1e0::/48"
-        case .geoIP: return "e.g. CN or US"
+        case .domainSuffix: AppLocalization.string("e.g. example.com")
+        case .domain: AppLocalization.string("e.g. my.server.com")
+        case .domainKeyword: AppLocalization.string("e.g. tailscale or internal")
+        case .ipCIDR: AppLocalization.string("e.g. 100.64.0.0/10 or 192.168.1.0/24")
+        case .ipCIDR6: AppLocalization.string("e.g. fd7a:115c:a1e0::/48")
+        case .geoIP: AppLocalization.string("e.g. CN or US")
         }
     }
 

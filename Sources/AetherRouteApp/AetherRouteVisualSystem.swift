@@ -72,6 +72,13 @@ enum AetherVisual {
     /// Sheet content follows the final dialog handoff rather than the page
     /// spacing grid.
     static let dialogPadding: CGFloat = 26
+    /// Symbol tile at the top of every sheet.
+    static let sheetIconSize: CGFloat = 44
+    /// Width shared by the small single-purpose sheets (rename, subscription,
+    /// archive password, iCloud, custom rule, connection details).
+    static let sheetMinWidth: CGFloat = 460
+    static let sheetIdealWidth: CGFloat = 520
+    static let sheetMaxWidth: CGFloat = 680
     static let onboardingTopPadding = s6 + s5
     static let wideListIndent = s6 * 2 + s2
     /// Distance from the window top to floating overlays (command palette).
@@ -489,16 +496,9 @@ struct AetherProgressButtonLabel: View {
     var systemImage: String?
     let isWorking: Bool
 
-    init(
-        _ title: LocalizedStringKey,
-        systemImage: String? = nil,
-        isWorking: Bool
-    ) {
-        self.title = Text(title)
-        self.systemImage = systemImage
-        self.isWorking = isWorking
-    }
-
+    /// Takes an already-localized title. A `LocalizedStringKey` overload
+    /// used to sit beside this one, but Swift resolves a bare literal to the
+    /// `String` overload, so literal titles silently stayed in English.
     init(
         _ titleString: String,
         systemImage: String? = nil,
@@ -522,6 +522,50 @@ struct AetherProgressButtonLabel: View {
             title
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The one header every sheet uses: a tinted symbol tile, the title, and a
+/// single sentence saying what the sheet is for. Sheets used to size their
+/// tiles, titles and subtitles independently, so opening two in a row read
+/// like two different apps.
+struct AetherSheetHeader<Accessory: View>: View {
+    let symbol: String
+    let title: String
+    var subtitle: String?
+    @ViewBuilder var accessory: () -> Accessory
+
+    var body: some View {
+        HStack(alignment: .center, spacing: AetherVisual.s4) {
+            Image(systemName: symbol)
+                .font(.title.weight(.medium))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: AetherVisual.sheetIconSize, height: AetherVisual.sheetIconSize)
+                .background(
+                    Color.accentColor.opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                )
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: AetherVisual.s2)
+            accessory()
+        }
+    }
+}
+
+extension AetherSheetHeader where Accessory == EmptyView {
+    init(symbol: String, title: String, subtitle: String? = nil) {
+        self.init(symbol: symbol, title: title, subtitle: subtitle) { EmptyView() }
     }
 }
 

@@ -36,26 +36,26 @@ enum ProfileArchivePasswordMode: Equatable {
     case export
     case `import`
 
-    var title: LocalizedStringKey {
+    var title: String {
         switch self {
-        case .export: "Export Profile Archive"
-        case .import: "Import Profile Archive"
+        case .export: AppLocalization.string("Export Profile Archive")
+        case .import: AppLocalization.string("Import Profile Archive")
         }
     }
 
-    var detail: LocalizedStringKey {
+    var detail: String {
         switch self {
         case .export:
-            "Create a password-encrypted copy of every profile for another Mac. The password is never stored."
+            AppLocalization.string("Create a password-encrypted copy of every profile for another Mac. The password is never stored.")
         case .import:
-            "Enter the archive password. Existing profiles stay in place and the profile currently in use will not change."
+            AppLocalization.string("Enter the archive password. Existing profiles stay in place and the profile currently in use will not change.")
         }
     }
 
-    var actionTitle: LocalizedStringKey {
+    var actionTitle: String {
         switch self {
-        case .export: "Export Archive"
-        case .import: "Import Archive"
+        case .export: AppLocalization.string("Export Archive")
+        case .import: AppLocalization.string("Import Archive")
         }
     }
 }
@@ -70,34 +70,19 @@ struct ProfileArchivePasswordSheet: View {
     @State private var isWorking = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s6) {
-            HStack(alignment: .top, spacing: AetherVisual.s4) {
-                Image(systemName: "lock.shield.fill")
-                    .font(.largeTitle.weight(.medium))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 48, height: 48)
-                    .background(
-                        Color.teal.opacity(0.09),
-                        in: RoundedRectangle(
-                            cornerRadius: AetherVisual.insetRadius,
-                            style: .continuous
-                        )
-                    )
-                VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                    Text(mode.title)
-                        .font(.title2.weight(.semibold))
-                    Text(mode.detail)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+        VStack(alignment: .leading, spacing: AetherVisual.s5) {
+            AetherSheetHeader(
+                symbol: "lock.shield.fill",
+                title: mode.title,
+                subtitle: mode.detail
+            )
 
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                SecureField("Archive password", text: $password)
+                SecureField(AppLocalization.string("Archive password"), text: $password)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("archive-password-field")
                 if mode == .export {
-                    SecureField("Confirm password", text: $confirmation)
+                    SecureField(AppLocalization.string("Confirm password"), text: $confirmation)
                         .textFieldStyle(.roundedBorder)
                         .accessibilityIdentifier(
                             "archive-password-confirmation-field"
@@ -142,7 +127,7 @@ struct ProfileArchivePasswordSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(minWidth: 440, idealWidth: 500, maxWidth: 680)
+        .frame(minWidth: AetherVisual.sheetMinWidth, idealWidth: AetherVisual.sheetIdealWidth, maxWidth: AetherVisual.sheetMaxWidth)
         .interactiveDismissDisabled(isWorking)
     }
 

@@ -8,20 +8,11 @@ struct ProfileCloudSyncSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s5) {
-            HStack(spacing: AetherVisual.s4) {
-                Image(systemName: "icloud.fill")
-                    .font(.largeTitle.weight(.medium))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 52, height: 52)
-                    .background(Color.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
-
-                VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    Text(AppLocalization.string("iCloud Profile Sync"))
-                        .font(.title2.weight(.semibold))
-                    Text(AppLocalization.string("End-to-end encrypted synchronization across your Mac and iPhone devices."))
-                        .foregroundStyle(.secondary)
-                }
-            }
+            AetherSheetHeader(
+                symbol: "icloud.fill",
+                title: AppLocalization.string("iCloud Profile Sync"),
+                subtitle: AppLocalization.string("End-to-end encrypted synchronization across your Mac and iPhone devices.")
+            )
 
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
                 Toggle(AppLocalization.string("Enable iCloud Sync"), isOn: $cloudSync.isCloudSyncEnabled)
@@ -146,7 +137,7 @@ struct ProfileCloudSyncSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(minWidth: 460, idealWidth: 520, maxWidth: 680)
+        .frame(minWidth: AetherVisual.sheetMinWidth, idealWidth: AetherVisual.sheetIdealWidth, maxWidth: AetherVisual.sheetMaxWidth)
         .interactiveDismissDisabled(cloudSync.isSyncing)
     }
 }

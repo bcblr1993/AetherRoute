@@ -115,23 +115,11 @@ struct ExternalSubscriptionConfirmationSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s5) {
-            HStack(alignment: .top, spacing: AetherVisual.s4) {
-                Image(systemName: "link.badge.plus")
-                    .font(.largeTitle.weight(.medium))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 54, height: 54)
-                    .background(
-                        Color.accentColor.opacity(0.09),
-                        in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius)
-                    )
-
-                VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    Text("Review Subscription Link")
-                        .font(.title2.weight(.semibold))
-                    Text("AetherRoute has not downloaded or changed anything yet.")
-                        .foregroundStyle(.secondary)
-                }
-            }
+            AetherSheetHeader(
+                symbol: "link.badge.plus",
+                title: AppLocalization.string("Review Subscription Link"),
+                subtitle: AppLocalization.string("AetherRoute has not downloaded or changed anything yet.")
+            )
 
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 Text("Address")
@@ -214,7 +202,7 @@ struct ExternalSubscriptionConfirmationSheet: View {
                     }
                 } label: {
                     AetherProgressButtonLabel(
-                        tunnel.isEnabled ? "Download and Save" : "Download and Enable",
+                        AppLocalization.string(tunnel.isEnabled ? "Download and Save" : "Download and Enable"),
                         isWorking: isConfirming
                             || tunnel.isRefreshingSubscription
                     )
@@ -230,7 +218,7 @@ struct ExternalSubscriptionConfirmationSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(width: 540)
+        .frame(width: AetherVisual.sheetIdealWidth)
         .interactiveDismissDisabled(isConfirming)
     }
 }
@@ -378,6 +366,20 @@ struct ProfilesView: View {
             }
         }
         .accessibilityIdentifier("profiles-page")
+#if DEBUG
+        .task {
+            // Isolated screenshot review only: open one sheet on launch.
+            switch ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_SHEET"] {
+            case "subscription": isSubscriptionEditorPresented = true
+            case "manual-node": isManualNodeEditorPresented = true
+            case "export": isExportPasswordPresented = true
+            case "cloud": isCloudSyncSheetPresented = true
+            case "rename": profileToRename = tunnel.profiles.first
+            case "profile-editor": nativeProfileToEdit = tunnel.profiles.first
+            default: break
+            }
+        }
+#endif
     }
 
     private var pageHeader: some View {
@@ -876,7 +878,7 @@ private struct RoutingResourcesCard: View {
                         Task { await tunnel.downloadRequiredRoutingResources() }
                     } label: {
                         AetherProgressButtonLabel(
-                            "Download & Verify",
+                            AppLocalization.string("Download & Verify"),
                             systemImage: "arrow.down.shield",
                             isWorking: tunnel.isUpdatingRoutingResources
                         )
@@ -1049,7 +1051,7 @@ private struct ManagedProfileRow: View {
             .buttonStyle(.plain)
             .disabled(isActive || !canActivate)
             .accessibilityIdentifier("radio-select-\(managed.id.uuidString)")
-            .accessibilityLabel(isActive ? "Selected" : "Select")
+            .accessibilityLabel(AppLocalization.string(isActive ? "Selected" : "Select"))
 
             // 2. 节点/配置图标 (磨砂色底 + 矢量图标)
             ZStack {
@@ -1100,7 +1102,7 @@ private struct ManagedProfileRow: View {
                     Task { await tunnel.refreshSubscription() }
                 } label: {
                     AetherProgressButtonLabel(
-                        "Check for Updates",
+                        AppLocalization.string("Check for Updates"),
                         systemImage: "arrow.clockwise",
                         isWorking: tunnel.isRefreshingSubscription
                     )
@@ -1282,14 +1284,13 @@ private struct ProfileRenameSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s5) {
-            VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                Text("Rename Profile")
-                    .font(.title2.weight(.semibold))
-                Text("Choose a short name that is easy to recognize in the menu bar.")
-                    .foregroundStyle(.secondary)
-            }
+            AetherSheetHeader(
+                symbol: "pencil",
+                title: AppLocalization.string("Rename Profile"),
+                subtitle: AppLocalization.string("Choose a short name that is easy to recognize in the menu bar.")
+            )
 
-            TextField("Profile name", text: $name)
+            TextField(AppLocalization.string("Profile name"), text: $name)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("profile-name-field")
 
@@ -1312,7 +1313,7 @@ private struct ProfileRenameSheet: View {
                     }
                 } label: {
                     AetherProgressButtonLabel(
-                        "Save",
+                        AppLocalization.string("Save"),
                         isWorking: isSaving
                     )
                 }
@@ -1325,7 +1326,7 @@ private struct ProfileRenameSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(minWidth: 400, idealWidth: 460, maxWidth: 600)
+        .frame(minWidth: AetherVisual.sheetMinWidth, idealWidth: AetherVisual.sheetIdealWidth, maxWidth: AetherVisual.sheetMaxWidth)
         .disabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: name != profile.profile.name, isSaving: isSaving, requested: $requestsCancel))
     }
@@ -1339,22 +1340,14 @@ struct SubscriptionEditorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s5) {
-            HStack(spacing: AetherVisual.s4) {
-                Image(systemName: "link.badge.plus")
-                    .font(.largeTitle.weight(.medium))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 52, height: 52)
-                    .background(Color.accentColor.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
-                VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    Text("Add Profile Subscription")
-                        .font(.title2.weight(.semibold))
-                    Text("Paste the HTTPS address supplied by your trusted provider.")
-                        .foregroundStyle(.secondary)
-                }
-            }
+            AetherSheetHeader(
+                symbol: "link.badge.plus",
+                title: AppLocalization.string("Add Profile Subscription"),
+                subtitle: AppLocalization.string("Paste the HTTPS address supplied by your trusted provider.")
+            )
 
             HStack(spacing: AetherVisual.s2) {
-                TextField("HTTPS subscription URL", text: $urlText)
+                TextField(AppLocalization.string("HTTPS subscription URL"), text: $urlText)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("subscription-url-field")
                     .onChange(of: urlText) { _, value in
@@ -1424,7 +1417,7 @@ struct SubscriptionEditorSheet: View {
                     }
                 } label: {
                     AetherProgressButtonLabel(
-                        tunnel.isEnabled ? "Download and Save" : "Download and Activate",
+                        AppLocalization.string(tunnel.isEnabled ? "Download and Save" : "Download and Activate"),
                         isWorking: tunnel.isRefreshingSubscription
                     )
                 }
@@ -1439,7 +1432,7 @@ struct SubscriptionEditorSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(minWidth: 460, idealWidth: 540, maxWidth: 680)
+        .frame(minWidth: AetherVisual.sheetMinWidth, idealWidth: AetherVisual.sheetIdealWidth, maxWidth: AetherVisual.sheetMaxWidth)
         .disabled(tunnel.isRefreshingSubscription)
         .modifier(DiscardChangesModifier(isDirty: !urlText.isEmpty, isSaving: tunnel.isRefreshingSubscription, requested: $requestsCancel))
         .onAppear {

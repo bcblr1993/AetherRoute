@@ -48,26 +48,11 @@ struct NativeProfileEditorSheet: View {
     }
 
     private var header: some View {
-        HStack(spacing: AetherVisual.s4) {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.largeTitle.weight(.medium))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 50, height: 50)
-                .background(
-                    Color.accentColor.opacity(0.10),
-                    in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                )
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text(AppLocalization.string("Edit Native Profile"))
-                    .font(.title3.weight(.semibold))
-                Text(profile.profile.name)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer()
+        AetherSheetHeader(
+            symbol: "point.3.connected.trianglepath.dotted",
+            title: AppLocalization.string("Edit Native Profile"),
+            subtitle: profile.profile.name
+        ) {
             Button(AppLocalization.string("Add Node"), systemImage: "plus") {
                 isAddingNode = true
             }
@@ -80,7 +65,24 @@ struct NativeProfileEditorSheet: View {
         .padding(AetherVisual.s6)
     }
 
+    @ViewBuilder
     private var nodeList: some View {
+        if nodes.isEmpty {
+            ContentUnavailableView {
+                Label(AppLocalization.string("No Nodes"), systemImage: "point.3.connected.trianglepath.dotted")
+            } description: {
+                Text(AppLocalization.string("Add a node to route traffic through this profile."))
+            } actions: {
+                Button(AppLocalization.string("Add Node")) { isAddingNode = true }
+                    .disabled(!tunnel.canModifyProfile(id: profile.id))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            populatedNodeList
+        }
+    }
+
+    private var populatedNodeList: some View {
         List {
             ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
                 HStack(spacing: AetherVisual.s4) {
@@ -108,7 +110,7 @@ struct NativeProfileEditorSheet: View {
                             .lineLimit(1)
                     }
 
-                    Spacer(minLength: 12)
+                    Spacer(minLength: AetherVisual.s3)
 
                     Button(AppLocalization.string("Edit"), systemImage: "pencil") {
                         nodeToEdit = node
@@ -161,7 +163,7 @@ struct NativeProfileEditorSheet: View {
             }
 
             if let removedNode {
-                Button("Undo removal") {
+                Button(AppLocalization.string("Undo removal")) {
                     nodes.insert(removedNode.node, at: min(removedNode.index, nodes.count))
                     self.removedNode = nil
                 }
@@ -209,6 +211,8 @@ struct NativeProfileEditorSheet: View {
         do {
             _ = try AetherNodeProfileCompiler.compile(nodes: nodes)
             return nil
+        } catch let error as AetherNodeProfileCompilerError {
+            return error.localizedAppDescription
         } catch {
             return error.localizedDescription
         }
@@ -234,5 +238,25 @@ struct NativeProfileEditorSheet: View {
         }
         nodes = candidate
         return true
+    }
+}
+
+extension AetherNodeProfileCompilerError {
+    /// The kit keeps English error text; the app shows it in the chosen
+    /// language.
+    var localizedAppDescription: String {
+        switch self {
+        case .emptyProfile:
+            AppLocalization.string("Add at least one node.")
+        case let .tooManyNodes(limit):
+            String.localizedStringWithFormat(
+                AppLocalization.string("A native profile supports at most %lld nodes."),
+                Int64(limit)
+            )
+        case .duplicateName:
+            AppLocalization.string("Node names must be unique.")
+        case .reservedName:
+            AppLocalization.string("A node name conflicts with a reserved routing name.")
+        }
     }
 }
