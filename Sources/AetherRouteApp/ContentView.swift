@@ -487,16 +487,16 @@ struct ContentView: View {
         switch section {
         case .proxies:
             if let summary = tunnel.activeProfileSummary, summary.proxyCount > 0 {
-                SidebarCountBadge(count: summary.proxyCount)
+                AetherCountBadge(count: summary.proxyCount)
             }
         case .connections:
             let count = tunnel.telemetryViewModel.snapshot.connections.count
             if count > 0 {
-                SidebarCountBadge(count: count)
+                AetherCountBadge(count: count)
             }
         case .rules:
             if let summary = tunnel.activeProfileSummary, summary.ruleCount > 0 {
-                SidebarCountBadge(count: summary.ruleCount)
+                AetherCountBadge(count: summary.ruleCount)
             }
         default:
             EmptyView()
@@ -574,21 +574,6 @@ struct ContentView: View {
 
 /// One badge style for every sidebar count; counts are information, not
 /// state, so none of them is tinted.
-private struct SidebarCountBadge: View {
-    let count: Int
-
-    var body: some View {
-        Text(verbatim: "\(count)")
-            .font(.caption.weight(.medium).monospacedDigit())
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, AetherVisual.sCompact)
-            .padding(.vertical, AetherVisual.sMicro)
-            .background(Color.secondary.opacity(0.12), in: Capsule())
-            .contentTransition(.numericText())
-            .animation(AetherVisual.animation(AetherVisual.quickFade), value: count)
-    }
-}
-
 private struct ConnectionToolbarButton: View {
     @EnvironmentObject private var tunnel: TunnelManager
 

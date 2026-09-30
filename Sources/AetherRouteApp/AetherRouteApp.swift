@@ -1297,19 +1297,21 @@ private struct MenuUpdateStatus: View {
                 Button {
                     updater.checkForUpdates()
                 } label: {
+                    // A solid accent pill with white text: a tinted pill read
+                    // as blue-on-gray on dark menus and the dot faded out.
                     HStack(spacing: AetherVisual.sCompact) {
                         Circle()
-                            .fill(Color.accentColor)
-                            .frame(width: AetherVisual.s2, height: AetherVisual.s2)
-                            .opacity(isPulsing ? 0.35 : 1)
+                            .fill(Color.white)
+                            .frame(width: AetherVisual.sCompact, height: AetherVisual.sCompact)
+                            .opacity(isPulsing ? 0.6 : 1)
                             .accessibilityHidden(true)
                         Text(String.localizedStringWithFormat(AppLocalization.string("New version %@"), version))
                             .font(.caption.weight(.semibold))
                     }
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.white)
                     .padding(.horizontal, AetherVisual.s2)
-                    .padding(.vertical, AetherVisual.sMicro)
-                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+                    .padding(.vertical, AetherVisual.s1)
+                    .background(Color.accentColor, in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .help(AppLocalization.string("View and install the update"))

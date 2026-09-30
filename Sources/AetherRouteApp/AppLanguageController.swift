@@ -43,9 +43,11 @@ enum AppLocalization {
         )
     }
 
-    /// A short elapsed-time phrase ("12 min", "1 hr 5 min") in the app's
-    /// chosen language rather than the system's.
-    static func duration(_ interval: TimeInterval) -> String {
+    /// The one elapsed-time format in the app: the two largest units,
+    /// abbreviated ("2小时11分钟", "2h 11m"), in the app's chosen language.
+    /// Live timers pass `includesSeconds` so a short session still moves
+    /// ("49分钟2秒", "49m 2s"); summaries round to whole minutes.
+    static func duration(_ interval: TimeInterval, includesSeconds: Bool = false) -> String {
         let identifier = lock.withLock { localeIdentifier }
         let locale = identifier.map { Locale(identifier: $0) }
             ?? .autoupdatingCurrent
@@ -53,11 +55,14 @@ enum AppLocalization {
         calendar.locale = locale
         let formatter = DateComponentsFormatter()
         formatter.calendar = calendar
-        formatter.unitsStyle = .short
-        formatter.allowedUnits = [.day, .hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        formatter.allowedUnits = includesSeconds
+            ? [.day, .hour, .minute, .second]
+            : [.day, .hour, .minute]
         formatter.maximumUnitCount = 2
         formatter.zeroFormattingBehavior = .dropAll
-        return formatter.string(from: max(60, interval)) ?? ""
+        let value = includesSeconds ? max(0, interval) : max(60, interval)
+        return formatter.string(from: value.rounded(.down)) ?? ""
     }
 
     private static func resolvedBundle(

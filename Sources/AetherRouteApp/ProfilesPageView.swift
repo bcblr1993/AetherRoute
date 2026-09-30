@@ -1074,17 +1074,11 @@ private struct ManagedProfileRow: View {
                         .lineLimit(1)
 
                     if isActive {
-                        HStack(spacing: AetherVisual.s1) {
-                            Circle()
-                                .fill(Color.green)
-                                .frame(width: 5, height: 5)
-                            Text("In Use")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.primary)
-                        }
-                        .padding(.horizontal, AetherVisual.s2)
-                        .padding(.vertical, AetherVisual.sMicro)
-                        .background(Color.green.opacity(0.12), in: Capsule())
+                        StatePill(
+                            title: AppLocalization.string("In Use"),
+                            color: .green,
+                            symbol: "checkmark.circle.fill"
+                        )
                     }
                 }
 

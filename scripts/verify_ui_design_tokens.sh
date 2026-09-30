@@ -64,9 +64,11 @@ fail_if_found \
 # The header must be localized *and* carry the column budget. Matching a bare
 # "Duration" literal here meant the guard demanded the untranslated string, so
 # localizing the header turned this into a false failure that blocked main even
-# though the 64/68/76 budget it exists to protect was untouched.
+# though the budget it exists to protect was untouched. The budget is
+# 72/84/100 since durations use the app-wide abbreviated format
+# ("2小时11分钟", "49m 2s") instead of the table's own "2h11m".
 if rg -Uq \
-  'TableColumn\(AppLocalization\.string\("Duration"\)\)[^{]*\{[^}]*\}[[:space:]]*\.width\(min:[[:space:]]*64,[[:space:]]*ideal:[[:space:]]*68,[[:space:]]*max:[[:space:]]*76\)' \
+  'TableColumn\(AppLocalization\.string\("Duration"\)\)[^{]*\{[^}]*\}[[:space:]]*\.width\(min:[[:space:]]*72,[[:space:]]*ideal:[[:space:]]*84,[[:space:]]*max:[[:space:]]*100\)' \
   "$CONNECTIONS"; then
   :
 else
@@ -75,7 +77,7 @@ else
     echo "UI design-token verification failed: rg exited with status $search_status" >&2
     exit "$search_status"
   fi
-  echo "UI design-token violation: the localized Duration header needs its 64...76pt column budget" >&2
+  echo "UI design-token violation: the localized Duration header needs its 72...100pt column budget" >&2
   exit 1
 fi
 

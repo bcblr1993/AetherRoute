@@ -348,39 +348,27 @@ struct RulesView: View {
                             }
 
                             // 2.5 用户自定义分流规则 (Custom Rules - Top Priority)
+                            // One heading with the count and the add action; the
+                            // card no longer repeats "Custom routing rules".
                             FeatureSection(
-                                title: AppLocalization.string("Custom rules (Top priority)"),
-                                symbol: "slider.horizontal.3"
+                                title: AppLocalization.string("Custom rules"),
+                                symbol: "slider.horizontal.3",
+                                count: tunnel.customRules.count
                             ) {
+                                Button {
+                                    editingRule = nil
+                                    showAddRuleSheet = true
+                                } label: {
+                                    Label(AppLocalization.string("Add Rule"), systemImage: "plus")
+                                }
+                                .controlSize(.small)
+                                .accessibilityIdentifier("add-custom-rule")
+                            } content: {
                                 VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                                            HStack(spacing: AetherVisual.s2) {
-                                                Text(AppLocalization.string("Custom routing rules"))
-                                                    .font(.headline.weight(.semibold))
-                                                Text(String.localizedStringWithFormat(AppLocalization.string("%lld rules"), Int64(tunnel.customRules.count)))
-                                                    .font(.system(.callout, design: .monospaced, weight: .semibold))
-                                                    .foregroundStyle(Color(nsColor: .labelColor))
-                                                    .padding(.horizontal, AetherVisual.sCompact)
-                                                    .padding(.vertical, AetherVisual.sMicro)
-                                                    .background(Color.teal.opacity(0.12), in: Capsule())
-                                            }
-                                            Text(AppLocalization.string("Custom rules take absolute top priority. Direct IP-CIDR rules automatically bypass TUN kernel routing."))
-                                                .font(.callout.weight(.medium))
-                                                .foregroundStyle(Color(nsColor: .labelColor))
-                                        }
-                                        Spacer()
-
-                                        Button {
-                                            editingRule = nil
-                                            showAddRuleSheet = true
-                                        } label: {
-                                            Label(AppLocalization.string("Add Rule"), systemImage: "plus.circle.fill")
-                                                .font(.callout.weight(.semibold))
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                        .controlSize(.small)
-                                    }
+                                    Text(AppLocalization.string("Custom rules take absolute top priority. Direct IP-CIDR rules automatically bypass TUN kernel routing."))
+                                        .font(.callout)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
 
                                     if let msg = tunnel.customRuleMessage {
                                         HStack(spacing: AetherVisual.s2) {

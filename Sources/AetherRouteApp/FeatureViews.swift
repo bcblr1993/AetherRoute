@@ -1,33 +1,38 @@
 import AetherRouteKit
 import SwiftUI
 
-struct FeatureSection<Content: View>: View {
-    let title: Text
+struct FeatureSection<Content: View, Accessory: View>: View {
+    let title: String
     let symbol: String
-    @ViewBuilder let content: Content
+    var count: Int?
+    let accessory: Accessory
+    let content: Content
 
-    init(title: String, symbol: String, @ViewBuilder content: () -> Content) {
-        self.title = Text(title)
+    init(
+        title: String,
+        symbol: String,
+        count: Int? = nil,
+        @ViewBuilder accessory: () -> Accessory,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
         self.symbol = symbol
-        self.content = content()
-    }
-
-    init(title: LocalizedStringKey, symbol: String, @ViewBuilder content: () -> Content) {
-        self.title = Text(title)
-        self.symbol = symbol
+        self.count = count
+        self.accessory = accessory()
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            Label {
-                title
-            } icon: {
-                Image(systemName: symbol)
-            }
-            .font(.headline)
+            AetherSectionHeader(title: title, symbol: symbol, count: count) { accessory }
             content
         }
+    }
+}
+
+extension FeatureSection where Accessory == EmptyView {
+    init(title: String, symbol: String, count: Int? = nil, @ViewBuilder content: () -> Content) {
+        self.init(title: title, symbol: symbol, count: count, accessory: { EmptyView() }, content: content)
     }
 }
 
@@ -146,8 +151,8 @@ struct StatePill: View {
         }
         .accessibilityElement(children: .contain)
         .font(.caption.weight(.semibold))
-        .padding(.horizontal, AetherVisual.s3)
-        .padding(.vertical, AetherVisual.s1)
+        .padding(.horizontal, AetherVisual.pillHorizontalPadding)
+        .padding(.vertical, AetherVisual.pillVerticalPadding)
         .background(
             color.opacity(0.12),
             in: Capsule()

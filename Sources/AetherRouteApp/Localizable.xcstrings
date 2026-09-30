@@ -11016,6 +11016,17 @@
           }
         }
       }
+    },
+    "Custom rules": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义规则"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

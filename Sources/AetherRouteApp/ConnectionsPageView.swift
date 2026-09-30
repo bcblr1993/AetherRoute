@@ -201,7 +201,7 @@ struct ConnectionsView: View {
                 TableColumn(AppLocalization.string("Duration")) { row in
                     ConnectionDurationCell(connection: row.connection)
                 }
-                .width(min: 64, ideal: 68, max: 76)
+                .width(min: 72, ideal: 84, max: 100)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: false))
             .accessibilityLabel(AppLocalization.string("Connections"))
@@ -456,12 +456,7 @@ private struct SessionBar: View {
         }
         let elapsed = Int(Date.now.timeIntervalSince(since))
         guard elapsed >= 0, elapsed <= 31 * 24 * 3_600 else { return nil }
-        return String(
-            format: "%02d:%02d:%02d",
-            elapsed / 3_600,
-            (elapsed % 3_600) / 60,
-            elapsed % 60
-        )
+        return AppLocalization.duration(TimeInterval(elapsed), includesSeconds: true)
     }
 
 }
@@ -488,11 +483,9 @@ private struct ConnectionDestinationCell: View {
         }
         .frame(height: 36)
         .foregroundStyle(.primary)
-        .background(
-            outlet == .rejected
-                ? Color.red.opacity(0.08)
-                : Color(nsColor: .controlBackgroundColor)
-        )
+        // Only a rejected flow is tinted; a filled background on every
+        // destination cell made one column look unlike the rest of the row.
+        .background(outlet == .rejected ? Color.red.opacity(0.08) : Color.clear)
         .accessibilityElement(children: .contain)
     }
 
@@ -584,13 +577,7 @@ private struct ConnectionDurationCell: View {
         // A stale or malformed provider timestamp must not turn into a
         // multi-thousand-hour duration in the table.
         guard elapsed >= 0, elapsed <= 31 * 24 * 3_600 else { return nil }
-        if elapsed >= 3_600 {
-            return String(format: "%dh%02dm", elapsed / 3_600, (elapsed % 3_600) / 60)
-        }
-        if elapsed >= 60 {
-            return String(format: "%dm%02ds", elapsed / 60, elapsed % 60)
-        }
-        return "\(elapsed)s"
+        return AppLocalization.duration(TimeInterval(elapsed), includesSeconds: true)
     }
 }
 

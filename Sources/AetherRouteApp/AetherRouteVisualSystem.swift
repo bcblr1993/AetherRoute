@@ -72,6 +72,10 @@ enum AetherVisual {
     /// Sheet content follows the final dialog handoff rather than the page
     /// spacing grid.
     static let dialogPadding: CGFloat = 26
+    /// Every capsule (status, count, latency) shares these insets so pills
+    /// line up wherever they sit side by side.
+    static let pillHorizontalPadding = s2
+    static let pillVerticalPadding = s1
     /// Symbol tile at the top of every sheet.
     static let sheetIconSize: CGFloat = 44
     /// Width shared by the small single-purpose sheets (rename, subscription,
@@ -525,6 +529,56 @@ struct AetherProgressButtonLabel: View {
     }
 }
 
+/// A number in a gray capsule: sidebar counts and section counts.
+struct AetherCountBadge: View {
+    let count: Int
+
+    var body: some View {
+        Text(verbatim: "\(count)")
+            .font(.caption.weight(.medium).monospacedDigit())
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, AetherVisual.sCompact)
+            .padding(.vertical, AetherVisual.sMicro)
+            .background(Color.secondary.opacity(0.12), in: Capsule())
+            .contentTransition(.numericText())
+            .animation(AetherVisual.animation(AetherVisual.quickFade), value: count)
+    }
+}
+
+/// The heading above a group of cards on every page: symbol, title, an
+/// optional count and optional trailing actions. Pages used to mix plain
+/// text headings, symbol headings and card titles repeating the heading.
+struct AetherSectionHeader<Accessory: View>: View {
+    let title: String
+    let symbol: String
+    var count: Int?
+    @ViewBuilder var accessory: () -> Accessory
+
+    var body: some View {
+        HStack(spacing: AetherVisual.s2) {
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: symbol)
+            }
+            .font(.headline)
+            if let count {
+                AetherCountBadge(count: count)
+            }
+            Spacer(minLength: AetherVisual.s2)
+            accessory()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+extension AetherSectionHeader where Accessory == EmptyView {
+    init(title: String, symbol: String, count: Int? = nil) {
+        self.init(title: title, symbol: symbol, count: count) { EmptyView() }
+    }
+}
+
 /// The one header every sheet uses: a tinted symbol tile, the title, and a
 /// single sentence saying what the sheet is for. Sheets used to size their
 /// tiles, titles and subtitles independently, so opening two in a row read
@@ -666,7 +720,7 @@ struct AetherLatencyPill: View {
         Button {
             onTap?()
         } label: {
-            HStack(spacing: 3.5) {
+            HStack(spacing: AetherVisual.s1) {
                 if status == .testing {
                     ProgressView()
                         .controlSize(.mini)
@@ -691,8 +745,8 @@ struct AetherLatencyPill: View {
                         .accessibilityHidden(true)
                 }
             }
-            .padding(.horizontal, 7.5)
-            .padding(.vertical, 3.5)
+            .padding(.horizontal, AetherVisual.pillHorizontalPadding)
+            .padding(.vertical, AetherVisual.pillVerticalPadding)
             .background(pillColor.opacity(isHovered ? 0.22 : 0.12), in: Capsule())
             .overlay {
                 Capsule()

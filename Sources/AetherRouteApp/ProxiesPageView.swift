@@ -97,22 +97,11 @@ struct ProxiesView: View {
     // MARK: - 顶部策略组胶囊 Tab 栏
     private func proxyGroupTabBar(groups: [ProxyGroupConfigurationSummary]) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            HStack(alignment: .center) {
-                HStack(spacing: AetherVisual.s2) {
-                    Text(AppLocalization.string("Proxy groups"))
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.primary)
-
-                    Text(verbatim: "\(groups.count)")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, AetherVisual.sCompact)
-                        .padding(.vertical, AetherVisual.sMicro)
-                        .background(Color.secondary.opacity(0.12), in: Capsule())
-                }
-
-                Spacer()
-            }
+            AetherSectionHeader(
+                title: AppLocalization.string("Proxy groups"),
+                symbol: "square.stack.3d.up",
+                count: groups.count
+            )
 
             // With one group the switcher would only repeat the detail card
             // below; it appears once there is a choice to make.
