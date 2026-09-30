@@ -258,6 +258,11 @@ final class TunnelManager: ObservableObject {
     @Published var routingResourceMessage: String?
     @Published var routingResourceMessageIsError = false
     @Published var hasAcceptedPrivacyDisclosure: Bool
+    /// First-run network setup still has to grant both engines' system
+    /// extension and configuration before the main window opens.
+    @Published var isNetworkSetupRequired = false
+    @Published var networkSetupStates: [NetworkEngineMode: NetworkSetupStepState] = [:]
+    @Published var isRunningNetworkSetup = false
     @Published var connectedSince: Date?
     @Published var sessionRoutingMode: RoutingMode?
     @Published var sessionNetworkEngineMode: NetworkEngineMode?
@@ -483,6 +488,7 @@ final class TunnelManager: ObservableObject {
         if let reviewState {
             hasAcceptedPrivacyDisclosure =
                 environment["AETHERROUTE_UI_REVIEW_PRIVACY"] != "pending"
+            installReviewNetworkSetup(environment["AETHERROUTE_UI_REVIEW_SETUP"])
             guard hasAcceptedPrivacyDisclosure else {
                 state = .privacyConsentRequired
                 return
@@ -631,6 +637,7 @@ final class TunnelManager: ObservableObject {
 
         hasAcceptedPrivacyDisclosure =
             privacyConsentStore.hasAcceptedCurrentDisclosure
+        isNetworkSetupRequired = resolveNetworkSetupGate()
         state = hasAcceptedPrivacyDisclosure ? .loading : .privacyConsentRequired
 
         cloudSyncObserver = NotificationCenter.default.addObserver(
@@ -663,12 +670,20 @@ final class TunnelManager: ObservableObject {
             privacyConsentStore.acceptCurrentDisclosure()
         }
         hasAcceptedPrivacyDisclosure = true
+        // First run continues with network setup; prepare() would otherwise
+        // install one engine's extension on its own and skip the other.
+        if isNetworkSetupRequired {
+            state = .disconnected
+            await refreshNetworkSetupStatus()
+            return
+        }
         state = isUIReviewMode ? .disconnected : .loading
         await prepare()
     }
 
     func prepare() async {
         guard ensurePrivacyConsent() else { return }
+        guard !isNetworkSetupRequired else { return }
         guard !isUIReviewMode else { return }
         guard !rejectDevelopmentPreviewStart() else { return }
         guard manager == nil, !isPreparing else { return }
@@ -863,6 +878,11 @@ final class TunnelManager: ObservableObject {
         guard ensurePrivacyConsent() else { return }
         guard !enabled || distributionConnectionAccess.permitsNewConnection
         else { return }
+        // Shortcuts, URL imports and the menu cannot connect around setup.
+        guard !enabled || !isNetworkSetupRequired else {
+            AppWindowManager.shared.showMainWindow()
+            return
+        }
         if isUIReviewMode {
             state = enabled ? .connected : .disconnected
             connectedSince = enabled ? .now : nil
@@ -1537,6 +1557,7 @@ final class TunnelManager: ObservableObject {
     }
 
     var canPerformPrimaryAction: Bool {
+        if isNetworkSetupRequired { return false }
         if isSwitchingNetworkEngine { return true }
         return switch state {
         case .disconnected, .failed:

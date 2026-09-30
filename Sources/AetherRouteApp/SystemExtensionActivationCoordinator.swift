@@ -238,7 +238,7 @@ final class SystemExtensionActivationCoordinator: NSObject,
     }
 }
 
-private enum SystemExtensionActivationError: LocalizedError {
+enum SystemExtensionActivationError: LocalizedError {
     case requestAlreadyInProgress
     case rebootRequired
     case unknownResult
@@ -260,6 +260,28 @@ private enum SystemExtensionActivationError: LocalizedError {
             )
         case let .framework(error):
             Self.frameworkErrorDescription(error)
+        }
+    }
+
+    /// False when the user cannot fix the failure by trying again: the
+    /// system or an organisation's policy forbids the extension, or this copy
+    /// of the app is damaged or unsigned.
+    var isRetryable: Bool {
+        guard case let .framework(error) = self else {
+            return self != .rebootRequired
+        }
+        let nsError = error as NSError
+        guard nsError.domain == OSSystemExtensionErrorDomain,
+              let code = OSSystemExtensionError.Code(rawValue: nsError.code)
+        else { return true }
+        switch code {
+        case .forbiddenBySystemPolicy, .authorizationRequired, .missingEntitlement,
+             .codeSignatureInvalid, .validationFailed, .unsupportedParentBundleLocation,
+             .extensionNotFound, .extensionMissingIdentifier,
+             .duplicateExtensionIdentifer, .unknownExtensionCategory:
+            return false
+        default:
+            return true
         }
     }
 
@@ -312,5 +334,115 @@ private enum SystemExtensionActivationError: LocalizedError {
                 "The network extension could not be installed. Retry once, then open Diagnostics if the problem continues."
             )
         }
+    }
+}
+
+extension SystemExtensionActivationError: Equatable {
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case (.requestAlreadyInProgress, .requestAlreadyInProgress),
+             (.rebootRequired, .rebootRequired),
+             (.unknownResult, .unknownResult):
+            true
+        case let (.framework(l), .framework(r)):
+            (l as NSError) == (r as NSError)
+        default:
+            false
+        }
+    }
+}
+
+/// Reads an extension's installation state without submitting an
+/// activation, so it never prompts the user. First-run setup uses it to show
+/// what is already granted before the user starts.
+@MainActor
+final class SystemExtensionStatusProbe: NSObject, OSSystemExtensionRequestDelegate {
+    private var continuation: CheckedContinuation<NetworkExtensionProbe, Never>?
+    private var request: OSSystemExtensionRequest?
+    private let identifier: String
+
+    private init(identifier: String) {
+        self.identifier = identifier
+    }
+
+    static func probe(identifier: String, timeout: Duration = .seconds(3)) async -> NetworkExtensionProbe {
+        let probe = SystemExtensionStatusProbe(identifier: identifier)
+        return await probe.run(timeout: timeout)
+    }
+
+    private func run(timeout: Duration) async -> NetworkExtensionProbe {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            let request = OSSystemExtensionRequest.propertiesRequest(
+                forExtensionWithIdentifier: identifier,
+                queue: .main
+            )
+            request.delegate = self
+            self.request = request
+            OSSystemExtensionManager.shared.submitRequest(request)
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: timeout)
+                self?.finish(.unknown)
+            }
+        }
+    }
+
+    private func finish(_ result: NetworkExtensionProbe) {
+        guard let continuation else { return }
+        self.continuation = nil
+        request?.delegate = nil
+        request = nil
+        continuation.resume(returning: result)
+    }
+
+    nonisolated func request(
+        _ request: OSSystemExtensionRequest,
+        foundProperties properties: [OSSystemExtensionProperties]
+    ) {
+        let expectedBuild = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Library/SystemExtensions")
+            .appendingPathComponent("\(request.identifier).systemextension")
+        let build = Bundle(url: expectedBuild)?
+            .object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let live = properties.filter { !$0.isUninstalling }
+        let active = live.filter { $0.isEnabled && !$0.isAwaitingUserApproval }
+        let result: NetworkExtensionProbe
+        if !active.isEmpty {
+            // Without a bundled copy to compare against, any enabled build
+            // counts as current.
+            let isCurrent = build.map { build in
+                active.contains { $0.bundleVersion == build }
+            } ?? true
+            result = .enabled(isCurrentBuild: isCurrent)
+        } else if live.contains(where: \.isAwaitingUserApproval) {
+            result = .awaitingApproval
+        } else if !properties.isEmpty && live.isEmpty {
+            result = .uninstalling
+        } else {
+            result = .notInstalled
+        }
+        Task { @MainActor in self.finish(result) }
+    }
+
+    nonisolated func request(
+        _ request: OSSystemExtensionRequest,
+        actionForReplacingExtension existing: OSSystemExtensionProperties,
+        withExtension ext: OSSystemExtensionProperties
+    ) -> OSSystemExtensionRequest.ReplacementAction {
+        .cancel
+    }
+
+    nonisolated func requestNeedsUserApproval(_ request: OSSystemExtensionRequest) {}
+
+    nonisolated func request(
+        _ request: OSSystemExtensionRequest,
+        didFinishWithResult result: OSSystemExtensionRequest.Result
+    ) {}
+
+    nonisolated func request(
+        _ request: OSSystemExtensionRequest,
+        didFailWithError error: Error
+    ) {
+        Task { @MainActor in self.finish(.unknown) }
     }
 }

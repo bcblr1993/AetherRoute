@@ -10631,6 +10631,347 @@
           }
         }
       }
+    },
+    "Permission to add the configuration was not given. Choose Retry, then Allow in the dialog.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未获得添加配置的授权。请点按“重试”，然后在弹出的对话框中选择“允许”。"
+          }
+        }
+      }
+    },
+    "Step 2 of 2": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 2 步，共 2 步"
+          }
+        }
+      }
+    },
+    "Set Up Network Permissions": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置网络权限"
+          }
+        }
+      }
+    },
+    "AetherRoute needs two macOS permissions for each network engine. Grant them once now, and connecting or switching engines later will never stop for a prompt.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个网络引擎都需要两项 macOS 授权。现在一次性完成，之后连接或切换引擎都不会再被弹窗打断。"
+          }
+        }
+      }
+    },
+    "Later": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "稍后"
+          }
+        }
+      }
+    },
+    "Start Setup": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始配置"
+          }
+        }
+      }
+    },
+    "Waiting for Permission…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待授权…"
+          }
+        }
+      }
+    },
+    "Start Using AetherRoute": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始使用 AetherRoute"
+          }
+        }
+      }
+    },
+    "Restart to Continue": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重启后继续"
+          }
+        }
+      }
+    },
+    "Nothing connects during setup. AetherRoute only asks macOS for permission.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置过程中不会建立任何连接，只向 macOS 申请授权。"
+          }
+        }
+      }
+    },
+    "macOS finishes installing the extension after a restart. Open AetherRoute again afterwards to continue.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 需要重启后才能完成扩展安装。重启后再次打开 AetherRoute 即可继续。"
+          }
+        }
+      }
+    },
+    "%@ is not available on this Mac. You can still use the other engine.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 在这台 Mac 上不可用，你仍可使用另一个引擎。"
+          }
+        }
+      }
+    },
+    "In System Settings › General › Login Items & Extensions › Network Extensions, switch on AetherRoute.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在“系统设置 › 通用 › 登录项与扩展 › 网络扩展”中打开 AetherRoute。"
+          }
+        }
+      }
+    },
+    "Choose Allow when macOS asks to add the AetherRoute configuration.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 询问是否添加 AetherRoute 配置时，请选择“允许”。"
+          }
+        }
+      }
+    },
+    "Available after this Mac restarts.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重启这台 Mac 后可用。"
+          }
+        }
+      }
+    },
+    "Checking": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查"
+          }
+        }
+      }
+    },
+    "Not set up": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未配置"
+          }
+        }
+      }
+    },
+    "Installing": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在安装"
+          }
+        }
+      }
+    },
+    "Waiting for you": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待你操作"
+          }
+        }
+      }
+    },
+    "Ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已就绪"
+          }
+        }
+      }
+    },
+    "Restart needed": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要重启"
+          }
+        }
+      }
+    },
+    "Not finished": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未完成"
+          }
+        }
+      }
+    },
+    "What you will be asked": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你需要完成的两步"
+          }
+        }
+      }
+    },
+    "Switch on the network extensions": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开网络扩展开关"
+          }
+        }
+      }
+    },
+    "Allow the configurations": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许添加配置"
+          }
+        }
+      }
+    },
+    "macOS opens Login Items & Extensions. Under Network Extensions, switch on both AetherRoute entries. You may need your password or Touch ID.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 会打开“登录项与扩展”。在“网络扩展”中打开两个 AetherRoute 开关，可能需要输入密码或使用触控 ID。"
+          }
+        }
+      }
+    },
+    "macOS asks whether AetherRoute may add proxy and VPN configurations. Choose Allow for each.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 会询问是否允许 AetherRoute 添加代理与 VPN 配置，每次都请选择“允许”。"
+          }
+        }
+      }
+    },
+    "Network setup required": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要完成网络设置"
+          }
+        }
+      }
+    },
+    "Finish granting the network permissions in the main window before connecting.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在主窗口完成网络权限设置，再进行连接。"
+          }
+        }
+      }
+    },
+    "Continue Setup": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续设置"
+          }
+        }
+      }
+    },
+    "Set Up Permissions Again": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新设置权限"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

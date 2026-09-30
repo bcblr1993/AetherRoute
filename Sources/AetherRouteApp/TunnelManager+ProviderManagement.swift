@@ -166,15 +166,32 @@ extension TunnelManager {
         }
         Self.runtimeLogger.info("stage=loadExistingManager success result=none")
 
-        let manager: NEVPNManager = switch networkEngineMode {
+        let manager = makeProviderManager(for: networkEngineMode, isEnabled: true)
+        Self.runtimeLogger.info("stage=createManager save begin")
+        try await manager.saveToPreferences()
+        Self.runtimeLogger.info("stage=createManager save success")
+        Self.runtimeLogger.info("stage=createManager reload begin")
+        try await manager.loadFromPreferences()
+        Self.runtimeLogger.info("stage=createManager reload success")
+        return manager
+    }
+
+    /// A new, unsaved configuration for `mode`. First-run setup saves one
+    /// per engine disabled, so creating the TUN configuration does not switch
+    /// off another app's VPN; connecting enables it.
+    func makeProviderManager(
+        for mode: NetworkEngineMode,
+        isEnabled: Bool
+    ) -> NEVPNManager {
+        let manager: NEVPNManager = switch mode {
         case .transparent: NETransparentProxyManager()
 #if AETHERROUTE_INDEPENDENT
         case .tun: NETunnelProviderManager()
 #endif
         }
         let provider = NETunnelProviderProtocol()
-        provider.providerBundleIdentifier = networkEngineMode.providerBundleIdentifier
-        provider.serverAddress = networkEngineMode.serverAddress
+        provider.providerBundleIdentifier = mode.providerBundleIdentifier
+        provider.serverAddress = mode.serverAddress
         provider.providerConfiguration = TunnelProviderConfigurationCodec.setting(
             routingMode: routingMode,
             localProxy: providerLocalProxySettings,
@@ -182,13 +199,7 @@ extension TunnelManager {
         )
         manager.protocolConfiguration = provider
         manager.localizedDescription = AppConstants.localizedDescription
-        manager.isEnabled = true
-        Self.runtimeLogger.info("stage=createManager save begin")
-        try await manager.saveToPreferences()
-        Self.runtimeLogger.info("stage=createManager save success")
-        Self.runtimeLogger.info("stage=createManager reload begin")
-        try await manager.loadFromPreferences()
-        Self.runtimeLogger.info("stage=createManager reload success")
+        manager.isEnabled = isEnabled
         return manager
     }
 
@@ -314,11 +325,14 @@ extension TunnelManager {
         return loaded
     }
 
-    func loadExistingManager() async throws -> NEVPNManager? {
+    func loadExistingManager(
+        for requestedMode: NetworkEngineMode? = nil
+    ) async throws -> NEVPNManager? {
+        let mode = requestedMode ?? networkEngineMode
         Self.runtimeLogger.info(
-            "stage=queryManagers begin engine=\(self.networkEngineMode.rawValue, privacy: .public)"
+            "stage=queryManagers begin engine=\(mode.rawValue, privacy: .public)"
         )
-        let loaded: [NEVPNManager] = switch networkEngineMode {
+        let loaded: [NEVPNManager] = switch mode {
         case .transparent:
             try await NETransparentProxyManager.loadAllFromPreferences().map { $0 }
 #if AETHERROUTE_INDEPENDENT
@@ -330,7 +344,7 @@ extension TunnelManager {
             .filter { manager in
                 (manager.protocolConfiguration as? NETunnelProviderProtocol)?
                     .providerBundleIdentifier ==
-                    networkEngineMode.providerBundleIdentifier
+                    mode.providerBundleIdentifier
             }
         Self.runtimeLogger.info(
             "stage=queryManagers success total=\(loaded.count, privacy: .public) matching=\(matching.count, privacy: .public)"

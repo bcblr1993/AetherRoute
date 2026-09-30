@@ -702,7 +702,7 @@ private struct MenuBarContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if tunnel.hasAcceptedPrivacyDisclosure {
+            if tunnel.hasAcceptedPrivacyDisclosure && !tunnel.isNetworkSetupRequired {
                 readyContent
                     .task { await tunnel.prepare() }
             } else {
@@ -1028,7 +1028,9 @@ private struct MenuBarContent: View {
                 AetherRouteBrandTile(size: 38)
 
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    Text("Privacy review required")
+                    Text(tunnel.hasAcceptedPrivacyDisclosure
+                        ? AppLocalization.string("Network setup required")
+                        : AppLocalization.string("Privacy review required"))
                         .font(.headline)
                     Text("Connection controls are locked")
                         .font(.caption)
@@ -1041,7 +1043,9 @@ private struct MenuBarContent: View {
             Divider()
 
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                Text("Review how profiles, network traffic, and DNS requests are handled before AetherRoute creates a network extension configuration.")
+                Text(tunnel.hasAcceptedPrivacyDisclosure
+                    ? AppLocalization.string("Finish granting the network permissions in the main window before connecting.")
+                    : AppLocalization.string("Review how profiles, network traffic, and DNS requests are handled before AetherRoute creates a network extension configuration."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1049,7 +1053,12 @@ private struct MenuBarContent: View {
                 Button {
                     openMainWindow()
                 } label: {
-                    Label("Review Network Privacy", systemImage: "lock.shield")
+                    Label(
+                        tunnel.hasAcceptedPrivacyDisclosure
+                            ? AppLocalization.string("Continue Setup")
+                            : AppLocalization.string("Review Network Privacy"),
+                        systemImage: "lock.shield"
+                    )
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)

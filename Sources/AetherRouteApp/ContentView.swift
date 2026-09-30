@@ -123,10 +123,15 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if tunnel.hasAcceptedPrivacyDisclosure {
+            if tunnel.hasAcceptedPrivacyDisclosure && tunnel.isNetworkSetupRequired {
+                NetworkSetupView(isOnboarding: true)
+                    .environmentObject(tunnel)
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+            } else if tunnel.hasAcceptedPrivacyDisclosure {
                 applicationContent
                     .task { await tunnel.prepare() }
                     .task { await tunnel.runSubscriptionUpdateLoop() }
+                    .transition(.opacity)
             } else {
                 ZStack {
                     Color(nsColor: .windowBackgroundColor)
@@ -140,6 +145,8 @@ struct ContentView: View {
         .accessibilityIdentifier("aetherroute-semantic-root")
         .frame(minWidth: 780, minHeight: 560)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.isNetworkSetupRequired)
+        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.hasAcceptedPrivacyDisclosure)
         .id(language.preference)
         .preferredColorScheme(uiReviewColorScheme)
         .environment(\.dynamicTypeSize, effectiveDynamicTypeSize)
@@ -906,8 +913,10 @@ private struct ActiveOutletRow: View {
 /// the hero. Retrying is the hero's own primary button, so this section only
 /// adds what that button cannot: the reason, and a way to the profiles.
 private struct RecoverySection: View {
+    @EnvironmentObject private var tunnel: TunnelManager
     let plan: ConnectionRecoveryPlan
     let openProfiles: () -> Void
+    @State private var isNetworkSetupPresented = false
 
     var body: some View {
         HStack(alignment: .center, spacing: AetherVisual.s3) {
@@ -920,6 +929,17 @@ private struct RecoverySection: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: AetherVisual.s2)
+            // A withdrawn permission (extension switched off, configuration
+            // removed) is fixed with the same page as first-run setup.
+            if plan.context == .configuration {
+                Button {
+                    isNetworkSetupPresented = true
+                } label: {
+                    Label(AppLocalization.string("Set Up Permissions Again"), systemImage: "lock.shield")
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("recovery-networkSetup")
+            }
             if plan.primaryAction == .reviewProfiles || plan.secondaryAction == .reviewProfiles {
                 let button = Button(action: openProfiles) {
                     Label(AppLocalization.string("Review Profiles"), systemImage: "doc.badge.gearshape")
@@ -934,6 +954,13 @@ private struct RecoverySection: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("connection-recovery-card")
+        .sheet(isPresented: $isNetworkSetupPresented) {
+            NetworkSetupView(isOnboarding: false) {
+                isNetworkSetupPresented = false
+            }
+            .environmentObject(tunnel)
+            .frame(width: AetherVisual.formMaxWidth, height: AetherVisual.windowHeight - AetherVisual.s6 * 2)
+        }
     }
 
     private var recoveryDetail: String {
