@@ -848,10 +848,7 @@ private struct MenuBarContent: View {
                     let member = tunnel.proxySelections[group.name]?.selectedMember
                     MenuSelectedNodeTitle(
                         member: member,
-                        isAutomaticGroup: member.map { name in
-                            tunnel.activeProfileSummary?.proxyGroups.contains { $0.name == name } ?? false
-                        } ?? false,
-                        telemetry: telemetry
+                        leaf: member.flatMap { tunnel.automaticGroupLeaves[$0] }
                     )
                     if let member {
                         MenuNodeLatency(
@@ -1236,16 +1233,7 @@ private struct MenuNodeListInline: View {
 /// group follows as context, matching the Overview hero.
 private struct MenuSelectedNodeTitle: View {
     let member: String?
-    let isAutomaticGroup: Bool
-    @ObservedObject var telemetry: NetworkTelemetryViewModel
-
-    private var leaf: String? {
-        guard isAutomaticGroup, let member else { return nil }
-        return GroupLeafResolver.leaf(
-            throughGroup: member,
-            chains: telemetry.snapshot.connections.map(\.proxyChain)
-        )
-    }
+    let leaf: String?
 
     var body: some View {
         let shown = leaf ?? member

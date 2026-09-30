@@ -269,6 +269,10 @@ final class TunnelManager: ObservableObject {
     @Published var networkEngineMode: NetworkEngineMode
     @Published var systemExtensionApprovalRequired = false
     @Published var proxySelections: [String: ProxySelectionState] = [:]
+    /// Node each automatic group (url-test, fallback…) is really using,
+    /// derived from live connection chains. Published only when it changes,
+    /// so views read it without observing every telemetry sample.
+    @Published var automaticGroupLeaves: [String: String] = [:]
     @Published var proxySelectionMessages: [String: String] = [:]
     @Published var proxySelectionRequests: Set<String> = []
     @Published var automaticProxySelectionGroups: Set<String> = []

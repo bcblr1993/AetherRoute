@@ -193,7 +193,7 @@ extension TunnelManager {
             let refreshed = try await client.telemetry(
                 maximumConnections: Self.telemetryConnectionLimit
             )
-            telemetryViewModel.update(refreshed)
+            publishTelemetry(refreshed)
         } catch {
             // A transient provider-message failure must not disconnect a healthy
             // tunnel or replace the last truthful sample with fabricated zeros.
@@ -372,7 +372,7 @@ extension TunnelManager {
 #else
         let useInvalidTimestamps = false
 #endif
-        telemetryViewModel.update(NetworkTelemetrySnapshot(
+        publishTelemetry(NetworkTelemetrySnapshot(
             uploadBytesPerSecond: 384_000,
             downloadBytesPerSecond: 2_480_000,
             uploadTotal: 18_430_000,
@@ -409,4 +409,25 @@ extension TunnelManager {
         ))
     }
 
+}
+
+extension TunnelManager {
+    /// Hands a sample to the telemetry view model and refreshes the
+    /// automatic-group leaves derived from it.
+    func publishTelemetry(_ snapshot: NetworkTelemetrySnapshot) {
+        telemetryViewModel.update(snapshot)
+        let automaticGroups = (activeProfileSummary?.proxyGroups ?? [])
+            .filter { $0.strategy.lowercased() != "select" }
+            .map(\.name)
+        let chains = snapshot.connections.map(\.proxyChain)
+        var leaves: [String: String] = [:]
+        for group in automaticGroups {
+            if let leaf = GroupLeafResolver.leaf(throughGroup: group, chains: chains) {
+                leaves[group] = leaf
+            }
+        }
+        if leaves != automaticGroupLeaves {
+            automaticGroupLeaves = leaves
+        }
+    }
 }

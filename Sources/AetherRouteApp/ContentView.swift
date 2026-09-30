@@ -781,17 +781,9 @@ private struct ActiveOutlet: Equatable {
 private struct ActiveOutletRow: View {
     @Environment(\.openSettings) private var openSettings
     let outlet: ActiveOutlet
-    @ObservedObject var telemetry: NetworkTelemetryViewModel
-
     /// The node an automatic group is using right now, read from the chains
     /// of live connections. Nil for plain nodes or before traffic flows.
-    private var resolvedLeaf: String? {
-        guard outlet.nestedGroupStrategy != nil else { return nil }
-        return GroupLeafResolver.leaf(
-            throughGroup: outlet.node,
-            chains: telemetry.snapshot.connections.map(\.proxyChain)
-        )
-    }
+    let resolvedLeaf: String?
 
     private var displayedNode: String { resolvedLeaf ?? outlet.node }
 
@@ -983,7 +975,7 @@ private struct ConnectionHero: View {
             // traffic going where I think?"), so they share one card.
             if let outlet {
                 Divider()
-                ActiveOutletRow(outlet: outlet, telemetry: tunnel.telemetryViewModel)
+                ActiveOutletRow(outlet: outlet, resolvedLeaf: tunnel.automaticGroupLeaves[outlet.node])
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
             if tunnel.isConnected {
