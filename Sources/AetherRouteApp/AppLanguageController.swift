@@ -43,6 +43,23 @@ enum AppLocalization {
         )
     }
 
+    /// A short elapsed-time phrase ("12 min", "1 hr 5 min") in the app's
+    /// chosen language rather than the system's.
+    static func duration(_ interval: TimeInterval) -> String {
+        let identifier = lock.withLock { localeIdentifier }
+        let locale = identifier.map { Locale(identifier: $0) }
+            ?? .autoupdatingCurrent
+        var calendar = Calendar.current
+        calendar.locale = locale
+        let formatter = DateComponentsFormatter()
+        formatter.calendar = calendar
+        formatter.unitsStyle = .short
+        formatter.allowedUnits = [.day, .hour, .minute]
+        formatter.maximumUnitCount = 2
+        formatter.zeroFormattingBehavior = .dropAll
+        return formatter.string(from: max(60, interval)) ?? ""
+    }
+
     private static func resolvedBundle(
         for preference: AppLanguagePreference
     ) -> Bundle {

@@ -69,14 +69,14 @@ struct DNSView: View {
                 value: "\(dns.fallbackCount)",
                 detail: AppLocalization.string("resolvers"),
                 symbol: "arrow.trianglehead.branch",
-                tint: .indigo
+                tint: .accentColor
             )
             DNSMetricCard(
                 title: AppLocalization.string("Policies"),
                 value: "\(dns.nameserverPolicyCount)",
                 detail: AppLocalization.string("domain rules"),
                 symbol: "list.bullet.indent",
-                tint: .teal
+                tint: .accentColor
             )
         }
 
@@ -229,11 +229,11 @@ struct DNSView: View {
                         systemImage: "rectangle.3.group.bubble"
                     )
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(Color.indigo)
+                    .foregroundStyle(Color.accentColor)
                     .padding(.horizontal, AetherVisual.s3)
                     .padding(.vertical, AetherVisual.s2)
                     .background(
-                        Color.indigo.opacity(0.09),
+                        Color.accentColor.opacity(0.09),
                         in: Capsule()
                     )
                 }
@@ -287,7 +287,7 @@ struct DNSView: View {
                         ? AppLocalization.string("Allowed")
                         : AppLocalization.string("Filtered"),
                     symbol: "6.circle",
-                    tint: dns.allowsIPv6 ? .teal : .secondary
+                    tint: dns.allowsIPv6 ? .accentColor : .secondary
                 )
                 Divider().padding(.leading, AetherVisual.wideListIndent)
                 DNSSettingRow(
@@ -299,7 +299,7 @@ struct DNSView: View {
                         ? AppLocalization.string("On")
                         : AppLocalization.string("Off"),
                     symbol: "arrow.triangle.branch",
-                    tint: dns.respectsRules ? .indigo : .secondary
+                    tint: dns.respectsRules ? .accentColor : .secondary
                 )
                 Divider().padding(.leading, AetherVisual.wideListIndent)
                 DNSSettingRow(
@@ -347,7 +347,7 @@ struct DNSView: View {
                         ? AppLocalization.string("On")
                         : AppLocalization.string("Off"),
                     symbol: "6.circle",
-                    tint: allowsIPv6 ? .teal : .secondary
+                    tint: allowsIPv6 ? .accentColor : .secondary
                 )
             }
             .featureCard()
@@ -378,7 +378,7 @@ struct DNSView: View {
                             : AppLocalization.string("Customized"),
                         color: tunnel.dnsRuntimePolicy.isInherited
                             ? .secondary
-                            : .indigo,
+                            : .accentColor,
                         symbol: tunnel.dnsRuntimePolicy.isInherited
                             ? "doc.text"
                             : "slider.horizontal.3"
@@ -407,7 +407,7 @@ struct DNSView: View {
                 Divider().padding(.leading, AetherVisual.s4)
                 dnsPolicyRow(
                     symbol: "6.circle",
-                    tint: dns.allowsIPv6 ? .teal : .secondary,
+                    tint: dns.allowsIPv6 ? .accentColor : .secondary,
                     title: AppLocalization.string("IPv6 answers"),
                     detail: dns.allowsIPv6
                         ? AppLocalization.string("AAAA responses are allowed by this profile.")
@@ -423,7 +423,7 @@ struct DNSView: View {
                 Divider().padding(.leading, AetherVisual.s4)
                 dnsPolicyRow(
                     symbol: "arrow.triangle.branch",
-                    tint: dns.respectsRules ? .indigo : .secondary,
+                    tint: dns.respectsRules ? .accentColor : .secondary,
                     title: AppLocalization.string("Rule-aware queries"),
                     detail: dns.respectsRules
                         ? AppLocalization.string("Upstream queries follow the routing rule engine.")
@@ -456,7 +456,7 @@ struct DNSView: View {
                     .padding(.horizontal, AetherVisual.s3)
                     .padding(.vertical, AetherVisual.s1)
                     .background(
-                        (dns.usesHosts ? Color.blue : Color.secondary).opacity(0.12),
+                        (dns.usesHosts ? Color.accentColor : Color.secondary).opacity(0.12),
                         in: Capsule()
                     )
                 }
@@ -486,7 +486,7 @@ struct DNSView: View {
                     .foregroundStyle(
                         tunnel.dnsRuntimePolicyMessageIsError
                             ? Color.orange
-                            : Color.teal
+                            : Color.accentColor
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(AetherVisual.s4)
@@ -703,8 +703,8 @@ struct DNSView: View {
     private func modeColor(_ mode: DNSResolutionMode) -> Color {
         switch mode {
         case .normal: .blue
-        case .fakeIP: .indigo
-        case .redirHost: .teal
+        case .fakeIP: .accentColor
+        case .redirHost: .accentColor
         case .unsupported: .orange
         }
     }
@@ -738,9 +738,9 @@ struct DNSView: View {
 
     private func transportColor(_ transport: DNSUpstreamTransport) -> Color {
         switch transport {
-        case .dnsOverTLS, .dnsOverHTTPS: .teal
+        case .dnsOverTLS, .dnsOverHTTPS: .accentColor
         case .udp, .tcp: .blue
-        case .dhcp: .indigo
+        case .dhcp: .accentColor
         case .unsupported: .orange
         }
     }

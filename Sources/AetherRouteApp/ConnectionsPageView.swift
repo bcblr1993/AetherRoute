@@ -34,12 +34,11 @@ struct ConnectionsView: View {
                 .environmentObject(tunnel)
                 .padding(.horizontal, AetherVisual.pageHorizontalPadding)
 
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField(AppLocalization.string("Search connections"), text: $searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("connections-search-field")
-            }
+            AetherSearchField(
+                text: $searchText,
+                prompt: AppLocalization.string("Search connections"),
+                accessibilityIdentifier: "connections-search-field"
+            )
             .padding(.horizontal, AetherVisual.pageHorizontalPadding)
             .padding(.vertical, AetherVisual.s2)
 
@@ -306,16 +305,20 @@ private struct SessionBar: View {
 
     var body: some View {
         HStack(spacing: AetherVisual.s4) {
-            HStack(spacing: AetherVisual.s2) {
-                AetherStatusBeacon(
-                    isConnected: tunnel.isConnected,
-                    isConnecting: tunnel.state == .connecting,
-                    size: 7
-                )
-                Text(tunnel.statusTitle)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+            // Connected state is already on the sidebar and overview; here
+            // the bar only names it when there is something to act on.
+            if !tunnel.isConnected {
+                HStack(spacing: AetherVisual.s2) {
+                    AetherStatusBeacon(
+                        isConnected: false,
+                        isConnecting: tunnel.state == .connecting,
+                        size: 7
+                    )
+                    Text(tunnel.compactStatusTitle)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             if !tunnel.isConnected {
@@ -326,13 +329,16 @@ private struct SessionBar: View {
             }
 
             if let duration {
-                Text(duration)
-                    .font(.body.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Elapsed")
+                Label {
+                    Text(duration)
+                        .font(.body.monospacedDigit())
+                } icon: {
+                    Image(systemName: "clock")
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityLabel("Elapsed")
+                Divider().frame(height: 18).opacity(0.4)
             }
-
-            Divider().frame(height: 18).opacity(0.4)
 
             rate(symbol: "arrow.down", value: downloadText, tint: .cyan)
                 .accessibilityIdentifier("connections-download-title")

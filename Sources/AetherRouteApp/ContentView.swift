@@ -1043,7 +1043,7 @@ private struct ConnectionHero: View {
                     .foregroundStyle(.primary)
                     .contentTransition(.opacity)
                     .accessibilityValue(Text(tunnel.statusDetail))
-                Text(tunnel.statusDetail)
+                heroSubtitle
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1060,6 +1060,24 @@ private struct ConnectionHero: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// While connected, how long the session has held says more than the
+    /// extension's readiness; other states keep their explanation.
+    @ViewBuilder
+    private var heroSubtitle: some View {
+        if tunnel.isConnected, !tunnel.isAutomaticRouteRecovering, let since = tunnel.connectedSince {
+            TimelineView(.periodic(from: since, by: 60)) { context in
+                Text(
+                    String.localizedStringWithFormat(
+                        AppLocalization.string("Connected for %@"),
+                        AppLocalization.duration(context.date.timeIntervalSince(since))
+                    )
+                )
+            }
+        } else {
+            Text(tunnel.statusDetail)
+        }
     }
 
     private var nextStep: String {

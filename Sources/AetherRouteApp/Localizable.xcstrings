@@ -4503,7 +4503,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "节点解析与协议诊断（底库清单）"
+            "value": "节点清单与提供方"
           }
         }
       }
@@ -4513,7 +4513,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "用于排查订阅解析与内核协议支持状态，日常使用无需关注"
+            "value": "排查订阅解析或协议支持问题时使用"
           }
         }
       }
@@ -10220,6 +10220,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在切换"
+          }
+        }
+      }
+    },
+    "Clear": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除"
+          }
+        }
+      }
+    },
+    "Connected for %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已连接 %@"
           }
         }
       }

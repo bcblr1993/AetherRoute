@@ -35,7 +35,14 @@ struct ProxiesView: View {
     private func content(summary: ProfileConfigurationSummary) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
-                AetherPageHeader(.proxies)
+                AetherPageHeader(.proxies) {
+                    AetherSearchField(
+                        text: $searchText,
+                        prompt: AppLocalization.string("Search nodes"),
+                        accessibilityIdentifier: "proxies-search-field"
+                    )
+                    .frame(width: 220)
+                }
 
                 if !summary.proxyGroups.isEmpty {
                     // 1. 顶部策略组水平 Tab 分段选择栏
@@ -74,11 +81,6 @@ struct ProxiesView: View {
             .accessibilityLabel(AppLocalization.string("Proxy configuration"))
             .accessibilityIdentifier("proxies-page-content")
         }
-        .searchable(
-            text: $searchText,
-            placement: .toolbar,
-            prompt: Text(AppLocalization.string("Search nodes"))
-        )
     }
 
     private func currentGroup(from groups: [ProxyGroupConfigurationSummary]) -> ProxyGroupConfigurationSummary? {
@@ -112,6 +114,9 @@ struct ProxiesView: View {
                 Spacer()
             }
 
+            // With one group the switcher would only repeat the detail card
+            // below; it appears once there is a choice to make.
+            if groups.count > 1 {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: AetherVisual.s1) {
                     ForEach(groups) { group in
@@ -139,6 +144,7 @@ struct ProxiesView: View {
                     RoundedRectangle(cornerRadius: AetherVisual.insetRadius + 2, style: .continuous)
                         .stroke(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 0.5)
                 }
+            }
             }
         }
     }

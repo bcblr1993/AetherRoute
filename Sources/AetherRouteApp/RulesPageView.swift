@@ -455,31 +455,11 @@ struct RulesView: View {
                                 VStack(alignment: .leading, spacing: AetherVisual.s3) {
                                     // 第一行：即时搜索框 + 策略动作过滤菜单
                                     HStack(spacing: AetherVisual.s3) {
-                                        HStack(spacing: AetherVisual.s2) {
-                                            Image(systemName: "magnifyingglass")
-                                                .foregroundStyle(.primary)
-                                            TextField(AppLocalization.string("Filter criteria, targets, or kinds…"), text: $searchText)
-                                                .textFieldStyle(.plain)
-                                            if !searchText.isEmpty {
-                                                Button {
-                                                    searchText = ""
-                                                } label: {
-                                                    Image(systemName: "xmark.circle.fill")
-                                                        .foregroundStyle(.primary)
-                                                }
-                                                .buttonStyle(.plain)
-                                            }
-                                        }
-                                        .padding(.horizontal, AetherVisual.s3)
-                                        .padding(.vertical, AetherVisual.sCompact)
-                                        .background(
-                                            Color(nsColor: .controlBackgroundColor).opacity(0.8),
-                                            in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+                                        AetherSearchField(
+                                            text: $searchText,
+                                            prompt: AppLocalization.string("Filter criteria, targets, or kinds…"),
+                                            accessibilityIdentifier: "rules-search-field"
                                         )
-                                        .overlay {
-                                            RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
-                                                .stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 0.5)
-                                        }
 
                                         // 动作筛选菜单
                                         Menu {

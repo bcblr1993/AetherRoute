@@ -14,7 +14,7 @@ struct EmptyProfileOnboardingCard: View {
                     RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [Color.accentColor.opacity(0.18), Color.blue.opacity(0.08)],
+                                colors: [Color.accentColor.opacity(0.18), Color.accentColor.opacity(0.08)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -277,13 +277,11 @@ struct ProfilesView: View {
                 pageHeader
 
                 if !tunnel.profiles.isEmpty {
-                    HStack {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField(AppLocalization.string("Search profiles"), text: $searchText)
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityLabel(AppLocalization.string("Search profiles"))
-                            .accessibilityIdentifier("profiles-search-field")
-                    }
+                    AetherSearchField(
+                        text: $searchText,
+                        prompt: AppLocalization.string("Search profiles"),
+                        accessibilityIdentifier: "profiles-search-field"
+                    )
                 }
 
                 if let message = tunnel.profileMessage, !tunnel.isImportingProfile {
@@ -493,7 +491,7 @@ struct ProfilesView: View {
                     RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [Color.accentColor.opacity(0.18), Color.blue.opacity(0.06)],
+                                colors: [Color.accentColor.opacity(0.18), Color.accentColor.opacity(0.06)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -526,10 +524,10 @@ struct ProfilesView: View {
                         HStack {
                             ZStack {
                                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                                    .fill(Color.blue.opacity(0.12))
+                                    .fill(Color.accentColor.opacity(0.12))
                                 Image(systemName: "link.badge.plus")
                                     .font(.title2.weight(.semibold))
-                                    .foregroundStyle(Color.blue)
+                                    .foregroundStyle(Color.accentColor)
                             }
                             .frame(width: 34, height: 34)
 
@@ -567,10 +565,10 @@ struct ProfilesView: View {
                         HStack {
                             ZStack {
                                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                                    .fill(Color.indigo.opacity(0.12))
+                                    .fill(Color.accentColor.opacity(0.12))
                                 Image(systemName: "square.and.arrow.down")
                                     .font(.title2.weight(.semibold))
-                                    .foregroundStyle(Color.indigo)
+                                    .foregroundStyle(Color.accentColor)
                             }
                             .frame(width: 34, height: 34)
 
@@ -608,10 +606,10 @@ struct ProfilesView: View {
                         HStack {
                             ZStack {
                                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                                    .fill(Color.teal.opacity(0.12))
+                                    .fill(Color.accentColor.opacity(0.12))
                                 Image(systemName: "icloud.fill")
                                     .font(.title2.weight(.semibold))
-                                    .foregroundStyle(Color.teal)
+                                    .foregroundStyle(Color.accentColor)
                             }
                             .frame(width: 34, height: 34)
 
@@ -730,10 +728,10 @@ struct ProfilesView: View {
         HStack(spacing: AetherVisual.s3) {
             ZStack {
                 RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                    .fill(Color.teal.opacity(0.12))
+                    .fill(Color.accentColor.opacity(0.12))
                 Image(systemName: "doc.text.fill")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color.teal)
+                    .foregroundStyle(Color.accentColor)
             }
             .frame(width: 32, height: 32)
             .accessibilityHidden(true)
@@ -807,7 +805,7 @@ private struct RoutingResourcesCard: View {
             HStack(alignment: .center, spacing: AetherVisual.s3) {
                 Image(systemName: resourcesAreReady ? "checkmark.shield" : "map")
                     .font(.title3)
-                    .foregroundStyle(resourcesAreReady ? Color.teal : Color.accentColor)
+                    .foregroundStyle(resourcesAreReady ? Color.green : Color.accentColor)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
@@ -993,9 +991,9 @@ private struct RoutingResourcesCard: View {
 
     private func resourceColor(_ kind: RoutingResourceKind) -> Color {
         switch tunnel.routingResourceStatuses[kind] {
-        case .ready?: .teal
+        case .ready?: .green
         case .stale?, .invalid?: .orange
-        case .missing?, nil: .blue
+        case .missing?, nil: .secondary
         }
     }
 
@@ -1231,14 +1229,9 @@ private struct ManagedProfileRow: View {
         return "doc.text.fill"
     }
 
+    /// Profile kinds differ by symbol; colour is not a kind.
     private var iconTint: Color {
-        if isSubscription {
-            return .blue
-        }
-        if managed.profile.nativeNodes != nil {
-            return .orange
-        }
-        return .teal
+        .accentColor
     }
 
     private var iconGradient: LinearGradient {
@@ -1351,7 +1344,7 @@ struct SubscriptionEditorSheet: View {
                     .font(.largeTitle.weight(.medium))
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 52, height: 52)
-                    .background(Color.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
+                    .background(Color.accentColor.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text("Add Profile Subscription")
                         .font(.title2.weight(.semibold))

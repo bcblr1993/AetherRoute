@@ -427,6 +427,55 @@ extension View {
     }
 }
 
+/// The one search field style used by every page: magnifier, clear button,
+/// and Escape to clear. Pages previously mixed a toolbar `.searchable` (which
+/// was invisible because the window hides its toolbar) with plain text fields.
+struct AetherSearchField: View {
+    @Binding var text: String
+    let prompt: String
+    var accessibilityIdentifier: String?
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: AetherVisual.sCompact) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField(prompt, text: $text)
+                .textFieldStyle(.plain)
+                .focused($isFocused)
+                .onExitCommand { text = "" }
+                .accessibilityIdentifier(accessibilityIdentifier ?? "")
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(AppLocalization.string("Clear"))
+                .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, AetherVisual.s2)
+        .padding(.vertical, AetherVisual.sCompact)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+                .stroke(
+                    isFocused ? Color.accentColor.opacity(0.6) : Color(nsColor: .separatorColor),
+                    lineWidth: isFocused ? 1.5 : 0.5
+                )
+        }
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isFocused)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: text.isEmpty)
+    }
+}
+
 /// Keeps asynchronous actions visually stable while work is in progress.
 /// The action title remains visible, so the control neither collapses to a
 /// spinner nor makes people guess which operation is running.
