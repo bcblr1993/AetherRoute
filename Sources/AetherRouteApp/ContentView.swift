@@ -766,7 +766,7 @@ private struct ActiveOutlet: Equatable {
         latency = ProxyLatencyStatus.status(
             member: node,
             results: tunnel.proxyLatencies[group.name]?.results,
-            isTesting: false
+            isTesting: tunnel.isTestingLatency(group: group.name, member: node)
         )
         confidence = tunnel.latencyConfidence(group: group.name, member: node)
     }
@@ -776,12 +776,17 @@ private struct ActiveOutlet: Equatable {
 /// answered, and the two things people do next (diagnose, switch).
 private struct ActiveOutletRow: View {
     @Environment(\.openSettings) private var openSettings
+    @EnvironmentObject private var tunnel: TunnelManager
     let outlet: ActiveOutlet
     /// The node an automatic group is using right now, read from the chains
     /// of live connections. Nil for plain nodes or before traffic flows.
     let resolvedLeaf: String?
 
     private var displayedNode: String { resolvedLeaf ?? outlet.node }
+
+    private func testLatency() {
+        Task { await tunnel.testSingleProxyLatency(group: outlet.groupName, member: outlet.node) }
+    }
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -863,9 +868,21 @@ private struct ActiveOutletRow: View {
 
     private var actions: some View {
         HStack(spacing: AetherVisual.s2) {
-            if outlet.latency != .untested {
-                AetherLatencyPill(status: outlet.latency, confidence: outlet.confidence)
-                    .transition(.opacity)
+            // The exit's latency is a button, as on the Proxies page: it used
+            // to have no tap action and so rendered disabled (dimmed).
+            if outlet.latency == .untested {
+                Button(AppLocalization.string("Test Latency"), systemImage: "bolt") {
+                    testLatency()
+                }
+                .accessibilityIdentifier("overview-test-latency")
+                .transition(.opacity)
+            } else {
+                AetherLatencyPill(status: outlet.latency, confidence: outlet.confidence) {
+                    testLatency()
+                }
+                .help(AppLocalization.string("Test this node again"))
+                .accessibilityIdentifier("overview-latency-pill")
+                .transition(.opacity)
             }
 
             Button {
@@ -1293,6 +1310,7 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
             control.setLabel(mode.localizedTitle, forSegment: index)
         }
         control.selectedSegment = modes.firstIndex(of: selection) ?? -1
+        control.markSelectedSegment()
         control.isEnabled = isEnabled
         // Equal segments, like the routing-mode control beside it, so the two
         // controls read as a pair. When a translation no longer fits, the bar
@@ -1317,6 +1335,7 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
         @MainActor @objc func selectionChanged(_ sender: NSSegmentedControl) {
             let modes = NetworkEngineMode.allCases
             guard modes.indices.contains(sender.selectedSegment) else { return }
+            sender.markSelectedSegment()
             selection.wrappedValue = modes[sender.selectedSegment]
         }
     }
@@ -1353,6 +1372,7 @@ struct RoutingModeSegmentedControl: NSViewRepresentable {
             control.setLabel(mode.localizedTitle, forSegment: index)
         }
         control.selectedSegment = modes.firstIndex(of: selection) ?? -1
+        control.markSelectedSegment()
         control.isEnabled = isEnabled
         control.segmentDistribution = .fillEqually
         // The default selected bezel is a faint grey step that almost
@@ -1374,6 +1394,7 @@ struct RoutingModeSegmentedControl: NSViewRepresentable {
         @MainActor @objc func selectionChanged(_ sender: NSSegmentedControl) {
             let modes = RoutingMode.allCases
             guard modes.indices.contains(sender.selectedSegment) else { return }
+            sender.markSelectedSegment()
             selection.wrappedValue = modes[sender.selectedSegment]
         }
     }
@@ -1852,4 +1873,35 @@ private struct LiveTrafficHistoryGraph: View {
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: isRealtime)
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: isBackground)
     }
+}
+
+extension NSSegmentedControl {
+    /// A small accent-coloured dot on the selected segment. AppKit draws the
+    /// selection in the accent colour only while the app is frontmost; the
+    /// menu bar panel never activates the app, so the selection there was
+    /// just a slightly lighter gray. The dot keeps the translucent native look
+    /// and reads the same in every state.
+    func markSelectedSegment() {
+        for index in 0..<segmentCount {
+            let isSelected = index == selectedSegment
+            if (image(forSegment: index) == nil) == isSelected {
+                setImage(isSelected ? Self.selectionDot : nil, forSegment: index)
+                setImageScaling(.scaleNone, forSegment: index)
+            }
+        }
+    }
+
+    /// Drawn at display time, so it follows the user's accent colour and
+    /// light or dark appearance. Not a template image: AppKit would recolour
+    /// a template to match the label.
+    private static let selectionDot: NSImage = {
+        let diameter: CGFloat = 7
+        let image = NSImage(size: NSSize(width: diameter + 3, height: diameter), flipped: false) { _ in
+            NSColor.controlAccentColor.setFill()
+            NSBezierPath(ovalIn: NSRect(x: 0, y: 0, width: diameter, height: diameter)).fill()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }()
 }

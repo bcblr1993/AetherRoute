@@ -943,6 +943,10 @@ private struct MenuBarContent: View {
                 Button(AppLocalization.string("Copy Proxy Command"), systemImage: "terminal") {
                     copy(terminalProxyCommand)
                 }
+                // Same rule as Settings: nothing listens on 127.0.0.1 unless
+                // TUN is the engine and the local proxy is on, so a copied
+                // command would only break the terminal's traffic.
+                .disabled(!canCopyTerminalProxyCommand)
                 .accessibilityIdentifier("copy-terminal-proxy-button")
                 Button(AppLocalization.string("Copy Clear Command"), systemImage: "terminal.fill") {
                     copy(LocalProxySettings.clearShellEnvironmentCommand)
@@ -967,6 +971,14 @@ private struct MenuBarContent: View {
         }
         .font(.callout)
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: copiedMessage)
+    }
+
+    private var canCopyTerminalProxyCommand: Bool {
+#if AETHERROUTE_INDEPENDENT
+        tunnel.networkEngineMode == .tun && tunnel.localProxySettings.isEnabled
+#else
+        false
+#endif
     }
 
     private var terminalProxyCommand: String {

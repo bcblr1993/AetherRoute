@@ -11049,6 +11049,28 @@
           }
         }
       }
+    },
+    "Test Latency": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测速"
+          }
+        }
+      }
+    },
+    "Test this node again": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新测速此节点"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
