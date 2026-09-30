@@ -697,7 +697,11 @@ private struct OverviewView: View {
 private struct ActiveOutlet: Equatable {
     let groupName: String
     let node: String
-    let protocolName: String
+    /// Nil when the profile does not declare the node's protocol inline.
+    let protocolName: String?
+    /// Set when the selected member is itself a group (for example a
+    /// url-test group); its strategy is shown instead of a protocol.
+    let nestedGroupStrategy: String?
     let latency: ProxyLatencyStatus
     let confidence: ProxyLatencyConfidence
 
@@ -711,7 +715,8 @@ private struct ActiveOutlet: Equatable {
         else { return nil }
         groupName = group.name
         self.node = node
-        protocolName = summary.proxies.first(where: { $0.name == node })?.protocolName ?? "PROXY"
+        protocolName = summary.proxies.first(where: { $0.name == node })?.protocolName
+        nestedGroupStrategy = summary.proxyGroups.first(where: { $0.name == node })?.strategy
         latency = ProxyLatencyStatus.status(
             member: node,
             results: tunnel.proxyLatencies[group.name]?.results,
@@ -745,7 +750,7 @@ private struct ActiveOutletRow: View {
 
     private var identity: some View {
         HStack(spacing: AetherVisual.s3) {
-            AetherNodeIcon(name: outlet.node, protocolName: outlet.protocolName, size: 36)
+            outletIcon
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 Text(AppLocalization.string("Exit"))
@@ -762,13 +767,40 @@ private struct ActiveOutletRow: View {
                     Label(outlet.groupName, systemImage: "square.stack.3d.up")
                         .labelStyle(.titleAndIcon)
                         .lineLimit(1)
-                    AetherProtocolBadge(type: outlet.protocolName)
+                    // A nested group shows its strategy (URL-TEST, FALLBACK…);
+                    // a node shows its protocol. Nothing is shown rather than
+                    // a placeholder when neither is known.
+                    if let strategy = outlet.nestedGroupStrategy {
+                        AetherProtocolBadge(type: strategy)
+                    } else if let protocolName = outlet.protocolName {
+                        AetherProtocolBadge(type: protocolName)
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
         }
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: outlet.node)
+    }
+
+    @ViewBuilder
+    private var outletIcon: some View {
+        if let strategy = outlet.nestedGroupStrategy {
+            ZStack {
+                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                            .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
+                    }
+                Image(systemName: proxyGroupSymbol(strategy))
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 36, height: 36)
+        } else {
+            AetherNodeIcon(name: outlet.node, protocolName: outlet.protocolName ?? "", size: 36)
+        }
     }
 
     private var actions: some View {

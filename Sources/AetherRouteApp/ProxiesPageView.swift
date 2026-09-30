@@ -204,7 +204,8 @@ struct ProxiesView: View {
     }
 }
 
-fileprivate func proxyGroupSymbol(_ strategy: String) -> String {
+/// Shared with the overview, which shows a group when one is the outlet.
+func proxyGroupSymbol(_ strategy: String) -> String {
     switch strategy.lowercased() {
     case "select": return "square.stack.3d.up.fill"
     case "url-test": return "bolt.horizontal.fill"
