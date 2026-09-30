@@ -132,6 +132,12 @@ elif name=='defaults':
         elif action=='read': print(state[key])
         else: raise SystemExit(99)
     else: raise SystemExit('unexpected preference '+key)
+elif name=='sudo':
+    # The prepare helper stops resident providers with a privileged killall
+    # inside the VM. Here it must only be recorded: forwarding it would kill
+    # the host's own live AetherRoute tunnel through passwordless sudo.
+    assert args==['killall','-9','com.aetherroute.desktop.tunnel','com.aetherroute.desktop.transparent-proxy'], args
+    state['provider']=False; event('provider-kill')
 elif name=='systemextensionsctl':
     assert args==['list']
     for engine,extension in [('tun','tunnel'),('transparent','transparent-proxy')]:
@@ -142,7 +148,10 @@ elif name=='systemextensionsctl':
 else: raise SystemExit('unexpected mock command '+name)
 ''')
 mock.chmod(0o755)
-for name in ['tart','scp','ssh','osascript','pgrep','sleep','open','defaults','systemextensionsctl']:
+# Every command the driver or its helpers may run with side effects outside
+# the fixture must resolve here first. `sudo` in particular: the host usually
+# has passwordless sudo and a live tunnel.
+for name in ['tart','scp','ssh','osascript','pgrep','sleep','open','defaults','systemextensionsctl','sudo','killall']:
     (mock_bin / name).symlink_to(mock.name)
 
 for case, original, should_pass in [
