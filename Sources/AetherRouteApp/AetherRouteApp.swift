@@ -529,6 +529,12 @@ struct AetherRouteApp: App {
                 .keyboardShortcut("u", modifiers: [.command, .shift])
             }
             CommandMenu("Navigate") {
+                Button(AppLocalization.string("Command Palette…")) {
+                    AppWindowManager.shared.showMainWindow()
+                    NotificationCenter.default.post(name: .aetherRouteToggleCommandPalette, object: nil)
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+                Divider()
                 ForEach(AppSection.allCases) { section in
                     Button(section.title) {
                         NotificationCenter.default.post(

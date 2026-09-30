@@ -74,6 +74,8 @@ enum AetherVisual {
     static let dialogPadding: CGFloat = 26
     static let onboardingTopPadding = s6 + s5
     static let wideListIndent = s6 * 2 + s2
+    /// Distance from the window top to floating overlays (command palette).
+    static let overlayTopInset = s6 * 3
     static let tableContentIndent = s6 * 3
 
     static let brandGradient = LinearGradient(

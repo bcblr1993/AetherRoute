@@ -119,6 +119,7 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedSection: AppSection? = .overview
+    @State private var isCommandPalettePresented = false
 
     var body: some View {
         Group {
@@ -163,6 +164,27 @@ struct ContentView: View {
         }
         .onOpenURL { url in
             tunnel.handleExternalURL(url)
+        }
+        .overlay(alignment: .top) {
+            if isCommandPalettePresented && tunnel.hasAcceptedPrivacyDisclosure {
+                ZStack(alignment: .top) {
+                    Color.black.opacity(0.12)
+                        .ignoresSafeArea()
+                        .onTapGesture { isCommandPalettePresented = false }
+                        .transition(.opacity)
+                    CommandPaletteView(
+                        navigate: { selectSection($0) },
+                        dismiss: { isCommandPalettePresented = false }
+                    )
+                    .environmentObject(tunnel)
+                    .padding(.top, AetherVisual.overlayTopInset)
+                    .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+                }
+            }
+        }
+        .animation(effectiveReduceMotion ? nil : AetherVisual.panelSpring, value: isCommandPalettePresented)
+        .onReceive(NotificationCenter.default.publisher(for: .aetherRouteToggleCommandPalette)) { _ in
+            isCommandPalettePresented.toggle()
         }
         .sheet(
             item: Binding(
@@ -214,6 +236,9 @@ struct ContentView: View {
                 "AETHERROUTE_UI_REVIEW_SECTION"
             ].flatMap(AppSection.init(rawValue:)) {
                 selectSection(requestedSection)
+            }
+            if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_PALETTE"] == "1" {
+                isCommandPalettePresented = true
             }
             if let link = ProcessInfo.processInfo.environment[
                 "AETHERROUTE_UI_REVIEW_EXTERNAL_SUBSCRIPTION"
