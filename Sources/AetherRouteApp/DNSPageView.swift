@@ -405,15 +405,15 @@ struct DNSView: View {
                     ),
                     help: .dnsResolutionMode
                 ) {
-                    Picker("Resolution mode", selection: resolutionModeBinding) {
-                        ForEach(DNSRuntimeResolutionMode.allCases, id: \.self) {
-                            Text(runtimeModeTitle($0)).tag($0)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
+                    AetherSegmentedPicker(
+                        selection: resolutionModeBinding,
+                        options: DNSRuntimeResolutionMode.allCases.map {
+                            .init(value: $0, title: runtimeModeTitle($0))
+                        },
+                        accessibilityLabel: AppLocalization.string("Resolution mode"),
+                        accessibilityIdentifier: "dns-runtime-resolution-mode"
+                    )
                     .fixedSize()
-                    .accessibilityIdentifier("dns-runtime-resolution-mode")
                 }
 
                 Divider().padding(.leading, AetherVisual.s4)
@@ -607,15 +607,15 @@ struct DNSView: View {
         selection: Binding<DNSRuntimeBoolean>,
         identifier: String
     ) -> some View {
-        Picker(title, selection: selection) {
-            ForEach(DNSRuntimeBoolean.allCases, id: \.self) {
-                Text(runtimeBooleanTitle($0)).tag($0)
-            }
-        }
-        .labelsHidden()
-        .pickerStyle(.segmented)
+        AetherSegmentedPicker(
+            selection: selection,
+            options: DNSRuntimeBoolean.allCases.map {
+                .init(value: $0, title: runtimeBooleanTitle($0))
+            },
+            accessibilityLabel: title,
+            accessibilityIdentifier: identifier
+        )
         .fixedSize()
-        .accessibilityIdentifier(identifier)
     }
 
     private var resolutionModeBinding: Binding<DNSRuntimeResolutionMode> {

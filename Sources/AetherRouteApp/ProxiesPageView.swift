@@ -408,7 +408,7 @@ private struct ActiveProxyGroupView: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
 
-                        Picker(
+                        AetherSegmentedPicker(
                             selection: Binding(
                                 get: { isAutomaticSelectionMode },
                                 set: { isAutomatic in
@@ -419,18 +419,17 @@ private struct ActiveProxyGroupView: View {
                                         )
                                     }
                                 }
-                            )
-                        ) {
-                            Text(AppLocalization.string("Manual")).tag(false)
-                            Text(AppLocalization.string("Auto")).tag(true)
-                        } label: {
-                            EmptyView()
-                        }
-                        .pickerStyle(.segmented)
+                            ),
+                            options: [
+                                .init(value: false, title: AppLocalization.string("Manual")),
+                                .init(value: true, title: AppLocalization.string("Auto")),
+                            ],
+                            accessibilityLabel: AppLocalization.string("Selection mode"),
+                            accessibilityIdentifier: "proxy-selection-mode-\(group.name)"
+                        )
                         .controlSize(.small)
                         .fixedSize()
                         .disabled(tunnel.proxySelectionRequests.contains(group.name))
-                        .accessibilityIdentifier("proxy-selection-mode-\(group.name)")
                     }
                 } else {
                     HStack(spacing: AetherVisual.sCompact) {

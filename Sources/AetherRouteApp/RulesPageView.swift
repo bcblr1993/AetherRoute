@@ -1166,14 +1166,13 @@ struct CustomRuleEditorSheet: View {
                 subtitle: AppLocalization.string("Custom rules take top priority in traffic matching.")
             )
 
-            Picker(AppLocalization.string("Input mode"), selection: $mode) {
-                ForEach(InputMode.allCases) { m in
-                    Text(m.title).tag(m)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .accessibilityIdentifier("custom-rule-input-mode")
+            AetherSegmentedPicker(
+                selection: $mode,
+                options: InputMode.allCases.map { .init(value: $0, title: $0.title) },
+                accessibilityLabel: AppLocalization.string("Input mode"),
+                accessibilityIdentifier: "custom-rule-input-mode",
+                fillsWidth: true
+            )
 
             if mode == .form {
                 Grid(alignment: .leading, horizontalSpacing: AetherVisual.s3, verticalSpacing: AetherVisual.s3) {

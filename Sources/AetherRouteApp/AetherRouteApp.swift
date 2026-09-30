@@ -1801,14 +1801,14 @@ private struct SettingsView: View {
 
                     Spacer(minLength: 12)
 
-                    Picker("", selection: networkEngineBinding) {
-                        ForEach(NetworkEngineMode.allCases) { mode in
-                            Text(mode.localizedTitleKey).tag(mode)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel(Text("Traffic capture"))
+                    AetherSegmentedPicker(
+                        selection: networkEngineBinding,
+                        options: NetworkEngineMode.allCases.map {
+                            .init(value: $0, title: $0.localizedTitle)
+                        },
+                        accessibilityLabel: AppLocalization.string("Traffic capture"),
+                        accessibilityIdentifier: "settings-network-engine-picker"
+                    )
                     .disabled(!tunnel.canChangeNetworkEngine)
                 }
 
@@ -1825,22 +1825,19 @@ private struct SettingsView: View {
 
                     Spacer(minLength: 12)
 
-                    Picker(
-                        "",
+                    AetherSegmentedPicker(
                         selection: Binding(
                             get: { tunnel.routingMode },
                             set: { mode in
                                 Task { await tunnel.setRoutingMode(mode) }
                             }
-                        )
-                    ) {
-                        ForEach(RoutingMode.allCases, id: \.self) { mode in
-                            Text(mode.localizedTitleKey).tag(mode)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel(Text("Routing mode"))
+                        ),
+                        options: RoutingMode.allCases.map {
+                            .init(value: $0, title: $0.localizedTitle)
+                        },
+                        accessibilityLabel: AppLocalization.string("Routing mode"),
+                        accessibilityIdentifier: "settings-routing-mode-picker"
+                    )
                     .disabled(!tunnel.canChangeRoutingMode)
                 }
 
@@ -1879,16 +1876,21 @@ private struct SettingsView: View {
 
     private var appearanceSettings: some View {
         Section("Appearance") {
-            Picker("Application theme", selection: Binding(
-                get: { appearance.preference },
-                set: { appearance.select($0) }
-            )) {
-                Text("Follow System").tag(AppAppearancePreference.system)
-                Text("Light").tag(AppAppearancePreference.light)
-                Text("Dark").tag(AppAppearancePreference.dark)
+            LabeledContent("Application theme") {
+                AetherSegmentedPicker(
+                    selection: Binding(
+                        get: { appearance.preference },
+                        set: { appearance.select($0) }
+                    ),
+                    options: [
+                        .init(value: .system, title: AppLocalization.string("Follow System")),
+                        .init(value: .light, title: AppLocalization.string("Light")),
+                        .init(value: .dark, title: AppLocalization.string("Dark")),
+                    ],
+                    accessibilityLabel: AppLocalization.string("Application theme"),
+                    accessibilityIdentifier: "app-appearance-picker"
+                )
             }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("app-appearance-picker")
 
             Text("Theme changes apply immediately and are remembered next time.")
                 .font(.subheadline)
@@ -1958,16 +1960,20 @@ private struct SettingsView: View {
 
     private var languageSettings: some View {
         Section("Language") {
-            Picker("Application language", selection: languageBinding) {
-                Text("Follow System")
-                    .tag(AppLanguagePreference.system)
-                Text(verbatim: "简体中文")
-                    .tag(AppLanguagePreference.simplifiedChinese)
-                Text(verbatim: "English")
-                    .tag(AppLanguagePreference.english)
+            LabeledContent("Application language") {
+                AetherSegmentedPicker(
+                    selection: languageBinding,
+                    options: [
+                        .init(value: .system, title: AppLocalization.string("Follow System")),
+                        // Each language names itself, so it stays findable
+                        // whatever language the app is showing.
+                        .init(value: .simplifiedChinese, title: "简体中文"),
+                        .init(value: .english, title: "English"),
+                    ],
+                    accessibilityLabel: AppLocalization.string("Application language"),
+                    accessibilityIdentifier: "app-language-picker"
+                )
             }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("app-language-picker")
 
             Label(
                 "Language changes apply immediately throughout AetherRoute.",

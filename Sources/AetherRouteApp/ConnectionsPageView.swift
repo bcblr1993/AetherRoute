@@ -210,20 +210,16 @@ struct ConnectionsView: View {
         }
     }
 
-    private var filterPicker: some View {
-        Picker(AppLocalization.string("Filter"), selection: $filter) {
-            ForEach(ConnectionOutletFilter.allCases) { option in
-                Text(label(for: option)).tag(option)
-            }
-        }
-        .labelsHidden()
-        .accessibilityIdentifier("connections-filter-picker")
-    }
-
     private var segmentedFilter: some View {
-        filterPicker
-            .pickerStyle(.segmented)
-            .fixedSize(horizontal: true, vertical: false)
+        AetherSegmentedPicker(
+            selection: $filter,
+            options: ConnectionOutletFilter.allCases.map {
+                .init(value: $0, title: label(for: $0))
+            },
+            accessibilityLabel: AppLocalization.string("Filter"),
+            accessibilityIdentifier: "connections-filter-picker"
+        )
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var connectionActions: some View {
