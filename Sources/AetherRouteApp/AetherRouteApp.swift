@@ -1574,29 +1574,42 @@ private struct SettingsView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedTab) {
+                // Same row style as the main window's sidebar: body text, a
+                // secondary icon that takes the accent when selected, and the
+                // system's own selection highlight.
                 ForEach(SettingsTab.allCases) { tab in
-                    HStack(spacing: AetherVisual.s2) {
+                    Button {
+                        selectedTab = tab
+                    } label: {
+                    HStack(spacing: AetherVisual.sCompact) {
                         Image(systemName: tab.symbol)
-                            .foregroundStyle(selectedTab == tab ? Color(nsColor: .alternateSelectedControlTextColor) : Color.accentColor)
+                            .font(.title3.weight(.semibold))
+                            .frame(width: 18)
+                            .foregroundStyle(selectedTab == tab ? Color.accentColor : Color.secondary)
                             .accessibilityHidden(true)
                         Text(tab.title)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(selectedTab == tab
-                                ? Color(nsColor: .alternateSelectedControlTextColor)
-                                : Color(nsColor: .labelColor))
+                            .font(.body.weight(.medium))
                             .accessibilityIdentifier("settings-tab-\(tab.rawValue)")
+                        Spacer(minLength: 0)
                     }
-                        .accessibilityElement(children: .contain)
-                        .listRowBackground(selectedTab == tab ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
-                        .tag(Optional(tab))
-                        .accessibilityIdentifier("settings-tab-\(tab.rawValue)")
+                    .padding(.vertical, AetherVisual.sMicro)
+                    .contentShape(Rectangle())
+                    }
+                    // A plain button keeps keyboard focus off the list, so the
+                    // selection stays the quiet gray the main window uses.
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .contain)
+                    .tag(Optional(tab))
+                    .accessibilityIdentifier("settings-tab-\(tab.rawValue)")
                 }
             }
             .listStyle(.sidebar)
+            // Rows are buttons; the list never takes focus, so its selection
+            // is never drawn in the emphasized accent color.
+            .focusable(false)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("settings-sidebar-list")
             .navigationSplitViewColumnWidth(min: 176, ideal: 190, max: 216)
-            .background(settingsSidebarBackground)
             .accessibilityLabel("Settings navigation")
             .accessibilityIdentifier("aetherroute-settings-navigation")
         } detail: {
@@ -1649,17 +1662,13 @@ private struct SettingsView: View {
         case .network:
             networkSettings
         case .privacy:
-            ScrollView {
-                VStack(alignment: .leading, spacing: AetherVisual.s6) {
-                    PrivacyDisclosureView(isOnboarding: false, isEmbedded: true)
-                    SupportDiagnosticsView(isEmbedded: true)
-                }
-                .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-                .padding(.top, AetherVisual.pageTopPadding)
-                .padding(.bottom, AetherVisual.pageBottomPadding)
-                .frame(maxWidth: AetherVisual.formMaxWidth)
-                .frame(maxWidth: .infinity)
+            // Same grouped form as General and Network: privacy, live
+            // diagnostics and the support report are sections, not cards.
+            Form {
+                PrivacyDisclosureView(isOnboarding: false, isEmbedded: true)
+                SupportDiagnosticsView(isEmbedded: true)
             }
+            .aetherSettingsForm()
             .environmentObject(tunnel)
         case .about:
             AboutAetherRouteView()
@@ -1681,10 +1690,6 @@ private struct SettingsView: View {
 #endif
     }
 
-    private var settingsSidebarBackground: Color {
-        Color(nsColor: .windowBackgroundColor)
-    }
-
     private var generalSettings: some View {
         Form {
             appearanceSettings
@@ -1704,12 +1709,7 @@ private struct SettingsView: View {
                 }
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .contentMargins(.horizontal, 20, for: .scrollContent)
-        .contentMargins(.vertical, 16, for: .scrollContent)
-        .contentMargins(.trailing, 10, for: .scrollIndicators)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .aetherSettingsForm()
     }
 
     private var networkSettings: some View {
@@ -1795,12 +1795,7 @@ private struct SettingsView: View {
             BypassRulesSection()
                 .environmentObject(tunnel)
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .contentMargins(.horizontal, 20, for: .scrollContent)
-        .contentMargins(.vertical, 16, for: .scrollContent)
-        .contentMargins(.trailing, 10, for: .scrollIndicators)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .aetherSettingsForm()
     }
 
     private var appearanceSettings: some View {

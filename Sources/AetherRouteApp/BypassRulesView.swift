@@ -15,7 +15,14 @@ struct BypassRulesSection: View {
     var body: some View {
         Section {
             HStack(spacing: AetherVisual.s2) {
-                TextField(AppLocalization.string("example.com or 192.168.0.0/16"), text: $newRule)
+                // In a Form a titled field shows its title as a row label;
+                // this is an example, so it belongs inside the field.
+                TextField(
+                    AppLocalization.string("Bypass destination"),
+                    text: $newRule,
+                    prompt: Text(AppLocalization.string("example.com or 192.168.0.0/16"))
+                )
+                    .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .focused($isInputFocused)
                     .onSubmit(addRule)

@@ -16,38 +16,33 @@ struct PrivacyDisclosureView: View {
         }
     }
 
+    /// Settings: one grouped-form section, matching General and Network.
     private var embeddedContent: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s4) {
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text(AppLocalization.string("Privacy"))
-                    .font(.title2.weight(.semibold))
-                Text(AppLocalization.string("How AetherRoute handles network data"))
-                    .font(.caption)
+        Section {
+            ForEach(NetworkPrivacyPoint.allCases) { point in
+                PrivacyPointRow(point: point, isCompact: true)
+            }
+            DisclosureGroup(AppLocalization.string("Privacy details"), isExpanded: $showsPrivacyDetails) {
+                Text(AppLocalization.string("When you connect, traffic and DNS queries may be sent to the proxy and DNS services in your profile. Subscription updates contact your provider; routing rule updates contact public data sources after connection. These services may observe your IP address. Review and trust a provider before importing it."))
+                    .font(.callout)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            disclosurePoints
-                .padding(AetherVisual.s4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .aetherPanel()
-            HStack(spacing: AetherVisual.s4) {
-                Button {
-                    withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) {
-                        showsPrivacyDetails.toggle()
-                    }
-                } label: {
-                    Label("Privacy details", systemImage: "chevron.right")
-                        .labelStyle(DisclosureLabelStyle(isExpanded: showsPrivacyDetails))
+            .accessibilityIdentifier("privacy-details-toggle")
+            LabeledContent(AppLocalization.string("Privacy disclosure")) {
+                if tunnel.hasAcceptedPrivacyDisclosure {
+                    Label(AppLocalization.string("Accepted on this Mac"), systemImage: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                        .accessibilityIdentifier("privacy-consent-accepted")
+                } else {
+                    Text(AppLocalization.string("Not accepted"))
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
-                .accessibilityIdentifier("privacy-details-toggle")
-                Spacer()
-                consentStatus
             }
-            if showsPrivacyDetails {
-                destinationNotice
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+        } header: {
+            Text(AppLocalization.string("Privacy"))
+        } footer: {
+            Text(AppLocalization.string("How AetherRoute handles network data"))
         }
     }
 
@@ -288,22 +283,24 @@ private enum NetworkPrivacyPoint: CaseIterable, Identifiable {
 
 private struct PrivacyPointRow: View {
     let point: NetworkPrivacyPoint
+    /// Settings rows use body text, like the rest of the form.
+    var isCompact = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: AetherVisual.s4) {
+        HStack(alignment: .top, spacing: isCompact ? AetherVisual.s3 : AetherVisual.s4) {
             Image(systemName: point.symbol)
-                .font(.title.weight(.regular))
+                .font(isCompact ? .title3 : .title.weight(.regular))
                 .foregroundStyle(point.colors[0])
-                .frame(width: 40)
+                .frame(width: isCompact ? AetherVisual.s6 : 40)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
+            VStack(alignment: .leading, spacing: isCompact ? AetherVisual.sMicro : AetherVisual.s1) {
                 Text(point.title)
-                    .font(.headline)
+                    .font(isCompact ? .body : .headline)
                     .foregroundStyle(.primary)
                     .accessibilityValue(Text(point.detail))
                 Text(point.detail)
-                    .font(.callout)
+                    .font(isCompact ? .caption : .callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityHidden(true)

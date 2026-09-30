@@ -41,15 +41,38 @@ struct IndependentDistributionView: View {
         .accessibilityIdentifier("independent-distribution-view")
     }
 
+    /// About in Settings: grouped-form sections. The free edition shows only
+    /// software updates; a licensed build adds its license first.
+    @ViewBuilder
     private var embeddedContent: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s4) {
-            if !distribution.isFreeDistribution {
+        if !distribution.isFreeDistribution {
+            Section {
                 licenseCard
-            }
-            sparkleUpdateCard
-            if !distribution.isFreeDistribution {
                 privacyFooter
+            } header: {
+                Text(AppLocalization.string("License"))
             }
+        }
+        Section {
+            HStack(spacing: AetherVisual.s3) {
+                // The section header already says "Software Updates".
+                Text(lastCheckDescription)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: AetherVisual.s2)
+                Button(AppLocalization.string("Check Now")) {
+                    sparkle.checkForUpdates()
+                }
+                .disabled(!sparkle.canCheckForUpdates)
+                .accessibilityIdentifier("check-for-updates-button")
+            }
+            Toggle(AppLocalization.string("Automatically check for updates"), isOn: Binding(
+                get: { sparkle.automaticallyChecksForUpdates },
+                set: { sparkle.setAutomaticallyChecksForUpdates($0) }
+            ))
+            .toggleStyle(.switch)
+        } header: {
+            Text(AppLocalization.string("Software Updates"))
         }
     }
 

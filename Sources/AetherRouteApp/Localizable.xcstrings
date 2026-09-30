@@ -10972,6 +10972,50 @@
           }
         }
       }
+    },
+    "What the report contains": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报告包含的内容"
+          }
+        }
+      }
+    },
+    "Privacy disclosure": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐私说明"
+          }
+        }
+      }
+    },
+    "Accepted on this Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在此 Mac 上接受"
+          }
+        }
+      }
+    },
+    "Not accepted": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未接受"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

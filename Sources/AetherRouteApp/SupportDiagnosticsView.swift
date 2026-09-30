@@ -475,7 +475,8 @@ struct SupportDiagnosticsView: View {
 
     var body: some View {
         if isEmbedded {
-            diagnosticsContent
+            settingsFormSections
+                .modifier(reportExporter)
         } else {
             ScrollView {
                 diagnosticsContent
@@ -565,26 +566,170 @@ struct SupportDiagnosticsView: View {
                     ]
                 )
             }
-        .fileExporter(
+        .modifier(reportExporter)
+    }
+
+    private var reportExporter: DiagnosticReportExporter {
+        DiagnosticReportExporter(
             isPresented: $isExporterPresented,
-            document: document,
-            contentType: .json,
+            document: $document,
+            statusMessage: $statusMessage,
+            statusIsError: $statusIsError,
             defaultFilename: Self.defaultFilename
-        ) { result in
-            switch result {
-            case .success:
-                statusMessage = AppLocalization.string(
-                    "Diagnostic report saved."
+        )
+    }
+
+    // MARK: - Settings Form
+
+    /// Privacy & Diagnostics in Settings: grouped-form sections with system
+    /// section headers, like General and Network, instead of the page's
+    /// own headings and cards.
+    @ViewBuilder
+    private var settingsFormSections: some View {
+        Section {
+            HStack(spacing: AetherVisual.s2) {
+                AetherStatusBeacon(
+                    isConnected: tunnel.isConnected,
+                    isConnecting: tunnel.state == .connecting,
+                    size: 6
                 )
-                statusIsError = false
-            case .failure:
-                statusMessage = AppLocalization.string(
-                    "The diagnostic report could not be saved."
-                )
-                statusIsError = true
+                Text(tunnel.compactStatusTitle)
+                    .font(.body.weight(.medium))
+                Text(tunnel.statusDetail)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: AetherVisual.s2)
+                Button(AppLocalization.string("View connections")) {
+                    NotificationCenter.default.post(
+                        name: .aetherRouteNavigateToSection,
+                        object: AppSection.connections.rawValue
+                    )
+                    AppWindowManager.shared.showMainWindow()
+                }
+                .buttonStyle(.link)
             }
-            document = nil
+            HStack(spacing: AetherVisual.s3) {
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                    Text(AppLocalization.string("Live Connectivity Diagnostics"))
+                    Text(AppLocalization.string("Real-time inspection of tunnel adapter, Fake-IP DNS, and outbound TLS path."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: AetherVisual.s2)
+                if diagnosticsEngine.isRunning {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button(
+                        diagnosticsEngine.report == nil
+                            ? AppLocalization.string("Run Diagnostics")
+                            : AppLocalization.string("Re-run Diagnostics")
+                    ) {
+                        triggerDiagnostics()
+                    }
+                    .accessibilityIdentifier(diagnosticsEngine.report == nil ? "run-diagnostics" : "rerun-diagnostics")
+                }
+            }
+            if diagnosticsEngine.isRunning || diagnosticsEngine.report != nil {
+                stageRows
+                if let report = diagnosticsEngine.report {
+                    verdictBanner(report: report)
+                }
+            }
+        } header: {
+            Text(AppLocalization.string("Diagnostics"))
         }
+
+        Section {
+            HStack(spacing: AetherVisual.s3) {
+                // The section header already says "Support report".
+                Text(AppLocalization.string("Maximum 64 KiB. Review the file before sharing it."))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: AetherVisual.s2)
+                Button {
+                    Task { await createReport() }
+                } label: {
+                    AetherProgressButtonLabel(
+                        AppLocalization.string("Export Diagnostic Report"),
+                        isWorking: isCreatingReport
+                    )
+                }
+                .disabled(isCreatingReport)
+                .accessibilityIdentifier("export-diagnostics")
+            }
+            if let statusMessage {
+                Label(
+                    statusMessage,
+                    systemImage: statusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
+                )
+                .foregroundStyle(statusIsError ? .red : .green)
+                .accessibilityIdentifier("diagnostics-status")
+            }
+            DisclosureGroup(AppLocalization.string("What the report contains")) {
+                reportItems(Self.includedItems, symbol: "checkmark.circle.fill", tint: .green)
+                reportItems(Self.omittedItems, symbol: "minus.circle", tint: .secondary)
+            }
+        } header: {
+            Text(AppLocalization.string("Support report"))
+        }
+    }
+
+    private static let includedItems = [
+        "App, build, macOS, and Apple silicon version",
+        "Connection, engine, and routing state",
+        "Profile item counts and aggregate traffic totals",
+        "Fixed aggregate provider error counters when available",
+        "Up to 128 fixed lifecycle event codes",
+    ]
+
+    private static let omittedItems = [
+        "Profile names, YAML, subscription URLs, and credentials",
+        "Source and destination addresses",
+        "Rule payloads, proxy chains, and account identifiers",
+    ]
+
+    private func reportItems(_ items: [String], symbol: String, tint: Color) -> some View {
+        ForEach(items, id: \.self) { item in
+            Label {
+                Text(verbatim: AppLocalization.string(item))
+            } icon: {
+                Image(systemName: symbol)
+            }
+            .labelStyle(DiagnosticItemLabelStyle(tint: tint))
+        }
+    }
+
+    @ViewBuilder
+    private var stageRows: some View {
+        stageRow(
+            index: 1,
+            title: AppLocalization.string("Tunnel & Node"),
+            symbol: "network",
+            status: stageStatus(stageIndex: 1, resultStatus: diagnosticsEngine.report?.tunnel.status),
+            detail: diagnosticsEngine.report?.tunnel.detail ?? (diagnosticsEngine.currentStage == 1 ? AppLocalization.string("Inspecting tunnel adapter and active profile...") : AppLocalization.string("Pending"))
+        )
+        stageRow(
+            index: 2,
+            title: AppLocalization.string("DNS & Fake-IP"),
+            symbol: "wand.and.stars",
+            status: stageStatus(stageIndex: 2, resultStatus: diagnosticsEngine.report?.dns.status),
+            detail: diagnosticsEngine.report?.dns.detail ?? (diagnosticsEngine.currentStage == 2 ? AppLocalization.string("Testing Fake-IP pool (198.18.0.0/15) resolution...") : AppLocalization.string("Pending"))
+        )
+        stageRow(
+            index: 3,
+            title: AppLocalization.string("Domestic Direct"),
+            symbol: "bolt.fill",
+            status: stageStatus(stageIndex: 3, resultStatus: diagnosticsEngine.report?.domestic.status),
+            detail: diagnosticsEngine.report?.domestic.detail ?? (diagnosticsEngine.currentStage == 3 ? AppLocalization.string("Probing domestic high-speed connectivity endpoint...") : AppLocalization.string("Pending"))
+        )
+        stageRow(
+            index: 4,
+            title: AppLocalization.string("Outbound Proxy Path"),
+            symbol: "globe.americas.fill",
+            status: stageStatus(stageIndex: 4, resultStatus: diagnosticsEngine.report?.proxy.status),
+            detail: diagnosticsEngine.report?.proxy.detail ?? (diagnosticsEngine.currentStage == 4 ? AppLocalization.string("Testing proxy node TCP connect and TLS handshake...") : AppLocalization.string("Pending"))
+        )
     }
 
     // MARK: - Live Diagnostics Card
@@ -946,5 +1091,32 @@ private struct DiagnosticItemLabelStyle: LabelStyle {
             Spacer(minLength: 0)
         }
         .font(.subheadline)
+    }
+}
+
+private struct DiagnosticReportExporter: ViewModifier {
+    @Binding var isPresented: Bool
+    @Binding var document: DiagnosticReportDocument?
+    @Binding var statusMessage: String?
+    @Binding var statusIsError: Bool
+    let defaultFilename: String
+
+    func body(content: Content) -> some View {
+        content.fileExporter(
+            isPresented: $isPresented,
+            document: document,
+            contentType: .json,
+            defaultFilename: defaultFilename
+        ) { result in
+            switch result {
+            case .success:
+                statusMessage = AppLocalization.string("Diagnostic report saved.")
+                statusIsError = false
+            case .failure:
+                statusMessage = AppLocalization.string("The diagnostic report could not be saved.")
+                statusIsError = true
+            }
+            document = nil
+        }
     }
 }

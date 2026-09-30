@@ -570,6 +570,17 @@ extension AetherSheetHeader where Accessory == EmptyView {
 }
 
 extension View {
+    /// Every Settings pane: the same grouped form, margins and background,
+    /// so switching tabs never changes the page's width or type scale.
+    func aetherSettingsForm() -> some View {
+        formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .contentMargins(.horizontal, AetherVisual.s5, for: .scrollContent)
+            .contentMargins(.vertical, AetherVisual.s4, for: .scrollContent)
+            .contentMargins(.trailing, AetherVisual.s2 + AetherVisual.sMicro, for: .scrollIndicators)
+            .background(Color(nsColor: .windowBackgroundColor))
+    }
+
     func aetherPanel() -> some View {
         modifier(AetherPanelModifier())
     }
