@@ -1282,6 +1282,10 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
         // controls read as a pair. When a translation no longer fits, the bar
         // above stacks the controls vertically instead of squeezing them.
         control.segmentDistribution = .fillEqually
+        // The default selected bezel is a faint grey step that almost
+        // disappears on dark materials; the accent fill reads at a glance
+        // and matches the connection toggle above it.
+        control.selectedSegmentBezelColor = .controlAccentColor
         control.setContentHuggingPriority(.defaultLow, for: .horizontal)
         control.setAccessibilityIdentifier("network-engine-picker")
         control.setAccessibilityLabel(AppLocalization.string("Network engine"))
@@ -1335,6 +1339,10 @@ struct RoutingModeSegmentedControl: NSViewRepresentable {
         control.selectedSegment = modes.firstIndex(of: selection) ?? -1
         control.isEnabled = isEnabled
         control.segmentDistribution = .fillEqually
+        // The default selected bezel is a faint grey step that almost
+        // disappears on dark materials; the accent fill reads at a glance
+        // and matches the connection toggle above it.
+        control.selectedSegmentBezelColor = .controlAccentColor
         control.setContentHuggingPriority(.defaultLow, for: .horizontal)
         control.setAccessibilityIdentifier("routing-mode-picker")
         control.setAccessibilityLabel(AppLocalization.string("Routing mode"))

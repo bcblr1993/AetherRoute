@@ -14,6 +14,13 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
     @Published private(set) var canCheckForUpdates = false
     @Published private(set) var automaticallyChecksForUpdates = true
     @Published private(set) var lastUpdateCheckDate: Date?
+    /// Drives the menu bar footer and the status-item badge.
+    @Published private(set) var availability: UpdateAvailability = .unknown
+
+    /// The running build's marketing version, e.g. "1.0.36".
+    static var currentVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    }
 
     private var updaterController: SPUStandardUpdaterController?
     private var cancellables = Set<AnyCancellable>()
@@ -52,6 +59,13 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
         self.now = now
         self.performCheckAction = performCheckAction
         super.init()
+#if DEBUG
+        // Isolated screenshot review only: pretend a newer release exists.
+        if let version = ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_UPDATE"],
+           !version.isEmpty {
+            availability = .available(version: version)
+        }
+#endif
 
         if let updaterController {
             configureUpdaterSubscriptions(for: updaterController.updater)
@@ -228,8 +242,57 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
     #endif
 }
 
+extension SparkleUpdaterController {
+    func apply(_ event: UpdateAvailability.Event) {
+        let next = availability.applying(event)
+        guard next != availability else { return }
+        Self.logger.info("stage=updateAvailability event=\(String(describing: event), privacy: .public)")
+        availability = next
+    }
+}
+
 extension SparkleUpdaterController: SPUUpdaterDelegate {
-    // SPUUpdaterDelegate hooks can be extended here for custom telemetry if desired.
+    nonisolated func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
+        Task { @MainActor in self.apply(.checkStarted) }
+    }
+
+    nonisolated func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        let version = item.displayVersionString
+        Task { @MainActor in self.apply(.foundUpdate(version: version)) }
+    }
+
+    nonisolated func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: any Error) {
+        Task { @MainActor in self.apply(.noUpdateFound) }
+    }
+
+    nonisolated func updater(
+        _ updater: SPUUpdater,
+        userDidMake choice: SPUUserUpdateChoice,
+        forUpdate updateItem: SUAppcastItem,
+        state: SPUUserUpdateState
+    ) {
+        // "Remind me later" keeps the badge; skipping this version clears it.
+        guard choice == .skip else { return }
+        Task { @MainActor in self.apply(.updateDismissed) }
+    }
+
+    nonisolated func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+        Task { @MainActor in self.apply(.updateDismissed) }
+    }
+
+    nonisolated func updater(
+        _ updater: SPUUpdater,
+        didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
+        error: (any Error)?
+    ) {
+        guard let error = error as NSError? else { return }
+        // "No update" also ends the cycle with an error; that case was
+        // already reported by updaterDidNotFindUpdate.
+        let isNoUpdate = error.domain == SUSparkleErrorDomain
+            && error.code == Int(SUError.noUpdateError.rawValue)
+        guard !isNoUpdate else { return }
+        Task { @MainActor in self.apply(.checkFailed) }
+    }
 }
 
 extension SparkleUpdaterController: SPUStandardUserDriverDelegate {

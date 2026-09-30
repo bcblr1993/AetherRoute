@@ -368,6 +368,7 @@ struct AetherRouteApp: App {
         IndependentDistributionController
     @StateObject private var runtimeEnvironment:
         AppRuntimeEnvironmentController
+    @ObservedObject private var updater = SparkleUpdaterController.shared
 
     init() {
         NavigationShortcutMonitor.install()
@@ -424,8 +425,16 @@ struct AetherRouteApp: App {
                 .environment(\.locale, language.locale)
         } label: {
             // Template artwork follows the menu bar's light/dark appearance.
-            Image(systemName: menuBarIcon)
-                .accessibilityLabel(menuBarAccessibilityLabel)
+            // With an update waiting, a drawn copy adds a blue dot; it draws
+            // the glyph in the menu bar's label colour so it still adapts.
+            Group {
+                if updater.availability.availableVersion != nil {
+                    Image(nsImage: MenuBarBadgedIcon.image(symbol: menuBarIcon))
+                } else {
+                    Image(systemName: menuBarIcon)
+                }
+            }
+            .accessibilityLabel(menuBarAccessibilityLabel)
         }
         .menuBarExtraStyle(.window)
 
@@ -597,7 +606,9 @@ struct AetherRouteApp: App {
     /// through the accessibility label instead. It reuses the same status
     /// wording as the window rather than inventing a second vocabulary.
     private var menuBarAccessibilityLabel: String {
-        "\(productDisplayName) · \(tunnel.statusTitle)"
+        let base = "\(productDisplayName) · \(tunnel.statusTitle)"
+        guard updater.availability.availableVersion != nil else { return base }
+        return "\(base) · \(AppLocalization.string("Update available"))"
     }
 
     private var productDisplayName: String {
@@ -925,7 +936,10 @@ private struct MenuBarContent: View {
                     .transition(.opacity)
             }
             Spacer()
+            MenuUpdateStatus(updater: SparkleUpdaterController.shared)
             Menu {
+                Text(verbatim: "AetherRoute \(SparkleUpdaterController.currentVersion)")
+                Divider()
                 Button(AppLocalization.string("Copy Proxy Command"), systemImage: "terminal") {
                     copy(terminalProxyCommand)
                 }
@@ -1225,6 +1239,102 @@ private struct MenuNodeListInline: View {
         orderedMembers = MenuProxyNodeOrder.sorted(
             members: tunnel.proxySelections[group.name]?.members ?? group.members
         )
+    }
+}
+
+/// The status-item glyph with a small blue "update available" dot.
+enum MenuBarBadgedIcon {
+    static func image(symbol: String) -> NSImage {
+        let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        guard let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration)
+        else { return NSImage() }
+        let dot: CGFloat = 6
+        let size = NSSize(width: glyph.size.width + dot / 2, height: glyph.size.height)
+        let image = NSImage(size: size, flipped: false) { _ in
+            // Resolved at draw time, so the glyph follows the menu bar's
+            // current appearance like a template image would.
+            let glyphRect = NSRect(origin: .zero, size: glyph.size)
+            glyph.draw(in: glyphRect)
+            NSColor.labelColor.set()
+            glyphRect.fill(using: .sourceAtop)
+            let dotRect = NSRect(x: size.width - dot, y: size.height - dot, width: dot, height: dot)
+            // Knock a thin gap out of the glyph around the dot.
+            NSGraphicsContext.current?.compositingOperation = .clear
+            NSBezierPath(ovalIn: dotRect.insetBy(dx: -1.5, dy: -1.5)).fill()
+            NSGraphicsContext.current?.compositingOperation = .sourceOver
+            NSColor.controlAccentColor.set()
+            NSBezierPath(ovalIn: dotRect).fill()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+}
+
+/// The current version beside the menu's "···" button. When Sparkle has
+/// found a newer release it becomes a tappable "New version" pill that stays
+/// until the update is installed or skipped, so "Remind me later" does not
+/// lose it.
+private struct MenuUpdateStatus: View {
+    @ObservedObject var updater: SparkleUpdaterController
+    @State private var isPulsing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Group {
+            switch updater.availability {
+            case let .available(version):
+                Button {
+                    updater.checkForUpdates()
+                } label: {
+                    HStack(spacing: AetherVisual.sCompact) {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: AetherVisual.s2, height: AetherVisual.s2)
+                            .opacity(isPulsing ? 0.35 : 1)
+                            .accessibilityHidden(true)
+                        Text(String.localizedStringWithFormat(AppLocalization.string("New version %@"), version))
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, AetherVisual.s2)
+                    .padding(.vertical, AetherVisual.sMicro)
+                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .help(AppLocalization.string("View and install the update"))
+                .accessibilityIdentifier("menu-update-available")
+                .onAppear {
+                    guard !reduceMotion else { return }
+                    withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                        isPulsing = true
+                    }
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            case .checking:
+                HStack(spacing: AetherVisual.sCompact) {
+                    ProgressView().controlSize(.mini)
+                    versionText
+                }
+                .transition(.opacity)
+            case .unknown, .upToDate:
+                versionText
+                    .transition(.opacity)
+            }
+        }
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: updater.availability)
+    }
+
+    private var versionText: some View {
+        Text(verbatim: "v\(SparkleUpdaterController.currentVersion)")
+            .font(.caption.monospacedDigit().weight(.medium))
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(String.localizedStringWithFormat(
+                AppLocalization.string("Version %@"),
+                SparkleUpdaterController.currentVersion
+            ))
+            .accessibilityIdentifier("menu-version")
     }
 }
 
