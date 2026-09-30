@@ -781,6 +781,19 @@ private struct ActiveOutlet: Equatable {
 private struct ActiveOutletRow: View {
     @Environment(\.openSettings) private var openSettings
     let outlet: ActiveOutlet
+    @ObservedObject var telemetry: NetworkTelemetryViewModel
+
+    /// The node an automatic group is using right now, read from the chains
+    /// of live connections. Nil for plain nodes or before traffic flows.
+    private var resolvedLeaf: String? {
+        guard outlet.nestedGroupStrategy != nil else { return nil }
+        return GroupLeafResolver.leaf(
+            throughGroup: outlet.node,
+            chains: telemetry.snapshot.connections.map(\.proxyChain)
+        )
+    }
+
+    private var displayedNode: String { resolvedLeaf ?? outlet.node }
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -806,17 +819,24 @@ private struct ActiveOutletRow: View {
                 Text(AppLocalization.string("Exit"))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
-                Text(outlet.node)
+                Text(displayedNode)
                     .font(.headline)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .help(outlet.node)
+                    .help(displayedNode)
                     .contentTransition(.opacity)
+                    .accessibilityIdentifier("overview-active-outlet-node")
                 HStack(spacing: AetherVisual.sCompact) {
                     Label(outlet.groupName, systemImage: "square.stack.3d.up")
                         .labelStyle(.titleAndIcon)
                         .lineLimit(1)
+                    // "Proxy › Auto": the automatic group that picked the
+                    // node above stays visible as routing context.
+                    if resolvedLeaf != nil {
+                        Text(verbatim: "› \(outlet.node)")
+                            .lineLimit(1)
+                    }
                     // A nested group shows its strategy (URL-TEST, FALLBACK…);
                     // a node shows its protocol. Nothing is shown rather than
                     // a placeholder when neither is known.
@@ -830,7 +850,7 @@ private struct ActiveOutletRow: View {
                 .foregroundStyle(.secondary)
             }
         }
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: outlet.node)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: displayedNode)
     }
 
     @ViewBuilder
@@ -963,7 +983,7 @@ private struct ConnectionHero: View {
             // traffic going where I think?"), so they share one card.
             if let outlet {
                 Divider()
-                ActiveOutletRow(outlet: outlet)
+                ActiveOutletRow(outlet: outlet, telemetry: tunnel.telemetryViewModel)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
             if tunnel.isConnected {

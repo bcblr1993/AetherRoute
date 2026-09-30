@@ -846,13 +846,13 @@ private struct MenuBarContent: View {
             } label: {
                 HStack(spacing: AetherVisual.s2) {
                     let member = tunnel.proxySelections[group.name]?.selectedMember
-                    AetherNodeFlag(name: member ?? "")
-                    Text(verbatim: member ?? AppLocalization.string("Select Node"))
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentTransition(.opacity)
+                    MenuSelectedNodeTitle(
+                        member: member,
+                        isAutomaticGroup: member.map { name in
+                            tunnel.activeProfileSummary?.proxyGroups.contains { $0.name == name } ?? false
+                        } ?? false,
+                        telemetry: telemetry
+                    )
                     if let member {
                         MenuNodeLatency(
                             status: ProxyLatencyStatus.status(
@@ -1228,6 +1228,43 @@ private struct MenuNodeListInline: View {
         orderedMembers = MenuProxyNodeOrder.sorted(
             members: tunnel.proxySelections[group.name]?.members ?? group.members
         )
+    }
+}
+
+/// The selected exit in the menu bar. When the selection is itself a group
+/// (for example "Auto"), the node that group is really using leads and the
+/// group follows as context, matching the Overview hero.
+private struct MenuSelectedNodeTitle: View {
+    let member: String?
+    let isAutomaticGroup: Bool
+    @ObservedObject var telemetry: NetworkTelemetryViewModel
+
+    private var leaf: String? {
+        guard isAutomaticGroup, let member else { return nil }
+        return GroupLeafResolver.leaf(
+            throughGroup: member,
+            chains: telemetry.snapshot.connections.map(\.proxyChain)
+        )
+    }
+
+    var body: some View {
+        let shown = leaf ?? member
+        AetherNodeFlag(name: shown ?? "")
+        HStack(alignment: .firstTextBaseline, spacing: AetherVisual.sCompact) {
+            Text(verbatim: shown ?? AppLocalization.string("Select Node"))
+                .font(.body.weight(.medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .layoutPriority(1)
+            if leaf != nil, let member {
+                Text(verbatim: "· \(member)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentTransition(.opacity)
     }
 }
 
