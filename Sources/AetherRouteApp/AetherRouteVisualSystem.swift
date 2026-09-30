@@ -381,10 +381,13 @@ struct AetherPageHeader<Accessory: View>: View {
                 .foregroundStyle(.primary)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("page-header-title-\(section.rawValue)")
+            // Two lines at most: an unbounded vertical fixedSize let the
+            // stacked (narrow) header report a huge minimum height, which
+            // pushed pages without a scroll view out of the window.
             Text(subtitle ?? section.subtitle)
                 .font(.callout)
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(2)
                 .contentTransition(.opacity)
                 .animation(AetherVisual.animation(AetherVisual.quickFade), value: subtitle)
         }

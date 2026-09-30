@@ -25,22 +25,24 @@ struct ConnectionsView: View {
         VStack(spacing: 0) {
             // Tables use the full width, so the header and bars carry the
             // page margins themselves instead of `aetherPageContent`.
-            AetherPageHeader(.connections)
-                .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-                .padding(.top, AetherVisual.pageTopPadding)
-                .padding(.bottom, AetherVisual.s3)
+            // Search sits in the header, as on Proxies: a separate row made
+            // the page taller than the 560 pt minimum window.
+            AetherPageHeader(.connections) {
+                AetherSearchField(
+                    text: $searchText,
+                    prompt: AppLocalization.string("Search connections"),
+                    accessibilityIdentifier: "connections-search-field"
+                )
+                .frame(width: 220)
+            }
+            .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+            .padding(.top, AetherVisual.pageTopPadding)
+            .padding(.bottom, AetherVisual.s3)
 
             SessionBar(telemetry: telemetry)
                 .environmentObject(tunnel)
                 .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-
-            AetherSearchField(
-                text: $searchText,
-                prompt: AppLocalization.string("Search connections"),
-                accessibilityIdentifier: "connections-search-field"
-            )
-            .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-            .padding(.vertical, AetherVisual.s2)
+                .padding(.bottom, AetherVisual.s2)
 
             if displayedConnections.isEmpty {
                 emptyState
@@ -48,19 +50,14 @@ struct ConnectionsView: View {
                 connectionList(rows: rows)
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: AetherVisual.s3) {
-                    footerContents(visibleCount: rows.count)
-                }
-                .fixedSize(horizontal: true, vertical: false)
-
-                VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    footerContents(visibleCount: rows.count)
-                }
+            // One line at every width: the privacy note truncates (full text
+            // on hover) rather than growing the footer past the window.
+            HStack(spacing: AetherVisual.s3) {
+                footerContents(visibleCount: rows.count)
             }
                 .layoutPriority(1)
-                .font(.body)
-                .foregroundStyle(.primary)
+                .font(.callout)
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, AetherVisual.pageHorizontalPadding)
                 .padding(.vertical, AetherVisual.s2)
@@ -84,10 +81,17 @@ struct ConnectionsView: View {
     private func footerContents(visibleCount: Int) -> some View {
         if pausedConnections != nil {
             Label("List paused · session counters are live", systemImage: "pause.circle")
+                .lineLimit(1)
+                .fixedSize()
         }
         Text(footerText(visibleCount: visibleCount))
+            .lineLimit(1)
+            .fixedSize()
             .accessibilityIdentifier("connections-count-summary")
         Text(AppLocalization.string("Only connections visible on this Mac are counted, and nothing is reported anywhere."))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .help(AppLocalization.string("Only connections visible on this Mac are counted, and nothing is reported anywhere."))
             .accessibilityIdentifier("connections-privacy-summary")
     }
 
@@ -116,6 +120,28 @@ struct ConnectionsView: View {
                     connectionActions
                 }
                 .fixedSize(horizontal: true, vertical: false)
+
+                // Narrower windows keep one row: actions become icons (their
+                // names stay as tooltips and VoiceOver labels).
+                HStack(spacing: AetherVisual.s2) {
+                    segmentedFilter
+                    connectionActions
+                        .labelStyle(.iconOnly)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+
+                HStack(spacing: AetherVisual.s2) {
+                    NativeFilterPicker(
+                        selection: $filter,
+                        options: ConnectionOutletFilter.allCases,
+                        title: label(for:),
+                        accessibilityLabel: AppLocalization.string("Filter"),
+                        accessibilityIdentifier: "connections-filter-picker"
+                    )
+                    Spacer(minLength: AetherVisual.s2)
+                    connectionActions
+                        .labelStyle(.iconOnly)
+                }
 
                 VStack(alignment: .leading, spacing: AetherVisual.s2) {
                     ViewThatFits(in: .horizontal) {
@@ -202,7 +228,7 @@ struct ConnectionsView: View {
                       systemImage: pausedConnections == nil ? "pause" : "play")
             }
             .buttonStyle(.bordered)
-            .help("Pauses the connection list only. Traffic and session counters remain live.")
+            .help(AppLocalization.string(pausedConnections == nil ? "Pause list" : "Resume list"))
             .accessibilityIdentifier("connections-pause-button")
             Picker(AppLocalization.string("Sort"), selection: $sort) {
                 ForEach(ConnectionSort.allCases) { option in

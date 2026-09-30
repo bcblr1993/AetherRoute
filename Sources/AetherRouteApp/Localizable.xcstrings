@@ -4498,26 +4498,6 @@
         }
       }
     },
-    "Raw Node Inventory & Providers": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "节点清单与提供方"
-          }
-        }
-      }
-    },
-    "Diagnostic use only; inspects kernel protocol validation and raw endpoints.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "排查订阅解析或协议支持问题时使用"
-          }
-        }
-      }
-    },
     "Auto select fastest": {
       "localizations": {
         "zh-Hans": {
@@ -10363,6 +10343,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "点按重新测速"
+          }
+        }
+      }
+    },
+    "Node inventory & providers": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点清单与提供方"
+          }
+        }
+      }
+    },
+    "For troubleshooting subscription parsing or protocol support.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "排查订阅解析或协议支持问题时使用"
           }
         }
       }

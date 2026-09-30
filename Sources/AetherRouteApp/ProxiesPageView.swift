@@ -185,7 +185,7 @@ struct ProxiesView: View {
 
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     HStack(spacing: AetherVisual.s1) {
-                        Text(AppLocalization.string("Raw Node Inventory & Providers"))
+                        Text(AppLocalization.string("Node inventory & providers"))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.primary)
 
@@ -194,7 +194,7 @@ struct ProxiesView: View {
                             .foregroundStyle(Color(nsColor: .labelColor))
                     }
 
-                    Text(AppLocalization.string("Diagnostic use only; inspects kernel protocol validation and raw endpoints."))
+                    Text(AppLocalization.string("For troubleshooting subscription parsing or protocol support."))
                         .font(.caption2)
                         .foregroundStyle(Color(nsColor: .labelColor))
                 }

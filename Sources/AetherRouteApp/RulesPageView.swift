@@ -490,6 +490,10 @@ struct RulesView: View {
 
                                     // 第二行：规则种类分段标签 + 计数提示
                                     HStack(spacing: AetherVisual.s2) {
+                                        // Chips keep their labels on one line and
+                                        // scroll sideways in a narrow window
+                                        // instead of breaking "DOMAIN" in two.
+                                        ScrollView(.horizontal, showsIndicators: false) {
                                         HStack(spacing: AetherVisual.s1) {
                                             ForEach(RuleKindFilter.allCases) { filter in
                                                 let isSelected = selectedFilter == filter
@@ -521,6 +525,7 @@ struct RulesView: View {
                                                         isSelected ? Color.accentColor.opacity(0.12) : Color.clear,
                                                         in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
                                                     )
+                                                    .fixedSize()
                                                     .contentShape(Rectangle())
                                                 }
                                                 .buttonStyle(.plain)
@@ -535,8 +540,9 @@ struct RulesView: View {
                                             RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                                                 .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
                                         }
+                                        }
 
-                                        Spacer()
+                                        Spacer(minLength: AetherVisual.s2)
 
                                         Text(
                                             String.localizedStringWithFormat(
@@ -546,7 +552,9 @@ struct RulesView: View {
                                             )
                                         )
                                         .font(.caption.weight(.medium))
-                                        .foregroundStyle(.primary)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .fixedSize()
                                     }
 
                                     HStack(spacing: AetherVisual.s1) {
