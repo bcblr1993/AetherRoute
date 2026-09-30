@@ -42,6 +42,9 @@ enum AetherVisual {
     static let gentleSpring = Animation.spring(response: 0.32, dampingFraction: 0.86)
     /// Larger surfaces: panel swaps, list reflow, section reveals.
     static let panelSpring = Animation.spring(response: 0.42, dampingFraction: 0.88)
+    /// A page arriving after sidebar navigation: quick enough to never delay
+    /// reading, long enough to show where the content came from.
+    static let pageEntrance = Animation.easeOut(duration: 0.22)
 
     /// Returns `animation` unless the user asked for reduced motion, in which
     /// case state still changes but does so without travel.
@@ -121,65 +124,88 @@ struct AetherRouteBrandTile: View {
     }
 }
 
-/// Quiet, theme-matched branding. Connection state is presented with an
-/// ambient breathing aura when connecting, settling into a soft green halo
-/// when active. With Reduce Motion the aura is shown without breathing.
+/// The connection state drawn around the brand glyph.
+///
+/// - Connecting: a short arc orbits the glyph. The angle is derived from the
+///   clock, not from a repeating animation, so leaving the state can never
+///   leave a stray animation running.
+/// - Connected: the arc closes into a full green ring and a check mark pops
+///   in at the corner.
+/// - Failed: a red ring with a warning badge.
+/// - Idle: no ring; the glyph alone.
+///
+/// The glyph itself never scales; only the ring and badge move. With Reduce
+/// Motion the arc is drawn still and state changes are instant.
 struct AetherRouteStatusLens: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var size: CGFloat = 52
     var isActive = false
     var isConnecting = false
+    var isFailed = false
 
-    @State private var pulse = false
+    private static let orbitPeriod: TimeInterval = 1.1
 
     var body: some View {
+        let ringWidth = max(2, size * 0.05)
         ZStack {
-            if isConnecting {
+            // Track: a faint full circle the arc travels on.
+            Circle()
+                .stroke(Color.secondary.opacity(isConnecting ? 0.15 : 0), lineWidth: ringWidth)
+
+            TimelineView(.animation(paused: !isConnecting || reduceMotion)) { context in
                 Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [Color.accentColor.opacity(0.35), Color.clear],
-                            center: .center,
-                            startRadius: size * 0.1,
-                            endRadius: size * 0.65
-                        )
-                    )
-                    .scaleEffect(pulse ? 1.15 : 0.88)
-                    .opacity(pulse ? 0.9 : 0.45)
-                    .animation(
-                        .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
-                        value: pulse
-                    )
-            } else if isActive {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [Color.green.opacity(0.22), Color.clear],
-                            center: .center,
-                            startRadius: size * 0.1,
-                            endRadius: size * 0.62
-                        )
-                    )
-                    .transition(.opacity)
+                    .trim(from: 0, to: ringLength)
+                    .stroke(ringColor, style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
+                    .rotationEffect(.degrees(orbitAngle(at: context.date)))
             }
 
             AetherRouteGlyph(isActive: isActive)
-                .padding(size * 0.06)
+                .padding(size * 0.16)
                 .frame(width: size, height: size)
-                .scaleEffect(isConnecting ? (pulse ? 1.03 : 0.97) : 1.0)
-                .animation(
-                    isConnecting ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true) : .default,
-                    value: pulse
-                )
+
+            if let badge {
+                Image(systemName: badge.symbol)
+                    .font(.system(size: size * 0.3, weight: .semibold))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, badge.color)
+                    .background(Circle().fill(Color(nsColor: .windowBackgroundColor)).padding(-1))
+                    .symbolEffect(.bounce, value: badge.symbol)
+                    .offset(x: size * 0.36, y: size * 0.36)
+                    .transition(.scale(scale: 0.4).combined(with: .opacity))
+            }
         }
         .frame(width: size, height: size)
+        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: isActive)
+        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: isConnecting)
+        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: isFailed)
         .accessibilityHidden(true)
-        .onAppear {
-            if isConnecting && !reduceMotion { pulse = true }
-        }
-        .onChange(of: isConnecting) { _, newValue in
-            pulse = newValue && !reduceMotion
-        }
+    }
+
+    /// Connecting shows a short arc; connected and failed close the ring.
+    private var ringLength: CGFloat {
+        if isConnecting { return 0.28 }
+        if isActive || isFailed { return 1 }
+        return 0
+    }
+
+    private var ringColor: Color {
+        if isFailed { return .red }
+        if isActive && !isConnecting { return .green }
+        return .accentColor
+    }
+
+    private func orbitAngle(at date: Date) -> Double {
+        guard isConnecting, !reduceMotion else { return -90 }
+        let phase = date.timeIntervalSinceReferenceDate
+            .truncatingRemainder(dividingBy: Self.orbitPeriod) / Self.orbitPeriod
+        return -90 + phase * 360
+    }
+
+    private var badge: (symbol: String, color: Color)? {
+        if isConnecting { return nil }
+        if isFailed { return ("exclamationmark.circle.fill", .red) }
+        if isActive { return ("checkmark.circle.fill", .green) }
+        return nil
     }
 }
 
@@ -603,8 +629,6 @@ struct AetherLatencyPill: View {
                 if status == .testing {
                     ProgressView()
                         .controlSize(.mini)
-                        .scaleEffect(0.65)
-                        .frame(width: 9, height: 9)
                 } else if case .responded = status {
                     Circle()
                         .fill(pillColor)
@@ -632,8 +656,7 @@ struct AetherLatencyPill: View {
                 Capsule()
                     .stroke(pillColor.opacity(isHovered ? 0.48 : 0.25), lineWidth: 0.5)
             }
-            .scaleEffect(isHovered && onTap != nil ? 1.04 : 1.0)
-            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: isHovered)
+            .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -743,8 +766,6 @@ public struct AetherStatusBeacon: View {
     let isConnecting: Bool
     var size: CGFloat = 10
 
-    @State private var isPulsing: Bool = false
-
     public init(isConnected: Bool, isConnecting: Bool = false, size: CGFloat = 10) {
         self.isConnected = isConnected
         self.isConnecting = isConnecting
@@ -757,15 +778,18 @@ public struct AetherStatusBeacon: View {
                 Circle()
                     .fill(Color.green.opacity(0.22))
                     .frame(width: size * 1.8, height: size * 1.8)
+                    .transition(.scale(scale: 0.5).combined(with: .opacity))
             } else if isConnecting {
-                Circle()
-                    .stroke(Color.orange.opacity(0.5), lineWidth: 1.5)
-                    .frame(width: size * 1.8, height: size * 1.8)
-                    .rotationEffect(.degrees(isPulsing ? 360 : 0))
-                    .animation(
-                        isConnecting ? .linear(duration: 1.5).repeatForever(autoreverses: false) : .default,
-                        value: isPulsing
-                    )
+                // A partial arc, so the rotation is actually visible; a full
+                // circle turning in place looks identical to a still one.
+                TimelineView(.animation(paused: reduceMotion)) { context in
+                    Circle()
+                        .trim(from: 0, to: 0.3)
+                        .stroke(Color.orange, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                        .frame(width: size * 1.8, height: size * 1.8)
+                        .rotationEffect(.degrees(angle(at: context.date)))
+                }
+                .transition(.opacity)
             }
 
             Circle()
@@ -773,12 +797,13 @@ public struct AetherStatusBeacon: View {
                 .frame(width: size, height: size)
         }
         .frame(width: size * 2.2, height: size * 2.2)
-        .onAppear {
-            isPulsing = isConnecting && !reduceMotion
-        }
-        .onChange(of: isConnecting) { _, newValue in
-            isPulsing = newValue && !reduceMotion
-        }
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: isConnected)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isConnecting)
+    }
+
+    private func angle(at date: Date) -> Double {
+        guard !reduceMotion else { return -90 }
+        return date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360
     }
 
     private var statusColor: Color {

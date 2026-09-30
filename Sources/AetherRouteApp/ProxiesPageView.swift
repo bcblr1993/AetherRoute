@@ -52,7 +52,7 @@ struct ProxiesView: View {
                             isGridView: $isGridView
                         )
                         .id(activeGroup.name)
-                        .transition(.opacity.combined(with: .scale(scale: 0.995, anchor: .top)))
+                        .transition(.opacity)
                     }
                 }
 
@@ -846,9 +846,10 @@ private struct ProxyNodeModernCard: View {
             RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
                 .stroke(cardBorder, lineWidth: isSelected ? 1.2 : (isHovered ? 0.9 : 0.5))
         }
-        .scaleEffect(isHovered ? 1.008 : 1.0)
-        .animation(AetherVisual.gentleSpring, value: isHovered)
-        .animation(AetherVisual.gentleSpring, value: isSelected)
+        // Hover changes the border only; scaling a card also scales its
+        // text, which blurs it mid-animation.
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: isSelected)
         .onHover { hovering in
             isHovered = hovering
         }

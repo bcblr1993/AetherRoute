@@ -152,7 +152,6 @@ struct ContentView: View {
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
         }
-        .animation(effectiveReduceMotion ? nil : .snappy(duration: 0.28), value: selectedSection)
         .onReceive(
             NotificationCenter.default.publisher(
                 for: .aetherRouteNavigateToSection
@@ -516,6 +515,19 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Each page is a new identity: the incoming page fades up into
+            // place and the outgoing one leaves at once. Scoping the
+            // animation here keeps the sidebar and window chrome still;
+            // animating the whole tree made the old page's cards morph into
+            // the new page's layout.
+            .id(section)
+            .transition(
+                .asymmetric(
+                    insertion: .opacity.combined(with: .offset(y: AetherVisual.s2)),
+                    removal: .identity
+                )
+            )
+            .animation(effectiveReduceMotion ? nil : AetherVisual.pageEntrance, value: section)
         }
         .navigationTitle(section.title)
         .accessibilityElement(children: .contain)
@@ -1025,12 +1037,28 @@ private struct ConnectionHero: View {
         reduceMotion || uiReviewRequestsReducedMotion
     }
 
+    /// Any transition in progress orbits the ring, including recovery and
+    /// the stop, so the lens never looks settled while work is under way.
+    private var isWorking: Bool {
+        if tunnel.isSwitchingNetworkEngine { return true }
+        switch tunnel.state {
+        case .connecting, .recovering, .disconnecting: return true
+        default: return false
+        }
+    }
+
+    private var isFailed: Bool {
+        if case .failed = tunnel.state { return true }
+        return false
+    }
+
     private var connectionIdentity: some View {
         HStack(spacing: AetherVisual.s4) {
             AetherRouteStatusLens(
                 size: 54,
                 isActive: tunnel.isConnected,
-                isConnecting: tunnel.state == .connecting || tunnel.isSwitchingNetworkEngine
+                isConnecting: isWorking,
+                isFailed: isFailed
             )
 
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
@@ -1727,13 +1755,25 @@ private struct LiveTrafficHistoryGraph: View {
     @ObservedObject var model: NetworkTelemetryViewModel
     let isRealtime: Bool
 
+    /// About 24 frames a second: the chart moves roughly one point per
+    /// frame, which reads as continuous without redrawing faster than needed.
+    private static let frameInterval: TimeInterval = 1.0 / 24
+    private static let entryLag = TimeInterval(
+        TunnelStartupTimingPolicy.activeTelemetryPollingIntervalSeconds
+    )
+
     var body: some View {
-        TimelineView(.animation(minimumInterval: 3, paused: !isRealtime)) { context in
+        TimelineView(.animation(minimumInterval: Self.frameInterval, paused: !isRealtime)) { context in
             let lastSample = model.history.samples.last?.date
-            // While paused nothing new arrives; anchoring the window at the
-            // last sample keeps the final 30 seconds on screen instead of
-            // sliding them off into an empty chart.
-            let now = isRealtime ? context.date : (lastSample ?? context.date)
+            // Live: the window slides continuously, one sampling period
+            // behind the clock, so each new sample enters at the right edge
+            // and drifts left instead of appearing mid-chart every 3 seconds.
+            // Paused: nothing new arrives; anchoring the window at the last
+            // sample keeps the final 30 seconds on screen instead of sliding
+            // them off into an empty chart.
+            let now = isRealtime
+                ? context.date.addingTimeInterval(-Self.entryLag)
+                : (lastSample ?? context.date)
             let samples = model.history.visible(at: now)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 ZStack {
