@@ -4,6 +4,50 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.36] - 2026-09-30
+
+A redesign of the app's interface. The network engine, protocols and extensions are unchanged from 1.0.35.
+
+### Added
+
+- Menu bar: the current version sits beside the "···" menu. When Sparkle finds a newer release it becomes a "New version x.y.z" pill that opens the update window; it stays after "Remind Me Later" and clears once the version is skipped or installed. The menu bar icon carries a small blue dot while an update is waiting. "Check for Updates…" and the running version head the "···" menu.
+- Command palette (⇧⌘P, Navigate menu): connect or disconnect, reconnect, switch routing mode or network engine, test latency, switch nodes in the main group, and jump to any page or Settings from the keyboard.
+- Automatic groups (url-test, fallback, load-balance) show the node they are actually using, read from live connection chains — "Singapore Edge · Auto" instead of a bare "Auto" — on Overview and in the menu bar. The group name is shown until traffic flows.
+
+### Changed
+
+- Menu bar panel redesigned in the style of Control Center: status ring, short status and a large switch at the top; exit node and latency test in the middle; routing mode and network engine below; copy-command, update and quit actions in a "···" menu. The node list uses flat rows with a hover highlight and hides search for eight or fewer nodes.
+- Settings reorganised from nine tabs into four: General, Network (engine, routing, local proxy and bypass rules), Privacy & Diagnostics, and About (version, build, updates, open-source licenses). Links to the old tab names still land on the right tab.
+- Overview: connection status, exit and route quality share one card; traffic appears only while connected; the connected duration ("Connected for 12 minutes") replaces "network extension reported ready". The selected segment of the routing-mode and network-engine controls is filled with the accent colour, so it is clear on dark backgrounds.
+- All eight sheets (subscription, subscription link review, rename, archive export/import, iCloud sync, node editor, native profile, custom rule, connection details) share one header, width and button layout. The custom-rule sheet no longer overflows; connection details are grouped into Route and Traffic.
+- Matched rules on the Connections page and in connection details use configuration spelling (`DOMAIN-SUFFIX`, `IP-CIDR`) instead of engine type names (`DomainSuffix`), matching the Rules page.
+- Unified search field on the Proxies, Connections, Profiles and Rules pages; Proxies no longer shows a fixed-height table.
+- Motion revised: page changes fade in the new page instead of morphing the whole window; the connecting indicator rotates an arc; the traffic graph scrolls smoothly; latency values roll between numbers. Reduce Motion is respected throughout.
+- Typography and colour narrowed to system styles; decorative indigo/teal accents and glow removed.
+- Telemetry refreshes every 3 s while the window is frontmost, every 10 s while it is visible behind other apps, and pauses otherwise; route health stays at 15 s in every state.
+
+### Fixed
+
+- The Connections page was pushed out of a narrow window (780×560, English) by a page subtitle that reported an unbounded height.
+- Buttons whose title was a string literal (Save, Download and Save, Download & Verify, Check for Updates) stayed in English in Chinese; several sheet placeholders and options were untranslated.
+- The Proxies node list showed one and a half rows at the minimum window size.
+- The Overview exit showed a nested strategy group as a node with a placeholder "PROXY" protocol.
+- Traffic numbers froze while the window was visible but not frontmost, and the Connections page did not refresh on its own.
+- DNS runtime override rows squeezed their description into a narrow column; descriptions were styled heavier than their titles.
+- "Automatic checks are on" was shown while automatic update checks were off.
+- `scripts/test.sh` killed the host's running tunnel extension: the VM priming test ran its `sudo killall` for real instead of through its test double.
+
+### Removed
+
+- Unused Swift code and 148 unused localization strings (found with Periphery, each cross-checked), 60 unreferenced scripts and three orphaned probe programs.
+
+### Verified
+
+- Local regression suites: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, `./scripts/test.sh`; 466 unit tests.
+- Tart VM 6-dimension matrix (`macos27`, build 2026093003): all six combinations passed on the first run, including idle keep-alive reuse, transparent SNI recovery, and the large-upload gate; VM temporary files cleaned up afterwards.
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`), notarized candidate: TUN — 2 MiB upload in 3.5 s, 6 MiB in 5.6 s, idle keep-alive reuse passed; transparent proxy — 2 MiB in 3.4 s, 6 MiB in 7.2 s, idle keep-alive reuse and SNI recovery passed.
+- Remote arm64 gate `test_remote_arm64.sh fast` passed; the Mac mini's proxy, DNS, route and interface state was identical before and after.
+
 ## [1.0.35] - 2026-09-29
 
 ### Fixed
