@@ -49,7 +49,9 @@ for required in \
   'timestamp service is not available' \
   "grep -Eq '^[[:space:]]*CodeSign '" \
   'retrying archive' \
-  'AETHERROUTE_RELEASE_CHANNEL = beta' \
+  "printf 'AETHERROUTE_RELEASE_CHANNEL = %s\\n' \"\$CANDIDATE_CHANNEL\"" \
+  'CANDIDATE_CHANNEL=${AETHERROUTE_CANDIDATE_CHANNEL:-beta}' \
+  'a stable candidate must use AETHERROUTE_TEST_CORE_VARIANT=normal' \
   'Authority=Developer ID Application' \
   'scripts/verify_product_metadata.sh' \
   'scripts/verify_transparent_proxy_metadata.sh' \

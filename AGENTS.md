@@ -67,6 +67,10 @@
 - 编写 `Docs/ReleaseExceptions/<VERSION>.md`（如适用）。
 
 ### 5. 正式构建发布与官网同步 (Release & Site Deployment)
+- 用于发布的公证候选包必须以正式通道构建（`package_release_dmg.sh` 会拒绝非 `stable` 通道的包，否则"关于"页会把正式版显示为"测试版本"）：
+  ```bash
+  AETHERROUTE_CANDIDATE_CHANNEL=stable AETHERROUTE_TEST_CORE_VARIANT=normal ./scripts/build_notarized_test_candidate.sh Config/Signing.json "<NOTARY_PROFILE>" <VERSION> <BUILD> outputs/notarized-candidate-<VERSION>-<BUILD>
+  ```
 - 执行纯净正式发布 DMG 打包（强制执行零测试说明校验，磁盘卷标统一为 `AetherRoute <VERSION>`，完成 Developer ID 签名、Apple 官方公证与装订）：
   ```bash
   ./scripts/package_release_dmg.sh outputs/notarized-candidate-<VERSION>-<BUILD>/<CANDIDATE_DMG> Config/Signing.json "<NOTARY_PROFILE>" <VERSION> <BUILD> outputs/release-<VERSION>-<BUILD>

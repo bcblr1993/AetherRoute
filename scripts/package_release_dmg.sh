@@ -94,6 +94,11 @@ test "$APP_BUILD" = "$BUILD_NUMBER" || {
   echo "App build ($APP_BUILD) does not match expected build ($BUILD_NUMBER)" >&2
   exit 1
 }
+APP_CHANNEL=$(plutil -extract AetherRouteReleaseChannel raw -o - "$APP/Contents/Info.plist" 2>/dev/null || echo missing)
+test "$APP_CHANNEL" = stable || {
+  echo "App release channel is '$APP_CHANNEL'; a published DMG must be built with AETHERROUTE_CANDIDATE_CHANNEL=stable" >&2
+  exit 1
+}
 
 echo "==> Preparing pristine production DMG staging layout (Zero test notes)"
 rm -f "$STAGE/测试版本说明.txt" "$STAGE/README.txt" "$STAGE/.DS_Store"

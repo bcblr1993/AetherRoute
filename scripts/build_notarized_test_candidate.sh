@@ -13,6 +13,16 @@ CORE_VARIANT=${AETHERROUTE_TEST_CORE_VARIANT:-diagnostics}
 case "$CORE_VARIANT" in normal|diagnostics) ;; *)
   echo 'AETHERROUTE_TEST_CORE_VARIANT must be normal or diagnostics' >&2; exit 64 ;;
 esac
+# The candidate that becomes the published DMG is built with
+# AETHERROUTE_CANDIDATE_CHANNEL=stable; package_release_dmg.sh refuses any
+# other channel, so About never labels an official release a beta again.
+CANDIDATE_CHANNEL=${AETHERROUTE_CANDIDATE_CHANNEL:-beta}
+case "$CANDIDATE_CHANNEL" in beta|stable) ;; *)
+  echo 'AETHERROUTE_CANDIDATE_CHANNEL must be beta or stable' >&2; exit 64 ;;
+esac
+if [ "$CANDIDATE_CHANNEL" = stable ] && [ "$CORE_VARIANT" != normal ]; then
+  echo 'a stable candidate must use AETHERROUTE_TEST_CORE_VARIANT=normal' >&2; exit 64
+fi
 
 usage() {
   echo "usage: $0 /absolute/Signing.json notary-profile version build-number /absolute/new-output-directory" >&2
@@ -307,7 +317,7 @@ TUNNEL_PROFILE=$(profile_uuid packet-tunnel)
   printf 'OTHER_CODE_SIGN_FLAGS = --timestamp=http:/$()/timestamp.apple.com/ts01\n'
   printf 'MARKETING_VERSION = %s\n' "$VERSION"
   printf 'CURRENT_PROJECT_VERSION = %s\n' "$BUILD_NUMBER"
-  printf 'AETHERROUTE_RELEASE_CHANNEL = beta\n'
+  printf 'AETHERROUTE_RELEASE_CHANNEL = %s\n' "$CANDIDATE_CHANNEL"
   # Distribution candidate: the Developer ID guard rejects the QA automation
   # fixture outright when this is set, so an unattended-connect build can never
   # be notarized by mistake.
