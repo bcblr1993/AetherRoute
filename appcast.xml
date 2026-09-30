@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.0.37 (Build 2026093005)</title>
-            <pubDate>Wed, 30 Sep 2026 22:28:42 +0800</pubDate>
-            <sparkle:version>2026093005</sparkle:version>
-            <sparkle:shortVersionString>1.0.37</sparkle:shortVersionString>
+            <title>Version 1.0.38 (Build 2026093006)</title>
+            <pubDate>Thu, 01 Oct 2026 00:09:15 +0800</pubDate>
+            <sparkle:version>2026093006</sparkle:version>
+            <sparkle:shortVersionString>1.0.38</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,41 +119,42 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.0.37 更新要点</span>
-  <span class="release-badge">Build 2026093005 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.0.38 更新要点</span>
+  <span class="release-badge">Build 2026093006 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🚀 首次启动引导</span>
+  <span class="section-tag tag-feature">🚀 新增</span>
   <ul>
-    <li><strong>一次完成网络权限</strong>：首次打开时在引导中一次性开启透明代理与 TUN 两个网络扩展并允许配置，之后连接或切换引擎不再被系统弹窗打断。老用户升级不受影响。</li>
-    <li><strong>权限被收回可一键修复</strong>：概览提供"重新设置权限"，打开同一引导页面。</li>
+    <li><strong>帮助说明</strong>：网络引擎和 DNS 设置旁的"?"就地说明，不懂透明代理与 TUN 的区别也能轻松选择。</li>
+    <li><strong>测速当前节点</strong>：概览中点击出口的延迟即可重新测速。</li>
+    <li><strong>菜单栏状态提示</strong>：无配置时引导添加，连接失败时显示原因。</li>
+    <li><strong>关于页</strong>：加入官网介绍、更新说明、隐私政策与支持链接。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 界面修复</span>
+  <span class="section-tag tag-fix">🐞 改进与修复</span>
   <ul>
-    <li><strong>设置窗口统一</strong>：四个分页改为同一表单样式，侧栏与主窗口一致。</li>
-    <li><strong>正式版不再显示"测试版本"</strong>，DNS 控件不再溢出，配置与 DNS 页宽度与其他页面一致。</li>
-    <li><strong>时长、延迟配色、新版本提示</strong>统一并更易读；跨境节点延迟不再全部显示红色。</li>
+    <li><strong>选中状态更清楚</strong>：路由模式与网络引擎保留原生半透明样式，选中项加状态点。</li>
+    <li><strong>复制代理命令</strong>：只在本机代理可用时启用。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">✨ 验证</span>
   <ul>
-    <li><strong>网络引擎与扩展与 1.0.36 相同</strong>，本版改动集中在引导与界面层。</li>
+    <li><strong>网络引擎与扩展与 1.0.37 相同</strong>，本版改动集中在界面与帮助说明。</li>
     <li><strong>全量验证通过</strong>：Tart 虚拟机 6 项矩阵全部通过；Apple Silicon Mac mini 双模式大请求上传、空闲连接复用、SNI 恢复全部通过。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.0.37/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.0.38/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.37/AetherRoute-1.0.37-build-2026093005-arm64.dmg"
-                sparkle:edSignature="1dQyh7ODDWpoK2h17uiqKB7lLss7PYOlIbjQmFzEaok4WcsZ8QdRacmOwR5jbNpiJAHNUa0lJ9F6/WK6842vCg=="
-                length="24527856"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.38/AetherRoute-1.0.38-build-2026093006-arm64.dmg"
+                sparkle:edSignature="uj1TSF4qrVYpiD1iRdGDH2Q+zk5c3ho++mqwD7syGJ7uQEATDMiNZys98KPJo2g+925Wof95q2umUgz3LNQyBQ=="
+                length="26248323"
                 type="application/octet-stream" />
         </item>
     </channel>

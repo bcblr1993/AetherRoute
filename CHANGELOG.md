@@ -4,6 +4,36 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.38] - 2026-10-01
+
+In-app help for the network engines and DNS settings, clearer menu bar states, and a current-node latency test on Overview. The network engine and extension code are unchanged from 1.0.37.
+
+### Added
+
+- Help for settings people commonly do not understand, opened from a small "?" button next to the setting and shown in a popover:
+  - "Transparent Proxy or TUN?" on Overview, in the menu bar and in Settings › Network: what each engine does, its trade-offs (local proxy, DNS overrides, bypass rules, coexisting with Tailscale) and which to choose.
+  - DNS page: what TUN runtime overrides are, and each option of resolution mode, IPv6 answers, rule-aware queries and hosts mapping.
+  - Each popover links to the AetherRoute website.
+- Overview: the exit's latency pill re-tests the current node when clicked; before the first test a "Test Latency" button appears. The pill had no action before and was drawn disabled.
+- Menu bar: with no profile, the panel says so and offers "Add Profile"; after a failed connection it shows the reason and "Details" instead of only "Unavailable".
+- About: the website's tagline and introduction, and links to the website, this version's release notes, release history, the privacy policy and support.
+
+### Changed
+
+- Routing mode and network engine controls keep the native translucent style and mark the selected segment with an accent-coloured dot. AppKit draws the selection in the accent colour only while the app is frontmost, and the menu bar panel never activates the app, so the selection there was a barely lighter gray.
+- Engine descriptions in first-run setup and Settings use plain language.
+- About no longer shows the author line.
+
+### Fixed
+
+- Menu bar "Copy Proxy Command" was available even when nothing listened on 127.0.0.1 (Transparent Proxy, or TUN with the local proxy off); it now follows the same rule as Settings.
+
+### Verified
+
+- Local regression suites: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, `./scripts/test.sh`; 472 unit tests.
+- Tart VM 6-dimension matrix (`macos27`, build 2026093006): all six combinations passed, including idle keep-alive reuse, transparent SNI recovery and the large-upload gate. In the first run `transparent/direct` timed out on the captive-portal probe alone (every other check in that combination passed); an isolated rerun passed it in 0.25 s. VM temporary files were cleaned up.
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`), notarized candidate: TUN — 2 MiB upload in 6.6 s, 6 MiB in 8.7 s, idle keep-alive reuse passed; transparent proxy — 2 MiB in 4.0 s, 6 MiB in 6.6 s, idle keep-alive reuse and SNI recovery passed. Remote arm64 gate `test_remote_arm64.sh fast` passed; the Mac mini's proxy, DNS, route and interface state was identical before and after.
+
 ## [1.0.37] - 2026-09-30
 
 First-run network setup, and an interface consistency pass based on a review of 1.0.36 with real profiles and traffic. The network engine and protocol code are unchanged from 1.0.36.
