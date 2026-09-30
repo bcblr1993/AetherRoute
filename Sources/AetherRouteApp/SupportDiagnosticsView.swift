@@ -469,8 +469,26 @@ struct SupportDiagnosticsView: View {
     @State private var statusIsError = false
     @State private var isCreatingReport = false
 
+    /// Embedded in the Privacy & Diagnostics settings page, which owns the
+    /// scroll view and page margins.
+    var isEmbedded = false
+
     var body: some View {
-        ScrollView {
+        if isEmbedded {
+            diagnosticsContent
+        } else {
+            ScrollView {
+                diagnosticsContent
+                    .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+                    .padding(.top, AetherVisual.pageTopPadding)
+                    .padding(.bottom, AetherVisual.pageBottomPadding)
+                    .frame(maxWidth: AetherVisual.formMaxWidth)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private var diagnosticsContent: some View {
             VStack(alignment: .leading, spacing: AetherVisual.s5) {
                 // Page Header
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
@@ -547,12 +565,6 @@ struct SupportDiagnosticsView: View {
                     ]
                 )
             }
-            .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-            .padding(.top, AetherVisual.pageTopPadding)
-            .padding(.bottom, AetherVisual.pageBottomPadding)
-            .frame(maxWidth: AetherVisual.formMaxWidth)
-            .frame(maxWidth: .infinity)
-        }
         .fileExporter(
             isPresented: $isExporterPresented,
             document: document,

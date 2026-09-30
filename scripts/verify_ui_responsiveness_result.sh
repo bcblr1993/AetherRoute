@@ -145,8 +145,7 @@ test "$sample_count" -eq "$(value sample_count)" || {
 for language in en zh-Hans; do
   for action in \
     main.overview main.proxies main.connections main.profiles main.rules main.dns \
-    settings.general settings.privacy settings.bypass settings.diagnostics \
-    settings.account settings.licenses settings.about
+    settings.general settings.network settings.privacy settings.about
   do
     awk -F, -v language="$language" -v action="$action" \
       '$2 == language && $3 == action {found = 1} END {exit !found}' \

@@ -1327,30 +1327,44 @@ private struct MenuStaticTrafficValue: View {
 }
 
 
+/// Four panes, like System Settings. Earlier builds had nine; several held
+/// one or two controls, and three of them described the app itself.
 private enum SettingsTab: String, CaseIterable, Identifiable {
     case general
     case network
-    case automation
     case privacy
-    case bypass
-    case diagnostics
-    case account
-    case licenses
     case about
 
     var id: Self { self }
 
+    /// Old pane names still arrive from in-app links ("Diagnose", "Manage
+    /// bypass rules") and review launch arguments; each maps to the pane
+    /// that now contains it.
+    static func resolve(_ raw: String) -> SettingsTab? {
+        switch raw {
+        case "general", "automation": .general
+        case "network", "bypass": .network
+        case "privacy", "diagnostics": .privacy
+        case "about", "account", "licenses": .about
+        default: nil
+        }
+    }
+
     var title: LocalizedStringKey {
         switch self {
         case .general: "General"
-        case .network: "Network Settings"
-        case .automation: "Shortcuts & Notifications"
-        case .privacy: "Privacy"
-        case .bypass: "Bypass"
-        case .diagnostics: "Diagnostics"
-        case .account: "Version & Updates"
-        case .licenses: "Licenses"
+        case .network: "Network"
+        case .privacy: "Privacy & Diagnostics"
         case .about: "About"
+        }
+    }
+
+    var titleString: String {
+        switch self {
+        case .general: AppLocalization.string("General")
+        case .network: AppLocalization.string("Network")
+        case .privacy: AppLocalization.string("Privacy & Diagnostics")
+        case .about: AppLocalization.string("About")
         }
     }
 
@@ -1358,12 +1372,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .network: "network"
-        case .automation: "keyboard"
         case .privacy: "hand.raised"
-        case .bypass: "arrow.trianglehead.branch"
-        case .diagnostics: "stethoscope"
-        case .account: "person.crop.circle"
-        case .licenses: "doc.text.magnifyingglass"
         case .about: "info.circle"
         }
     }
@@ -1385,7 +1394,7 @@ private struct SettingsView: View {
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
         let requestedTab = ProcessInfo.processInfo.environment[
             "AETHERROUTE_UI_REVIEW_SETTINGS_TAB"
-        ].flatMap(SettingsTab.init(rawValue:))
+        ].flatMap(SettingsTab.resolve)
         _selectedTab = State(initialValue: requestedTab ?? .general)
 #else
         _selectedTab = State(initialValue: .general)
@@ -1400,9 +1409,7 @@ private struct SettingsView: View {
                         Image(systemName: tab.symbol)
                             .foregroundStyle(selectedTab == tab ? Color(nsColor: .alternateSelectedControlTextColor) : Color.accentColor)
                             .accessibilityHidden(true)
-                        Text(tab == .account
-                            ? LocalizedStringKey(distribution.isFreeDistribution ? "Version & Updates" : "License & Updates")
-                            : tab.title)
+                        Text(tab.title)
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(selectedTab == tab
                                 ? Color(nsColor: .alternateSelectedControlTextColor)
@@ -1443,7 +1450,7 @@ private struct SettingsView: View {
         .accessibilityIdentifier("aetherroute-settings-root")
         .frame(minWidth: 780, idealWidth: 960, minHeight: 560, idealHeight: 640)
         .onReceive(NotificationCenter.default.publisher(for: .aetherRouteNavigateToSettings)) { notification in
-            if let raw = notification.object as? String, let tab = SettingsTab(rawValue: raw) { selectedTab = tab }
+            if let raw = notification.object as? String, let tab = SettingsTab.resolve(raw) { selectedTab = tab }
         }
         .onChange(of: selectedTab) { _, tab in
             guard let tab else { return }
@@ -1452,8 +1459,9 @@ private struct SettingsView: View {
         .id(language.preference)
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .topLeading) {
+            // The title names the open pane, as System Settings does.
             WindowChromeSynchronizer(
-                title: AppLocalization.string("AetherRoute settings"),
+                title: (selectedTab ?? .general).titleString,
                 showsTitle: true
             )
             .id("\(selectedTab?.rawValue ?? "general")-\(language.preference.rawValue)")
@@ -1470,24 +1478,22 @@ private struct SettingsView: View {
             generalSettings
         case .network:
             networkSettings
-        case .automation:
-            shortcutsSettings
         case .privacy:
-            PrivacyDisclosureView(isOnboarding: false)
-                .environmentObject(tunnel)
-        case .bypass:
-            BypassRulesView()
-                .environmentObject(tunnel)
-        case .diagnostics:
-            SupportDiagnosticsView()
-                .environmentObject(tunnel)
-        case .account:
-            IndependentDistributionView()
-                .environmentObject(distribution)
-        case .licenses:
-            ThirdPartyLicensesView()
+            ScrollView {
+                VStack(alignment: .leading, spacing: AetherVisual.s6) {
+                    PrivacyDisclosureView(isOnboarding: false, isEmbedded: true)
+                    SupportDiagnosticsView(isEmbedded: true)
+                }
+                .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+                .padding(.top, AetherVisual.pageTopPadding)
+                .padding(.bottom, AetherVisual.pageBottomPadding)
+                .frame(maxWidth: AetherVisual.formMaxWidth)
+                .frame(maxWidth: .infinity)
+            }
+            .environmentObject(tunnel)
         case .about:
             AboutAetherRouteView()
+                .environmentObject(distribution)
         }
     }
 
@@ -1512,9 +1518,10 @@ private struct SettingsView: View {
     private var generalSettings: some View {
         Form {
             appearanceSettings
+            languageSettings
             dockSettings
             startupSettings
-            languageSettings
+            automationSettings
 
 
             if !tunnel.hasAcceptedPrivacyDisclosure {
@@ -1614,17 +1621,10 @@ private struct SettingsView: View {
             Text("Routing mode changes apply immediately when connected. Switching engines reconnects automatically. Network optimization applies on the next connection or profile reload.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-        }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .contentMargins(.horizontal, 20, for: .scrollContent)
-        .contentMargins(.vertical, 16, for: .scrollContent)
-        .contentMargins(.trailing, 10, for: .scrollIndicators)
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
 
-    private var shortcutsSettings: some View {
-        Form { automationSettings }
+            BypassRulesSection()
+                .environmentObject(tunnel)
+        }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .contentMargins(.horizontal, 20, for: .scrollContent)

@@ -385,8 +385,7 @@ final class AetherRouteUITests: XCTestCase {
             exerciseResponsiveSettingsNavigation(
                 in: app,
                 tabs: [
-                    "Network Settings", "Shortcuts & Notifications", "Privacy", "Bypass", "Diagnostics", "Version & Updates",
-                    "Licenses", "About", "General",
+                    "Network", "Privacy & Diagnostics", "About", "General",
                 ]
             )
             changeResponsiveLanguage(
@@ -410,8 +409,7 @@ final class AetherRouteUITests: XCTestCase {
             exerciseResponsiveSettingsNavigation(
                 in: app,
                 tabs: [
-                    "网络", "快捷键与通知", "隐私", "绕过", "诊断", "版本与更新", "开源许可", "关于",
-                    "通用",
+                    "网络", "隐私与诊断", "关于", "通用",
                 ]
             )
             changeResponsiveLanguage(
@@ -428,9 +426,7 @@ final class AetherRouteUITests: XCTestCase {
         let requiredActions = [
             "main.overview", "main.proxies", "main.connections",
             "main.profiles", "main.rules", "main.dns",
-            "settings.general", "settings.network", "settings.automation", "settings.privacy", "settings.bypass",
-            "settings.diagnostics", "settings.account", "settings.licenses",
-            "settings.about",
+            "settings.general", "settings.network", "settings.privacy", "settings.about",
         ]
         for language in ["en", "zh-Hans"] {
             for action in requiredActions {
@@ -3437,6 +3433,16 @@ final class AetherRouteUITests: XCTestCase {
         }
         XCTAssertTrue(settingsWindow.waitForExistence(timeout: 4))
         selectSettingsTab(tabLabel, in: settingsWindow, app: app)
+        // Licenses now open from About as a sheet on the Settings window.
+        if ["Licenses", "开源许可"].contains(tabLabel) {
+            let licenses = settingsWindow.buttons["about-open-licenses"]
+            XCTAssertTrue(licenses.waitForExistence(timeout: 3))
+            licenses.click()
+            XCTAssertTrue(
+                settingsWindow.textFields["license-search-field"]
+                    .waitForExistence(timeout: 3)
+            )
+        }
     }
 
     private func selectSettingsTab(
@@ -3444,16 +3450,13 @@ final class AetherRouteUITests: XCTestCase {
         in settingsWindow: XCUIElement,
         app: XCUIApplication
     ) {
+        // Settings has four panes; older pane names resolve to the pane
+        // that now contains that content.
         let identifier: String? = switch tabLabel {
-        case "General", "通用": "general"
-        case "Network", "Network Settings", "网络": "network"
-        case "Shortcuts & Notifications", "快捷键与通知": "automation"
-        case "Privacy", "隐私": "privacy"
-        case "Bypass", "绕过": "bypass"
-        case "Diagnostics", "诊断": "diagnostics"
-        case "Account", "账户", "Version & Updates", "版本与更新": "account"
-        case "Licenses", "开源许可": "licenses"
-        case "About", "关于": "about"
+        case "General", "通用", "Shortcuts & Notifications", "快捷键与通知": "general"
+        case "Network", "Network Settings", "网络", "Bypass", "绕过": "network"
+        case "Privacy & Diagnostics", "隐私与诊断", "Privacy", "隐私", "Diagnostics", "诊断": "privacy"
+        case "About", "关于", "Account", "账户", "Version & Updates", "版本与更新", "Licenses", "开源许可": "about"
         default: nil
         }
 
@@ -3462,14 +3465,7 @@ final class AetherRouteUITests: XCTestCase {
             let detailIdentifier = switch identifier {
             case "general": "app-language-picker"
             case "network": "domestic-optimization-toggle"
-            case "automation": "global-shortcuts-toggle"
-            case "privacy": "privacy-consent-accepted"
-            case "bypass": "bypass-rule-field"
-            case "diagnostics": "export-diagnostics"
-            // The free edition's short ScrollView does not expose its outer
-            // identifier in AX. Wait for the visible localized page heading.
-            case "account": ["账户", "版本与更新"].contains(tabLabel) ? "免费版" : "Free Edition"
-            case "licenses": "license-search-field"
+            case "privacy": "export-diagnostics"
             case "about": "about-page-content"
             default: ""
             }

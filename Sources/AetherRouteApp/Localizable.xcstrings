@@ -461,16 +461,6 @@
         }
       }
     },
-    "Add a destination": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "添加目标"
-          }
-        }
-      }
-    },
     "Add at least one profile before creating a portable archive.": {
       "localizations": {
         "zh-Hans": {
@@ -1571,26 +1561,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "复制代理命令"
-          }
-        }
-      }
-    },
-    "Copy terminal export command to clipboard": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "复制终端代理 export 命令到剪贴板"
-          }
-        }
-      }
-    },
-    "Copy terminal unset command to clipboard": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "复制终端代理 unset 清除命令到剪贴板"
           }
         }
       }
@@ -3323,11 +3293,12 @@
       }
     },
     "Network": {
+      "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "传输网络"
+            "value": "网络"
           }
         }
       }
@@ -3408,16 +3379,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有活动连接"
-          }
-        }
-      }
-    },
-    "No Bypass Rules": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "没有绕过规则"
           }
         }
       }
@@ -4578,16 +4539,6 @@
         }
       }
     },
-    "Recovery Assistant": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "恢复助手"
-          }
-        }
-      }
-    },
     "Redir-host": {
       "localizations": {
         "zh-Hans": {
@@ -4624,16 +4575,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "拒绝"
-          }
-        }
-      }
-    },
-    "Release channel": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "发布通道"
           }
         }
       }
@@ -5324,16 +5265,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "节点模式"
-          }
-        }
-      }
-    },
-    "Send trusted destinations over the normal network path instead of the selected proxy engine.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "让可信目标使用正常网络路径，而不经过所选代理引擎。"
           }
         }
       }
@@ -6867,16 +6798,6 @@
         }
       }
     },
-    "This edition does not contact a licensing service. Software updates are checked and verified automatically.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前版本无需激活许可服务。软件更新会自动检查并安全验证。"
-          }
-        }
-      }
-    },
     "This group is automatically managed by latency tests.": {
       "localizations": {
         "zh-Hans": {
@@ -7791,17 +7712,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "主题切换立即生效，下次启动时保留你的选择。"
-          }
-        }
-      }
-    },
-    "Current Node": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前节点"
           }
         }
       }
@@ -8734,22 +8644,6 @@
         }
       }
     },
-    "Pauses the connection list only. Traffic and session counters remain live.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pauses the connection list only. Traffic and session counters remain live."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "仅暂停连接列表。流量与会话统计仍实时更新。"
-          }
-        }
-      }
-    },
     "Copy destination": {
       "localizations": {
         "en": {
@@ -9338,22 +9232,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "端口必须在 1 到 65535 之间。"
-          }
-        }
-      }
-    },
-    "Your configuration stays encrypted on this Mac. Network data is processed locally; diagnostic reports are exported only when you choose.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your configuration stays encrypted on this Mac. Network data is processed locally; diagnostic reports are exported only when you choose."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "配置在此 Mac 上加密保存。网络数据在本机处理；诊断报告仅在你主动选择时导出。"
           }
         }
       }
@@ -10365,6 +10243,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "排查订阅解析或协议支持问题时使用"
+          }
+        }
+      }
+    },
+    "Open-Source Licenses": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开源许可"
+          }
+        }
+      }
+    },
+    "Automatic checks are off. Updates are cryptographically signed with Ed25519.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动检查已关闭。更新由 Ed25519 密码学签名保护。"
+          }
+        }
+      }
+    },
+    "This edition does not contact a licensing service. Every software update is verified before it is installed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前版本无需激活许可服务。每次软件更新在安装前都会经过验证。"
+          }
+        }
+      }
+    },
+    "Privacy & Diagnostics": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐私与诊断"
           }
         }
       }

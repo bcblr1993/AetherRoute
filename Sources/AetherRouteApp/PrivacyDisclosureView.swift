@@ -3,9 +3,55 @@ import SwiftUI
 struct PrivacyDisclosureView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     let isOnboarding: Bool
+    /// Settings shows the same commitments as a compact section, without the
+    /// first-run hero or its own scroll view.
+    var isEmbedded = false
     @State private var showsPrivacyDetails = false
 
     var body: some View {
+        if isEmbedded {
+            embeddedContent
+        } else {
+            fullPage
+        }
+    }
+
+    private var embeddedContent: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                Text(AppLocalization.string("Privacy"))
+                    .font(.title2.weight(.semibold))
+                Text(AppLocalization.string("How AetherRoute handles network data"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            disclosurePoints
+                .padding(AetherVisual.s4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .aetherPanel()
+            HStack(spacing: AetherVisual.s4) {
+                Button {
+                    withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) {
+                        showsPrivacyDetails.toggle()
+                    }
+                } label: {
+                    Label("Privacy details", systemImage: "chevron.right")
+                        .labelStyle(DisclosureLabelStyle(isExpanded: showsPrivacyDetails))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+                .accessibilityIdentifier("privacy-details-toggle")
+                Spacer()
+                consentStatus
+            }
+            if showsPrivacyDetails {
+                destinationNotice
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private var fullPage: some View {
         ScrollView {
             VStack(alignment: .center, spacing: AetherVisual.s6) {
                 disclosureHeader

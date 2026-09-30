@@ -8,28 +8,49 @@ struct IndependentDistributionView: View {
         IndependentDistributionController
     @ObservedObject private var sparkle = SparkleUpdaterController.shared
     @State private var licenseKey = ""
+    /// Embedded in About, which already names the product and version: the
+    /// free edition then shows only software updates.
+    var isEmbedded = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: AetherVisual.s5) {
-                header
-                if distribution.isFreeDistribution {
-                    freeEditionCard
-                    sparkleUpdateCard
-                } else {
-                    licenseCard
-                    sparkleUpdateCard
-                    privacyFooter
+        Group {
+            if isEmbedded {
+                embeddedContent
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: AetherVisual.s5) {
+                        header
+                        if distribution.isFreeDistribution {
+                            freeEditionCard
+                            sparkleUpdateCard
+                        } else {
+                            licenseCard
+                            sparkleUpdateCard
+                            privacyFooter
+                        }
+                    }
+                    .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+                    .padding(.top, AetherVisual.pageTopPadding)
+                    .padding(.bottom, AetherVisual.pageBottomPadding)
+                    .frame(maxWidth: AetherVisual.formMaxWidth)
+                    .frame(maxWidth: .infinity)
                 }
             }
-            .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-            .padding(.top, AetherVisual.pageTopPadding)
-            .padding(.bottom, AetherVisual.pageBottomPadding)
-            .frame(maxWidth: AetherVisual.formMaxWidth)
-            .frame(maxWidth: .infinity)
         }
         .task { distribution.loadLocalReceipt() }
         .accessibilityIdentifier("independent-distribution-view")
+    }
+
+    private var embeddedContent: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            if !distribution.isFreeDistribution {
+                licenseCard
+            }
+            sparkleUpdateCard
+            if !distribution.isFreeDistribution {
+                privacyFooter
+            }
+        }
     }
 
     private var header: some View {
@@ -55,7 +76,7 @@ struct IndependentDistributionView: View {
             }
             .font(.headline)
             .foregroundStyle(.primary)
-            Text(AppLocalization.string("This edition does not contact a licensing service. Software updates are checked and verified automatically."))
+            Text(AppLocalization.string("This edition does not contact a licensing service. Every software update is verified before it is installed."))
                 .font(.body)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -139,8 +160,11 @@ struct IndependentDistributionView: View {
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text(AppLocalization.string("Software Updates"))
                         .font(.headline)
-                    Text(currentVersionDescription)
-                        .font(.subheadline.weight(.medium))
+                    // About already shows the version and build above.
+                    if !isEmbedded {
+                        Text(currentVersionDescription)
+                            .font(.subheadline.weight(.medium))
+                    }
                     Text(lastCheckDescription)
                         .font(.caption)
                         .foregroundStyle(.primary)
@@ -191,7 +215,10 @@ struct IndependentDistributionView: View {
                 relative
             )
         } else {
-            return AppLocalization.string("Automatic checks enabled. Updates are cryptographically signed with Ed25519.")
+            // Say what the toggle below actually says.
+            return sparkle.automaticallyChecksForUpdates
+                ? AppLocalization.string("Automatic checks enabled. Updates are cryptographically signed with Ed25519.")
+                : AppLocalization.string("Automatic checks are off. Updates are cryptographically signed with Ed25519.")
         }
     }
 

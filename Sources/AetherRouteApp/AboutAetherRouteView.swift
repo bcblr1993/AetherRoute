@@ -3,6 +3,7 @@ import SwiftUI
 struct AboutAetherRouteView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.locale) private var locale
+    @State private var isLicensesPresented = false
 
     private let authorName = bundleText(
         for: "AetherRouteAuthorName",
@@ -26,6 +27,10 @@ struct AboutAetherRouteView: View {
             VStack(spacing: AetherVisual.s6) {
                 productHeader
                 releaseSection
+                // Version, updates and licenses all describe this app, so
+                // they share one page instead of three settings tabs.
+                IndependentDistributionView(isEmbedded: true)
+                licensesRow
                 authorFooter
             }
             .frame(maxWidth: AetherVisual.formMaxWidth)
@@ -99,6 +104,42 @@ struct AboutAetherRouteView: View {
         .overlay(panelBorder(radius: AetherVisual.panelRadius))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AppLocalization.string("Release information"))
+    }
+
+    private var licensesRow: some View {
+        Button {
+            isLicensesPresented = true
+        } label: {
+            HStack {
+                Label(AppLocalization.string("Open-Source Licenses"), systemImage: "doc.text.magnifyingglass")
+                    .foregroundStyle(.primary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, AetherVisual.s4)
+            .padding(.vertical, AetherVisual.sRow)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(panelBackground(radius: AetherVisual.panelRadius))
+        .overlay(panelBorder(radius: AetherVisual.panelRadius))
+        .accessibilityIdentifier("about-open-licenses")
+        .sheet(isPresented: $isLicensesPresented) {
+            VStack(spacing: 0) {
+                ThirdPartyLicensesView()
+                Divider()
+                HStack {
+                    Spacer()
+                    Button(AppLocalization.string("Done")) { isLicensesPresented = false }
+                        .keyboardShortcut(.defaultAction)
+                        .accessibilityIdentifier("licenses-done")
+                }
+                .padding(AetherVisual.s3)
+            }
+            .frame(minWidth: 760, minHeight: 520)
+        }
     }
 
     private func releaseRow(title: String, value: String, identifier: String) -> some View {
