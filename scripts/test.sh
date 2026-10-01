@@ -27,6 +27,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_installed_ne_performance_c
 "$ROOT/scripts/test_notarized_test_candidate_pipeline.sh"
 "$ROOT/scripts/test_ui_isolation_guards.sh"
 "$ROOT/scripts/test_telemetry_observation_scope.sh"
+"$ROOT/scripts/test_motion_guards.sh"
 "$ROOT/scripts/test_packet_tunnel_autorelease_scope.sh"
 "$ROOT/scripts/test_packet_tunnel_telemetry_buffer_reuse.sh"
 "$ROOT/scripts/validation/test_correlate_vm_host_network_1434.sh"

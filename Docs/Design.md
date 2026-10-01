@@ -54,9 +54,12 @@ Shared pieces apply them the same way everywhere:
   for a moment.
 - Latency results pop their status dot in as each measurement lands; progress
   spinners and icons cross-scale when work starts or ends.
-- The only repeating animation is the connecting indicator (the orbiting arc
-  of the connection lens and the luminous bar), and it also respects Reduce
-  Motion.
+- Only two things repeat: the connecting indicator (the orbiting arc of the
+  connection lens and the luminous bar) and the menu bar's "new version"
+  badge pulse. Both stop under Reduce Motion.
+- Every animation goes through `AetherVisual.animation(_:)` (or reads
+  `accessibilityReduceMotion`); a bare token such as
+  `.animation(AetherVisual.quickFade, …)` ignores Reduce Motion.
 - Navigation is a native sidebar list with real buttons, keyboard shortcuts,
   focus behavior, and selected-state accessibility traits.
 

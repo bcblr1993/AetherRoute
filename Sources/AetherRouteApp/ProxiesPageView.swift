@@ -361,7 +361,7 @@ private struct ProxyGroupTabButton: View {
         }
         .buttonStyle(.aetherPressable)
         .onHover { hovering in
-            withAnimation(AetherVisual.quickFade) {
+            withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
                 isHovered = hovering
             }
         }
@@ -609,7 +609,7 @@ private struct ActiveProxyGroupView: View {
                 let count = members.filter { option.accepts(status(for: $0)) && matchesSearch($0) }.count
 
                 Button {
-                    withAnimation(AetherVisual.quickFade) {
+                    withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
                         filter = option
                     }
                 } label: {

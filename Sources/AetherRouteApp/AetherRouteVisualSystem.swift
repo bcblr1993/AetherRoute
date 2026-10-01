@@ -639,7 +639,7 @@ extension View {
             isHovered ? hoverColor : Color.clear,
             in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         )
-        .animation(AetherVisual.quickFade, value: isHovered)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
     }
 }
 

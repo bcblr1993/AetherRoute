@@ -879,7 +879,7 @@ private struct DNSMetricCard: View {
             RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
                 .stroke(isHovered ? tint.opacity(0.35) : Color.clear, lineWidth: 1)
         }
-        .animation(AetherVisual.quickFade, value: isHovered)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
         .onHover { hovering in
             isHovered = hovering
         }

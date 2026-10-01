@@ -343,7 +343,7 @@ struct RulesView: View {
                                             Spacer()
 
                                             Button {
-                                                withAnimation(AetherVisual.panelSpring) {
+                                                withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) {
                                                     highlightedRuleID = result.matchedRule.id
                                                     scrollProxy.scrollTo(result.matchedRule.id, anchor: .center)
                                                 }
@@ -523,7 +523,7 @@ struct RulesView: View {
                                                 let isSelected = selectedFilter == filter
                                                 let count = summary.rules.filter { filter.accepts($0.kind) }.count
                                                 Button {
-                                                    withAnimation(AetherVisual.quickFade) {
+                                                    withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
                                                         selectedFilter = filter
                                                     }
                                                 } label: {
@@ -605,7 +605,9 @@ struct RulesView: View {
                                     detail: AppLocalization.string("Try adjusting the filter or clearing the search text.")
                                 )
                             } else {
-                                VStack(spacing: AetherVisual.sCompact) {
+                                // Lazy: a profile can carry thousands of rules, and only
+                                // the rows on screen should be built.
+                                LazyVStack(spacing: AetherVisual.sCompact) {
                                     ForEach(displayedRules) { rule in
                                         RuleRow(
                                             rule: rule,
@@ -621,7 +623,7 @@ struct RulesView: View {
                                 }
                                 .accessibilityElement(children: .contain)
                                 .accessibilityLabel(AppLocalization.string("Ordered routing rules"))
-                                .animation(AetherVisual.gentleSpring, value: displayedRules.count)
+                                .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: displayedRules.count)
                             }
 
                             TruncationNotice(
