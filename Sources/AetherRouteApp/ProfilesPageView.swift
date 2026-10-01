@@ -1219,7 +1219,7 @@ private struct ManagedProfileRow: View {
 
                     if isActive {
                         StatePill(
-                            title: AppLocalization.string("In Use"),
+                            title: AppLocalization.string("Current profile"),
                             color: .green,
                             symbol: "checkmark.circle.fill"
                         )

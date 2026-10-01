@@ -4,18 +4,17 @@ import SwiftUI
 struct DNSView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var showsAdvancedDNS = false
-    @State private var isCompactPolicyLayout = false
 
     var body: some View {
         Group {
             if let summary = tunnel.activeProfileSummary {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
-                        header(summary.dns)
+                        AetherPageHeader(.dns)
                         if usesAutomaticTUNDNS(summary.dns) {
 #if AETHERROUTE_INDEPENDENT
-                            automaticTUNDNSContent(summary.dns)
-                            tunRuntimePolicyContent(summary.dns)
+                            automaticTUNDNSCard(summary.dns)
+                            tunAdjustmentsSection(summary.dns)
 #endif
                         } else if summary.dns.isPresent {
                             configuredContent(summary.dns)
@@ -45,220 +44,277 @@ struct DNSView: View {
         .accessibilityIdentifier("dns-page")
     }
 
-    private func header(_ dns: DNSConfigurationSummary) -> some View {
-        AetherPageHeader(.dns, subtitle: headerDetail(dns)) {
-            StatePill(
-                title: statusTitle(dns),
-                color: headerColor(dns),
-                symbol: headerSymbol(dns)
-            )
-        }
-    }
-
     @ViewBuilder
     private func configuredContent(_ dns: DNSConfigurationSummary) -> some View {
-        HStack(spacing: AetherVisual.s3) {
-            DNSMetricCard(
-                title: AppLocalization.string("Primary"),
-                summary: AppLocalization.format("%lld upstreams", Int64(dns.nameserverCount)),
-                symbol: "server.rack",
-                tint: .blue
-            )
-            DNSMetricCard(
-                title: AppLocalization.string("Fallback"),
-                summary: AppLocalization.format("%lld resolvers", Int64(dns.fallbackCount)),
-                symbol: "arrow.trianglehead.branch",
-                tint: .accentColor
-            )
-            DNSMetricCard(
-                title: AppLocalization.string("Policies"),
-                summary: AppLocalization.format("%lld domain rules", Int64(dns.nameserverPolicyCount)),
-                symbol: "list.bullet.indent",
-                tint: .accentColor
-            )
-        }
+        summaryCard(
+            title: AppLocalization.string("Profile DNS"),
+            caption: dns.isEnabled
+                ? AppLocalization.string("From the active profile")
+                : AppLocalization.string("Present in the profile but turned off"),
+            stats: [
+                (AppLocalization.string("Resolution mode"), modeTitle(dns.mode)),
+                (AppLocalization.string("Primary"), AppLocalization.format("%lld upstreams", Int64(dns.nameserverCount))),
+                (AppLocalization.string("Fallback"), AppLocalization.format("%lld resolvers", Int64(dns.fallbackCount))),
+                (AppLocalization.string("Policies"), AppLocalization.format("%lld domain rules", Int64(dns.nameserverPolicyCount))),
+            ],
+            details: dns
+        )
 
 #if AETHERROUTE_INDEPENDENT
-        tunRuntimePolicyContent(dns)
+        tunAdjustmentsSection(dns)
 #else
         resolutionBehaviorSection(dns)
 #endif
-
-        DisclosureGroup("Advanced DNS details", isExpanded: $showsAdvancedDNS) {
-        if dns.mode == .fakeIP || dns.fakeIPFilterCount > 0 {
-            HStack(alignment: .top, spacing: AetherVisual.s4) {
-                upstreamPrivacySection(dns)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                fakeIPSafeguardsSection(dns)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
-        } else {
-            upstreamPrivacySection(dns)
-        }
-
-        }
-
-        Label(
-            AppLocalization.string("This page is a privacy-safe view of the imported profile. The protocol core remains authoritative and validates DNS semantics when a session starts."),
-            systemImage: "info.circle"
-        )
-        .font(.caption)
-        .foregroundStyle(.primary)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, AetherVisual.s1)
     }
 
-    private func upstreamPrivacySection(_ dns: DNSConfigurationSummary) -> some View {
-        FeatureSection(title: AppLocalization.string("Upstream privacy"), symbol: "lock.shield") {
-            VStack(alignment: .leading, spacing: AetherVisual.s4) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                        Text(AppLocalization.string("Transport types"))
-                            .font(.subheadline.weight(.semibold))
-                        Text(AppLocalization.string("Server addresses stay hidden in this summary."))
+    // MARK: - Summary
+
+    /// What resolves names, in one card: the mode and the counts, with the
+    /// transport and Fake-IP details folded away underneath.
+    private func summaryCard(
+        title: String,
+        caption: String,
+        stats: [(String, String)],
+        details: DNSConfigurationSummary?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
+                Text(title)
+                    .font(.headline)
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding([.horizontal, .top], AetherVisual.s4)
+
+            HStack(spacing: 0) {
+                ForEach(Array(stats.enumerated()), id: \.offset) { index, stat in
+                    if index > 0 {
+                        Divider().padding(.vertical, AetherVisual.s3)
+                    }
+                    VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                        Text(stat.0)
                             .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(stat.1)
+                            .font(.title3.weight(.semibold).monospacedDigit())
                             .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .aetherNumericValue(stat.1)
                     }
-                    Spacer(minLength: 8)
-                    Text(
-                        String.localizedStringWithFormat(
-                            AppLocalization.string("%lld total"),
-                            totalResolverCount(dns)
-                        )
-                    )
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .padding(AetherVisual.s4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .combine)
                 }
-
-                if dns.upstreamTransports.isEmpty {
-                    Label(AppLocalization.string("No explicit upstream transport"), systemImage: "minus.circle")
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                } else {
-                    HStack(spacing: AetherVisual.s2) {
-                        ForEach(dns.upstreamTransports, id: \.self) { transport in
-                            Label(
-                                transportTitle(transport),
-                                systemImage: transportSymbol(transport)
-                            )
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(transportColor(transport))
-                            .padding(.horizontal, AetherVisual.s3)
-                            .padding(.vertical, AetherVisual.s2)
-                            .background(
-                                transportColor(transport).opacity(0.09),
-                                in: Capsule()
-                            )
-                        }
-                    }
-                }
-
-                Divider()
-
-                Grid(alignment: .leading, horizontalSpacing: AetherVisual.s3, verticalSpacing: AetherVisual.s2) {
-                    GridRow {
-                        DNSCountLabel(AppLocalization.string("Bootstrap"))
-                        Spacer(minLength: 8)
-                        Text(verbatim: String(dns.defaultNameserverCount))
-                            .monospacedDigit()
-                    }
-                    GridRow {
-                        DNSCountLabel(AppLocalization.string("Proxy hostnames"))
-                        Spacer(minLength: 8)
-                        Text(verbatim: String(dns.proxyNameserverCount))
-                            .monospacedDigit()
-                    }
-                    GridRow {
-                        DNSCountLabel(AppLocalization.string("Local listener"))
-                        Spacer(minLength: 8)
-                        Text(
-                            dns.hasListener
-                                ? AppLocalization.string("Configured")
-                                : AppLocalization.string("None")
-                        )
-                    }
-                    GridRow {
-                        DNSCountLabel(AppLocalization.string("EDNS subnet"))
-                        Spacer(minLength: 8)
-                        Text(
-                            dns.hasEDNSClientSubnet
-                                ? AppLocalization.string("Configured")
-                                : AppLocalization.string("None")
-                        )
-                    }
-                }
-                .font(.subheadline)
             }
-            .padding(AetherVisual.s5)
-            .aetherPanel()
+            .fixedSize(horizontal: false, vertical: true)
+
+            if let details {
+                Divider().padding(.horizontal, AetherVisual.s4)
+                detailsDisclosure(details)
+            }
+        }
+        .aetherPanel()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(title))
+    }
+
+    private func detailsDisclosure(_ dns: DNSConfigurationSummary) -> some View {
+        let showsFakeIP = dns.mode == .fakeIP || dns.fakeIPFilterCount > 0
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(AetherVisual.animation(AetherVisual.disclosure)) {
+                    showsAdvancedDNS.toggle()
+                }
+            } label: {
+                HStack(spacing: AetherVisual.s2) {
+                    AetherDisclosureChevron(isExpanded: showsAdvancedDNS)
+                    Text(AppLocalization.string("Details"))
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text(
+                        showsFakeIP
+                            ? AppLocalization.string("Encryption and Fake-IP exclusions")
+                            : AppLocalization.string("Encryption")
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, AetherVisual.s4)
+                .padding(.vertical, AetherVisual.s3)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(
+                showsAdvancedDNS
+                    ? AppLocalization.string("Expanded")
+                    : AppLocalization.string("Collapsed")
+            )
+            .accessibilityIdentifier("dns-details-disclosure")
+
+            if showsAdvancedDNS {
+                HStack(alignment: .top, spacing: AetherVisual.s5) {
+                    upstreamPrivacyDetails(dns)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    if showsFakeIP {
+                        fakeIPDetails(dns)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                }
+                .padding([.horizontal, .bottom], AetherVisual.s4)
+                .transition(AetherVisual.insertion)
+            }
         }
     }
 
-    private func fakeIPSafeguardsSection(_ dns: DNSConfigurationSummary) -> some View {
-        FeatureSection(title: AppLocalization.string("Fake-IP safeguards"), symbol: "wand.and.stars") {
-            VStack(alignment: .leading, spacing: AetherVisual.s4) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                        Text(AppLocalization.string("Address pool"))
-                            .font(.subheadline.weight(.semibold))
-                        Text(
-                            dns.hasExplicitFakeIPRange
-                                ? AppLocalization.string("Profile range")
-                                : AppLocalization.string("Core default")
-                        )
+    private func upstreamPrivacyDetails(_ dns: DNSConfigurationSummary) -> some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            Text(AppLocalization.string("Upstream privacy"))
+                .font(.subheadline.weight(.semibold))
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                    Text(AppLocalization.string("Transport types"))
+                        .font(.subheadline.weight(.semibold))
+                    Text(AppLocalization.string("Server addresses stay hidden in this summary."))
                         .font(.caption)
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 8)
-                    StatePill(
-                        title: modeTitle(dns.mode),
-                        color: modeColor(dns.mode),
-                        symbol: modeSymbol(dns.mode)
-                    )
                 }
+                Spacer(minLength: 8)
+                Text(
+                    String.localizedStringWithFormat(
+                        AppLocalization.string("%lld total"),
+                        totalResolverCount(dns)
+                    )
+                )
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.primary)
+            }
 
+            if dns.upstreamTransports.isEmpty {
+                Label(AppLocalization.string("No explicit upstream transport"), systemImage: "minus.circle")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+            } else {
                 HStack(spacing: AetherVisual.s2) {
-                    Label(
-                        dns.hasExplicitFakeIPRange
-                            ? AppLocalization.string("Profile range")
-                            : AppLocalization.string("Core default"),
-                        systemImage: "rectangle.3.group.bubble"
-                    )
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, AetherVisual.s3)
-                    .padding(.vertical, AetherVisual.s2)
-                    .background(
-                        Color.accentColor.opacity(0.09),
-                        in: Capsule()
-                    )
-                }
-
-                Divider()
-
-                Grid(alignment: .leading, horizontalSpacing: AetherVisual.s3, verticalSpacing: AetherVisual.s2) {
-                    GridRow {
-                        DNSCountLabel(AppLocalization.string("Bypass filters"))
-                        Spacer(minLength: 8)
-                        Text(verbatim: String(dns.fakeIPFilterCount))
-                            .monospacedDigit()
-                    }
-                    GridRow {
-                        DNSCountLabel(AppLocalization.string("Fallback filter"))
-                        Spacer(minLength: 8)
-                        Text(
-                            dns.hasFallbackFilter
-                                ? AppLocalization.string("Configured")
-                                : AppLocalization.string("Default")
+                    ForEach(dns.upstreamTransports, id: \.self) { transport in
+                        Label(
+                            transportTitle(transport),
+                            systemImage: transportSymbol(transport)
+                        )
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(transportColor(transport))
+                        .padding(.horizontal, AetherVisual.s3)
+                        .padding(.vertical, AetherVisual.s2)
+                        .background(
+                            transportColor(transport).opacity(0.09),
+                            in: Capsule()
                         )
                     }
                 }
-                .font(.subheadline)
             }
-            .padding(AetherVisual.s5)
-            .aetherPanel()
+
+            Divider()
+
+            Grid(alignment: .leading, horizontalSpacing: AetherVisual.s3, verticalSpacing: AetherVisual.s2) {
+                GridRow {
+                    DNSCountLabel(AppLocalization.string("Bootstrap"))
+                    Spacer(minLength: 8)
+                    Text(verbatim: String(dns.defaultNameserverCount))
+                        .monospacedDigit()
+                }
+                GridRow {
+                    DNSCountLabel(AppLocalization.string("Proxy hostnames"))
+                    Spacer(minLength: 8)
+                    Text(verbatim: String(dns.proxyNameserverCount))
+                        .monospacedDigit()
+                }
+                GridRow {
+                    DNSCountLabel(AppLocalization.string("Local listener"))
+                    Spacer(minLength: 8)
+                    Text(
+                        dns.hasListener
+                            ? AppLocalization.string("Configured")
+                            : AppLocalization.string("None")
+                    )
+                }
+                GridRow {
+                    DNSCountLabel(AppLocalization.string("EDNS subnet"))
+                    Spacer(minLength: 8)
+                    Text(
+                        dns.hasEDNSClientSubnet
+                            ? AppLocalization.string("Configured")
+                            : AppLocalization.string("None")
+                    )
+                }
+            }
+            .font(.subheadline)
+        }
+    }
+
+    private func fakeIPDetails(_ dns: DNSConfigurationSummary) -> some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            Text(AppLocalization.string("Fake-IP safeguards"))
+                .font(.subheadline.weight(.semibold))
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                    Text(AppLocalization.string("Address pool"))
+                        .font(.subheadline.weight(.semibold))
+                    Text(
+                        dns.hasExplicitFakeIPRange
+                            ? AppLocalization.string("Profile range")
+                            : AppLocalization.string("Core default")
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                StatePill(
+                    title: modeTitle(dns.mode),
+                    color: modeColor(dns.mode),
+                    symbol: modeSymbol(dns.mode)
+                )
+            }
+
+            HStack(spacing: AetherVisual.s2) {
+                Label(
+                    dns.hasExplicitFakeIPRange
+                        ? AppLocalization.string("Profile range")
+                        : AppLocalization.string("Core default"),
+                    systemImage: "rectangle.3.group.bubble"
+                )
+                .font(.caption.weight(.medium))
+                .foregroundStyle(Color.accentColor)
+                .padding(.horizontal, AetherVisual.s3)
+                .padding(.vertical, AetherVisual.s2)
+                .background(
+                    Color.accentColor.opacity(0.09),
+                    in: Capsule()
+                )
+            }
+
+            Divider()
+
+            Grid(alignment: .leading, horizontalSpacing: AetherVisual.s3, verticalSpacing: AetherVisual.s2) {
+                GridRow {
+                    DNSCountLabel(AppLocalization.string("Bypass filters"))
+                    Spacer(minLength: 8)
+                    Text(verbatim: String(dns.fakeIPFilterCount))
+                        .monospacedDigit()
+                }
+                GridRow {
+                    DNSCountLabel(AppLocalization.string("Fallback filter"))
+                    Spacer(minLength: 8)
+                    Text(
+                        dns.hasFallbackFilter
+                            ? AppLocalization.string("Configured")
+                            : AppLocalization.string("Default")
+                    )
+                }
+            }
+            .font(.subheadline)
         }
     }
 
@@ -318,7 +374,8 @@ struct DNSView: View {
 #endif
 
 #if AETHERROUTE_INDEPENDENT
-    private func automaticTUNDNSContent(
+    /// TUN without an enabled DNS section in the profile: TUN's own resolver.
+    private func automaticTUNDNSCard(
         _ dns: DNSConfigurationSummary
     ) -> some View {
         let mode = tunnel.dnsRuntimePolicy
@@ -328,293 +385,240 @@ struct DNSView: View {
                 for: dns,
                 profileAllowsIPv6: tunnel.activeProfileSummary?.allowsIPv6 == true
             )
-        return FeatureSection(title: AppLocalization.string("Automatic TUN DNS"), symbol: "network") {
-            VStack(spacing: 0) {
-                DNSSettingRow(
-                    title: AppLocalization.string("Enhanced mode"),
-                    detail: modeDetail(mode),
-                    value: modeTitle(mode),
-                    symbol: modeSymbol(mode),
-                    tint: modeColor(mode)
-                )
-                Divider().padding(.leading, AetherVisual.wideListIndent)
-                DNSSettingRow(
-                    title: AppLocalization.string("IPv6 answers"),
-                    detail: AppLocalization.string("IPv6 answers follow the selected TUN policy."),
-                    value: allowsIPv6
-                        ? AppLocalization.string("On")
-                        : AppLocalization.string("Off"),
-                    symbol: "6.circle",
-                    tint: allowsIPv6 ? .accentColor : .secondary
-                )
-            }
-            .aetherPanel()
-        }
+        return summaryCard(
+            title: AppLocalization.string("Automatic TUN DNS"),
+            caption: AppLocalization.string("The profile has no DNS section turned on, so TUN resolves names itself."),
+            stats: [
+                (AppLocalization.string("Resolution mode"), modeTitle(mode)),
+                (AppLocalization.string("IPv6 answers"), onOffTitle(allowsIPv6)),
+            ],
+            details: nil
+        )
     }
 
-    private func tunRuntimePolicyContent(
+    // MARK: - Adjustments in TUN mode
+
+    private func tunAdjustmentsSection(
         _ dns: DNSConfigurationSummary
     ) -> some View {
-        FeatureSection(
-            title: AppLocalization.string("DNS adjustments in TUN mode"),
-            symbol: "slider.horizontal.3",
-            accessory: { AetherHelpButton(topic: .dnsRuntimeOverrides) }
-        ) {
-            VStack(spacing: 0) {
-                HStack(spacing: AetherVisual.s3) {
-                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                        Text(AppLocalization.string("Override the active profile"))
-                            .font(.body.weight(.semibold))
-                        Text(
-                            tunnel.networkEngineMode == .tun
-                                ? AppLocalization.string("Changes are validated first and apply the next time you connect with TUN.")
-                                : AppLocalization.string("Select the TUN engine on Overview to edit runtime overrides.")
-                        )
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: AetherVisual.s3)
-                    StatePill(
-                        title: tunnel.dnsRuntimePolicy.isInherited
-                            ? AppLocalization.string("Follow profile")
-                            : AppLocalization.string("Customized"),
-                        color: tunnel.dnsRuntimePolicy.isInherited
-                            ? .secondary
-                            : .accentColor,
-                        symbol: tunnel.dnsRuntimePolicy.isInherited
-                            ? "doc.text"
-                            : "slider.horizontal.3"
-                    )
-                }
-                .padding(AetherVisual.s4)
-
-                Divider().padding(.leading, AetherVisual.s4)
-                let mode = effectiveResolutionMode(dns)
-                dnsPolicyRow(
-                    symbol: modeSymbol(mode),
-                    tint: modeColor(mode),
-                    title: AppLocalization.string("Resolution mode"),
-                    detail: followsProfile(
-                        tunnel.dnsRuntimePolicy.resolutionMode == .inherit,
-                        value: modeTitle(mode),
-                        detail: modeDetail(mode)
-                    ),
-                    help: .dnsResolutionMode
-                ) {
-                    AetherSegmentedPicker(
-                        selection: resolutionModeBinding,
-                        options: DNSRuntimeResolutionMode.allCases.map {
-                            .init(value: $0, title: runtimeModeTitle($0))
-                        },
-                        accessibilityLabel: AppLocalization.string("Resolution mode"),
-                        accessibilityIdentifier: "dns-runtime-resolution-mode"
-                    )
-                    .fixedSize()
-                }
-
-                Divider().padding(.leading, AetherVisual.s4)
-                let allowsIPv6 = tunnel.dnsRuntimePolicy
-                    .effectivePacketTunnelAllowsIPv6(
-                        for: dns,
-                        profileAllowsIPv6: tunnel.activeProfileSummary?.allowsIPv6 == true
-                    )
-                dnsPolicyRow(
-                    symbol: "6.circle",
-                    tint: allowsIPv6 ? .accentColor : .secondary,
-                    title: AppLocalization.string("IPv6 answers"),
-                    detail: followsProfile(
-                        tunnel.dnsRuntimePolicy.ipv6 == .inherit,
-                        value: onOffTitle(allowsIPv6),
-                        detail: allowsIPv6
-                            ? AppLocalization.string("AAAA responses are allowed.")
-                            : AppLocalization.string("AAAA responses are filtered.")
-                    ),
-                    help: .dnsIPv6
-                ) {
-                    dnsBooleanPicker(
-                        AppLocalization.string("IPv6 answers"),
-                        selection: booleanBinding(\.ipv6),
-                        identifier: "dns-runtime-ipv6"
-                    )
-                }
-
-                Divider().padding(.leading, AetherVisual.s4)
-                let respectsRules = tunnel.dnsRuntimePolicy.respectsRules
-                    .resolved(profileValue: dns.respectsRules)
-                dnsPolicyRow(
-                    symbol: "arrow.triangle.branch",
-                    tint: respectsRules ? .accentColor : .secondary,
-                    title: AppLocalization.string("Rule-aware queries"),
-                    detail: followsProfile(
-                        tunnel.dnsRuntimePolicy.respectsRules == .inherit,
-                        value: onOffTitle(respectsRules),
-                        detail: respectsRules
-                            ? AppLocalization.string("Upstream queries follow the routing rule engine.")
-                            : AppLocalization.string("Upstream queries use the core's direct DNS path.")
-                    ),
-                    help: .dnsRespectRules
-                ) {
-                    dnsBooleanPicker(
-                        AppLocalization.string("Rule-aware queries"),
-                        selection: booleanBinding(\.respectsRules),
-                        identifier: "dns-runtime-respect-rules"
-                    )
-                }
-
-                Divider().padding(.leading, AetherVisual.s4)
-                dnsPolicyRow(
-                    symbol: "house.and.flag",
-                    tint: dns.usesHosts ? .blue : .secondary,
-                    title: AppLocalization.string("Hosts mapping"),
-                    // Hosts has no override: it always follows the profile,
-                    // so it reads as a fact rather than a lone control.
-                    detail: followsProfile(
-                        true,
-                        value: onOffTitle(dns.usesHosts),
-                        detail: dns.usesHosts
-                            ? AppLocalization.string("Profile hosts entries participate in resolution.")
-                            : AppLocalization.string("Profile hosts entries are ignored for DNS.")
-                    ),
-                    help: .dnsHosts,
-                    canDisable: false
-                ) {
-                    EmptyView()
-                }
-
-                // Saving this card's own change locks it for a moment; that
-                // is not a lock the person needs explained.
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            HStack(spacing: AetherVisual.s2) {
+                Text(AppLocalization.string("DNS adjustments in TUN mode"))
+                    .font(.headline)
+                AetherHelpButton(topic: .dnsRuntimeOverrides)
+                Spacer(minLength: AetherVisual.s2)
+                // Only offered once something was changed; it replaces the
+                // old "Customized" badge.
+                // A link button does not look disabled, so while the policy
+                // is locked it is left out rather than shown dead.
                 if tunnel.networkEngineMode == .tun,
-                   !tunnel.isUpdatingDNSRuntimePolicy,
-                   let reason = tunnel.profileEditLockReason {
-                    Divider().padding(.leading, AetherVisual.s4)
-                    Label(reason, systemImage: "lock")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, AetherVisual.s4)
-                        .padding(.vertical, AetherVisual.s3)
-                        .accessibilityIdentifier("dns-runtime-lock-reason")
-                }
-
-                Divider().padding(.leading, AetherVisual.s4)
-                HStack {
-                    Text("DNS changes apply on the next TUN connection, including restoring profile defaults.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                    Button("Restore profile defaults") {
+                   !tunnel.dnsRuntimePolicy.isInherited,
+                   tunnel.canModifyDNSRuntimePolicy {
+                    Button {
                         Task { await tunnel.setDNSRuntimePolicy(DNSRuntimePolicy()) }
+                    } label: {
+                        Label(AppLocalization.string("Restore defaults"), systemImage: "arrow.counterclockwise")
                     }
-                    .disabled(tunnel.dnsRuntimePolicy.isInherited || !tunnel.canModifyDNSRuntimePolicy || tunnel.networkEngineMode != .tun)
+                    .buttonStyle(.link)
                     .accessibilityIdentifier("dns-restore-defaults")
-                }
-                .padding(AetherVisual.s4)
-                if let message = tunnel.dnsRuntimePolicyMessage {
-                    Divider().padding(.leading, AetherVisual.s4)
-                    Label(
-                        message,
-                        systemImage: tunnel.dnsRuntimePolicyMessageIsError
-                            ? "exclamationmark.triangle.fill"
-                            : "checkmark.circle.fill"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(
-                        tunnel.dnsRuntimePolicyMessageIsError
-                            ? Color.orange
-                            : Color.accentColor
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(AetherVisual.s4)
-                    .transition(AetherVisual.insertion)
+                    .transition(.opacity)
                 }
             }
-            .aetherPanel()
-            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.dnsRuntimePolicyMessage)
-            .onGeometryChange(for: Bool.self) { proxy in
-                proxy.size.width < Self.compactPolicyWidth
-            } action: { isCompact in
-                isCompactPolicyLayout = isCompact
+
+            if tunnel.networkEngineMode == .tun {
+                tunPolicyForm(dns)
+                    .transition(.opacity)
+            } else {
+                transparentProxyNotice
+                    .transition(.opacity)
             }
         }
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.networkEngineMode)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: tunnel.dnsRuntimePolicy.isInherited)
     }
 
-    /// Below this card width a row cannot hold its description beside the
-    /// four-way resolution picker, which keeps its natural width (about 350
-    /// points: "Redir-host" sets every segment's width) rather than
-    /// overflowing the card as a fixed 250-point frame did.
-    nonisolated private static let compactPolicyWidth: CGFloat = 720
-    private static let policyIconSize: CGFloat = 34
+    /// With Transparent Proxy none of the adjustments apply, so instead of a
+    /// card of controls that cannot be used: why, and the way to TUN.
+    private var transparentProxyNotice: some View {
+        HStack(spacing: AetherVisual.s3) {
+            Image(systemName: "info.circle")
+                .font(.title3)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 36, height: 36)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                Text(AppLocalization.string("Transparent Proxy is on"))
+                    .font(.body.weight(.semibold))
+                Text(AppLocalization.string("With Transparent Proxy, apps use the system DNS. Switch to TUN to adjust the resolution mode, IPv6 and more here."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: AetherVisual.s3)
+            Button {
+                Task { await tunnel.setNetworkEngineMode(.tun) }
+            } label: {
+                AetherProgressButtonLabel(
+                    AppLocalization.string("Switch to TUN"),
+                    systemImage: "arrow.left.arrow.right",
+                    isWorking: tunnel.isSwitchingNetworkEngine
+                )
+            }
+            .buttonStyle(.bordered)
+            .disabled(!tunnel.canChangeNetworkEngine)
+            .help(AppLocalization.string("While connected, AetherRoute reconnects with TUN."))
+            .accessibilityIdentifier("dns-switch-to-tun")
+        }
+        .padding(AetherVisual.s4)
+        .aetherPanel()
+    }
 
-    private func dnsPolicyRow<Control: View>(
-        symbol: String,
-        tint: Color,
-        title: String,
-        detail: String,
-        help: HelpTopic? = nil,
-        canDisable: Bool = true,
+    /// Settings-style rows: the name on the left, a menu on the right whose
+    /// "Follow profile" entry names what the profile says.
+    private func tunPolicyForm(_ dns: DNSConfigurationSummary) -> some View {
+        let policy = tunnel.dnsRuntimePolicy
+        let profileMode = DNSRuntimePolicy.inherited.effectivePacketTunnelResolutionMode(for: dns)
+        let profileIPv6 = DNSRuntimePolicy.inherited.effectivePacketTunnelAllowsIPv6(
+            for: dns,
+            profileAllowsIPv6: tunnel.activeProfileSummary?.allowsIPv6 == true
+        )
+        return VStack(spacing: 0) {
+            policyRow(
+                AppLocalization.string("Resolution mode"),
+                help: .dnsResolutionMode,
+                isChanged: policy.resolutionMode != .inherit
+            ) {
+                Picker(AppLocalization.string("Resolution mode"), selection: resolutionModeBinding) {
+                    ForEach(DNSRuntimeResolutionMode.allCases, id: \.self) { mode in
+                        Text(runtimeModeTitle(mode, profileMode: profileMode)).tag(mode)
+                    }
+                }
+                .accessibilityIdentifier("dns-runtime-resolution-mode")
+            }
+            Divider().padding(.horizontal, AetherVisual.s4)
+            policyRow(
+                AppLocalization.string("IPv6 answers"),
+                help: .dnsIPv6,
+                isChanged: policy.ipv6 != .inherit
+            ) {
+                booleanMenu(
+                    AppLocalization.string("IPv6 answers"),
+                    selection: booleanBinding(\.ipv6),
+                    profileValue: profileIPv6
+                )
+                .accessibilityIdentifier("dns-runtime-ipv6")
+            }
+            Divider().padding(.horizontal, AetherVisual.s4)
+            policyRow(
+                AppLocalization.string("Rule-aware queries"),
+                help: .dnsRespectRules,
+                isChanged: policy.respectsRules != .inherit
+            ) {
+                booleanMenu(
+                    AppLocalization.string("Rule-aware queries"),
+                    selection: booleanBinding(\.respectsRules),
+                    profileValue: dns.respectsRules
+                )
+                .accessibilityIdentifier("dns-runtime-respect-rules")
+            }
+            Divider().padding(.horizontal, AetherVisual.s4)
+            // Hosts has no override: it always follows the profile.
+            policyRow(AppLocalization.string("Hosts mapping"), help: .dnsHosts, isChanged: false) {
+                Text(followProfileTitle(onOffTitle(dns.usesHosts)))
+                    .foregroundStyle(.secondary)
+            }
+
+            // Saving this card's own change locks it for a moment; that is
+            // not a lock the person needs explained.
+            if !tunnel.isUpdatingDNSRuntimePolicy,
+               let reason = tunnel.profileEditLockReason {
+                Divider().padding(.horizontal, AetherVisual.s4)
+                Label(reason, systemImage: "lock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, AetherVisual.s4)
+                    .padding(.vertical, AetherVisual.s3)
+                    .accessibilityIdentifier("dns-runtime-lock-reason")
+            }
+
+            Divider().padding(.horizontal, AetherVisual.s4)
+            HStack(spacing: AetherVisual.s2) {
+                if !policy.isInherited {
+                    ChangedSettingDot()
+                    Text(AppLocalization.string("Marks a changed setting. Changes apply the next time you connect with TUN."))
+                } else {
+                    Text(AppLocalization.string("Changes apply the next time you connect with TUN."))
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, AetherVisual.s4)
+            .padding(.vertical, AetherVisual.s3)
+
+            if let message = tunnel.dnsRuntimePolicyMessage {
+                Divider().padding(.horizontal, AetherVisual.s4)
+                Label(
+                    message,
+                    systemImage: tunnel.dnsRuntimePolicyMessageIsError
+                        ? "exclamationmark.triangle.fill"
+                        : "checkmark.circle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(
+                    tunnel.dnsRuntimePolicyMessageIsError
+                        ? Color.orange
+                        : Color.accentColor
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(AetherVisual.s4)
+                .transition(AetherVisual.insertion)
+            }
+        }
+        .aetherPanel()
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.dnsRuntimePolicyMessage)
+    }
+
+    private func policyRow<Control: View>(
+        _ title: String,
+        help: HelpTopic,
+        isChanged: Bool,
         @ViewBuilder control: () -> Control
     ) -> some View {
-        // In a narrow window the segmented control moves under the text
-        // instead of squeezing the description into a tall column.
-        let layout = isCompactPolicyLayout
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: AetherVisual.s2))
-            : AnyLayout(HStackLayout(spacing: AetherVisual.s4))
-        return layout {
-            HStack(spacing: AetherVisual.s4) {
-                Image(systemName: symbol)
-                    .foregroundStyle(tint)
-                    .frame(width: Self.policyIconSize, height: Self.policyIconSize)
-                    .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    HStack(spacing: AetherVisual.s1) {
-                        Text(title)
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(.primary)
-                        if let help {
-                            AetherHelpButton(topic: help)
-                        }
-                    }
-                    Text(detail)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: AetherVisual.s2) {
+            Text(title)
+                .font(.body.weight(.medium))
+            AetherHelpButton(topic: help)
+            Spacer(minLength: AetherVisual.s3)
+            if isChanged {
+                ChangedSettingDot()
+                    .transition(.scale(scale: 0.4).combined(with: .opacity))
             }
-            Group {
-                if canDisable {
-                    control()
-                        .disabled(
-                            tunnel.networkEngineMode != .tun
-                                || !tunnel.canModifyDNSRuntimePolicy
-                        )
-                } else {
-                    control()
-                }
-            }
-            .padding(.leading, isCompactPolicyLayout ? Self.policyIconSize + AetherVisual.s4 : .zero)
+            control()
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+                .disabled(!tunnel.canModifyDNSRuntimePolicy)
         }
+        .frame(minHeight: 44)
         .padding(.horizontal, AetherVisual.s4)
-        .padding(.vertical, AetherVisual.s3)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isChanged)
     }
 
-    private func dnsBooleanPicker(
+    private func booleanMenu(
         _ title: String,
         selection: Binding<DNSRuntimeBoolean>,
-        identifier: String
+        profileValue: Bool
     ) -> some View {
-        AetherSegmentedPicker(
-            selection: selection,
-            options: DNSRuntimeBoolean.allCases.map {
-                .init(value: $0, title: runtimeBooleanTitle($0))
-            },
-            accessibilityLabel: title,
-            accessibilityIdentifier: identifier
-        )
-        .fixedSize()
+        Picker(title, selection: selection) {
+            ForEach(DNSRuntimeBoolean.allCases, id: \.self) { value in
+                Text(runtimeBooleanTitle(value, profileValue: profileValue)).tag(value)
+            }
+        }
     }
 
     private var resolutionModeBinding: Binding<DNSRuntimeResolutionMode> {
@@ -644,52 +648,36 @@ struct DNSView: View {
     private func applyDNSRuntimePolicyAfterViewUpdate(
         _ policy: DNSRuntimePolicy
     ) {
-        // Segmented Picker can invoke its Binding setter from SwiftUI's view
-        // update pass. Dispatch to the next main run-loop turn before the
+        // A Picker can invoke its Binding setter from SwiftUI's view update
+        // pass. Dispatch to the next main run-loop turn before the
         // observable manager publishes the validated policy and message.
         DispatchQueue.main.async {
             Task { await tunnel.setDNSRuntimePolicy(policy) }
         }
     }
 
-    /// The mode the next TUN session uses: the override, or the profile's.
-    private func effectiveResolutionMode(
-        _ dns: DNSConfigurationSummary
-    ) -> DNSResolutionMode {
-        tunnel.dnsRuntimePolicy.effectivePacketTunnelResolutionMode(for: dns)
-    }
-
-    /// Names the profile's value when a row follows it, so "Follow profile"
-    /// never hides what the profile actually says.
-    private func followsProfile(
-        _ inherits: Bool,
-        value: String,
-        detail: String
-    ) -> String {
-        guard inherits else { return detail }
-        return String.localizedStringWithFormat(
-            AppLocalization.string("Follows profile: %@ · %@"),
-            value,
-            detail
-        )
+    /// "Follow profile (Fake-IP)": the menu never hides what following the
+    /// profile actually means.
+    private func followProfileTitle(_ value: String) -> String {
+        String.localizedStringWithFormat(AppLocalization.string("Follow profile (%@)"), value)
     }
 
     private func onOffTitle(_ isOn: Bool) -> String {
         isOn ? AppLocalization.string("On") : AppLocalization.string("Off")
     }
 
-    private func runtimeModeTitle(_ mode: DNSRuntimeResolutionMode) -> String {
+    private func runtimeModeTitle(_ mode: DNSRuntimeResolutionMode, profileMode: DNSResolutionMode) -> String {
         switch mode {
-        case .inherit: AppLocalization.string("Follow profile")
+        case .inherit: followProfileTitle(modeTitle(profileMode))
         case .normal: AppLocalization.string("Normal")
         case .fakeIP: AppLocalization.string("Fake-IP")
         case .redirHost: AppLocalization.string("Redir-host")
         }
     }
 
-    private func runtimeBooleanTitle(_ value: DNSRuntimeBoolean) -> String {
+    private func runtimeBooleanTitle(_ value: DNSRuntimeBoolean, profileValue: Bool) -> String {
         switch value {
-        case .inherit: AppLocalization.string("Follow profile")
+        case .inherit: followProfileTitle(onOffTitle(profileValue))
         case .disabled: AppLocalization.string("Off")
         case .enabled: AppLocalization.string("On")
         }
@@ -720,50 +708,6 @@ struct DNSView: View {
         }
         .padding(AetherVisual.s5)
         .aetherPanel()
-    }
-
-    private func headerColor(_ dns: DNSConfigurationSummary) -> Color {
-        if usesAutomaticTUNDNS(dns) {
-            return modeColor(
-                tunnel.dnsRuntimePolicy.effectivePacketTunnelResolutionMode(for: dns)
-            )
-        }
-        guard dns.isPresent else { return .secondary }
-        return dns.isEnabled ? modeColor(dns.mode) : .orange
-    }
-
-    private func headerSymbol(_ dns: DNSConfigurationSummary) -> String {
-        if usesAutomaticTUNDNS(dns) {
-            return modeSymbol(
-                tunnel.dnsRuntimePolicy.effectivePacketTunnelResolutionMode(for: dns)
-            )
-        }
-        guard dns.isPresent else { return "macbook.and.iphone" }
-        return dns.isEnabled ? modeSymbol(dns.mode) : "pause.circle.fill"
-    }
-
-    private func statusTitle(_ dns: DNSConfigurationSummary) -> String {
-        if usesAutomaticTUNDNS(dns) {
-            return modeTitle(
-                tunnel.dnsRuntimePolicy.effectivePacketTunnelResolutionMode(for: dns)
-            )
-        }
-        guard dns.isPresent else { return AppLocalization.string("System resolver") }
-        return dns.isEnabled
-            ? AppLocalization.string("Profile DNS on")
-            : AppLocalization.string("Profile DNS off")
-    }
-
-    private func headerDetail(_ dns: DNSConfigurationSummary) -> String {
-        if usesAutomaticTUNDNS(dns) {
-            return AppLocalization.string("TUN manages DNS automatically when the profile has no enabled DNS section. Review or adjust its policy below.")
-        }
-        guard dns.isPresent else {
-            return AppLocalization.string("This profile does not define a custom DNS section.")
-        }
-        return dns.isEnabled
-            ? AppLocalization.string("Resolver behavior is supplied by the active profile and validated by the core.")
-            : AppLocalization.string("A DNS section is present, but its resolver is disabled.")
     }
 
     private func modeTitle(_ mode: DNSResolutionMode) -> String {
@@ -839,52 +783,13 @@ struct DNSView: View {
     }
 }
 
-private struct DNSMetricCard: View {
-    @State private var isHovered = false
-
-    let title: String
-    /// The counted phrase ("2 upstreams"), plural-aware as one string.
-    let summary: String
-    let symbol: String
-    let tint: Color
-
+/// The mark beside a DNS setting that no longer follows the profile.
+private struct ChangedSettingDot: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            HStack(spacing: AetherVisual.s3) {
-                Image(systemName: symbol)
-                    .font(.body)
-                    .foregroundStyle(tint)
-                    .frame(width: 32, height: 32)
-                    .background(
-                        tint.opacity(0.12),
-                        in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
-                    )
-                    .accessibilityHidden(true)
-                Text(title)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            Text(summary)
-                .font(.title3.monospacedDigit().weight(.semibold))
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-                .aetherNumericValue(summary)
-        }
-        .padding(AetherVisual.s4)
-        .frame(maxWidth: .infinity)
-        .aetherPanel()
-        .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-                .stroke(isHovered ? tint.opacity(0.35) : Color.clear, lineWidth: 1)
-        }
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text(title))
+        Circle()
+            .fill(Color.accentColor)
+            .frame(width: 6, height: 6)
+            .accessibilityLabel(AppLocalization.string("Changed"))
     }
 }
 
@@ -941,15 +846,5 @@ private struct DNSCountLabel: View {
         Text(title)
             .foregroundStyle(.primary)
             .frame(minWidth: 80, alignment: .leading)
-    }
-}
-
-private extension DNSRuntimeBoolean {
-    func resolved(profileValue: Bool) -> Bool {
-        switch self {
-        case .inherit: profileValue
-        case .disabled: false
-        case .enabled: true
-        }
     }
 }

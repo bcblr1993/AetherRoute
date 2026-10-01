@@ -961,11 +961,15 @@ private struct MenuBarContent: View {
 
     private var modeSection: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            HStack(spacing: AetherVisual.s2) {
+            // Same title row as the network engine below.
+            HStack(spacing: AetherVisual.s1) {
                 Text(AppLocalization.string("Routing mode"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                AetherHelpButton(topic: .routingMode)
+                    .controlSize(.small)
                 ModeHint(text: tunnel.routingMode.shortHint)
+                    .padding(.leading, AetherVisual.s1)
             }
             RoutingModeSegmentedControl(
                 selection: Binding(
@@ -1861,6 +1865,7 @@ private struct SettingsView: View {
                 HStack(spacing: AetherVisual.s3) {
                     Text("Routing mode")
                         .foregroundStyle(.primary)
+                    AetherHelpButton(topic: .routingMode)
 
                     Spacer(minLength: 12)
 
@@ -2068,6 +2073,9 @@ private struct SettingsView: View {
                 )
             }
             .disabled(!canEditLocalProxyPorts)
+            // Form labels do not dim when disabled, so the gray port alone
+            // looked like an empty placeholder; the whole row dims instead.
+            .foregroundStyle(canEditLocalProxyPorts ? .primary : .secondary)
 
             LabeledContent("Additional SOCKS5-only port") {
                 LocalProxyPortField(
@@ -2078,6 +2086,7 @@ private struct SettingsView: View {
                 )
             }
             .disabled(!canEditLocalProxyPorts)
+            .foregroundStyle(canEditLocalProxyPorts ? .primary : .secondary)
 
             HStack {
                 AetherCopyButton(

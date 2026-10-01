@@ -105,10 +105,13 @@ struct ConnectionsView: View {
                 .fixedSize()
                 .transition(AetherVisual.insertion)
         }
-        Text(footerText(visibleCount: visibleCount))
-            .lineLimit(1)
-            .fixedSize()
-            .accessibilityIdentifier("connections-count-summary")
+        // "Showing 0 of 0" only repeats the empty state above it.
+        if !displayedConnections.isEmpty {
+            Text(footerText(visibleCount: visibleCount))
+                .lineLimit(1)
+                .fixedSize()
+                .accessibilityIdentifier("connections-count-summary")
+        }
         Text(AppLocalization.string("Counted on this Mac only; nothing is reported."))
             .lineLimit(1)
             .truncationMode(.tail)
@@ -123,7 +126,7 @@ struct ConnectionsView: View {
             Label(
                 tunnel.isConnected
                     ? AppLocalization.string("No active connections")
-                    : AppLocalization.string("Connections appear here once you connect"),
+                    : AppLocalization.string("No connections yet"),
                 systemImage: "arrow.left.arrow.right"
             )
         } description: {
@@ -216,10 +219,13 @@ struct ConnectionsView: View {
                     ConnectionTrafficCell(connection: row.connection)
                 }
                 .width(min: 76, ideal: 80, max: 120)
+                // Numbers sit on the right; the title follows them.
+                .alignment(.numeric)
                 TableColumn(AppLocalization.string("Duration")) { row in
                     ConnectionDurationCell(connection: row.connection)
                 }
                 .width(min: 72, ideal: 84, max: 100)
+                .alignment(.numeric)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: false))
             .accessibilityLabel(AppLocalization.string("Connections"))
@@ -371,6 +377,7 @@ private struct SessionBar: View {
                     AetherStatusBeacon(
                         isConnected: false,
                         isConnecting: tunnel.state == .connecting,
+                        isFailed: tunnel.isFailed,
                         size: 7
                     )
                     Text(tunnel.compactStatusTitle)

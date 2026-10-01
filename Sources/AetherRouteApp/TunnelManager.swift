@@ -1415,6 +1415,11 @@ final class TunnelManager: ObservableObject {
         state == .connected
     }
 
+    var isFailed: Bool {
+        if case .failed = state { return true }
+        return false
+    }
+
     var isTransitioning: Bool {
         switch state {
         case .loading, .connecting, .recovering, .disconnecting: true

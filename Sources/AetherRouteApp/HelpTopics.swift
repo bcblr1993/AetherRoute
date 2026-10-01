@@ -4,6 +4,7 @@ import SwiftUI
 /// Plain-language help for settings people commonly do not understand. One
 /// source of text, shown from every place the setting appears.
 enum HelpTopic: String, CaseIterable, Identifiable {
+    case routingMode
     case networkEngine
     case dnsRuntimeOverrides
     case dnsResolutionMode
@@ -21,6 +22,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .routingMode: AppLocalization.string("Rule, Global or Direct?")
         case .networkEngine: AppLocalization.string("Transparent Proxy or TUN?")
         case .dnsRuntimeOverrides: AppLocalization.string("What are DNS adjustments in TUN mode?")
         case .dnsResolutionMode: AppLocalization.string("Resolution mode")
@@ -32,6 +34,33 @@ enum HelpTopic: String, CaseIterable, Identifiable {
 
     var sections: [Section] {
         switch self {
+        case .routingMode:
+            [
+                Section(
+                    heading: AppLocalization.string("Rule · recommended for everyday use"),
+                    lines: [
+                        AppLocalization.string("Each connection is checked against the profile's rules from top to bottom; the first match decides whether it uses a proxy or connects directly."),
+                    ]
+                ),
+                Section(
+                    heading: AppLocalization.string("Global"),
+                    lines: [
+                        AppLocalization.string("Sends all traffic through the selected proxy, ignoring the rules."),
+                    ]
+                ),
+                Section(
+                    heading: AppLocalization.string("Direct"),
+                    lines: [
+                        AppLocalization.string("Sends all traffic over your normal network without any proxy."),
+                    ]
+                ),
+                Section(
+                    heading: AppLocalization.string("How to choose"),
+                    lines: [
+                        AppLocalization.string("Keep Rule for daily use. Try Global when a site that needs the proxy is not covered by a rule, and Direct to check whether a problem comes from the proxy. While connected, a new mode applies immediately."),
+                    ]
+                ),
+            ]
         case .networkEngine:
             [
                 Section(

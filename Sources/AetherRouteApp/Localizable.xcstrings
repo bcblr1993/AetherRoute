@@ -403,16 +403,6 @@
         }
       }
     },
-    "A DNS section is present, but its resolver is disabled.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前配置包含 DNS 设置，但解析器已关闭。"
-          }
-        }
-      }
-    },
     "A native profile must keep at least one node.": {
       "localizations": {
         "zh-Hans": {
@@ -1070,16 +1060,6 @@
         }
       }
     },
-    "Available": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "可用"
-          }
-        }
-      }
-    },
     "Before AetherRoute can configure a network extension, review how your network data is handled.": {
       "localizations": {
         "zh-Hans": {
@@ -1577,16 +1557,6 @@
         }
       }
     },
-    "Connections appear here once you connect": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接后这里会显示每一条连接"
-          }
-        }
-      }
-    },
     "Copied": {
       "localizations": {
         "zh-Hans": {
@@ -1963,16 +1933,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "DNS 覆盖将在下一次 TUN 连接时生效。"
-          }
-        }
-      }
-    },
-    "Down": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "下行"
           }
         }
       }
@@ -2777,16 +2737,6 @@
         }
       }
     },
-    "In Use": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用中"
-          }
-        }
-      }
-    },
     "Included": {
       "localizations": {
         "zh-Hans": {
@@ -2817,32 +2767,12 @@
         }
       }
     },
-    "Inspect endpoints, groups, and provider sources.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "查看代理节点、策略组和提供方来源。"
-          }
-        }
-      }
-    },
     "Inspect ordered routing decisions and targets.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "查看按顺序执行的路由规则与目标。"
-          }
-        }
-      }
-    },
-    "Inspect resolver privacy, transports, and Fake-IP behavior.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "查看 DNS 隐私、传输方式与 Fake-IP 行为。"
           }
         }
       }
@@ -2863,26 +2793,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "IPv6 响应"
-          }
-        }
-      }
-    },
-    "IPv6 answers follow the selected TUN policy.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "IPv6 应答遵循当前选择的 TUN 策略。"
-          }
-        }
-      }
-    },
-    "Keeps the selected node pinned": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "固定所选节点，失败时不回退"
           }
         }
       }
@@ -2933,16 +2843,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "延迟"
-          }
-        }
-      }
-    },
-    "Latency results are local": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "延迟结果仅保存在本机"
           }
         }
       }
@@ -3173,16 +3073,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "管理本地配置与订阅配置。"
-          }
-        }
-      }
-    },
-    "Manual": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "手动"
           }
         }
       }
@@ -4171,26 +4061,6 @@
         }
       }
     },
-    "Profile DNS off": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "配置 DNS 已关闭"
-          }
-        }
-      }
-    },
-    "Profile DNS on": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "配置 DNS 已开启"
-          }
-        }
-      }
-    },
     "Profile hosts entries are ignored for DNS.": {
       "localizations": {
         "zh-Hans": {
@@ -4731,16 +4601,6 @@
         }
       }
     },
-    "Resolver behavior is supplied by the active profile and validated by the core.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "解析行为由当前配置提供，并由协议核心验证。"
-          }
-        }
-      }
-    },
     "Resolves real addresses while retaining enhanced host routing.": {
       "localizations": {
         "zh-Hans": {
@@ -4757,16 +4617,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在恢复正常网络路径"
-          }
-        }
-      }
-    },
-    "Retries the fastest available node": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不可用时切换到最快可用节点"
           }
         }
       }
@@ -5211,16 +5061,6 @@
         }
       }
     },
-    "Select the TUN engine on Overview to edit runtime overrides.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请在“概览”中选择 TUN 引擎后编辑运行时覆盖。"
-          }
-        }
-      }
-    },
     "Selected page content": {
       "localizations": {
         "zh-Hans": {
@@ -5237,16 +5077,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已选择：%@"
-          }
-        }
-      }
-    },
-    "Selection mode": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "节点模式"
           }
         }
       }
@@ -5395,44 +5225,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示 %1$lld / 共 %2$lld 条连接"
-          }
-        }
-      }
-    },
-    "Showing %lld of %lld nodes": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Showing %1$lld of %#@total@"
-          },
-          "substitutions": {
-            "total": {
-              "argNum": 2,
-              "formatSpecifier": "lld",
-              "variations": {
-                "plural": {
-                  "one": {
-                    "stringUnit": {
-                      "state": "translated",
-                      "value": "%arg node"
-                    }
-                  },
-                  "other": {
-                    "stringUnit": {
-                      "state": "translated",
-                      "value": "%arg nodes"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示 %1$lld / 共 %2$lld 个节点"
           }
         }
       }
@@ -5900,16 +5692,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在测试"
-          }
-        }
-      }
-    },
-    "Testing latency…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在测试延迟…"
           }
         }
       }
@@ -6882,16 +6664,6 @@
         }
       }
     },
-    "This automatic group is ready and will choose the fastest available node when you connect.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自动策略组已就绪，将在连接时选择最快的可用节点。"
-          }
-        }
-      }
-    },
     "This build does not have the required Network Extension permission. Install the signed official release.": {
       "localizations": {
         "zh-Hans": {
@@ -6932,32 +6704,12 @@
         }
       }
     },
-    "This page is a privacy-safe view of the imported profile. The protocol core remains authoritative and validates DNS semantics when a session starts.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此页面以隐私安全方式展示导入配置。协议核心仍是最终依据，并会在会话启动时验证 DNS 语义。"
-          }
-        }
-      }
-    },
     "This preview can import and inspect profiles, but it cannot enable system routing.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "此预览版可以导入并检查配置，但不能启用系统路由。"
-          }
-        }
-      }
-    },
-    "This profile does not define a custom DNS section.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前配置没有定义自定义 DNS。"
           }
         }
       }
@@ -7048,23 +6800,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "流量已恢复到正常网络路径。"
-          }
-        }
-      }
-    },
-    "Traffic is routed as soon as the network extension installs its settings.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Traffic is routed as soon as the network extension installs its settings."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "网络扩展装好设置后，流量即刻开始路由。"
           }
         }
       }
@@ -7165,16 +6900,6 @@
         }
       }
     },
-    "TUN manages DNS automatically when the profile has no enabled DNS section. Review or adjust its policy below.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "配置未启用 DNS 时，TUN 会自动管理 DNS。你可以在下方查看或调整策略。"
-          }
-        }
-      }
-    },
     "Try adjusting the filter or clearing the search text.": {
       "localizations": {
         "zh-Hans": {
@@ -7261,16 +6986,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "未测"
-          }
-        }
-      }
-    },
-    "Up": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上行"
           }
         }
       }
@@ -7897,7 +7612,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "网络波形 · 最近 30 秒"
+            "value": "流量走势 · 最近 30 秒"
           }
         }
       }
@@ -9044,54 +8759,6 @@
         }
       }
     },
-    "Advanced DNS details": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Advanced DNS details"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "高级 DNS 详情"
-          }
-        }
-      }
-    },
-    "DNS changes apply on the next TUN connection, including restoring profile defaults.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "DNS changes apply on the next TUN connection, including restoring profile defaults."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "DNS 修改在下一次 TUN 连接生效，包括恢复配置默认值。"
-          }
-        }
-      }
-    },
-    "Restore profile defaults": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Restore profile defaults"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "恢复配置默认值"
-          }
-        }
-      }
-    },
     "DNS behavior will follow the active profile on the next TUN connection.": {
       "localizations": {
         "en": {
@@ -9136,38 +8803,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "连接仍保持。线路未在限定时间内完成检查，尚未确认目标可用性。"
-          }
-        }
-      }
-    },
-    "Last measurement": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Last measurement"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最近测量"
-          }
-        }
-      }
-    },
-    "Older than 5 minutes · test again": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Older than 5 minutes · test again"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "结果已超过 5 分钟 · 请重新测试"
           }
         }
       }
@@ -11702,62 +11337,12 @@
         }
       }
     },
-    "Override the active profile": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "覆盖当前配置"
-          }
-        }
-      }
-    },
-    "Changes are validated first and apply the next time you connect with TUN.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "修改会先校验，下次以 TUN 连接时生效。"
-          }
-        }
-      }
-    },
     "Follow profile": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "跟随配置"
-          }
-        }
-      }
-    },
-    "Follows profile: %@ · %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "跟随配置：%1$@ · %2$@"
-          }
-        }
-      }
-    },
-    "AAAA responses are allowed.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "允许 AAAA 响应。"
-          }
-        }
-      }
-    },
-    "AAAA responses are filtered.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "过滤 AAAA 响应。"
           }
         }
       }
@@ -11921,34 +11506,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 个节点"
-          }
-        }
-      }
-    },
-    "%lld endpoints": {
-      "localizations": {
-        "en": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld endpoint"
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld endpoints"
-                }
-              }
-            }
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 个代理节点"
           }
         }
       }
@@ -12251,6 +11808,512 @@
           "stringUnit": {
             "state": "translated",
             "value": "该配置及其加密的节点将从此 Mac 上删除，且无法恢复。"
+          }
+        }
+      }
+    },
+    "Traffic is already routed. Use Diagnose to check the selected exit.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "流量已在路由中，可点“诊断”检查当前出口。"
+          }
+        }
+      }
+    },
+    "Rule, Global or Direct?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则、全局还是直连？"
+          }
+        }
+      }
+    },
+    "Rule · recommended for everyday use": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则 · 日常推荐"
+          }
+        }
+      }
+    },
+    "Each connection is checked against the profile's rules from top to bottom; the first match decides whether it uses a proxy or connects directly.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每条连接按配置里的规则自上而下匹配，第一条命中的规则决定它走代理还是直连。"
+          }
+        }
+      }
+    },
+    "Sends all traffic through the selected proxy, ignoring the rules.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有流量都经所选代理转发，不再看规则。"
+          }
+        }
+      }
+    },
+    "Sends all traffic over your normal network without any proxy.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有流量都走本机正常网络，不经过任何代理。"
+          }
+        }
+      }
+    },
+    "Keep Rule for daily use. Try Global when a site that needs the proxy is not covered by a rule, and Direct to check whether a problem comes from the proxy. While connected, a new mode applies immediately.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日常保持“规则”即可。需要代理的网站没被规则覆盖时，可临时切到“全局”；想确认问题是不是出在代理上，可切到“直连”。连接期间切换立即生效。"
+          }
+        }
+      }
+    },
+    "No connections yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无连接"
+          }
+        }
+      }
+    },
+    "Strategy select": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动选择"
+          }
+        }
+      }
+    },
+    "Strategy url-test": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL Test"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动测速"
+          }
+        }
+      }
+    },
+    "Strategy fallback": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fallback"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "故障转移"
+          }
+        }
+      }
+    },
+    "Strategy load-balance": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load Balance"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "负载均衡"
+          }
+        }
+      }
+    },
+    "Strategy relay": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relay"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "链式代理"
+          }
+        }
+      }
+    },
+    "Current profile": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前"
+          }
+        }
+      }
+    },
+    "Switch to TUN": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换到 TUN"
+          }
+        }
+      }
+    },
+    "While connected, AetherRoute reconnects with TUN.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接期间会自动以 TUN 重新连接。"
+          }
+        }
+      }
+    },
+    "Profile order": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置顺序"
+          }
+        }
+      }
+    },
+    "Choose an exit node and see which one is fastest.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择出口节点，测一测哪条线路最快。"
+          }
+        }
+      }
+    },
+    "How domain names are turned into addresses.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "域名如何被解析成地址。"
+          }
+        }
+      }
+    },
+    "Show…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看…"
+          }
+        }
+      }
+    },
+    "Current node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前节点"
+          }
+        }
+      }
+    },
+    "No node selected yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未选择节点"
+          }
+        }
+      }
+    },
+    "Chooses a node once connected": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接后自动选择节点"
+          }
+        }
+      }
+    },
+    "Sort: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "排序：%@"
+          }
+        }
+      }
+    },
+    "Last tested at %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次测速：%@"
+          }
+        }
+      }
+    },
+    "Pick the fastest node automatically": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动选择最快节点"
+          }
+        }
+      }
+    },
+    "When on, AetherRoute uses the node with the lowest latency, so you never switch by hand.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启后自动选用延迟最低的节点，不用手动切换。"
+          }
+        }
+      }
+    },
+    "This group automatically uses the node with the lowest latency.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个策略组会自动选用延迟最低的节点，不需要手动指定。"
+          }
+        }
+      }
+    },
+    "This group uses the first node that responds, in list order.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个策略组按顺序使用第一个可用的节点。"
+          }
+        }
+      }
+    },
+    "This group spreads connections across its nodes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个策略组会把连接分散到各个节点。"
+          }
+        }
+      }
+    },
+    "This group chooses its node automatically.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个策略组会自动选择节点。"
+          }
+        }
+      }
+    },
+    "This group has no nodes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个策略组没有节点。"
+          }
+        }
+      }
+    },
+    "Profile DNS": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置中的 DNS"
+          }
+        }
+      }
+    },
+    "From the active profile": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自当前配置"
+          }
+        }
+      }
+    },
+    "Present in the profile but turned off": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置中有 DNS，但未开启"
+          }
+        }
+      }
+    },
+    "Encryption and Fake-IP exclusions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加密方式、Fake-IP 排除列表"
+          }
+        }
+      }
+    },
+    "Encryption": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加密方式"
+          }
+        }
+      }
+    },
+    "The profile has no DNS section turned on, so TUN resolves names itself.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置未开启 DNS，由 TUN 自行解析域名。"
+          }
+        }
+      }
+    },
+    "Restore defaults": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复默认"
+          }
+        }
+      }
+    },
+    "Transparent Proxy is on": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前是透明代理模式"
+          }
+        }
+      }
+    },
+    "With Transparent Proxy, apps use the system DNS. Switch to TUN to adjust the resolution mode, IPv6 and more here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "透明代理下各应用使用系统 DNS。切换到 TUN 后，可以在这里调整解析模式、IPv6 等设置。"
+          }
+        }
+      }
+    },
+    "Marks a changed setting. Changes apply the next time you connect with TUN.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示已改过的设置。修改在下次以 TUN 连接时生效。"
+          }
+        }
+      }
+    },
+    "Changes apply the next time you connect with TUN.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改在下次以 TUN 连接时生效。"
+          }
+        }
+      }
+    },
+    "Follow profile (%@)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟随配置（%@）"
+          }
+        }
+      }
+    },
+    "Changed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已修改"
+          }
+        }
+      }
+    },
+    "Expanded": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已展开"
+          }
+        }
+      }
+    },
+    "Collapsed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已收起"
           }
         }
       }

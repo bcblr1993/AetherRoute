@@ -10,7 +10,7 @@ enum ProxyNodeSort: String, CaseIterable, Identifiable, Sendable {
 
     var localizedTitle: String {
         switch self {
-        case .default: AppLocalization.string("Default")
+        case .default: AppLocalization.string("Profile order")
         case .latency: AppLocalization.string("By latency")
         case .name: AppLocalization.string("By name")
         }

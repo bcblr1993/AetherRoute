@@ -12,6 +12,9 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
         let title: String
     }
 
+    /// Read here so a window gaining or losing key status updates the
+    /// selection dot to match the fill AppKit draws.
+    @Environment(\.controlActiveState) private var controlActiveState
     @Binding var selection: Value
     let options: [Option]
     var accessibilityLabel: String? = nil
@@ -71,8 +74,8 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
             control.setLabel(option.title, forSegment: index)
         }
         control.selectedSegment = options.firstIndex { $0.value == selection } ?? -1
-        control.markSelectedSegment()
         control.isEnabled = context.environment.isEnabled
+        control.markSelectedSegment(onAccentFill: controlActiveState == .key)
         control.controlSize = switch context.environment.controlSize {
         case .mini: .mini
         case .small: .small
@@ -165,7 +168,7 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
 
         @MainActor @objc func selectionChanged(_ sender: NSSegmentedControl) {
             guard options.indices.contains(sender.selectedSegment) else { return }
-            sender.markSelectedSegment()
+            sender.markSelectedSegment(onAccentFill: sender.window?.isKeyWindow == true)
             selection.wrappedValue = options[sender.selectedSegment].value
         }
     }

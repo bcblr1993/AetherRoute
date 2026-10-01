@@ -580,18 +580,13 @@ final class AetherRouteUITests: XCTestCase {
             XCTAssertTrue(routing.isEnabled, "Routing switching is disabled while \(state).")
 
             navigationButton(in: app, title: "Proxies").click()
-            let selectionModeByIdentifier = app.radioGroups[
-                "proxy-selection-mode-Balanced"
+            let automaticSelection = app.descendants(matching: .any)[
+                "proxy-auto-select-Balanced"
             ]
-            let selectionModeByLabel = app.radioGroups["Selection mode"]
-            let selectionMode = selectionModeByIdentifier
-                .waitForExistence(timeout: 1)
-                    ? selectionModeByIdentifier
-                    : selectionModeByLabel
-            XCTAssertTrue(selectionMode.waitForExistence(timeout: 2))
+            XCTAssertTrue(automaticSelection.waitForExistence(timeout: 2))
             XCTAssertTrue(
-                selectionMode.isEnabled,
-                "Node mode switching is disabled while \(state)."
+                automaticSelection.isEnabled,
+                "Automatic node selection is disabled while \(state)."
             )
             let node = app.buttons["Singapore Edge"]
             XCTAssertTrue(node.waitForExistence(timeout: 2))
@@ -999,10 +994,19 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(latencyButton.waitForExistence(timeout: 3))
         XCTAssertTrue(latencyButton.isHittable)
         XCTAssertTrue(latencyButton.isEnabled)
-        XCTAssertFalse(app.staticTexts["最近测量"].exists)
         latencyButton.click()
-        XCTAssertTrue(app.staticTexts["最近测量"].waitForExistence(timeout: 3))
-        XCTAssertTrue(latencyButton.isEnabled)
+        // The result lands in the current-node line and the node's row.
+        let currentNode = app.descendants(matching: .any)["proxy-current-node"]
+        XCTAssertTrue(currentNode.waitForExistence(timeout: 3))
+        let enabledAgain = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == true"),
+            object: latencyButton
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [enabledAgain], timeout: 5), .completed)
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "毫秒"))
+                .firstMatch.exists
+        )
     }
 
     func testRoutingRulesKeepManualResourceSetupInAdvancedOptions() {
@@ -1351,7 +1355,6 @@ final class AetherRouteUITests: XCTestCase {
             app.staticTexts["DNS adjustments in TUN mode"]
                 .waitForExistence(timeout: 2)
         )
-        XCTAssertTrue(app.staticTexts["Override the active profile"].exists)
         let resolutionMode = app.descendants(matching: .any)[
             "dns-runtime-resolution-mode"
         ]
@@ -1364,15 +1367,16 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(ipv6.isEnabled)
         XCTAssertTrue(respectRules.isEnabled)
 
-        let normalRadio = resolutionMode.radioButtons["Normal"]
-        let normalButton = resolutionMode.buttons["Normal"]
-        let normalSegment = normalRadio.exists ? normalRadio : normalButton
-        XCTAssertTrue(normalSegment.waitForExistence(timeout: 2))
-        normalSegment.click()
+        selectMenuItem("Normal", from: resolutionMode, in: app)
         XCTAssertTrue(
             app.staticTexts[
                 "DNS overrides will apply on the next TUN connection."
-            ].exists
+            ].waitForExistence(timeout: 2)
+        )
+        // A changed setting offers the way back.
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dns-restore-defaults"]
+                .waitForExistence(timeout: 2)
         )
 
         try auditProductAccessibility(in: app)
@@ -2495,7 +2499,6 @@ final class AetherRouteUITests: XCTestCase {
                element.elementType == .popUpButton,
                [
                    "app-language-picker",
-                   "proxy-sort-picker",
                    "connections-sort-picker",
                ].contains(element.identifier),
                element.isHittable {
@@ -2666,7 +2669,6 @@ final class AetherRouteUITests: XCTestCase {
                     return true
                 }
                 for identifier in [
-                    "proxy-group-members-table",
                     "proxy-node-inventory-table",
                     "connections-table",
                 ] {
@@ -2969,27 +2971,25 @@ final class AetherRouteUITests: XCTestCase {
                 }
                 if button == "DNS" {
                     let runtimePolicy = app.staticTexts["DNS adjustments in TUN mode"].exists
-                    let modeTitle = runtimePolicy ? "Resolution mode" : "Enhanced mode"
-                    for _ in 0..<3 {
-                        if app.staticTexts[modeTitle].exists { break }
-                        app.descendants(matching: .any)["dns-page"]
-                            .scroll(byDeltaX: 0, deltaY: 300)
-                    }
-                    // The runtime card describes the value TUN will use: the
-                    // review fixture's compatibility default filters AAAA.
-                    let ipv6Detail = runtimePolicy
-                        ? "AAAA responses are filtered."
-                        : "AAAA responses are allowed by this profile."
-                    for text in [modeTitle,
-                        "Maps names into a synthetic range for deterministic domain routing.",
-                        "IPv6 answers", ipv6Detail] {
-                        XCTAssertTrue(app.staticTexts[text].exists)
-                    }
-                    if runtimePolicy {
+                    // The summary card always names the resolution mode.
+                    XCTAssertTrue(app.staticTexts["Resolution mode"].exists)
+                    XCTAssertTrue(app.staticTexts["Fake-IP"].exists)
+                    let switchToTUN = app.descendants(matching: .any)["dns-switch-to-tun"]
+                    if runtimePolicy, switchToTUN.exists {
+                        // Transparent Proxy: no unusable controls, just the
+                        // way to TUN.
+                        XCTAssertTrue(switchToTUN.isHittable)
+                        XCTAssertFalse(app.descendants(matching: .any)["dns-runtime-resolution-mode"].exists)
+                    } else if runtimePolicy {
+                        for _ in 0..<3 {
+                            if app.staticTexts["IPv6 answers"].exists { break }
+                            app.descendants(matching: .any)["dns-page"]
+                                .scroll(byDeltaX: 0, deltaY: 300)
+                        }
                         XCTAssertTrue(app.descendants(matching: .any)["dns-runtime-resolution-mode"].exists)
                         XCTAssertTrue(app.descendants(matching: .any)["dns-runtime-ipv6"].exists)
                     } else {
-                        XCTAssertTrue(app.staticTexts["Fake-IP"].exists)
+                        XCTAssertTrue(app.staticTexts["Enhanced mode"].exists)
                         XCTAssertTrue(app.staticTexts["Allowed"].exists)
                     }
                 }
@@ -3050,44 +3050,14 @@ final class AetherRouteUITests: XCTestCase {
         )
         XCTAssertTrue(windowFrame.contains(latencyButton.frame))
 
-        let table = app.outlines["proxy-node-inventory-table"]
-        if !table.exists {
-            // The inventory is now an explicit advanced disclosure. Exercise
-            // opening it before checking its columns and accessible content.
-            let disclosure = app.disclosureTriangles.firstMatch
-            for _ in 0..<3 {
-                if disclosure.exists && disclosure.isHittable { break }
-                app.descendants(matching: .any)["proxies-page"]
-                    .scroll(byDeltaX: 0, deltaY: 480)
-            }
-            XCTAssertTrue(disclosure.waitForExistence(timeout: 2))
-            XCTAssertTrue(disclosure.isHittable)
-            // The native disclosure's AX frame includes the full custom
-            // label. Its center is blank space; activate the leading arrow.
-            disclosure.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
-                .withOffset(CGVector(dx: 26, dy: 0)).click()
-            XCTAssertEqual(String(describing: disclosure.value ?? ""), "1")
-        }
-        // The expanded inventory sits below the group cards in a lazy stack;
-        // scroll it into the viewport so AppKit creates the native table.
-        for _ in 0..<4 {
-            if table.exists && windowFrame.contains(table.frame) { break }
-            app.descendants(matching: .any)["proxies-page"]
-                .scroll(byDeltaX: 0, deltaY: -400)
-        }
-        XCTAssertTrue(table.waitForExistence(timeout: 2))
-        XCTAssertTrue(windowFrame.contains(table.frame))
-        let columns = table.children(matching: .tableColumn)
-        XCTAssertEqual(columns.count, 4)
-        print("PROXIES_LAYOUT window=\(windowFrame) latency=\(latencyButton.frame) table=\(table.frame)")
-        for column in columns.allElementsBoundByIndex {
-            print("PROXIES_LAYOUT column=\(column.frame)")
-            XCTAssertGreaterThanOrEqual(column.frame.minX, table.frame.minX - 1)
-            XCTAssertLessThanOrEqual(
-                column.frame.maxX, table.frame.maxX + 1,
-                "Every node column must fit without horizontal scrolling."
-            )
-        }
+        let members = app.descendants(matching: .any)["proxy-group-members-table"]
+        XCTAssertTrue(members.waitForExistence(timeout: 2))
+        print("PROXIES_LAYOUT window=\(windowFrame) latency=\(latencyButton.frame) members=\(members.frame)")
+        XCTAssertGreaterThanOrEqual(members.frame.minX, windowFrame.minX)
+        XCTAssertLessThanOrEqual(
+            members.frame.maxX, windowFrame.maxX,
+            "Node rows must fit without horizontal scrolling."
+        )
     }
 
     private func pasteFixtureText(
@@ -3773,13 +3743,6 @@ final class AetherRouteUITests: XCTestCase {
             }
             if destination.pageIdentifier == "proxies-page" {
                 assertProxyControlsFit(in: app)
-                if language == "en" {
-                    let filter = app.popUpButtons["proxy-filter-picker-Balanced"]
-                    XCTAssertTrue(filter.exists)
-                    assertCompactFilterWorks(
-                        filter, optionPrefix: "Available Available", in: app
-                    )
-                }
             }
             if destination.pageIdentifier == "connections-page" {
                 assertConnectionsFit(in: app)

@@ -148,34 +148,6 @@ extension ProxyConfigurationSummary.Recognition {
     var isSelectable: Bool { self != .incomplete }
 }
 
-/// The filter chips above the node table.
-enum ProxyNodeFilter: String, CaseIterable, Identifiable {
-    case all
-    case available
-    case timedOut
-    case untested
-
-    var id: Self { self }
-
-    var localizedTitle: String {
-        switch self {
-        case .all: AppLocalization.string("All")
-        case .available: AppLocalization.string("Available")
-        case .timedOut: AppLocalization.string("Timed out")
-        case .untested: AppLocalization.string("Untested")
-        }
-    }
-
-    func accepts(_ status: ProxyLatencyStatus) -> Bool {
-        switch self {
-        case .all: true
-        case .available: status.isMeasured
-        case .timedOut: status == .timedOut
-        case .untested: status == .untested || status == .testing
-        }
-    }
-}
-
 /// The filter chips above the connection table.
 enum ConnectionOutletFilter: String, CaseIterable, Identifiable {
     case all

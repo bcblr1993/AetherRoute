@@ -199,23 +199,6 @@ struct TruncationNotice: View {
     }
 }
 
-/// The result remains visible, but its age must not imply current availability.
-struct MeasurementAgeLabel: View {
-    let measuredAt: Date
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            HStack(spacing: AetherVisual.s2) {
-                Text("Last measurement")
-                Text(measuredAt, format: .dateTime.hour().minute().second())
-                if context.date.timeIntervalSince(measuredAt) >= 300 {
-                    Text("Older than 5 minutes · test again").foregroundStyle(.orange)
-                }
-            }
-            .font(.caption).foregroundStyle(.secondary)
-        }
-    }
-}
-
 struct DiscardChangesModifier: ViewModifier {
     @Environment(\.dismiss) private var dismiss
     let isDirty: Bool

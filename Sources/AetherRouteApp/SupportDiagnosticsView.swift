@@ -468,6 +468,7 @@ struct SupportDiagnosticsView: View {
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var isCreatingReport = false
+    @State private var isInventoryPresented = false
 
     /// Embedded in the Privacy & Diagnostics settings page, which owns the
     /// scroll view and page margins.
@@ -591,6 +592,7 @@ struct SupportDiagnosticsView: View {
                 AetherStatusBeacon(
                     isConnected: tunnel.isConnected,
                     isConnecting: tunnel.state == .connecting,
+                    isFailed: tunnel.isFailed,
                     size: 6
                 )
                 Text(tunnel.compactStatusTitle)
@@ -634,6 +636,29 @@ struct SupportDiagnosticsView: View {
                 stageRows
                 if let report = diagnosticsEngine.report {
                     verdictBanner(report: report)
+                }
+            }
+            // Moved here from the proxies page, which is for choosing nodes;
+            // this list is for troubleshooting a profile.
+            if let summary = tunnel.activeProfileSummary,
+               summary.proxyCount > 0 || summary.proxyProviderCount > 0 {
+                HStack(spacing: AetherVisual.s3) {
+                    VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                        Text(AppLocalization.string("Node inventory & providers"))
+                        Text(AppLocalization.string("For troubleshooting subscription parsing or protocol support."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: AetherVisual.s2)
+                    Button(AppLocalization.string("Show…")) {
+                        isInventoryPresented = true
+                    }
+                    .accessibilityIdentifier("show-node-inventory")
+                }
+                .sheet(isPresented: $isInventoryPresented) {
+                    ProxyInventorySheet()
+                        .environmentObject(tunnel)
                 }
             }
         } header: {
@@ -799,6 +824,7 @@ struct SupportDiagnosticsView: View {
                 AetherStatusBeacon(
                     isConnected: tunnel.isConnected,
                     isConnecting: tunnel.state == .connecting,
+                    isFailed: tunnel.isFailed,
                     size: 6
                 )
                 Text(tunnel.compactStatusTitle)

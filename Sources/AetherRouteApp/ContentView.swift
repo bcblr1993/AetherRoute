@@ -37,11 +37,11 @@ enum AppSection: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .overview: AppLocalization.string("Connection health and the active route.")
-        case .proxies: AppLocalization.string("Inspect endpoints, groups, and provider sources.")
+        case .proxies: AppLocalization.string("Choose an exit node and see which one is fastest.")
         case .connections: AppLocalization.string("Review the current session and available telemetry.")
         case .profiles: AppLocalization.string("Manage local and subscribed configurations.")
         case .rules: AppLocalization.string("Inspect ordered routing decisions and targets.")
-        case .dns: AppLocalization.string("Inspect resolver privacy, transports, and Fake-IP behavior.")
+        case .dns: AppLocalization.string("How domain names are turned into addresses.")
         }
     }
 
@@ -392,6 +392,7 @@ struct ContentView: View {
                         AetherStatusBeacon(
                             isConnected: tunnel.isConnected,
                             isConnecting: tunnel.state == .connecting || tunnel.state == .recovering || tunnel.isSwitchingNetworkEngine,
+                            isFailed: tunnel.isFailed,
                             size: 6
                         )
                         Text(tunnel.compactStatusTitle)
@@ -422,14 +423,10 @@ struct ContentView: View {
                             selectSection(section)
                         } label: {
                             HStack(spacing: AetherVisual.sCompact) {
-                                Image(systemName: section.symbol)
-                                    .font(.title3.weight(.semibold))
-                                    .frame(width: 18)
-                                    .foregroundStyle(
-                                        selectedSection == section
-                                            ? Color.accentColor
-                                            : Color.secondary
-                                    )
+                                SidebarSectionIcon(
+                                    symbol: section.symbol,
+                                    isSelected: selectedSection == section
+                                )
 
                                 Text(section.title)
                                     .font(.body.weight(.medium))
@@ -597,6 +594,29 @@ struct ContentView: View {
     }
 }
 
+/// The selected row's icon. On the accent selection fill an accent icon
+/// vanished into the background, so it follows the label to white there;
+/// on the grey fill of an inactive window it keeps the accent.
+private struct SidebarSectionIcon: View {
+    @Environment(\.backgroundProminence) private var backgroundProminence
+    let symbol: String
+    let isSelected: Bool
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.title3.weight(.semibold))
+            .frame(width: 18)
+            .foregroundStyle(style)
+    }
+
+    private var style: AnyShapeStyle {
+        guard isSelected else { return AnyShapeStyle(Color.secondary) }
+        return backgroundProminence == .increased
+            ? AnyShapeStyle(.primary)
+            : AnyShapeStyle(Color.accentColor)
+    }
+}
+
 /// One badge style for every sidebar count; counts are information, not
 /// state, so none of them is tinted.
 private struct ConnectionToolbarButton: View {
@@ -612,7 +632,9 @@ private struct ConnectionToolbarButton: View {
                         .controlSize(.small)
                         .accessibilityHidden(true)
                 } else {
-                    Image(systemName: "power")
+                    // Retry is not a power switch; it gets the retry arrow.
+                    Image(systemName: tunnel.isFailed ? "arrow.clockwise" : "power")
+                        .contentTransition(.symbolEffect(.replace))
                         .accessibilityHidden(true)
                 }
                 Text(tunnel.primaryActionTitle)
@@ -1154,9 +1176,16 @@ private struct ConnectionHero: View {
                     .accessibilityHidden(true)
                 if (!tunnel.isConnected || tunnel.isAutomaticRouteRecovering || tunnel.isSwitchingNetworkEngine)
                     && tunnel.recoveryPlan == nil {
-                    Label(nextStep, systemImage: nextStepSymbol)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
+                    // A step below the status, so it reads below the
+                    // subtitle too; the tinted icon is what draws the eye.
+                    Label {
+                        Text(nextStep)
+                    } icon: {
+                        Image(systemName: nextStepSymbol)
+                            .foregroundStyle(tunnel.isFailed ? Color.orange : Color.accentColor)
+                    }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.opacity)
                 }
@@ -1291,6 +1320,8 @@ private struct ConnectionControlBar: View {
                 Text(AppLocalization.string("Routing mode"))
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.primary)
+                AetherHelpButton(topic: .routingMode)
+                    .controlSize(.small)
                 ModeHint(text: routingMode.shortHint)
             }
             RoutingModeSegmentedControl(
@@ -1334,6 +1365,7 @@ private struct ConnectionControlBar: View {
 
 #if AETHERROUTE_INDEPENDENT
 struct NetworkEngineSegmentedControl: NSViewRepresentable {
+    @Environment(\.controlActiveState) private var controlActiveState
     @Binding var selection: NetworkEngineMode
     let isEnabled: Bool
 
@@ -1363,8 +1395,8 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
             control.setLabel(mode.localizedTitle, forSegment: index)
         }
         control.selectedSegment = modes.firstIndex(of: selection) ?? -1
-        control.markSelectedSegment()
         control.isEnabled = isEnabled
+        control.markSelectedSegment(onAccentFill: controlActiveState == .key)
         // Equal segments, like the routing-mode control beside it, so the two
         // controls read as a pair. When a translation no longer fits, the bar
         // above stacks the controls vertically instead of squeezing them.
@@ -1388,7 +1420,7 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
         @MainActor @objc func selectionChanged(_ sender: NSSegmentedControl) {
             let modes = NetworkEngineMode.allCases
             guard modes.indices.contains(sender.selectedSegment) else { return }
-            sender.markSelectedSegment()
+            sender.markSelectedSegment(onAccentFill: sender.window?.isKeyWindow == true)
             selection.wrappedValue = modes[sender.selectedSegment]
         }
     }
@@ -1396,6 +1428,7 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
 #endif
 
 struct RoutingModeSegmentedControl: NSViewRepresentable {
+    @Environment(\.controlActiveState) private var controlActiveState
     @Binding var selection: RoutingMode
     let isEnabled: Bool
 
@@ -1425,8 +1458,8 @@ struct RoutingModeSegmentedControl: NSViewRepresentable {
             control.setLabel(mode.localizedTitle, forSegment: index)
         }
         control.selectedSegment = modes.firstIndex(of: selection) ?? -1
-        control.markSelectedSegment()
         control.isEnabled = isEnabled
+        control.markSelectedSegment(onAccentFill: controlActiveState == .key)
         control.segmentDistribution = .fillEqually
         // The default selected bezel is a faint grey step that almost
         // disappears on dark materials; the accent fill reads at a glance
@@ -1447,7 +1480,7 @@ struct RoutingModeSegmentedControl: NSViewRepresentable {
         @MainActor @objc func selectionChanged(_ sender: NSSegmentedControl) {
             let modes = RoutingMode.allCases
             guard modes.indices.contains(sender.selectedSegment) else { return }
-            sender.markSelectedSegment()
+            sender.markSelectedSegment(onAccentFill: sender.window?.isKeyWindow == true)
             selection.wrappedValue = modes[sender.selectedSegment]
         }
     }
@@ -1773,7 +1806,7 @@ private struct RouteQualityLine: View {
     private var detail: LocalizedStringKey {
         switch quality {
         case nil, .unknown:
-            "Traffic is routed as soon as the network extension installs its settings."
+            "Traffic is already routed. Use Diagnose to check the selected exit."
         case .verifying:
             "The tunnel is connected. AetherRoute is checking the selected route in the background."
         case .verified:
@@ -1835,8 +1868,8 @@ private struct TrafficCard: View {
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.secondary)
                         Spacer(minLength: AetherVisual.s2)
-                        legend(color: .cyan, title: "Down")
-                        legend(color: .purple, title: "Up")
+                        legend(color: .cyan, title: "Download")
+                        legend(color: .purple, title: "Upload")
                     }
                     LiveTrafficHistoryGraph(model: telemetry, isRealtime: isRealtime, isBackground: isBackground)
                 }
@@ -1956,16 +1989,19 @@ private struct LiveTrafficHistoryGraph: View {
 }
 
 extension NSSegmentedControl {
-    /// A small accent-coloured dot on the selected segment. AppKit draws the
-    /// selection in the accent colour only while the app is frontmost; the
-    /// menu bar panel never activates the app, so the selection there was
-    /// just a slightly lighter gray. The dot keeps the translucent native look
-    /// and reads the same in every state.
-    func markSelectedSegment() {
+    /// A small dot on the selected segment. AppKit fills the selection with
+    /// the accent colour only in the key window of the frontmost app; the
+    /// menu bar panel never activates the app, so its selection was just a
+    /// slightly lighter grey. There the accent dot marks the choice. On the
+    /// accent fill an accent dot vanished into the background and only
+    /// nudged the label off centre, so it turns white like the label.
+    func markSelectedSegment(onAccentFill: Bool = false) {
+        let isFilled = onAccentFill && isEnabled && NSApp.isActive
+        let dot = isFilled ? Self.selectionDotOnFill : Self.selectionDot
         for index in 0..<segmentCount {
-            let isSelected = index == selectedSegment
-            if (image(forSegment: index) == nil) == isSelected {
-                setImage(isSelected ? Self.selectionDot : nil, forSegment: index)
+            let wanted = index == selectedSegment ? dot : nil
+            if image(forSegment: index) !== wanted {
+                setImage(wanted, forSegment: index)
                 setImageScaling(.scaleNone, forSegment: index)
             }
         }
@@ -1974,14 +2010,19 @@ extension NSSegmentedControl {
     /// Drawn at display time, so it follows the user's accent colour and
     /// light or dark appearance. Not a template image: AppKit would recolour
     /// a template to match the label.
-    private static let selectionDot: NSImage = {
+    private static let selectionDot = dot(filledWith: .controlAccentColor)
+    /// Same size as `selectionDot`, so switching between them never changes
+    /// a segment's width.
+    private static let selectionDotOnFill = dot(filledWith: .white)
+
+    private static func dot(filledWith color: NSColor) -> NSImage {
         let diameter: CGFloat = 7
         let image = NSImage(size: NSSize(width: diameter + 3, height: diameter), flipped: false) { _ in
-            NSColor.controlAccentColor.setFill()
+            color.setFill()
             NSBezierPath(ovalIn: NSRect(x: 0, y: 0, width: diameter, height: diameter)).fill()
             return true
         }
         image.isTemplate = false
         return image
-    }()
+    }
 }

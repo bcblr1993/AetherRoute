@@ -676,35 +676,6 @@ struct AetherProtocolBadge: View {
     }
 }
 
-/// Latency as a filled bar: longer is faster. It fills as a result lands
-/// and shares the pill's colour bands, so both always agree.
-struct AetherLatencyBar: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let status: ProxyLatencyStatus
-
-    /// Past this a node reads as slow; the bar stops shrinking there.
-    private static let scaleMilliseconds = 800.0
-
-    private var fraction: Double {
-        guard case let .responded(milliseconds) = status else { return 0 }
-        return max(0.08, 1 - min(Double(milliseconds), Self.scaleMilliseconds) / Self.scaleMilliseconds)
-    }
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.secondary.opacity(0.14))
-                Capsule()
-                    .fill(status.tint)
-                    .frame(width: proxy.size.width * fraction)
-            }
-        }
-        .frame(height: 4)
-        .animation(reduceMotion ? nil : AetherVisual.valueChange, value: status)
-        .accessibilityHidden(true)
-    }
-}
-
 /// Latency result for one node; tapping it re-tests when an action is given.
 struct AetherLatencyPill: View {
     let status: ProxyLatencyStatus
@@ -879,11 +850,13 @@ public struct AetherStatusBeacon: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isConnected: Bool
     let isConnecting: Bool
+    let isFailed: Bool
     var size: CGFloat = 10
 
-    public init(isConnected: Bool, isConnecting: Bool = false, size: CGFloat = 10) {
+    public init(isConnected: Bool, isConnecting: Bool = false, isFailed: Bool = false, size: CGFloat = 10) {
         self.isConnected = isConnected
         self.isConnecting = isConnecting
+        self.isFailed = isFailed
         self.size = size
     }
 
@@ -914,6 +887,7 @@ public struct AetherStatusBeacon: View {
         .frame(width: size * 2.2, height: size * 2.2)
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: isConnected)
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: isConnecting)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isFailed)
     }
 
     private func angle(at date: Date) -> Double {
@@ -924,6 +898,9 @@ public struct AetherStatusBeacon: View {
     private var statusColor: Color {
         if isConnected { return .green }
         if isConnecting { return .orange }
+        // Red like the menu bar panel and the overview lens, so a failure
+        // never reads as a plain "not connected".
+        if isFailed { return .red }
         return .secondary.opacity(0.6)
     }
 }
