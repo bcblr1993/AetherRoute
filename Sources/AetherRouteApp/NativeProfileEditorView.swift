@@ -152,8 +152,8 @@ struct NativeProfileEditorSheet: View {
                 .foregroundStyle(.orange)
             } else {
                 Label(
-                    String.localizedStringWithFormat(
-                        AppLocalization.string("%lld native nodes · encrypted on this Mac"),
+                    AppLocalization.format(
+                        "%lld native nodes · encrypted on this Mac",
                         Int64(nodes.count)
                     ),
                     systemImage: "lock.fill"

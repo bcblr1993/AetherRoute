@@ -56,9 +56,15 @@ struct ManualNodeEditorSheet: View {
                 connectionSection
                 credentialsSection
                 Button {
-                    showsAdvanced.toggle()
+                    withAnimation(AetherVisual.animation(AetherVisual.disclosure)) {
+                        showsAdvanced.toggle()
+                    }
                 } label: {
-                    Label(AppLocalization.string("Advanced connection options"), systemImage: showsAdvanced ? "chevron.down" : "chevron.right")
+                    Label {
+                        Text(AppLocalization.string("Advanced connection options"))
+                    } icon: {
+                        AetherDisclosureChevron(isExpanded: showsAdvanced)
+                    }
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("manual-node-advanced-toggle")

@@ -152,8 +152,11 @@ struct RuleDistributionBar: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("rule-distribution-mode-note")
+                    .transition(AetherVisual.insertion)
             }
         }
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: routingMode)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: [directCount, proxyCount, rejectCount])
     }
 
     private var modeNote: String? {
@@ -218,7 +221,7 @@ struct RulesView: View {
                                                     routingMode: tunnel.routingMode)
                             }
                             .padding(AetherVisual.s4)
-                            .featureCard()
+                            .aetherPanel()
 
                             // 2. 路由匹配测试抽屉 (Simulator)
                             if showSimulator {
@@ -290,7 +293,7 @@ struct RulesView: View {
                                                 testQuery = domain
                                                 performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
                                             }
-                                            .buttonStyle(.plain)
+                                            .buttonStyle(.aetherPressable)
                                             .font(.subheadline)
                                             .padding(.horizontal, AetherVisual.s2)
                                             .padding(.vertical, AetherVisual.sMicro)
@@ -373,7 +376,7 @@ struct RulesView: View {
                                     }
                                 }
                                 .padding(AetherVisual.s4)
-                                .featureCard()
+                                .aetherPanel()
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                             }
 
@@ -409,6 +412,7 @@ struct RulesView: View {
                                                 .foregroundStyle(tunnel.customRuleMessageIsError ? Color.red : Color.primary)
                                         }
                                         .padding(.vertical, AetherVisual.sMicro)
+                                        .transition(AetherVisual.insertion)
                                     }
 
                                     if tunnel.customRules.isEmpty {
@@ -442,12 +446,14 @@ struct RulesView: View {
                                                         }
                                                     }
                                                 )
+                                                .transition(AetherVisual.insertion)
                                             }
                                         }
                                     }
                                 }
                                 .padding(AetherVisual.s4)
-                                .featureCard()
+                                .aetherPanel()
+                                .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.customRules.map(\.id))
                             }
 
                             // 3. 规则集 Rule providers
@@ -464,7 +470,7 @@ struct RulesView: View {
                                             }
                                         }
                                     }
-                                    .featureCard()
+                                    .aetherPanel()
                                 }
                             }
 
@@ -546,7 +552,7 @@ struct RulesView: View {
                                                     .fixedSize()
                                                     .contentShape(Rectangle())
                                                 }
-                                                .buttonStyle(.plain)
+                                                .buttonStyle(.aetherPressable)
                                             }
                                         }
                                         .padding(AetherVisual.sMicro)
@@ -563,8 +569,8 @@ struct RulesView: View {
                                         Spacer(minLength: AetherVisual.s2)
 
                                         Text(
-                                            String.localizedStringWithFormat(
-                                                AppLocalization.string("Showing %lld of %lld items."),
+                                            AppLocalization.format(
+                                                "Showing %lld of %lld items",
                                                 Int64(displayedRules.count),
                                                 Int64(summary.rules.count)
                                             )
@@ -628,6 +634,7 @@ struct RulesView: View {
                             )
                         }
                         .aetherPageContent(.wide)
+                        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.customRuleMessage)
                         .accessibilityElement(children: .contain)
                         .accessibilityLabel(AppLocalization.string("Routing rules content"))
                     }
@@ -676,7 +683,7 @@ struct RulesView: View {
         HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
             Text("Ordered routing policy").font(.headline)
             Spacer(minLength: AetherVisual.s2)
-            Text(verbatim: "\(String.localizedStringWithFormat(AppLocalization.string("%lld rules"), Int64(count))) · \(routingModeTitle)")
+            Text(verbatim: "\(AppLocalization.format("%lld rules", Int64(count))) · \(routingModeTitle)")
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
@@ -810,7 +817,7 @@ private struct RuleRow: View {
                         .frame(width: 22, height: 22)
                         .background(Color.secondary.opacity(0.1), in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.aetherPressable)
                 .help(AppLocalization.string("Copy criteria"))
                 .transition(.opacity)
             }
@@ -993,7 +1000,7 @@ struct CustomRuleRow: View {
                         .frame(width: 24, height: 24)
                         .background(Color.accentColor.opacity(0.1), in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.aetherPressable)
                 .help(AppLocalization.string("Verify rule"))
 
                 Button {
@@ -1005,7 +1012,7 @@ struct CustomRuleRow: View {
                         .frame(width: 24, height: 24)
                         .background(Color.secondary.opacity(0.1), in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.aetherPressable)
                 .help(AppLocalization.string("Edit rule"))
 
                 Button {
@@ -1017,7 +1024,7 @@ struct CustomRuleRow: View {
                         .frame(width: 24, height: 24)
                         .background(Color.red.opacity(0.1), in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.aetherPressable)
                 .help(AppLocalization.string("Delete rule"))
             }
         }

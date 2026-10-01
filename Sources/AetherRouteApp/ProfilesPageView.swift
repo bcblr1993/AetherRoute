@@ -275,6 +275,7 @@ struct ProfilesView: View {
 
                 if let message = tunnel.profileMessage, !tunnel.isImportingProfile {
                     profileMessageBanner(message: message, isError: tunnel.profileMessageIsError)
+                        .transition(AetherVisual.insertion)
                 }
 
                 if tunnel.isImportingProfile {
@@ -303,6 +304,7 @@ struct ProfilesView: View {
                 }
             }
             .aetherPageContent(.wide)
+            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.profileMessage)
         }
         .fileImporter(
             isPresented: $isFileImporterPresented,
@@ -562,7 +564,7 @@ struct ProfilesView: View {
                             .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.aetherPressable)
 
                 Button {
                     tunnel.clearProfileMessage()
@@ -603,7 +605,7 @@ struct ProfilesView: View {
                             .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.aetherPressable)
 
                 Button {
                     tunnel.clearProfileMessage()
@@ -644,7 +646,7 @@ struct ProfilesView: View {
                             .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.aetherPressable)
                 .accessibilityIdentifier("onboarding-icloud-sync-card-button")
             }
             .padding(.horizontal, AetherVisual.s2)
@@ -703,7 +705,7 @@ struct ProfilesView: View {
             .accessibilityIdentifier("profiles-add-another-node")
         }
         .padding(AetherVisual.s4)
-        .featureCard()
+        .aetherPanel()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profiles-add-another")
     }
@@ -758,6 +760,8 @@ struct ProfilesView: View {
                     }
                 )
 
+                .transition(AetherVisual.insertion)
+
                 if index < filteredProfiles.count - 1 {
                     Divider()
                         .padding(.leading, AetherVisual.tableContentIndent)
@@ -766,6 +770,8 @@ struct ProfilesView: View {
             }
         }
         .aetherPanel()
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: filteredProfiles.map(\.id))
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.activeProfileID)
     }
 
     private var supportedFormatsCard: some View {
@@ -879,14 +885,13 @@ private struct RoutingResourcesCard: View {
             }
 
             Button {
-                showsAdvanced.toggle()
+                withAnimation(AetherVisual.animation(AetherVisual.disclosure)) {
+                    showsAdvanced.toggle()
+                }
             } label: {
                 HStack(spacing: AetherVisual.s1) {
-                    Image(systemName: showsAdvanced ? "chevron.down" : "chevron.right")
-                        .font(.caption.weight(.semibold))
+                    AetherDisclosureChevron(isExpanded: showsAdvanced)
                         .foregroundStyle(.primary)
-                        .frame(width: 12)
-                        .accessibilityHidden(true)
                     Text("Advanced")
                     Spacer(minLength: 0)
                 }
@@ -946,6 +951,7 @@ private struct RoutingResourcesCard: View {
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                .transition(AetherVisual.insertion)
             }
         }
         .padding(AetherVisual.s4)
@@ -1155,6 +1161,7 @@ private struct ManagedProfileRow: View {
                             color: .green,
                             symbol: "checkmark.circle.fill"
                         )
+                        .transition(.scale(scale: 0.7).combined(with: .opacity))
                     }
                 }
 
@@ -1334,7 +1341,7 @@ private struct ManagedProfileRow: View {
                 + AppLocalization.date($0, date: .abbreviated, time: .shortened)
         } ?? ""
         let count = managed.profile.nativeNodes?.count ?? inspectedNodeCount
-        let nodeDetail = count.map { " · \($0) " + AppLocalization.string("nodes") } ?? ""
+        let nodeDetail = count.map { " · " + AppLocalization.format("%lld nodes", Int64($0)) } ?? ""
         return "\(source) · \(importedAt)\(nodeDetail)\(updateDetail)"
     }
 }

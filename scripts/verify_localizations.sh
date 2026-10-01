@@ -93,7 +93,7 @@ import sys
 
 catalog = json.loads(pathlib.Path(sys.argv[2]).read_text())["strings"]
 literal_call = re.compile(
-    r'AppLocalization\.string\(\s*("(?:[^"\\\r\n]|\\.)*")\s*\)'
+    r'AppLocalization\.(?:string|format)\(\s*("(?:[^"\\\r\n]|\\.)*")\s*[),]'
 )
 missing = []
 checked = set()

@@ -78,8 +78,8 @@ struct BypassRulesSection: View {
                 Text(AppLocalization.string("Bypass Rules"))
                 Spacer()
                 Text(
-                    String.localizedStringWithFormat(
-                        AppLocalization.string("%lld rules"),
+                    AppLocalization.format(
+                        "%lld rules",
                         Int64(tunnel.bypassPolicy.rules.count)
                     )
                 )

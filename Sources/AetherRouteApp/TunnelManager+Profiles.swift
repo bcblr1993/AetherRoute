@@ -248,8 +248,8 @@ extension TunnelManager {
             } else {
                 await applyProductionProfileCatalog(catalog)
             }
-            profileMessage = String.localizedStringWithFormat(
-                AppLocalization.string("%lld profiles are available after secure import."),
+            profileMessage = AppLocalization.format(
+                "%lld profiles are available after secure import.",
                 Int64(catalog.profiles.count)
             )
             profileMessageIsError = false
@@ -492,7 +492,7 @@ extension TunnelManager {
                 let baseMsg: String.LocalizationValue = shouldActivate
                     ? "Subscription downloaded and activated."
                     : "Subscription downloaded into library."
-                let partialMsg: String.LocalizationValue = shouldActivate
+                let partialMsg: String = shouldActivate
                     ? "Subscription downloaded and activated. %lld usable nodes imported; %lld invalid nodes skipped."
                     : "Subscription downloaded into library. %lld usable nodes imported; %lld invalid nodes skipped."
                 profileMessage = subscriptionSuccessMessage(
@@ -1090,15 +1090,15 @@ extension TunnelManager {
 
     func subscriptionSuccessMessage(
         base: String.LocalizationValue,
-        partial: String.LocalizationValue,
+        partial: String,
         report: SubscriptionPayloadReport
     ) -> String {
         guard report.skippedNodeCount > 0,
               let usableNodeCount = report.usableNodeCount else {
             return AppLocalization.string(base)
         }
-        return String.localizedStringWithFormat(
-            AppLocalization.string(partial),
+        return AppLocalization.format(
+            partial,
             Int64(usableNodeCount),
             Int64(report.skippedNodeCount)
         )

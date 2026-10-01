@@ -25,10 +25,38 @@ keyboard focus, VoiceOver semantics, and Reduce Motion.
 
 ## Motion and interaction
 
-- Navigation uses a 280 ms snappy transition.
-- Press feedback is 120 ms and disabled when Reduce Motion is enabled.
-- The only repeating symbol effect is the connecting indicator, and it also
-  respects Reduce Motion.
+Motion explains what changed; it never makes the user wait. Every timing
+comes from the tokens in `AetherVisual` (`AetherRouteVisualSystem.swift` and
+`AetherMotion.swift`), and every piece of motion respects Reduce Motion: the
+state still changes, only the travel is dropped.
+
+| Token | Use |
+|---|---|
+| `pressFeedback` (120 ms ease-out) | Press dip and hover fades |
+| `quickFade` (180 ms) | Status text, badges, icon swaps |
+| `pageEntrance` (220 ms) | A page arriving after sidebar navigation |
+| `valueChange` (spring 0.36 s) | Numbers rolling to a new value |
+| `disclosure` (spring 0.3 s) | Disclosure chevrons and the content they reveal |
+| `gentleSpring` (spring 0.32 s) | Layout and list changes, inline messages |
+| `panelSpring` (spring 0.42 s) | Larger surfaces and the connection lens |
+
+Shared pieces apply them the same way everywhere:
+
+- `.aetherNumericValue(_:)` rolls the digits of traffic rates, counts and
+  connection numbers instead of swapping the text.
+- `.buttonStyle(.aetherPressable)` gives card-like and icon buttons a slight
+  press dip; native bordered buttons keep their own feedback.
+- `AetherDisclosureChevron` turns rather than swapping symbols, and the
+  revealed content arrives with `AetherVisual.insertion`.
+- `AetherVisual.insertion` brings rows and inline messages in from above and
+  fades them out.
+- `AetherCopyButton` confirms a copy by turning its symbol into a check mark
+  for a moment.
+- Latency results pop their status dot in as each measurement lands; progress
+  spinners and icons cross-scale when work starts or ends.
+- The only repeating animation is the connecting indicator (the orbiting arc
+  of the connection lens and the luminous bar), and it also respects Reduce
+  Motion.
 - Navigation is a native sidebar list with real buttons, keyboard shortcuts,
   focus behavior, and selected-state accessibility traits.
 

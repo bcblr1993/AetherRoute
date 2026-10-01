@@ -774,6 +774,11 @@ private struct ActiveOutlet: Equatable {
 
 /// One row inside the hero: where traffic leaves, how fast that exit last
 /// answered, and the two things people do next (diagnose, switch).
+/// The overview card's leading column: the connection lens, the exit icon
+/// and the route-check symbol share it, so the text beside them lines up.
+private let overviewIdentityColumn: CGFloat = 54
+private let overviewIdentitySpacing = AetherVisual.s4
+
 private struct ActiveOutletRow: View {
     @Environment(\.openSettings) private var openSettings
     @EnvironmentObject private var tunnel: TunnelManager
@@ -805,8 +810,11 @@ private struct ActiveOutletRow: View {
     }
 
     private var identity: some View {
-        HStack(spacing: AetherVisual.s3) {
+        // The exit sits in the lens's column, so its text starts where the
+        // status title above it does.
+        HStack(spacing: overviewIdentitySpacing) {
             outletIcon
+                .frame(width: overviewIdentityColumn)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 Text(AppLocalization.string("Exit"))
@@ -1023,7 +1031,7 @@ private struct ConnectionHero: View {
         }
         .padding(AetherVisual.s5)
         .frame(maxWidth: .infinity)
-        .aetherHeroPanel()
+        .aetherPanel()
         .overlay(alignment: .top) {
             if tunnel.state == .connecting {
                 ConnectionLuminousBar()
@@ -1098,9 +1106,9 @@ private struct ConnectionHero: View {
     }
 
     private var connectionIdentity: some View {
-        HStack(spacing: AetherVisual.s4) {
+        HStack(spacing: overviewIdentitySpacing) {
             AetherRouteStatusLens(
-                size: 54,
+                size: overviewIdentityColumn,
                 isActive: tunnel.isConnected,
                 isConnecting: isWorking,
                 isFailed: isFailed
@@ -1630,8 +1638,7 @@ private struct LiveTelemetryMetricValue: View {
             .font(.title2.weight(.medium))
             .foregroundStyle(.primary)
             .monospacedDigit()
-            .contentTransition(.numericText())
-            .animation(AetherVisual.animation(AetherVisual.quickFade), value: value)
+            .aetherNumericValue(value)
     }
 
     private var value: String {
@@ -1660,9 +1667,12 @@ private struct RouteQualityLine: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
+            // Same column as the lens and the exit icon above.
             Image(systemName: symbol)
                 .foregroundStyle(tint)
                 .symbolEffect(.pulse, isActive: quality == .verifying)
+                .frame(width: overviewIdentityColumn)
+                .padding(.trailing, overviewIdentitySpacing - AetherVisual.s2)
                 .accessibilityHidden(true)
             Text(title)
                 .font(.subheadline.weight(.medium))

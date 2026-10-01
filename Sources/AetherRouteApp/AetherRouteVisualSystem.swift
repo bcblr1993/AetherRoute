@@ -284,25 +284,6 @@ private struct AetherPanelModifier: ViewModifier {
     }
 }
 
-private struct AetherHeroPanelModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        content
-            .background(
-                AetherVisual.panelFill(for: colorScheme),
-                in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-                    .stroke(
-                        AetherVisual.panelBorder(for: colorScheme),
-                        lineWidth: 0.5
-                    )
-            }
-    }
-}
-
 /// A quiet content canvas. Brand color is used as atmosphere, not as another
 /// control layer, and disappears almost entirely when Reduce Transparency is on.
 struct AetherContentCanvas: View {
@@ -519,12 +500,15 @@ struct AetherProgressButtonLabel: View {
                 ProgressView()
                     .controlSize(.small)
                     .accessibilityHidden(true)
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
             } else if let systemImage {
                 Image(systemName: systemImage)
                     .accessibilityHidden(true)
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
             }
             title
         }
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isWorking)
         .accessibilityElement(children: .combine)
     }
 }
@@ -540,8 +524,7 @@ struct AetherCountBadge: View {
             .padding(.horizontal, AetherVisual.sCompact)
             .padding(.vertical, AetherVisual.sMicro)
             .background(Color.secondary.opacity(0.12), in: Capsule())
-            .contentTransition(.numericText())
-            .animation(AetherVisual.animation(AetherVisual.quickFade), value: count)
+            .aetherNumericValue(count)
     }
 }
 
@@ -639,10 +622,6 @@ extension View {
         modifier(AetherPanelModifier())
     }
 
-    func aetherHeroPanel() -> some View {
-        modifier(AetherHeroPanelModifier())
-    }
-
     func aetherHoverHighlight(
         _ isHovered: Bool,
         cornerRadius: CGFloat = AetherVisual.controlRadius,
@@ -724,10 +703,13 @@ struct AetherLatencyPill: View {
                 if status == .testing {
                     ProgressView()
                         .controlSize(.mini)
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
                 } else if case .responded = status {
+                    // The result's dot pops in as the measurement lands.
                     Circle()
                         .fill(pillColor)
                         .frame(width: 5, height: 5)
+                        .transition(.scale(scale: 0.2).combined(with: .opacity))
                 }
 
                 Text(displayText)
@@ -755,7 +737,7 @@ struct AetherLatencyPill: View {
             .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
             .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: status)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.aetherPressable)
         .accessibilityLabel(
             String.localizedStringWithFormat(
                 AppLocalization.string("Latency: %@"),

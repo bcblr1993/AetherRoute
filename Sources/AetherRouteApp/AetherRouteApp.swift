@@ -941,7 +941,7 @@ private struct MenuBarContent: View {
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous))
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.aetherPressable)
             .help(tunnel.proxySelections[group.name]?.selectedMember ?? AppLocalization.string("Select Node"))
             .accessibilityIdentifier("menu-proxy-node-selector")
             .task(id: "\(group.name):\(tunnel.isConnected)") {
@@ -1492,7 +1492,7 @@ private struct MenuNodeRow: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.aetherPressable)
         .onHover { isHovered = $0 }
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
         .help(member)
@@ -1538,6 +1538,7 @@ private struct MenuLiveTrafficValue: View {
         Text(value)
             .font(.caption.monospacedDigit().weight(.semibold))
             .lineLimit(1)
+            .aetherNumericValue(value)
     }
 
     private var value: String {
@@ -1687,7 +1688,8 @@ private struct SettingsView: View {
             .focusable(false)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("settings-sidebar-list")
-            .navigationSplitViewColumnWidth(min: 176, ideal: 190, max: 216)
+            // Wide enough for "Privacy & Diagnostics" in English.
+            .navigationSplitViewColumnWidth(min: 204, ideal: 214, max: 240)
             .accessibilityLabel("Settings navigation")
             .accessibilityIdentifier("aetherroute-settings-navigation")
         } detail: {
@@ -2046,19 +2048,25 @@ private struct SettingsView: View {
             .disabled(!canEditLocalProxyPorts)
 
             HStack {
-                Button("Copy Shell Environment", systemImage: "terminal") {
-                    copyLocalProxyShellEnvironment()
-                }
+                AetherCopyButton(
+                    title: Text("Copy Shell Environment"),
+                    systemImage: "terminal",
+                    action: copyLocalProxyShellEnvironment
+                )
                 .disabled(!canCopyLocalProxyEnvironment)
                 .accessibilityIdentifier("copy-shell-proxy-button")
 
-                Button("Copy Clear Command", systemImage: "xmark.circle") {
+                AetherCopyButton(
+                    title: Text("Copy Clear Command"),
+                    systemImage: "xmark.circle"
+                ) {
                     copyToPasteboard(
                         LocalProxySettings.clearShellEnvironmentCommand
                     )
                     localProxyCopyMessage = AppLocalization.string(
                         "Clear command copied."
                     )
+                    return true
                 }
                 .accessibilityIdentifier("copy-clear-proxy-button")
 
@@ -2111,7 +2119,7 @@ private struct SettingsView: View {
             : "arrow.triangle.swap"
     }
 
-    private func copyLocalProxyShellEnvironment() {
+    private func copyLocalProxyShellEnvironment() -> Bool {
         do {
             copyToPasteboard(
                 try tunnel.localProxySettings.shellEnvironmentCommand()
@@ -2119,8 +2127,10 @@ private struct SettingsView: View {
             localProxyCopyMessage = AppLocalization.string(
                 "Shell environment copied."
             )
+            return true
         } catch {
             localProxyCopyMessage = error.localizedDescription
+            return false
         }
     }
 

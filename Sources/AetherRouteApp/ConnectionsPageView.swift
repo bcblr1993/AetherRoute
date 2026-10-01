@@ -95,7 +95,7 @@ struct ConnectionsView: View {
             .lineLimit(1)
             .fixedSize()
             .accessibilityIdentifier("connections-count-summary")
-        Text(AppLocalization.string("Only connections visible on this Mac are counted, and nothing is reported anywhere."))
+        Text(AppLocalization.string("Counted on this Mac only; nothing is reported."))
             .lineLimit(1)
             .truncationMode(.tail)
             .help(AppLocalization.string("Only connections visible on this Mac are counted, and nothing is reported anywhere."))
@@ -113,7 +113,11 @@ struct ConnectionsView: View {
                 systemImage: "arrow.left.arrow.right"
             )
         } description: {
-            Text(AppLocalization.string("Each row shows the destination, the rule that matched, which outlet carried it, and how much it moved. Nothing is fabricated while the session is stopped."))
+            Text(
+                tunnel.isConnected
+                    ? AppLocalization.string("Each live connection shows its destination, matched rule, outlet and traffic.")
+                    : AppLocalization.string("Connect to see each connection's destination, matched rule, outlet and traffic.")
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(AetherVisual.s6)
@@ -297,8 +301,8 @@ struct ConnectionsView: View {
     }
 
     private func footerText(visibleCount: Int) -> String {
-        String.localizedStringWithFormat(
-            AppLocalization.string("Showing %lld of %lld connections"),
+        AppLocalization.format(
+            "Showing %lld of %lld connections",
             Int64(visibleCount),
             Int64(displayedConnections.count)
         )
@@ -425,6 +429,7 @@ private struct SessionBar: View {
             Text(value)
                 .font(.body.monospacedDigit())
                 .foregroundStyle(.primary)
+                .aetherNumericValue(value)
         }
         .accessibilityElement(children: .combine)
     }
@@ -461,30 +466,32 @@ private struct ConnectionDestinationCell: View {
     let connection: ConnectionTelemetry
 
     var body: some View {
-        HStack(spacing: AetherVisual.s3) {
-            Circle()
-                .fill(outlet == .rejected ? Color.red : Color.green)
-                .frame(width: 7, height: 7)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                // The registrable domain sits at the right of a host name,
-                // so truncate from the left and keep the port whole:
-                // "…logs.datadoghq.com:443", not "http-intake.logs….com:443".
-                HStack(spacing: 0) {
-                    Text(verbatim: connection.destinationHost)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                    Text(verbatim: ":\(connection.destinationPort)")
-                        .lineLimit(1)
-                        .fixedSize()
-                }
-                .font(.body.weight(.medium))
+        // The host name leads the cell so it lines up with the column
+        // heading; the status dot marks the transport line beneath it.
+        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+            // The registrable domain sits at the right of a host name,
+            // so truncate from the left and keep the port whole:
+            // "…logs.datadoghq.com:443", not "http-intake.logs….com:443".
+            HStack(spacing: 0) {
+                Text(verbatim: connection.destinationHost)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                Text(verbatim: ":\(connection.destinationPort)")
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .font(.body.weight(.medium))
+            HStack(spacing: AetherVisual.s1) {
+                Circle()
+                    .fill(outlet == .rejected ? Color.red : Color.green)
+                    .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
                 Text(connection.transport == .tcp ? "TCP" : "UDP")
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 36)
         .foregroundStyle(.primary)
         // Only a rejected flow is tinted; a filled background on every
@@ -618,9 +625,9 @@ private struct ConnectionInspector: View {
             .fixedSize(horizontal: false, vertical: true)
 
             HStack {
-                Button(AppLocalization.string("Copy destination"), systemImage: "doc.on.doc") {
+                AetherCopyButton(title: Text(AppLocalization.string("Copy destination"))) {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(connection.destinationAddress, forType: .string)
+                    return NSPasteboard.general.setString(connection.destinationAddress, forType: .string)
                 }
                 Spacer()
                 Button(AppLocalization.string("Done")) { dismiss() }

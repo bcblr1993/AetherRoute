@@ -60,22 +60,19 @@ struct DNSView: View {
         HStack(spacing: AetherVisual.s3) {
             DNSMetricCard(
                 title: AppLocalization.string("Primary"),
-                value: "\(dns.nameserverCount)",
-                detail: AppLocalization.string("upstreams"),
+                summary: AppLocalization.format("%lld upstreams", Int64(dns.nameserverCount)),
                 symbol: "server.rack",
                 tint: .blue
             )
             DNSMetricCard(
                 title: AppLocalization.string("Fallback"),
-                value: "\(dns.fallbackCount)",
-                detail: AppLocalization.string("resolvers"),
+                summary: AppLocalization.format("%lld resolvers", Int64(dns.fallbackCount)),
                 symbol: "arrow.trianglehead.branch",
                 tint: .accentColor
             )
             DNSMetricCard(
                 title: AppLocalization.string("Policies"),
-                value: "\(dns.nameserverPolicyCount)",
-                detail: AppLocalization.string("domain rules"),
+                summary: AppLocalization.format("%lld domain rules", Int64(dns.nameserverPolicyCount)),
                 symbol: "list.bullet.indent",
                 tint: .accentColor
             )
@@ -194,7 +191,7 @@ struct DNSView: View {
                 .font(.subheadline)
             }
             .padding(AetherVisual.s5)
-            .featureCard()
+            .aetherPanel()
         }
     }
 
@@ -261,7 +258,7 @@ struct DNSView: View {
                 .font(.subheadline)
             }
             .padding(AetherVisual.s5)
-            .featureCard()
+            .aetherPanel()
         }
     }
 
@@ -315,7 +312,7 @@ struct DNSView: View {
                     tint: dns.usesHosts ? .blue : .secondary
                 )
             }
-            .featureCard()
+            .aetherPanel()
         }
     }
 #endif
@@ -351,7 +348,7 @@ struct DNSView: View {
                     tint: allowsIPv6 ? .accentColor : .secondary
                 )
             }
-            .featureCard()
+            .aetherPanel()
         }
     }
 
@@ -530,9 +527,11 @@ struct DNSView: View {
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(AetherVisual.s4)
+                    .transition(AetherVisual.insertion)
                 }
             }
-            .featureCard()
+            .aetherPanel()
+            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.dnsRuntimePolicyMessage)
             .onGeometryChange(for: Bool.self) { proxy in
                 proxy.size.width < Self.compactPolicyWidth
             } action: { isCompact in
@@ -720,7 +719,7 @@ struct DNSView: View {
             .foregroundStyle(Color.accentColor)
         }
         .padding(AetherVisual.s5)
-        .featureCard()
+        .aetherPanel()
     }
 
     private func headerColor(_ dns: DNSConfigurationSummary) -> Color {
@@ -844,8 +843,8 @@ private struct DNSMetricCard: View {
     @State private var isHovered = false
 
     let title: String
-    let value: String
-    let detail: String
+    /// The counted phrase ("2 upstreams"), plural-aware as one string.
+    let summary: String
     let symbol: String
     let tint: Color
 
@@ -867,19 +866,15 @@ private struct DNSMetricCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
-            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
-                Text(value)
-                    .font(.title3.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text(detail)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(summary)
+                .font(.title3.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .aetherNumericValue(summary)
         }
         .padding(AetherVisual.s4)
         .frame(maxWidth: .infinity)
-        .featureCard()
+        .aetherPanel()
         .overlay {
             RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
                 .stroke(isHovered ? tint.opacity(0.35) : Color.clear, lineWidth: 1)

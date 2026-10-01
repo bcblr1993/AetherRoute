@@ -186,22 +186,16 @@ struct TruncationNotice: View {
     var body: some View {
         if visibleCount < totalCount {
             Label(
-                String.localizedStringWithFormat(
-                    AppLocalization.string("Showing %lld of %lld items."),
-                    visibleCount,
-                    totalCount
+                AppLocalization.format(
+                    "Showing %lld of %lld items",
+                    Int64(visibleCount),
+                    Int64(totalCount)
                 ),
                 systemImage: "info.circle"
             )
             .font(.caption)
             .foregroundStyle(.secondary)
         }
-    }
-}
-
-extension View {
-    func featureCard() -> some View {
-        aetherPanel()
     }
 }
 

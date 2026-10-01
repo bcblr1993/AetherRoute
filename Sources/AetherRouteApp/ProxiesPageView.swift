@@ -160,7 +160,7 @@ struct ProxiesView: View {
                                 }
                             }
                         }
-                        .featureCard()
+                        .aetherPanel()
                     }
                 }
             }
@@ -178,7 +178,7 @@ struct ProxiesView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.primary)
 
-                        Text(verbatim: "(\(summary.proxyCount) \(AppLocalization.string("Endpoints")))")
+                        Text(verbatim: "(\(AppLocalization.format("%lld endpoints", Int64(summary.proxyCount))))")
                             .font(.caption2)
                             .foregroundStyle(Color(nsColor: .labelColor))
                     }
@@ -289,7 +289,7 @@ private struct ProxyGroupTabButton: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.aetherPressable)
         .onHover { hovering in
             withAnimation(AetherVisual.quickFade) {
                 isHovered = hovering
@@ -335,6 +335,7 @@ private struct ActiveProxyGroupView: View {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.red)
+                    .transition(AetherVisual.insertion)
             }
 
             if let selectedMember, let measuredAt = tunnel.latencyMeasuredAt[group.name]?[selectedMember] {
@@ -356,8 +357,8 @@ private struct ActiveProxyGroupView: View {
 
                 HStack {
                     Text(
-                        String.localizedStringWithFormat(
-                            AppLocalization.string("Showing %lld of %lld nodes"),
+                        AppLocalization.format(
+                            "Showing %lld of %lld nodes",
                             Int64(visibleMembers.count),
                             Int64(members.count)
                         )
@@ -371,6 +372,7 @@ private struct ActiveProxyGroupView: View {
         }
         .padding(AetherVisual.s4)
         .aetherPanel()
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.proxySelectionMessages[group.name])
         .task(id: tunnel.isConnected) {
             guard isManuallySelectable else { return }
             await tunnel.refreshProxySelection(group: group.name)
@@ -562,7 +564,7 @@ private struct ActiveProxyGroupView: View {
                     )
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.aetherPressable)
             }
         }
         .padding(AetherVisual.sMicro)
@@ -819,7 +821,7 @@ private struct ProxyNodeModernCard: View {
             .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
             .contentShape(RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.aetherPressable)
         .accessibilityLabel(name)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .disabled(!canSelect || isBusy)
@@ -907,7 +909,7 @@ private struct ProxyNodeRow: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.aetherPressable)
             .disabled(row.isBusy || !canSelect)
             .accessibilityLabel(row.member)
             .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])

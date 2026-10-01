@@ -230,10 +230,7 @@ struct ThirdPartyLicensesView: View {
         VStack(alignment: .leading, spacing: AetherVisual.s1) {
             Divider()
             Text(
-                String.localizedStringWithFormat(
-                    AppLocalization.string("%lld components"),
-                    report.components.count
-                )
+                AppLocalization.format("%lld components", Int64(report.components.count))
             )
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(Color(nsColor: .labelColor))

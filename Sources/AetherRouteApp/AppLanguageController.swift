@@ -29,6 +29,20 @@ enum AppLocalization {
         string(String.LocalizationValue(value))
     }
 
+    /// Formats a counted string with the catalog's plural rules applied
+    /// ("1 rule", "3 rules"). `String(localized:)` returns a plain string,
+    /// which loses the plural variations, so counted copy goes through the
+    /// bundle's format string instead.
+    static func format(_ key: String, _ arguments: any CVarArg...) -> String {
+        let snapshot = lock.withLock {
+            (localeIdentifier, localizationBundle)
+        }
+        let locale = snapshot.0.map { Locale(identifier: $0) }
+            ?? .autoupdatingCurrent
+        let format = snapshot.1.localizedString(forKey: key, value: nil, table: nil)
+        return String(format: format, locale: locale, arguments: arguments)
+    }
+
     static func date(
         _ value: Date,
         date dateStyle: Date.FormatStyle.DateStyle,
