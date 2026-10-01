@@ -73,11 +73,20 @@ identifier, rejects any app network socket, compares system-proxy snapshots,
 and binds evidence to the complete source manifest. A standard product build
 test also rejects the measurement environment string if it ever escapes the
 compile-time boundary.
-Its 30-image matrix covers every primary page plus all seven Settings pages,
+Its 53-image matrix covers every primary page plus every Settings page,
 English and Simplified Chinese, light and dark appearance, both network-engine
-selectors, expanded text at the minimum window, and privacy onboarding. The
+selectors, expanded text at the minimum window, 800-point narrow windows,
+the menu bar panel in its connected, disconnected and failed states, and
+privacy onboarding. Each run writes `report.html`, a gallery of the images;
+with `AETHERROUTE_UI_REVIEW_BASELINE` naming an earlier capture it compares
+every image pixel by pixel and writes a diff image for each one that changed
+(`scripts/ui_review_report.swift`). `Docs/DesignQA.md` is the checklist those
+images are reviewed against and `Docs/PerformanceBudget.md` the performance
+targets the interface keeps. The
 Settings capture waits for the separate Settings scene and rejects a main-window
-substitute by requiring the expected window geometry. It refuses an existing output
+substitute by requiring the expected window geometry; Settings titles itself
+after the open pane, so any titled window other than "AetherRoute" is a
+candidate. It refuses an existing output
 directory, terminates only the exact child process it launched, verifies every
 PNG has credible dimensions and content size, and writes deterministic hashes
 for every PNG, corresponding runtime log, and the complete source manifest.

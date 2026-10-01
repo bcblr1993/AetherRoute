@@ -3,7 +3,7 @@ import Foundation
 import AppKit
 
 guard (2...3).contains(CommandLine.arguments.count) else {
-    fputs("usage: ui_review_window_id --preflight|[--settings] <pid>\n", stderr)
+    fputs("usage: ui_review_window_id --preflight|[--settings|--panel] <pid>\n", stderr)
     exit(64)
 }
 
@@ -13,13 +13,22 @@ if CommandLine.arguments[1] == "--preflight" {
 
 let settingsOnly = CommandLine.arguments.count == 3
     && CommandLine.arguments[1] == "--settings"
-let pidArgument = settingsOnly ? CommandLine.arguments[2] : CommandLine.arguments[1]
+// The menu bar panel review renders the real panel in its own narrow window.
+let panelOnly = CommandLine.arguments.count == 3
+    && CommandLine.arguments[1] == "--panel"
+let pidArgument = CommandLine.arguments.count == 3
+    ? CommandLine.arguments[2]
+    : CommandLine.arguments[1]
 
 guard
       let requestedPID = Int(pidArgument),
       requestedPID > 0
 else {
-    fputs("usage: ui_review_window_id --preflight|[--settings] <pid>\n", stderr)
+    fputs("usage: ui_review_window_id --preflight|[--settings|--panel] <pid>\n", stderr)
+    exit(64)
+}
+guard CommandLine.arguments.count == 2 || settingsOnly || panelOnly else {
+    fputs("usage: ui_review_window_id --preflight|[--settings|--panel] <pid>\n", stderr)
     exit(64)
 }
 
@@ -54,15 +63,19 @@ let candidates = windows.compactMap { window -> (
           let bounds = window[kCGWindowBounds as String] as? [String: Any],
           let width = bounds["Width"] as? Double,
           let height = bounds["Height"] as? Double,
-          width >= (settingsOnly ? 900 : 780),
-          height >= (settingsOnly ? 620 : 560)
+          width >= (panelOnly ? 300 : (settingsOnly ? 900 : 780)),
+          height >= (panelOnly ? 300 : (settingsOnly ? 620 : 560))
     else {
         return nil
     }
     if settingsOnly {
+        // Settings titles itself after the open pane ("Network", "网络"),
+        // so any titled window other than the main one ("AetherRoute") is a
+        // Settings candidate; the size check below picks the right one.
         let isSettingsWindow =
             name.localizedCaseInsensitiveContains("settings")
             || name.contains("设置")
+            || (!name.isEmpty && name != "AetherRoute")
         guard isSettingsWindow else {
             return nil
         }

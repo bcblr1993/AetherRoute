@@ -285,6 +285,13 @@ grep -Fq 'Repository source changed during UI review capture.' "$UI_CAPTURE_SCRI
 grep -Fq 'Application performed a reentrant operation' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'UI review rejected a runtime warning' "$UI_CAPTURE_SCRIPT"
 grep -Fq -- '--settings' "$UI_CAPTURE_SCRIPT"
+grep -Fq -- '--panel' "$UI_CAPTURE_SCRIPT"
+grep -Fq 'panelOnly ? 300' "$UI_WINDOW_SELECTOR"
+grep -Fq 'AETHERROUTE_UI_REVIEW_PANEL="$panel_review"' "$UI_CAPTURE_SCRIPT"
+grep -Fq 'panel-zh-dark-connected' "$UI_CAPTURE_SCRIPT"
+grep -Fq 'narrow-dns-en-light' "$UI_CAPTURE_SCRIPT"
+grep -Fq 'scripts/ui_review_report.swift' "$UI_CAPTURE_SCRIPT"
+grep -Fq 'AETHERROUTE_UI_REVIEW_BASELINE' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'settingsOnly ? 900 : 780' "$UI_WINDOW_SELECTOR"
 grep -Fq 'UI review capture always rebuilds inside its isolated temporary workspace.' \
   "$UI_CAPTURE_SCRIPT"

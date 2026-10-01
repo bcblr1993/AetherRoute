@@ -144,6 +144,11 @@ capture() {
   privacy=$8
   text_size=$9
   settings_tab=${10}
+  surface=${11:-main}
+  panel_review=0
+  if [ "$surface" = panel ]; then
+    panel_review=1
+  fi
   png="$OUTPUT/$name.png"
   log="$OUTPUT/$name.log"
   if [ "$text_size" = expanded ]; then
@@ -180,6 +185,7 @@ capture() {
       AETHERROUTE_UI_REVIEW_PRIVACY="$privacy" \
       AETHERROUTE_UI_REVIEW_TEXT_SIZE="$text_size" \
       AETHERROUTE_UI_REVIEW_SETTINGS_TAB="$settings_tab" \
+      AETHERROUTE_UI_REVIEW_PANEL="$panel_review" \
       "$EXECUTABLE" \
         -AppleLanguages "($language)" \
         -AppleLocale "$locale" \
@@ -200,7 +206,9 @@ capture() {
   window_id=
   attempts=0
   while [ "$attempts" -lt 80 ]; do
-    if [ "$settings_tab" = "-" ]; then
+    if [ "$surface" = panel ]; then
+      window_id=$("$TEMP/ui_review_window_id" --panel "$CURRENT_PID" 2>/dev/null || true)
+    elif [ "$settings_tab" = "-" ]; then
       window_id=$("$TEMP/ui_review_window_id" "$CURRENT_PID" 2>/dev/null || true)
     else
       window_id=$("$TEMP/ui_review_window_id" --settings "$CURRENT_PID" 2>/dev/null || true)
@@ -246,7 +254,7 @@ capture() {
 }
 
 CAPTURE_COUNT=0
-while IFS='|' read -r name language appearance section size state engine privacy text_size settings_tab
+while IFS='|' read -r name language appearance section size state engine privacy text_size settings_tab surface
 do
   if [ -n "$CASE_FILTER" ] && \
      ! printf '%s\n' "$name" | grep -Eq "$CASE_FILTER"; then
@@ -255,7 +263,7 @@ do
   CAPTURE_COUNT=$((CAPTURE_COUNT + 1))
   capture \
     "$name" "$language" "$appearance" "$section" "$size" \
-    "$state" "$engine" "$privacy" "$text_size" "$settings_tab"
+    "$state" "$engine" "$privacy" "$text_size" "$settings_tab" "${surface:-main}"
 done <<'CASES'
 overview-en-light-tun|en|light|overview|940x640|connected|tun|accepted|standard|-
 overview-zh-dark-transparent|zh-Hans|dark|overview|940x640|connected|transparent|accepted|standard|-
@@ -301,6 +309,15 @@ settings-licenses-en-dark|en|dark|overview|960x640|disconnected|tun|accepted|sta
 settings-licenses-zh-light|zh-Hans|light|overview|960x640|disconnected|tun|accepted|standard|licenses
 settings-about-en-light|en|light|overview|960x640|disconnected|tun|accepted|standard|about
 settings-about-zh-dark|zh-Hans|dark|overview|960x640|disconnected|tun|accepted|standard|about
+narrow-proxies-en-light|en|light|proxies|800x640|connected|tun|accepted|standard|-
+narrow-connections-en-dark|en|dark|connections|800x640|connected|tun|accepted|standard|-
+narrow-profiles-zh-light|zh-Hans|light|profiles|800x640|disconnected|tun|accepted|standard|-
+narrow-rules-zh-dark|zh-Hans|dark|rules|800x640|connected|tun|accepted|standard|-
+narrow-dns-en-light|en|light|dns|800x640|disconnected|tun|accepted|standard|-
+panel-zh-dark-connected|zh-Hans|dark|overview|380x300|connected|tun|accepted|standard|-|panel
+panel-en-light-connected|en|light|overview|380x300|connected|transparent|accepted|standard|-|panel
+panel-en-dark-disconnected|en|dark|overview|380x300|disconnected|tun|accepted|standard|-|panel
+panel-zh-light-failed|zh-Hans|light|overview|380x300|failed|tun|accepted|standard|-|panel
 CASES
 
 if grep -E \
@@ -332,3 +349,14 @@ test "$log_count" -eq "$CAPTURE_COUNT"
 OUTPUT_COMPLETE=1
 printf 'UI review capture passed: screenshots=%s logs=%s output=%s network-extension=disabled\n' \
   "$count" "$log_count" "$OUTPUT"
+
+# The gallery (and, against a baseline capture, the pixel comparison) is
+# written after the hashes and counts above, so it never changes what they
+# certify. AETHERROUTE_UI_REVIEW_BASELINE names an earlier capture directory.
+xcrun swiftc -O "$REPOSITORY_ROOT/scripts/ui_review_report.swift" \
+  -o "$TEMP/ui_review_report"
+if [ -n "${AETHERROUTE_UI_REVIEW_BASELINE:-}" ]; then
+  "$TEMP/ui_review_report" "$OUTPUT" "$AETHERROUTE_UI_REVIEW_BASELINE"
+else
+  "$TEMP/ui_review_report" "$OUTPUT"
+fi
