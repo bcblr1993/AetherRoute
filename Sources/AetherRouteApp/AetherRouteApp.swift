@@ -912,15 +912,19 @@ private struct MenuBarContent: View {
             panelRow(
                 symbol: tunnel.networkEngineMode == .tun ? "bolt.shield.fill" : "shield.fill",
                 tint: .blue,
-                title: AppLocalization.string("Network engine"),
+                // "Network engine" left no room for the control in English.
+                title: AppLocalization.string("Engine (menu bar panel row)"),
                 help: .networkEngine
             ) {
                 NetworkEngineSegmentedControl(
                     selection: networkEngineBinding,
                     isEnabled: tunnel.canChangeNetworkEngine,
-                    marksSelection: true
+                    marksSelection: true,
+                    usesShortTitles: true
                 )
-                .frame(width: 168)
+                // "Transparent" and the selection dot need 184 pt in English; the
+                // trailing edges still line up with the routing control above.
+                .frame(width: 184)
             }
 #endif
         }

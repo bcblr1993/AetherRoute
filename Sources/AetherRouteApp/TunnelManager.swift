@@ -21,6 +21,17 @@ enum NetworkEngineMode: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The engine's name where room is short, as in the menu bar panel's
+    /// segmented control: "Transparent Proxy" did not fit there in English.
+    var shortTitle: String {
+        switch self {
+        case .transparent: AppLocalization.string("Transparent (short engine name)")
+#if AETHERROUTE_INDEPENDENT
+        case .tun: AppLocalization.string("TUN")
+#endif
+        }
+    }
+
     var localizedDetail: String {
         switch self {
         case .transparent:
@@ -547,9 +558,13 @@ final class TunnelManager: ObservableObject {
                 : ""
             // "large" stresses the lists: 500 nodes and 10,000 rules.
             let isLargeReview = environment["AETHERROUTE_UI_REVIEW_PROFILE"] == "large"
+            // "showcase" is the website's screenshot set: a realistic mix of
+            // regions, protocols, rules and flows. Generated, never bundled.
+            let isShowcaseReview = environment["AETHERROUTE_UI_REVIEW_PROFILE"] == "showcase"
             let profile = ActiveProfile(
                 name: "Balanced · Singapore",
-                yaml: isLargeReview ? Self.largeReviewProfileYAML : """
+                yaml: isLargeReview ? Self.largeReviewProfileYAML
+                    : isShowcaseReview ? Self.showcaseReviewProfileYAML : """
                 dns:
                   enable: true
                   ipv6: true
@@ -633,26 +648,32 @@ final class TunnelManager: ObservableObject {
             default: .disconnected
             }
             connectedSince = state == .connected || state == .recovering
-                ? Date(timeIntervalSince1970: 1_775_003_600)
+                ? (isShowcaseReview
+                    ? Date.now.addingTimeInterval(-8_040)
+                    : Date(timeIntervalSince1970: 1_775_003_600))
                 : nil
             sessionRoutingMode = state == .connected || state == .recovering ? routingMode : nil
             if state == .connected {
-                proxySelections["Balanced"] = ProxySelectionState(
-                    selectedMember: "Singapore Edge",
-                    members: ["Singapore Edge", "Tokyo Direct"]
-                )
-                proxyLatencies["Balanced"] = ProxyLatencyState(
-                    results: [
-                        ProxyLatencyResult(
-                            member: "Singapore Edge",
-                            delayMilliseconds: 24
-                        ),
-                        ProxyLatencyResult(
-                            member: "Tokyo Direct",
-                            delayMilliseconds: 57
-                        ),
-                    ]
-                )
+                if isShowcaseReview {
+                    installShowcaseReviewSelections()
+                } else {
+                    proxySelections["Balanced"] = ProxySelectionState(
+                        selectedMember: "Singapore Edge",
+                        members: ["Singapore Edge", "Tokyo Direct"]
+                    )
+                    proxyLatencies["Balanced"] = ProxyLatencyState(
+                        results: [
+                            ProxyLatencyResult(
+                                member: "Singapore Edge",
+                                delayMilliseconds: 24
+                            ),
+                            ProxyLatencyResult(
+                                member: "Tokyo Direct",
+                                delayMilliseconds: 57
+                            ),
+                        ]
+                    )
+                }
                 installReviewTelemetry()
             }
             return
@@ -1924,8 +1945,84 @@ extension TunnelManager {
         return lines.joined(separator: "\n")
     }()
 }
+
+extension TunnelManager {
+    /// The "showcase" review profile behind the website's screenshots.
+    static let showcaseReviewNodes: [(name: String, type: String, delay: Int)] = [
+        ("Hong Kong 01", "vless", 38),
+        ("Hong Kong 02", "hysteria2", 42),
+        ("Taipei 01", "hysteria2", 49),
+        ("Tokyo 01", "trojan", 61),
+        ("Tokyo 02", "vless", 58),
+        ("Singapore 01", "vmess", 74),
+        ("Seoul 01", "trojan", 83),
+        ("Los Angeles 01", "vless", 162),
+        ("San Jose 01", "ss", 171),
+        ("London 01", "trojan", 205),
+        ("Frankfurt 01", "ss", 198),
+    ]
+
+    static let showcaseReviewProfileYAML: String = {
+        let names = showcaseReviewNodes.map(\.name)
+        var lines = [
+            "dns:",
+            "  enable: true",
+            "  ipv6: true",
+            "  respect-rules: true",
+            "  enhanced-mode: fake-ip",
+            "  fake-ip-range: 198.18.0.1/16",
+            "  nameserver: [https://1.1.1.1/dns-query, tls://9.9.9.9:853]",
+            "  fallback: [tcp://8.8.8.8:53]",
+            "  default-nameserver: [1.0.0.1]",
+            "proxies:",
+        ]
+        lines += showcaseReviewNodes.map { "  - {name: \($0.name), type: \($0.type)}" }
+        lines += [
+            "proxy-groups:",
+            "  - {name: Balanced, type: select, proxies: [\(names.joined(separator: ", "))]}",
+            "  - {name: Auto, type: url-test, proxies: [\(names.prefix(7).joined(separator: ", "))], url: 'https://www.gstatic.com/generate_204', interval: 300}",
+            "  - {name: Streaming, type: fallback, proxies: [Hong Kong 02, Taipei 01, Tokyo 02, Singapore 01], url: 'https://www.gstatic.com/generate_204', interval: 300}",
+            "rules:",
+            "  - GEOSITE,category-ads-all,REJECT",
+            "  - DOMAIN-SUFFIX,youtube.com,Streaming",
+            "  - DOMAIN-SUFFIX,netflix.com,Streaming",
+            "  - DOMAIN-SUFFIX,anthropic.com,Balanced",
+            "  - DOMAIN-SUFFIX,claude.ai,Balanced",
+            "  - DOMAIN-KEYWORD,openai,Balanced",
+            "  - GEOSITE,github,Auto",
+            "  - GEOSITE,google,Auto",
+            "  - DOMAIN-SUFFIX,apple.com,DIRECT",
+            "  - DOMAIN-SUFFIX,icloud.com,DIRECT",
+            "  - DOMAIN-SUFFIX,bilibili.com,DIRECT",
+            "  - DOMAIN-SUFFIX,taobao.com,DIRECT",
+            "  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
+            "  - GEOSITE,cn,DIRECT",
+            "  - GEOIP,CN,DIRECT,no-resolve",
+            "  - MATCH,Balanced",
+        ]
+        return lines.joined(separator: "\n")
+    }()
+
+    func installShowcaseReviewSelections() {
+        let nodes = Self.showcaseReviewNodes
+        let latencies = ProxyLatencyState(
+            results: nodes.map {
+                ProxyLatencyResult(member: $0.name, delayMilliseconds: UInt32($0.delay))
+            }
+        )
+        proxySelections["Balanced"] = ProxySelectionState(
+            selectedMember: "Hong Kong 01",
+            members: nodes.map(\.name)
+        )
+        proxyLatencies["Balanced"] = latencies
+        proxyLatencies["Auto"] = latencies
+        proxyLatencies["Streaming"] = latencies
+    }
+}
 #else
 extension TunnelManager {
     static let largeReviewProfileYAML = ""
+    static let showcaseReviewProfileYAML = ""
+    func installShowcaseReviewSelections() {}
 }
 #endif

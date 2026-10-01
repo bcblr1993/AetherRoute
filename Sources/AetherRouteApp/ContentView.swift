@@ -1532,14 +1532,20 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
     let isEnabled: Bool
     /// The menu bar panel: see `NSSegmentedControl.markSelectedSegment`.
     var marksSelection = false
+    /// Short engine names, for the narrow menu bar panel.
+    var usesShortTitles = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(selection: $selection)
     }
 
+    private func title(_ mode: NetworkEngineMode) -> String {
+        usesShortTitles ? mode.shortTitle : mode.localizedTitle
+    }
+
     func makeNSView(context: Context) -> NSSegmentedControl {
         let control = NSSegmentedControl(
-            labels: NetworkEngineMode.allCases.map(\.localizedTitle),
+            labels: NetworkEngineMode.allCases.map(title),
             trackingMode: .selectOne,
             target: context.coordinator,
             action: #selector(Coordinator.selectionChanged(_:))
@@ -1556,7 +1562,8 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
     private func configure(_ control: NSSegmentedControl) {
         let modes = NetworkEngineMode.allCases
         for (index, mode) in modes.enumerated() {
-            control.setLabel(mode.localizedTitle, forSegment: index)
+            control.setLabel(title(mode), forSegment: index)
+            control.setToolTip(mode.localizedTitle, forSegment: index)
         }
         control.selectedSegment = modes.firstIndex(of: selection) ?? -1
         control.isEnabled = isEnabled

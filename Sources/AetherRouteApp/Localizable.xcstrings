@@ -12100,6 +12100,38 @@
           }
         }
       }
+    },
+    "Transparent (short engine name)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transparent"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "透明代理"
+          }
+        }
+      }
+    },
+    "Engine (menu bar panel row)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Engine"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络引擎"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -388,6 +388,19 @@ extension TunnelManager {
             ))
             return
         }
+        if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_PROFILE"] == "showcase" {
+            publishTelemetry(NetworkTelemetrySnapshot(
+                // The same rates the seeded history ends on, so the graph
+                // reads as one continuous curve.
+                uploadBytesPerSecond: 384_000,
+                downloadBytesPerSecond: 2_480_000,
+                uploadTotal: 86_430_000,
+                downloadTotal: 1_942_700_000,
+                memoryBytes: 12_240_000,
+                connections: Self.showcaseReviewConnections(now: reviewNow)
+            ))
+            return
+        }
 #endif
         publishTelemetry(NetworkTelemetrySnapshot(
             uploadBytesPerSecond: 384_000,
@@ -474,6 +487,39 @@ extension TunnelManager {
             ))
         }
         return connections
+    }
+
+    /// A believable set of flows for the website's screenshots.
+    static func showcaseReviewConnections(now: TimeInterval) -> [ConnectionTelemetry] {
+        let flows: [(NetworkTelemetryTransport, String, UInt16, UInt64, UInt64, Double, String, String, String)] = [
+            (.tcp, "rr4---sn-i3b7knld.googlevideo.com", 443, 1_820_000, 486_300_000, 412, "DomainSuffix", "youtube.com", "Streaming → Hong Kong 02"),
+            (.tcp, "claude.ai", 443, 3_140_000, 18_900_000, 1_284, "DomainSuffix", "claude.ai", "Balanced → Hong Kong 01"),
+            (.tcp, "api.anthropic.com", 443, 6_220_000, 41_700_000, 2_706, "DomainSuffix", "anthropic.com", "Balanced → Hong Kong 01"),
+            (.tcp, "github.com", 443, 412_000, 9_860_000, 845, "GeoSite", "github", "Auto → Hong Kong 01"),
+            (.tcp, "objects.githubusercontent.com", 443, 96_000, 128_400_000, 96, "GeoSite", "github", "Auto → Hong Kong 01"),
+            (.tcp, "www.google.com", 443, 84_000, 1_240_000, 37, "GeoSite", "google", "Auto → Hong Kong 01"),
+            (.udp, "www.youtube.com", 443, 2_410_000, 64_200_000, 380, "DomainSuffix", "youtube.com", "Streaming → Hong Kong 02"),
+            (.tcp, "chatgpt.com", 443, 1_120_000, 7_480_000, 563, "DomainKeyword", "openai", "Balanced → Hong Kong 01"),
+            (.tcp, "gateway.icloud.com", 443, 238_000, 1_960_000, 3_904, "DomainSuffix", "icloud.com", "DIRECT"),
+            (.tcp, "swcdn.apple.com", 443, 62_000, 384_500_000, 210, "DomainSuffix", "apple.com", "DIRECT"),
+            (.tcp, "www.bilibili.com", 443, 128_000, 22_600_000, 156, "DomainSuffix", "bilibili.com", "DIRECT"),
+            (.udp, "dns.google", 53, 2_480, 6_120, 4, "Match", "", "Balanced → Hong Kong 01"),
+            (.tcp, "192.168.1.10", 8080, 18_000, 92_000, 67, "IPCIDR", "192.168.0.0/16", "DIRECT"),
+            (.tcp, "fonts.gstatic.com", 443, 21_000, 864_000, 12, "GeoSite", "google", "Auto → Hong Kong 01"),
+        ]
+        return flows.map { flow in
+            ConnectionTelemetry(
+                transport: flow.0,
+                destination: flow.1,
+                destinationPort: flow.2,
+                uploadTotal: flow.3,
+                downloadTotal: flow.4,
+                startedAtUnixMilliseconds: UInt64(max(0, now - flow.5) * 1_000),
+                rule: flow.6,
+                rulePayload: flow.7,
+                proxyChain: flow.8
+            )
+        }
     }
 }
 #endif
