@@ -39,18 +39,27 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
         configure(control, context: context)
     }
 
-    /// The control's own size, from the segment widths set in `configure`;
-    /// a full-width control takes whatever width it is offered.
+    /// The control's size from the segment widths set in `configure`; a
+    /// full-width control takes whatever width it is offered.
     func sizeThatFits(
         _ proposal: ProposedViewSize,
         nsView control: NSSegmentedControl,
         context: Context
     ) -> CGSize? {
-        let natural = control.intrinsicContentSize
-        guard fillsWidth, let width = proposal.width, width.isFinite else {
-            return natural
+        let height = control.intrinsicContentSize.height
+        guard fillsWidth else {
+            // The sum of the widths set in `configure`. The control's own
+            // intrinsic width lags a width change until the next layout.
+            let width = (0..<control.segmentCount).reduce(CGFloat.zero) {
+                $0 + control.width(forSegment: $1)
+            }
+            return CGSize(width: width, height: height)
         }
-        return CGSize(width: max(width, natural.width), height: natural.height)
+        let natural = control.intrinsicContentSize.width
+        guard let width = proposal.width, width.isFinite else {
+            return CGSize(width: natural, height: height)
+        }
+        return CGSize(width: max(width, natural), height: height)
     }
 
     private func configure(_ control: NSSegmentedControl, context: Context) {
@@ -108,18 +117,19 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
         for titles: [String],
         controlSize: NSControl.ControlSize
     ) -> CGFloat {
-        let probe = NSSegmentedControl(
-            labels: [""],
-            trackingMode: .selectOne,
-            target: nil,
-            action: nil
-        )
-        probe.controlSize = controlSize
-        probe.segmentDistribution = .fit
-        probe.selectedSegment = 0
-        probe.markSelectedSegment()
-        return titles.map { title in
-            probe.setLabel(title, forSegment: 0)
+        // One probe per title: relabelling a probe does not refresh its
+        // intrinsic width, which then stayed at the first label's size.
+        titles.map { title in
+            let probe = NSSegmentedControl(
+                labels: [title],
+                trackingMode: .selectOne,
+                target: nil,
+                action: nil
+            )
+            probe.controlSize = controlSize
+            probe.segmentDistribution = .fit
+            probe.selectedSegment = 0
+            probe.markSelectedSegment()
             return probe.intrinsicContentSize.width
         }.max().map(ceil) ?? 0
     }

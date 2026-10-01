@@ -1719,6 +1719,11 @@ private struct SettingsView: View {
         }
         .id(language.preference)
         .background(Color(nsColor: .windowBackgroundColor))
+        .background(alignment: .topLeading) {
+            InitialFocusAnchor()
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
         .overlay(alignment: .topLeading) {
             // The title names the open pane, as System Settings does.
             WindowChromeSynchronizer(
@@ -2382,4 +2387,25 @@ private struct LocalProxyPortField: View {
         // restore it here. An accepted one arrives through onChange.
         text = String(port)
     }
+}
+
+/// Holds a window's first focus so that no text field takes it on open.
+/// Settings otherwise focused the bypass-rule field whenever Network opened,
+/// and the form scrolled down to it past the engine and routing sections.
+private struct InitialFocusAnchor: NSViewRepresentable {
+    final class AnchorView: NSView {
+        override var acceptsFirstResponder: Bool { true }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            window.initialFirstResponder = self
+            if window.firstResponder is NSText || window.firstResponder === window {
+                window.makeFirstResponder(self)
+            }
+        }
+    }
+
+    func makeNSView(context: Context) -> AnchorView { AnchorView() }
+    func updateNSView(_ view: AnchorView, context: Context) {}
 }
