@@ -1820,7 +1820,7 @@ private struct SettingsView: View {
                 PrivacyDisclosureView(isOnboarding: false, isEmbedded: true)
                 SupportDiagnosticsView(isEmbedded: true)
             }
-            .aetherSettingsForm()
+            .aetherSettingsForm(title: SettingsTab.privacy.titleString)
             .environmentObject(tunnel)
         case .about:
             AboutAetherRouteView()
@@ -1861,13 +1861,13 @@ private struct SettingsView: View {
                 }
             }
         }
-        .aetherSettingsForm()
+        .aetherSettingsForm(title: SettingsTab.general.titleString)
     }
 
     private var networkSettings: some View {
         Form {
 #if AETHERROUTE_INDEPENDENT
-            Section("Network engine") {
+            Section {
                 HStack(spacing: AetherVisual.s3) {
                     Text("Traffic capture")
                         .foregroundStyle(.primary)
@@ -1885,14 +1885,14 @@ private struct SettingsView: View {
                     )
                     .disabled(!tunnel.canChangeNetworkEngine)
                 }
-
+            } header: {
+                Text("Network engine")
+            } footer: {
                 Text(tunnel.networkEngineMode.localizedDetail)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
             }
 #endif
 
-            Section("Routing") {
+            Section {
                 HStack(spacing: AetherVisual.s3) {
                     Text("Routing mode")
                         .foregroundStyle(.primary)
@@ -1924,33 +1924,29 @@ private struct SettingsView: View {
                     )
                 )
                 .accessibilityIdentifier("domestic-optimization-toggle")
-
+            } header: {
+                Text("Routing")
+            } footer: {
                 Text(
                     AppLocalization.string(
                         "Injects high-speed direct routing and domestic DNS policy for Apple CDN, updates, and domestic websites."
                     )
                 )
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                Text("Routing mode changes apply immediately when connected. Switching engines reconnects automatically. Network optimization applies on the next connection or profile reload.")
             }
 
 #if AETHERROUTE_INDEPENDENT
             localProxySection
 #endif
 
-            Text("Routing mode changes apply immediately when connected. Switching engines reconnects automatically. Network optimization applies on the next connection or profile reload.")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
             BypassRulesSection()
                 .environmentObject(tunnel)
         }
-        .aetherSettingsForm()
+        .aetherSettingsForm(title: SettingsTab.network.titleString)
     }
 
     private var appearanceSettings: some View {
-        Section("Appearance") {
+        Section {
             LabeledContent("Application theme") {
                 AetherSegmentedPicker(
                     selection: Binding(
@@ -1967,15 +1963,15 @@ private struct SettingsView: View {
                 )
             }
 
+        } header: {
+            Text("Appearance")
+        } footer: {
             Text("Theme changes apply immediately and are remembered next time.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var dockSettings: some View {
-        Section(AppLocalization.string("Dock & Menu Bar")) {
+        Section {
             Toggle(
                 AppLocalization.string("Hide Dock icon"),
                 isOn: Binding(
@@ -1984,20 +1980,19 @@ private struct SettingsView: View {
                 )
             )
             .accessibilityIdentifier("hide-dock-icon-toggle")
-
+        } header: {
+            Text(AppLocalization.string("Dock & Menu Bar"))
+        } footer: {
             Text(
                 AppLocalization.string(
                     "Keep AetherRoute in the menu bar only without a Dock icon. The main window can be reopened from the menu bar or by clicking the app icon."
                 )
             )
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var startupSettings: some View {
-        Section(AppLocalization.string("Startup")) {
+        Section {
             Toggle(
                 AppLocalization.string("Launch at login"),
                 isOn: Binding(
@@ -2006,15 +2001,6 @@ private struct SettingsView: View {
                 )
             )
             .accessibilityIdentifier("launch-at-login-toggle")
-
-            Text(
-                AppLocalization.string(
-                    "Automatically start AetherRoute when logging into macOS. If connected before quitting, it will automatically reconnect upon launch."
-                )
-            )
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
 
             if startup.serviceStatus == .requiresApproval {
                 Label(
@@ -2030,11 +2016,19 @@ private struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.red)
             }
+        } header: {
+            Text(AppLocalization.string("Startup"))
+        } footer: {
+            Text(
+                AppLocalization.string(
+                    "Automatically start AetherRoute when logging into macOS. If connected before quitting, it will automatically reconnect upon launch."
+                )
+            )
         }
     }
 
     private var languageSettings: some View {
-        Section("Language") {
+        Section {
             LabeledContent("Application language") {
                 AetherSegmentedPicker(
                     selection: languageBinding,
@@ -2050,13 +2044,10 @@ private struct SettingsView: View {
                 )
             }
 
-            Label(
-                "Language changes apply immediately throughout AetherRoute.",
-                systemImage: "globe"
-            )
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+        } header: {
+            Text("Language")
+        } footer: {
+            Text("Language changes apply immediately throughout AetherRoute.")
         }
     }
 
@@ -2081,7 +2072,7 @@ private struct SettingsView: View {
 
 #if AETHERROUTE_INDEPENDENT
     private var localProxySection: some View {
-        Section("Local proxy") {
+        Section {
             Toggle(
                 "Loopback HTTP and SOCKS5 proxy",
                 isOn: Binding(
@@ -2155,11 +2146,10 @@ private struct SettingsView: View {
                 }
             }
 
-            Label(localProxyDetail, systemImage: localProxyDetailSymbol)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
+        } header: {
+            Text("Local proxy")
+        } footer: {
+            Text(localProxyDetail)
         }
     }
 
@@ -2185,12 +2175,6 @@ private struct SettingsView: View {
         )
     }
 
-    private var localProxyDetailSymbol: String {
-        tunnel.networkEngineMode == .tun
-            ? "lock.shield"
-            : "arrow.triangle.swap"
-    }
-
     private func copyLocalProxyShellEnvironment() -> Bool {
         do {
             copyToPasteboard(
@@ -2213,7 +2197,7 @@ private struct SettingsView: View {
 #endif
 
     private var automationSettings: some View {
-        Section("Automation") {
+        Section {
             Toggle(
                 "Global shortcuts",
                 isOn: Binding(
@@ -2273,10 +2257,10 @@ private struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+        } header: {
+            Text("Automation")
+        } footer: {
             Text("Shortcuts work while AetherRoute is running and do not require Accessibility access. Notifications are optional and never include profile names, addresses, or traffic details.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityHidden(true)
         }
     }

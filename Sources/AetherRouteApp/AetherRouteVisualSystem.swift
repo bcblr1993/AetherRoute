@@ -519,14 +519,10 @@ extension AetherSheetHeader where Accessory == EmptyView {
 }
 
 extension View {
-    /// Every Settings pane: the same grouped form, margins and background,
-    /// so switching tabs never changes the page's width or type scale.
-    func aetherSettingsForm() -> some View {
-        formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .contentMargins(.horizontal, AetherVisual.s5, for: .scrollContent)
-            .contentMargins(.vertical, AetherVisual.s4, for: .scrollContent)
-            .contentMargins(.trailing, AetherVisual.s2 + AetherVisual.sMicro, for: .scrollIndicators)
+    /// Every Settings pane and form sheet: sections as glass cards, the same
+    /// as the main window's pages, with an optional large page title.
+    func aetherSettingsForm(title: String? = nil, isSheet: Bool = false) -> some View {
+        formStyle(AetherGlassFormStyle(title: title, isSheet: isSheet))
     }
 
     func aetherPanel() -> some View {
@@ -956,3 +952,117 @@ public struct AetherTrafficMiniGraph: View {
     }
 }
 
+
+
+// MARK: - Glass forms
+
+/// Settings drawn like the rest of the app: each section a caption over a
+/// glass card whose rows are divided by inset hairlines. The panes keep
+/// ordinary `Form`, `Section`, `Toggle` and `LabeledContent` content.
+struct AetherGlassFormStyle: FormStyle {
+    var title: String?
+    /// Sheets use the dialog margins instead of a page's.
+    var isSheet = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        ScrollView {
+            let stack = VStack(alignment: .leading, spacing: isSheet ? AetherVisual.s4 : AetherVisual.s5) {
+                if let title {
+                    Text(title)
+                        .font(.largeTitle.weight(.bold))
+                        .foregroundStyle(.primary)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                ForEach(sections: configuration.content) { section in
+                    AetherGlassFormSection(section: section)
+                }
+            }
+            if isSheet {
+                stack.padding(AetherVisual.dialogPadding)
+            } else {
+                stack.aetherPageContent(.reading)
+            }
+        }
+        .toggleStyle(AetherRowToggleStyle())
+        .labeledContentStyle(AetherRowLabeledContentStyle())
+    }
+}
+
+private struct AetherGlassFormSection: View {
+    let section: SectionConfiguration
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            if !section.header.isEmpty {
+                HStack(spacing: AetherVisual.s2) {
+                    section.header
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, AetherVisual.s1)
+                .accessibilityAddTraits(.isHeader)
+            }
+            if !section.content.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(section.content) { row in
+                        row
+                            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                            .padding(.horizontal, AetherVisual.s4)
+                            .padding(.vertical, AetherVisual.s3)
+                        if row.id != section.content.last?.id {
+                            Divider()
+                                .padding(.leading, AetherVisual.s4)
+                        }
+                    }
+                }
+                .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous))
+            }
+            if !section.footer.isEmpty {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                    section.footer
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, AetherVisual.s1)
+            }
+        }
+    }
+}
+
+/// The label leading and a switch trailing, as in System Settings. The
+/// accessibility representation keeps it one native switch, so identifiers
+/// and VoiceOver land on the control.
+struct AetherRowToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: AetherVisual.s3) {
+            configuration.label
+                .foregroundStyle(.primary)
+            Spacer(minLength: AetherVisual.s3)
+            Toggle("", isOn: configuration.$isOn)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .accessibilityHidden(true)
+        }
+        .contentShape(Rectangle())
+        .accessibilityRepresentation {
+            // A hidden label becomes the switch's own name instead of a
+            // separate text element it merely points to.
+            Toggle(isOn: configuration.$isOn) { configuration.label }
+                .toggleStyle(.switch)
+                .labelsHidden()
+        }
+    }
+}
+
+/// The label leading and the value or control trailing.
+struct AetherRowLabeledContentStyle: LabeledContentStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: AetherVisual.s3) {
+            configuration.label
+            Spacer(minLength: AetherVisual.s3)
+            configuration.content
+                .multilineTextAlignment(.trailing)
+        }
+    }
+}

@@ -654,8 +654,7 @@ private struct ConnectionInspector: View {
                     LabeledContent(AppLocalization.string("Upload"), value: bytes(connection.uploadTotal))
                 }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
+            .aetherSettingsForm(isSheet: true)
             .scrollDisabled(true)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)

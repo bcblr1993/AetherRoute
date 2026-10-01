@@ -74,8 +74,7 @@ struct ManualNodeEditorSheet: View {
                     if showsProtocolOptionsSection { protocolOptionsSection }
                 }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
+            .aetherSettingsForm(isSheet: true)
             Divider()
             footer
         }
@@ -134,17 +133,21 @@ struct ManualNodeEditorSheet: View {
                 }
             }
             .accessibilityIdentifier("manual-node-protocol")
+            .fieldRow("Protocol")
             TextField("Node name", text: $node.name)
                 .textContentType(.name)
                 .accessibilityIdentifier("manual-node-name")
+                .fieldRow("Node name")
             if node.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text("Enter a node name.").font(.caption).foregroundStyle(.secondary)
             }
             TextField("Server", text: $node.server)
                 .textContentType(.URL)
                 .accessibilityIdentifier("manual-node-server")
+                .fieldRow("Server")
             TextField("Port", text: $portText)
                 .accessibilityIdentifier("manual-node-port")
+                .fieldRow("Port")
             if UInt16(portText) == nil || UInt16(portText) == 0 {
                 Text("Port must be between 1 and 65535.").font(.caption).foregroundStyle(.orange)
             }
@@ -157,15 +160,21 @@ struct ManualNodeEditorSheet: View {
             switch node.protocolID {
             case .http, .socks5:
                 TextField("Username (optional)", text: $node.username)
+                    .fieldRow("Username (optional)")
                 SecureField("Password (optional)", text: $node.password)
+                    .fieldRow("Password (optional)")
             case .shadowsocks:
                 TextField("Cipher", text: $node.cipher)
+                    .fieldRow("Cipher")
                 SecureField("Password", text: $node.password)
+                    .fieldRow("Password")
             case .vmess, .vless:
                 TextField("UUID", text: $node.uuid)
                     .accessibilityIdentifier("manual-node-uuid")
+                    .fieldRow("UUID")
                 if node.protocolID == .vmess {
                     TextField("Cipher", text: $node.cipher)
+                        .fieldRow("Cipher")
                     Stepper(
                         String.localizedStringWithFormat(
                             AppLocalization.string("Alter ID: %lld"),
@@ -177,18 +186,26 @@ struct ManualNodeEditorSheet: View {
                 }
             case .trojan, .hysteria2, .anyTLS:
                 SecureField("Password", text: $node.password)
+                    .fieldRow("Password")
             case .tuic:
                 TextField("UUID", text: $node.uuid)
                     .accessibilityIdentifier("manual-node-uuid")
+                    .fieldRow("UUID")
                 SecureField("Password", text: $node.password)
+                    .fieldRow("Password")
             case .wireGuard:
                 SecureField("Private key", text: $node.privateKey)
+                    .fieldRow("Private key")
                 TextField("Peer public key", text: $node.publicKey)
+                    .fieldRow("Peer public key")
                 SecureField("Pre-shared key (optional)", text: $node.preSharedKey)
+                    .fieldRow("Pre-shared key (optional)")
             case .ssh:
                 TextField("Username", text: $node.username)
                     .accessibilityIdentifier("manual-node-username")
+                    .fieldRow("Username")
                 SecureField("Password (optional)", text: $node.password)
+                    .fieldRow("Password (optional)")
                 HStack(spacing: AetherVisual.s3) {
                     Label(
                         node.privateKey.isEmpty
@@ -231,13 +248,16 @@ struct ManualNodeEditorSheet: View {
                             }
                         )
                     )
+                        .fieldRow("Private key passphrase (optional)")
                 }
                 Text("The selected key is read into memory, never displayed, and saved only in the encrypted profile library.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             case .shadowQUIC:
                 TextField("Username", text: $node.username)
+                    .fieldRow("Username")
                 SecureField("Password", text: $node.password)
+                    .fieldRow("Password")
             }
         }
     }
@@ -249,20 +269,26 @@ struct ManualNodeEditorSheet: View {
                     Text(transportTitle(transport)).tag(transport)
                 }
             }
+                .fieldRow("Network")
             switch node.transport.kind {
             case .tcp:
                 EmptyView()
             case .webSocket:
                 TextField("Path (optional)", text: $node.transport.path)
+                    .fieldRow("Path (optional)")
                 TextField("Host header (optional)", text: $node.transport.host)
+                    .fieldRow("Host header (optional)")
             case .http2:
                 TextField("Path (optional)", text: $node.transport.path)
+                    .fieldRow("Path (optional)")
                 TextField("Host (optional)", text: $node.transport.host)
+                    .fieldRow("Host (optional)")
             case .grpc:
                 TextField(
                     "Service name (optional)",
                     text: $node.transport.grpcServiceName
                 )
+                    .fieldRow("Service name (optional)")
             }
         }
     }
@@ -279,6 +305,7 @@ struct ManualNodeEditorSheet: View {
             if node.tls.enabled || usesTLSIdentity {
                 TextField("Server name (SNI)", text: $node.tls.serverName)
                     .accessibilityIdentifier("manual-node-sni")
+                    .fieldRow("Server name (SNI)")
                 Toggle(
                     "Skip certificate verification",
                     isOn: $node.tls.skipCertificateVerification
@@ -300,16 +327,19 @@ struct ManualNodeEditorSheet: View {
                         text: $node.tls.realityPublicKey
                     )
                     .accessibilityIdentifier("manual-node-reality-public-key")
+                    .fieldRow("Public key")
                     TextField(
                         "Short ID (optional)",
                         text: $node.tls.realityShortID
                     )
                     .accessibilityIdentifier("manual-node-reality-short-id")
+                    .fieldRow("Short ID (optional)")
                     TextField(
                         "Client fingerprint",
                         text: $node.tls.clientFingerprint
                     )
                     .accessibilityIdentifier("manual-node-client-fingerprint")
+                    .fieldRow("Client fingerprint")
                     if let realityValidationMessage {
                         Label(
                             realityValidationMessage,
@@ -340,6 +370,7 @@ struct ManualNodeEditorSheet: View {
                 Toggle("UDP relay", isOn: $node.udp)
                 if node.protocolID == .vless {
                     TextField("Flow (optional)", text: $node.flow)
+                        .fieldRow("Flow (optional)")
                 }
             case .hysteria2:
                 Toggle(
@@ -357,25 +388,33 @@ struct ManualNodeEditorSheet: View {
                         "Obfuscation password",
                         text: $node.obfuscationPassword
                     )
+                        .fieldRow("Obfuscation password")
                 }
                 TextField("Upload Mbps (optional)", text: $uploadText)
+                    .fieldRow("Upload Mbps (optional)")
                 TextField("Download Mbps (optional)", text: $downloadText)
+                    .fieldRow("Download Mbps (optional)")
             case .tuic:
                 TextField(
                     "Congestion controller (optional)",
                     text: $node.congestionController
                 )
+                    .fieldRow("Congestion controller (optional)")
                 TextField(
                     "UDP relay mode (optional)",
                     text: $node.udpRelayMode
                 )
+                    .fieldRow("UDP relay mode (optional)")
             case .wireGuard:
                 TextField("Local IPv4 CIDR", text: $node.localAddress)
+                    .fieldRow("Local IPv4 CIDR")
                 TextField(
                     "Local IPv6 CIDR (optional)",
                     text: $node.localIPv6Address
                 )
+                    .fieldRow("Local IPv6 CIDR (optional)")
                 TextField("Allowed IPs", text: $allowedIPsText)
+                    .fieldRow("Allowed IPs")
                 Toggle("UDP", isOn: $node.udp)
             case .ssh:
                 EmptyView()
@@ -384,6 +423,7 @@ struct ManualNodeEditorSheet: View {
                     "Congestion control (optional)",
                     text: $node.congestionController
                 )
+                    .fieldRow("Congestion control (optional)")
             }
         }
     }
@@ -628,6 +668,19 @@ private enum ManualNodeEditorError: LocalizedError {
                 AppLocalization.string("%@ must be a whole non-negative number."),
                 field
             )
+        }
+    }
+}
+
+private extension View {
+    /// A field in the glass form: its title leads and the field trails, as
+    /// in System Settings. Modifiers chained before stay on the field itself.
+    func fieldRow(_ title: LocalizedStringKey) -> some View {
+        LabeledContent(title) {
+            self
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 280, alignment: .trailing)
         }
     }
 }
