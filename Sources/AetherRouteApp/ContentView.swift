@@ -1429,7 +1429,9 @@ private struct OverviewModeRows: View {
                 get: { networkEngineMode },
                 set: { mode in selectNetworkEngine(mode) }
             ),
-            isEnabled: canChangeNetworkEngine
+            isEnabled: canChangeNetworkEngine,
+            // "Transparent Proxy" overflowed the 200 pt control in English.
+            usesShortTitles: true
         )
         .frame(width: 200)
     }

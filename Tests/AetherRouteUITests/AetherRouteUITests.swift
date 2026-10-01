@@ -1978,7 +1978,8 @@ final class AetherRouteUITests: XCTestCase {
             in: app
         )
 
-        let engineLabel = engine == "tun" ? "TUN" : "Transparent Proxy"
+        // The Overview control shows the short engine names.
+        let engineLabel = engine == "tun" ? "TUN" : "Transparent"
         let enginePicker = app.radioGroups["network-engine-picker"]
         XCTAssertTrue(
             enginePicker.waitForExistence(timeout: 5),
