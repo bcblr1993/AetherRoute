@@ -537,6 +537,14 @@ final class TunnelManager: ObservableObject {
                 reviewSubscription = nil
             }
 
+            // "groups" reviews the multi-group Proxies layout; every other
+            // review keeps the single group the UI tests are written for.
+            let reviewExtraGroups = environment["AETHERROUTE_UI_REVIEW_PROFILE"] == "groups"
+                ? """
+                  - {name: Auto, type: url-test, proxies: [Singapore Edge, Tokyo Direct], url: 'https://www.gstatic.com/generate_204', interval: 300}
+                  - {name: Streaming, type: fallback, proxies: [Singapore Edge, Tokyo Direct], url: 'https://www.gstatic.com/generate_204', interval: 300}
+                """
+                : ""
             let profile = ActiveProfile(
                 name: "Balanced · Singapore",
                 yaml: """
@@ -563,6 +571,7 @@ final class TunnelManager: ObservableObject {
                   - {name: Tokyo Direct, type: direct}
                 proxy-groups:
                   - {name: Balanced, type: select, proxies: [Singapore Edge, Tokyo Direct]}
+                \(reviewExtraGroups)
                 rules:
                   - GEOSITE,github,Balanced
                   - GEOIP,CN,DIRECT,no-resolve

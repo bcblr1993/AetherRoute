@@ -9,6 +9,8 @@ struct ProxiesView: View {
     @State private var selectedGroupId: Int?
     @AppStorage("proxies-view-display-mode") private var isGridView: Bool = false
     @State private var showAdvancedInventory: Bool = false
+    /// Wide enough for the groups to sit in a column beside their members.
+    @State private var isWideGroupLayout = false
 
     var body: some View {
         Group {
@@ -45,21 +47,17 @@ struct ProxiesView: View {
                 }
 
                 if !summary.proxyGroups.isEmpty {
-                    // 1. 顶部策略组水平 Tab 分段选择栏
-                    proxyGroupTabBar(groups: summary.proxyGroups)
-
-                    // 2. 当前选中策略组的节点网格/列表展示
-                    if let activeGroup = currentGroup(from: summary.proxyGroups) {
-                        ActiveProxyGroupView(
-                            group: activeGroup,
-                            protocols: Dictionary(
-                                uniqueKeysWithValues: summary.proxies.map { ($0.name, $0.protocolName) }
-                            ),
-                            searchText: searchText,
-                            isGridView: $isGridView
-                        )
-                        .id(activeGroup.name)
-                        .transition(.opacity)
+                    if summary.proxyGroups.count > 1, isWideGroupLayout {
+                        // Groups in a column beside their members, so the
+                        // current choice of every group stays in view.
+                        HStack(alignment: .top, spacing: AetherVisual.s4) {
+                            proxyGroupColumn(groups: summary.proxyGroups)
+                                .frame(width: Self.groupColumnWidth)
+                            activeGroupView(summary: summary)
+                        }
+                    } else {
+                        proxyGroupTabBar(groups: summary.proxyGroups)
+                        activeGroupView(summary: summary)
                     }
                 }
 
@@ -77,9 +75,62 @@ struct ProxiesView: View {
                 }
             }
             .aetherPageContent(.wide)
+            .onGeometryChange(for: Bool.self) { proxy in
+                proxy.size.width >= Self.wideGroupLayoutWidth
+            } action: { isWide in
+                isWideGroupLayout = isWide
+            }
+            .animation(AetherVisual.animation(AetherVisual.panelSpring), value: isWideGroupLayout)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(AppLocalization.string("Proxy configuration"))
             .accessibilityIdentifier("proxies-page-content")
+        }
+    }
+
+    nonisolated private static let wideGroupLayoutWidth: CGFloat = 720
+    private static let groupColumnWidth: CGFloat = 236
+
+    @ViewBuilder
+    private func activeGroupView(summary: ProfileConfigurationSummary) -> some View {
+        if let activeGroup = currentGroup(from: summary.proxyGroups) {
+            ActiveProxyGroupView(
+                group: activeGroup,
+                protocols: Dictionary(
+                    uniqueKeysWithValues: summary.proxies.map { ($0.name, $0.protocolName) }
+                ),
+                searchText: searchText,
+                isGridView: $isGridView
+            )
+            .id(activeGroup.name)
+            .transition(.opacity)
+        }
+    }
+
+    /// The groups as a vertical list beside the members of the chosen one.
+    private func proxyGroupColumn(groups: [ProxyGroupConfigurationSummary]) -> some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            AetherSectionHeader(
+                title: AppLocalization.string("Proxy groups"),
+                symbol: "square.stack.3d.up",
+                count: groups.count
+            )
+            VStack(spacing: AetherVisual.sMicro) {
+                ForEach(groups) { group in
+                    ProxyGroupTabButton(
+                        group: group,
+                        isSelected: currentGroup(from: groups)?.id == group.id,
+                        currentMember: tunnel.proxySelections[group.name]?.selectedMember,
+                        fillsWidth: true,
+                        onSelect: {
+                            withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                                selectedGroupId = group.id
+                            }
+                        }
+                    )
+                }
+            }
+            .padding(AetherVisual.s1)
+            .aetherPanel()
         }
     }
 
@@ -214,6 +265,20 @@ private struct ProxyGroupTabButton: View {
     let group: ProxyGroupConfigurationSummary
     let isSelected: Bool
     let currentMember: String?
+    /// In the group column each button spans the column; in the top bar it
+    /// keeps its natural width.
+    var fillsWidth = false
+
+    /// What a group without a pinned node does, instead of repeating its
+    /// strategy name under the strategy badge.
+    private var strategyBehavior: String {
+        switch group.strategy.lowercased() {
+        case "url-test": AppLocalization.string("Auto select fastest")
+        case "fallback": AppLocalization.string("Uses the first available node")
+        case "load-balance": AppLocalization.string("Spreads traffic across nodes")
+        default: group.strategy.uppercased()
+        }
+    }
     let onSelect: () -> Void
     @State private var isHovered = false
 
@@ -259,11 +324,15 @@ private struct ProxyGroupTabButton: View {
                                 .lineLimit(1)
                         }
                     } else {
-                        Text(group.strategy.lowercased() == "url-test" ? AppLocalization.string("Auto select fastest") : group.strategy.uppercased())
+                        Text(strategyBehavior)
                             .font(.caption)
                             .foregroundStyle(Color(nsColor: .labelColor))
                             .lineLimit(1)
                     }
+                }
+
+                if fillsWidth {
+                    Spacer(minLength: 0)
                 }
 
                 if isSelected {
@@ -271,6 +340,7 @@ private struct ProxyGroupTabButton: View {
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(Color.accentColor)
                         .padding(.leading, AetherVisual.sMicro)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }
             .padding(.horizontal, AetherVisual.s3)
@@ -913,6 +983,13 @@ private struct ProxyNodeRow: View {
             .disabled(row.isBusy || !canSelect)
             .accessibilityLabel(row.member)
             .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
+
+            if row.showsLatency {
+                // A bar beside the pill lets the eye compare nodes down the
+                // list without reading every number.
+                AetherLatencyBar(status: row.status)
+                    .frame(width: 56)
+            }
 
             Group {
                 if row.showsLatency {

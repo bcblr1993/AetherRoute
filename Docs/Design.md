@@ -101,10 +101,11 @@ identifier, rejects any app network socket, compares system-proxy snapshots,
 and binds evidence to the complete source manifest. A standard product build
 test also rejects the measurement environment string if it ever escapes the
 compile-time boundary.
-Its 53-image matrix covers every primary page plus every Settings page,
+Its 55-image matrix covers every primary page plus every Settings page,
 English and Simplified Chinese, light and dark appearance, both network-engine
 selectors, expanded text at the minimum window, 800-point narrow windows,
-the menu bar panel in its connected, disconnected and failed states, and
+the menu bar panel in its connected, disconnected and failed states, the
+multi-group Proxies layout (`AETHERROUTE_UI_REVIEW_PROFILE=groups`), and
 privacy onboarding. Each run writes `report.html`, a gallery of the images;
 with `AETHERROUTE_UI_REVIEW_BASELINE` naming an earlier capture it compares
 every image pixel by pixel and writes a diff image for each one that changed

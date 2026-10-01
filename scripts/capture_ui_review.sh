@@ -145,6 +145,7 @@ capture() {
   text_size=$9
   settings_tab=${10}
   surface=${11:-main}
+  review_profile=${12:--}
   panel_review=0
   if [ "$surface" = panel ]; then
     panel_review=1
@@ -186,6 +187,7 @@ capture() {
       AETHERROUTE_UI_REVIEW_TEXT_SIZE="$text_size" \
       AETHERROUTE_UI_REVIEW_SETTINGS_TAB="$settings_tab" \
       AETHERROUTE_UI_REVIEW_PANEL="$panel_review" \
+      AETHERROUTE_UI_REVIEW_PROFILE="$review_profile" \
       "$EXECUTABLE" \
         -AppleLanguages "($language)" \
         -AppleLocale "$locale" \
@@ -254,7 +256,7 @@ capture() {
 }
 
 CAPTURE_COUNT=0
-while IFS='|' read -r name language appearance section size state engine privacy text_size settings_tab surface
+while IFS='|' read -r name language appearance section size state engine privacy text_size settings_tab surface review_profile
 do
   if [ -n "$CASE_FILTER" ] && \
      ! printf '%s\n' "$name" | grep -Eq "$CASE_FILTER"; then
@@ -263,7 +265,7 @@ do
   CAPTURE_COUNT=$((CAPTURE_COUNT + 1))
   capture \
     "$name" "$language" "$appearance" "$section" "$size" \
-    "$state" "$engine" "$privacy" "$text_size" "$settings_tab" "${surface:-main}"
+    "$state" "$engine" "$privacy" "$text_size" "$settings_tab" "${surface:-main}" "${review_profile:--}"
 done <<'CASES'
 overview-en-light-tun|en|light|overview|940x640|connected|tun|accepted|standard|-
 overview-zh-dark-transparent|zh-Hans|dark|overview|940x640|connected|transparent|accepted|standard|-
@@ -318,6 +320,8 @@ panel-zh-dark-connected|zh-Hans|dark|overview|380x300|connected|tun|accepted|sta
 panel-en-light-connected|en|light|overview|380x300|connected|transparent|accepted|standard|-|panel
 panel-en-dark-disconnected|en|dark|overview|380x300|disconnected|tun|accepted|standard|-|panel
 panel-zh-light-failed|zh-Hans|light|overview|380x300|failed|tun|accepted|standard|-|panel
+proxies-groups-zh-dark|zh-Hans|dark|proxies|1100x720|connected|tun|accepted|standard|-|main|groups
+proxies-groups-en-light-narrow|en|light|proxies|860x640|connected|tun|accepted|standard|-|main|groups
 CASES
 
 if grep -E \

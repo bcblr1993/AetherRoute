@@ -12194,6 +12194,26 @@
           }
         }
       }
+    },
+    "Uses the first available node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用第一个可用节点"
+          }
+        }
+      }
+    },
+    "Spreads traffic across nodes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在节点间分担流量"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
