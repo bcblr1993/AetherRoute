@@ -47,12 +47,24 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
-        case .overview: "circle.grid.2x2"
-        case .proxies: "point.3.connected.trianglepath.dotted"
+        case .overview: "gauge.with.dots.needle.67percent"
+        case .proxies: "globe"
         case .connections: "arrow.left.arrow.right"
-        case .profiles: "doc.on.doc"
-        case .rules: "list.bullet.rectangle.portrait"
-        case .dns: "network.badge.shield.half.filled"
+        case .profiles: "doc.text.fill"
+        case .rules: "list.bullet"
+        case .dns: "server.rack"
+        }
+    }
+
+    /// The sidebar tile colour, one per page as in System Settings.
+    var tileColor: Color {
+        switch self {
+        case .overview: .blue
+        case .proxies: .indigo
+        case .connections: .green
+        case .profiles: .orange
+        case .rules: .purple
+        case .dns: .teal
         }
     }
 
@@ -170,6 +182,9 @@ struct ContentView: View {
         .accessibilityIdentifier("aetherroute-semantic-root")
         .frame(minWidth: 780, minHeight: 560)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The desktop shows through the window, behind the floating glass
+        // sidebar and cards; Reduce Transparency makes it opaque.
+        .containerBackground(.thinMaterial, for: .window)
         .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.isNetworkSetupRequired)
         .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.hasAcceptedPrivacyDisclosure)
         .id(language.preference)
@@ -395,9 +410,12 @@ struct ContentView: View {
                             isFailed: tunnel.isFailed,
                             size: 6
                         )
+                        // Primary, not secondary: the beacon carries the
+                        // colour, and grey caption text on glass failed the
+                        // contrast audit.
                         Text(tunnel.compactStatusTitle)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.primary)
                             .lineLimit(1)
                             .contentTransition(.opacity)
                             .animation(AetherVisual.animation(AetherVisual.quickFade), value: tunnel.compactStatusTitle)
@@ -423,10 +441,7 @@ struct ContentView: View {
                             selectSection(section)
                         } label: {
                             HStack(spacing: AetherVisual.sCompact) {
-                                SidebarSectionIcon(
-                                    symbol: section.symbol,
-                                    isSelected: selectedSection == section
-                                )
+                                AetherIconTile(symbol: section.symbol, color: section.tileColor)
 
                                 Text(section.title)
                                     .font(.body.weight(.medium))
@@ -445,6 +460,7 @@ struct ContentView: View {
                 }
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
 
             // 3. 底部设置入口
             VStack(spacing: 0) {
@@ -468,23 +484,33 @@ struct ContentView: View {
                 .padding(.horizontal, AetherVisual.s3)
                 .padding(.vertical, AetherVisual.s1)
             }
+            .padding(.bottom, AetherVisual.s2)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .padding(.horizontal, AetherVisual.s1)
+        // A floating Liquid Glass pane inset from the window edges, with the
+        // window controls inside it, as in macOS 26's own apps. The glass is
+        // the system's, so it follows the Liquid Glass and Reduce
+        // Transparency settings.
+        .background {
+            Color.clear
+                .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.sidebarRadius, style: .continuous))
+                .padding(AetherVisual.s2)
+                .ignoresSafeArea(edges: .top)
+        }
     }
 
     private var sidebarSettingsButton: some View {
         Button {
             openSettings()
         } label: {
-            HStack(spacing: AetherVisual.sCompact) {
-                Image(systemName: "gearshape")
-                    .font(.body.weight(.medium))
+            HStack(spacing: AetherVisual.sRow) {
+                AetherIconTile(symbol: "gearshape.fill", color: .gray)
                 Text(AppLocalization.string("Settings"))
                     .font(.callout.weight(.medium))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
-            .foregroundStyle(isSettingsHovered ? Color.primary : Color.secondary)
+            .foregroundStyle(.primary)
             .padding(.vertical, AetherVisual.s2)
             .padding(.horizontal, AetherVisual.sCompact)
             .aetherHoverHighlight(isHovered: isSettingsHovered)
@@ -497,7 +523,7 @@ struct ContentView: View {
 
     private var sidebarVersionLabel: some View {
         Text(verbatim: currentAppVersion)
-            .font(.system(.callout, design: .monospaced, weight: .semibold))
+            .font(.system(.caption, design: .monospaced, weight: .medium))
             .foregroundStyle(.primary)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
@@ -550,7 +576,6 @@ struct ContentView: View {
     private var detail: some View {
         let section = selectedSection ?? .overview
         return ZStack {
-            AetherContentCanvas()
             Group {
                 switch section {
                 case .overview:
@@ -594,62 +619,54 @@ struct ContentView: View {
     }
 }
 
-/// The selected row's icon. On the accent selection fill an accent icon
-/// vanished into the background, so it follows the label to white there;
-/// on the grey fill of an inactive window it keeps the accent.
-private struct SidebarSectionIcon: View {
-    @Environment(\.backgroundProminence) private var backgroundProminence
-    let symbol: String
-    let isSelected: Bool
-
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.title3.weight(.semibold))
-            .frame(width: 18)
-            .foregroundStyle(style)
-    }
-
-    private var style: AnyShapeStyle {
-        guard isSelected else { return AnyShapeStyle(Color.secondary) }
-        return backgroundProminence == .increased
-            ? AnyShapeStyle(.primary)
-            : AnyShapeStyle(Color.accentColor)
-    }
-}
-
-/// One badge style for every sidebar count; counts are information, not
-/// state, so none of them is tinted.
-private struct ConnectionToolbarButton: View {
+/// The connection switch, drawn like the VPN switch in System Settings. It is
+/// still a button named after its action ("Connect", "Disconnect", "Retry",
+/// "Cancel"), so VoiceOver reads the verb and automation finds it as before.
+struct ConnectionSwitch: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    var identifier = "primary-connection-button"
+    var isCompact = false
 
     var body: some View {
         Button {
             Task { await tunnel.setEnabled(!tunnel.isEnabled) }
         } label: {
-            HStack(spacing: AetherVisual.s2) {
-                if tunnel.state == .connecting {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityHidden(true)
-                } else {
-                    // Retry is not a power switch; it gets the retry arrow.
-                    Image(systemName: tunnel.isFailed ? "arrow.clockwise" : "power")
-                        .contentTransition(.symbolEffect(.replace))
-                        .accessibilityHidden(true)
-                }
-                Text(tunnel.primaryActionTitle)
-                    .contentTransition(.opacity)
+            ZStack(alignment: tunnel.isEnabled ? .trailing : .leading) {
+                Capsule()
+                    .fill(tunnel.isEnabled ? Color.green : Color.secondary.opacity(0.32))
+                Circle()
+                    .fill(.white)
+                    .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+                    .padding(3)
+                    .overlay {
+                        if isWorking {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .tint(.gray)
+                                .transition(.opacity)
+                        }
+                    }
             }
-            .font(.body.weight(.semibold))
-            .frame(minWidth: 118)
-            .padding(.vertical, AetherVisual.sMicro)
+            .frame(width: isCompact ? 52 : 62, height: isCompact ? 30 : 34)
+            .contentShape(Capsule())
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
+        .buttonStyle(.aetherPressable)
         .disabled(!tunnel.canPerformPrimaryAction)
-        .accessibilityIdentifier("primary-connection-button")
+        .opacity(tunnel.canPerformPrimaryAction ? 1 : 0.45)
+        .animation(AetherVisual.animation(AetherVisual.switchToggle), value: tunnel.isEnabled)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isWorking)
+        .accessibilityLabel(tunnel.primaryActionTitle)
+        .accessibilityIdentifier(identifier)
         .accessibilityHint(primaryActionHint)
         .help(primaryActionHint)
+    }
+
+    private var isWorking: Bool {
+        if tunnel.isSwitchingNetworkEngine { return true }
+        switch tunnel.state {
+        case .connecting, .recovering, .disconnecting: return true
+        default: return false
+        }
     }
 
     private var primaryActionHint: String {
@@ -670,7 +687,6 @@ private struct ConnectionToolbarButton: View {
         default: AppLocalization.string("Starts the secure connection")
         }
     }
-
 }
 
 private struct OverviewView: View {
@@ -682,34 +698,32 @@ private struct OverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: AetherVisual.sectionSpacing) {
+            VStack(spacing: AetherVisual.sectionSpacing + AetherVisual.s1) {
                 AetherPageHeader(.overview)
                 // With nothing to connect yet, getting a profile is the one
-                // thing to do, so it leads; mode controls that cannot act
-                // yet stay out of the way.
+                // thing to do, so it leads; controls that cannot act yet stay
+                // out of the way.
                 if needsOnboarding {
                     onboardingCard
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
                 ConnectionHero(openProfiles: openProfiles)
-                if !needsOnboarding {
-                    ConnectionControlBar(
-                    networkEngineMode: tunnel.networkEngineMode,
-                    routingMode: tunnel.routingMode,
-                    canChangeNetworkEngine: tunnel.canChangeNetworkEngine,
-                    canChangeRoutingMode: tunnel.canChangeRoutingMode,
-                    selectNetworkEngine: { mode in
-                        Task { await tunnel.setNetworkEngineMode(mode) }
-                    },
-                    selectRoutingMode: { mode in
-                        Task { await tunnel.setRoutingMode(mode) }
-                    }
+                if showsTraffic {
+                    TrafficCard(
+                        isConnected: tunnel.isConnected,
+                        isRealtime: tunnel.isRealtimeTelemetryPreferred,
+                        isBackground: tunnel.isBackgroundTelemetryPreferred,
+                        telemetry: tunnel.telemetryViewModel
                     )
+                    .transition(.opacity)
                 }
-                overviewDetails
+                if !needsOnboarding {
+                    routeSection
+                }
             }
             .aetherPageContent(.wide)
             .animation(AetherVisual.animation(AetherVisual.panelSpring), value: needsOnboarding)
+            .animation(AetherVisual.animation(AetherVisual.panelSpring), value: showsTraffic)
         }
         .sheet(isPresented: $isSubscriptionEditorPresented) {
             SubscriptionEditorSheet(urlText: $subscriptionURL)
@@ -723,14 +737,19 @@ private struct OverviewView: View {
         .accessibilityIdentifier("overview-page")
     }
 
-    /// Everything below the hero and the mode controls. The hero already
-    /// carries the active outlet and route check, so this only holds what is
-    /// shown instead of an outlet (onboarding, the idle route) and traffic.
     private var needsOnboarding: Bool {
         tunnel.activeProfile == nil
             && !tunnel.isConnected
             && !tunnel.systemExtensionApprovalRequired
             && tunnel.state != .privacyConsentRequired
+    }
+
+    /// A failed connection explains itself in the hero; an empty traffic
+    /// card under it would only repeat "nothing is flowing".
+    private var showsTraffic: Bool {
+        guard !needsOnboarding else { return false }
+        if case .failed = tunnel.state { return false }
+        return true
     }
 
     private var onboardingCard: some View {
@@ -750,229 +769,65 @@ private struct OverviewView: View {
         )
     }
 
-    /// What follows the hero. Each state shows only what adds information:
-    /// the planned route while idle, live traffic while connected. A failed
-    /// connection explains itself inside the hero instead of repeating
-    /// "unavailable" in three more cards.
-    private var overviewDetails: some View {
-        VStack(spacing: AetherVisual.sectionSpacing) {
-            if showsRouteSummary {
-                RouteSummary()
-                    .transition(.opacity)
-            }
-            if tunnel.isConnected {
-                TrafficCard(
-                    isConnected: tunnel.isConnected,
-                    isRealtime: tunnel.isRealtimeTelemetryPreferred,
-                    isBackground: tunnel.isBackgroundTelemetryPreferred,
-                    telemetry: tunnel.telemetryViewModel
+    /// Where traffic goes and how: one grouped list, as in System Settings.
+    private var routeSection: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            Text(AppLocalization.string("Overview route section"))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, AetherVisual.s2)
+                .accessibilityAddTraits(.isHeader)
+            VStack(spacing: 0) {
+                OverviewExitRow()
+                OverviewRowDivider()
+                OverviewModeRows(
+                    networkEngineMode: tunnel.networkEngineMode,
+                    routingMode: tunnel.routingMode,
+                    canChangeNetworkEngine: tunnel.canChangeNetworkEngine,
+                    canChangeRoutingMode: tunnel.canChangeRoutingMode,
+                    selectNetworkEngine: { mode in
+                        Task { await tunnel.setNetworkEngineMode(mode) }
+                    },
+                    selectRoutingMode: { mode in
+                        Task { await tunnel.setRoutingMode(mode) }
+                    }
                 )
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                OverviewRowDivider()
+                OverviewRouteCheckRow()
             }
+            .aetherPanel()
         }
-        .frame(maxWidth: .infinity)
-        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.isConnected)
-    }
-
-    private var showsRouteSummary: Bool {
-        guard !tunnel.isConnected, tunnel.activeProfile != nil else { return false }
-        if case .failed = tunnel.state { return false }
-        return true
+        .transition(.opacity)
     }
 }
 
-/// The outlet the active profile is routing through right now: the node, the
-/// group that chose it, and its last latency result.
+/// The outlet the active profile routes through: the node, the group that
+/// chose it, and its last latency result.
 private struct ActiveOutlet: Equatable {
     let groupName: String
     let node: String
-    /// Nil when the profile does not declare the node's protocol inline.
-    let protocolName: String?
-    /// Set when the selected member is itself a group (for example a
-    /// url-test group); its strategy is shown instead of a protocol.
-    let nestedGroupStrategy: String?
     let latency: ProxyLatencyStatus
-    let confidence: ProxyLatencyConfidence
 
     @MainActor
     init?(tunnel: TunnelManager) {
-        guard tunnel.isConnected,
-              let summary = tunnel.activeProfileSummary,
+        guard let summary = tunnel.activeProfileSummary,
               let group = summary.proxyGroups.first(where: { $0.strategy.lowercased() == "select" })
                 ?? summary.proxyGroups.first,
               let node = tunnel.proxySelections[group.name]?.selectedMember
         else { return nil }
         groupName = group.name
         self.node = node
-        protocolName = summary.proxies.first(where: { $0.name == node })?.protocolName
-        nestedGroupStrategy = summary.proxyGroups.first(where: { $0.name == node })?.strategy
         latency = ProxyLatencyStatus.status(
             member: node,
             results: tunnel.proxyLatencies[group.name]?.results,
             isTesting: tunnel.isTestingLatency(group: group.name, member: node)
         )
-        confidence = tunnel.latencyConfidence(group: group.name, member: node)
-    }
-}
-
-/// One row inside the hero: where traffic leaves, how fast that exit last
-/// answered, and the two things people do next (diagnose, switch).
-/// The overview card's leading column: the connection lens, the exit icon
-/// and the route-check symbol share it, so the text beside them lines up.
-private let overviewIdentityColumn: CGFloat = 54
-private let overviewIdentitySpacing = AetherVisual.s4
-
-private struct ActiveOutletRow: View {
-    @Environment(\.openSettings) private var openSettings
-    @EnvironmentObject private var tunnel: TunnelManager
-    let outlet: ActiveOutlet
-    /// The node an automatic group is using right now, read from the chains
-    /// of live connections. Nil for plain nodes or before traffic flows.
-    let resolvedLeaf: String?
-
-    private var displayedNode: String { resolvedLeaf ?? outlet.node }
-
-    private func testLatency() {
-        Task { await tunnel.testSingleProxyLatency(group: outlet.groupName, member: outlet.node) }
-    }
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: AetherVisual.s3) {
-                identity
-                Spacer(minLength: AetherVisual.s2)
-                actions
-            }
-            // Stacked when narrow; leading-aligned like the wide layout
-            // instead of centered in the card.
-            VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                identity
-                actions
-                    .padding(.leading, overviewIdentityColumn + overviewIdentitySpacing)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("overview-active-outlet")
-    }
-
-    private var identity: some View {
-        // The exit sits in the lens's column, so its text starts where the
-        // status title above it does.
-        HStack(spacing: overviewIdentitySpacing) {
-            outletIcon
-                .frame(width: overviewIdentityColumn)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                Text(AppLocalization.string("Exit"))
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Text(displayedNode)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(displayedNode)
-                    .contentTransition(.opacity)
-                    .accessibilityIdentifier("overview-active-outlet-node")
-                HStack(spacing: AetherVisual.sCompact) {
-                    Label(outlet.groupName, systemImage: "square.stack.3d.up")
-                        .labelStyle(.titleAndIcon)
-                        .lineLimit(1)
-                    // "Proxy › Auto": the automatic group that picked the
-                    // node above stays visible as routing context.
-                    if resolvedLeaf != nil {
-                        Text(verbatim: "› \(outlet.node)")
-                            .lineLimit(1)
-                    }
-                    // A nested group shows its strategy (URL-TEST, FALLBACK…);
-                    // a node shows its protocol. Nothing is shown rather than
-                    // a placeholder when neither is known.
-                    if let strategy = outlet.nestedGroupStrategy {
-                        AetherProtocolBadge(type: strategy)
-                    } else if let protocolName = outlet.protocolName {
-                        AetherProtocolBadge(type: protocolName)
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-        }
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: displayedNode)
-    }
-
-    @ViewBuilder
-    private var outletIcon: some View {
-        if let strategy = outlet.nestedGroupStrategy {
-            ZStack {
-                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                            .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
-                    }
-                Image(systemName: proxyGroupSymbol(strategy))
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 36, height: 36)
-        } else {
-            AetherNodeIcon(name: outlet.node, protocolName: outlet.protocolName ?? "", size: 36)
-        }
-    }
-
-    private var actions: some View {
-        HStack(spacing: AetherVisual.s2) {
-            // The exit's latency is a button, as on the Proxies page: it used
-            // to have no tap action and so rendered disabled (dimmed).
-            if outlet.latency == .untested {
-                Button(AppLocalization.string("Test Latency"), systemImage: "bolt") {
-                    testLatency()
-                }
-                .accessibilityIdentifier("overview-test-latency")
-                .transition(.opacity)
-            } else {
-                AetherLatencyPill(status: outlet.latency, confidence: outlet.confidence) {
-                    testLatency()
-                }
-                .help(AppLocalization.string("Test this node again"))
-                .accessibilityIdentifier("overview-latency-pill")
-                .transition(.opacity)
-            }
-
-            Button {
-                openSettings()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    NotificationCenter.default.post(
-                        name: .aetherRouteNavigateToSettings,
-                        object: "diagnostics"
-                    )
-                }
-            } label: {
-                Label(AppLocalization.string("Diagnose"), systemImage: "stethoscope")
-            }
-            .accessibilityIdentifier("overview-diagnose-button")
-            .help(AppLocalization.string("Run end-to-end network connectivity diagnostics."))
-
-            Button {
-                NotificationCenter.default.post(
-                    name: .aetherRouteNavigateToSection,
-                    object: AppSection.proxies.rawValue
-                )
-            } label: {
-                Label(AppLocalization.string("Switch"), systemImage: "arrow.left.arrow.right")
-            }
-            .accessibilityIdentifier("overview-switch-node-button")
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .fixedSize()
     }
 }
 
 /// Why the last connection failed and the next step, shown at the foot of
-/// the hero. Retrying is the hero's own primary button, so this section only
-/// adds what that button cannot: the reason, and a way to the profiles.
+/// the hero. Retrying is the hero's own switch, so this section only adds
+/// what the switch cannot: the reason, and a way to the profiles.
 private struct RecoverySection: View {
     @EnvironmentObject private var tunnel: TunnelManager
     let plan: ConnectionRecoveryPlan
@@ -998,7 +853,7 @@ private struct RecoverySection: View {
                 } label: {
                     Label(AppLocalization.string("Set Up Permissions Again"), systemImage: "lock.shield")
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .accessibilityIdentifier("recovery-networkSetup")
             }
             if plan.primaryAction == .reviewProfiles || plan.secondaryAction == .reviewProfiles {
@@ -1007,9 +862,9 @@ private struct RecoverySection: View {
                 }
                 .accessibilityIdentifier("recovery-reviewProfiles")
                 if plan.primaryAction == .reviewProfiles {
-                    button.buttonStyle(.borderedProminent)
+                    button.aetherGlassButton(prominent: true)
                 } else {
-                    button.buttonStyle(.bordered)
+                    button.aetherGlassButton()
                 }
             }
         }
@@ -1036,39 +891,52 @@ private struct RecoverySection: View {
             AppLocalization.string("AetherRoute could not confirm a healthy connection. Retry once, then review the active profile.")
         }
     }
-
 }
 
+/// The state at a glance: a medallion, one large word and the switch. The
+/// glass takes a faint tint of the state colour, so the card itself reads as
+/// connected, idle or failed before any text is read.
 private struct ConnectionHero: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let openProfiles: () -> Void
 
     var body: some View {
-        let outlet = ActiveOutlet(tunnel: tunnel)
-        let quality = ConnectionQualityPolicy.displayedQuality(
-            tunnel.connectionQuality, isConnected: tunnel.isConnected
-        )
-        VStack(spacing: AetherVisual.s4) {
-            HStack(spacing: AetherVisual.s6) {
-                connectionIdentity
-                ConnectionToolbarButton()
-                    .environmentObject(tunnel)
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            HStack(spacing: AetherVisual.s5) {
+                ConnectionMedallion(phase: phase)
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                    Text(tunnel.compactStatusTitle)
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .contentTransition(.opacity)
+                        .accessibilityIdentifier("overview-status-title")
+                        .accessibilityValue(Text(tunnel.statusDetail))
+                    heroSubtitle
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .contentTransition(.opacity)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                ConnectionSwitch()
+            }
+            if let nextStep {
+                Label {
+                    Text(nextStep)
+                } icon: {
+                    Image(systemName: nextStepSymbol)
+                        .foregroundStyle(tunnel.isFailed ? Color.orange : Color.accentColor)
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, ConnectionMedallion.heroSize + AetherVisual.s5)
+                .transition(.opacity)
             }
             if tunnel.systemExtensionApprovalRequired {
                 approvalControls
                     .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-            // State, exit and route check answer one question ("is my
-            // traffic going where I think?"), so they share one card.
-            if let outlet {
-                Divider()
-                ActiveOutletRow(outlet: outlet, resolvedLeaf: tunnel.automaticGroupLeaves[outlet.node])
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-            if tunnel.isConnected {
-                RouteQualityLine(quality: quality, checkedAt: tunnel.connectionQualityCheckedAt)
-                    .transition(.opacity)
             }
             if let plan = tunnel.recoveryPlan {
                 Divider()
@@ -1076,9 +944,12 @@ private struct ConnectionHero: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(AetherVisual.s5)
+        .padding(AetherVisual.s6)
         .frame(maxWidth: .infinity)
-        .aetherPanel()
+        .aetherGlass(
+            in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous),
+            tint: phase.color.opacity(phase == .idle ? 0 : 0.14)
+        )
         .overlay(alignment: .top) {
             if tunnel.state == .connecting {
                 ConnectionLuminousBar()
@@ -1094,10 +965,16 @@ private struct ConnectionHero: View {
                     .transition(.opacity)
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("overview-hero")
         .animation(
             effectiveReduceMotion ? nil : .smooth(duration: 0.34),
             value: tunnel.state
         )
+    }
+
+    private var phase: ConnectionMedallion.Phase {
+        ConnectionMedallion.Phase(tunnel: tunnel)
     }
 
     private var approvalControls: some View {
@@ -1116,14 +993,14 @@ private struct ConnectionHero: View {
                 } label: {
                     Label("Open System Settings", systemImage: "gearshape")
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .accessibilityIdentifier("extension-approval-open-settings")
                 Button {
                     Task { await tunnel.recheckSystemExtensionApproval() }
                 } label: {
                     Label("Check Again", systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(.bordered)
+                .aetherGlassButton()
                 .accessibilityIdentifier("extension-approval-recheck")
             }
             .controlSize(.large)
@@ -1137,82 +1014,30 @@ private struct ConnectionHero: View {
         reduceMotion || uiReviewRequestsReducedMotion
     }
 
-    /// Any transition in progress orbits the ring, including recovery and
-    /// the stop, so the lens never looks settled while work is under way.
-    private var isWorking: Bool {
-        if tunnel.isSwitchingNetworkEngine { return true }
-        switch tunnel.state {
-        case .connecting, .recovering, .disconnecting: return true
-        default: return false
-        }
-    }
-
-    private var isFailed: Bool {
-        if case .failed = tunnel.state { return true }
-        return false
-    }
-
-    private var connectionIdentity: some View {
-        HStack(spacing: overviewIdentitySpacing) {
-            AetherRouteStatusLens(
-                size: overviewIdentityColumn,
-                isActive: tunnel.isConnected,
-                isConnecting: isWorking,
-                isFailed: isFailed
-            )
-
-            VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                Text(tunnel.statusTitle)
-                    .font(.title.weight(.semibold))
-                    .tracking(-0.45)
-                    .foregroundStyle(.primary)
-                    .contentTransition(.opacity)
-                    .accessibilityValue(Text(tunnel.statusDetail))
-                heroSubtitle
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .contentTransition(.opacity)
-                    .accessibilityHidden(true)
-                if (!tunnel.isConnected || tunnel.isAutomaticRouteRecovering || tunnel.isSwitchingNetworkEngine)
-                    && tunnel.recoveryPlan == nil {
-                    // A step below the status, so it reads below the
-                    // subtitle too; the tinted icon is what draws the eye.
-                    Label {
-                        Text(nextStep)
-                    } icon: {
-                        Image(systemName: nextStepSymbol)
-                            .foregroundStyle(tunnel.isFailed ? Color.orange : Color.accentColor)
-                    }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .contentTransition(.opacity)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// While connected, how long the session has held says more than the
-    /// extension's readiness; other states keep their explanation.
+    /// While connected: how long, and through which node. Otherwise the
+    /// state's own explanation.
     @ViewBuilder
     private var heroSubtitle: some View {
         if tunnel.isConnected, !tunnel.isAutomaticRouteRecovering, let since = tunnel.connectedSince {
+            let node = ActiveOutlet(tunnel: tunnel).map { tunnel.automaticGroupLeaves[$0.node] ?? $0.node }
             TimelineView(.periodic(from: since, by: 60)) { context in
-                Text(
-                    String.localizedStringWithFormat(
-                        AppLocalization.string("Connected for %@"),
-                        AppLocalization.duration(context.date.timeIntervalSince(since))
-                    )
-                )
+                let duration = AppLocalization.duration(context.date.timeIntervalSince(since))
+                if let node {
+                    Text(String.localizedStringWithFormat(AppLocalization.string("Connected for %@ · via %@"), duration, node))
+                } else {
+                    Text(String.localizedStringWithFormat(AppLocalization.string("Connected for %@"), duration))
+                }
             }
+        } else if tunnel.state == .disconnected, tunnel.activeProfile != nil {
+            Text(AppLocalization.string("Traffic uses the normal network. Turn on the switch to connect."))
         } else {
             Text(tunnel.statusDetail)
         }
     }
 
-    private var nextStep: String {
+    /// A next step only where the switch alone does not say what to do.
+    private var nextStep: String? {
+        guard tunnel.recoveryPlan == nil else { return nil }
         if tunnel.systemExtensionApprovalRequired {
             return AppLocalization.string("Open System Settings to allow the network extension.")
         }
@@ -1224,10 +1049,8 @@ private struct ConnectionHero: View {
             AppLocalization.string("Review the privacy disclosure to unlock connection controls.")
         case .loading:
             AppLocalization.string("AetherRoute is preparing the local extension configuration.")
-        case .disconnected:
-            tunnel.activeProfile == nil
-                ? AppLocalization.string("Import or select a profile before connecting.")
-                : AppLocalization.string("Connect when ready, or review the active profile first.")
+        case .disconnected where tunnel.activeProfile == nil:
+            AppLocalization.string("Import or select a profile before connecting.")
         case .connecting:
             AppLocalization.string("You can cancel safely while readiness checks are running.")
         case .recovering:
@@ -1236,12 +1059,12 @@ private struct ConnectionHero: View {
             AppLocalization.string(
                 "The tunnel remains active while AetherRoute retries the fastest available node."
             )
-        case .connected:
-            AppLocalization.string("Open Connections for per-flow details. Route checks are shown separately below.")
         case .disconnecting:
             AppLocalization.string("Wait while the normal network path is restored.")
         case .failed:
             AppLocalization.string("Retry once, then review the active profile and diagnostics.")
+        case .disconnected, .connected:
+            nil
         }
     }
 
@@ -1249,10 +1072,7 @@ private struct ConnectionHero: View {
         if tunnel.systemExtensionApprovalRequired { return "hand.raised.fill" }
         if tunnel.isSwitchingNetworkEngine { return "arrow.triangle.2.circlepath" }
         return switch tunnel.state {
-        case .connected where tunnel.isAutomaticRouteRecovering:
-            "arrow.triangle.2.circlepath"
-        case .recovering: "arrow.triangle.2.circlepath"
-        case .connected: "checkmark.circle.fill"
+        case .connected, .recovering: "arrow.triangle.2.circlepath"
         case .failed: "exclamationmark.triangle.fill"
         case .connecting, .disconnecting, .loading: "clock"
         case .privacyConsentRequired: "hand.raised.fill"
@@ -1261,6 +1081,84 @@ private struct ConnectionHero: View {
     }
 }
 
+/// A shield in a filled circle of the state colour. While work is under way
+/// an arc orbits it, so it never looks settled mid-change. Shared by the
+/// overview hero and the menu bar panel.
+struct ConnectionMedallion: View {
+    enum Phase: Equatable {
+        case connected, working, failed, idle
+
+        @MainActor
+        init(tunnel: TunnelManager) {
+            if tunnel.isSwitchingNetworkEngine {
+                self = .working
+                return
+            }
+            switch tunnel.state {
+            case .connected where tunnel.isAutomaticRouteRecovering: self = .working
+            case .connected: self = .connected
+            case .connecting, .recovering, .disconnecting: self = .working
+            case .failed: self = .failed
+            default: self = .idle
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .connected: .green
+            case .working: .orange
+            case .failed: .red
+            case .idle: Color(nsColor: .systemGray)
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .connected: "checkmark.shield.fill"
+            case .working: "shield.fill"
+            case .failed: "exclamationmark.shield.fill"
+            case .idle: "shield.slash.fill"
+            }
+        }
+    }
+
+    static let heroSize: CGFloat = 64
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let phase: Phase
+    var size: CGFloat = ConnectionMedallion.heroSize
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(phase.color.opacity(0.18))
+                .padding(-size * 0.11)
+            Circle()
+                .fill(phase.color.gradient)
+            Image(systemName: phase.symbol)
+                .font(.system(size: size * 0.44, weight: .semibold))
+                .foregroundStyle(.white)
+                .contentTransition(.symbolEffect(.replace))
+            if phase == .working {
+                TimelineView(.animation(paused: reduceMotion || uiReviewRequestsReducedMotion)) { context in
+                    Circle()
+                        .trim(from: 0, to: 0.28)
+                        .stroke(phase.color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .padding(-size * 0.11)
+                        .rotationEffect(.degrees(angle(at: context.date)))
+                }
+                .transition(.opacity)
+            }
+        }
+        .frame(width: size, height: size)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: phase)
+        .accessibilityHidden(true)
+    }
+
+    private func angle(at date: Date) -> Double {
+        guard !(reduceMotion || uiReviewRequestsReducedMotion) else { return -90 }
+        return date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2 * 360
+    }
+}
 
 /// A mode's effect beside its heading. It cross-fades when the choice
 /// changes, so the sentence visibly follows the control.
@@ -1278,7 +1176,104 @@ struct ModeHint: View {
     }
 }
 
-private struct ConnectionControlBar: View {
+// MARK: - Route rows
+
+/// One System Settings-style row: a colour tile, a title, then the value or
+/// control on the trailing edge.
+private struct OverviewRow<Trailing: View>: View {
+    let symbol: String
+    let tint: Color
+    let title: String
+    var help: HelpTopic?
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: AetherVisual.s3) {
+            AetherIconTile(symbol: symbol, color: tint, size: 26)
+            HStack(spacing: AetherVisual.s1) {
+                Text(title)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .fixedSize()
+                if let help {
+                    AetherHelpButton(topic: help)
+                        .controlSize(.small)
+                }
+            }
+            Spacer(minLength: AetherVisual.s3)
+            trailing
+        }
+        .frame(minHeight: 52)
+        .padding(.horizontal, AetherVisual.s4)
+    }
+}
+
+private struct OverviewRowDivider: View {
+    var body: some View {
+        Divider()
+            .padding(.leading, AetherVisual.s4 + 26 + AetherVisual.s3)
+    }
+}
+
+/// The exit node; the whole row opens the Proxies page to change it.
+private struct OverviewExitRow: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+
+    var body: some View {
+        let outlet = ActiveOutlet(tunnel: tunnel)
+        Button {
+            NotificationCenter.default.post(
+                name: .aetherRouteNavigateToSection,
+                object: AppSection.proxies.rawValue
+            )
+        } label: {
+            OverviewRow(symbol: "globe", tint: .indigo, title: AppLocalization.string("Exit node")) {
+                HStack(spacing: AetherVisual.s2) {
+                    if let outlet {
+                        let node = tunnel.automaticGroupLeaves[outlet.node] ?? outlet.node
+                        AetherRegionCode(name: node, reservesSlot: false)
+                        Text(node)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .accessibilityIdentifier("overview-active-outlet-node")
+                        if outlet.latency != .untested || tunnel.isConnected {
+                            ProxyLatencyText(status: outlet.latency)
+                        }
+                    } else {
+                        Text(AppLocalization.string("Choose a node"))
+                            .foregroundStyle(.secondary)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.aetherPressable)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(AppLocalization.string("Opens Proxies to change the node"))
+        .accessibilityIdentifier("overview-active-outlet")
+        // The selection is read from the extension (or the profile while
+        // disconnected); without this the row said "Choose a node" until
+        // the Proxies page had been opened once.
+        .task(id: "\(primaryGroupName ?? ""):\(tunnel.isConnected)") {
+            guard let primaryGroupName else { return }
+            await tunnel.refreshProxySelection(group: primaryGroupName)
+        }
+    }
+
+    private var primaryGroupName: String? {
+        let groups = tunnel.activeProfileSummary?.proxyGroups ?? []
+        return (groups.first { $0.strategy.lowercased() == "select" } ?? groups.first)?.name
+    }
+}
+
+/// Routing mode and network engine. Takes plain values rather than observing
+/// the tunnel, so the native segmented controls only update when a mode
+/// actually changes.
+private struct OverviewModeRows: View {
     let networkEngineMode: NetworkEngineMode
     let routingMode: RoutingMode
     let canChangeNetworkEngine: Bool
@@ -1287,87 +1282,162 @@ private struct ConnectionControlBar: View {
     let selectRoutingMode: (RoutingMode) -> Void
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: AetherVisual.s4) {
-                routingControls
-#if AETHERROUTE_INDEPENDENT
-                Divider()
-                    .frame(height: 38)
-                    .opacity(0.4)
-                engineControls
-                    .frame(minWidth: 220)
-#endif
+        VStack(spacing: 0) {
+            OverviewRow(
+                symbol: "arrow.triangle.branch",
+                tint: .orange,
+                title: AppLocalization.string("Routing mode"),
+                help: .routingMode
+            ) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: AetherVisual.s3) {
+                        ModeHint(text: routingMode.shortHint)
+                        routingPicker
+                    }
+                    routingPicker
+                }
             }
-            VStack(alignment: .leading, spacing: AetherVisual.s4) {
-                routingControls
 #if AETHERROUTE_INDEPENDENT
-                engineControls
-#endif
+            OverviewRowDivider()
+            OverviewRow(
+                symbol: networkEngineMode == .tun ? "bolt.shield.fill" : "shield.fill",
+                tint: .blue,
+                title: AppLocalization.string("Network engine"),
+                help: .networkEngine
+            ) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: AetherVisual.s3) {
+                        ModeHint(text: networkEngineMode.shortHint)
+                        enginePicker
+                    }
+                    enginePicker
+                }
             }
+#endif
         }
-        .padding(.horizontal, AetherVisual.s4)
-        .padding(.vertical, AetherVisual.sRow)
-        .aetherPanel()
     }
 
-    private var routingControls: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.sCompact) {
-            HStack(spacing: AetherVisual.sCompact) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .accessibilityHidden(true)
-                Text(AppLocalization.string("Routing mode"))
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.primary)
-                AetherHelpButton(topic: .routingMode)
-                    .controlSize(.small)
-                ModeHint(text: routingMode.shortHint)
-            }
-            RoutingModeSegmentedControl(
-                selection: Binding(
-                    get: { routingMode },
-                    set: { mode in selectRoutingMode(mode) }
-                ),
-                isEnabled: canChangeRoutingMode
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    private var routingPicker: some View {
+        RoutingModeSegmentedControl(
+            selection: Binding(
+                get: { routingMode },
+                set: { mode in selectRoutingMode(mode) }
+            ),
+            isEnabled: canChangeRoutingMode
+        )
+        .frame(width: 240)
     }
 
 #if AETHERROUTE_INDEPENDENT
-    private var engineControls: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.sCompact) {
-            HStack(spacing: AetherVisual.sCompact) {
-                Image(systemName: networkEngineMode == .tun ? "bolt.shield.fill" : "network")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .accessibilityHidden(true)
-                Text(AppLocalization.string("Network engine"))
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.primary)
-                AetherHelpButton(topic: .networkEngine)
-                    .controlSize(.small)
-                ModeHint(text: networkEngineMode.shortHint)
-            }
-            NetworkEngineSegmentedControl(
-                selection: Binding(
-                    get: { networkEngineMode },
-                    set: { mode in selectNetworkEngine(mode) }
-                ),
-                isEnabled: canChangeNetworkEngine
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    private var enginePicker: some View {
+        NetworkEngineSegmentedControl(
+            selection: Binding(
+                get: { networkEngineMode },
+                set: { mode in selectNetworkEngine(mode) }
+            ),
+            isEnabled: canChangeNetworkEngine
+        )
+        .frame(width: 200)
     }
 #endif
 }
 
+/// Route quality behind a tunnel that is already carrying traffic. The
+/// tunnel being up and the route being fast are separate questions; this
+/// answers the second without implying the first is in doubt.
+private struct OverviewRouteCheckRow: View {
+    @Environment(\.openSettings) private var openSettings
+    @EnvironmentObject private var tunnel: TunnelManager
+
+    var body: some View {
+        let quality = ConnectionQualityPolicy.displayedQuality(
+            tunnel.connectionQuality, isConnected: tunnel.isConnected
+        )
+        OverviewRow(symbol: "checkmark.seal.fill", tint: .green, title: AppLocalization.string("Route check")) {
+            HStack(spacing: AetherVisual.s3) {
+                if tunnel.isConnected {
+                    Label {
+                        Text(title(quality))
+                    } icon: {
+                        Image(systemName: symbol(quality))
+                            .foregroundStyle(tint(quality))
+                            .symbolEffect(.pulse, isActive: quality == .verifying)
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .help(detail(quality))
+                    Button(AppLocalization.string("Check")) {
+                        openSettings()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            NotificationCenter.default.post(
+                                name: .aetherRouteNavigateToSettings,
+                                object: "diagnostics"
+                            )
+                        }
+                    }
+                    .aetherGlassButton()
+                    .controlSize(.small)
+                    .help(AppLocalization.string("Run end-to-end network connectivity diagnostics."))
+                    .accessibilityIdentifier("overview-diagnose-button")
+                } else {
+                    Text(AppLocalization.string("Available once connected"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("overview-route-quality")
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: quality)
+    }
+
+    private func symbol(_ quality: ConnectionQuality?) -> String {
+        switch quality {
+        case nil, .unknown: "questionmark.circle"
+        case .verifying: "gauge.with.dots.needle.bottom.50percent"
+        case .verified: "checkmark.circle.fill"
+        case .degraded: "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func tint(_ quality: ConnectionQuality?) -> Color {
+        switch quality {
+        case nil, .unknown: .secondary
+        case .verifying: Color.accentColor
+        case .verified: .green
+        case .degraded: .orange
+        }
+    }
+
+    private func title(_ quality: ConnectionQuality?) -> String {
+        switch quality {
+        case nil, .unknown: AppLocalization.string("Not checked yet")
+        case .verifying: AppLocalization.string("Checking route quality")
+        case .verified: AppLocalization.string("Route verified")
+        case .degraded: AppLocalization.string("Route check incomplete")
+        }
+    }
+
+    private func detail(_ quality: ConnectionQuality?) -> String {
+        switch quality {
+        case nil, .unknown:
+            AppLocalization.string("Traffic is already routed. Use Diagnose to check the selected exit.")
+        case .verifying:
+            AppLocalization.string("The tunnel is connected. AetherRoute is checking the selected route in the background.")
+        case .verified:
+            AppLocalization.string("The selected route answered the latency and data-plane checks.")
+        case .degraded:
+            AppLocalization.string("Still connected. The route did not complete its checks within the time limit; target availability is not confirmed.")
+        }
+    }
+}
+
 #if AETHERROUTE_INDEPENDENT
 struct NetworkEngineSegmentedControl: NSViewRepresentable {
-    @Environment(\.controlActiveState) private var controlActiveState
     @Binding var selection: NetworkEngineMode
     let isEnabled: Bool
+    /// The menu bar panel: see `NSSegmentedControl.markSelectedSegment`.
+    var marksSelection = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(selection: $selection)
@@ -1396,15 +1466,13 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
         }
         control.selectedSegment = modes.firstIndex(of: selection) ?? -1
         control.isEnabled = isEnabled
-        control.markSelectedSegment(onAccentFill: controlActiveState == .key)
+        if marksSelection {
+            control.markSelectedSegment()
+        }
         // Equal segments, like the routing-mode control beside it, so the two
         // controls read as a pair. When a translation no longer fits, the bar
         // above stacks the controls vertically instead of squeezing them.
         control.segmentDistribution = .fillEqually
-        // The default selected bezel is a faint grey step that almost
-        // disappears on dark materials; the accent fill reads at a glance
-        // and matches the connection toggle above it.
-        control.selectedSegmentBezelColor = .controlAccentColor
         control.setContentHuggingPriority(.defaultLow, for: .horizontal)
         control.setAccessibilityIdentifier("network-engine-picker")
         control.setAccessibilityLabel(AppLocalization.string("Network engine"))
@@ -1420,7 +1488,9 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
         @MainActor @objc func selectionChanged(_ sender: NSSegmentedControl) {
             let modes = NetworkEngineMode.allCases
             guard modes.indices.contains(sender.selectedSegment) else { return }
-            sender.markSelectedSegment(onAccentFill: sender.window?.isKeyWindow == true)
+            if (0..<sender.segmentCount).contains(where: { sender.image(forSegment: $0) != nil }) {
+                sender.markSelectedSegment()
+            }
             selection.wrappedValue = modes[sender.selectedSegment]
         }
     }
@@ -1428,9 +1498,10 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
 #endif
 
 struct RoutingModeSegmentedControl: NSViewRepresentable {
-    @Environment(\.controlActiveState) private var controlActiveState
     @Binding var selection: RoutingMode
     let isEnabled: Bool
+    /// The menu bar panel: see `NSSegmentedControl.markSelectedSegment`.
+    var marksSelection = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(selection: $selection)
@@ -1459,12 +1530,10 @@ struct RoutingModeSegmentedControl: NSViewRepresentable {
         }
         control.selectedSegment = modes.firstIndex(of: selection) ?? -1
         control.isEnabled = isEnabled
-        control.markSelectedSegment(onAccentFill: controlActiveState == .key)
+        if marksSelection {
+            control.markSelectedSegment()
+        }
         control.segmentDistribution = .fillEqually
-        // The default selected bezel is a faint grey step that almost
-        // disappears on dark materials; the accent fill reads at a glance
-        // and matches the connection toggle above it.
-        control.selectedSegmentBezelColor = .controlAccentColor
         control.setContentHuggingPriority(.defaultLow, for: .horizontal)
         control.setAccessibilityIdentifier("routing-mode-picker")
         control.setAccessibilityLabel(AppLocalization.string("Routing mode"))
@@ -1480,191 +1549,11 @@ struct RoutingModeSegmentedControl: NSViewRepresentable {
         @MainActor @objc func selectionChanged(_ sender: NSSegmentedControl) {
             let modes = RoutingMode.allCases
             guard modes.indices.contains(sender.selectedSegment) else { return }
-            sender.markSelectedSegment(onAccentFill: sender.window?.isKeyWindow == true)
+            if (0..<sender.segmentCount).contains(where: { sender.image(forSegment: $0) != nil }) {
+                sender.markSelectedSegment()
+            }
             selection.wrappedValue = modes[sender.selectedSegment]
         }
-    }
-}
-
-private struct RouteSummary: View {
-    @EnvironmentObject private var tunnel: TunnelManager
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            HStack {
-                Text("Current route")
-                    .font(.headline)
-                Spacer()
-                Label(routeStatus.title, systemImage: routeStatus.symbol)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-            }
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: AetherVisual.s2) {
-                    routeStops(horizontal: true)
-                }
-                .frame(maxWidth: .infinity)
-
-                VStack(spacing: AetherVisual.s2) {
-                    routeStops(horizontal: false)
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-        .padding(.horizontal, AetherVisual.s4)
-        .padding(.vertical, AetherVisual.sRow)
-        .aetherPanel()
-    }
-
-    @ViewBuilder
-    private func routeStops(horizontal: Bool) -> some View {
-        RouteStop(
-            identifier: "overview-route-device",
-            symbol: "laptopcomputer",
-            caption: "Device",
-            value: AppLocalization.string("This Mac")
-        )
-        RouteConnector(isHorizontal: horizontal)
-        RouteStop(
-            identifier: "overview-route-policy",
-            symbol: "arrow.triangle.branch",
-            caption: "Policy",
-            value: tunnel.activeProfile?.name
-                ?? AppLocalization.string("No profile")
-        )
-        RouteConnector(isHorizontal: horizontal)
-        RouteStop(
-            identifier: "overview-route-exit",
-            symbol: "network",
-            caption: "Exit",
-            value: routeExit
-        )
-    }
-
-    private var routeExit: String {
-        switch tunnel.state {
-        case .privacyConsentRequired: AppLocalization.string("Privacy review")
-        case .loading: AppLocalization.string("Preparing")
-        case .disconnected: AppLocalization.string("Normal network")
-        case .connecting: AppLocalization.string("Starting")
-        case .recovering: AppLocalization.string("Recovering network")
-        case .connected where tunnel.isAutomaticRouteRecovering:
-            AppLocalization.string("Retrying nodes")
-        case .connected: AppLocalization.string("Extension ready")
-        case .disconnecting: AppLocalization.string("Stopping")
-        case .failed: AppLocalization.string("Unavailable")
-        }
-    }
-
-    private var routeStatus: (title: String, symbol: String, color: Color) {
-        switch tunnel.state {
-        case .privacyConsentRequired:
-            (AppLocalization.string("Privacy review"), "hand.raised.fill", .orange)
-        case .loading:
-            (AppLocalization.string("Preparing"), "circle.dotted", .secondary)
-        case .disconnected:
-            (AppLocalization.string("Standby"), "pause.circle", .secondary)
-        case .connecting:
-            (AppLocalization.string("Starting"), "progress.indicator", .orange)
-        case .recovering:
-            (AppLocalization.string("Recovering network"), "arrow.triangle.2.circlepath", .orange)
-        case .connected where tunnel.isAutomaticRouteRecovering:
-            (AppLocalization.string("Recovering"), "arrow.triangle.2.circlepath", .orange)
-        case .connected:
-            (AppLocalization.string("Active"), "checkmark.circle.fill", .teal)
-        case .disconnecting:
-            (AppLocalization.string("Stopping"), "progress.indicator", .orange)
-        case .failed:
-            (AppLocalization.string("Unavailable"), "exclamationmark.triangle.fill", .red)
-        }
-    }
-}
-
-
-private struct RouteStop: View {
-    let identifier: String
-    let symbol: String
-    let caption: LocalizedStringKey
-    let value: String
-
-    var body: some View {
-        HStack(spacing: AetherVisual.s3) {
-            ZStack {
-                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.12))
-                Image(systemName: symbol)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-            }
-            .frame(width: 32, height: 32)
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                Text(caption)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                Text(value)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .help(value)
-            }
-        }
-        .padding(.horizontal, AetherVisual.s3)
-        .padding(.vertical, AetherVisual.s2)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            Color(nsColor: .controlBackgroundColor).opacity(0.85),
-            in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 0.5)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(identifier)
-    }
-}
-
-private struct RouteConnector: View {
-    let isHorizontal: Bool
-
-    var body: some View {
-        Group {
-            if isHorizontal {
-                HStack(spacing: AetherVisual.sMicro) {
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.accentColor.opacity(0.35), Color.accentColor.opacity(0.15)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(height: 1.5)
-                        .frame(minWidth: 10)
-                    Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.bold))
-                        .imageScale(.small)
-                        .foregroundStyle(Color.accentColor.opacity(0.55))
-                }
-                .frame(maxWidth: 36)
-            } else {
-                VStack(spacing: AetherVisual.sMicro) {
-                    Rectangle()
-                        .fill(Color.accentColor.opacity(0.3))
-                        .frame(width: 1.5, height: 8)
-                    Image(systemName: "chevron.down")
-                        .font(.caption2.weight(.bold))
-                        .imageScale(.small)
-                        .foregroundStyle(Color.accentColor.opacity(0.55))
-                }
-                .frame(height: 14)
-            }
-        }
-        .accessibilityHidden(true)
     }
 }
 
@@ -1674,24 +1563,24 @@ private enum LiveTelemetryMetricKind {
     case connections
 }
 
-/// The label, SF Symbol and panel layout remain structurally stable while only
-/// the numeric text observes high-frequency telemetry updates.
-private struct LiveTelemetryMetricTile: View {
-    let label: LocalizedStringKey
-    let symbol: String
-    let tint: Color
+/// A metric's label stays put while only the number observes high-frequency
+/// telemetry updates.
+private struct LiveTelemetryMetric: View {
+    let label: String
+    let dot: Color?
     let metric: LiveTelemetryMetricKind
     let isConnected: Bool
     let telemetry: NetworkTelemetryViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            Label {
+        VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+            HStack(spacing: AetherVisual.sCompact) {
+                if let dot {
+                    Circle().fill(dot).frame(width: 7, height: 7)
+                }
                 Text(label)
-            } icon: {
-                Image(systemName: symbol).foregroundStyle(tint)
             }
-            .font(.subheadline.weight(.medium))
+            .font(.caption)
             .foregroundStyle(.secondary)
             LiveTelemetryMetricValue(
                 metric: metric,
@@ -1699,22 +1588,30 @@ private struct LiveTelemetryMetricTile: View {
                 telemetry: telemetry
             )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(AetherVisual.s4)
+        .accessibilityElement(children: .combine)
     }
 }
 
+/// The number large and the unit small, as in Apple's Activity app.
 private struct LiveTelemetryMetricValue: View {
     let metric: LiveTelemetryMetricKind
     let isConnected: Bool
     @ObservedObject var telemetry: NetworkTelemetryViewModel
 
     var body: some View {
-        Text(value)
-            .font(.title2.weight(.medium))
-            .foregroundStyle(.primary)
-            .monospacedDigit()
-            .aetherNumericValue(value)
+        let parts = split(value)
+        HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s1) {
+            Text(parts.number)
+                .font(.system(size: 30, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(isConnected ? Color.primary : Color.secondary)
+                .aetherNumericValue(parts.number)
+            if let unit = parts.unit {
+                Text(unit)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var value: String {
@@ -1728,100 +1625,15 @@ private struct LiveTelemetryMetricValue: View {
             return String(telemetry.snapshot.connections.count)
         }
     }
-}
 
-/// Reports route quality behind a tunnel that is already carrying traffic.
-///
-/// The tunnel being up and the selected route being fast are separate
-/// questions. This answers the second one without ever implying the first is
-/// in doubt, so a slow node reads as "still working, looking for better"
-/// rather than as a failure. It sits at the foot of the hero, next to the
-/// exit it describes.
-private struct RouteQualityLine: View {
-    let quality: ConnectionQuality?
-    let checkedAt: Date?
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
-            // Same column as the lens and the exit icon above.
-            Image(systemName: symbol)
-                .foregroundStyle(tint)
-                .symbolEffect(.pulse, isActive: quality == .verifying)
-                .frame(width: overviewIdentityColumn)
-                .padding(.trailing, overviewIdentitySpacing - AetherVisual.s2)
-                .accessibilityHidden(true)
-            Text(title)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary)
-                .accessibilityHint(Text(detail))
-            if let checkedAt, quality != nil {
-                Text(checkedAt, format: .dateTime.hour().minute().second())
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityHidden(true)
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("overview-route-quality")
-        .animation(
-            AetherVisual.animation(AetherVisual.gentleSpring),
-            value: quality
-        )
-    }
-
-    private var symbol: String {
-        switch quality {
-        case nil, .unknown: "questionmark.circle"
-        case .verifying: "gauge.with.dots.needle.bottom.50percent"
-        case .verified: "checkmark.shield"
-        case .degraded: "exclamationmark.triangle"
-        }
-    }
-
-    private var tint: Color {
-        switch quality {
-        case nil, .unknown: .secondary
-        case .verifying: Color.accentColor
-        case .verified: .green
-        case .degraded: .orange
-        }
-    }
-
-    private var title: LocalizedStringKey {
-        switch quality {
-        case nil, .unknown: "Route not checked"
-        case .verifying: "Checking route quality"
-        case .verified: "Route verified"
-        case .degraded: "Route check incomplete"
-        }
-    }
-
-    private var detail: LocalizedStringKey {
-        switch quality {
-        case nil, .unknown:
-            "Traffic is already routed. Use Diagnose to check the selected exit."
-        case .verifying:
-            "The tunnel is connected. AetherRoute is checking the selected route in the background."
-        case .verified:
-            "The selected route answered the latency and data-plane checks."
-        case .degraded:
-            "Still connected. The route did not complete its checks within the time limit; target availability is not confirmed."
-        }
+    private func split(_ text: String) -> (number: String, unit: String?) {
+        guard let space = text.lastIndex(of: " ") else { return (text, nil) }
+        return (String(text[..<space]), String(text[text.index(after: space)...]))
     }
 }
 
-/// Download, upload and connection count, with the last 30 seconds drawn
-/// underneath. The card states the real refresh cadence: every 3 s when
-/// frontmost, every 10 s when visible behind another app, and paused (graph
-/// frozen at the last sample) when nothing is visible, instead of letting the
-/// graph drain empty beside numbers that look live.
+/// Download, upload and connection count above the last 30 seconds of
+/// traffic. While disconnected it keeps its place and says what will appear.
 private struct TrafficCard: View {
     let isConnected: Bool
     let isRealtime: Bool
@@ -1829,64 +1641,60 @@ private struct TrafficCard: View {
     let telemetry: NetworkTelemetryViewModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                LiveTelemetryMetricTile(
-                    label: "Download",
-                    symbol: "arrow.down",
-                    tint: .cyan,
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(AppLocalization.string("Live traffic"))
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: AetherVisual.s2)
+                Text(AppLocalization.string("Last 30 seconds"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            HStack(alignment: .bottom, spacing: AetherVisual.s6 * 2) {
+                LiveTelemetryMetric(
+                    label: AppLocalization.string("Download"),
+                    dot: .cyan,
                     metric: .download,
                     isConnected: isConnected,
                     telemetry: telemetry
                 )
-                Divider().frame(height: 40)
-                LiveTelemetryMetricTile(
-                    label: "Upload",
-                    symbol: "arrow.up",
-                    tint: .purple,
+                LiveTelemetryMetric(
+                    label: AppLocalization.string("Upload"),
+                    dot: .purple,
                     metric: .upload,
                     isConnected: isConnected,
                     telemetry: telemetry
                 )
-                Divider().frame(height: 40)
-                LiveTelemetryMetricTile(
-                    label: "Active connections",
-                    symbol: "point.3.connected.trianglepath.dotted",
-                    tint: .secondary,
+                LiveTelemetryMetric(
+                    label: AppLocalization.string("Active connections"),
+                    dot: nil,
                     metric: .connections,
                     isConnected: isConnected,
                     telemetry: telemetry
                 )
+                Spacer(minLength: 0)
             }
-
             if isConnected {
-                Divider()
-                    .padding(.horizontal, AetherVisual.s4)
-                VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                    HStack(spacing: AetherVisual.s3) {
-                        Label(AppLocalization.string("Traffic · Last 30 seconds"), systemImage: "chart.xyaxis.line")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        Spacer(minLength: AetherVisual.s2)
-                        legend(color: .cyan, title: "Download")
-                        legend(color: .purple, title: "Upload")
+                LiveTrafficHistoryGraph(model: telemetry, isRealtime: isRealtime, isBackground: isBackground)
+                    .transition(.opacity)
+            } else {
+                Text(AppLocalization.string("Once connected, live download and upload curves appear here."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 96)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                            .strokeBorder(Color.secondary.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     }
-                    LiveTrafficHistoryGraph(model: telemetry, isRealtime: isRealtime, isBackground: isBackground)
-                }
-                .padding(AetherVisual.s4)
-                .transition(.opacity)
+                    .transition(.opacity)
             }
         }
+        .padding(AetherVisual.s5)
         .aetherPanel()
-    }
-
-    private func legend(color: Color, title: LocalizedStringKey) -> some View {
-        HStack(spacing: AetherVisual.s1) {
-            Circle().fill(color).frame(width: 6, height: 6)
-            Text(title)
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("overview-traffic")
+        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: isConnected)
     }
 }
 
@@ -1989,17 +1797,13 @@ private struct LiveTrafficHistoryGraph: View {
 }
 
 extension NSSegmentedControl {
-    /// A small dot on the selected segment. AppKit fills the selection with
-    /// the accent colour only in the key window of the frontmost app; the
-    /// menu bar panel never activates the app, so its selection was just a
-    /// slightly lighter grey. There the accent dot marks the choice. On the
-    /// accent fill an accent dot vanished into the background and only
-    /// nudged the label off centre, so it turns white like the label.
-    func markSelectedSegment(onAccentFill: Bool = false) {
-        let isFilled = onAccentFill && isEnabled && NSApp.isActive
-        let dot = isFilled ? Self.selectionDotOnFill : Self.selectionDot
+    /// An accent dot on the selected segment, for the menu bar panel only.
+    /// The panel never activates the app, and AppKit then draws the selected
+    /// segment as a barely lighter grey; the person chose this dot over a
+    /// self-drawn control to keep the native look there.
+    func markSelectedSegment() {
         for index in 0..<segmentCount {
-            let wanted = index == selectedSegment ? dot : nil
+            let wanted = index == selectedSegment ? Self.selectionDot : nil
             if image(forSegment: index) !== wanted {
                 setImage(wanted, forSegment: index)
                 setImageScaling(.scaleNone, forSegment: index)
@@ -2007,22 +1811,16 @@ extension NSSegmentedControl {
         }
     }
 
-    /// Drawn at display time, so it follows the user's accent colour and
-    /// light or dark appearance. Not a template image: AppKit would recolour
-    /// a template to match the label.
-    private static let selectionDot = dot(filledWith: .controlAccentColor)
-    /// Same size as `selectionDot`, so switching between them never changes
-    /// a segment's width.
-    private static let selectionDotOnFill = dot(filledWith: .white)
-
-    private static func dot(filledWith color: NSColor) -> NSImage {
+    /// Drawn at display time, so it follows the accent colour and the light
+    /// or dark appearance. Not a template: AppKit would recolour it.
+    private static let selectionDot: NSImage = {
         let diameter: CGFloat = 7
         let image = NSImage(size: NSSize(width: diameter + 3, height: diameter), flipped: false) { _ in
-            color.setFill()
+            NSColor.controlAccentColor.setFill()
             NSBezierPath(ovalIn: NSRect(x: 0, y: 0, width: diameter, height: diameter)).fill()
             return true
         }
         image.isTemplate = false
         return image
-    }
+    }()
 }

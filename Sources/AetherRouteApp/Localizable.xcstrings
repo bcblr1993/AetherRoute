@@ -1467,16 +1467,6 @@
         }
       }
     },
-    "Connect when ready, or review the active profile first.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "准备好后即可连接，也可以先检查当前配置。"
-          }
-        }
-      }
-    },
     "Connecting": {
       "localizations": {
         "zh-Hans": {
@@ -1707,16 +1697,6 @@
         }
       }
     },
-    "Current route": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前路由"
-          }
-        }
-      }
-    },
     "Customized": {
       "localizations": {
         "zh-Hans": {
@@ -1783,16 +1763,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "在为正式版本配置签名授权服务前，开发版本保持可用。"
-          }
-        }
-      }
-    },
-    "Device": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "设备"
           }
         }
       }
@@ -2187,16 +2157,6 @@
         }
       }
     },
-    "Exit": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "出口"
-          }
-        }
-      }
-    },
     "expired": {
       "localizations": {
         "zh-Hans": {
@@ -2253,16 +2213,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "导出配置归档"
-          }
-        }
-      }
-    },
-    "Extension ready": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "扩展已就绪"
           }
         }
       }
@@ -3345,16 +3295,6 @@
         }
       }
     },
-    "No matching rules": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "没有匹配的规则"
-          }
-        }
-      }
-    },
     "No license is active on this Mac": {
       "localizations": {
         "zh-Hans": {
@@ -3381,16 +3321,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "尚未选择私钥"
-          }
-        }
-      }
-    },
-    "No profile": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "尚无配置"
           }
         }
       }
@@ -3521,16 +3451,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "普通"
-          }
-        }
-      }
-    },
-    "Normal network": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正常网络"
           }
         }
       }
@@ -3695,16 +3615,6 @@
         }
       }
     },
-    "Ordered routing policy": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "有序路由策略"
-          }
-        }
-      }
-    },
     "Ordered routing rules": {
       "localizations": {
         "zh-Hans": {
@@ -3821,16 +3731,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "分流策略"
-          }
-        }
-      }
-    },
-    "Policy": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "策略"
           }
         }
       }
@@ -4107,16 +4007,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "配置项目数量和汇总流量数据"
-          }
-        }
-      }
-    },
-    "Profile Library": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "配置库"
           }
         }
       }
@@ -4657,16 +4547,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "请先重试一次；若仍失败，请检查当前配置与诊断信息。"
-          }
-        }
-      }
-    },
-    "Retrying nodes": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在重试节点"
           }
         }
       }
@@ -5309,32 +5189,12 @@
         }
       }
     },
-    "Standby": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "待机"
-          }
-        }
-      }
-    },
     "Started": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "启动时间"
-          }
-        }
-      }
-    },
-    "Starting": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在启动"
           }
         }
       }
@@ -5375,16 +5235,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已停止"
-          }
-        }
-      }
-    },
-    "Stopping": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在停止"
           }
         }
       }
@@ -5591,16 +5441,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "支持 Clash 兼容的 YAML/JSON 配置、HTTPS 订阅和常见节点链接。"
-          }
-        }
-      }
-    },
-    "Switch": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "切换"
           }
         }
       }
@@ -6694,16 +6534,6 @@
         }
       }
     },
-    "This Mac": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此 Mac"
-          }
-        }
-      }
-    },
     "This preview can import and inspect profiles, but it cannot enable system routing.": {
       "localizations": {
         "zh-Hans": {
@@ -6896,16 +6726,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "TUN 会在系统路由层应用 IPv4 和 IPv6 CIDR 排除。域名规则保持加密，并在选择透明代理时生效。"
-          }
-        }
-      }
-    },
-    "Try adjusting the filter or clearing the search text.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "尝试调整过滤条件或清除搜索文本。"
           }
         }
       }
@@ -7606,17 +7426,6 @@
         }
       }
     },
-    "Traffic · Last 30 seconds": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "流量走势 · 最近 30 秒"
-          }
-        }
-      }
-    },
     "Refresh: every 3 seconds": {
       "extractionState": "manual",
       "localizations": {
@@ -7693,66 +7502,6 @@
         }
       }
     },
-    "All Actions": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "全部动作"
-          }
-        }
-      }
-    },
-    "Hide Test": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "收起测试"
-          }
-        }
-      }
-    },
-    "Test Route": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "测试路由"
-          }
-        }
-      }
-    },
-    "Route Match Simulator": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "路由匹配模拟器"
-          }
-        }
-      }
-    },
-    "Instant dry-run against active rules": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "实时模拟规则命中路径"
-          }
-        }
-      }
-    },
-    "Enter a domain (e.g. github.com) or IP (e.g. 192.168.1.1)…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "输入域名（如 github.com）或 IP（如 192.168.1.1）…"
-          }
-        }
-      }
-    },
     "Test": {
       "localizations": {
         "zh-Hans": {
@@ -7779,26 +7528,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "定位"
-          }
-        }
-      }
-    },
-    "Filter criteria, targets, or kinds…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "搜索域名、IP、目标或类型…"
-          }
-        }
-      }
-    },
-    "Evaluation order (top to bottom)": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自上而下按序匹配"
           }
         }
       }
@@ -7973,16 +7702,6 @@
         }
       }
     },
-    "Quick Test:": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "快速测试："
-          }
-        }
-      }
-    },
     "No matching nodes": {
       "localizations": {
         "zh-Hans": {
@@ -8123,32 +7842,12 @@
         }
       }
     },
-    "Custom rules take absolute top priority. Direct IP-CIDR rules automatically bypass TUN kernel routing.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自定义规则拥有最高优先级，且目标为 DIRECT 的 IP-CIDR 将自动在内核层绕过 TUN 网卡。"
-          }
-        }
-      }
-    },
     "Add Rule": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "添加规则"
-          }
-        }
-      }
-    },
-    "No custom rules configured": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂未配置自定义规则"
           }
         }
       }
@@ -8423,22 +8122,6 @@
         }
       }
     },
-    "Open Connections for per-flow details. Route checks are shown separately below.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open Connections for per-flow details. Route checks are shown separately below."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在“连接”查看每条连接的详情。线路检查结果单独显示在下方。"
-          }
-        }
-      }
-    },
     "Pause list": {
       "localizations": {
         "en": {
@@ -8663,54 +8346,6 @@
         }
       }
     },
-    "Rule sources & scope": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rule sources & scope"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "规则来源与作用范围"
-          }
-        }
-      }
-    },
-    "Custom rules take precedence in the core rule list. Imported rules retain their order; optimization may add direct rules at runtime.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Custom rules take precedence in the core rule list. Imported rules retain their order; optimization may add direct rules at runtime."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自定义规则在核心规则列表中优先匹配。导入规则保留原有顺序；网络优化可能在运行时添加直连规则。"
-          }
-        }
-      }
-    },
-    "This list is a configuration summary. System bypass exclusions and runtime optimization can affect actual traffic outside the displayed list.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This list is a configuration summary. System bypass exclusions and runtime optimization can affect actual traffic outside the displayed list."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此列表是配置摘要。系统绕过排除与运行时网络优化也会影响实际流量，可能未包含在显示列表中。"
-          }
-        }
-      }
-    },
     "Manage bypass rules": {
       "localizations": {
         "en": {
@@ -8723,38 +8358,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "管理绕过规则"
-          }
-        }
-      }
-    },
-    "Open Settings and select Bypass.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open Settings and select Bypass."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开设置并选择“绕过”。"
-          }
-        }
-      }
-    },
-    "Predicts a match against the displayed rules. This does not test reachability, DNS resolution, or the complete runtime policy.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Predicts a match against the displayed rules. This does not test reachability, DNS resolution, or the complete runtime policy."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "根据显示的规则预测匹配结果，不测试实际可达性、DNS 解析或完整运行时策略。"
           }
         }
       }
@@ -9027,22 +8630,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "网络"
-          }
-        }
-      }
-    },
-    "Route not checked": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Route not checked"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "线路尚未检查"
           }
         }
       }
@@ -9683,22 +9270,6 @@
         }
       }
     },
-    "Bypass changes apply on the next connection. Network optimization applies on the next connection or profile reload.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bypass changes apply on the next connection. Network optimization applies on the next connection or profile reload."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "绕过设置在下次连接时生效。网络优化在下次连接或重新加载配置时生效。"
-          }
-        }
-      }
-    },
     "Could not save the node. Check the configuration and try again.": {
       "localizations": {
         "en": {
@@ -10029,17 +9600,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "下载并保存"
-          }
-        }
-      }
-    },
-    "Selected": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已选择"
           }
         }
       }
@@ -10759,39 +10319,6 @@
         }
       }
     },
-    "Add another profile": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "添加更多配置"
-          }
-        }
-      }
-    },
-    "Test Latency": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "测速"
-          }
-        }
-      }
-    },
-    "Test this node again": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新测速此节点"
-          }
-        }
-      }
-    },
     "No profile yet": {
       "extractionState": "manual",
       "localizations": {
@@ -11347,16 +10874,6 @@
         }
       }
     },
-    "By rule count": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按规则数"
-          }
-        }
-      }
-    },
     "Direct rules: %lld": {
       "localizations": {
         "zh-Hans": {
@@ -11468,16 +10985,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "导入于 %@"
-          }
-        }
-      }
-    },
-    "Keep a backup provider or a separate work setup and switch between them from the menu bar. Add one with the buttons above, or enter nodes by hand.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保留一个备用服务商或单独的工作配置，随时在菜单栏中切换。可用上方按钮添加，也可以手动录入节点。"
           }
         }
       }
@@ -12314,6 +11821,282 @@
           "stringUnit": {
             "state": "translated",
             "value": "已收起"
+          }
+        }
+      }
+    },
+    "Connected for %@ · via %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已连接 %@ · 经由 %@"
+          }
+        }
+      }
+    },
+    "Traffic uses the normal network. Turn on the switch to connect.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "流量正在使用正常网络，打开开关即可连接。"
+          }
+        }
+      }
+    },
+    "Exit node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出口节点"
+          }
+        }
+      }
+    },
+    "Choose a node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择节点"
+          }
+        }
+      }
+    },
+    "Opens Proxies to change the node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开代理页更换节点"
+          }
+        }
+      }
+    },
+    "Route check": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "线路检查"
+          }
+        }
+      }
+    },
+    "Not checked yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未检查"
+          }
+        }
+      }
+    },
+    "Check": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查"
+          }
+        }
+      }
+    },
+    "Available once connected": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接后可检查"
+          }
+        }
+      }
+    },
+    "Live traffic": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时流量"
+          }
+        }
+      }
+    },
+    "Last 30 seconds": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近 30 秒"
+          }
+        }
+      }
+    },
+    "Once connected, live download and upload curves appear here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接后，这里会显示下载和上传的实时曲线。"
+          }
+        }
+      }
+    },
+    "Overview route section": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Route"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "线路"
+          }
+        }
+      }
+    },
+    "Highest priority": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "优先级最高"
+          }
+        }
+      }
+    },
+    "Profile rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置中的规则"
+          }
+        }
+      }
+    },
+    "Matched top to bottom; the first match wins": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从上到下依次匹配，命中即停止"
+          }
+        }
+      }
+    },
+    "Try:": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "试试："
+          }
+        }
+      }
+    },
+    "Search rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索规则"
+          }
+        }
+      }
+    },
+    "Filter by target": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按去向筛选"
+          }
+        }
+      }
+    },
+    "Enter a website or IP to see which route it takes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入网址或 IP，看看会走哪条线路"
+          }
+        }
+      }
+    },
+    "Rule #%lld needs data only available once connected, so the route is decided by the core.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %lld 条规则需要连接后才有的数据，线路将由核心在连接后判断。"
+          }
+        }
+      }
+    },
+    "No custom rules yet. To always send a site direct or through the proxy, add a rule here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有自定义规则。想让某个网站总是直连或走代理，可以在这里添加。"
+          }
+        }
+      }
+    },
+    "No rules match. Try another filter or clear the search.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有匹配的规则。换个筛选条件，或清空搜索。"
+          }
+        }
+      }
+    },
+    "This is a summary of the profile; bypass rules and runtime optimization can also affect traffic.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里是配置的摘要，绕过规则和运行时优化也会影响实际流量。"
+          }
+        }
+      }
+    },
+    "My profiles": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的配置"
+          }
+        }
+      }
+    },
+    "Profiles and nodes are encrypted on this Mac. You can also drop a profile file onto this window to import it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置和节点在此 Mac 上加密保存。也可以把配置文件直接拖到这个窗口导入。"
+          }
+        }
+      }
+    },
+    "Rule resources": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则资源"
           }
         }
       }

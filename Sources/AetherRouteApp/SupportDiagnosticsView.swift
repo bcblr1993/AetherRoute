@@ -524,7 +524,7 @@ struct SupportDiagnosticsView: View {
                             isWorking: isCreatingReport
                         )
                     }
-                    .buttonStyle(.borderedProminent)
+                    .aetherGlassButton(prominent: true)
                     .disabled(isCreatingReport)
                     .accessibilityIdentifier("export-diagnostics")
                 }
@@ -800,7 +800,7 @@ struct SupportDiagnosticsView: View {
                             Text(AppLocalization.string("Re-run Diagnostics"))
                         }
                     }
-                    .buttonStyle(.bordered)
+                    .aetherGlassButton()
                     .controlSize(.small)
                     .accessibilityIdentifier("rerun-diagnostics")
                 } else {
@@ -812,7 +812,7 @@ struct SupportDiagnosticsView: View {
                             Text(AppLocalization.string("Run Diagnostics"))
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .aetherGlassButton(prominent: true)
                     .controlSize(.small)
                     .accessibilityIdentifier("run-diagnostics")
                 }

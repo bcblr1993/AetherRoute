@@ -189,8 +189,8 @@ struct ConnectionsView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-            .padding(.vertical, AetherVisual.s2)
+            .padding(.horizontal, AetherVisual.s3)
+            .padding(.vertical, AetherVisual.s3)
 
             if rows.isEmpty {
                 ContentUnavailableView.search(text: searchText)
@@ -228,10 +228,14 @@ struct ConnectionsView: View {
                 .alignment(.numeric)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: false))
+            .scrollContentBackground(.hidden)
             .accessibilityLabel(AppLocalization.string("Connections"))
             .accessibilityIdentifier("connections-table")
             .scrollIndicators(.hidden, axes: .horizontal)
         }
+        .aetherPanel()
+        .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+        .padding(.bottom, AetherVisual.s2)
     }
 
     private var segmentedFilter: some View {
@@ -260,7 +264,7 @@ struct ConnectionsView: View {
                         .contentTransition(.symbolEffect(.replace))
                 }
             }
-            .buttonStyle(.bordered)
+            .aetherGlassButton()
             // A frozen list must not pass for a live one: the button stays
             // tinted while the list is paused.
             .tint(pausedConnections == nil ? nil : .orange)
@@ -281,7 +285,7 @@ struct ConnectionsView: View {
                 Button(AppLocalization.string("Disconnect"), systemImage: "power") {
                     showingDisconnectConfirmation = true
                 }
-                .buttonStyle(.bordered)
+                .aetherGlassButton()
                 .disabled(tunnel.isTransitioning || telemetry.snapshot.connections.isEmpty)
                 .accessibilityIdentifier("disconnect-all-connections")
                 .confirmationDialog(
@@ -431,23 +435,16 @@ private struct SessionBar: View {
                 Button(tunnel.primaryActionTitle) {
                     Task { await tunnel.setEnabled(!tunnel.isEnabled) }
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .controlSize(.small)
                 .disabled(!tunnel.canPerformPrimaryAction)
                 .accessibilityIdentifier("connections-primary-action")
             }
         }
-        .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+        .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s1)
         .frame(minHeight: 44)
-        .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 0.5)
-        }
+        .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.s3 + AetherVisual.sMicro, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("connections-session-bar")
     }
@@ -538,30 +535,55 @@ private struct ConnectionDestinationCell: View {
 
 }
 
+/// The rule as its kind and its value side by side ("DOMAIN-SUFFIX
+/// apple.com"), so a narrow column cuts the value, never the kind.
 private struct ConnectionRuleCell: View {
     let connection: ConnectionTelemetry
 
     var body: some View {
-        Text(ruleText)
-            .font(.body.weight(.medium))
-            .foregroundStyle(.primary)
-            .lineLimit(1)
-            .help(ruleText)
+        HStack(spacing: AetherVisual.s1) {
+            Text(verbatim: ClashRuleKindName.display(connection.rule))
+                .font(.caption2.monospaced().weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, AetherVisual.s1)
+                .padding(.vertical, 1)
+                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+                .fixedSize()
+            if !connection.rulePayload.isEmpty {
+                Text(verbatim: connection.rulePayload)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .help(connection.ruleSummary)
+        .accessibilityElement(children: .combine)
     }
-
-    private var ruleText: String { connection.ruleSummary }
 }
 
 private struct ConnectionOutletCell: View {
     let connection: ConnectionTelemetry
 
     var body: some View {
-        Label(outlet.localizedTitle, systemImage: outletSymbol)
-            .font(.body.weight(.semibold))
-            .foregroundStyle(.primary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .help(outlet.localizedTitle)
+        HStack(spacing: AetherVisual.s2) {
+            AetherIconTile(symbol: outletSymbol, color: outletTint, size: 20)
+            Text(outlet.localizedTitle)
+                .font(.body.weight(.medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .help(outlet.localizedTitle)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var outletTint: Color {
+        switch outlet {
+        case .proxied: .indigo
+        case .direct: .green
+        case .rejected: .red
+        }
     }
 
     private var outlet: ConnectionOutlet {
@@ -663,7 +685,7 @@ private struct ConnectionInspector: View {
                 }
                 Spacer()
                 Button(AppLocalization.string("Done")) { dismiss() }
-                    .buttonStyle(.borderedProminent)
+                    .aetherGlassButton(prominent: true)
                     .keyboardShortcut(.defaultAction)
             }
             .padding([.horizontal, .bottom], AetherVisual.dialogPadding)

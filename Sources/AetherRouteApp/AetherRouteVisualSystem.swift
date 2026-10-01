@@ -26,7 +26,8 @@ enum AetherVisual {
     static let controlRadius: CGFloat = 6
     static let insetRadius: CGFloat = 8
     static let cardRadius: CGFloat = 10
-    static let panelRadius: CGFloat = 12
+    static let panelRadius: CGFloat = 18
+    static let sidebarRadius: CGFloat = 16
 
     // MARK: - Motion
     //
@@ -95,31 +96,6 @@ enum AetherVisual {
         endPoint: .bottomTrailing
     )
 
-    static let pageBackground = Color(nsColor: .windowBackgroundColor)
-
-    static func panelFill(for _: ColorScheme) -> Color {
-        Color(nsColor: .controlBackgroundColor)
-    }
-
-    static func panelBorder(for _: ColorScheme) -> Color {
-        Color(nsColor: .separatorColor)
-    }
-}
-
-/// The asset catalog selects the light or dark Silver Flight artwork using
-/// the current SwiftUI appearance, including live app-theme changes.
-struct AetherRouteGlyph: View {
-    var isActive = false
-    var isOnColor = false
-
-    var body: some View {
-        Image("AetherSapphireEmblem")
-            .resizable()
-            .renderingMode(.original)
-            .aspectRatio(contentMode: .fit)
-            .opacity(isOnColor || isActive ? 1 : 0.88)
-            .accessibilityHidden(true)
-    }
 }
 
 struct AetherRouteBrandTile: View {
@@ -133,91 +109,6 @@ struct AetherRouteBrandTile: View {
             .aspectRatio(contentMode: .fit)
             .frame(width: size, height: size)
             .accessibilityLabel("AetherRoute")
-    }
-}
-
-/// The connection state drawn around the brand glyph.
-///
-/// - Connecting: a short arc orbits the glyph. The angle is derived from the
-///   clock, not from a repeating animation, so leaving the state can never
-///   leave a stray animation running.
-/// - Connected: the arc closes into a full green ring and a check mark pops
-///   in at the corner.
-/// - Failed: a red ring with a warning badge.
-/// - Idle: no ring; the glyph alone.
-///
-/// The glyph itself never scales; only the ring and badge move. With Reduce
-/// Motion the arc is drawn still and state changes are instant.
-struct AetherRouteStatusLens: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    var size: CGFloat = 52
-    var isActive = false
-    var isConnecting = false
-    var isFailed = false
-
-    private static let orbitPeriod: TimeInterval = 1.1
-
-    var body: some View {
-        let ringWidth = max(2, size * 0.05)
-        ZStack {
-            // Track: a faint full circle the arc travels on.
-            Circle()
-                .stroke(Color.secondary.opacity(isConnecting ? 0.15 : 0), lineWidth: ringWidth)
-
-            TimelineView(.animation(paused: !isConnecting || reduceMotion)) { context in
-                Circle()
-                    .trim(from: 0, to: ringLength)
-                    .stroke(ringColor, style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
-                    .rotationEffect(.degrees(orbitAngle(at: context.date)))
-            }
-
-            AetherRouteGlyph(isActive: isActive)
-                .padding(size * 0.16)
-                .frame(width: size, height: size)
-
-            if let badge {
-                Image(systemName: badge.symbol)
-                    .font(.system(size: size * 0.3, weight: .semibold))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, badge.color)
-                    .background(Circle().fill(Color(nsColor: .windowBackgroundColor)).padding(-1))
-                    .symbolEffect(.bounce, value: badge.symbol)
-                    .offset(x: size * 0.36, y: size * 0.36)
-                    .transition(.scale(scale: 0.4).combined(with: .opacity))
-            }
-        }
-        .frame(width: size, height: size)
-        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: isActive)
-        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: isConnecting)
-        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: isFailed)
-        .accessibilityHidden(true)
-    }
-
-    /// Connecting shows a short arc; connected and failed close the ring.
-    private var ringLength: CGFloat {
-        if isConnecting { return 0.28 }
-        if isActive || isFailed { return 1 }
-        return 0
-    }
-
-    private var ringColor: Color {
-        if isFailed { return .red }
-        if isActive && !isConnecting { return .green }
-        return .accentColor
-    }
-
-    private func orbitAngle(at date: Date) -> Double {
-        guard isConnecting, !reduceMotion else { return -90 }
-        let phase = date.timeIntervalSinceReferenceDate
-            .truncatingRemainder(dividingBy: Self.orbitPeriod) / Self.orbitPeriod
-        return -90 + phase * 360
-    }
-
-    private var badge: (symbol: String, color: Color)? {
-        if isConnecting { return nil }
-        if isFailed { return ("exclamationmark.circle.fill", .red) }
-        if isActive { return ("checkmark.circle.fill", .green) }
-        return nil
     }
 }
 
@@ -266,39 +157,47 @@ struct ConnectionLuminousBar: View {
 }
 
 private struct AetherPanelModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
     func body(content: Content) -> some View {
-        content
-            .background(
-                AetherVisual.panelFill(for: colorScheme),
-                in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-                    .stroke(
-                        AetherVisual.panelBorder(for: colorScheme),
-                        lineWidth: 0.5
-                    )
-            }
+        content.aetherGlass(
+            in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
+        )
     }
 }
 
-/// A quiet content canvas. Brand color is used as atmosphere, not as another
-/// control layer, and disappears almost entirely when Reduce Transparency is on.
-struct AetherContentCanvas: View {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    var body: some View {
-        ZStack {
-            Color(nsColor: .windowBackgroundColor)
-
-            if !reduceTransparency { Color.clear }
+extension View {
+    /// System Liquid Glass from macOS 26, so every surface follows the
+    /// person's Liquid Glass setting (clear or tinted) and Reduce
+    /// Transparency exactly as Apple's own apps do. Earlier systems get the
+    /// closest material with a hairline edge.
+    @ViewBuilder
+    func aetherGlass<S: Shape>(in shape: S, tint: Color? = nil, interactive: Bool = false) -> some View {
+        if #available(macOS 26, *) {
+            glassEffect(Glass.regular.tint(tint).interactive(interactive), in: shape)
+        } else {
+            background(.regularMaterial, in: shape)
+                .overlay { shape.stroke(Color(nsColor: .separatorColor), lineWidth: 0.5) }
         }
-        .ignoresSafeArea()
-        .accessibilityHidden(true)
+    }
+
+    /// Glass buttons from macOS 26; bordered buttons before it.
+    @ViewBuilder
+    func aetherGlassButton(prominent: Bool = false) -> some View {
+        if #available(macOS 26, *) {
+            if prominent {
+                buttonStyle(.glassProminent)
+            } else {
+                buttonStyle(.glass)
+            }
+        } else {
+            if prominent {
+                buttonStyle(.borderedProminent)
+            } else {
+                buttonStyle(.bordered)
+            }
+        }
     }
 }
+
 
 // MARK: - Page skeleton
 //
@@ -334,18 +233,34 @@ enum AetherPageWidth {
     }
 }
 
+/// A white symbol on a rounded colour tile, as in System Settings' sidebar
+/// and rows. The colour identifies the item; it never carries state.
+struct AetherIconTile: View {
+    let symbol: String
+    let color: Color
+    var size: CGFloat = 22
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.55, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(color.gradient, in: RoundedRectangle(cornerRadius: size * 0.27, style: .continuous))
+            .accessibilityHidden(true)
+    }
+}
+
+/// A large title and the page's actions, as in System Settings. The
+/// section's one-line description stays available to VoiceOver only.
 struct AetherPageHeader<Accessory: View>: View {
     let section: AppSection
-    var subtitle: String?
     @ViewBuilder var accessory: Accessory
 
     init(
         _ section: AppSection,
-        subtitle: String? = nil,
         @ViewBuilder accessory: () -> Accessory
     ) {
         self.section = section
-        self.subtitle = subtitle
         self.accessory = accessory()
     }
 
@@ -367,22 +282,12 @@ struct AetherPageHeader<Accessory: View>: View {
     }
 
     private var titles: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-            Text(section.title)
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(.primary)
-                .accessibilityAddTraits(.isHeader)
-                .accessibilityIdentifier("page-header-title-\(section.rawValue)")
-            // Two lines at most: an unbounded vertical fixedSize let the
-            // stacked (narrow) header report a huge minimum height, which
-            // pushed pages without a scroll view out of the window.
-            Text(subtitle ?? section.subtitle)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .contentTransition(.opacity)
-                .animation(AetherVisual.animation(AetherVisual.quickFade), value: subtitle)
-        }
+        Text(section.title)
+            .font(.largeTitle.weight(.bold))
+            .foregroundStyle(.primary)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityHint(Text(section.subtitle))
+            .accessibilityIdentifier("page-header-title-\(section.rawValue)")
     }
 
     private var accessoryRow: some View {
@@ -394,8 +299,8 @@ struct AetherPageHeader<Accessory: View>: View {
 }
 
 extension AetherPageHeader where Accessory == EmptyView {
-    init(_ section: AppSection, subtitle: String? = nil) {
-        self.init(section, subtitle: subtitle) { EmptyView() }
+    init(_ section: AppSection) {
+        self.init(section) { EmptyView() }
     }
 }
 
@@ -615,7 +520,6 @@ extension View {
             .contentMargins(.horizontal, AetherVisual.s5, for: .scrollContent)
             .contentMargins(.vertical, AetherVisual.s4, for: .scrollContent)
             .contentMargins(.trailing, AetherVisual.s2 + AetherVisual.sMicro, for: .scrollIndicators)
-            .background(Color(nsColor: .windowBackgroundColor))
     }
 
     func aetherPanel() -> some View {
@@ -675,174 +579,6 @@ struct AetherProtocolBadge: View {
         }
     }
 }
-
-/// Latency result for one node; tapping it re-tests when an action is given.
-struct AetherLatencyPill: View {
-    let status: ProxyLatencyStatus
-    /// Qualifies a measured number: a TCP handshake and a number measured
-    /// through the node's real protocol handler are not the same claim.
-    var confidence: ProxyLatencyConfidence = .reachability
-    var onTap: (() -> Void)? = nil
-    @State private var isHovered = false
-
-    init(
-        status: ProxyLatencyStatus,
-        confidence: ProxyLatencyConfidence = .reachability,
-        onTap: (() -> Void)? = nil
-    ) {
-        self.status = status
-        self.confidence = confidence
-        self.onTap = onTap
-    }
-
-    var body: some View {
-        Button {
-            onTap?()
-        } label: {
-            HStack(spacing: AetherVisual.s1) {
-                if status == .testing {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .transition(.scale(scale: 0.5).combined(with: .opacity))
-                } else if case .responded = status {
-                    // The result's dot pops in as the measurement lands.
-                    Circle()
-                        .fill(pillColor)
-                        .frame(width: 5, height: 5)
-                        .transition(.scale(scale: 0.2).combined(with: .opacity))
-                }
-
-                Text(displayText)
-                    .font(.system(.caption, design: .monospaced, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .contentTransition(.numericText())
-
-                if status.isMeasured, confidence == .verified {
-                    // Only the stronger claim is marked. Reachability is the
-                    // default, so badging it too would add noise to every row.
-                    Image(systemName: confidence.symbol)
-                        .font(.caption2.weight(.semibold))
-                        .imageScale(.small)
-                        .foregroundStyle(Color.accentColor)
-                        .accessibilityHidden(true)
-                }
-            }
-            .padding(.horizontal, AetherVisual.pillHorizontalPadding)
-            .padding(.vertical, AetherVisual.pillVerticalPadding)
-            .background(pillColor.opacity(isHovered ? 0.22 : 0.12), in: Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(pillColor.opacity(isHovered ? 0.48 : 0.25), lineWidth: 0.5)
-            }
-            .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
-            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: status)
-        }
-        .buttonStyle(.aetherPressable)
-        .accessibilityLabel(
-            String.localizedStringWithFormat(
-                AppLocalization.string("Latency: %@"),
-                status.localizedTitle
-            )
-        )
-        .accessibilityHint(onTap == nil ? "" : AppLocalization.string("Tests this node again"))
-        .onHover { hovering in
-            if onTap != nil && status != .testing {
-                isHovered = hovering
-            }
-        }
-        .disabled(status == .testing || onTap == nil)
-    }
-
-    private var displayText: String {
-        status.localizedTitle
-    }
-
-    /// Shares the latency bands every other latency surface uses, so a node
-    /// never reads as fast in one place and slow in another.
-    private var pillColor: Color {
-        status.tint
-    }
-}
-
-/// Node icon: the region flag when the name states one, otherwise a
-/// protocol symbol.
-public struct AetherNodeIcon: View {
-    let name: String
-    let protocolName: String
-    var size: CGFloat = 28
-
-    public init(name: String, protocolName: String, size: CGFloat = 28) {
-        self.name = name
-        self.protocolName = protocolName
-        self.size = size
-    }
-
-    public var body: some View {
-        if let region = AetherRegionFlag.region(for: name) {
-            // 真实匹配到的国家/地区旗帜
-            ZStack {
-                RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
-                            .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
-                    }
-                Text(verbatim: region.flag)
-                    .font(.system(size: size * 0.55))
-                    .accessibilityHidden(true)
-            }
-            .frame(width: size, height: size)
-        } else {
-            // 通用/未知地域：呈现高质感协议专用科技晶核图标
-            let config = iconConfig
-            ZStack {
-                RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
-                            .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
-                    }
-
-                // The symbol still tells protocols apart; colour is left to
-                // state, so the list does not read as a rainbow.
-                Image(systemName: config.symbol)
-                    .font(.system(size: size * 0.44, weight: .semibold))
-                    .foregroundStyle(config.color)
-            }
-            .frame(width: size, height: size)
-        }
-    }
-
-    private var iconConfig: (symbol: String, color: Color) {
-        let upperName = name.uppercased()
-        let upperProto = protocolName.uppercased()
-
-        if upperProto.contains("HY2") || upperProto.contains("HYSTERIA") || upperName.contains("HY2") || upperName.contains("HYSTERIA") {
-            return ("bolt.fill", Color.secondary)
-        }
-        if upperProto.contains("VLESS") || upperName.contains("VLESS") {
-            return ("shield.checkered", Color.secondary)
-        }
-        if upperProto.contains("VMESS") || upperName.contains("VMESS") {
-            return ("cube.fill", Color.secondary)
-        }
-        if upperProto.contains("TROJAN") || upperName.contains("TROJAN") {
-            return ("lock.shield.fill", Color.secondary)
-        }
-        if upperProto.contains("DIRECT") || upperName.contains("DIRECT") {
-            return ("arrow.trianglehead.branch", Color.green)
-        }
-        if upperProto.contains("SS") || upperProto.contains("SHADOWSOCKS") || upperName.contains("SS") {
-            return ("paperplane.fill", Color.secondary)
-        }
-        if upperProto.contains("WIREGUARD") || upperProto.contains("WG") {
-            return ("shield.lefthalf.filled", Color.secondary)
-        }
-        return ("point.3.filled.connected.trianglepath.dotted", Color.secondary)
-    }
-}
-
-// MARK: - Shared components
 
 /// Connection state dot: steady when connected, a rotating ring while
 /// connecting.
@@ -914,24 +650,58 @@ enum AetherRegionFlag {
     }
 }
 
-/// A fixed-width flag for list rows: the region flag when the name clearly
-/// states one, otherwise a neutral globe, so rows stay aligned without
-/// claiming a region.
-struct AetherNodeFlag: View {
+/// The region a node's name states, as a short code such as "SG". Text,
+/// not a flag, so it reads the same in every font and on every glass tint.
+/// Rows reserve the slot for unrecognised names so the names line up.
+struct AetherRegionCode: View {
     let name: String
+    var reservesSlot = true
 
     var body: some View {
         Group {
             if let region = AetherRegionFlag.region(for: name) {
-                Text(verbatim: region.flag)
-            } else {
-                Image(systemName: "globe")
+                Text(verbatim: region.code)
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
                     .foregroundStyle(.secondary)
+                    .frame(width: 26, height: 18)
+                    .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            } else if reservesSlot {
+                Color.clear.frame(width: 26, height: 18)
             }
         }
-        .frame(width: AetherVisual.s4)
         .accessibilityHidden(true)
     }
+}
+
+/// A capsule of system glass with full-contrast text. The menu bar panel
+/// never activates the app, and AppKit draws its own buttons there as if
+/// disabled; this keeps them reading as live controls.
+struct AetherGlassCapsuleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        AetherGlassCapsuleLabel(configuration: configuration)
+    }
+}
+
+private struct AetherGlassCapsuleLabel: View {
+    @Environment(\.isEnabled) private var isEnabled
+    let configuration: ButtonStyleConfiguration
+
+    var body: some View {
+        configuration.label
+            .font(.callout.weight(.medium))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, AetherVisual.s3 + AetherVisual.sMicro)
+            .frame(minHeight: 32)
+            .contentShape(Capsule())
+            .aetherGlass(in: Capsule(), interactive: true)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.45)
+            .animation(AetherVisual.animation(AetherVisual.pressFeedback), value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == AetherGlassCapsuleButtonStyle {
+    static var aetherGlassCapsule: AetherGlassCapsuleButtonStyle { AetherGlassCapsuleButtonStyle() }
 }
 
 /// Download and upload over the last 30 seconds.

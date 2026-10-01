@@ -13,6 +13,8 @@ extension AetherVisual {
     static let valueChange = Animation.spring(response: 0.36, dampingFraction: 0.9)
     /// A disclosure opening or closing.
     static let disclosure = Animation.spring(response: 0.3, dampingFraction: 0.88)
+    /// A switch knob travelling to its other side.
+    static let switchToggle = Animation.spring(response: 0.3, dampingFraction: 0.72)
 
     /// A row or inline message arriving in, or leaving, a list.
     @MainActor static var insertion: AnyTransition {

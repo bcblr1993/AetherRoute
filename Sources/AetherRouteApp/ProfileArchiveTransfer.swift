@@ -121,7 +121,7 @@ struct ProfileArchivePasswordSheet: View {
                         isWorking: isWorking
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canSubmit || isWorking)
             }

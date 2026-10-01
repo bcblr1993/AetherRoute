@@ -56,7 +56,7 @@ struct NativeProfileEditorSheet: View {
             Button(AppLocalization.string("Add Node"), systemImage: "plus") {
                 isAddingNode = true
             }
-            .buttonStyle(.bordered)
+            .aetherGlassButton()
             .disabled(
                 !tunnel.canModifyProfile(id: profile.id)
                     || nodes.count >= AetherNodeProfileCompiler.maximumNodes
@@ -193,7 +193,7 @@ struct NativeProfileEditorSheet: View {
                         isWorking: isSaving
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     validationMessage != nil

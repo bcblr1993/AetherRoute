@@ -39,11 +39,12 @@ test "$(grep -Fc '@ObservedObject var telemetry: NetworkTelemetryViewModel' \
 
 control_bar=$(
   awk '
-    /private struct ConnectionControlBar:/ { inside = 1 }
+    /private struct OverviewModeRows:/ { inside = 1 }
     inside { print }
-    inside && /private struct RouteSummary:/ { exit }
+    inside && /private struct OverviewRouteCheckRow:/ { exit }
   ' "$CONTENT"
 )
+test -n "$control_bar" || fail "overview mode rows must exist"
 printf '%s\n' "$control_bar" | grep -F '@EnvironmentObject' >/dev/null \
   && fail "overview segmented controls must not observe TunnelManager directly"
 printf '%s\n' "$control_bar" | grep -E '^[[:space:]]*Picker\(' >/dev/null \
@@ -62,7 +63,7 @@ connection_hero=$(
   awk '
     /private struct ConnectionHero:/ { inside = 1 }
     inside { print }
-    inside && /private struct ConnectionControlBar:/ { exit }
+    inside && /private struct ConnectionMedallion:/ { exit }
   ' "$CONTENT"
 )
 printf '%s\n' "$connection_hero" | grep -F 'private var connectionControls' >/dev/null \

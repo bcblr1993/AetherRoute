@@ -719,11 +719,11 @@ private struct MenuBarContent: View {
                 }
             }
         }
+        // The menu bar window is already system glass; only Reduce
+        // Transparency needs an opaque ground.
         .background {
             if reduceTransparency {
                 Color(nsColor: .windowBackgroundColor)
-            } else {
-                Rectangle().fill(.regularMaterial)
             }
         }
         .onChange(of: tunnel.activeProfile?.yaml) { _, _ in showingNodes = false }
@@ -748,12 +748,11 @@ private struct MenuBarContent: View {
     }
 
     /// Laid out like a Control Center module: state and the switch first,
-    /// then the exit people change most, then modes; terminal helpers and
-    /// app commands live in the overflow menu.
+    /// then live traffic, then one glass group for the exit and the modes;
+    /// terminal helpers and app commands live in the overflow menu.
     private var readyContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
             header
-                .padding(AetherVisual.s4)
 
             if tunnel.isConnected {
                 HStack(spacing: AetherVisual.s3) {
@@ -761,52 +760,45 @@ private struct MenuBarContent: View {
                     MenuLiveTrafficMetric(title: "Upload", symbol: "arrow.up", metric: .upload, telemetry: telemetry, isLive: isMenuVisible)
                     MenuLiveTrafficMetric(title: "Connections", symbol: "point.3.connected.trianglepath.dotted", metric: .connections, telemetry: telemetry, isLive: isMenuVisible)
                 }
-                .padding(.horizontal, AetherVisual.s4)
-                .padding(.bottom, AetherVisual.s3)
+                .padding(AetherVisual.s3)
+                .aetherGlass(in: RoundedRectangle(cornerRadius: Self.groupRadius, style: .continuous))
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: AetherVisual.s4) {
-                // The switch is disabled in both cases; say why and where to
-                // go instead of leaving a dead end.
-                if tunnel.profiles.isEmpty {
-                    menuNotice(
-                        symbol: "doc.badge.plus",
-                        tint: .secondary,
-                        title: AppLocalization.string("No profile yet"),
-                        detail: AppLocalization.string("Import a profile or add a subscription to connect."),
-                        action: AppLocalization.string("Add Profile"),
-                        section: .profiles
-                    )
-                    .accessibilityIdentifier("menu-no-profile")
-                } else if isFailed {
-                    menuNotice(
-                        symbol: "exclamationmark.triangle.fill",
-                        tint: .red,
-                        title: AppLocalization.string("Could not connect"),
-                        detail: tunnel.statusDetail,
-                        action: AppLocalization.string("Details"),
-                        section: .overview
-                    )
-                    .accessibilityIdentifier("menu-connection-failure")
-                }
-                if let group = primaryGroup {
-                    exitSection(group)
-                }
-                modeSection
+            // The switch is disabled in both cases; say why and where to go
+            // instead of leaving a dead end.
+            if tunnel.profiles.isEmpty {
+                menuNotice(
+                    symbol: "doc.badge.plus",
+                    tint: .secondary,
+                    title: AppLocalization.string("No profile yet"),
+                    detail: AppLocalization.string("Import a profile or add a subscription to connect."),
+                    action: AppLocalization.string("Add Profile"),
+                    section: .profiles
+                )
+                .accessibilityIdentifier("menu-no-profile")
+            } else if isFailed {
+                menuNotice(
+                    symbol: "exclamationmark.triangle.fill",
+                    tint: .red,
+                    title: AppLocalization.string("Could not connect"),
+                    detail: tunnel.statusDetail,
+                    action: AppLocalization.string("Details"),
+                    section: .overview
+                )
+                .accessibilityIdentifier("menu-connection-failure")
             }
-            .padding(AetherVisual.s4)
 
-            Divider()
+            routeGroup
 
             footer
-                .padding(.horizontal, AetherVisual.s4)
-                .padding(.vertical, AetherVisual.sRow)
         }
+        .padding(AetherVisual.s4)
         .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.isConnected)
     }
+
+    private static let groupRadius: CGFloat = 14
+    private static let rowTileSize: CGFloat = 24
 
     /// One line of guidance in the panel's own style: symbol, what is wrong,
     /// and a link to the page that fixes it.
@@ -840,176 +832,196 @@ private struct MenuBarContent: View {
                 )
                 AppWindowManager.shared.showMainWindow()
             }
-            .controlSize(.small)
+            .buttonStyle(.aetherGlassCapsule)
         }
+        .padding(AetherVisual.s3)
+        .aetherGlass(in: RoundedRectangle(cornerRadius: Self.groupRadius, style: .continuous))
         .accessibilityElement(children: .contain)
     }
 
     private var header: some View {
         HStack(spacing: AetherVisual.s3) {
-            AetherRouteStatusLens(
-                size: 36,
-                isActive: tunnel.isConnected,
-                isConnecting: isWorking,
-                isFailed: isFailed
-            )
+            ConnectionMedallion(phase: ConnectionMedallion.Phase(tunnel: tunnel), size: 40)
+                .padding(AetherVisual.s1)
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                Text(verbatim: "AetherRoute")
-                    .font(.headline)
                 Text(tunnel.compactStatusTitle)
-                    .font(.subheadline)
-                    .foregroundStyle(isFailed ? Color.red : Color.secondary)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(isFailed ? Color.red : Color.primary)
                     .contentTransition(.opacity)
                     .animation(AetherVisual.animation(AetherVisual.quickFade), value: tunnel.compactStatusTitle)
+                headerSubtitle
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             Spacer(minLength: AetherVisual.s2)
-            Toggle(isOn: Binding(
-                get: { tunnel.isEnabled },
-                set: { _ in Task { await tunnel.setEnabled(!tunnel.isEnabled) } }
-            )) {
-                Text(tunnel.primaryActionTitle)
-            }
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .controlSize(.large)
-            .disabled(!tunnel.canPerformPrimaryAction)
-            .help(tunnel.primaryActionTitle)
-            .accessibilityLabel(tunnel.primaryActionTitle)
-            .accessibilityIdentifier("menu-connection-toggle")
+            // Drawn rather than a native Toggle: the panel never activates
+            // the app, and AppKit draws a native switch grey there even
+            // when it is on.
+            ConnectionSwitch(identifier: "menu-connection-toggle", isCompact: true)
         }
     }
 
-    private func exitSection(_ group: ProxyGroupConfigurationSummary) -> some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            HStack(spacing: AetherVisual.s2) {
-                Text(AppLocalization.string("Exit"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(verbatim: group.name)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                Spacer()
-                let isTesting = tunnel.proxyLatencyRequests.contains(group.name)
-                Button {
-                    Task { await tunnel.testProxyLatency(group: group.name) }
-                } label: {
-                    Label {
-                        Text(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
-                    } icon: {
-                        if isTesting {
-                            ProgressView().controlSize(.mini)
-                        } else {
-                            Image(systemName: "bolt")
+    @ViewBuilder
+    private var headerSubtitle: some View {
+        if tunnel.isConnected, let since = tunnel.connectedSince {
+            TimelineView(.periodic(from: since, by: 60)) { context in
+                Text(
+                    String.localizedStringWithFormat(
+                        AppLocalization.string("Connected for %@"),
+                        AppLocalization.duration(context.date.timeIntervalSince(since))
+                    )
+                )
+            }
+        } else {
+            Text(verbatim: "AetherRoute")
+        }
+    }
+
+    /// The exit and the two modes in one glass group, rows as in System
+    /// Settings.
+    private var routeGroup: some View {
+        VStack(spacing: 0) {
+            if let group = primaryGroup {
+                exitRow(group)
+                if showingNodes {
+                    MenuNodeListInline(group: group) {
+                        withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                            showingNodes = false
                         }
                     }
-                    .font(.caption)
+                    .padding(.horizontal, AetherVisual.s2)
+                    .padding(.bottom, AetherVisual.s2)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                .buttonStyle(.borderless)
-                .disabled(isTesting)
-                .accessibilityIdentifier("menu-proxy-speedtest-button")
+                rowDivider
             }
-
-            Button {
-                withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                    showingNodes.toggle()
-                }
-            } label: {
-                HStack(spacing: AetherVisual.s2) {
-                    let member = tunnel.proxySelections[group.name]?.selectedMember
-                    MenuSelectedNodeTitle(
-                        member: member,
-                        leaf: member.flatMap { tunnel.automaticGroupLeaves[$0] }
-                    )
-                    if let member {
-                        MenuNodeLatency(
-                            status: ProxyLatencyStatus.status(
-                                member: member,
-                                results: tunnel.proxyLatencies[group.name]?.results,
-                                isTesting: tunnel.proxyLatencyRequests.contains(group.name)
-                            ),
-                            confidence: tunnel.latencyConfidence(group: group.name, member: member)
-                        )
-                    }
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(showingNodes ? 90 : 0))
-                }
-                .padding(.horizontal, AetherVisual.s3)
-                .padding(.vertical, AetherVisual.s2)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous))
-                .contentShape(Rectangle())
+            panelRow(symbol: "arrow.triangle.branch", tint: .orange, title: AppLocalization.string("Routing mode"), help: .routingMode) {
+                RoutingModeSegmentedControl(
+                    selection: Binding(
+                        get: { tunnel.routingMode },
+                        set: { mode in Task { await tunnel.setRoutingMode(mode) } }
+                    ),
+                    isEnabled: tunnel.canChangeRoutingMode,
+                    marksSelection: true
+                )
+                .frame(width: 168)
             }
-            .buttonStyle(.aetherPressable)
-            .help(tunnel.proxySelections[group.name]?.selectedMember ?? AppLocalization.string("Select Node"))
-            .accessibilityIdentifier("menu-proxy-node-selector")
-            .task(id: "\(group.name):\(tunnel.isConnected)") {
-                await tunnel.refreshProxySelection(group: group.name)
+#if AETHERROUTE_INDEPENDENT
+            rowDivider
+            panelRow(
+                symbol: tunnel.networkEngineMode == .tun ? "bolt.shield.fill" : "shield.fill",
+                tint: .blue,
+                title: AppLocalization.string("Network engine"),
+                help: .networkEngine
+            ) {
+                NetworkEngineSegmentedControl(
+                    selection: networkEngineBinding,
+                    isEnabled: tunnel.canChangeNetworkEngine,
+                    marksSelection: true
+                )
+                .frame(width: 168)
             }
-
-            if showingNodes {
-                MenuNodeListInline(group: group) {
-                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                        showingNodes = false
-                    }
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+#endif
         }
+        .aetherGlass(in: RoundedRectangle(cornerRadius: Self.groupRadius, style: .continuous))
     }
 
-    private var modeSection: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            // Same title row as the network engine below.
-            HStack(spacing: AetherVisual.s1) {
-                Text(AppLocalization.string("Routing mode"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                AetherHelpButton(topic: .routingMode)
-                    .controlSize(.small)
-                ModeHint(text: tunnel.routingMode.shortHint)
-                    .padding(.leading, AetherVisual.s1)
+    private var rowDivider: some View {
+        Divider().padding(.leading, AetherVisual.s3 + Self.rowTileSize + AetherVisual.s2)
+    }
+
+    private func panelRow<Trailing: View>(
+        symbol: String,
+        tint: Color,
+        title: String,
+        help: HelpTopic,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        HStack(spacing: AetherVisual.s2) {
+            AetherIconTile(symbol: symbol, color: tint, size: Self.rowTileSize)
+            Text(title)
+                .font(.callout)
+                .lineLimit(1)
+                .fixedSize()
+            AetherHelpButton(topic: help)
+                .controlSize(.small)
+            Spacer(minLength: AetherVisual.s2)
+            trailing()
+        }
+        .frame(minHeight: 44)
+        .padding(.horizontal, AetherVisual.s3)
+    }
+
+    private func exitRow(_ group: ProxyGroupConfigurationSummary) -> some View {
+        Button {
+            withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                showingNodes.toggle()
             }
-            RoutingModeSegmentedControl(
-                selection: Binding(
-                    get: { tunnel.routingMode },
-                    set: { mode in Task { await tunnel.setRoutingMode(mode) } }
-                ),
-                isEnabled: tunnel.canChangeRoutingMode
-            )
-#if AETHERROUTE_INDEPENDENT
-            HStack(spacing: AetherVisual.s1) {
-                Text(AppLocalization.string("Network engine"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                AetherHelpButton(topic: .networkEngine)
-                    .controlSize(.small)
-                ModeHint(text: tunnel.networkEngineMode.shortHint)
-                    .padding(.leading, AetherVisual.s1)
+        } label: {
+            HStack(spacing: AetherVisual.s2) {
+                AetherIconTile(symbol: "globe", color: .indigo, size: Self.rowTileSize)
+                let member = tunnel.proxySelections[group.name]?.selectedMember
+                MenuSelectedNodeTitle(
+                    member: member,
+                    leaf: member.flatMap { tunnel.automaticGroupLeaves[$0] }
+                )
+                if let member {
+                    MenuNodeLatency(
+                        status: ProxyLatencyStatus.status(
+                            member: member,
+                            results: tunnel.proxyLatencies[group.name]?.results,
+                            isTesting: tunnel.proxyLatencyRequests.contains(group.name)
+                        ),
+                        confidence: tunnel.latencyConfidence(group: group.name, member: member)
+                    )
+                }
+                AetherDisclosureChevron(isExpanded: showingNodes)
             }
-            .padding(.top, AetherVisual.s1)
-            NetworkEngineSegmentedControl(
-                selection: networkEngineBinding,
-                isEnabled: tunnel.canChangeNetworkEngine
-            )
-#endif
+            .frame(minHeight: 44)
+            .padding(.horizontal, AetherVisual.s3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.aetherPressable)
+        .help(tunnel.proxySelections[group.name]?.selectedMember ?? AppLocalization.string("Select Node"))
+        .accessibilityIdentifier("menu-proxy-node-selector")
+        .task(id: "\(group.name):\(tunnel.isConnected)") {
+            await tunnel.refreshProxySelection(group: group.name)
         }
     }
 
     private var footer: some View {
-        HStack(spacing: AetherVisual.s3) {
-            Button(AppLocalization.string("Open AetherRoute")) {
+        HStack(spacing: AetherVisual.s2) {
+            Button {
                 AppWindowManager.shared.showMainWindow()
+            } label: {
+                Text(AppLocalization.string("Open AetherRoute"))
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.aetherGlassCapsule)
             if let copiedMessage {
                 Label(copiedMessage, systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                     .transition(.opacity)
             }
-            Spacer()
             MenuUpdateStatus(updater: SparkleUpdaterController.shared)
+            if let group = primaryGroup {
+                let isTesting = tunnel.proxyLatencyRequests.contains(group.name)
+                Button {
+                    Task { await tunnel.testProxyLatency(group: group.name) }
+                } label: {
+                    if isTesting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "bolt.fill")
+                    }
+                }
+                .buttonStyle(.aetherGlassCapsule)
+                .disabled(isTesting)
+                .help(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
+                .accessibilityLabel(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
+                .accessibilityIdentifier("menu-proxy-speedtest-button")
+            }
             Menu {
                 Text(verbatim: "AetherRoute \(SparkleUpdaterController.currentVersion)")
                 Divider()
@@ -1035,10 +1047,11 @@ private struct MenuBarContent: View {
                     DispatchQueue.main.async { NSApplication.shared.terminate(nil) }
                 }
             } label: {
-                Image(systemName: "ellipsis.circle")
+                Image(systemName: "ellipsis")
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
             .menuIndicator(.hidden)
+            .buttonStyle(.aetherGlassCapsule)
             .fixedSize()
             .accessibilityLabel(AppLocalization.string("More"))
         }
@@ -1146,7 +1159,7 @@ private struct MenuBarContent: View {
                     )
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .controlSize(.large)
                 .accessibilityIdentifier("menu-privacy-review-button")
             }
@@ -1443,7 +1456,7 @@ private struct MenuSelectedNodeTitle: View {
 
     var body: some View {
         let shown = leaf ?? member
-        AetherNodeFlag(name: shown ?? "")
+        AetherRegionCode(name: shown ?? "")
         HStack(alignment: .firstTextBaseline, spacing: AetherVisual.sCompact) {
             Text(verbatim: shown ?? AppLocalization.string("Select Node"))
                 .font(.body.weight(.medium))
@@ -1485,7 +1498,7 @@ private struct MenuNodeRow: View {
                     .opacity(isSelected ? 1 : 0)
                     .frame(width: AetherVisual.s3)
                     .accessibilityHidden(true)
-                AetherNodeFlag(name: member)
+                AetherRegionCode(name: member)
                 Text(verbatim: member)
                     .font(.callout.weight(isSelected ? .semibold : .regular))
                     .lineLimit(1)
@@ -1655,10 +1668,20 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
-        case .general: "gearshape"
+        case .general: "gearshape.fill"
         case .network: "network"
-        case .privacy: "hand.raised"
-        case .about: "info.circle"
+        case .privacy: "hand.raised.fill"
+        case .about: "info"
+        }
+    }
+
+    /// One tile colour per pane, as in System Settings.
+    var tileColor: Color {
+        switch self {
+        case .general: .gray
+        case .network: .blue
+        case .privacy: .indigo
+        case .about: .teal
         }
     }
 }
@@ -1689,19 +1712,14 @@ private struct SettingsView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedTab) {
-                // Same row style as the main window's sidebar: body text, a
-                // secondary icon that takes the accent when selected, and the
-                // system's own selection highlight.
+                // Same row style as the main window's sidebar: a colour tile,
+                // body text, and the system's own selection highlight.
                 ForEach(SettingsTab.allCases) { tab in
                     Button {
                         selectedTab = tab
                     } label: {
-                    HStack(spacing: AetherVisual.sCompact) {
-                        Image(systemName: tab.symbol)
-                            .font(.title3.weight(.semibold))
-                            .frame(width: 18)
-                            .foregroundStyle(selectedTab == tab ? Color.accentColor : Color.secondary)
-                            .accessibilityHidden(true)
+                    HStack(spacing: AetherVisual.sRow) {
+                        AetherIconTile(symbol: tab.symbol, color: tab.tileColor)
                         Text(tab.title)
                             .font(.body.weight(.medium))
                             .accessibilityIdentifier("settings-tab-\(tab.rawValue)")
@@ -1715,7 +1733,9 @@ private struct SettingsView: View {
                     .buttonStyle(.plain)
                     .accessibilityElement(children: .contain)
                     .tag(Optional(tab))
-                    .accessibilityIdentifier("settings-tab-\(tab.rawValue)")
+                    // The identifier lives on the title text only: on both
+                    // the row and its text, UI automation found two matches
+                    // and could not click either.
                 }
             }
             .listStyle(.sidebar)
@@ -2342,7 +2362,7 @@ private struct ShortcutAssignmentRow: View {
                         .font(.caption2.weight(.semibold))
                 }
             }
-            .buttonStyle(.bordered)
+            .aetherGlassButton()
             .accessibilityLabel(title)
             .accessibilityValue(selection.displayTitle)
             .popover(isPresented: $isPresentingChoices, arrowEdge: .trailing) {

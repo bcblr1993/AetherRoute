@@ -88,54 +88,6 @@ func formattedBytes(_ bytes: UInt64) -> String {
     }
 }
 
-struct TargetPillView: View {
-    let target: String
-    var isHovered: Bool = false
-
-    var body: some View {
-        HStack(spacing: AetherVisual.s1) {
-            Image(systemName: iconName)
-                .font(.subheadline.weight(.semibold))
-                .accessibilityHidden(true)
-
-            Text(target)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color(nsColor: .labelColor))
-        }
-        .foregroundStyle(foregroundColor)
-        .padding(.horizontal, AetherVisual.s2)
-        .padding(.vertical, AetherVisual.s1)
-        .background(pillColor.opacity(0.12), in: Capsule())
-        .overlay {
-            Capsule()
-                .stroke(pillColor.opacity(0.28), lineWidth: 0.6)
-        }
-        .lineLimit(1)
-    }
-
-    private var upperTarget: String {
-        target.uppercased()
-    }
-
-    private var pillColor: Color {
-        if upperTarget == "DIRECT" { return .green }
-        if upperTarget == "REJECT" { return .red }
-        return .indigo
-    }
-
-    private var foregroundColor: Color {
-        if upperTarget == "DIRECT" { return .green }
-        if upperTarget == "REJECT" { return .red }
-        return .primary
-    }
-
-    private var iconName: String {
-        if upperTarget == "DIRECT" { return "arrow.forward" }
-        if upperTarget == "REJECT" { return "hand.raised.fill" }
-        return "arrow.triangle.branch"
-    }
-}
-
 struct StatePill: View {
     let title: String
     let color: Color

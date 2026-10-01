@@ -7,10 +7,25 @@ keyboard focus, VoiceOver semantics, and Reduce Motion.
 
 ## Visual hierarchy
 
-- A native resizable sidebar keeps the five primary destinations stable and
-  inherits the user's system accent, row size, focus, and Liquid Glass behavior.
-- The primary connection action lives in the system toolbar. The content layer
-  begins with task content instead of imitating a second toolbar.
+- The window follows macOS 26 Liquid Glass. The desktop shows through a
+  translucent window material; the sidebar is a floating glass pane inset
+  8 pt from the window edges with the window controls inside it; cards,
+  buttons and segmented controls are glass. Every glass surface is the
+  system's own (`glassEffect`, glass button styles, native segmented
+  controls), so the person's Liquid Glass setting (clear or tinted) and
+  Reduce Transparency apply to AetherRoute exactly as to Apple's apps. On
+  macOS 15 the same surfaces fall back to the closest material.
+- Pages read like System Settings: a large title and the page's actions on
+  one line, no subtitle (the section's description stays with VoiceOver);
+  groups of rows inside glass cards, each row a colour tile, a title, then
+  the value or control on the trailing edge; a quiet section heading above a
+  group and a short footnote below it.
+- Colour tiles name things, never state: one colour per sidebar page,
+  Settings pane, profile kind and proxy-group strategy.
+- The connection switch is drawn, not a native toggle, on the overview and in
+  the menu bar panel: the panel never activates the app, and AppKit draws a
+  native switch grey there even when it is on. It stays a button named after
+  its action ("Connect", "Disconnect", "Retry", "Cancel").
 - Green communicates an active, healthy data path. Orange is transitional, red
   is a failure, and secondary color is inactive or unavailable. The blue brand
   gradient stays out of this vocabulary entirely; it carries identity, not
@@ -18,10 +33,11 @@ keyboard focus, VoiceOver semantics, and Reduce Motion.
 - Connection state comes only from the active Network Extension lifecycle and
   readiness signal. The interface never paints a successful state from a
   requested toggle value.
-- The overview prioritizes connection state, routing mode, active profile, and
-  current route. Telemetry remains blank rather than showing invented values.
-- Content uses quiet semantic fills, 14-18 point continuous corners, hairline
-  separation, and restrained elevation only around the connection focus.
+- The overview leads with the state (medallion, one large word, the switch),
+  then live traffic, then the route group (exit node, routing mode, network
+  engine, route check). Telemetry remains blank rather than showing invented
+  values.
+- Regions are named by text codes (SG, JP), not flags.
 
 ## Motion and interaction
 

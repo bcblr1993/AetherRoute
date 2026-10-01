@@ -176,7 +176,9 @@ struct PrivacyDisclosureView: View {
                     )
                 Text(AppLocalization.string("When you connect, traffic and DNS queries may be sent to the proxy and DNS services in your profile. Subscription updates contact your provider; routing rule updates contact public data sources after connection. These services may observe your IP address. Review and trust a provider before importing it."))
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    // Primary: grey text on the orange tint failed the
+                    // contrast audit.
+                    .foregroundStyle(.primary)
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityHidden(true)
@@ -215,7 +217,7 @@ struct PrivacyDisclosureView: View {
                     .frame(minWidth: 220)
                     .padding(.vertical, AetherVisual.s1)
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("privacy-consent-button")

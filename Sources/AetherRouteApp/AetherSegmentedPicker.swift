@@ -1,20 +1,16 @@
 import AppKit
 import SwiftUI
 
-/// A native segmented control that marks its selection the same way as the
-/// Overview's routing and engine controls: accent fill plus the status dot.
-/// SwiftUI's segmented Picker cannot carry the dot, so every text-only
-/// segmented choice uses this instead. `.disabled` and `.controlSize` apply
-/// through the environment, as they do for a Picker.
+/// A native segmented control with equal segments sized up front, which
+/// SwiftUI's segmented Picker does not offer. It draws exactly as the system
+/// does, Liquid Glass included. `.disabled` and `.controlSize` apply through
+/// the environment, as they do for a Picker.
 struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
     struct Option {
         let value: Value
         let title: String
     }
 
-    /// Read here so a window gaining or losing key status updates the
-    /// selection dot to match the fill AppKit draws.
-    @Environment(\.controlActiveState) private var controlActiveState
     @Binding var selection: Value
     let options: [Option]
     var accessibilityLabel: String? = nil
@@ -75,7 +71,6 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
         }
         control.selectedSegment = options.firstIndex { $0.value == selection } ?? -1
         control.isEnabled = context.environment.isEnabled
-        control.markSelectedSegment(onAccentFill: controlActiveState == .key)
         control.controlSize = switch context.environment.controlSize {
         case .mini: .mini
         case .small: .small
@@ -84,9 +79,7 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
         }
         // Equal segments, sized up front. `.fillEqually` widens the segments
         // only after the first layout pass, so the width SwiftUI measured
-        // first was wrong and a narrow DNS page overflowed its window. Every
-        // segment also reserves room for the selection dot, so moving the
-        // selection never changes the control's width.
+        // first was wrong and a narrow DNS page overflowed its window.
         // A full-width control is sized by its container, so AppKit can
         // share that width out equally without the first-pass problem.
         control.segmentDistribution = fillsWidth ? .fillEqually : .fit
@@ -100,7 +93,6 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
         where control.width(forSegment: index) != segmentWidth {
             control.setWidth(segmentWidth, forSegment: index)
         }
-        control.selectedSegmentBezelColor = .controlAccentColor
         control.setContentHuggingPriority(
             fillsWidth ? .defaultLow : .required,
             for: .horizontal
@@ -113,8 +105,8 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
         }
     }
 
-    /// The width AppKit itself gives the widest label once it carries the
-    /// selection dot, measured on a one-segment control of the same size.
+    /// The width AppKit itself gives the widest label, measured on a
+    /// one-segment control of the same size.
     @MainActor
     static func measureSegmentWidth(
         for titles: [String],
@@ -132,7 +124,6 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
             probe.controlSize = controlSize
             probe.segmentDistribution = .fit
             probe.selectedSegment = 0
-            probe.markSelectedSegment()
             return probe.intrinsicContentSize.width
         }.max().map(ceil) ?? 0
     }
@@ -168,7 +159,6 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
 
         @MainActor @objc func selectionChanged(_ sender: NSSegmentedControl) {
             guard options.indices.contains(sender.selectedSegment) else { return }
-            sender.markSelectedSegment(onAccentFill: sender.window?.isKeyWindow == true)
             selection.wrappedValue = options[sender.selectedSegment].value
         }
     }

@@ -158,7 +158,7 @@ struct NetworkSetupView: View {
             .padding(.vertical, AetherVisual.s1)
             .contentTransition(.opacity)
         }
-        .buttonStyle(.borderedProminent)
+        .aetherGlassButton(prominent: true)
         .controlSize(.large)
         .keyboardShortcut(.defaultAction)
         .disabled(primaryAction == .waiting || primaryAction == .restartRequired)

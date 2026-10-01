@@ -44,7 +44,9 @@ struct ProxiesView: View {
                         HStack(alignment: .top, spacing: AetherVisual.s4) {
                             proxyGroupColumn(groups: summary.proxyGroups)
                                 .frame(width: Self.groupColumnWidth)
+                            // Level with the group card, below its heading.
                             activeGroupView(summary: summary)
+                                .padding(.top, AetherVisual.s5 + AetherVisual.s1)
                         }
                     } else {
                         // One group needs no switcher; the card names it.
@@ -98,16 +100,18 @@ struct ProxiesView: View {
     /// The groups as a vertical list beside the members of the chosen one.
     private func proxyGroupColumn(groups: [ProxyGroupConfigurationSummary]) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            AetherSectionHeader(
-                title: AppLocalization.string("Proxy groups"),
-                symbol: "square.stack.3d.up",
-                count: groups.count
-            )
+            Text(AppLocalization.string("Proxy groups"))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, AetherVisual.s2)
+                .accessibilityAddTraits(.isHeader)
             VStack(spacing: AetherVisual.sMicro) {
                 ForEach(groups) { group in
                     groupButton(group, in: groups, fillsWidth: true)
                 }
             }
+            .padding(AetherVisual.sCompact)
+            .aetherPanel()
         }
     }
 
@@ -157,10 +161,21 @@ struct ProxiesView: View {
 func proxyGroupSymbol(_ strategy: String) -> String {
     switch strategy.lowercased() {
     case "select": return "square.stack.3d.up.fill"
-    case "url-test": return "bolt.horizontal.fill"
-    case "fallback": return "arrow.triangle.pull"
+    case "url-test": return "bolt.fill"
+    case "fallback": return "arrow.triangle.branch"
     case "load-balance": return "scale.3d"
     default: return "point.3.connected.trianglepath.dotted"
+    }
+}
+
+/// The group's tile colour, by strategy, so the kinds tell apart at a glance.
+func proxyGroupTint(_ strategy: String) -> Color {
+    switch strategy.lowercased() {
+    case "select": .indigo
+    case "url-test": .green
+    case "fallback": .orange
+    case "load-balance": .teal
+    default: .gray
     }
 }
 
@@ -178,7 +193,9 @@ func proxyGroupStrategyTitle(_ strategy: String) -> String {
     }
 }
 
-// MARK: - 策略组 Tab 按钮组件
+// MARK: - Group button
+
+/// A group as a row: its tile, its name, and "strategy · current node".
 private struct ProxyGroupTabButton: View {
     let group: ProxyGroupConfigurationSummary
     let isSelected: Bool
@@ -186,97 +203,63 @@ private struct ProxyGroupTabButton: View {
     /// In the group column each button spans the column; in the top bar it
     /// keeps its natural width.
     var fillsWidth = false
-
-    /// What a group without a pinned node does, instead of repeating its
-    /// strategy name under the strategy badge.
-    private var strategyBehavior: String {
-        switch group.strategy.lowercased() {
-        case "url-test": AppLocalization.string("Auto select fastest")
-        case "fallback": AppLocalization.string("Uses the first available node")
-        case "load-balance": AppLocalization.string("Spreads traffic across nodes")
-        default: group.strategy.uppercased()
-        }
-    }
     let onSelect: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: AetherVisual.s2) {
-                Image(systemName: proxyGroupSymbol(group.strategy))
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(Color(nsColor: .labelColor))
-                    .accessibilityHidden(true)
-                    .frame(width: 24, height: 24)
-                    .background(
-                        (isSelected ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08)),
-                        in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
-                    )
-
+            HStack(spacing: AetherVisual.sRow) {
+                AetherIconTile(symbol: proxyGroupSymbol(group.strategy), color: proxyGroupTint(group.strategy), size: 28)
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    HStack(spacing: AetherVisual.s1) {
-                        Text(group.name)
-                            .font(.body.weight(isSelected ? .bold : .medium))
-                            .foregroundStyle(Color(nsColor: .labelColor))
-                            .lineLimit(1)
-
-                        Text(proxyGroupStrategyTitle(group.strategy))
-                            .font(.caption2.weight(.bold))
-                            .padding(.horizontal, AetherVisual.s1)
-                            .padding(.vertical, AetherVisual.sMicro)
-                            .background(
-                                (isSelected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.1)),
-                                in: Capsule()
-                            )
-                            .foregroundStyle(Color(nsColor: .labelColor))
-                    }
-
-                    if let currentMember {
-                        HStack(spacing: AetherVisual.s1) {
-                            Circle()
-                                .fill(Color.green)
-                                .frame(width: 4.5, height: 4.5)
-                            Text(currentMember)
-                                .font(.caption)
-                                .foregroundStyle(Color(nsColor: .labelColor))
-                                .lineLimit(1)
-                        }
-                    } else {
-                        Text(strategyBehavior)
-                            .font(.caption)
-                            .foregroundStyle(Color(nsColor: .labelColor))
-                            .lineLimit(1)
-                    }
+                    Text(group.name)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-
                 if fillsWidth {
                     Spacer(minLength: 0)
                 }
             }
-            .padding(.horizontal, AetherVisual.s3)
-            .padding(.vertical, AetherVisual.sCompact)
-            .contentShape(RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous))
+            .padding(.horizontal, AetherVisual.sRow)
+            .padding(.vertical, AetherVisual.s2)
+            .contentShape(RoundedRectangle(cornerRadius: AetherVisual.s3, style: .continuous))
             .background(
                 isSelected
-                    ? AnyShapeStyle(Color(nsColor: .controlBackgroundColor))
-                    : AnyShapeStyle(isHovered ? Color.secondary.opacity(0.08) : Color.clear),
-                in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                    ? Color.accentColor.opacity(0.22)
+                    : (isHovered ? Color.secondary.opacity(0.1) : Color.clear),
+                in: RoundedRectangle(cornerRadius: AetherVisual.s3, style: .continuous)
             )
-            .overlay {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                        .stroke(Color.accentColor.opacity(0.6), lineWidth: 1.2)
-                }
-            }
         }
         .buttonStyle(.aetherPressable)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .onHover { hovering in
             withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
                 isHovered = hovering
             }
         }
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: isSelected)
+    }
+
+    /// "Manual select · Singapore Edge"; a group with no node yet says what
+    /// it will do instead.
+    private var subtitle: String {
+        let strategy = proxyGroupStrategyTitle(group.strategy)
+        if let currentMember {
+            return "\(strategy) · \(currentMember)"
+        }
+        return switch group.strategy.lowercased() {
+        case "url-test": AppLocalization.string("Auto select fastest")
+        case "fallback": AppLocalization.string("Uses the first available node")
+        case "load-balance": AppLocalization.string("Spreads traffic across nodes")
+        default: strategy
+        }
     }
 }
+
 // MARK: - The chosen group
 
 /// One card: the group and its current node, the one switch that matters,
@@ -362,7 +345,7 @@ private struct ActiveProxyGroupView: View {
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(minWidth: 72)
             }
-            .buttonStyle(.bordered)
+            .aetherGlassButton()
             .controlSize(.small)
             .disabled(isTesting)
             .help(lastTestedHelp)
@@ -412,7 +395,7 @@ private struct ActiveProxyGroupView: View {
             Image(systemName: "arrow.up.arrow.down")
         }
         .menuIndicator(.hidden)
-        .buttonStyle(.bordered)
+        .aetherGlassButton()
         .controlSize(.small)
         .fixedSize()
         .help(String.localizedStringWithFormat(AppLocalization.string("Sort: %@"), sort.localizedTitle))
@@ -681,7 +664,7 @@ private struct ProxyNodeRow: View {
                     .frame(width: AetherVisual.s5)
                     .accessibilityHidden(true)
             }
-            ProxyRegionCode(name: row.member)
+            AetherRegionCode(name: row.member)
             Text(row.member)
                 .font(.body.weight(row.isSelected ? .semibold : .regular))
                 .foregroundStyle(.primary)
@@ -734,7 +717,7 @@ private struct ProxyMemberTableItem: Identifiable {
 /// A latency result as coloured text, the same colour bands as everywhere
 /// else. The system green and orange are too light for text on a light
 /// background, so they are deepened there.
-private struct ProxyLatencyText: View {
+struct ProxyLatencyText: View {
     @Environment(\.colorScheme) private var colorScheme
     let status: ProxyLatencyStatus
 
@@ -759,27 +742,6 @@ private struct ProxyLatencyText: View {
     private var color: Color {
         guard isResult else { return .secondary }
         return colorScheme == .dark ? status.tint : status.tint.mix(with: .black, by: 0.3)
-    }
-}
-
-/// The region a node's name states, as a short code such as "SG". An
-/// unrecognised name keeps the slot empty so names still line up.
-private struct ProxyRegionCode: View {
-    let name: String
-
-    var body: some View {
-        Group {
-            if let region = AetherRegionFlag.region(for: name) {
-                Text(verbatim: region.code)
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 26, height: 18)
-                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-            } else {
-                Color.clear.frame(width: 26, height: 18)
-            }
-        }
-        .accessibilityHidden(true)
     }
 }
 

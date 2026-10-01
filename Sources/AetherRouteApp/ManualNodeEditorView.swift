@@ -413,7 +413,7 @@ struct ManualNodeEditorSheet: View {
                         isWorking: isSaving
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     !isCreateEnabled

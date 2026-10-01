@@ -51,7 +51,7 @@ struct EmptyProfileOnboardingCard: View {
                     }
                     .padding(.horizontal, AetherVisual.s1)
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .controlSize(.large)
                 .accessibilityIdentifier("onboarding-add-subscription-button")
 
@@ -65,7 +65,7 @@ struct EmptyProfileOnboardingCard: View {
                             .font(.body.weight(.medium))
                     }
                 }
-                .buttonStyle(.bordered)
+                .aetherGlassButton()
                 .controlSize(.large)
                 .accessibilityIdentifier("onboarding-import-profile-button")
 
@@ -80,7 +80,7 @@ struct EmptyProfileOnboardingCard: View {
                                 .font(.body.weight(.medium))
                         }
                     }
-                    .buttonStyle(.bordered)
+                    .aetherGlassButton()
                     .controlSize(.large)
                     .accessibilityIdentifier("onboarding-icloud-sync-button")
                 }
@@ -207,7 +207,7 @@ struct ExternalSubscriptionConfirmationSheet: View {
                             || tunnel.isRefreshingSubscription
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     !tunnel.canImportOrAddProfileRegardlessOfPrivacy
@@ -227,7 +227,6 @@ struct ProfilesView: View {
     private enum FileImporterKind {
         case profile
         case portableArchive
-        case routingResource
 
         var allowedContentTypes: [UTType] {
             switch self {
@@ -235,8 +234,6 @@ struct ProfilesView: View {
                 [.plainText, .data]
             case .portableArchive:
                 [.aetherRouteProfileArchive, .data]
-            case .routingResource:
-                [.data]
             }
         }
     }
@@ -257,7 +254,6 @@ struct ProfilesView: View {
     @State private var isArchivePasswordPresented = false
     @State private var isArchiveExporterPresented = false
     @State private var isExportPasswordPresented = false
-    @State private var routingResourceImportKind: RoutingResourceKind?
     @State private var isCloudSyncSheetPresented = false
     @State private var archiveImportURL: URL?
     @State private var pendingArchiveData: Data?
@@ -291,20 +287,6 @@ struct ProfilesView: View {
                     supportedFormatsCard
                 } else {
                     profileLibraryCard
-
-                    if tunnel.profiles.count == 1 {
-                        addAnotherProfileCard
-                    }
-
-                    if !tunnel.requiredRoutingResources.isEmpty {
-                        RoutingResourcesCard(
-                            importResource: { kind in
-                                routingResourceImportKind = kind
-                                presentFileImporter(.routingResource)
-                            }
-                        )
-                        .environmentObject(tunnel)
-                    }
                 }
             }
             .aetherPageContent(.wide)
@@ -439,38 +421,46 @@ struct ProfilesView: View {
 #endif
     }
 
+    /// One "Add" menu for every way a profile arrives, as in Apple's own
+    /// apps; archives and sync sit in the overflow menu beside it.
     private var pageHeader: some View {
         AetherPageHeader(.profiles) {
-            Button("Add Subscription…", systemImage: "link.badge.plus") {
-                tunnel.clearProfileMessage()
-                subscriptionURL = ""
-                isSubscriptionEditorPresented = true
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
-            .disabled(!tunnel.canImportOrAddProfile)
-            .accessibilityIdentifier("add-subscription")
+            Menu {
+                Button("Add Subscription…", systemImage: "link.badge.plus") {
+                    tunnel.clearProfileMessage()
+                    subscriptionURL = ""
+                    isSubscriptionEditorPresented = true
+                }
+                .disabled(!tunnel.canImportOrAddProfile)
+                .accessibilityIdentifier("add-subscription")
 
-            Button("Import Profile…", systemImage: "square.and.arrow.down") {
-                tunnel.clearProfileMessage()
-                presentFileImporter(.profile)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .disabled(!tunnel.canImportOrAddProfile)
+                Button("Import Profile…", systemImage: "square.and.arrow.down") {
+                    tunnel.clearProfileMessage()
+                    presentFileImporter(.profile)
+                }
+                .disabled(!tunnel.canImportOrAddProfile)
+                .accessibilityIdentifier("import-profile")
 
-            Menu("More", systemImage: "ellipsis.circle") {
+                Button("Add Node…", systemImage: "plus.circle") {
+                    tunnel.clearProfileMessage()
+                    isManualNodeEditorPresented = true
+                }
+                .disabled(!tunnel.canImportOrAddProfile)
+                .accessibilityIdentifier("add-manual-node")
+            } label: {
+                Label(AppLocalization.string("Add"), systemImage: "plus")
+            }
+            .menuIndicator(.visible)
+            .aetherGlassButton(prominent: true)
+            .fixedSize()
+            .accessibilityIdentifier("profiles-add-menu")
+
+            Menu {
                 Button(AppLocalization.string("iCloud Sync…"), systemImage: "icloud") {
                     tunnel.clearProfileMessage()
                     isCloudSyncSheetPresented = true
                 }
                 .accessibilityIdentifier("profiles-icloud-sync-button")
-
-                Button("Add Node…", systemImage: "plus") {
-                    tunnel.clearProfileMessage()
-                    isManualNodeEditorPresented = true
-                }
-                .disabled(!tunnel.canImportOrAddProfile)
 
                 Divider()
 
@@ -485,9 +475,13 @@ struct ProfilesView: View {
                     presentFileImporter(.portableArchive)
                 }
                 .disabled(!tunnel.canModifyProfiles)
+            } label: {
+                Image(systemName: "ellipsis")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
+            .menuIndicator(.hidden)
+            .aetherGlassButton()
+            .fixedSize()
+            .accessibilityLabel(AppLocalization.string("More"))
             .accessibilityIdentifier("profiles-more-menu")
         }
     }
@@ -725,101 +719,55 @@ struct ProfilesView: View {
 
     private static let searchThreshold = 2
 
-    /// With a single profile the page was mostly empty. Offering the ways
-    /// to add a second one (a backup provider, a work network) fills that
-    /// space with something useful and disappears once there are two.
-    private var addAnotherProfileCard: some View {
-        HStack(alignment: .center, spacing: AetherVisual.s4) {
-            Image(systemName: "square.stack.3d.up.badge.a")
-                .font(.title2)
-                .foregroundStyle(Color.accentColor)
-                .frame(width: AetherVisual.sheetIconSize, height: AetherVisual.sheetIconSize)
-                .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                Text(AppLocalization.string("Add another profile"))
-                    .font(.headline)
-                Text(AppLocalization.string("Keep a backup provider or a separate work setup and switch between them from the menu bar. Add one with the buttons above, or enter nodes by hand."))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: AetherVisual.s3)
-            // The header already offers subscriptions and profile files;
-            // manual nodes are only in its More menu, so surface them here.
-            Button("Add Node…", systemImage: "plus") {
-                tunnel.clearProfileMessage()
-                isManualNodeEditorPresented = true
-            }
-            .disabled(!tunnel.canImportOrAddProfile)
-            .accessibilityIdentifier("profiles-add-another-node")
-        }
-        .padding(AetherVisual.s4)
-        .aetherPanel()
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("profiles-add-another")
-    }
-
     private var profileLibraryCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center) {
-                HStack(spacing: AetherVisual.s2) {
-                    Text("Profile Library")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            Text(AppLocalization.string("My profiles"))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, AetherVisual.s2)
+                .accessibilityAddTraits(.isHeader)
 
-                    Text(verbatim: "\(tunnel.profiles.count)")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, AetherVisual.sCompact)
-                        .padding(.vertical, AetherVisual.sMicro)
-                        .background(Color.secondary.opacity(0.12), in: Capsule())
+            VStack(spacing: 0) {
+                if filteredProfiles.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
+                        .padding(AetherVisual.s4)
                 }
+                ForEach(Array(filteredProfiles.enumerated()), id: \.element.id) { index, managed in
+                    ManagedProfileRow(
+                        managed: managed,
+                        isActive: managed.id == tunnel.activeProfileID,
+                        canActivate: tunnel.canActivateProfile,
+                        canModify: tunnel.canModifyProfile(id: managed.id),
+                        activate: {
+                            Task { await tunnel.activateProfile(id: managed.id) }
+                        },
+                        rename: {
+                            profileToRename = managed
+                        },
+                        editNative: managed.profile.nativeNodes == nil ? nil : { nativeProfileToEdit = managed },
+                        remove: {
+                            profileToRemove = managed
+                        }
+                    )
+                    .transition(AetherVisual.insertion)
 
-                Spacer()
-
-                Label("Encrypted on this Mac", systemImage: "lock.shield.fill")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.primary)
-            }
-            .padding(.horizontal, AetherVisual.s5)
-            .padding(.vertical, AetherVisual.s4)
-
-            Divider()
-                .padding(.horizontal, AetherVisual.s5)
-
-            if filteredProfiles.isEmpty {
-                ContentUnavailableView.search(text: searchText)
-                    .padding(AetherVisual.s4)
-            }
-            ForEach(Array(filteredProfiles.enumerated()), id: \.element.id) { index, managed in
-                ManagedProfileRow(
-                    managed: managed,
-                    isActive: managed.id == tunnel.activeProfileID,
-                    canActivate: tunnel.canActivateProfile,
-                    canModify: tunnel.canModifyProfile(id: managed.id),
-                    activate: {
-                        Task { await tunnel.activateProfile(id: managed.id) }
-                    },
-                    rename: {
-                        profileToRename = managed
-                    },
-                    editNative: managed.profile.nativeNodes == nil ? nil : { nativeProfileToEdit = managed },
-                    remove: {
-                        profileToRemove = managed
+                    if index < filteredProfiles.count - 1 {
+                        Divider()
+                            .padding(.leading, AetherVisual.s4 + ManagedProfileRow.tileSize + AetherVisual.s3)
                     }
-                )
-
-                .transition(AetherVisual.insertion)
-
-                if index < filteredProfiles.count - 1 {
-                    Divider()
-                        .padding(.leading, AetherVisual.tableContentIndent)
-                        .padding(.trailing, AetherVisual.s5)
                 }
             }
+            .aetherPanel()
+
+            Label(
+                AppLocalization.string("Profiles and nodes are encrypted on this Mac. You can also drop a profile file onto this window to import it."),
+                systemImage: "lock.fill"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, AetherVisual.s2)
+            .padding(.top, AetherVisual.s1)
         }
-        .aetherPanel()
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: filteredProfiles.map(\.id))
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.activeProfileID)
     }
@@ -873,15 +821,7 @@ struct ProfilesView: View {
                 await Task.yield()
                 isArchivePasswordPresented = true
             }
-        case let (.routingResource, .success(urls)):
-            guard let kind = routingResourceImportKind,
-                  let url = urls.first else { return }
-            routingResourceImportKind = nil
-            Task {
-                await tunnel.importRoutingResource(kind, from: url)
-            }
         case let (_, .failure(error)):
-            routingResourceImportKind = nil
             tunnel.reportProfileImportError(error)
         }
     }
@@ -906,7 +846,7 @@ struct ProfilesView: View {
     }
 }
 
-private struct RoutingResourcesCard: View {
+struct RoutingResourcesCard: View {
     @EnvironmentObject private var tunnel: TunnelManager
     let importResource: (RoutingResourceKind) -> Void
 
@@ -921,7 +861,7 @@ private struct RoutingResourcesCard: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    Text("Routing rules")
+                    Text(AppLocalization.string("Rule resources"))
                         .font(.headline)
                     Text(summary)
                         .font(.subheadline)
@@ -939,7 +879,7 @@ private struct RoutingResourcesCard: View {
                     Button("Retry") {
                         Task { await tunnel.prepareRequiredRoutingResources() }
                     }
-                    .buttonStyle(.bordered)
+                    .aetherGlassButton()
                     .disabled(!tunnel.canModifyProfiles)
                     .help(editLockReason ?? "")
                     .accessibilityIdentifier("retry-routing-rules")
@@ -993,7 +933,7 @@ private struct RoutingResourcesCard: View {
                             isWorking: tunnel.isUpdatingRoutingResources
                         )
                     }
-                    .buttonStyle(.bordered)
+                    .aetherGlassButton()
                     .disabled(
                         !tunnel.canModifyProfiles
                             || tunnel.isUpdatingRoutingResources
@@ -1089,7 +1029,7 @@ private struct RoutingResourcesCard: View {
             Button("Import…", systemImage: "square.and.arrow.down") {
                 importResource(kind)
             }
-            .buttonStyle(.bordered)
+            .aetherGlassButton()
             .controlSize(.small)
             .disabled(
                 !tunnel.canModifyProfiles
@@ -1153,11 +1093,12 @@ private struct RoutingResourcesCard: View {
     }
 }
 
+/// A profile as a System Settings row: kind tile, name, details, and on the
+/// trailing edge either "Current" or a Use button.
 private struct ManagedProfileRow: View {
-    @Environment(\.colorScheme) private var colorScheme
+    static let tileSize: CGFloat = 34
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var isHovered = false
-    @State private var isActionHovered = false
     @State private var inspectedNodeCount: Int?
     let managed: ManagedProfile
     let isActive: Bool
@@ -1170,72 +1111,22 @@ private struct ManagedProfileRow: View {
 
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
-            // 1. 左侧原生单选指示器 (Radio Indicator)
-            Button(action: {
-                if !isActive && canActivate {
-                    activate()
-                }
-            }) {
-                ZStack {
-                    Circle()
-                        .strokeBorder(
-                            isActive ? Color.accentColor : Color.secondary.opacity(0.35),
-                            lineWidth: 1.5
-                        )
-                        .frame(width: 16, height: 16)
-                    if isActive {
-                        Circle()
-                            .fill(Color.accentColor)
-                            .frame(width: 8, height: 8)
-                    }
-                }
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isActive || !canActivate)
-            .accessibilityIdentifier("radio-select-\(managed.id.uuidString)")
-            .accessibilityLabel(AppLocalization.string(isActive ? "Selected" : "Select"))
+            AetherIconTile(symbol: iconName, color: iconTint, size: Self.tileSize)
 
-            // 2. 节点/配置图标 (磨砂色底 + 矢量图标)
-            ZStack {
-                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                    .fill(iconGradient)
-                Image(systemName: iconName)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(iconTint)
-            }
-            .frame(width: 36, height: 36)
-            .accessibilityHidden(true)
-
-            // 3. 配置名称与副标题
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                HStack(spacing: AetherVisual.s2) {
-                    Text(managed.profile.name)
-                        .help(managed.profile.name)
-                        .font(.body.weight(isActive ? .bold : .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
-                    if isActive {
-                        StatePill(
-                            title: AppLocalization.string("Current profile"),
-                            color: .green,
-                            symbol: "checkmark.circle.fill"
-                        )
-                        .transition(.scale(scale: 0.7).combined(with: .opacity))
-                    }
-                }
-
-                Text(detail)
-                    .font(.callout.weight(.medium))
+                Text(managed.profile.name)
+                    .help(managed.profile.name)
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
 
             Spacer(minLength: AetherVisual.s2)
 
-            // 4. 右侧操作区：如果是激活的订阅，展示检查更新按钮
             if isActive && isSubscription {
                 Button {
                     Task { await tunnel.refreshSubscription() }
@@ -1246,9 +1137,26 @@ private struct ManagedProfileRow: View {
                         isWorking: tunnel.isRefreshingSubscription
                     )
                 }
-                .buttonStyle(.bordered)
+                .aetherGlassButton()
                 .controlSize(.small)
                 .disabled(!canModify || tunnel.isRefreshingSubscription)
+            }
+
+            if isActive {
+                Label(AppLocalization.string("Current profile"), systemImage: "checkmark")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+                    .accessibilityIdentifier("profile-current-\(managed.id.uuidString)")
+            } else {
+                Button(AppLocalization.string("Use")) {
+                    activate()
+                }
+                .aetherGlassButton()
+                .controlSize(.small)
+                .disabled(!canActivate)
+                .transition(.opacity)
+                .accessibilityIdentifier("radio-select-\(managed.id.uuidString)")
             }
 
             Menu {
@@ -1292,22 +1200,23 @@ private struct ManagedProfileRow: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(isActionHovered ? Color.primary : Color.secondary)
                     .frame(width: 26, height: 26)
-                    .background(isActionHovered ? Color.secondary.opacity(0.18) : Color.clear, in: Circle())
                     .contentShape(Circle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .frame(width: 26, height: 26)
-            .onHover { isActionHovered = $0 }
             .accessibilityLabel("Profile actions")
             .accessibilityIdentifier("profile-actions-\(managed.id.uuidString)")
         }
-        .padding(.horizontal, AetherVisual.s5)
+        .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.sRow)
+        .frame(minHeight: 60)
         .contentShape(Rectangle())
-        .onTapGesture {
+        .background(isHovered ? Color.primary.opacity(0.04) : Color.clear)
+        .onHover { isHovered = $0 }
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: isActive)
+        .onTapGesture(count: 2) {
             if !isActive && canActivate {
                 activate()
             }
@@ -1322,12 +1231,6 @@ private struct ManagedProfileRow: View {
             guard !Task.isCancelled else { return }
             inspectedNodeCount = count
         }
-        .background(
-            isActive
-                ? Color.accentColor.opacity(colorScheme == .dark ? 0.08 : 0.04)
-                : (isHovered ? Color.primary.opacity(0.03) : Color.clear)
-        )
-        .onHover { isHovered = $0 }
         .contextMenu {
             if !isActive {
                 Button(action: activate) {
@@ -1370,17 +1273,11 @@ private struct ManagedProfileRow: View {
         return "doc.text.fill"
     }
 
-    /// Profile kinds differ by symbol; colour is not a kind.
+    /// One tile colour per kind of profile, like System Settings' rows.
     private var iconTint: Color {
-        .accentColor
-    }
-
-    private var iconGradient: LinearGradient {
-        LinearGradient(
-            colors: [iconTint.opacity(0.18), iconTint.opacity(0.08)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        if isSubscription { return .teal }
+        if managed.profile.nativeNodes != nil { return .indigo }
+        return .orange
     }
 
     private var detail: String {
@@ -1462,7 +1359,7 @@ private struct ProfileRenameSheet: View {
                         isWorking: isSaving
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1513,7 +1410,7 @@ struct SubscriptionEditorSheet: View {
                 } label: {
                     Label(AppLocalization.string("Paste"), systemImage: "doc.on.clipboard")
                 }
-                .buttonStyle(.bordered)
+                .aetherGlassButton()
                 .controlSize(.regular)
                 .accessibilityIdentifier("subscription-paste-button")
             }
@@ -1566,7 +1463,7 @@ struct SubscriptionEditorSheet: View {
                         isWorking: tunnel.isRefreshingSubscription
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

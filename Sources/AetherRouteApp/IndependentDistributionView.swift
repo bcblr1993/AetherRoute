@@ -164,7 +164,7 @@ struct IndependentDistributionView: View {
                             isWorking: distribution.isActivating
                         )
                     }
-                    .buttonStyle(.borderedProminent)
+                    .aetherGlassButton(prominent: true)
                     .disabled(
                         distribution.isActivating
                             || licenseKey.trimmingCharacters(
@@ -199,7 +199,7 @@ struct IndependentDistributionView: View {
                 } label: {
                     Text(AppLocalization.string("Check Now"))
                 }
-                .buttonStyle(.bordered)
+                .aetherGlassButton()
                 .disabled(!sparkle.canCheckForUpdates)
                 .accessibilityIdentifier("check-for-updates-button")
             }

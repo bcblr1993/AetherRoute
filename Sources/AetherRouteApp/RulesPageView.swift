@@ -1,58 +1,18 @@
 import AetherRouteKit
 import SwiftUI
 
-enum RuleKindFilter: String, CaseIterable, Identifiable {
-    case all = "All"
-    case domain = "Domain"
-    case ip = "IP / CIDR"
-    case geo = "Geo"
-    case match = "Match"
-
-    var id: String { rawValue }
-
-    var localizedTitle: String {
-        switch self {
-        case .all: AppLocalization.string("All")
-        case .domain: "DOMAIN"
-        case .ip: "IP-CIDR"
-        case .geo: "GEO"
-        case .match: "MATCH"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .all: "list.bullet"
-        case .domain: "globe"
-        case .ip: "network"
-        case .geo: "map"
-        case .match: "asterisk"
-        }
-    }
-
-    func accepts(_ kind: String) -> Bool {
-        let upper = kind.uppercased()
-        switch self {
-        case .all: return true
-        case .domain: return upper.contains("DOMAIN")
-        case .ip: return upper.contains("IP") || upper.contains("CIDR")
-        case .geo: return upper.contains("GEO")
-        case .match: return upper.contains("MATCH") || (!upper.contains("DOMAIN") && !upper.contains("IP") && !upper.contains("CIDR") && !upper.contains("GEO"))
-        }
-    }
-}
-
 enum RuleActionFilter: String, CaseIterable, Identifiable {
     case all = "All"
-    case direct = "Direct"
     case proxy = "Proxy"
+    case direct = "Direct"
     case reject = "Reject"
 
     var id: String { rawValue }
 
-    var localizedTitle: String {
+    /// The segment label, before its count.
+    var shortTitle: String {
         switch self {
-        case .all: AppLocalization.string("All Actions")
+        case .all: AppLocalization.string("All")
         case .direct: AppLocalization.string("Direct")
         case .proxy: AppLocalization.string("Proxy")
         case .reject: AppLocalization.string("Reject")
@@ -70,9 +30,8 @@ enum RuleActionFilter: String, CaseIterable, Identifiable {
     }
 }
 
-/// 路由策略出口比例分布条
-/// Shares of the rule list by target. It counts rules, not traffic, and
-/// says so: a long direct list does not mean most traffic goes direct.
+/// Shares of the rule list by target, as one thin bar. It counts rules, not
+/// traffic; the numbers are in the filter beside it.
 struct RuleDistributionBar: View {
     let directCount: Int
     let proxyCount: Int
@@ -81,90 +40,42 @@ struct RuleDistributionBar: View {
     let routingMode: RoutingMode
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                GeometryReader { proxy in
-                    let total = max(totalCount, 1)
-                    let directWidth = proxy.size.width * CGFloat(directCount) / CGFloat(total)
-                    let proxyWidth = proxy.size.width * CGFloat(proxyCount) / CGFloat(total)
-                    let rejectWidth = proxy.size.width * CGFloat(rejectCount) / CGFloat(total)
-
-                    HStack(spacing: AetherVisual.sMicro) {
-                        if directCount > 0 {
-                            RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
-                                .fill(Color.green)
-                                .frame(width: max(directWidth - 1, 4))
-                        }
-                        if proxyCount > 0 {
-                            RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
-                                .fill(Color.indigo)
-                                .frame(width: max(proxyWidth - 1, 4))
-                        }
-                        if rejectCount > 0 {
-                            RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
-                                .fill(Color.red)
-                                .frame(width: max(rejectWidth - 1, 4))
-                        }
-                    }
-                }
-                .frame(height: 6)
-                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
-
-                HStack(spacing: AetherVisual.s4) {
-                    Text("By rule count")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    HStack(spacing: AetherVisual.s1) {
-                        Circle().fill(Color.green).frame(width: 6.5, height: 6.5)
-                        Text(String.localizedStringWithFormat(AppLocalization.string("Direct rules: %lld"), Int64(directCount)))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.primary)
-                    }
-
-                    HStack(spacing: AetherVisual.s1) {
-                        Circle().fill(Color.indigo).frame(width: 6.5, height: 6.5)
-                        Text(String.localizedStringWithFormat(AppLocalization.string("Proxy rules: %lld"), Int64(proxyCount)))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.primary)
-                    }
-
-                    if rejectCount > 0 {
-                        HStack(spacing: AetherVisual.s1) {
-                            Circle().fill(Color.red).frame(width: 6.5, height: 6.5)
-                            Text(String.localizedStringWithFormat(AppLocalization.string("Reject rules: %lld"), Int64(rejectCount)))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.primary)
-                        }
-                    }
-
-                    Spacer()
-                }
-            }
-            // Outside Rule mode the list is not consulted, so the shares
-            // describe nothing that happens to traffic right now.
-            .opacity(routingMode == .rule ? 1 : 0.4)
-            .accessibilityElement(children: .combine)
-
-            if let modeNote {
-                Label(modeNote, systemImage: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("rule-distribution-mode-note")
-                    .transition(AetherVisual.insertion)
+        GeometryReader { proxy in
+            let total = CGFloat(max(totalCount, 1))
+            HStack(spacing: AetherVisual.sMicro) {
+                segment(count: proxyCount, color: .indigo, width: proxy.size.width, total: total)
+                segment(count: directCount, color: .green, width: proxy.size.width, total: total)
+                segment(count: rejectCount, color: .red, width: proxy.size.width, total: total)
             }
         }
-        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: routingMode)
+        .frame(height: 6)
+        .frame(minWidth: 80)
+        .background(Color.secondary.opacity(0.12), in: Capsule())
+        .clipShape(Capsule())
+        // Outside Rule mode the list is not consulted, so the shares
+        // describe nothing that happens to traffic right now.
+        .opacity(routingMode == .rule ? 1 : 0.4)
+        .help(summary)
+        .accessibilityElement()
+        .accessibilityLabel(summary)
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: [directCount, proxyCount, rejectCount])
     }
 
-    private var modeNote: String? {
-        switch routingMode {
-        case .rule: nil
-        case .global: AppLocalization.string("Global mode does not match rules; all traffic goes through the proxy.")
-        case .direct: AppLocalization.string("Direct mode does not match rules; all traffic connects directly.")
+    @ViewBuilder
+    private func segment(count: Int, color: Color, width: CGFloat, total: CGFloat) -> some View {
+        if count > 0 {
+            Rectangle()
+                .fill(color)
+                .frame(width: max(width * CGFloat(count) / total - 1, 4))
         }
+    }
+
+    private var summary: String {
+        [
+            String.localizedStringWithFormat(AppLocalization.string("Proxy rules: %lld"), Int64(proxyCount)),
+            String.localizedStringWithFormat(AppLocalization.string("Direct rules: %lld"), Int64(directCount)),
+            String.localizedStringWithFormat(AppLocalization.string("Reject rules: %lld"), Int64(rejectCount)),
+        ].joined(separator: " · ")
     }
 }
 
@@ -172,9 +83,7 @@ struct RulesView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.openSettings) private var openSettings
     @State private var searchText = ""
-    @State private var selectedFilter: RuleKindFilter = .all
     @State private var selectedAction: RuleActionFilter = .all
-    @State private var showSimulator: Bool = false
     @State private var testQuery: String = ""
     @State private var testResult: RouteMatchResult? = nil
     @State private var hasAttemptedMatch: Bool = false
@@ -182,291 +91,39 @@ struct RulesView: View {
     @State private var highlightedRuleID: Int? = nil
     @State private var showAddRuleSheet: Bool = false
     @State private var editingRule: CustomRule? = nil
+    @State private var routingResourceImportKind: RoutingResourceKind?
+    @State private var isResourceImporterPresented = false
 
     var body: some View {
         Group {
             if let summary = tunnel.activeProfileSummary {
                 let displayedRules = filteredRules(from: summary.rules)
-                let directCount = summary.rules.filter { $0.target.uppercased() == "DIRECT" }.count
-                let rejectCount = summary.rules.filter { $0.target.uppercased() == "REJECT" }.count
-                let proxyCount = max(0, summary.rules.count - directCount - rejectCount)
 
                 ScrollViewReader { scrollProxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
+                        LazyVStack(alignment: .leading, spacing: AetherVisual.sectionSpacing + AetherVisual.s1) {
                             AetherPageHeader(.rules) {
-                                simulatorToggle
-                            }
-
-                            VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                                ruleHeading(count: summary.ruleCount)
-                                DisclosureGroup("Rule sources & scope") {
-                                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                                        Text("Custom rules take precedence in the core rule list. Imported rules retain their order; optimization may add direct rules at runtime.")
-                                        Text("This list is a configuration summary. System bypass exclusions and runtime optimization can affect actual traffic outside the displayed list.")
-                                        Text("Bypass changes apply on the next connection. Network optimization applies on the next connection or profile reload.")
-                                        Button("Manage bypass rules") {
-                                            openSettings()
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                                NotificationCenter.default.post(name: .aetherRouteNavigateToSettings, object: "bypass")
-                                            }
-                                        }
-                                        .help("Open Settings and select Bypass.")
-                                    }
-                                    .font(.callout).foregroundStyle(.primary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                }
-                                RuleDistributionBar(directCount: directCount, proxyCount: proxyCount,
-                                                    rejectCount: rejectCount, totalCount: summary.rules.count,
-                                                    routingMode: tunnel.routingMode)
-                            }
-                            .padding(AetherVisual.s4)
-                            .aetherPanel()
-
-                            // 2. 路由匹配测试抽屉 (Simulator)
-                            if showSimulator {
-                                VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                                    HStack {
-                                        Label(AppLocalization.string("Route Match Simulator"), systemImage: "sparkles")
-                                            .font(.headline.weight(.bold))
-                                            .foregroundStyle(.primary)
-                                        Spacer()
-                                        Text(AppLocalization.string("Instant dry-run against active rules"))
-                                            .font(.caption)
-                                            .foregroundStyle(.primary)
-                                    }
-
-                                    Text("Predicts a match against the displayed rules. This does not test reachability, DNS resolution, or the complete runtime policy.")
-                                        .font(.callout).foregroundStyle(.primary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    HStack(spacing: AetherVisual.s2) {
-                                        Image(systemName: "magnifyingglass")
-                                            .foregroundStyle(.primary)
-                                            .padding(.leading, AetherVisual.s1)
-
-                                        TextField(
-                                            AppLocalization.string("Enter a domain (e.g. github.com) or IP (e.g. 192.168.1.1)…"),
-                                            text: $testQuery
-                                        )
-                                        .textFieldStyle(.plain)
-                                        .font(.system(.callout, design: .monospaced))
-                                        .onSubmit {
-                                            performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
-                                        }
-
-                                        if !testQuery.isEmpty {
-                                            Button {
-                                                testQuery = ""
-                                                testResult = nil
-                                                hasAttemptedMatch = false
-                                            } label: {
-                                                Image(systemName: "xmark.circle.fill")
-                                                    .foregroundStyle(.primary)
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-
-                                        Button(AppLocalization.string("Test")) {
-                                            performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                        .controlSize(.small)
-                                        .disabled(testQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                                    }
-                                    .padding(.horizontal, AetherVisual.s3)
-                                    .padding(.vertical, AetherVisual.sCompact)
-                                    .background(
-                                        Color(nsColor: .controlBackgroundColor).opacity(0.8),
-                                        in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
-                                    )
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
-                                            .stroke(Color.accentColor.opacity(0.4), lineWidth: 0.5)
-                                    }
-
-                                    HStack(spacing: AetherVisual.s1) {
-                                        Text(AppLocalization.string("Quick Test:"))
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(.primary)
-                                        ForEach(["google.com", "apple.com", "github.com", "bilibili.com"], id: \.self) { domain in
-                                            Button(domain) {
-                                                testQuery = domain
-                                                performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
-                                            }
-                                            .buttonStyle(.aetherPressable)
-                                            .font(.subheadline)
-                                            .padding(.horizontal, AetherVisual.s2)
-                                            .padding(.vertical, AetherVisual.sMicro)
-                                            .background(Color.secondary.opacity(0.1), in: Capsule())
-                                            .accessibilityIdentifier("rule-quick-test-\(domain)")
-                                        }
-                                    }
-
-                                    if let result = testResult {
-                                        HStack(spacing: AetherVisual.s3) {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .font(.title)
-                                                .foregroundStyle(Color.green)
-
-                                            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                                                HStack(spacing: AetherVisual.s2) {
-                                                    if result.isCustomRule {
-                                                        Text(verbatim: "CUSTOM RULE")
-                                                            .font(.caption2.weight(.semibold))
-                                                            .foregroundStyle(Color.white)
-                                                            .padding(.horizontal, AetherVisual.sCompact)
-                                                            .padding(.vertical, AetherVisual.sMicro)
-                                                            .background(Color.teal, in: Capsule())
-                                                    }
-
-                                                    Text(String.localizedStringWithFormat(AppLocalization.string("Matched Rule #%lld"), Int64(result.order)))
-                                                        .font(.callout.weight(.bold))
-
-                                                    Text(result.matchedRule.kind)
-                                                        .font(.system(.caption2, design: .monospaced, weight: .bold))
-                                                        .padding(.horizontal, AetherVisual.s1)
-                                                        .padding(.vertical, AetherVisual.sMicro)
-                                                        .background(Color.blue.opacity(0.15), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
-
-                                                    Image(systemName: "arrow.right")
-                                                        .font(.caption2)
-                                                        .foregroundStyle(.primary)
-
-                                                    TargetPillView(target: result.target)
-                                                }
-
-                                                Text(result.reason)
-                                                    .font(.caption)
-                                                    .foregroundStyle(result.isCustomRule ? Color.teal : Color.secondary)
-                                            }
-
-                                            Spacer()
-
-                                            Button {
-                                                withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) {
-                                                    highlightedRuleID = result.matchedRule.id
-                                                    scrollProxy.scrollTo(result.matchedRule.id, anchor: .center)
-                                                }
-                                            } label: {
-                                                Label(AppLocalization.string("Locate"), systemImage: "scope")
-                                                    .font(.subheadline.weight(.semibold))
-                                            }
-                                            .buttonStyle(.bordered)
-                                            .controlSize(.small)
-                                        }
-                                        .padding(AetherVisual.s3)
-                                        .background(
-                                            result.isCustomRule ? Color.teal.opacity(0.1) : Color.green.opacity(0.08),
-                                            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
-                                        )
-                                        .overlay {
-                                            RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
-                                                .stroke(result.isCustomRule ? Color.teal.opacity(0.4) : Color.green.opacity(0.25), lineWidth: 0.5)
-                                        }
-                                    } else if hasAttemptedMatch && !testQuery.isEmpty {
-                                        HStack(spacing: AetherVisual.s2) {
-                                            Image(systemName: "exclamationmark.triangle")
-                                                .foregroundStyle(.orange)
-                                            Text(matchExplanation)
-                                                .font(.caption)
-                                                .foregroundStyle(.primary)
-                                        }
-                                        .padding(AetherVisual.s3)
-                                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
-                                    }
-                                }
-                                .padding(AetherVisual.s4)
-                                .aetherPanel()
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                            }
-
-                            // 2.5 用户自定义分流规则 (Custom Rules - Top Priority)
-                            // One heading with the count and the add action; the
-                            // card no longer repeats "Custom routing rules".
-                            FeatureSection(
-                                title: AppLocalization.string("Custom rules"),
-                                symbol: "slider.horizontal.3",
-                                count: tunnel.customRules.count
-                            ) {
                                 Button {
                                     editingRule = nil
                                     showAddRuleSheet = true
                                 } label: {
                                     Label(AppLocalization.string("Add Rule"), systemImage: "plus")
                                 }
-                                .controlSize(.small)
+                                .aetherGlassButton()
                                 .accessibilityIdentifier("add-custom-rule")
-                            } content: {
-                                VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                                    Text(AppLocalization.string("Custom rules take absolute top priority. Direct IP-CIDR rules automatically bypass TUN kernel routing."))
-                                        .font(.callout)
-                                        .foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-
-                                    if let msg = tunnel.customRuleMessage {
-                                        HStack(spacing: AetherVisual.s2) {
-                                            Image(systemName: tunnel.customRuleMessageIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                                                .foregroundStyle(tunnel.customRuleMessageIsError ? Color.red : Color.green)
-                                            Text(msg)
-                                                .font(.caption)
-                                                .foregroundStyle(tunnel.customRuleMessageIsError ? Color.red : Color.primary)
-                                        }
-                                        .padding(.vertical, AetherVisual.sMicro)
-                                        .transition(AetherVisual.insertion)
-                                    }
-
-                                    if tunnel.customRules.isEmpty {
-                                        Label(AppLocalization.string("No custom rules configured"), systemImage: "pencil.and.list.clipboard")
-                                            .font(.callout).foregroundStyle(.primary)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                    } else {
-                                        VStack(spacing: AetherVisual.sCompact) {
-                                            ForEach(tunnel.customRules) { rule in
-                                                CustomRuleRow(
-                                                    rule: rule,
-                                                    onToggle: {
-                                                        Task {
-                                                            await tunnel.toggleCustomRule(id: rule.id)
-                                                        }
-                                                    },
-                                                    onEdit: {
-                                                        editingRule = rule
-                                                        showAddRuleSheet = true
-                                                    },
-                                                    onDelete: {
-                                                        Task {
-                                                            await tunnel.deleteCustomRule(id: rule.id)
-                                                        }
-                                                    },
-                                                    onTest: {
-                                                        testQuery = rule.value
-                                                        showSimulator = true
-                                                        if let s = tunnel.activeProfileSummary {
-                                                            performMatch(rules: s.rules, totalRuleCount: s.ruleCount)
-                                                        }
-                                                    }
-                                                )
-                                                .transition(AetherVisual.insertion)
-                                            }
-                                        }
-                                    }
-                                }
-                                .padding(AetherVisual.s4)
-                                .aetherPanel()
-                                .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.customRules.map(\.id))
                             }
 
-                            // 3. 规则集 Rule providers
+                            routeTester(summary: summary, scrollProxy: scrollProxy)
+
+                            customRulesSection(summary: summary)
+
                             if !summary.ruleProviders.isEmpty {
-                                FeatureSection(title: AppLocalization.string("Rule providers"), symbol: "shippingbox") {
+                                section(title: AppLocalization.string("Rule providers"), note: nil) {
                                     VStack(spacing: 0) {
                                         ForEach(summary.ruleProviders) { provider in
                                             ProviderRow(provider: provider)
                                             if provider.id != summary.ruleProviders.last?.id {
-                                                Divider().padding(
-                                                    .leading,
-                                                    AetherVisual.onboardingTopPadding
-                                                )
+                                                Divider().padding(.leading, AetherVisual.onboardingTopPadding)
                                             }
                                         }
                                     }
@@ -474,156 +131,16 @@ struct RulesView: View {
                                 }
                             }
 
-                            // 4. 现代化多维过滤与搜索工具栏
-                            if !summary.rules.isEmpty {
-                                VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                                    // 第一行：即时搜索框 + 策略动作过滤菜单
-                                    HStack(spacing: AetherVisual.s3) {
-                                        AetherSearchField(
-                                            text: $searchText,
-                                            prompt: AppLocalization.string("Filter criteria, targets, or kinds…"),
-                                            accessibilityIdentifier: "rules-search-field"
-                                        )
+                            profileRulesSection(summary: summary, displayedRules: displayedRules)
 
-                                        // 动作筛选菜单
-                                        Menu {
-                                            ForEach(RuleActionFilter.allCases) { action in
-                                                Button {
-                                                    selectedAction = action
-                                                } label: {
-                                                    HStack {
-                                                        Text(action.localizedTitle)
-                                                        if selectedAction == action {
-                                                            Image(systemName: "checkmark")
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        } label: {
-                                            HStack(spacing: AetherVisual.s1) {
-                                                Image(systemName: "line.3.horizontal.decrease.circle")
-                                                Text(selectedAction.localizedTitle)
-                                            }
-                                            .font(.callout.weight(.medium))
-                                        }
-                                        .menuStyle(.borderedButton)
-                                        .accessibilityLabel(selectedAction.localizedTitle)
-                                        .accessibilityIdentifier("rules-action-filter")
-                                        .fixedSize()
+                            if !tunnel.requiredRoutingResources.isEmpty {
+                                RoutingResourcesCard(
+                                    importResource: { kind in
+                                        routingResourceImportKind = kind
+                                        isResourceImporterPresented = true
                                     }
-
-                                    // 第二行：规则种类分段标签 + 计数提示
-                                    HStack(spacing: AetherVisual.s2) {
-                                        // Chips keep their labels on one line and
-                                        // scroll sideways in a narrow window
-                                        // instead of breaking "DOMAIN" in two.
-                                        ScrollView(.horizontal, showsIndicators: false) {
-                                        HStack(spacing: AetherVisual.s1) {
-                                            ForEach(RuleKindFilter.allCases) { filter in
-                                                let isSelected = selectedFilter == filter
-                                                let count = summary.rules.filter { filter.accepts($0.kind) }.count
-                                                Button {
-                                                    withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
-                                                        selectedFilter = filter
-                                                    }
-                                                } label: {
-                                                    HStack(spacing: AetherVisual.s1) {
-                                                        Image(systemName: filter.icon)
-                                                            .font(.caption)
-                                                        Text(filter.localizedTitle)
-                                                            .font(.subheadline.weight(isSelected ? .semibold : .regular))
-                                                        Text(verbatim: "\(count)")
-                                                            .font(.system(.callout, design: .monospaced, weight: .semibold))
-                                                            .foregroundStyle(Color(nsColor: .labelColor))
-                                                            .padding(.horizontal, AetherVisual.s1)
-                                                            .padding(.vertical, AetherVisual.sMicro)
-                                                            .background(
-                                                                isSelected ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12),
-                                                                in: Capsule()
-                                                            )
-                                                    }
-                                                    .padding(.horizontal, AetherVisual.s2)
-                                                    .padding(.vertical, AetherVisual.s1)
-                                                    .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
-                                                    .background(
-                                                        isSelected ? Color.accentColor.opacity(0.12) : Color.clear,
-                                                        in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
-                                                    )
-                                                    .fixedSize()
-                                                    .contentShape(Rectangle())
-                                                }
-                                                .buttonStyle(.aetherPressable)
-                                            }
-                                        }
-                                        .padding(AetherVisual.sMicro)
-                                        .background(
-                                            Color(nsColor: .controlBackgroundColor).opacity(0.5),
-                                            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                                        )
-                                        .overlay {
-                                            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                                                .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
-                                        }
-                                        }
-
-                                        Spacer(minLength: AetherVisual.s2)
-
-                                        Text(
-                                            AppLocalization.format(
-                                                "Showing %lld of %lld items",
-                                                Int64(displayedRules.count),
-                                                Int64(summary.rules.count)
-                                            )
-                                        )
-                                        .font(.caption.weight(.medium))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                        .fixedSize()
-                                    }
-
-                                    HStack(spacing: AetherVisual.s1) {
-                                        Label(AppLocalization.string("Evaluation order (top to bottom)"), systemImage: "arrow.down")
-                                            .font(.caption.weight(.semibold))
-                                            .foregroundStyle(.primary)
-                                        Spacer()
-                                    }
-                                    .padding(.top, AetherVisual.sMicro)
-                                }
-                            }
-
-                            // 5. 规则列表
-                            if summary.rules.isEmpty {
-                                FeatureEmptyState(
-                                    symbol: "list.bullet.rectangle.portrait",
-                                    title: AppLocalization.string("No explicit rules"),
-                                    detail: AppLocalization.string("The active profile contains no ordered rule entries. Its effective fallback is determined only after the protocol core validates and starts the profile.")
                                 )
-                            } else if displayedRules.isEmpty {
-                                FeatureEmptyState(
-                                    symbol: "line.3.horizontal.decrease.circle",
-                                    title: AppLocalization.string("No matching rules"),
-                                    detail: AppLocalization.string("Try adjusting the filter or clearing the search text.")
-                                )
-                            } else {
-                                // Lazy: a profile can carry thousands of rules, and only
-                                // the rows on screen should be built.
-                                LazyVStack(spacing: AetherVisual.sCompact) {
-                                    ForEach(displayedRules) { rule in
-                                        RuleRow(
-                                            rule: rule,
-                                            isHighlighted: highlightedRuleID == rule.id,
-                                            onTest: { destination in
-                                                testQuery = destination
-                                                showSimulator = true
-                                                performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
-                                            }
-                                        )
-                                        .id(rule.id)
-                                    }
-                                }
-                                .accessibilityElement(children: .contain)
-                                .accessibilityLabel(AppLocalization.string("Ordered routing rules"))
-                                .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: displayedRules.count)
+                                .environmentObject(tunnel)
                             }
 
                             TruncationNotice(
@@ -677,35 +194,358 @@ struct RulesView: View {
             )
             .environmentObject(tunnel)
         }
-    }
-
-    /// The page header already names the page; the card heading only
-    /// qualifies what the distribution below summarizes.
-    private func ruleHeading(count: Int) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
-            Text("Ordered routing policy").font(.headline)
-            Spacer(minLength: AetherVisual.s2)
-            Text(verbatim: "\(AppLocalization.format("%lld rules", Int64(count))) · \(routingModeTitle)")
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(.secondary)
+        .fileImporter(
+            isPresented: $isResourceImporterPresented,
+            allowedContentTypes: [.data],
+            allowsMultipleSelection: false
+        ) { result in
+            guard let kind = routingResourceImportKind else { return }
+            routingResourceImportKind = nil
+            switch result {
+            case let .success(urls):
+                guard let url = urls.first else { return }
+                Task { await tunnel.importRoutingResource(kind, from: url) }
+            case let .failure(error):
+                tunnel.reportProfileImportError(error)
+            }
         }
     }
 
-    private var routingModeTitle: String {
+    /// A heading above a group, with an optional quieter note beside it, as
+    /// in System Settings.
+    private func section<Content: View>(
+        title: String,
+        note: String?,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityAddTraits(.isHeader)
+                if let note {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, AetherVisual.s2)
+            content()
+        }
+    }
+
+    // MARK: Route tester
+
+    /// "Where would this go?" answered in place: the page's most useful
+    /// question, so it leads the page instead of hiding behind a button.
+    private func routeTester(summary: ProfileConfigurationSummary, scrollProxy: ScrollViewProxy) -> some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            HStack(spacing: AetherVisual.s2) {
+                HStack(spacing: AetherVisual.s2) {
+                    Image(systemName: "globe")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    TextField(
+                        AppLocalization.string("Enter a website or IP to see which route it takes"),
+                        text: $testQuery
+                    )
+                    .textFieldStyle(.plain)
+                    .font(.body)
+                    .onSubmit { performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount) }
+                    .accessibilityIdentifier("rule-test-field")
+                    if !testQuery.isEmpty {
+                        Button {
+                            testQuery = ""
+                            testResult = nil
+                            hasAttemptedMatch = false
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(AppLocalization.string("Clear"))
+                    }
+                }
+                .padding(.horizontal, AetherVisual.s3 + AetherVisual.sMicro)
+                .frame(minHeight: 36)
+                .background(Color.primary.opacity(0.06), in: Capsule())
+
+                Button(AppLocalization.string("Test")) {
+                    performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
+                }
+                .aetherGlassButton(prominent: true)
+                .controlSize(.large)
+                .disabled(testQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("rule-test-button")
+            }
+
+            if let result = testResult {
+                HStack(spacing: AetherVisual.s2) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .accessibilityHidden(true)
+                    Text(String.localizedStringWithFormat(AppLocalization.string("Matched Rule #%lld"), Int64(result.order)))
+                        .font(.callout.weight(.semibold))
+                    RuleKindTag(kind: result.matchedRule.kind)
+                    if let criteria = result.matchedRule.criteria {
+                        Text(verbatim: criteria)
+                            .font(.callout.monospaced())
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Image(systemName: "arrow.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    RuleTargetLabel(target: result.target)
+                    Spacer(minLength: AetherVisual.s2)
+                    Button {
+                        withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) {
+                            highlightedRuleID = result.matchedRule.id
+                            scrollProxy.scrollTo(result.matchedRule.id, anchor: .center)
+                        }
+                    } label: {
+                        Label(AppLocalization.string("Locate"), systemImage: "scope")
+                    }
+                    .aetherGlassButton()
+                    .controlSize(.small)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("rule-test-result")
+                .transition(AetherVisual.insertion)
+            } else if hasAttemptedMatch && !testQuery.isEmpty {
+                Label(matchExplanation, systemImage: "info.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("rule-test-explanation")
+                    .transition(AetherVisual.insertion)
+            } else {
+                HStack(spacing: AetherVisual.s1) {
+                    Text(AppLocalization.string("Try:"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(["google.com", "apple.com", "github.com", "bilibili.com"], id: \.self) { domain in
+                        Button(domain) {
+                            testQuery = domain
+                            performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
+                        }
+                        .buttonStyle(.aetherPressable)
+                        .font(.caption)
+                        .padding(.horizontal, AetherVisual.s2)
+                        .padding(.vertical, AetherVisual.sMicro)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                        .accessibilityIdentifier("rule-quick-test-\(domain)")
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .padding(AetherVisual.s4)
+        .aetherPanel()
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: testResult?.matchedRule.id)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: hasAttemptedMatch)
+    }
+
+    // MARK: Custom rules
+
+    private func customRulesSection(summary: ProfileConfigurationSummary) -> some View {
+        section(
+            title: AppLocalization.string("Custom rules"),
+            note: AppLocalization.string("Highest priority")
+        ) {
+            VStack(alignment: .leading, spacing: 0) {
+                if let msg = tunnel.customRuleMessage {
+                    Label(msg, systemImage: tunnel.customRuleMessageIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(tunnel.customRuleMessageIsError ? Color.red : Color.secondary)
+                        .padding(.horizontal, AetherVisual.s4)
+                        .padding(.top, AetherVisual.s3)
+                        .transition(AetherVisual.insertion)
+                }
+                if tunnel.customRules.isEmpty {
+                    HStack(spacing: AetherVisual.s3) {
+                        Text(AppLocalization.string("No custom rules yet. To always send a site direct or through the proxy, add a rule here."))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: AetherVisual.s2)
+                        Button(AppLocalization.string("Add")) {
+                            editingRule = nil
+                            showAddRuleSheet = true
+                        }
+                        .aetherGlassButton()
+                        .controlSize(.small)
+                    }
+                    .padding(AetherVisual.s4)
+                } else {
+                    VStack(spacing: AetherVisual.sCompact) {
+                        ForEach(tunnel.customRules) { rule in
+                            CustomRuleRow(
+                                rule: rule,
+                                onToggle: {
+                                    Task { await tunnel.toggleCustomRule(id: rule.id) }
+                                },
+                                onEdit: {
+                                    editingRule = rule
+                                    showAddRuleSheet = true
+                                },
+                                onDelete: {
+                                    Task { await tunnel.deleteCustomRule(id: rule.id) }
+                                },
+                                onTest: {
+                                    testQuery = rule.value
+                                    performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
+                                }
+                            )
+                            .transition(AetherVisual.insertion)
+                        }
+                    }
+                    .padding(AetherVisual.s3)
+                }
+            }
+            .aetherPanel()
+            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.customRules.map(\.id))
+        }
+    }
+
+    // MARK: Profile rules
+
+    private func profileRulesSection(
+        summary: ProfileConfigurationSummary,
+        displayedRules: [RuleConfigurationSummary]
+    ) -> some View {
+        let directCount = summary.rules.filter { $0.target.uppercased() == "DIRECT" }.count
+        let rejectCount = summary.rules.filter { $0.target.uppercased() == "REJECT" }.count
+        let proxyCount = max(0, summary.rules.count - directCount - rejectCount)
+        return section(
+            title: AppLocalization.string("Profile rules"),
+            note: AppLocalization.string("Matched top to bottom; the first match wins")
+        ) {
+            VStack(alignment: .leading, spacing: 0) {
+                if summary.rules.isEmpty {
+                    FeatureEmptyState(
+                        symbol: "list.bullet.rectangle.portrait",
+                        title: AppLocalization.string("No explicit rules"),
+                        detail: AppLocalization.string("The active profile contains no ordered rule entries. Its effective fallback is determined only after the protocol core validates and starts the profile.")
+                    )
+                    .padding(AetherVisual.s4)
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: AetherVisual.s3) {
+                            actionFilter(summary: summary)
+                            RuleDistributionBar(
+                                directCount: directCount, proxyCount: proxyCount,
+                                rejectCount: rejectCount, totalCount: summary.rules.count,
+                                routingMode: tunnel.routingMode
+                            )
+                            rulesSearchField
+                                .frame(width: 180)
+                        }
+                        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                            HStack(spacing: AetherVisual.s3) {
+                                actionFilter(summary: summary)
+                                rulesSearchField
+                            }
+                            RuleDistributionBar(
+                                directCount: directCount, proxyCount: proxyCount,
+                                rejectCount: rejectCount, totalCount: summary.rules.count,
+                                routingMode: tunnel.routingMode
+                            )
+                        }
+                    }
+                    .padding(AetherVisual.s3)
+
+                    if let modeNote {
+                        Label(modeNote, systemImage: "info.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, AetherVisual.s4)
+                            .padding(.bottom, AetherVisual.s2)
+                            .accessibilityIdentifier("rule-distribution-mode-note")
+                            .transition(AetherVisual.insertion)
+                    }
+
+                    if displayedRules.isEmpty {
+                        Text(AppLocalization.string("No rules match. Try another filter or clear the search."))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(AetherVisual.s5)
+                    } else {
+                        // Lazy: a profile can carry thousands of rules, and
+                        // only the rows on screen should be built.
+                        LazyVStack(spacing: 0) {
+                            ForEach(displayedRules) { rule in
+                                Divider().padding(.leading, AetherVisual.s4)
+                                RuleRow(
+                                    rule: rule,
+                                    isHighlighted: highlightedRuleID == rule.id,
+                                    onTest: { destination in
+                                        testQuery = destination
+                                        performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
+                                    }
+                                )
+                                .id(rule.id)
+                            }
+                        }
+                        .padding(.bottom, AetherVisual.s1)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel(AppLocalization.string("Ordered routing rules"))
+                        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: displayedRules.count)
+                    }
+                }
+            }
+            .aetherPanel()
+
+            HStack(spacing: AetherVisual.s1) {
+                Text(AppLocalization.string("This is a summary of the profile; bypass rules and runtime optimization can also affect traffic."))
+                Button(AppLocalization.string("Manage bypass rules")) {
+                    openSettings()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        NotificationCenter.default.post(name: .aetherRouteNavigateToSettings, object: "bypass")
+                    }
+                }
+                .buttonStyle(.link)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, AetherVisual.s2)
+            .padding(.top, AetherVisual.s1)
+        }
+    }
+
+    private var modeNote: String? {
         switch tunnel.routingMode {
-        case .rule: AppLocalization.string("Rule mode")
-        case .global: AppLocalization.string("Global mode")
-        case .direct: AppLocalization.string("Direct mode")
+        case .rule: nil
+        case .global: AppLocalization.string("Global mode does not match rules; all traffic goes through the proxy.")
+        case .direct: AppLocalization.string("Direct mode does not match rules; all traffic connects directly.")
         }
     }
 
-    private var simulatorToggle: some View {
-        Button {
-            withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) { showSimulator.toggle() }
-        } label: {
-            Label(AppLocalization.string(showSimulator ? "Hide Test" : "Test Route"), systemImage: "arrow.triangle.branch")
-        }
-        .buttonStyle(.bordered)
+    private func actionFilter(summary: ProfileConfigurationSummary) -> some View {
+        AetherSegmentedPicker(
+            selection: $selectedAction,
+            options: RuleActionFilter.allCases.map { action in
+                .init(
+                    value: action,
+                    title: "\(action.shortTitle) \(summary.rules.filter { action.accepts($0.target) }.count)"
+                )
+            },
+            accessibilityLabel: AppLocalization.string("Filter by target"),
+            accessibilityIdentifier: "rules-action-filter"
+        )
+        .fixedSize()
+    }
+
+    private var rulesSearchField: some View {
+        AetherSearchField(
+            text: $searchText,
+            prompt: AppLocalization.string("Search rules"),
+            accessibilityIdentifier: "rules-search-field"
+        )
     }
 
     private func performMatch(rules: [RuleConfigurationSummary], totalRuleCount: Int) {
@@ -713,6 +553,13 @@ struct RulesView: View {
         testResult = nil
         switch RouteMatchEngine.assess(destination: testQuery, against: rules, totalRuleCount: totalRuleCount) {
         case let .matched(result): testResult = result
+        case let .indeterminate(ruleOrder?):
+            // A GEOSITE/GEOIP or similar rule needs the core's databases; say
+            // which rule stops the preview rather than guessing past it.
+            matchExplanation = String.localizedStringWithFormat(
+                AppLocalization.string("Rule #%lld needs data only available once connected, so the route is decided by the core."),
+                Int64(ruleOrder)
+            )
         case .indeterminate:
             matchExplanation = AppLocalization.string("Cannot determine the route: runtime data or rules outside this preview are required.")
         case .noMatch:
@@ -724,7 +571,6 @@ struct RulesView: View {
 
     private func filteredRules(from rules: [RuleConfigurationSummary]) -> [RuleConfigurationSummary] {
         rules.filter { rule in
-            guard selectedFilter.accepts(rule.kind) else { return false }
             guard selectedAction.accepts(rule.target) else { return false }
             if searchText.isEmpty { return true }
             let text = searchText.lowercased()
@@ -733,6 +579,66 @@ struct RulesView: View {
             if rule.target.lowercased().contains(text) { return true }
             if String(rule.order) == text { return true }
             return false
+        }
+    }
+}
+
+/// A rule's kind as a small monospaced tag.
+struct RuleKindTag: View {
+    let kind: String
+
+    var body: some View {
+        Text(verbatim: kind.uppercased())
+            .font(.caption2.monospaced().weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, AetherVisual.sCompact)
+            .padding(.vertical, AetherVisual.sMicro)
+            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+            .fixedSize()
+    }
+}
+
+/// Where a rule sends traffic, coloured by kind of target: direct green,
+/// reject red, a proxy or group indigo.
+struct RuleTargetLabel: View {
+    let target: String
+
+    var body: some View {
+        Label {
+            Text(title)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        } icon: {
+            Image(systemName: symbol)
+        }
+        .font(.callout.weight(.semibold))
+        .foregroundStyle(tint)
+        .help(target)
+    }
+
+    private var upper: String { target.uppercased() }
+
+    private var title: String {
+        switch upper {
+        case "DIRECT": AppLocalization.string("Direct")
+        case "REJECT", "REJECT-DROP": AppLocalization.string("Reject")
+        default: target
+        }
+    }
+
+    private var symbol: String {
+        switch upper {
+        case "DIRECT": "arrow.right"
+        case "REJECT", "REJECT-DROP": "hand.raised.fill"
+        default: "arrow.triangle.branch"
+        }
+    }
+
+    private var tint: Color {
+        switch upper {
+        case "DIRECT": .green
+        case "REJECT", "REJECT-DROP": .red
+        default: .indigo
         }
     }
 }
@@ -747,15 +653,10 @@ private struct RuleRow: View {
 
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
-            // 规则序号
             Text(verbatim: "\(rule.order)")
-                .font(.caption.monospacedDigit().weight(.medium))
+                .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .frame(width: 32, height: 26)
-                .background(
-                    RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
-                        .fill(Color.secondary.opacity(0.08))
-                )
+                .frame(width: 28, alignment: .trailing)
 
             if rule.isCustom {
                 Text(verbatim: "CUSTOM")
@@ -763,38 +664,15 @@ private struct RuleRow: View {
                     .foregroundStyle(Color.teal)
                     .padding(.horizontal, AetherVisual.s1)
                     .padding(.vertical, AetherVisual.sMicro)
-                    .background(Color.teal.opacity(0.18), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: AetherVisual.badgeRadius)
-                            .stroke(Color.teal.opacity(0.4), lineWidth: 0.5)
-                    }
+                    .background(Color.teal.opacity(0.16), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
             }
 
-            // 规则类型徽章
-            HStack(spacing: AetherVisual.s1) {
-                Image(systemName: kindIcon(rule.kind))
-                    .font(.caption2.weight(.bold))
-                    .imageScale(.small)
-                    .accessibilityHidden(true)
-                Text(rule.kind)
-                    .font(.caption.monospaced().weight(.medium))
-            }
-            .foregroundStyle(ruleKindColor(rule.kind))
-            .padding(.horizontal, AetherVisual.sCompact)
-            .padding(.vertical, AetherVisual.sMicro)
-            .background(
-                ruleKindColor(rule.kind).opacity(0.12),
-                in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
-                    .stroke(ruleKindColor(rule.kind).opacity(0.24), lineWidth: 0.5)
-            }
+            RuleKindTag(kind: rule.kind)
+                .frame(minWidth: 110, alignment: .leading)
 
-            // 规则条件
             if let criteria = rule.criteria {
                 Text(criteria)
-                    .font(.system(.callout, design: .monospaced, weight: .medium))
+                    .font(.system(.callout, design: .monospaced))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -802,13 +680,12 @@ private struct RuleRow: View {
                     .help(criteria)
             } else {
                 Text(AppLocalization.string("Any remaining traffic (Fallback)"))
-                    .font(.callout.weight(.regular))
+                    .font(.callout)
                     .foregroundStyle(.primary)
             }
 
             Spacer(minLength: AetherVisual.s3)
 
-            // 悬停快捷复制
             if isHovered || showCopied {
                 Button {
                     copyCriteria()
@@ -817,35 +694,22 @@ private struct RuleRow: View {
                         .font(.caption)
                         .foregroundStyle(showCopied ? Color.green : Color.secondary)
                         .frame(width: 22, height: 22)
-                        .background(Color.secondary.opacity(0.1), in: Circle())
                 }
                 .buttonStyle(.aetherPressable)
                 .help(AppLocalization.string("Copy criteria"))
                 .transition(.opacity)
             }
 
-            TargetPillView(target: rule.target, isHovered: isHovered)
+            RuleTargetLabel(target: rule.target)
                 .frame(maxWidth: 190, alignment: .trailing)
         }
-        .padding(.horizontal, AetherVisual.sRow)
-        .padding(.vertical, AetherVisual.sCompact)
+        .padding(.horizontal, AetherVisual.s4)
+        .frame(minHeight: 40)
         .background(
-            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                .fill(
-                    isHighlighted
-                        ? Color.accentColor.opacity(0.14)
-                        : (isHovered ? Color(nsColor: .controlBackgroundColor).opacity(0.95) : Color(nsColor: .controlBackgroundColor).opacity(0.55))
-                )
+            isHighlighted
+                ? Color.accentColor.opacity(0.16)
+                : (isHovered ? Color.primary.opacity(0.04) : Color.clear)
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                .stroke(
-                    isHighlighted
-                        ? Color.accentColor
-                        : (isHovered ? Color.accentColor.opacity(0.35) : Color(nsColor: .separatorColor).opacity(0.3)),
-                    lineWidth: isHighlighted ? 1.5 : 0.5
-                )
-        }
         .onHover { hovering in
             withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
                 isHovered = hovering
@@ -903,22 +767,6 @@ private struct RuleRow: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-    }
-
-    private func kindIcon(_ kind: String) -> String {
-        let upper = kind.uppercased()
-        if upper.contains("DOMAIN") { return "globe" }
-        if upper.contains("IP") || upper.contains("CIDR") { return "network" }
-        if upper.contains("GEO") { return "map" }
-        if upper.contains("MATCH") { return "asterisk" }
-        return "number"
-    }
-
-    /// Rule kinds are told apart by their symbol and label. Colour stays
-    /// with the target (direct, proxy, reject), which is what a reader
-    /// scanning the list is actually looking for.
-    private func ruleKindColor(_: String) -> Color {
-        .secondary
     }
 }
 
@@ -989,7 +837,7 @@ struct CustomRuleRow: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
 
-            TargetPillView(target: rule.target.rawString, isHovered: isHovered)
+            RuleTargetLabel(target: rule.target.rawString)
                 .frame(maxWidth: 160, alignment: .trailing)
 
             HStack(spacing: AetherVisual.sMicro) {
@@ -1269,7 +1117,7 @@ struct CustomRuleEditorSheet: View {
                     Label(AppLocalization.string("Verify rule"), systemImage: "bolt.badge.clock.fill")
                         .font(.subheadline.weight(.semibold))
                 }
-                .buttonStyle(.bordered)
+                .aetherGlassButton()
                 .controlSize(.small)
                 .disabled(!validationResult.isValid || isSaving)
             }
@@ -1331,7 +1179,7 @@ struct CustomRuleEditorSheet: View {
                 } label: {
                     AetherProgressButtonLabel(AppLocalization.string("Save rule"), isWorking: isSaving)
                 }
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!validationResult.isValid || isSaving)
             }

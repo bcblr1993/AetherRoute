@@ -80,7 +80,7 @@ struct ProfileCloudSyncSheet: View {
                                 Text(AppLocalization.string("Sync Now"))
                             }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .aetherGlassButton(prominent: true)
                         .disabled(cloudSync.isSyncing)
                         .accessibilityIdentifier("icloud-sync-now-button")
 
@@ -98,7 +98,7 @@ struct ProfileCloudSyncSheet: View {
                                 Text(AppLocalization.string("Force Pull"))
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .aetherGlassButton()
                         .disabled(cloudSync.isSyncing)
                         .accessibilityIdentifier("icloud-force-pull-button")
 
@@ -116,7 +116,7 @@ struct ProfileCloudSyncSheet: View {
                                 Text(AppLocalization.string("Force Push"))
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .aetherGlassButton()
                         .disabled(cloudSync.isSyncing || tunnel.profiles.isEmpty)
                         .accessibilityIdentifier("icloud-force-push-button")
                     }
@@ -131,7 +131,7 @@ struct ProfileCloudSyncSheet: View {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .aetherGlassButton(prominent: true)
                 .accessibilityIdentifier("icloud-sync-done-button")
                 .disabled(cloudSync.isSyncing)
             }
