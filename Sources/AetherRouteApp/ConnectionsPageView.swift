@@ -48,6 +48,18 @@ struct ConnectionsView: View {
                 emptyState
             } else {
                 connectionList(rows: rows)
+                    .overlay {
+                        // A search or filter that matches nothing says so
+                        // instead of leaving a bare table.
+                        if rows.isEmpty {
+                            ContentUnavailableView(
+                                AppLocalization.string("No matching connections"),
+                                systemImage: "magnifyingglass",
+                                description: Text(AppLocalization.string("Change the filter, or clear the search field."))
+                            )
+                            .transition(.opacity)
+                        }
+                    }
             }
 
             // One line at every width: the privacy note truncates (full text
@@ -87,9 +99,11 @@ struct ConnectionsView: View {
     @ViewBuilder
     private func footerContents(visibleCount: Int) -> some View {
         if pausedConnections != nil {
-            Label("List paused · session counters are live", systemImage: "pause.circle")
+            Label("List paused · session counters are live", systemImage: "pause.circle.fill")
+                .foregroundStyle(.orange)
                 .lineLimit(1)
                 .fixedSize()
+                .transition(AetherVisual.insertion)
         }
         Text(footerText(visibleCount: visibleCount))
             .lineLimit(1)
@@ -229,12 +243,21 @@ struct ConnectionsView: View {
     private var connectionActions: some View {
         HStack(spacing: AetherVisual.s2) {
             Button {
-                pausedConnections = pausedConnections == nil ? telemetry.snapshot.connections : nil
+                withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                    pausedConnections = pausedConnections == nil ? telemetry.snapshot.connections : nil
+                }
             } label: {
-                Label(AppLocalization.string(pausedConnections == nil ? "Pause list" : "Resume list"),
-                      systemImage: pausedConnections == nil ? "pause" : "play")
+                Label {
+                    Text(AppLocalization.string(pausedConnections == nil ? "Pause list" : "Resume list"))
+                } icon: {
+                    Image(systemName: pausedConnections == nil ? "pause.fill" : "play.fill")
+                        .contentTransition(.symbolEffect(.replace))
+                }
             }
             .buttonStyle(.bordered)
+            // A frozen list must not pass for a live one: the button stays
+            // tinted while the list is paused.
+            .tint(pausedConnections == nil ? nil : .orange)
             .help(AppLocalization.string(pausedConnections == nil ? "Pause list" : "Resume list"))
             .accessibilityIdentifier("connections-pause-button")
             Picker(AppLocalization.string("Sort"), selection: $sort) {
@@ -247,7 +270,9 @@ struct ConnectionsView: View {
             .frame(width: 112)
 
             if tunnel.isConnected {
-                Button(AppLocalization.string("Disconnect all"), systemImage: "xmark.circle") {
+                // This stops the tunnel, not only the listed flows, so it says
+                // "Disconnect" like the overview and confirms first.
+                Button(AppLocalization.string("Disconnect"), systemImage: "power") {
                     showingDisconnectConfirmation = true
                 }
                 .buttonStyle(.bordered)

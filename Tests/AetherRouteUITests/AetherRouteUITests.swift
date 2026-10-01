@@ -112,7 +112,7 @@ final class AetherRouteUITests: XCTestCase {
     func testConnectionsPassAccessibilityAuditInLightAndDark() throws {
         try auditPrimaryPage(
             button: "Connections",
-            landmark: "Only connections visible on this Mac are counted, and nothing is reported anywhere.",
+            landmark: "Counted on this Mac only; nothing is reported.",
             windowSize: "780x560"
         )
         for item in [
@@ -208,8 +208,8 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Proxy groups"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.buttons["Singapore Edge"].waitForExistence(timeout: 2))
         navigationButton(in: app, title: "Connections").click()
-        XCTAssertTrue(app.staticTexts["Only connections visible on this Mac are counted, and nothing is reported anywhere."].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.buttons["Disconnect all"].isHittable)
+        XCTAssertTrue(app.staticTexts["Counted on this Mac only; nothing is reported."].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["disconnect-all-connections"].isHittable)
         app.buttons["Profiles"].click()
         XCTAssertTrue(app.buttons["Import Profile…"].waitForExistence(timeout: 2))
         navigationButton(in: app, title: "Rules").click()
@@ -257,7 +257,7 @@ final class AetherRouteUITests: XCTestCase {
         for (button, landmark) in [
             ("Overview", "Traffic routing active"),
             ("Proxies", "Proxy groups"),
-            ("Connections", "Only connections visible on this Mac are counted, and nothing is reported anywhere."),
+            ("Connections", "Counted on this Mac only; nothing is reported."),
             ("Profiles", "Import Profile…"),
             ("Rules", "Ordered routing policy"),
             ("DNS", "page-header-title-dns"),
@@ -757,7 +757,7 @@ final class AetherRouteUITests: XCTestCase {
             destinations: [
                 ("Overview", "Traffic routing active", "overview-page"),
                 ("Proxies", "Proxy groups", "proxies-page"),
-                ("Connections", "Only connections visible on this Mac are counted, and nothing is reported anywhere.", "connections-page"),
+                ("Connections", "Counted on this Mac only; nothing is reported.", "connections-page"),
                 ("Profiles", "Import Profile…", "profiles-page"),
                 ("Rules", "Ordered routing policy", "rules-page"),
                 ("DNS", "DNS", "dns-page"),
@@ -1654,8 +1654,8 @@ final class AetherRouteUITests: XCTestCase {
         }
         XCTAssertTrue(copyEnvironment.waitForExistence(timeout: 2))
         XCTAssertTrue(copyEnvironment.isEnabled)
-        XCTAssertTrue(app.staticTexts["127.0.0.1:7890"].exists)
-        XCTAssertTrue(app.staticTexts["127.0.0.1:7891"].exists)
+        XCTAssertEqual(app.textFields["local-proxy-http-port"].value as? String, "7890")
+        XCTAssertEqual(app.textFields["local-proxy-socks-port"].value as? String, "7891")
 
         copyEnvironment.click()
         XCTAssertTrue(
@@ -3018,7 +3018,7 @@ final class AetherRouteUITests: XCTestCase {
         let language = app.launchEnvironment["AETHERROUTE_UI_REVIEW_LANGUAGE"]
         let expected = language == "zh-Hans"
             ? "只统计本机可见的连接，不上报"
-            : "Only connections visible on this Mac are counted, and nothing is reported anywhere."
+            : "Counted on this Mac only; nothing is reported."
         let expanded = app.launchArguments.contains("-NSDoubleLocalizedStrings")
         XCTAssertEqual(privacy.value as? String, expanded ? expected + " " + expected : expected)
     }
