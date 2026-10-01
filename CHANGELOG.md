@@ -4,6 +4,65 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-10-01
+
+A redesign of the whole interface in macOS 26 Liquid Glass, with simpler Proxies, DNS, Profiles and Rules pages. The network engine and extension code are unchanged from 1.0.38.
+
+### Added
+
+- One motion system: page entrances, number ticks, presses, disclosures, copy confirmations and list changes share the same timing, and every animation stops under Reduce Motion (a new guard script keeps it that way).
+- Menu bar: 30-second download and upload trend lines under the rates; a one-line hint beside the routing mode and network engine.
+- Overview traffic graph: a time axis and the peak rate in view.
+- Profiles: removing a profile asks first; a profile file dropped onto the window imports it.
+- Connections: a paused list is tinted so it never passes for a live one; a search or filter with no match says so.
+- Help for the routing mode, next to the network engine help.
+
+### Changed
+
+- Liquid Glass throughout: the sidebar is the system's Liquid Glass sidebar; cards, buttons and segmented controls are glass over an opaque content layer, as Apple's guidelines ask, so secondary text keeps its contrast whatever the desktop shows. Every surface is the system's own glass, so the Liquid Glass setting (clear or tinted) in System Settings › Appearance and Reduce Transparency apply to AetherRoute as to Apple's apps. macOS 15 gets the closest material.
+- Pages read like System Settings: a large title with the page's actions, grouped rows in glass cards with a colour tile for each item, and a colour tile for every sidebar page and Settings pane.
+- Overview: the state at a glance — a shield medallion, one large word and a VPN-style switch — then live traffic with large numbers, then one "Route" group for the exit node (opens Proxies), routing mode, network engine and route check. The "Current route" diagram is gone.
+- Menu bar panel: the same medallion and switch, traffic, exit and modes in one glass group, and glass buttons that stay legible while the app is in the background. The selected mode keeps its accent dot there.
+- Proxies: only choosing a node and testing latency. Each node row shows selection, region code (SG, JP), name, protocol and a coloured latency; "Manual / Auto" became a "Pick the fastest node automatically" switch; automatic groups (URL test, fallback) are read-only and mark the node in use; strategy names are localised. Search, filters, grid view and latency bars were removed; the node inventory moved to Settings › Privacy & Diagnostics.
+- DNS: one "Profile DNS" summary card with details folded away. With Transparent Proxy the TUN adjustments collapse to an explanation and a "Switch to TUN" button; with TUN they are pop-up menus whose "Follow profile" entry names the profile's value, with a dot on changed settings and "Restore defaults" only when something changed.
+- Profiles: one "Add" menu (subscription, file, node) and an overflow menu for sync and archives; each profile row shows "Current" or a "Use" button instead of a radio and a badge.
+- Rules: "Test a website or IP" leads the page and answers in place; when a GEOSITE/GEOIP rule needs runtime data it names that rule instead of guessing. Profile rules filter by where they send traffic (proxy, direct, reject); custom rules collapse to one line when empty; rule resources moved here from Profiles.
+- Connections: the matched rule shows its kind and value separately, so a narrow column cuts the value, never the kind; the outlet has a coloured tile.
+
+### Fixed
+
+- English plural forms for rules, nodes, upstreams, resolvers and similar counts.
+- Disabled controls say why (for example while connected) instead of only greying out; DNS options show the value actually in effect.
+- Settings no longer opens scrolled down to the bypass field; local proxy ports are typed directly.
+- Segmented controls no longer squeeze or overflow narrow windows.
+- The selected sidebar item's icon vanished into the accent selection.
+- Failure states: the sidebar dot is red and the primary action reads "Retry" with a retry icon.
+- Contrast: sidebar status text and the privacy disclosure paragraph now pass the accessibility contrast audit.
+- Settings: each sidebar row carried its identifier twice, so UI automation could not select a pane; the pane and page wrappers no longer replace each page's own accessibility identifier.
+- The connection switch stays a button for VoiceOver while it shows progress.
+- Connections table headers for traffic and duration now align with their right-aligned numbers.
+
+### Removed
+
+- About 20 components and some 70 interface strings that the redesign no longer uses.
+
+### Performance
+
+Page render time from navigation to first frame (Debug build with optimisation, Apple silicon; `Docs/PerformanceBudget.md`):
+
+- Connections with 2,000 flows: 760 ms → about 310 ms (one pass counts outlets; the filter no longer rebuilds per row).
+- Connections, standard fixture: 245 ms → 150–180 ms.
+- Profiles with 500 nodes and 10,000 rules: 250 ms → 190–220 ms (node counts cached per profile).
+- Overview and Rules on later visits: about 60 ms; Proxies and Rules lists load lazily.
+
+### Verified
+
+- Local regression: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` all passed.
+- Tart VM 6-dimension matrix (`macos27`, build 2026100102): all six combinations passed, including idle keep-alive reuse, transparent SNI recovery and the large-upload gate (2 MiB in 3.6–4.0 s; 27 s under TUN global, still a pass). VM temporary files were cleaned up.
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`), notarized candidate: TUN — 2 MiB upload in 4.1 s, 6 MiB in 6.1 s, idle keep-alive reuse passed; transparent proxy — 2 MiB in 3.9 s, 6 MiB in 6.1 s, idle keep-alive reuse and SNI recovery passed. Remote arm64 gate `test_remote_arm64.sh fast` passed (it first caught a Swift concurrency error that only Xcode 26.5 reports, fixed in this release).
+- Build 2026100101 was superseded: the VM kept that build's system extensions because the rebuilt candidate had the same version and build number, so the release moved to 2026100102 with identical source.
+- The full UI test suite was not rerun on the Mac mini after the accessibility fixes; see `Docs/ReleaseExceptions/1.1.0.md`.
+
 ## [1.0.38] - 2026-10-01
 
 In-app help for the network engines and DNS settings, clearer menu bar states, and a current-node latency test on Overview. The network engine and extension code are unchanged from 1.0.37.
