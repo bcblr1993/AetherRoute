@@ -12114,6 +12114,86 @@
           }
         }
       }
+    },
+    "Split by rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按规则分流"
+          }
+        }
+      }
+    },
+    "Everything through the proxy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部流量经代理"
+          }
+        }
+      }
+    },
+    "Everything connects directly": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部流量直接连接"
+          }
+        }
+      }
+    },
+    "Forwards each app's connections": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按应用连接转发"
+          }
+        }
+      }
+    },
+    "Virtual interface takes all traffic": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "虚拟网卡接管全部流量"
+          }
+        }
+      }
+    },
+    "Peak %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "峰值 %@"
+          }
+        }
+      }
+    },
+    "30 s ago": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30 秒前"
+          }
+        }
+      }
+    },
+    "Now": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "现在"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

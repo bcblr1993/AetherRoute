@@ -929,6 +929,38 @@ struct AetherNodeFlag: View {
 }
 
 /// Download and upload over the last 30 seconds.
+/// A single-series trend line, small enough to sit under a value. Fewer
+/// than two samples draw nothing; the frame keeps its height either way.
+struct AetherSparkline: View {
+    let values: [Double]
+    var tint: Color = .accentColor
+
+    var body: some View {
+        GeometryReader { proxy in
+            if values.count > 1 {
+                let peak = max(values.max() ?? 0, 1)
+                let step = proxy.size.width / CGFloat(values.count - 1)
+                let height = proxy.size.height
+                Path { path in
+                    for (index, value) in values.enumerated() {
+                        let point = CGPoint(
+                            x: CGFloat(index) * step,
+                            y: height - 1 - CGFloat(value / peak) * (height - 2)
+                        )
+                        if index == 0 {
+                            path.move(to: point)
+                        } else {
+                            path.addLine(to: point)
+                        }
+                    }
+                }
+                .stroke(tint, style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 public struct AetherTrafficMiniGraph: View {
     let downloadSamples: [Double]
     let uploadSamples: [Double]
@@ -1004,7 +1036,6 @@ public struct AetherTrafficMiniGraph: View {
 
     private func smoothPoints(samples: [Double], width: CGFloat, height: CGFloat, maxVal: Double) -> [CGPoint] {
         guard !samples.isEmpty else { return [] }
-        let baselineY = height - 3
         let count = samples.count
 
         var rawPoints: [CGPoint] = []
@@ -1037,9 +1068,11 @@ public struct AetherTrafficMiniGraph: View {
         guard !deduped.isEmpty else { return [] }
 
         var result: [CGPoint] = []
-        // 当左侧没有充满 30 秒时，平滑补充最左端零基线点，避免波形悬空截断
+        // Until 30 seconds have been sampled, the first value extends flat to
+        // the left edge. Dropping to the baseline there drew a cliff that
+        // looked like a traffic spike.
         if let first = deduped.first, first.x > 0 {
-            result.append(CGPoint(x: 0, y: baselineY))
+            result.append(CGPoint(x: 0, y: first.y))
         }
 
         result.append(contentsOf: deduped)

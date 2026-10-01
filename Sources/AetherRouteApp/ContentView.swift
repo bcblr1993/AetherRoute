@@ -92,11 +92,32 @@ extension RoutingMode {
         }
     }
 
+    /// What the mode does, short enough to sit beside its heading.
+    var shortHint: String {
+        switch self {
+        case .rule: AppLocalization.string("Split by rules")
+        case .global: AppLocalization.string("Everything through the proxy")
+        case .direct: AppLocalization.string("Everything connects directly")
+        }
+    }
+
     var symbol: String {
         switch self {
         case .rule: "arrow.triangle.branch"
         case .global: "globe.americas.fill"
         case .direct: "bolt.fill"
+        }
+    }
+}
+
+extension NetworkEngineMode {
+    /// What the engine does, short enough to sit beside its heading.
+    var shortHint: String {
+        switch self {
+        case .transparent: AppLocalization.string("Forwards each app's connections")
+#if AETHERROUTE_INDEPENDENT
+        case .tun: AppLocalization.string("Virtual interface takes all traffic")
+#endif
         }
     }
 }
@@ -800,10 +821,14 @@ private struct ActiveOutletRow: View {
                 Spacer(minLength: AetherVisual.s2)
                 actions
             }
+            // Stacked when narrow; leading-aligned like the wide layout
+            // instead of centered in the card.
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
                 identity
                 actions
+                    .padding(.leading, overviewIdentityColumn + overviewIdentitySpacing)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("overview-active-outlet")
@@ -1208,6 +1233,22 @@ private struct ConnectionHero: View {
 }
 
 
+/// A mode's effect beside its heading. It cross-fades when the choice
+/// changes, so the sentence visibly follows the control.
+struct ModeHint: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .contentTransition(.opacity)
+            .animation(AetherVisual.animation(AetherVisual.quickFade), value: text)
+    }
+}
+
 private struct ConnectionControlBar: View {
     let networkEngineMode: NetworkEngineMode
     let routingMode: RoutingMode
@@ -1250,6 +1291,7 @@ private struct ConnectionControlBar: View {
                 Text(AppLocalization.string("Routing mode"))
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.primary)
+                ModeHint(text: routingMode.shortHint)
             }
             RoutingModeSegmentedControl(
                 selection: Binding(
@@ -1275,6 +1317,7 @@ private struct ConnectionControlBar: View {
                     .foregroundStyle(.primary)
                 AetherHelpButton(topic: .networkEngine)
                     .controlSize(.small)
+                ModeHint(text: networkEngineMode.shortHint)
             }
             NetworkEngineSegmentedControl(
                 selection: Binding(
@@ -1841,12 +1884,23 @@ private struct LiveTrafficHistoryGraph: View {
                 : (lastSample ?? context.date)
             let samples = model.history.visible(at: now)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                // The chart's scale, the busiest moment in view, sits on its
+                // own line so it never covers the curve.
+                HStack {
+                    Spacer(minLength: 0)
+                    Text(peakRate(samples).map {
+                        String.localizedStringWithFormat(AppLocalization.string("Peak %@"), $0)
+                    } ?? " ")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .aetherNumericValue(peakRate(samples) ?? "")
+                }
                 ZStack {
                     AetherTrafficMiniGraph(
                         downloadSamples: samples.map(\.download),
                         uploadSamples: samples.map(\.upload),
                         samplePositions: samples.map { TrafficHistory.position(of: $0, at: now) },
-                        height: 56
+                        height: 80
                     )
                     if samples.count < 2 {
                         Text(AppLocalization.string("Collecting traffic samples…"))
@@ -1856,9 +1910,23 @@ private struct LiveTrafficHistoryGraph: View {
                     }
                 }
                 .animation(AetherVisual.animation(AetherVisual.quickFade), value: samples.count < 2)
-                refreshStatus(lastSample: lastSample)
+                HStack {
+                    Text(AppLocalization.string("30 s ago"))
+                    Spacer(minLength: AetherVisual.s2)
+                    refreshStatus(lastSample: lastSample)
+                    Spacer(minLength: AetherVisual.s2)
+                    Text(AppLocalization.string("Now"))
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func peakRate(_ samples: [TrafficHistory.Sample]) -> String? {
+        let peak = samples.map { max($0.download, $0.upload) }.max() ?? 0
+        guard samples.count > 1, peak >= 1 else { return nil }
+        return formattedRate(UInt64(peak))
     }
 
     @ViewBuilder

@@ -164,6 +164,21 @@ final class NetworkTelemetryViewModel: ObservableObject {
     @Published var snapshot: NetworkTelemetrySnapshot = .empty
     private(set) var history = TrafficHistory()
 
+#if DEBUG
+    /// Review mode only: a fixed 30-second history, so screenshots show the
+    /// traffic chart and sparklines the same way on every run.
+    func seedReviewHistory(endingAt end: Date) {
+        for second in stride(from: 29, through: 1, by: -1) {
+            let phase = Double(30 - second)
+            history.append(
+                download: 2_400_000 * (0.7 + 0.25 * sin(phase * 0.45) + 0.12 * sin(phase * 1.3)),
+                upload: 384_000 * (0.7 + 0.3 * sin(phase * 0.6 + 1) + 0.1 * sin(phase * 1.7)),
+                at: end.addingTimeInterval(-Double(second))
+            )
+        }
+    }
+#endif
+
     func update(_ snapshot: NetworkTelemetrySnapshot) {
         history.append(
             download: Double(snapshot.downloadBytesPerSecond),

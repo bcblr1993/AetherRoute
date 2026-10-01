@@ -961,9 +961,12 @@ private struct MenuBarContent: View {
 
     private var modeSection: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            Text(AppLocalization.string("Routing mode"))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+            HStack(spacing: AetherVisual.s2) {
+                Text(AppLocalization.string("Routing mode"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ModeHint(text: tunnel.routingMode.shortHint)
+            }
             RoutingModeSegmentedControl(
                 selection: Binding(
                     get: { tunnel.routingMode },
@@ -978,6 +981,8 @@ private struct MenuBarContent: View {
                     .foregroundStyle(.secondary)
                 AetherHelpButton(topic: .networkEngine)
                     .controlSize(.small)
+                ModeHint(text: tunnel.networkEngineMode.shortHint)
+                    .padding(.leading, AetherVisual.s1)
             }
             .padding(.top, AetherVisual.s1)
             NetworkEngineSegmentedControl(
@@ -1535,10 +1540,33 @@ private struct MenuLiveTrafficValue: View {
     @ObservedObject var telemetry: NetworkTelemetryViewModel
 
     var body: some View {
-        Text(value)
-            .font(.caption.monospacedDigit().weight(.semibold))
-            .lineLimit(1)
-            .aetherNumericValue(value)
+        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+            Text(value)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .aetherNumericValue(value)
+            // The last 30 seconds under the rate. It shares this view's
+            // telemetry observation, so the panel keeps one observer.
+            AetherSparkline(values: series, tint: tint)
+                .frame(height: 14)
+        }
+    }
+
+    private var series: [Double] {
+        let samples = telemetry.history.visible(at: Date())
+        switch metric {
+        case .download: return samples.map(\.download)
+        case .upload: return samples.map(\.upload)
+        case .connections: return []
+        }
+    }
+
+    private var tint: Color {
+        switch metric {
+        case .download: .cyan
+        case .upload: .purple
+        case .connections: .secondary
+        }
     }
 
     private var value: String {
@@ -1558,9 +1586,13 @@ private struct MenuStaticTrafficValue: View {
     let snapshot: NetworkTelemetrySnapshot
 
     var body: some View {
-        Text(value)
-            .font(.caption.monospacedDigit().weight(.semibold))
-            .lineLimit(1)
+        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+            Text(value)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+            // Same height as the live sparkline, so nothing shifts.
+            Color.clear.frame(height: 14)
+        }
     }
 
     private var value: String {

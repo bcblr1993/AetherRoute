@@ -372,6 +372,9 @@ extension TunnelManager {
 #else
         let useInvalidTimestamps = false
 #endif
+#if DEBUG
+        telemetryViewModel.seedReviewHistory(endingAt: Date(timeIntervalSince1970: reviewNow))
+#endif
         publishTelemetry(NetworkTelemetrySnapshot(
             uploadBytesPerSecond: 384_000,
             downloadBytesPerSecond: 2_480_000,
