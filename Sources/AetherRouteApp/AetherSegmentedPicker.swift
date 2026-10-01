@@ -145,7 +145,7 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
             // each digit as "8", the widest, keeps the width for as long as
             // the number of digits holds, so the control neither re-measures
             // nor jitters on every tick.
-            let widest = titles.map(Self.widestDigits)
+            let widest = titles.map(segmentTitleWithWidestDigits)
             if let measuredKey, measuredKey.0 == widest, measuredKey.1 == controlSize {
                 return measuredWidth
             }
@@ -155,10 +155,6 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
             )
             measuredKey = (widest, controlSize)
             return measuredWidth
-        }
-
-        private static func widestDigits(_ title: String) -> String {
-            String(title.map { $0.isNumber ? "8" : $0 })
         }
 
         init(selection: Binding<Value>, options: [Option]) {
@@ -171,4 +167,11 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
             selection.wrappedValue = options[sender.selectedSegment].value
         }
     }
+}
+
+/// The title with every digit replaced by "8", the widest digit. Outside the
+/// generic picker so no closure captures its `Value` type, which Xcode 26's
+/// concurrency checking rejects in a main-actor method.
+private func segmentTitleWithWidestDigits(_ title: String) -> String {
+    String(title.map { $0.isNumber ? "8" : $0 })
 }
