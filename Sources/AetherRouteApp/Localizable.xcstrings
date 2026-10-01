@@ -700,16 +700,6 @@
         }
       }
     },
-    "AetherRoute does not sell network data, build advertising profiles, or include behavioral trackers.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AetherRoute 不会出售网络数据，不会建立广告画像，也不包含行为跟踪器。"
-          }
-        }
-      }
-    },
     "AetherRoute has not downloaded or changed anything yet.": {
       "localizations": {
         "zh-Hans": {
@@ -760,16 +750,6 @@
         }
       }
     },
-    "AetherRoute processes proxy profiles, network destinations, addresses, and routing decisions locally on this Mac.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AetherRoute 会在此 Mac 本地处理代理配置、网络目标、地址和路由决策。"
-          }
-        }
-      }
-    },
     "AetherRoute settings": {
       "localizations": {
         "zh-Hans": {
@@ -796,16 +776,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "确认之前，AetherRoute 不会访问这个地址。"
-          }
-        }
-      }
-    },
-    "AetherRoute will not create or save a network extension configuration, import or download a profile, or connect until you agree.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在你同意前，AetherRoute 不会创建或保存网络扩展配置、导入或下载配置，也不会连接。"
           }
         }
       }
@@ -1056,16 +1026,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "自动化"
-          }
-        }
-      }
-    },
-    "Before AetherRoute can configure a network extension, review how your network data is handled.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AetherRoute 配置网络扩展前，请先了解网络数据的处理方式。"
           }
         }
       }
@@ -2437,16 +2397,6 @@
         }
       }
     },
-    "How AetherRoute handles network data": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AetherRoute 如何处理网络数据"
-          }
-        }
-      }
-    },
     "HTTP CONNECT uses TCP. Enable TLS above for HTTPS CONNECT.": {
       "localizations": {
         "zh-Hans": {
@@ -2493,16 +2443,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "HTTPS 订阅地址"
-          }
-        }
-      }
-    },
-    "I Understand and Continue": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "我已了解并继续"
           }
         }
       }
@@ -3395,16 +3335,6 @@
         }
       }
     },
-    "No sale or tracking": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不出售，也不跟踪"
-          }
-        }
-      }
-    },
     "Node": {
       "localizations": {
         "zh-Hans": {
@@ -3551,16 +3481,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "只统计本机可见的连接，不上报"
-          }
-        }
-      }
-    },
-    "Only the proxy and DNS services in the profile you select receive forwarded traffic or queries.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "只有你所选配置中的代理和 DNS 服务会收到转发的流量或查询。"
           }
         }
       }
@@ -3861,16 +3781,6 @@
         }
       }
     },
-    "Privacy disclosure accepted on this Mac": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已在此 Mac 上接受隐私说明"
-          }
-        }
-      }
-    },
     "Privacy review": {
       "localizations": {
         "zh-Hans": {
@@ -3927,16 +3837,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "私密路由，原生匠心。"
-          }
-        }
-      }
-    },
-    "Processed on this Mac": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在此 Mac 上处理"
           }
         }
       }
@@ -7120,52 +7020,12 @@
         }
       }
     },
-    "When you connect, traffic and DNS queries may be sent to the proxy and DNS services in your profile. Subscription updates contact your provider; routing rule updates contact public data sources after connection. These services may observe your IP address. Review and trust a provider before importing it.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接后，流量和 DNS 查询可能发送至配置中的代理和 DNS 服务。订阅更新会联系你的服务商；路由规则会在连接后从公开数据源更新。这些服务可能看到你的 IP 地址，请仅导入你信任的配置。"
-          }
-        }
-      }
-    },
     "You can cancel safely while readiness checks are running.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "就绪检查期间可以安全取消。"
-          }
-        }
-      }
-    },
-    "You choose the route": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "由你选择路由"
-          }
-        }
-      }
-    },
-    "Your Network Privacy": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你的网络隐私"
-          }
-        }
-      }
-    },
-    "Your selected services receive traffic": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你选择的服务会接收流量"
           }
         }
       }
@@ -8582,22 +8442,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "端口必须在 1 到 65535 之间。"
-          }
-        }
-      }
-    },
-    "Privacy details": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Privacy details"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "隐私详情"
           }
         }
       }
@@ -10271,28 +10115,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "报告包含的内容"
-          }
-        }
-      }
-    },
-    "Privacy disclosure": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "隐私说明"
-          }
-        }
-      }
-    },
-    "Accepted on this Mac": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已在此 Mac 上接受"
           }
         }
       }
@@ -12129,6 +11951,358 @@
           "stringUnit": {
             "state": "translated",
             "value": "网络引擎"
+          }
+        }
+      }
+    },
+    "Privacy commitments": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privacy commitments"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐私承诺"
+          }
+        }
+      }
+    },
+    "Privacy commitments summary": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On this Mac · Nothing reported · No ads · Never sold"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机处理 · 不上报 · 无广告 · 不出售"
+          }
+        }
+      }
+    },
+    "Accepted": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accepted"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已接受"
+          }
+        }
+      }
+    },
+    "Private by default": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Private by default"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐私，是默认设置"
+          }
+        }
+      }
+    },
+    "AetherRoute does one thing: forward your traffic by your rules.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute does one thing: forward your traffic by your rules."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute 只做一件事：按你的规则转发流量。"
+          }
+        }
+      }
+    },
+    "On this Mac": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On this Mac"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机处理"
+          }
+        }
+      }
+    },
+    "Nothing reported": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing reported"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不上报"
+          }
+        }
+      }
+    },
+    "No ads": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No ads"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无广告"
+          }
+        }
+      }
+    },
+    "Never sold": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Never sold"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不出售"
+          }
+        }
+      }
+    },
+    "Routing decisions happen on your Mac.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Routing decisions happen on your Mac."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分流决策在你的 Mac 上完成"
+          }
+        }
+      }
+    },
+    "Connection and traffic stats stay here.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection and traffic stats stay here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接与流量统计只留在本机"
+          }
+        }
+      }
+    },
+    "No profiling and no trackers.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No profiling and no trackers."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不建立画像，不含跟踪器"
+          }
+        }
+      }
+    },
+    "Your network data is never sold.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your network data is never sold."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任何网络数据都不出售"
+          }
+        }
+      }
+    },
+    "Once connected, data goes only here": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Once connected, data goes only here"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接后，数据只会去这些地方"
+          }
+        }
+      }
+    },
+    "Your Mac": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your Mac"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的 Mac"
+          }
+        }
+      }
+    },
+    "AetherRoute decides where each connection goes.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute decides where each connection goes."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute 按规则决定每个连接的去向。"
+          }
+        }
+      }
+    },
+    "Your proxy and DNS": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your proxy and DNS"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你选的代理和 DNS"
+          }
+        }
+      }
+    },
+    "They forward your traffic and queries, and can see your IP address.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "They forward your traffic and queries, and can see your IP address."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转发你的流量和查询，它们能看到你的 IP 地址。"
+          }
+        }
+      }
+    },
+    "Subscription updates contact your provider; rule updates come from public sources after you connect.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subscription updates contact your provider; rule updates come from public sources after you connect."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新订阅时访问你的订阅提供方；连接后从公开数据源更新分流规则。"
+          }
+        }
+      }
+    },
+    "Only import subscriptions from providers you trust.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only import subscriptions from providers you trust."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入订阅前，请确认你信任它的提供方。"
+          }
+        }
+      }
+    },
+    "Agree and Continue": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agree and Continue"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同意并继续"
+          }
+        }
+      }
+    },
+    "Nothing is configured or connected until you continue.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing is configured or connected until you continue."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同意前不会创建网络扩展配置，也不会连接。"
           }
         }
       }

@@ -994,31 +994,48 @@ private struct MenuBarContent: View {
         }
     }
 
+    /// Two equal actions and the overflow menu. The version lives in that
+    /// menu; an available update gets its own row above the actions.
     private var footer: some View {
-        HStack(spacing: AetherVisual.s2) {
-            Button {
-                AppWindowManager.shared.showMainWindow()
-            } label: {
-                Text(AppLocalization.string("Open AetherRoute"))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.aetherGlassCapsule)
+        VStack(spacing: AetherVisual.s2) {
+            MenuUpdateStatus(updater: SparkleUpdaterController.shared)
             if let copiedMessage {
                 Label(copiedMessage, systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                     .transition(.opacity)
             }
-            MenuUpdateStatus(updater: SparkleUpdaterController.shared)
+            footerActions
+        }
+        .font(.callout)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: copiedMessage)
+    }
+
+    private var footerActions: some View {
+        HStack(spacing: AetherVisual.s2) {
+            Button {
+                AppWindowManager.shared.showMainWindow()
+            } label: {
+                Text(AppLocalization.string("Open AetherRoute"))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.aetherGlassCapsule)
             if let group = primaryGroup {
                 let isTesting = tunnel.proxyLatencyRequests.contains(group.name)
                 Button {
                     Task { await tunnel.testProxyLatency(group: group.name) }
                 } label: {
-                    if isTesting {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "bolt.fill")
+                    // Text beside the icon: a bare bolt was easy to miss.
+                    HStack(spacing: AetherVisual.s1) {
+                        if isTesting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "bolt.fill")
+                        }
+                        Text(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
+                            .lineLimit(1)
                     }
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.aetherGlassCapsule)
                 .disabled(isTesting)
@@ -1059,8 +1076,6 @@ private struct MenuBarContent: View {
             .fixedSize()
             .accessibilityLabel(AppLocalization.string("More"))
         }
-        .font(.callout)
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: copiedMessage)
     }
 
     private var canCopyTerminalProxyCommand: Bool {
@@ -1399,7 +1414,7 @@ private struct MenuUpdateStatus: View {
                 Button {
                     updater.checkForUpdates()
                 } label: {
-                    // A solid accent pill with white text: a tinted pill read
+                    // A solid accent row with white text: a tinted pill read
                     // as blue-on-gray on dark menus and the dot faded out.
                     HStack(spacing: AetherVisual.sCompact) {
                         Circle()
@@ -1408,12 +1423,16 @@ private struct MenuUpdateStatus: View {
                             .opacity(isPulsing ? 0.6 : 1)
                             .accessibilityHidden(true)
                         Text(String.localizedStringWithFormat(AppLocalization.string("New version %@"), version))
-                            .font(.caption.weight(.semibold))
+                            .font(.callout.weight(.semibold))
+                        Spacer(minLength: AetherVisual.s2)
+                        Image(systemName: "arrow.down.circle.fill")
+                            .accessibilityHidden(true)
                     }
                     .foregroundStyle(Color.white)
-                    .padding(.horizontal, AetherVisual.s2)
-                    .padding(.vertical, AetherVisual.s1)
+                    .padding(.horizontal, AetherVisual.s3)
+                    .padding(.vertical, AetherVisual.s2)
                     .background(Color.accentColor, in: Capsule())
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .help(AppLocalization.string("View and install the update"))
@@ -1425,29 +1444,12 @@ private struct MenuUpdateStatus: View {
                     }
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
-            case .checking:
-                HStack(spacing: AetherVisual.sCompact) {
-                    ProgressView().controlSize(.mini)
-                    versionText
-                }
-                .transition(.opacity)
-            case .unknown, .upToDate:
-                versionText
-                    .transition(.opacity)
+            case .checking, .unknown, .upToDate:
+                // The version is in the overflow menu; nothing to say here.
+                EmptyView()
             }
         }
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: updater.availability)
-    }
-
-    private var versionText: some View {
-        Text(verbatim: "v\(SparkleUpdaterController.currentVersion)")
-            .font(.caption.monospacedDigit().weight(.medium))
-            .foregroundStyle(.secondary)
-            .accessibilityLabel(String.localizedStringWithFormat(
-                AppLocalization.string("Version %@"),
-                SparkleUpdaterController.currentVersion
-            ))
-            .accessibilityIdentifier("menu-version")
     }
 }
 

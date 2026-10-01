@@ -1,326 +1,324 @@
 import SwiftUI
 
+/// The privacy commitments. First run shows them as a welcome page with the
+/// consent button; Settings shows one summary row whose "Show…" opens the
+/// same page in a sheet.
 struct PrivacyDisclosureView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     let isOnboarding: Bool
-    /// Settings shows the same commitments as a compact section, without the
-    /// first-run hero or its own scroll view.
+    /// Settings: the one-row summary inside the Privacy & Diagnostics form.
     var isEmbedded = false
-    @State private var showsPrivacyDetails = false
+    /// The full page shown as a sheet from Settings: a Done button replaces
+    /// the consent bar.
+    var isSheet = false
+    @Environment(\.dismiss) private var dismiss
+    @State private var showsCommitments = false
+    @State private var hasAppeared = false
 
     var body: some View {
         if isEmbedded {
-            embeddedContent
+            summaryRow
         } else {
             fullPage
         }
     }
 
-    /// Settings: one grouped-form section, matching General and Network.
-    private var embeddedContent: some View {
+    // MARK: Settings summary
+
+    private var summaryRow: some View {
         Section {
-            ForEach(NetworkPrivacyPoint.allCases) { point in
-                PrivacyPointRow(point: point, isCompact: true)
-            }
-            DisclosureGroup(AppLocalization.string("Privacy details"), isExpanded: $showsPrivacyDetails) {
-                Text(AppLocalization.string("When you connect, traffic and DNS queries may be sent to the proxy and DNS services in your profile. Subscription updates contact your provider; routing rule updates contact public data sources after connection. These services may observe your IP address. Review and trust a provider before importing it."))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .accessibilityIdentifier("privacy-details-toggle")
-            LabeledContent(AppLocalization.string("Privacy disclosure")) {
-                if tunnel.hasAcceptedPrivacyDisclosure {
-                    Label(AppLocalization.string("Accepted on this Mac"), systemImage: "checkmark.seal.fill")
-                        .foregroundStyle(.green)
-                        .accessibilityIdentifier("privacy-consent-accepted")
-                } else {
-                    Text(AppLocalization.string("Not accepted"))
+            HStack(spacing: AetherVisual.s3) {
+                AetherIconTile(symbol: "checkmark.shield.fill", color: .blue, size: 28)
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                    Text(AppLocalization.string("Privacy commitments"))
+                        .foregroundStyle(.primary)
+                    Text(AppLocalization.string("Privacy commitments summary"))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                Spacer(minLength: AetherVisual.s2)
+                consentBadge
+                Button(AppLocalization.string("Show…")) {
+                    showsCommitments = true
+                }
+                .accessibilityIdentifier("privacy-commitments-show")
+            }
+            .padding(.vertical, AetherVisual.sMicro)
+            .accessibilityElement(children: .contain)
+            .sheet(isPresented: $showsCommitments) {
+                PrivacyDisclosureView(isOnboarding: false, isSheet: true)
+                    .environmentObject(tunnel)
+                    .frame(width: 620, height: 600)
             }
         } header: {
             Text(AppLocalization.string("Privacy"))
         }
     }
 
+    @ViewBuilder
+    private var consentBadge: some View {
+        if tunnel.hasAcceptedPrivacyDisclosure {
+            Label {
+                Text(AppLocalization.string("Accepted"))
+                    .foregroundStyle(.primary)
+            } icon: {
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(.green)
+            }
+            .font(.callout)
+            .accessibilityIdentifier("privacy-consent-accepted")
+        } else {
+            Text(AppLocalization.string("Not accepted"))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Full page
+
+    /// Liquid Glass layout: plain content in glass cards, and the action as a
+    /// floating glass capsule the content scrolls beneath — no opaque bar.
     private var fullPage: some View {
         ScrollView {
-            VStack(alignment: .center, spacing: AetherVisual.s6) {
-                disclosureHeader
-                // The three commitments are the page; hiding them behind a
-                // toggle left two thirds of the first-run window empty.
-                disclosurePoints
-                VStack(spacing: AetherVisual.s3) {
-                    Button {
-                        withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) {
-                            showsPrivacyDetails.toggle()
-                        }
-                    } label: {
-                        Label("Privacy details", systemImage: "chevron.right")
-                            .labelStyle(DisclosureLabelStyle(isExpanded: showsPrivacyDetails))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
-                    .accessibilityIdentifier("privacy-details-toggle")
-                    if showsPrivacyDetails {
-                        destinationNotice
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-                }
-                if !usesPinnedConsent {
-                    consentStatus
-                }
+            VStack(spacing: AetherVisual.s5) {
+                header
+                factGrid
+                dataFlow
+                Text(AppLocalization.string("Only import subscriptions from providers you trust."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
+            .frame(maxWidth: 560)
             .padding(.horizontal, AetherVisual.s6)
-            .padding(.top, isOnboarding ? AetherVisual.onboardingTopPadding : AetherVisual.pageTopPadding)
-            .padding(.bottom, AetherVisual.s6)
-            .frame(maxWidth: AetherVisual.formMaxWidth)
+            .padding(.top, isSheet ? AetherVisual.s5 : AetherVisual.s6)
+            .padding(.bottom, AetherVisual.s4)
             .frame(maxWidth: .infinity)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if usesPinnedConsent {
-                consentStatus
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, AetherVisual.s6)
-                    .padding(.vertical, AetherVisual.s4)
-                    .background(.regularMaterial)
-                    .overlay(alignment: .top) {
-                        Divider()
-                    }
-            }
-        }
+        .modifier(FloatingBottomBar { actionArea })
+        .onAppear { hasAppeared = true }
     }
 
-    private var usesPinnedConsent: Bool {
-        isOnboarding && !tunnel.hasAcceptedPrivacyDisclosure
-    }
-
-    private var disclosureHeader: some View {
+    private var header: some View {
         VStack(spacing: AetherVisual.s3) {
-            ZStack(alignment: .bottomTrailing) {
-                AetherRouteBrandTile(size: 72)
-
-                ZStack {
-                    Circle()
-                        .fill(Color(nsColor: .windowBackgroundColor))
-                        .frame(width: 28, height: 28)
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [AetherVisual.portalLight, AetherVisual.portalMid],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 24, height: 24)
-                    Image(systemName: "checkmark.shield.fill")
-                        .font(.body.weight(.bold))
-                        .foregroundStyle(.white)
-                }
-                .offset(x: 5, y: 5)
-            }
-            .frame(width: 72, height: 72)
-            .accessibilityHidden(true)
-
-            VStack(spacing: AetherVisual.s2) {
-                Text(AppLocalization.string("Your Network Privacy"))
-                    .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(.primary)
-                Text(disclosureSubtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.top, AetherVisual.s1)
+            AetherIconTile(symbol: "checkmark.shield.fill", color: .blue, size: 56)
+                .scaleEffect(hasAppeared ? 1 : 0.8)
+                .opacity(hasAppeared ? 1 : 0)
+                .animation(AetherVisual.animation(AetherVisual.panelSpring), value: hasAppeared)
+            Text(AppLocalization.string("Private by default"))
+                .font(.largeTitle.weight(.bold))
+                .foregroundStyle(.primary)
+            Text(AppLocalization.string("AetherRoute does one thing: forward your traffic by your rules."))
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity)
     }
 
-    private var disclosureSubtitle: String {
-        isOnboarding
-            ? AppLocalization.string("Before AetherRoute can configure a network extension, review how your network data is handled.")
-            : AppLocalization.string("How AetherRoute handles network data")
-    }
-
-    private var disclosurePoints: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s5) {
-            ForEach(NetworkPrivacyPoint.allCases) { point in
-                PrivacyPointRow(point: point)
-            }
-        }
-        .frame(maxWidth: 520, alignment: .leading)
-    }
-
-    private var destinationNotice: some View {
-        HStack(alignment: .top, spacing: AetherVisual.s3) {
-            ZStack {
-                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                    .fill(Color.orange.opacity(0.12))
-                Image(systemName: "arrow.up.right.square.fill")
-                    .font(.title2.weight(.medium))
-                    .foregroundStyle(.orange)
-            }
-            .frame(width: 32, height: 32)
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text(AppLocalization.string("Your selected services receive traffic"))
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .accessibilityValue(
-                        Text(AppLocalization.string("When you connect, traffic and DNS queries may be sent to the proxy and DNS services in your profile. Subscription updates contact your provider; routing rule updates contact public data sources after connection. These services may observe your IP address. Review and trust a provider before importing it."))
-                    )
-                Text(AppLocalization.string("When you connect, traffic and DNS queries may be sent to the proxy and DNS services in your profile. Subscription updates contact your provider; routing rule updates contact public data sources after connection. These services may observe your IP address. Review and trust a provider before importing it."))
-                    .font(.callout)
-                    // Primary: grey text on the orange tint failed the
-                    // contrast audit.
-                    .foregroundStyle(.primary)
-                    .lineSpacing(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityHidden(true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(AetherVisual.s4)
-        .background(
-            RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-                .fill(Color.orange.opacity(0.05))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-                .stroke(Color.orange.opacity(0.15), lineWidth: 1)
-        )
-    }
-
-    @ViewBuilder
-    private var consentStatus: some View {
-        if tunnel.hasAcceptedPrivacyDisclosure {
-            Label(AppLocalization.string("Privacy disclosure accepted on this Mac"), systemImage: "checkmark.seal.fill")
-                .font(.headline)
-                .foregroundStyle(.green)
-                .padding(.top, AetherVisual.s1)
-                .accessibilityIdentifier("privacy-consent-accepted")
-        } else {
-            VStack(spacing: AetherVisual.s2) {
-                Button {
-                    Task { await tunnel.acceptPrivacyDisclosure() }
-                } label: {
-                    HStack(spacing: AetherVisual.s2) {
-                        Image(systemName: "checkmark.shield.fill")
-                        Text(AppLocalization.string("I Understand and Continue"))
+    /// Four short facts, like an App Store privacy label, in cards of equal
+    /// height that fit their text.
+    private var factGrid: some View {
+        HStack(alignment: .top, spacing: AetherVisual.s2) {
+            ForEach(Array(PrivacyFact.allCases.enumerated()), id: \.element) { index, fact in
+                VStack(spacing: AetherVisual.s2) {
+                    AetherIconTile(symbol: fact.symbol, color: fact.color, size: 34)
+                    VStack(spacing: AetherVisual.sMicro) {
+                        Text(fact.title)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        Text(fact.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .font(.title3.weight(.semibold))
-                    .frame(minWidth: 220)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.vertical, AetherVisual.s3)
+                .padding(.horizontal, AetherVisual.s2)
+                .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous))
+                .accessibilityElement(children: .contain)
+                .opacity(hasAppeared ? 1 : 0)
+                .offset(y: hasAppeared ? 0 : 12)
+                .animation(
+                    AetherVisual.animation(AetherVisual.panelSpring.delay(0.1 + Double(index) * 0.06)),
+                    value: hasAppeared
+                )
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Where data goes once connected: shown, not tucked behind a link.
+    private var dataFlow: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            Text(AppLocalization.string("Once connected, data goes only here"))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: 0) {
+                flowNode(
+                    symbol: "laptopcomputer", color: .gray,
+                    title: AppLocalization.string("Your Mac"),
+                    detail: AppLocalization.string("AetherRoute decides where each connection goes.")
+                )
+                Image(systemName: "arrow.down")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 28)
                     .padding(.vertical, AetherVisual.s1)
+                    .accessibilityHidden(true)
+                flowNode(
+                    symbol: "arrow.triangle.branch", color: .green,
+                    title: AppLocalization.string("Your proxy and DNS"),
+                    detail: AppLocalization.string("They forward your traffic and queries, and can see your IP address.")
+                )
+                Divider().padding(.vertical, AetherVisual.s3)
+                Label {
+                    Text(AppLocalization.string("Subscription updates contact your provider; rule updates come from public sources after you connect."))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(AetherVisual.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous))
+        }
+        .opacity(hasAppeared ? 1 : 0)
+        .animation(AetherVisual.animation(AetherVisual.panelSpring.delay(0.35)), value: hasAppeared)
+    }
+
+    private func flowNode(symbol: String, color: Color, title: String, detail: String) -> some View {
+        HStack(alignment: .center, spacing: AetherVisual.s3) {
+            AetherIconTile(symbol: symbol, color: color, size: 28)
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    /// The floating action: a glass capsule over the scrolling content.
+    @ViewBuilder
+    private var actionArea: some View {
+        if isSheet {
+            HStack {
+                consentBadge
+                    .padding(.horizontal, AetherVisual.s3)
+                    .padding(.vertical, AetherVisual.s2)
+                    .aetherGlass(in: Capsule())
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Text(AppLocalization.string("Done"))
+                        .frame(minWidth: 80)
                 }
                 .aetherGlassButton(prominent: true)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("privacy-sheet-done")
+            }
+            .padding(.horizontal, AetherVisual.s5)
+            .padding(.bottom, AetherVisual.s4)
+        } else if isOnboarding && !tunnel.hasAcceptedPrivacyDisclosure {
+            VStack(spacing: AetherVisual.s2) {
+                Button {
+                    Task { await tunnel.acceptPrivacyDisclosure() }
+                } label: {
+                    Text(AppLocalization.string("Agree and Continue"))
+                        .font(.title3.weight(.semibold))
+                        .frame(minWidth: 240)
+                        .padding(.vertical, AetherVisual.s1)
+                }
+                .aetherGlassButton(prominent: true)
+                .controlSize(.extraLarge)
+                .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("privacy-consent-button")
-                .accessibilityHint(
-                    Text(AppLocalization.string("AetherRoute will not create or save a network extension configuration, import or download a profile, or connect until you agree."))
-                )
+                .accessibilityHint(Text(AppLocalization.string("Nothing is configured or connected until you continue.")))
 
-                Text(AppLocalization.string("AetherRoute will not create or save a network extension configuration, import or download a profile, or connect until you agree."))
+                Text(AppLocalization.string("Nothing is configured or connected until you continue."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
                     .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, AetherVisual.s5)
+        }
+    }
+}
+
+/// The floating action as a macOS 26 safe-area bar: content scrolls beneath
+/// it and softly blurs out, as under the system's own glass toolbars.
+private struct FloatingBottomBar<Bar: View>: ViewModifier {
+    @ViewBuilder var bar: () -> Bar
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .scrollEdgeEffectStyle(.soft, for: .bottom)
+                .safeAreaBar(edge: .bottom, spacing: 0) { bar() }
+        } else {
+            content.safeAreaInset(edge: .bottom, spacing: 0) {
+                bar().background(.regularMaterial)
             }
         }
     }
 }
 
-private enum NetworkPrivacyPoint: CaseIterable, Identifiable {
+private enum PrivacyFact: CaseIterable, Identifiable {
     case onDevice
-    case noTracking
-    case userControlled
+    case nothingReported
+    case noAds
+    case neverSold
 
     var id: Self { self }
 
     var symbol: String {
         switch self {
-        case .onDevice: "macbook"
-        case .noTracking: "hand.raised.slash.fill"
-        case .userControlled: "point.filled.topleft.down.curvedto.point.bottomright.up"
+        case .onDevice: "laptopcomputer"
+        case .nothingReported: "antenna.radiowaves.left.and.right.slash"
+        case .noAds: "eye.slash.fill"
+        case .neverSold: "tag.slash.fill"
         }
     }
 
-    var colors: [Color] {
+    var color: Color {
         switch self {
-        case .onDevice:
-            [Color.blue, Color.blue.opacity(0.75)]
-        case .noTracking:
-            [Color.indigo, Color.indigo.opacity(0.75)]
-        case .userControlled:
-            [Color.teal, Color.teal.opacity(0.75)]
+        case .onDevice: .blue
+        case .nothingReported: .purple
+        case .noAds: .pink
+        case .neverSold: .orange
         }
     }
 
     var title: String {
         switch self {
-        case .onDevice: AppLocalization.string("Processed on this Mac")
-        case .noTracking: AppLocalization.string("No sale or tracking")
-        case .userControlled: AppLocalization.string("You choose the route")
+        case .onDevice: AppLocalization.string("On this Mac")
+        case .nothingReported: AppLocalization.string("Nothing reported")
+        case .noAds: AppLocalization.string("No ads")
+        case .neverSold: AppLocalization.string("Never sold")
         }
     }
 
     var detail: String {
         switch self {
-        case .onDevice:
-            AppLocalization.string("AetherRoute processes proxy profiles, network destinations, addresses, and routing decisions locally on this Mac.")
-        case .noTracking:
-            AppLocalization.string("AetherRoute does not sell network data, build advertising profiles, or include behavioral trackers.")
-        case .userControlled:
-            AppLocalization.string("Only the proxy and DNS services in the profile you select receive forwarded traffic or queries.")
-        }
-    }
-}
-
-private struct PrivacyPointRow: View {
-    let point: NetworkPrivacyPoint
-    /// Settings rows use body text, like the rest of the form.
-    var isCompact = false
-
-    var body: some View {
-        HStack(alignment: .top, spacing: isCompact ? AetherVisual.s3 : AetherVisual.s4) {
-            Image(systemName: point.symbol)
-                .font(isCompact ? .title3 : .title.weight(.regular))
-                .foregroundStyle(point.colors[0])
-                .frame(width: isCompact ? AetherVisual.s6 : 40)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: isCompact ? AetherVisual.sMicro : AetherVisual.s1) {
-                Text(point.title)
-                    .font(isCompact ? .body : .headline)
-                    .foregroundStyle(.primary)
-                    .accessibilityValue(Text(point.detail))
-                Text(point.detail)
-                    .font(isCompact ? .caption : .callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityHidden(true)
-            }
-            Spacer(minLength: 0)
-        }
-        .accessibilityElement(children: .contain)
-    }
-}
-
-/// A plain disclosure label whose chevron turns as it opens.
-private struct DisclosureLabelStyle: LabelStyle {
-    let isExpanded: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: AetherVisual.s1) {
-            configuration.title
-            configuration.icon
-                .font(.caption.weight(.semibold))
-                .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                .animation(AetherVisual.animation(AetherVisual.quickFade), value: isExpanded)
+        case .onDevice: AppLocalization.string("Routing decisions happen on your Mac.")
+        case .nothingReported: AppLocalization.string("Connection and traffic stats stay here.")
+        case .noAds: AppLocalization.string("No profiling and no trackers.")
+        case .neverSold: AppLocalization.string("Your network data is never sold.")
         }
     }
 }

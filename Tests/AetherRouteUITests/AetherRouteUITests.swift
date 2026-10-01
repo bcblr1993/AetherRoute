@@ -623,14 +623,13 @@ final class AetherRouteUITests: XCTestCase {
                 XCTAssertTrue(
                     mainProductRoot(in: auditApp).waitForExistence(timeout: 5)
                 )
-                XCTAssertTrue(auditApp.staticTexts["Your Network Privacy"].exists)
-                auditApp.buttons["privacy-details-toggle"].click()
+                XCTAssertTrue(auditApp.staticTexts["Private by default"].exists)
                 for _ in 0..<4 {
-                    if auditApp.staticTexts["No sale or tracking"].exists { break }
+                    if auditApp.staticTexts["Never sold"].exists { break }
                     mainProductWindow(in: auditApp).scrollViews.firstMatch
                         .scroll(byDeltaX: 0, deltaY: 220)
                 }
-                XCTAssertTrue(auditApp.staticTexts["No sale or tracking"].waitForExistence(timeout: 2))
+                XCTAssertTrue(auditApp.staticTexts["Never sold"].waitForExistence(timeout: 2))
                 XCTAssertFalse(auditApp.buttons["Connect"].exists)
                 XCTAssertFalse(auditApp.buttons["Import Profile…"].exists)
                 try auditProductAccessibility(in: auditApp)
@@ -662,7 +661,7 @@ final class AetherRouteUITests: XCTestCase {
                     interactionApp.buttons["Overview"].waitForExistence(timeout: 2)
                 )
                 XCTAssertFalse(
-                    interactionApp.staticTexts["Your Network Privacy"].exists
+                    interactionApp.staticTexts["Private by default"].exists
                 )
             }
         }
@@ -1542,22 +1541,24 @@ final class AetherRouteUITests: XCTestCase {
         )
 
         selectSettingsTab("Privacy", in: settingsWindow, app: app)
-        // Settings shows the details as a native disclosure triangle.
-        app.descendants(matching: .any)["privacy-details-toggle"].firstMatch.click()
+        // Settings keeps one summary row; "Show…" opens the full page.
+        app.buttons["privacy-commitments-show"].click()
         XCTAssertTrue(
-            app.staticTexts["Processed on this Mac"]
+            app.staticTexts["On this Mac"]
                 .waitForExistence(timeout: 3)
         )
-        XCTAssertTrue(app.staticTexts["No sale or tracking"].exists)
-        XCTAssertTrue(app.staticTexts["You choose the route"].exists)
-        XCTAssertFalse(app.staticTexts["在此 Mac 上处理"].exists)
+        XCTAssertTrue(app.staticTexts["Never sold"].exists)
+        XCTAssertTrue(app.staticTexts["Nothing reported"].exists)
+        XCTAssertFalse(app.staticTexts["本机处理"].exists)
+        app.buttons["privacy-sheet-done"].click()
+        XCTAssertTrue(
+            app.buttons["privacy-sheet-done"].waitForNonExistence(timeout: 3)
+        )
 
         selectSettingsTab("About", in: settingsWindow, app: app)
-        XCTAssertTrue(app.staticTexts["BianChengBuLiangRen"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["Development"].exists)
+        XCTAssertTrue(app.staticTexts["Development"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Not released"].exists)
         XCTAssertTrue(app.staticTexts["Version"].exists)
-        XCTAssertFalse(app.staticTexts["编程不良人"].exists)
         XCTAssertFalse(app.staticTexts["开发版本"].exists)
 
         closeResponsiveSettings(in: app)
