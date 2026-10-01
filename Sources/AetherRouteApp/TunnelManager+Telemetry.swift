@@ -375,6 +375,20 @@ extension TunnelManager {
 #if DEBUG
         telemetryViewModel.seedReviewHistory(endingAt: Date(timeIntervalSince1970: reviewNow))
 #endif
+#if DEBUG
+        if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_PROFILE"] == "large" {
+            // 2,000 flows for measuring the Connections table.
+            publishTelemetry(NetworkTelemetrySnapshot(
+                uploadBytesPerSecond: 384_000,
+                downloadBytesPerSecond: 2_480_000,
+                uploadTotal: 18_430_000,
+                downloadTotal: 142_700_000,
+                memoryBytes: 12_240_000,
+                connections: Self.largeReviewConnections(now: reviewNow)
+            ))
+            return
+        }
+#endif
         publishTelemetry(NetworkTelemetrySnapshot(
             uploadBytesPerSecond: 384_000,
             downloadBytesPerSecond: 2_480_000,
@@ -434,3 +448,32 @@ extension TunnelManager {
         }
     }
 }
+
+#if DEBUG
+extension TunnelManager {
+    /// 2,000 flows for the "large" review profile.
+    static func largeReviewConnections(now: TimeInterval) -> [ConnectionTelemetry] {
+        var connections: [ConnectionTelemetry] = []
+        connections.reserveCapacity(2_000)
+        for index in 0..<2_000 {
+            let isUDP = index % 5 == 0
+            let isRule = index % 2 == 0
+            let age = Double(index % 3_600)
+            let chain: String = index % 3 == 0 ? "DIRECT" : "Balanced → Singapore \(index % 500 + 1)"
+            let started = UInt64(max(0, now - age) * 1_000)
+            connections.append(ConnectionTelemetry(
+                transport: isUDP ? .udp : .tcp,
+                destination: "host\(index).example",
+                destinationPort: isUDP ? 53 : 443,
+                uploadTotal: UInt64(1_000 + index * 37),
+                downloadTotal: UInt64(10_000 + index * 911),
+                startedAtUnixMilliseconds: started,
+                rule: isRule ? "DomainSuffix" : "Match",
+                rulePayload: isRule ? "site\(index).example" : "",
+                proxyChain: chain
+            ))
+        }
+        return connections
+    }
+}
+#endif

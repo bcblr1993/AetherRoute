@@ -308,16 +308,30 @@ private struct AetherPageContentModifier: ViewModifier {
     let width: AetherPageWidth
 
     func body(content: Content) -> some View {
-        content
-            .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-            .padding(.top, AetherVisual.pageTopPadding)
-            .padding(.bottom, AetherVisual.pageBottomPadding)
-            .frame(maxWidth: width.maxWidth, alignment: .leading)
-            // Reading pages narrow only their trailing edge: every page title
-            // starts on the same leading line, so switching pages never
-            // shifts the header sideways.
-            .frame(maxWidth: width.columnWidth, alignment: .leading)
-            .frame(maxWidth: .infinity)
+        glassContainer(
+            content
+                .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+                .padding(.top, AetherVisual.pageTopPadding)
+                .padding(.bottom, AetherVisual.pageBottomPadding)
+                .frame(maxWidth: width.maxWidth, alignment: .leading)
+                // Reading pages narrow only their trailing edge: every page
+                // title starts on the same leading line, so switching pages
+                // never shifts the header sideways.
+                .frame(maxWidth: width.columnWidth, alignment: .leading)
+                .frame(maxWidth: .infinity)
+        )
+    }
+
+    /// All of a page's glass renders in one container, as Apple recommends
+    /// for several glass shapes: one pass instead of one per card. Zero
+    /// spacing keeps neighbouring cards from merging into each other.
+    @ViewBuilder
+    private func glassContainer<V: View>(_ view: V) -> some View {
+        if #available(macOS 26, *) {
+            GlassEffectContainer(spacing: 0) { view }
+        } else {
+            view
+        }
     }
 }
 
@@ -479,15 +493,8 @@ struct AetherSheetHeader<Accessory: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: AetherVisual.s4) {
-            Image(systemName: symbol)
-                .font(.title.weight(.medium))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: AetherVisual.sheetIconSize, height: AetherVisual.sheetIconSize)
-                .background(
-                    Color.accentColor.opacity(0.10),
-                    in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-                )
-                .accessibilityHidden(true)
+            // The same colour tile as the sidebar and rows, larger.
+            AetherIconTile(symbol: symbol, color: .blue, size: AetherVisual.sheetIconSize)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(title)
                     .font(.title3.weight(.semibold))

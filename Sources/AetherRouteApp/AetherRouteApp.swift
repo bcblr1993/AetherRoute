@@ -1749,7 +1749,12 @@ private struct SettingsView: View {
             .accessibilityLabel("Settings navigation")
             .accessibilityIdentifier("aetherroute-settings-navigation")
         } detail: {
-            selectedSettings
+            // A stack of its own, so the detail's label and identifier wrap
+            // the pane instead of replacing the pane's own (a Form is a
+            // single scroll view, and both sets of modifiers landed on it).
+            VStack(spacing: 0) {
+                selectedSettings
+            }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("AetherRoute settings")

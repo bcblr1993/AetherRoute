@@ -263,14 +263,7 @@ struct IndependentDistributionView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4, content: content)
             .padding(AetherVisual.s5)
-            .background(
-                Color(nsColor: .controlBackgroundColor),
-                in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
-            }
+            .aetherPanel()
     }
 
     private func statusIcon(symbol: String, tint: Color) -> some View {

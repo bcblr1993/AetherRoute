@@ -7,8 +7,10 @@ keyboard focus, VoiceOver semantics, and Reduce Motion.
 
 ## Visual hierarchy
 
-- The window follows macOS 26 Liquid Glass. The desktop shows through a
-  translucent window material; the sidebar is a floating glass pane inset
+- The window follows macOS 26 Liquid Glass. The content layer stays
+  opaque, as Apple's guidelines ask (a translucent window let a bright
+  wallpaper wash out secondary text and failed the contrast audit); the
+  sidebar is a floating glass pane inset
   8 pt from the window edges with the window controls inside it; cards,
   buttons and segmented controls are glass. Every glass surface is the
   system's own (`glassEffect`, glass button styles, native segmented

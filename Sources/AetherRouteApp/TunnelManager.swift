@@ -545,9 +545,11 @@ final class TunnelManager: ObservableObject {
                   - {name: Streaming, type: fallback, proxies: [Singapore Edge, Tokyo Direct], url: 'https://www.gstatic.com/generate_204', interval: 300}
                 """
                 : ""
+            // "large" stresses the lists: 500 nodes and 10,000 rules.
+            let isLargeReview = environment["AETHERROUTE_UI_REVIEW_PROFILE"] == "large"
             let profile = ActiveProfile(
                 name: "Balanced · Singapore",
-                yaml: """
+                yaml: isLargeReview ? Self.largeReviewProfileYAML : """
                 dns:
                   enable: true
                   ipv6: true
@@ -1892,3 +1894,38 @@ enum TunnelManagerError: LocalizedError, Sendable, Equatable {
         }
     }
 }
+
+#if DEBUG
+extension TunnelManager {
+    /// The "large" review profile: 500 nodes in one group and 10,000 rules,
+    /// for measuring the lists. Generated, never bundled.
+    static let largeReviewProfileYAML: String = {
+        let kinds = ["vmess", "trojan", "vless", "ss", "hysteria2"]
+        let regions = ["Singapore", "Tokyo", "Hong Kong", "US West", "Frankfurt", "London", "Taipei", "Seoul"]
+        var lines = ["proxies:"]
+        var names: [String] = []
+        for index in 0..<500 {
+            let name = "\(regions[index % regions.count]) \(index + 1)"
+            names.append(name)
+            lines.append("  - {name: \(name), type: \(kinds[index % kinds.count])}")
+        }
+        lines.append("proxy-groups:")
+        lines.append("  - {name: Balanced, type: select, proxies: [\(names.joined(separator: ", "))]}")
+        lines.append("rules:")
+        for index in 0..<10_000 {
+            switch index % 4 {
+            case 0: lines.append("  - DOMAIN-SUFFIX,site\(index).example,Balanced")
+            case 1: lines.append("  - DOMAIN,api\(index).example,DIRECT")
+            case 2: lines.append("  - IP-CIDR,10.\(index / 256 % 256).\(index % 256).0/24,DIRECT,no-resolve")
+            default: lines.append("  - DOMAIN-KEYWORD,kw\(index),Balanced")
+            }
+        }
+        lines.append("  - MATCH,DIRECT")
+        return lines.joined(separator: "\n")
+    }()
+}
+#else
+extension TunnelManager {
+    static let largeReviewProfileYAML = ""
+}
+#endif

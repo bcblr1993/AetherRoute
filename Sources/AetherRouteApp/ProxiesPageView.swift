@@ -477,7 +477,8 @@ private struct ActiveProxyGroupView: View {
     // MARK: Nodes
 
     private var nodeList: some View {
-        VStack(spacing: AetherVisual.sMicro) {
+        // Lazy: a group can hold hundreds of nodes.
+        LazyVStack(spacing: AetherVisual.sMicro) {
             ForEach(memberRows) { row in
                 ProxyNodeRow(
                     row: row,

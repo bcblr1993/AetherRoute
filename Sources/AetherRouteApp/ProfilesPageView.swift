@@ -602,11 +602,10 @@ struct ProfilesView: View {
                     }
                     .padding(AetherVisual.s4)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.6), in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-                            .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
-                    }
+                    .aetherGlass(
+                        in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous),
+                        interactive: true
+                    )
                 }
                 .buttonStyle(.aetherPressable)
 
@@ -643,11 +642,10 @@ struct ProfilesView: View {
                     }
                     .padding(AetherVisual.s4)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.6), in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-                            .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
-                    }
+                    .aetherGlass(
+                        in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous),
+                        interactive: true
+                    )
                 }
                 .buttonStyle(.aetherPressable)
 
@@ -684,11 +682,10 @@ struct ProfilesView: View {
                     }
                     .padding(AetherVisual.s4)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.6), in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-                            .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
-                    }
+                    .aetherGlass(
+                        in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous),
+                        interactive: true
+                    )
                 }
                 .buttonStyle(.aetherPressable)
                 .accessibilityIdentifier("onboarding-icloud-sync-card-button")
@@ -1224,11 +1221,19 @@ private struct ManagedProfileRow: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("activate-profile-\(managed.id.uuidString)")
         .task(id: managed.profile.yaml) {
+            // Parsed once per profile version, not on every visit: a large
+            // profile took over 100 ms to inspect each time the page opened.
+            let key = ProfileNodeCountCache.key(for: managed)
+            if let cached = ProfileNodeCountCache.counts[key] {
+                inspectedNodeCount = cached
+                return
+            }
             let yaml = managed.profile.yaml
             let count = await Task.detached(priority: .utility) {
                 ProfileConfigurationInspector.inspect(yaml: yaml).proxyCount
             }.value
             guard !Task.isCancelled else { return }
+            ProfileNodeCountCache.counts[key] = count
             inspectedNodeCount = count
         }
         .contextMenu {
@@ -1487,3 +1492,19 @@ struct SubscriptionEditorSheet: View {
     }
 }
 
+/// Node counts of the profiles in the library, by profile and import date,
+/// so the list does not re-parse every profile each time it appears.
+@MainActor
+private enum ProfileNodeCountCache {
+    struct Key: Hashable {
+        let id: UUID
+        let importedAt: Date
+        let length: Int
+    }
+
+    static var counts: [Key: Int] = [:]
+
+    static func key(for managed: ManagedProfile) -> Key {
+        Key(id: managed.id, importedAt: managed.profile.importedAt, length: managed.profile.yaml.utf8.count)
+    }
+}

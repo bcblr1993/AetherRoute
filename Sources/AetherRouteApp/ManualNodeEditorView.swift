@@ -89,7 +89,6 @@ struct ManualNodeEditorSheet: View {
         )
         .disabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
-        .background(Color(nsColor: .windowBackgroundColor))
         .onChange(of: node.protocolID) { _, protocolID in
             applyDefaults(for: protocolID)
         }

@@ -132,7 +132,7 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
         var selection: Binding<Value>
         var options: [Option]
         /// Labels such as "All 12" refresh with live counts; measure only
-        /// when the text or size actually changes.
+        /// when the text (digits aside) or size actually changes.
         private var measuredKey: ([String], NSControl.ControlSize)?
         private var measuredWidth: CGFloat = 0
 
@@ -141,15 +141,24 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
             for titles: [String],
             controlSize: NSControl.ControlSize
         ) -> CGFloat {
-            if let measuredKey, measuredKey.0 == titles, measuredKey.1 == controlSize {
+            // Live counts ("All 1,204") change every sample. Measuring with
+            // each digit as "8", the widest, keeps the width for as long as
+            // the number of digits holds, so the control neither re-measures
+            // nor jitters on every tick.
+            let widest = titles.map(Self.widestDigits)
+            if let measuredKey, measuredKey.0 == widest, measuredKey.1 == controlSize {
                 return measuredWidth
             }
             measuredWidth = AetherSegmentedPicker.measureSegmentWidth(
-                for: titles,
+                for: widest,
                 controlSize: controlSize
             )
-            measuredKey = (titles, controlSize)
+            measuredKey = (widest, controlSize)
             return measuredWidth
+        }
+
+        private static func widestDigits(_ title: String) -> String {
+            String(title.map { $0.isNumber ? "8" : $0 })
         }
 
         init(selection: Binding<Value>, options: [Option]) {

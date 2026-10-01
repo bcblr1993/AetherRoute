@@ -165,7 +165,7 @@ struct AboutAetherRouteView: View {
                 Label(AppLocalization.string("Native macOS"), systemImage: "swift")
             }
             .font(.caption)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)

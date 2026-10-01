@@ -36,7 +36,6 @@ struct NativeProfileEditorSheet: View {
         )
         .disabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: nodes != (profile.profile.nativeNodes ?? []), isSaving: isSaving, requested: $requestsCancel))
-        .background(Color(nsColor: .windowBackgroundColor))
         .sheet(isPresented: $isAddingNode) {
             ManualNodeEditorSheet(save: append)
                 .environmentObject(tunnel)

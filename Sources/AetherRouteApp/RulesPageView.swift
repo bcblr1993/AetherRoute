@@ -881,13 +881,9 @@ struct CustomRuleRow: View {
         .padding(.horizontal, AetherVisual.sRow)
         .padding(.vertical, AetherVisual.sCompact)
         .background(
-            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                .fill(isHovered ? Color(nsColor: .controlBackgroundColor).opacity(0.95) : Color(nsColor: .controlBackgroundColor).opacity(0.55))
+            isHovered ? Color.primary.opacity(0.05) : Color.clear,
+            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                .stroke(isHovered ? Color.teal.opacity(0.4) : Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
-        }
         .opacity(rule.isEnabled ? 1.0 : 0.6)
         .onHover { hovering in
             withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {

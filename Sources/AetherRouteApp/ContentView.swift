@@ -170,11 +170,8 @@ struct ContentView: View {
                     .task { await tunnel.runSubscriptionUpdateLoop() }
                     .transition(.opacity)
             } else {
-                ZStack {
-                    Color(nsColor: .windowBackgroundColor)
-                    PrivacyDisclosureView(isOnboarding: true)
-                        .environmentObject(tunnel)
-                }
+                PrivacyDisclosureView(isOnboarding: true)
+                    .environmentObject(tunnel)
             }
         }
         .accessibilityElement(children: .contain)
@@ -182,9 +179,9 @@ struct ContentView: View {
         .accessibilityIdentifier("aetherroute-semantic-root")
         .frame(minWidth: 780, minHeight: 560)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // The desktop shows through the window, behind the floating glass
-        // sidebar and cards; Reduce Transparency makes it opaque.
-        .containerBackground(.thinMaterial, for: .window)
+        // The content layer stays opaque, as Apple's guidelines ask: glass
+        // belongs to the sidebar, cards and controls floating above it, and
+        // secondary text then keeps its contrast whatever the desktop shows.
         .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.isNetworkSetupRequired)
         .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.hasAcceptedPrivacyDisclosure)
         .id(language.preference)
@@ -314,7 +311,11 @@ struct ContentView: View {
                     max: AetherVisual.sidebarWidth
                 )
         } detail: {
-            detail
+            // A stack of its own: on a page whose root is a scroll view these
+            // modifiers otherwise replace the page's own identifier.
+            VStack(spacing: 0) {
+                detail
+            }
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Selected page content")
                 .accessibilityIdentifier("aetherroute-selected-page")
@@ -487,16 +488,10 @@ struct ContentView: View {
             .padding(.bottom, AetherVisual.s2)
         }
         .padding(.horizontal, AetherVisual.s1)
-        // A floating Liquid Glass pane inset from the window edges, with the
-        // window controls inside it, as in macOS 26's own apps. The glass is
-        // the system's, so it follows the Liquid Glass and Reduce
-        // Transparency settings.
-        .background {
-            Color.clear
-                .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.sidebarRadius, style: .continuous))
-                .padding(AetherVisual.s2)
-                .ignoresSafeArea(edges: .top)
-        }
+        // No pane of our own: the system sidebar is already the floating
+        // Liquid Glass pane of macOS 26 and follows the Liquid Glass and
+        // Reduce Transparency settings. A second glass pane on top of it
+        // read as a box inside a box.
     }
 
     private var sidebarSettingsButton: some View {
@@ -615,9 +610,104 @@ struct ContentView: View {
         .task(id: section) {
             await Task.yield()
             UIResponsivenessProbe.rendered("main.\(section.rawValue)")
+#if DEBUG
+            ReviewPerformanceTour.rendered(section)
+#endif
+        }
+#if DEBUG
+        .task { await runReviewPerformanceTour() }
+#endif
+    }
+
+#if DEBUG
+    /// Isolated review only: switches through every page three times,
+    /// timing selection to first rendered frame, then times the heavy pure
+    /// work behind the lists, writes the results and quits.
+    private func runReviewPerformanceTour() async {
+        guard let path = ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_PERF_TOUR"] else { return }
+        try? await Task.sleep(for: .seconds(3))
+        var lines: [String] = []
+        var order: [AppSection] = [.proxies, .connections, .profiles, .rules, .dns, .overview]
+        var rounds = 3
+        // A focused page alternates with DNS (the lightest page) many times,
+        // so a profiler can sample just that page's appearance.
+        if let focus = ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_PERF_FOCUS"]
+            .flatMap(AppSection.init(rawValue:)) {
+            order = [focus, .dns]
+            rounds = 12
+        }
+        for round in 1...rounds {
+            for section in order {
+                let started = DispatchTime.now().uptimeNanoseconds
+                async let rendered: Void = ReviewPerformanceTour.waitForRender(section)
+                selectSection(section)
+                await rendered
+                let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
+                lines.append(String(format: "page round=%d %@ %.1f ms", round, section.rawValue, milliseconds))
+                try? await Task.sleep(for: .milliseconds(700))
+            }
+        }
+        lines.append(contentsOf: await ReviewPerformanceTour.computeBenchmarks(tunnel: tunnel))
+        try? (lines.joined(separator: "\n") + "\n").write(toFile: path, atomically: true, encoding: .utf8)
+        NSApp.terminate(nil)
+    }
+#endif
+}
+
+#if DEBUG
+/// Timing support for `runReviewPerformanceTour`; review builds only.
+@MainActor
+enum ReviewPerformanceTour {
+    private static var waiting: [AppSection: CheckedContinuation<Void, Never>] = [:]
+
+    static func waitForRender(_ section: AppSection) async {
+        await withCheckedContinuation { continuation in
+            waiting[section] = continuation
         }
     }
+
+    static func rendered(_ section: AppSection) {
+        waiting.removeValue(forKey: section)?.resume()
+    }
+
+    /// The pure work behind the large lists, timed off the main thread.
+    static func computeBenchmarks(tunnel: TunnelManager) async -> [String] {
+        let yaml = tunnel.activeProfile?.yaml ?? ""
+        let connections = tunnel.telemetryViewModel.snapshot.connections
+        return await Task.detached(priority: .userInitiated) {
+            var lines: [String] = []
+            func time(_ label: String, _ work: () -> Int) {
+                let start = DispatchTime.now().uptimeNanoseconds
+                let count = work()
+                let ms = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
+                lines.append(String(format: "compute %@ %.1f ms (n=%d)", label, ms, count))
+            }
+            var summary: ProfileConfigurationSummary?
+            time("parse-profile") {
+                summary = ProfileConfigurationInspector.inspect(yaml: yaml)
+                return summary?.ruleCount ?? 0
+            }
+            let rules = summary?.rules ?? []
+            time("filter-rules-search") {
+                rules.filter { ($0.criteria ?? "").lowercased().contains("site9") }.count
+            }
+            time("route-test-assess") {
+                switch RouteMatchEngine.assess(destination: "site9996.example", against: rules, totalRuleCount: summary?.ruleCount) {
+                case .matched: 1
+                default: 0
+                }
+            }
+            time("filter-connections-search") {
+                connections.filter { $0.destination.localizedCaseInsensitiveContains("host19") }.count
+            }
+            time("sort-connections-traffic") {
+                connections.sorted { $0.downloadTotal + $0.uploadTotal > $1.downloadTotal + $1.uploadTotal }.count
+            }
+            return lines
+        }.value
+    }
 }
+#endif
 
 /// The connection switch, drawn like the VPN switch in System Settings. It is
 /// still a button named after its action ("Connect", "Disconnect", "Retry",
@@ -640,10 +730,14 @@ struct ConnectionSwitch: View {
                     .padding(3)
                     .overlay {
                         if isWorking {
+                            // Hidden: as an element of its own it turned the
+                            // switch into a group that automation could not
+                            // find as a button. The action title says it.
                             ProgressView()
                                 .controlSize(.mini)
                                 .tint(.gray)
                                 .transition(.opacity)
+                                .accessibilityHidden(true)
                         }
                     }
             }

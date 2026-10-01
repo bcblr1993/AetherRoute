@@ -118,11 +118,7 @@ struct CommandPaletteView: View {
             .padding(.vertical, AetherVisual.s2)
         }
         .frame(width: 560)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-        }
+        .aetherPanel()
         .onAppear { isSearchFocused = true }
         .onChange(of: query) { _, _ in selection = 0 }
         .onKeyPress(.downArrow) {

@@ -37,7 +37,6 @@ struct NetworkSetupView: View {
             .frame(maxWidth: AetherVisual.formMaxWidth)
             .frame(maxWidth: .infinity)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             actionBar
                 .frame(maxWidth: .infinity)
@@ -214,12 +213,11 @@ private struct NetworkSetupEngineCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: AetherVisual.s4) {
-            Image(systemName: mode == .tun ? "bolt.shield" : "network")
-                .font(.title2)
-                .foregroundStyle(Color.accentColor)
-                .frame(width: AetherVisual.sheetIconSize, height: AetherVisual.sheetIconSize)
-                .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
-                .accessibilityHidden(true)
+            AetherIconTile(
+                symbol: mode == .tun ? "bolt.shield.fill" : "network",
+                color: .blue,
+                size: AetherVisual.sheetIconSize
+            )
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(mode.localizedTitle)
@@ -378,7 +376,7 @@ struct NetworkSetupGuide: View {
         }
         .padding(AetherVisual.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous))
+        .aetherPanel()
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: activeStep)
     }
 

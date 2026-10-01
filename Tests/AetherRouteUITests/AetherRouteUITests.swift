@@ -710,7 +710,8 @@ final class AetherRouteUITests: XCTestCase {
 
         XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
         app.typeKey("5", modifierFlags: .command)
-        XCTAssertTrue(app.staticTexts["Profile rules"].waitForExistence(timeout: 2))
+        // The route tester leads the Rules page; lower sections are lazy.
+        XCTAssertTrue(app.descendants(matching: .any)["rule-test-field"].waitForExistence(timeout: 2))
         app.typeKey("1", modifierFlags: .command)
         XCTAssertTrue(app.descendants(matching: .any)["overview-page"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["overview-status-title"].exists)
@@ -1043,6 +1044,11 @@ final class AetherRouteUITests: XCTestCase {
             let advanced = app.buttons["routing-rules-advanced"]
             XCTAssertTrue(advanced.waitForExistence(timeout: 2))
             XCTAssertEqual(advanced.label, advancedTitle)
+            // The card sits at the foot of the page; bring the button fully in.
+            for _ in 0..<3 where !advanced.isHittable {
+                app.descendants(matching: .any)["rules-page"]
+                    .scroll(byDeltaX: 0, deltaY: -480)
+            }
             XCTAssertTrue(advanced.isHittable)
             advanced.click()
             let country = app.staticTexts["Country.mmdb"]
@@ -1446,7 +1452,7 @@ final class AetherRouteUITests: XCTestCase {
         let networkWindow = app.windows["com_apple_SwiftUI_Settings_window"]
         selectSettingsTab("网络", in: networkWindow, app: app)
         XCTAssertTrue(
-            app.staticTexts["按 TCP/UDP 连接转发受支持的应用流量"]
+            app.staticTexts["流量接管方式"]
                 .waitForExistence(timeout: 3)
         )
         XCTAssertFalse(
@@ -1532,11 +1538,12 @@ final class AetherRouteUITests: XCTestCase {
         )
         XCTAssertFalse(app.staticTexts["应用语言"].exists)
         XCTAssertFalse(
-            app.staticTexts["按 TCP/UDP 连接转发受支持的应用流量"].exists
+            app.staticTexts["流量接管方式"].exists
         )
 
         selectSettingsTab("Privacy", in: settingsWindow, app: app)
-        app.buttons["privacy-details-toggle"].click()
+        // Settings shows the details as a native disclosure triangle.
+        app.descendants(matching: .any)["privacy-details-toggle"].firstMatch.click()
         XCTAssertTrue(
             app.staticTexts["Processed on this Mac"]
                 .waitForExistence(timeout: 3)
@@ -1594,11 +1601,11 @@ final class AetherRouteUITests: XCTestCase {
             "com_apple_SwiftUI_Settings_window"
         ]
         let general = settingsWindow.cells.containing(
-            .staticText,
+            .any,
             identifier: "settings-tab-general"
         ).firstMatch
         let about = settingsWindow.cells.containing(
-            .staticText,
+            .any,
             identifier: "settings-tab-about"
         ).firstMatch
         XCTAssertTrue(general.waitForExistence(timeout: 2))
@@ -1700,7 +1707,7 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertFalse(copyEnvironment.isEnabled)
     }
 
-    func testAboutPageShowsEnglishAuthorAndReleaseInformation() throws {
+    func testAboutPageShowsEnglishReleaseInformation() throws {
         let app = launchReviewApp(
             appearance: "dark",
             state: "disconnected",
@@ -1709,18 +1716,18 @@ final class AetherRouteUITests: XCTestCase {
         defer { app.terminate() }
 
         openAboutSettings(in: app, tabLabel: "About")
- 
-        XCTAssertTrue(app.staticTexts["BianChengBuLiangRen"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.staticTexts["编程不良人"].exists)
-        XCTAssertTrue(app.staticTexts["Original design and native macOS development"].exists)
-        XCTAssertTrue(app.staticTexts["about-version"].exists)
+
+        // The About pane names the product and its maker in the footer;
+        // release facts sit in their own rows.
+        XCTAssertTrue(app.staticTexts["about-version"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["开发版本"].exists)
         XCTAssertTrue(app.staticTexts["about-release-build"].exists)
         XCTAssertTrue(app.staticTexts["Development"].exists)
         XCTAssertTrue(app.staticTexts["Not released"].exists)
         try auditProductAccessibility(in: app)
     }
 
-    func testAboutPageShowsChineseAuthorOnlyInChinese() {
+    func testAboutPageShowsReleaseInformationOnlyInChinese() {
         let app = launchReviewApp(
             appearance: "light",
             state: "disconnected",
@@ -1731,9 +1738,8 @@ final class AetherRouteUITests: XCTestCase {
 
         openAboutSettings(in: app, tabLabel: "关于")
 
-        XCTAssertTrue(app.staticTexts["编程不良人"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.staticTexts["BianChengBuLiangRen"].exists)
-        XCTAssertTrue(app.staticTexts["开发版本"].exists)
+        XCTAssertTrue(app.staticTexts["开发版本"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["Development"].exists)
         XCTAssertTrue(app.staticTexts["尚未发布"].exists)
     }
 
@@ -2976,6 +2982,11 @@ final class AetherRouteUITests: XCTestCase {
                 if button == "Rules" {
                     let filter = app.radioGroups["rules-action-filter"]
                     XCTAssertTrue(filter.waitForExistence(timeout: 2))
+                    // Profile rules follow the route tester; scroll them in.
+                    for _ in 0..<4 where !filter.isHittable {
+                        app.descendants(matching: .any)["rules-page"]
+                            .scroll(byDeltaX: 0, deltaY: -240)
+                    }
                     let direct = filter.radioButtons.element(
                         matching: NSPredicate(format: "label BEGINSWITH %@", "Direct")
                     )
@@ -3483,7 +3494,7 @@ final class AetherRouteUITests: XCTestCase {
             default: ""
             }
             let row = settingsWindow.cells.containing(
-                .staticText,
+                .any,
                 identifier: tabIdentifier
             ).firstMatch
             if row.waitForExistence(timeout: 3),

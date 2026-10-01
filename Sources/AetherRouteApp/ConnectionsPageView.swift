@@ -141,50 +141,26 @@ struct ConnectionsView: View {
     }
 
     private func connectionList(rows: [ConnectionTableItem]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // Counted once per sample, not once per filter and layout candidate:
+        // with 2,000 flows that was 8 passes over every proxy chain.
+        let counts = outletCounts
+        return VStack(alignment: .leading, spacing: 0) {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: AetherVisual.s2) {
-                    segmentedFilter
+                    segmentedFilter(counts: counts)
                     connectionActions
                 }
                 .fixedSize(horizontal: true, vertical: false)
 
-                // Narrower windows keep one row: actions become icons (their
-                // names stay as tooltips and VoiceOver labels).
-                HStack(spacing: AetherVisual.s2) {
-                    segmentedFilter
-                    connectionActions
-                        .labelStyle(.iconOnly)
-                }
-                .fixedSize(horizontal: true, vertical: false)
-
-                HStack(spacing: AetherVisual.s2) {
-                    NativeFilterPicker(
-                        selection: $filter,
-                        options: ConnectionOutletFilter.allCases,
-                        title: label(for:),
-                        accessibilityLabel: AppLocalization.string("Filter"),
-                        accessibilityIdentifier: "connections-filter-picker"
-                    )
-                    Spacer(minLength: AetherVisual.s2)
-                    connectionActions
-                        .labelStyle(.iconOnly)
-                }
-
+                // Narrower windows: the filter on its own line, actions as
+                // icons beneath it (their names stay as tooltips and
+                // VoiceOver labels).
                 VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                    ViewThatFits(in: .horizontal) {
-                        segmentedFilter
-                        NativeFilterPicker(
-                            selection: $filter,
-                            options: ConnectionOutletFilter.allCases,
-                            title: label(for:),
-                            accessibilityLabel: AppLocalization.string("Filter"),
-                            accessibilityIdentifier: "connections-filter-picker"
-                        )
-                    }
+                    segmentedFilter(counts: counts)
                     HStack {
                         Spacer(minLength: 0)
                         connectionActions
+                            .labelStyle(.iconOnly)
                     }
                 }
             }
@@ -238,11 +214,11 @@ struct ConnectionsView: View {
         .padding(.bottom, AetherVisual.s2)
     }
 
-    private var segmentedFilter: some View {
+    private func segmentedFilter(counts: [ConnectionOutletFilter: Int]) -> some View {
         AetherSegmentedPicker(
             selection: $filter,
             options: ConnectionOutletFilter.allCases.map {
-                .init(value: $0, title: label(for: $0))
+                .init(value: $0, title: "\($0.localizedTitle) \(counts[$0, default: 0])")
             },
             accessibilityLabel: AppLocalization.string("Filter"),
             accessibilityIdentifier: "connections-filter-picker"
@@ -357,11 +333,17 @@ struct ConnectionsView: View {
         }
     }
 
-    private func label(for option: ConnectionOutletFilter) -> String {
-        let count = displayedConnections.filter {
-            ConnectionOutlet(proxyChain: $0.proxyChain).matches(option)
-        }.count
-        return "\(option.localizedTitle) \(count)"
+    /// Flows per outlet, in one pass over the list.
+    private var outletCounts: [ConnectionOutletFilter: Int] {
+        var counts: [ConnectionOutletFilter: Int] = [.all: displayedConnections.count]
+        for connection in displayedConnections {
+            switch ConnectionOutlet(proxyChain: connection.proxyChain) {
+            case .proxied: counts[.proxied, default: 0] += 1
+            case .direct: counts[.direct, default: 0] += 1
+            case .rejected: counts[.rejected, default: 0] += 1
+            }
+        }
+        return counts
     }
 }
 

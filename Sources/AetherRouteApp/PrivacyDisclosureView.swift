@@ -78,7 +78,6 @@ struct PrivacyDisclosureView: View {
             .frame(maxWidth: AetherVisual.formMaxWidth)
             .frame(maxWidth: .infinity)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if usesPinnedConsent {
                 consentStatus
