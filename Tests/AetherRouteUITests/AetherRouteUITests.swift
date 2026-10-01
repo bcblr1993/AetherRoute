@@ -894,6 +894,14 @@ final class AetherRouteUITests: XCTestCase {
         let remove = app.menuItems["Remove Profile"]
         XCTAssertTrue(remove.waitForExistence(timeout: 2))
         remove.click()
+        // The confirmation is a system dialog; its button may surface by
+        // identifier or only by title.
+        let confirmByIdentifier = app.buttons["confirm-remove-profile"]
+        let confirmRemove = confirmByIdentifier.waitForExistence(timeout: 2)
+            ? confirmByIdentifier
+            : app.sheets.buttons["Remove"].firstMatch
+        XCTAssertTrue(confirmRemove.waitForExistence(timeout: 2))
+        confirmRemove.click()
         XCTAssertTrue(
             app.staticTexts["Profile removed."].waitForExistence(timeout: 2)
         )
@@ -965,6 +973,14 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(remove.waitForExistence(timeout: 2))
         XCTAssertTrue(remove.isEnabled)
         remove.click()
+        // The confirmation is a system dialog; its button may surface by
+        // identifier or only by title.
+        let confirmByIdentifier = app.buttons["confirm-remove-profile"]
+        let confirmRemove = confirmByIdentifier.waitForExistence(timeout: 2)
+            ? confirmByIdentifier
+            : app.sheets.buttons["Remove"].firstMatch
+        XCTAssertTrue(confirmRemove.waitForExistence(timeout: 2))
+        confirmRemove.click()
         XCTAssertTrue(
             app.staticTexts["Profile removed."].waitForExistence(timeout: 2)
         )

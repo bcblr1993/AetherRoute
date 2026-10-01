@@ -243,6 +243,10 @@ struct ProfilesView: View {
 
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var fileImporterKind: FileImporterKind = .profile
+    /// Removal deletes the profile's encrypted data, so it asks first.
+    @State private var profileToRemove: ManagedProfile?
+    /// A file dragged over the page that can be dropped to import it.
+    @State private var isDropTargeted = false
     @State private var isFileImporterPresented = false
     @State private var isManualNodeEditorPresented = false
     @State private var isSubscriptionEditorPresented = false
@@ -305,6 +309,52 @@ struct ProfilesView: View {
             }
             .aetherPageContent(.wide)
             .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.profileMessage)
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            importDroppedFile(urls)
+        } isTargeted: { targeted in
+            withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
+                isDropTargeted = targeted && tunnel.canImportOrAddProfile
+            }
+        }
+        .overlay {
+            if isDropTargeted {
+                // Says where the file goes before it is let go.
+                RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
+                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
+                    .background(
+                        Color.accentColor.opacity(0.06),
+                        in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
+                    )
+                    .overlay {
+                        Label(AppLocalization.string("Drop to import the profile"), systemImage: "square.and.arrow.down")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .padding(AetherVisual.s3)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .confirmationDialog(
+            String.localizedStringWithFormat(
+                AppLocalization.string("Remove “%@”?"),
+                profileToRemove?.profile.name ?? ""
+            ),
+            isPresented: Binding(
+                get: { profileToRemove != nil },
+                set: { if !$0 { profileToRemove = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: profileToRemove
+        ) { managed in
+            Button(AppLocalization.string("Remove"), role: .destructive) {
+                Task { await tunnel.removeProfile(id: managed.id) }
+            }
+            .accessibilityIdentifier("confirm-remove-profile")
+            Button(AppLocalization.string("Cancel"), role: .cancel) {}
+        } message: { _ in
+            Text(AppLocalization.string("The profile and its encrypted nodes are deleted from this Mac. This cannot be undone."))
         }
         .fileImporter(
             isPresented: $isFileImporterPresented,
@@ -756,7 +806,7 @@ struct ProfilesView: View {
                     },
                     editNative: managed.profile.nativeNodes == nil ? nil : { nativeProfileToEdit = managed },
                     remove: {
-                        Task { await tunnel.removeProfile(id: managed.id) }
+                        profileToRemove = managed
                     }
                 )
 
@@ -834,6 +884,18 @@ struct ProfilesView: View {
             routingResourceImportKind = nil
             tunnel.reportProfileImportError(error)
         }
+    }
+
+    /// A profile or portable archive dropped on the page goes through the
+    /// same import as the Import buttons.
+    private func importDroppedFile(_ urls: [URL]) -> Bool {
+        guard tunnel.canImportOrAddProfile,
+              let url = urls.first, url.isFileURL else { return false }
+        tunnel.clearProfileMessage()
+        let isArchive = UTType(filenameExtension: url.pathExtension)?
+            .conforms(to: .aetherRouteProfileArchive) == true
+        handleFileImport(.success([url]), kind: isArchive ? .portableArchive : .profile)
+        return true
     }
 
     private func presentPendingArchiveExporter() {

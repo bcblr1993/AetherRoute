@@ -12224,6 +12224,36 @@
           }
         }
       }
+    },
+    "Drop to import the profile": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "松开即可导入配置"
+          }
+        }
+      }
+    },
+    "Remove “%@”?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除“%@”？"
+          }
+        }
+      }
+    },
+    "The profile and its encrypted nodes are deleted from this Mac. This cannot be undone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该配置及其加密的节点将从此 Mac 上删除，且无法恢复。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
