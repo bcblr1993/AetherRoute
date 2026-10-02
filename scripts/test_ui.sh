@@ -309,6 +309,28 @@ for application in "$RUNNER_APP" "$PRODUCT_APP"; do
   fi
 done
 
+# Build-and-sign only: hand the signed products to another machine (the Tart
+# VM) that runs them with `xcodebuild test-without-building`. Nothing is
+# launched here, so the host's screen and apps are untouched.
+EXPORT_PRODUCTS=${AETHERROUTE_UI_TEST_EXPORT_PRODUCTS:-}
+if [ -n "$EXPORT_PRODUCTS" ]; then
+  case "$EXPORT_PRODUCTS" in
+    /*) ;;
+    *) echo "AETHERROUTE_UI_TEST_EXPORT_PRODUCTS must be an absolute path." >&2; exit 64 ;;
+  esac
+  [ ! -e "$EXPORT_PRODUCTS" ] || {
+    echo "Refusing to overwrite an existing export: $EXPORT_PRODUCTS" >&2; exit 64
+  }
+  mkdir -p "$(dirname "$EXPORT_PRODUCTS")"
+  ditto "$DERIVED_DATA/Build/Products" "$EXPORT_PRODUCTS"
+  ls "$EXPORT_PRODUCTS"/*.xctestrun >/dev/null 2>&1 || {
+    echo "No .xctestrun was produced; cannot run these products elsewhere." >&2; exit 1
+  }
+  IMMEDIATE_CLEANUP=1
+  printf 'Signed UI test products exported to %s\n' "$EXPORT_PRODUCTS"
+  exit 0
+fi
+
 set -- xcodebuild test-without-building \
   -project "$ROOT/AetherRoute.xcodeproj" \
   -clonedSourcePackagesDirPath "$REPOSITORY_ROOT/.build/DerivedData/SourcePackages" \

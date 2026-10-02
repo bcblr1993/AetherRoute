@@ -287,7 +287,7 @@ def inspect_unified_logs(window_seconds: int = 30) -> Dict[str, Any]:
     """Scrapes Unified Log (os_log) for errors and faults in AetherRoute subsystem/processes."""
     predicate = (
         '(process == "AetherRoute" OR process == "com.aetherroute.desktop.tunnel" '
-        'OR subsystem == "com.aetherroute.desktop") '
+        'OR process == "com.aetherroute.desktop.transparent-proxy") '
         'AND (messageType == error OR messageType == fault)'
     )
     cmd = [
