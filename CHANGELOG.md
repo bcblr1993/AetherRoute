@@ -23,6 +23,14 @@ A maintenance release: plain HTTP proxy nodes are now covered by an automated te
 - Plain `type: http` nodes: in September (1.0.4 and 1.0.5) a profile with an HTTP node was accepted but the engine never connected to the node. This no longer happens: on build 2026100204 in the `macos27` VM, an HTTP node on the host carried all traffic in both TUN and transparent proxy mode (connection checks, google.com, github.com, wikipedia.org), and the new test passes.
 - The protocol evidence and third-party license manifest record the rebuilt engine archives; their engine source is unchanged (`d9f3952`).
 
+### Verified
+
+- Local regression: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` (including the new HTTP node test) all passed; the new test fails as expected when the node rejects the credentials. The installed-extension collector tests passed 6 runs in a row with no traceback.
+- Clean engine build: from an empty `.build/core`, both archives build, and their objects carry the same deployment targets as 1.1.2 (415 at macOS 14, 375 at 11.0 from Rust's bundled compiler-builtins).
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`), notarized stable candidate with both system extensions upgraded to 2026100301: TUN — 2 MiB upload in 3.8 s, idle keep-alive reuse passed; transparent proxy — 2 MiB in 3.8 s, idle keep-alive reuse and SNI recovery passed; the app quit normally while connected. Remote arm64 gate `test_remote_arm64.sh fast` passed.
+- Tart VM 6-dimension matrix (`macos27`, build 2026100301, two VMess fixtures on the host): all six combinations passed, `tun/global` on a single-combination rerun; idle keep-alive reuse 6/6, 2 MiB upload 6/6 (3.5–4.0 s through the proxy), SNI recovery 3/3. See `Docs/ReleaseExceptions/1.1.3.md`.
+- Performance: the engine and data path are unchanged from 1.1.2; proxied 2 MiB uploads took 3.5–4.0 s in the VM (1.1.2: 3.7–4.6 s) and 3.8 s on the Mac mini in both modes (1.1.2: 3.9 s TUN, 4.7 s transparent).
+
 ## [1.1.2] - 2026-10-02
 
 Quitting from the menu bar panel works again while connected, and every "copy proxy command" now copies the command that matches your local proxy. The network engine and extension code are unchanged from 1.1.1.
