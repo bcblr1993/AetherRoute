@@ -12322,6 +12322,16 @@
           }
         }
       }
+    },
+    "Turn on the local proxy in Settings › Network.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在“设置 › 网络”中开启本地代理。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

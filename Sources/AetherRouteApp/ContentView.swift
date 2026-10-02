@@ -647,7 +647,7 @@ struct ContentView: View {
         }
         lines.append(contentsOf: await ReviewPerformanceTour.computeBenchmarks(tunnel: tunnel))
         try? (lines.joined(separator: "\n") + "\n").write(toFile: path, atomically: true, encoding: .utf8)
-        NSApp.terminate(nil)
+        AppTermination.request()
     }
 #endif
 }

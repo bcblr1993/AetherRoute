@@ -187,6 +187,23 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSM
     }
 }
 
+/// Quit requested from a SwiftUI control. Never call `terminate` from a
+/// main-queue block or a main-actor task: while connected,
+/// `applicationShouldTerminate` answers `.terminateLater` and AppKit waits in
+/// a nested run loop for the disconnect to reply, but that reply is itself
+/// main-actor work queued behind the block that is still running, so the app
+/// never quits. A run-loop perform leaves the main queue free.
+@MainActor
+enum AppTermination {
+    static func request() {
+        NSApp.perform(
+            #selector(NSApplication.terminate(_:)),
+            with: nil,
+            afterDelay: 0
+        )
+    }
+}
+
 struct WindowChromeSynchronizer: NSViewRepresentable {
     let title: String
     let showsTitle: Bool
@@ -582,16 +599,20 @@ struct AetherRouteApp: App {
 
             CommandMenu("Proxy") {
                 Button("Copy Terminal Export Command") {
-                    let command = "export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 all_proxy=socks5://127.0.0.1:7890"
+                    guard let command = try? tunnel.localProxySettings
+                        .shellEnvironmentCommand() else { return }
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(command, forType: .string)
                 }
                 .keyboardShortcut("c", modifiers: [.command, .control])
+                .disabled(!tunnel.canCopyTerminalProxyCommand)
 
                 Button("Copy Terminal Unset Command") {
-                    let command = "unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY"
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(command, forType: .string)
+                    NSPasteboard.general.setString(
+                        LocalProxySettings.clearShellEnvironmentCommand,
+                        forType: .string
+                    )
                 }
                 .keyboardShortcut("u", modifiers: [.command, .control])
             }
@@ -1049,11 +1070,17 @@ private struct MenuBarContent: View {
                 Button(AppLocalization.string("Copy Proxy Command"), systemImage: "terminal") {
                     copy(terminalProxyCommand)
                 }
-                // Same rule as Settings: nothing listens on 127.0.0.1 unless
-                // TUN is the engine and the local proxy is on, so a copied
-                // command would only break the terminal's traffic.
-                .disabled(!canCopyTerminalProxyCommand)
+                .disabled(!tunnel.canCopyTerminalProxyCommand)
                 .accessibilityIdentifier("copy-terminal-proxy-button")
+#if AETHERROUTE_INDEPENDENT
+                if !tunnel.canCopyTerminalProxyCommand {
+                    Text(
+                        tunnel.networkEngineMode == .tun
+                            ? AppLocalization.string("Turn on the local proxy in Settings › Network.")
+                            : AppLocalization.string("Switch to TUN to use the local proxy.")
+                    )
+                }
+#endif
                 Button(AppLocalization.string("Copy Clear Command"), systemImage: "terminal.fill") {
                     copy(LocalProxySettings.clearShellEnvironmentCommand)
                 }
@@ -1065,7 +1092,7 @@ private struct MenuBarContent: View {
                 .disabled(!SparkleUpdaterController.shared.canCheckForUpdates)
                 Divider()
                 Button(AppLocalization.string("Quit"), systemImage: "power") {
-                    DispatchQueue.main.async { NSApplication.shared.terminate(nil) }
+                    AppTermination.request()
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -1076,14 +1103,6 @@ private struct MenuBarContent: View {
             .fixedSize()
             .accessibilityLabel(AppLocalization.string("More"))
         }
-    }
-
-    private var canCopyTerminalProxyCommand: Bool {
-#if AETHERROUTE_INDEPENDENT
-        tunnel.networkEngineMode == .tun && tunnel.localProxySettings.isEnabled
-#else
-        false
-#endif
     }
 
     private var terminalProxyCommand: String {
@@ -1189,7 +1208,7 @@ private struct MenuBarContent: View {
             HStack {
                 Spacer()
                 Button("Quit") {
-                    DispatchQueue.main.async { NSApplication.shared.terminate(nil) }
+                    AppTermination.request()
                 }
             }
             .buttonStyle(.borderless)

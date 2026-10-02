@@ -4,6 +4,16 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.2] - 2026-10-02
+
+Quitting from the menu bar panel works again while connected, and every "copy proxy command" now copies the command that matches your local proxy. The network engine and extension code are unchanged from 1.1.1.
+
+### Fixed
+
+- Quit: choosing Quit in the menu bar panel's "…" menu while connected left AetherRoute waiting to quit forever, and every later quit request (including from scripts) was ignored until it was force-quit. The app asked to disconnect first, but the reply waited behind the very request that started the quit. Quit now disconnects and exits normally. This had been present since 1.0.31.
+- Main menu › Proxy › Copy Terminal Export Command (⌃⌘C) copied a fixed `127.0.0.1:7890` command even when the local proxy was off or used other ports, so pasting it broke the terminal's network. It now copies the same command as the menu bar panel and Settings (your ports, `socks5h`, `NO_PROXY`) and is unavailable unless TUN is the engine and the local proxy is on. Copy Terminal Unset Command now also clears `NO_PROXY`.
+- Menu bar panel: when "Copy Proxy Command" is unavailable, the menu now says why — turn on the local proxy in Settings › Network, or switch to TUN.
+
 ## [1.1.1] - 2026-10-02
 
 Settings and every form sheet now use the same Liquid Glass design as the main window, the privacy page is rewritten, and the menu bar panel's actions are easier to read. The network engine and extension code are unchanged from 1.1.0.

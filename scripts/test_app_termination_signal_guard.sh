@@ -30,4 +30,18 @@ require_literal "$TUNNEL" 'func disconnectForApplicationTermination() async -> B
 require_literal "$TUNNEL" 'await setEnabled(false)'
 require_literal "$TUNNEL" 'waitForProviderToBecomeInactive('
 
+# SwiftUI quit controls must not call terminate from a main-queue block or a
+# main-actor task. While connected the delegate answers .terminateLater, and
+# the disconnect that replies is main-actor work queued behind that block, so
+# the app would hang in its termination run loop and ignore every later quit.
+# (The quit Apple Event handler may call terminate directly: Apple Events are
+# dispatched by the event loop, not from the main queue.)
+require_literal "$APP" 'enum AppTermination {'
+require_literal "$APP" '#selector(NSApplication.terminate(_:))'
+if grep -rnE 'DispatchQueue\.main\.async.*terminate\(|Task.*terminate\(|NSApp\.terminate\(nil\)' \
+  "$ROOT/Sources/AetherRouteApp" >&2; then
+  echo "quit must go through AppTermination.request(), not a main-queue terminate" >&2
+  exit 1
+fi
+
 echo "application termination signal guard passed"
