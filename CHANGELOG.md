@@ -14,6 +14,14 @@ Quitting from the menu bar panel works again while connected, and every "copy pr
 - Main menu › Proxy › Copy Terminal Export Command (⌃⌘C) copied a fixed `127.0.0.1:7890` command even when the local proxy was off or used other ports, so pasting it broke the terminal's network. It now copies the same command as the menu bar panel and Settings (your ports, `socks5h`, `NO_PROXY`) and is unavailable unless TUN is the engine and the local proxy is on. Copy Terminal Unset Command now also clears `NO_PROXY`.
 - Menu bar panel: when "Copy Proxy Command" is unavailable, the menu now says why — turn on the local proxy in Settings › Network, or switch to TUN.
 
+### Verified
+
+- Local regression: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` (including the extended application termination guard) all passed.
+- Quit fix: a minimal AppKit program that answers `.terminateLater` and replies from a main-actor task hangs when quit is requested the old way (a main-queue block) and exits when requested through the run loop, as the app now does. The termination guard fails on the old code.
+- UI tests on the physical Mac mini for the local proxy copy rules and the free distribution Settings: 2 of 2 passed.
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`), notarized candidate with both system extensions upgraded to 2026100202: TUN — 2 MiB upload in 3.9 s, 6 MiB in 7.7 s, idle keep-alive reuse passed; transparent proxy — 2 MiB in 4.7 s, 6 MiB in 10.9 s, idle keep-alive reuse and SNI recovery passed; the app quit normally while connected each time. Remote arm64 gate `test_remote_arm64.sh fast` passed.
+- Tart VM 6-dimension matrix (`macos27`, build 2026100202): five combinations passed every check; all six passed idle keep-alive reuse, the 2 MiB upload (3.7–4.6 s) and, for the transparent engine, SNI recovery. One reachability probe timed out; see `Docs/ReleaseExceptions/1.1.2.md`.
+
 ## [1.1.1] - 2026-10-02
 
 Settings and every form sheet now use the same Liquid Glass design as the main window, the privacy page is rewritten, and the menu bar panel's actions are easier to read. The network engine and extension code are unchanged from 1.1.0.
