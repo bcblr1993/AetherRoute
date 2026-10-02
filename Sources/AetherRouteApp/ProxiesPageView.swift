@@ -236,6 +236,7 @@ private struct ProxyGroupTabButton: View {
         }
         .buttonStyle(.aetherPressable)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier("proxy-group-\(group.name)")
         .onHover { hovering in
             withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
                 isHovered = hovering
@@ -325,6 +326,7 @@ private struct ActiveProxyGroupView: View {
                 Text(group.name)
                     .font(.title3.weight(.bold))
                     .lineLimit(1)
+                    .accessibilityIdentifier("proxy-active-group-name")
                 currentNodeLine
                 if showsNextConnectionNote {
                     Label(
@@ -460,6 +462,7 @@ private struct ActiveProxyGroupView: View {
             .font(.subheadline)
             .foregroundStyle(AetherVisual.secondaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("proxy-group-automatic-note")
         }
     }
 

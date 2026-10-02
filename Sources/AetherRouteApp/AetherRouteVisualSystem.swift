@@ -718,38 +718,6 @@ extension ButtonStyle where Self == AetherGlassCapsuleButtonStyle {
 }
 
 /// Download and upload over the last 30 seconds.
-/// A single-series trend line, small enough to sit under a value. Fewer
-/// than two samples draw nothing; the frame keeps its height either way.
-struct AetherSparkline: View {
-    let values: [Double]
-    var tint: Color = .accentColor
-
-    var body: some View {
-        GeometryReader { proxy in
-            if values.count > 1 {
-                let peak = max(values.max() ?? 0, 1)
-                let step = proxy.size.width / CGFloat(values.count - 1)
-                let height = proxy.size.height
-                Path { path in
-                    for (index, value) in values.enumerated() {
-                        let point = CGPoint(
-                            x: CGFloat(index) * step,
-                            y: height - 1 - CGFloat(value / peak) * (height - 2)
-                        )
-                        if index == 0 {
-                            path.move(to: point)
-                        } else {
-                            path.addLine(to: point)
-                        }
-                    }
-                }
-                .stroke(tint, style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
-            }
-        }
-        .accessibilityHidden(true)
-    }
-}
-
 public struct AetherTrafficMiniGraph: View {
     let downloadSamples: [Double]
     let uploadSamples: [Double]

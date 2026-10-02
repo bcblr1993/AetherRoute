@@ -778,10 +778,15 @@ private struct MenuBarContent: View {
             header
 
             if tunnel.isConnected {
-                HStack(spacing: AetherVisual.s3) {
-                    MenuLiveTrafficMetric(title: "Download", symbol: "arrow.down", metric: .download, telemetry: telemetry, isLive: isMenuVisible)
-                    MenuLiveTrafficMetric(title: "Upload", symbol: "arrow.up", metric: .upload, telemetry: telemetry, isLive: isMenuVisible)
-                    MenuLiveTrafficMetric(title: "Connections", symbol: "point.3.connected.trianglepath.dotted", metric: .connections, telemetry: telemetry, isLive: isMenuVisible)
+                // Overview's live traffic in miniature: the same legend dots
+                // and one shared-scale graph, so both draw the same curve.
+                VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                    HStack(spacing: AetherVisual.s3) {
+                        MenuLiveTrafficMetric(title: "Download", dot: .cyan, metric: .download, telemetry: telemetry, isLive: isMenuVisible)
+                        MenuLiveTrafficMetric(title: "Upload", dot: .purple, metric: .upload, telemetry: telemetry, isLive: isMenuVisible)
+                        MenuLiveTrafficMetric(title: "Connections", dot: nil, metric: .connections, telemetry: telemetry, isLive: isMenuVisible)
+                    }
+                    MenuTrafficGraph(telemetry: telemetry, isLive: isMenuVisible)
                 }
                 .padding(AetherVisual.s3)
                 .aetherGlass(in: RoundedRectangle(cornerRadius: Self.groupRadius, style: .continuous))
@@ -1562,16 +1567,22 @@ private enum MenuLiveTrafficMetricKind {
 
 private struct MenuLiveTrafficMetric: View {
     let title: LocalizedStringKey
-    let symbol: String
+    /// The graph's colour for this series, as in Overview's legend.
+    let dot: Color?
     let metric: MenuLiveTrafficMetricKind
     let telemetry: NetworkTelemetryViewModel
     var isLive: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s1) {
-            Label(title, systemImage: symbol)
-                .font(.caption2)
-                .foregroundStyle(AetherVisual.secondaryText)
+            HStack(spacing: AetherVisual.sCompact) {
+                if let dot {
+                    Circle().fill(dot).frame(width: 6, height: 6)
+                }
+                Text(title)
+            }
+            .font(.caption2)
+            .foregroundStyle(AetherVisual.secondaryText)
             if isLive {
                 MenuLiveTrafficValue(metric: metric, telemetry: telemetry)
             } else {
@@ -1588,33 +1599,10 @@ private struct MenuLiveTrafficValue: View {
     @ObservedObject var telemetry: NetworkTelemetryViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s1) {
-            Text(value)
-                .font(.caption.monospacedDigit().weight(.semibold))
-                .lineLimit(1)
-                .aetherNumericValue(value)
-            // The last 30 seconds under the rate. It shares this view's
-            // telemetry observation, so the panel keeps one observer.
-            AetherSparkline(values: series, tint: tint)
-                .frame(height: 14)
-        }
-    }
-
-    private var series: [Double] {
-        let samples = telemetry.history.visible(at: Date())
-        switch metric {
-        case .download: return samples.map(\.download)
-        case .upload: return samples.map(\.upload)
-        case .connections: return []
-        }
-    }
-
-    private var tint: Color {
-        switch metric {
-        case .download: .cyan
-        case .upload: .purple
-        case .connections: .secondary
-        }
+        Text(value)
+            .font(.caption.monospacedDigit().weight(.semibold))
+            .lineLimit(1)
+            .aetherNumericValue(value)
     }
 
     private var value: String {
@@ -1629,18 +1617,47 @@ private struct MenuLiveTrafficValue: View {
     }
 }
 
+/// Overview's live traffic graph at panel size: the same 30-second window
+/// trailing the clock by one sampling period, samples placed by time, and
+/// download and upload on one shared scale. Without the shared scale a small
+/// upload filled its own sparkline and looked like a spike. It animates only
+/// while the panel is open; closed, it rests on the last 30 seconds.
+private struct MenuTrafficGraph: View {
+    @ObservedObject var telemetry: NetworkTelemetryViewModel
+    let isLive: Bool
+
+    /// Half Overview's rate: smooth at this width, cheaper in the menu bar.
+    private static let frameInterval: TimeInterval = 1.0 / 12
+    private static let entryLag = TimeInterval(
+        TunnelStartupTimingPolicy.activeTelemetryPollingIntervalSeconds
+    )
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: Self.frameInterval, paused: !isLive)) { context in
+            let lastSample = telemetry.history.samples.last?.date
+            let now = isLive
+                ? context.date.addingTimeInterval(-Self.entryLag)
+                : (lastSample ?? context.date)
+            let samples = telemetry.history.visible(at: now)
+            AetherTrafficMiniGraph(
+                downloadSamples: samples.map(\.download),
+                uploadSamples: samples.map(\.upload),
+                samplePositions: samples.map { TrafficHistory.position(of: $0, at: now) },
+                height: 36
+            )
+        }
+        .accessibilityIdentifier("menu-traffic-graph")
+    }
+}
+
 private struct MenuStaticTrafficValue: View {
     let metric: MenuLiveTrafficMetricKind
     let snapshot: NetworkTelemetrySnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s1) {
-            Text(value)
-                .font(.caption.monospacedDigit().weight(.semibold))
-                .lineLimit(1)
-            // Same height as the live sparkline, so nothing shifts.
-            Color.clear.frame(height: 14)
-        }
+        Text(value)
+            .font(.caption.monospacedDigit().weight(.semibold))
+            .lineLimit(1)
     }
 
     private var value: String {
