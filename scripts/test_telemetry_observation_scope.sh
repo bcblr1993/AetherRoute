@@ -29,6 +29,8 @@ grep -F 'MenuLiveTrafficValue(metric: metric, telemetry: telemetry)' "$APP" \
   >/dev/null || fail "menu values must own telemetry observation"
 test "$(grep -Fc '@ObservedObject var telemetry: NetworkTelemetryViewModel' \
   "$APP")" -eq 1 || fail "menu must have exactly one telemetry observer"
+grep -F 'MenuTrafficGraph(model: telemetry, isLive: isMenuVisible)' "$APP" \
+  >/dev/null || fail "menu traffic graph must own its telemetry observation"
 
 grep -F 'ConnectionsView(telemetry: tunnel.telemetryViewModel)' "$CONTENT" \
   >/dev/null || fail "connections telemetry must be page-scoped"

@@ -786,7 +786,7 @@ private struct MenuBarContent: View {
                         MenuLiveTrafficMetric(title: "Upload", dot: .purple, metric: .upload, telemetry: telemetry, isLive: isMenuVisible)
                         MenuLiveTrafficMetric(title: "Connections", dot: nil, metric: .connections, telemetry: telemetry, isLive: isMenuVisible)
                     }
-                    MenuTrafficGraph(telemetry: telemetry, isLive: isMenuVisible)
+                    MenuTrafficGraph(model: telemetry, isLive: isMenuVisible)
                 }
                 .padding(AetherVisual.s3)
                 .aetherGlass(in: RoundedRectangle(cornerRadius: Self.groupRadius, style: .continuous))
@@ -1623,7 +1623,9 @@ private struct MenuLiveTrafficValue: View {
 /// upload filled its own sparkline and looked like a spike. It animates only
 /// while the panel is open; closed, it rests on the last 30 seconds.
 private struct MenuTrafficGraph: View {
-    @ObservedObject var telemetry: NetworkTelemetryViewModel
+    /// Like Overview's graph, the waveform is its own observing leaf, so a
+    /// frame redraws this view and not the panel.
+    @ObservedObject var model: NetworkTelemetryViewModel
     let isLive: Bool
 
     /// Half Overview's rate: smooth at this width, cheaper in the menu bar.
@@ -1634,11 +1636,11 @@ private struct MenuTrafficGraph: View {
 
     var body: some View {
         TimelineView(.animation(minimumInterval: Self.frameInterval, paused: !isLive)) { context in
-            let lastSample = telemetry.history.samples.last?.date
+            let lastSample = model.history.samples.last?.date
             let now = isLive
                 ? context.date.addingTimeInterval(-Self.entryLag)
                 : (lastSample ?? context.date)
-            let samples = telemetry.history.visible(at: now)
+            let samples = model.history.visible(at: now)
             AetherTrafficMiniGraph(
                 downloadSamples: samples.map(\.download),
                 uploadSamples: samples.map(\.upload),
