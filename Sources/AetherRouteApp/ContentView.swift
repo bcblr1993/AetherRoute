@@ -514,7 +514,7 @@ struct ContentView: View {
 
     private var sidebarVersionLabel: some View {
         Text(verbatim: currentAppVersion)
-            .font(.system(.caption, design: .monospaced, weight: .medium))
+            .font(.system(.subheadline, design: .monospaced, weight: .medium))
             // A resolved grey: on the glass sidebar `.primary` was drawn
             // vibrantly and failed the contrast audit.
             .foregroundStyle(AetherVisual.secondaryText)
@@ -1006,7 +1006,8 @@ private struct ConnectionHero: View {
                         .accessibilityValue(Text(tunnel.statusDetail))
                     heroSubtitle
                         .font(.callout)
-                        .foregroundStyle(AetherVisual.secondaryText)
+                        // On the tinted card the usual grey measured about 4:1.
+                        .foregroundStyle(AetherVisual.strongSecondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.opacity)
                 }
@@ -1420,7 +1421,11 @@ private struct OverviewModeRows: View {
             ),
             isEnabled: canChangeRoutingMode
         )
-        .frame(width: 240)
+        // At least 240 pt so the two controls line up, wider when a long
+        // translation needs it: a fixed frame let the native control draw
+        // past its frame and out of the window.
+        .fixedSize()
+        .frame(minWidth: 240, alignment: .trailing)
     }
 
 #if AETHERROUTE_INDEPENDENT
@@ -1434,7 +1439,8 @@ private struct OverviewModeRows: View {
             // "Transparent Proxy" overflowed the 200 pt control in English.
             usesShortTitles: true
         )
-        .frame(width: 200)
+        .fixedSize()
+        .frame(minWidth: 200, alignment: .trailing)
     }
 #endif
 }

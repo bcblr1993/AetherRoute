@@ -568,11 +568,11 @@ struct DNSView: View {
                         ? "exclamationmark.triangle.fill"
                         : "checkmark.circle.fill"
                 )
-                .font(.caption)
+                .font(.subheadline)
                 .foregroundStyle(
-                    tunnel.dnsRuntimePolicyMessageIsError
-                        ? Color.orange
-                        : Color.accentColor
+                    AetherReadableTint(
+                        color: tunnel.dnsRuntimePolicyMessageIsError ? .orange : .accentColor
+                    )
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(AetherVisual.s4)
@@ -789,7 +789,10 @@ private struct ChangedSettingDot: View {
         Circle()
             .fill(Color.accentColor)
             .frame(width: 6, height: 6)
+            .accessibilityElement()
             .accessibilityLabel(AppLocalization.string("Changed"))
+            // A labelled shape has no role of its own; announce it as an image.
+            .accessibilityAddTraits(.isImage)
     }
 }
 

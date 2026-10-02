@@ -336,6 +336,8 @@ struct RulesView: View {
                         .padding(.horizontal, AetherVisual.s2)
                         .padding(.vertical, AetherVisual.sMicro)
                         .background(Color.secondary.opacity(0.12), in: Capsule())
+                        // A bare domain read as an unclear label; say the action.
+                        .accessibilityLabel(String.localizedStringWithFormat(AppLocalization.string("Test %@"), domain))
                         .accessibilityIdentifier("rule-quick-test-\(domain)")
                     }
                 }
@@ -440,6 +442,8 @@ struct RulesView: View {
                                 rejectCount: rejectCount, totalCount: summary.rules.count,
                                 routingMode: tunnel.routingMode
                             )
+                            // Decorative: the filter's segments carry the counts.
+                            .accessibilityHidden(true)
                             rulesSearchField
                                 .frame(width: 180)
                         }
@@ -453,6 +457,7 @@ struct RulesView: View {
                                 rejectCount: rejectCount, totalCount: summary.rules.count,
                                 routingMode: tunnel.routingMode
                             )
+                            .accessibilityHidden(true)
                         }
                     }
                     .padding(AetherVisual.s3)
@@ -590,7 +595,7 @@ struct RuleKindTag: View {
     var body: some View {
         Text(verbatim: kind.uppercased())
             .font(.caption2.monospaced().weight(.semibold))
-            .foregroundStyle(AetherVisual.secondaryText)
+            .foregroundStyle(AetherVisual.strongSecondaryText)
             .padding(.horizontal, AetherVisual.sCompact)
             .padding(.vertical, AetherVisual.sMicro)
             .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
@@ -612,7 +617,7 @@ struct RuleTargetLabel: View {
             Image(systemName: symbol)
         }
         .font(.callout.weight(.semibold))
-        .foregroundStyle(tint)
+        .foregroundStyle(AetherReadableTint(color: tint))
         .help(target)
     }
 

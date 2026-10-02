@@ -4,6 +4,25 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-10-02
+
+Settings and every form sheet now use the same Liquid Glass design as the main window, the privacy page is rewritten, and the menu bar panel's actions are easier to read. The network engine and extension code are unchanged from 1.1.0.
+
+### Changed
+
+- Settings: General, Network, Privacy & Diagnostics and About use the main window's design — a large title, each group a caption over a glass card with inset dividers, switches and controls on the trailing edge, and explanations under the card instead of inside it. The node editor and connection details sheets match.
+- Privacy: "Private by default" replaces the long disclosure. Four short facts (on this Mac, nothing reported, no ads, never sold) and, right on the page, where data goes once connected — your proxy and DNS, which can see your IP address, and the update sources. The consent button floats over the content in a Liquid Glass bar. Settings shows one summary row whose "Show…" opens the same page.
+- Menu bar panel: "Open AetherRoute" and "Test all" sit side by side at equal width; the version moved into the "…" menu, and an available update gets its own row.
+- Secondary text uses fixed colours: Liquid Glass drew the system's secondary style too light on glass cards (about 3:1); it now keeps at least 4.5:1 in both appearances.
+
+### Fixed
+
+- English: the network engine control overflowed its card in the menu bar panel and covered its hint on Overview; both now use the short names "Transparent" and "TUN".
+- Connections: at the narrowest window the table scrolled sideways and hid the Duration column; the columns now fit and Destination takes any extra width.
+- Accessibility: page and Settings identifiers are no longer replaced by their containers; Settings switches carry their names and the whole row toggles them; the rules quick tests say "Test google.com" rather than a bare domain; the DNS "changed" marks have an image role.
+- Contrast: rule kind tags, rule targets, the "Current" marks on Proxies and Profiles, the DNS runtime note and the Overview subtitle are stronger; notes under Settings cards are 11 pt so they stay legible on non-Retina displays.
+- Long translations: Overview row titles wrap and the mode controls widen to fit instead of drawing past the window; the Connections filter becomes a menu when a translation outgrows the toolbar.
+
 ## [1.1.0] - 2026-10-01
 
 A redesign of the whole interface in macOS 26 Liquid Glass, with simpler Proxies, DNS, Profiles and Rules pages. The network engine and extension code are unchanged from 1.0.38.

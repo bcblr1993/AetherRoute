@@ -66,8 +66,10 @@ enum AetherVisual {
     /// hierarchical `.secondary`/`.tertiary` styles — and AppKit's label
     /// colours — vibrantly, which on a glass card measured about 3:1, under
     /// the 4.5:1 small text needs. These keep about 6:1 in both appearances.
-    static let secondaryText = AetherTextStyle(light: 0.33, dark: 0.74)
-    static let tertiaryText = AetherTextStyle(light: 0.40, dark: 0.66)
+    static let secondaryText = AetherTextStyle(light: 0.28, dark: 0.80)
+    static let tertiaryText = AetherTextStyle(light: 0.36, dark: 0.72)
+    /// Secondary text on a tinted card, such as the Overview hero.
+    static let strongSecondaryText = AetherTextStyle(light: 0.18, dark: 0.86)
     static let formMaxWidth: CGFloat = 720
     /// Dashboard and list pages use more of a large window before centering,
     /// so a maximized window does not read as half-loaded.
@@ -367,6 +369,8 @@ struct AetherSearchField: View {
                 .textFieldStyle(.plain)
                 .focused($isFocused)
                 .onExitCommand { text = "" }
+                // The prompt is only a placeholder; give the field its name.
+                .accessibilityLabel(prompt)
                 .accessibilityIdentifier(accessibilityIdentifier ?? "")
             if !text.isEmpty {
                 Button {
@@ -1027,7 +1031,9 @@ private struct AetherGlassFormSection: View {
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     section.footer
                 }
-                .font(.caption)
+                // 11 pt, not caption: on a 1x display 10 pt strokes never
+                // reach their colour and the notes measured under 4.5:1.
+                .font(.subheadline)
                 .foregroundStyle(AetherVisual.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, AetherVisual.s1)
@@ -1076,6 +1082,19 @@ struct AetherRowLabeledContentStyle: LabeledContentStyle {
     }
 }
 
+
+/// A coloured label that stays readable: system greens, blues and indigos
+/// measured 2–3.7:1 on cards, so they move toward black in light mode and
+/// toward white in dark mode.
+struct AetherReadableTint: ShapeStyle {
+    let color: Color
+
+    func resolve(in environment: EnvironmentValues) -> Color {
+        environment.colorScheme == .dark
+            ? color.mix(with: .white, by: 0.6)
+            : color.mix(with: .black, by: 0.55)
+    }
+}
 
 /// A grey resolved from the view's own colour scheme when it renders. A
 /// plain colour is never drawn vibrantly, and unlike a dynamic `NSColor`

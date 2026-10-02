@@ -12306,6 +12306,22 @@
           }
         }
       }
+    },
+    "Test %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试 %@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

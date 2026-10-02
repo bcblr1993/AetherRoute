@@ -675,7 +675,7 @@ private struct ProxyNodeRow: View {
             if !showsSelectionControl, row.isSelected {
                 Text(AppLocalization.string("Current"))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(AetherReadableTint(color: .green))
                     .padding(.horizontal, AetherVisual.s1)
                     .padding(.vertical, 1)
                     .background(Color.green.opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))

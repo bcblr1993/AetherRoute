@@ -1142,7 +1142,7 @@ private struct ManagedProfileRow: View {
             if isActive {
                 Label(AppLocalization.string("Current profile"), systemImage: "checkmark")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AetherReadableTint(color: .accentColor))
                     .transition(.scale(scale: 0.8).combined(with: .opacity))
                     .accessibilityIdentifier("profile-current-\(managed.id.uuidString)")
             } else {

@@ -156,7 +156,12 @@ struct ConnectionsView: View {
                 // icons beneath it (their names stay as tooltips and
                 // VoiceOver labels).
                 VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                    segmentedFilter(counts: counts)
+                    // Still too wide (a long translation): a pop-up menu
+                    // instead of segments that would draw past the window.
+                    ViewThatFits(in: .horizontal) {
+                        segmentedFilter(counts: counts)
+                        menuFilter()
+                    }
                     HStack {
                         Spacer(minLength: 0)
                         connectionActions
@@ -214,6 +219,19 @@ struct ConnectionsView: View {
         .aetherPanel()
         .padding(.horizontal, AetherVisual.pageHorizontalPadding)
         .padding(.bottom, AetherVisual.s2)
+    }
+
+    private func menuFilter() -> some View {
+        Picker(AppLocalization.string("Filter"), selection: $filter) {
+            ForEach(ConnectionOutletFilter.allCases, id: \.self) { option in
+                Text(option.localizedTitle).tag(option)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .fixedSize()
+        .accessibilityLabel(AppLocalization.string("Filter"))
+        .accessibilityIdentifier("connections-filter-picker")
     }
 
     private func segmentedFilter(counts: [ConnectionOutletFilter: Int]) -> some View {
@@ -528,7 +546,7 @@ private struct ConnectionRuleCell: View {
         HStack(spacing: AetherVisual.s1) {
             Text(verbatim: ClashRuleKindName.display(connection.rule))
                 .font(.caption2.monospaced().weight(.semibold))
-                .foregroundStyle(AetherVisual.secondaryText)
+                .foregroundStyle(AetherVisual.strongSecondaryText)
                 .padding(.horizontal, AetherVisual.s1)
                 .padding(.vertical, 1)
                 .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
