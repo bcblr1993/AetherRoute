@@ -547,12 +547,14 @@ struct AetherRouteApp: App {
                 }
                 .disabled(!tunnel.canChangeRoutingMode)
 
+#if !AETHERROUTE_APP_STORE
                 Divider()
 
                 Button(AppLocalization.string("Check for Updates…")) {
                     SparkleUpdaterController.shared.checkForUpdates()
                 }
                 .keyboardShortcut("u", modifiers: [.command, .shift])
+#endif
             }
             CommandMenu("Navigate") {
                 Button(AppLocalization.string("Command Palette…")) {
@@ -1019,7 +1021,9 @@ private struct MenuBarContent: View {
     /// menu; an available update gets its own row above the actions.
     private var footer: some View {
         VStack(spacing: AetherVisual.s2) {
+#if !AETHERROUTE_APP_STORE
             MenuUpdateStatus(updater: SparkleUpdaterController.shared)
+#endif
             if let copiedMessage {
                 Label(copiedMessage, systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
@@ -1085,11 +1089,13 @@ private struct MenuBarContent: View {
                     copy(LocalProxySettings.clearShellEnvironmentCommand)
                 }
                 .accessibilityIdentifier("clear-terminal-proxy-button")
+#if !AETHERROUTE_APP_STORE
                 Divider()
                 Button(AppLocalization.string("Check for Updates…"), systemImage: "arrow.triangle.2.circlepath") {
                     SparkleUpdaterController.shared.checkForUpdates()
                 }
                 .disabled(!SparkleUpdaterController.shared.canCheckForUpdates)
+#endif
                 Divider()
                 Button(AppLocalization.string("Quit"), systemImage: "power") {
                     AppTermination.request()

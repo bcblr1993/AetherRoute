@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""Derive an isolated Store build graph without rewriting Developer ID settings."""
+import argparse
+import json
+import pathlib
+import plistlib
+import re
+import subprocess
+from datetime import datetime, timezone
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def derive(spec, output, team, version, build, identity, profiles):
+    spec = json.loads(json.dumps(spec))
+    spec['name'] = 'AetherRouteAppStore'
+    spec.pop('packages', None)
+    base = spec['settings']['base']
+    base.update(AETHERROUTE_DEVELOPMENT_TEAM=team,
+                MARKETING_VERSION=version, CURRENT_PROJECT_VERSION=build,
+                AETHERROUTE_RELEASE_CHANNEL='stable',
+                AETHERROUTE_RELEASE_TIMESTAMP=datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                AETHERROUTE_DISTRIBUTION_MODE='free',
+                AETHERROUTE_LICENSE_SERVICE_URL='', AETHERROUTE_UPDATE_MANIFEST_URL='',
+                AETHERROUTE_DISTRIBUTION_PUBLIC_KEY='')
+    release = spec['settings']['configs']['Release']
+    release.update(CODE_SIGN_STYLE='Manual', CODE_SIGN_IDENTITY=identity,
+                   ENABLE_HARDENED_RUNTIME=True)
+    roles = {'AetherRoute': ('HOST', 'AetherRoute.entitlements'),
+             'AetherRoutePacketTunnel': ('PACKET_TUNNEL', 'AetherRoutePacketTunnel.entitlements'),
+             'AetherRouteTransparentProxy': ('TRANSPARENT_PROXY', 'AetherRouteTransparentProxy.entitlements')}
+    for name, target in spec['targets'].items():
+        if 'info' in target:
+            target['info']['path'] = str(output / (name + '-Info.plist'))
+        for source in target.get('sources', []):
+            if isinstance(source, dict):
+                source['path'] = str(ROOT / source['path'])
+        for dep in target.get('dependencies', []):
+            if 'framework' in dep:
+                dep['framework'] = str(ROOT / dep['framework'])
+        for script in target.get('preBuildScripts', []):
+            if script.get('path', '').endswith('guard_developer_id_network_extension_build.sh'):
+                script['path'] = str(ROOT / 'scripts/guard_app_store_build.sh')
+                script['name'] = 'Validate Store distribution boundary'
+            elif 'path' in script:
+                script['path'] = str(ROOT / script['path'])
+        if name in roles:
+            role, filename = roles[name]
+            ent = plistlib.loads((ROOT / 'Config' / filename).read_bytes())
+            ent.pop('com.apple.security.temporary-exception.mach-lookup.global-name', None)
+            # Match the shipping Developer ID host: KVS is not granted by its
+            # production profile or by the desktop Store application identifier.
+            ent.pop('com.apple.developer.ubiquity-kvstore-identifier', None)
+            path = output / filename
+            path.write_bytes(plistlib.dumps(ent))
+            key = 'AETHERROUTE_' + role + '_ENTITLEMENTS'
+            base[key] = release[key] = str(path)
+            base['AETHERROUTE_' + role + '_PROFILE_SPECIFIER'] = profiles.get(name, '')
+    host = spec['targets']['AetherRoute']
+    host['dependencies'] = [d for d in host['dependencies'] if 'package' not in d]
+    host['settings']['base']['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] = '$(inherited) AETHERROUTE_INDEPENDENT AETHERROUTE_APP_STORE'
+    host['settings']['base']['SKIP_INSTALL'] = False
+    props = host['info']['properties']
+    for key in list(props):
+        if key.startswith('SU'):
+            del props[key]
+    props['AetherRouteStoreDistribution'] = True
+    # Source-root build settings and UI-test scripts still refer to the original checkout.
+    def paths(value):
+        if isinstance(value, str):
+            return value.replace('$(SRCROOT)', str(ROOT)).replace('$SRCROOT/', str(ROOT) + '/')
+        if isinstance(value, list):
+            return [paths(v) for v in value]
+        if isinstance(value, dict):
+            return {k: paths(v) for k, v in value.items()}
+        return value
+    spec = paths(spec)
+    for target in spec['targets'].values():
+        settings = target.get('settings', {}).get('base', {})
+        bridge = settings.get('SWIFT_OBJC_BRIDGING_HEADER')
+        if bridge:
+            settings['SWIFT_OBJC_BRIDGING_HEADER'] = str(ROOT / bridge)
+    return spec
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('output', type=pathlib.Path)
+    parser.add_argument('--team', required=True)
+    parser.add_argument('--version', required=True)
+    parser.add_argument('--build', required=True)
+    parser.add_argument('--identity', default='3rd Party Mac Developer Application')
+    parser.add_argument('--host-profile', default='')
+    parser.add_argument('--tunnel-profile', default='')
+    parser.add_argument('--transparent-profile', default='')
+    args = parser.parse_args()
+    if not re.fullmatch(r'[A-Z0-9]{10}', args.team):
+        parser.error('Team must be the exact ten-character Apple Team ID.')
+    if not re.fullmatch(r'\d+\.\d+\.\d+', args.version) or not re.fullmatch(r'[1-9]\d*', args.build):
+        parser.error('Use a numeric semantic version and build.')
+    output = args.output.resolve()
+    if output == ROOT or not output.is_relative_to(ROOT / 'outputs'):
+        parser.error('Generated projects belong in outputs, outside the source graph.')
+    output.mkdir(parents=True, exist_ok=False)
+    spec = json.loads(subprocess.check_output(['xcodegen', 'dump', '--spec', str(ROOT / 'project.yml'),
+                                              '--type', 'json', '--no-env'], text=True))
+    spec = derive(spec, output, args.team, args.version, args.build, args.identity,
+                  {'AetherRoute': args.host_profile,
+                   'AetherRoutePacketTunnel': args.tunnel_profile,
+                   'AetherRouteTransparentProxy': args.transparent_profile})
+    path = output / 'project.json'
+    path.write_text(json.dumps(spec, indent=2) + '\n')
+    subprocess.run(['xcodegen', 'generate', '--spec', str(path), '--project', str(output)], check=True)
+    print(output / 'AetherRouteAppStore.xcodeproj')
+
+
+if __name__ == '__main__':
+    main()

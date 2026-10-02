@@ -1,5 +1,8 @@
 # Developer ID signing and independent distribution
 
+This document describes the website build. The separate generated Mac App
+Store channel is documented in [AppStoreDistribution.md](AppStoreDistribution.md).
+
 AetherRoute is distributed as a notarized DMG outside the Mac App Store. No
 Store target, Store receipt, App Store Connect upload, or Store provisioning
 profile is part of the product.

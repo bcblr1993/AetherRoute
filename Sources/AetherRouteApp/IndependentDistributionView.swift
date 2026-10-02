@@ -13,6 +13,9 @@ struct IndependentDistributionView: View {
     var isEmbedded = false
 
     var body: some View {
+#if AETHERROUTE_APP_STORE
+        EmptyView()
+#else
         Group {
             if isEmbedded {
                 embeddedContent
@@ -40,6 +43,7 @@ struct IndependentDistributionView: View {
         .task { distribution.loadLocalReceipt() }
         // No identifier here: embedded, this view is several form sections,
         // and one identifier was copied onto every row they contain.
+#endif
     }
 
     /// About in Settings: grouped-form sections. The free edition shows only

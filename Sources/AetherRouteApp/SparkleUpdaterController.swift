@@ -3,8 +3,10 @@ import AetherRouteKit
 import Combine
 import Foundation
 import OSLog
-import Sparkle
 import SwiftUI
+
+#if !AETHERROUTE_APP_STORE
+import Sparkle
 
 @MainActor
 final class SparkleUpdaterController: NSObject, ObservableObject {
@@ -315,3 +317,26 @@ struct CheckForUpdatesCommandButton: View {
         .disabled(!controller.canCheckForUpdates)
     }
 }
+#else
+/// Store builds receive updates through macOS and never initialize an updater.
+@MainActor
+final class SparkleUpdaterController: NSObject, ObservableObject {
+    static let shared = SparkleUpdaterController()
+    @Published private(set) var canCheckForUpdates = false
+    @Published private(set) var automaticallyChecksForUpdates = false
+    @Published private(set) var lastUpdateCheckDate: Date?
+    @Published private(set) var availability: UpdateAvailability = .unknown
+
+    static var currentVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    }
+
+    var canCheckForUpdatesEffective: Bool { false }
+    func checkForUpdates() {}
+    func setAutomaticallyChecksForUpdates(_ enabled: Bool) {}
+}
+
+struct CheckForUpdatesCommandButton: View {
+    var body: some View { EmptyView() }
+}
+#endif

@@ -31,6 +31,24 @@ A maintenance release: plain HTTP proxy nodes are now covered by an automated te
 - Tart VM 6-dimension matrix (`macos27`, build 2026100301, two VMess fixtures on the host): all six combinations passed, `tun/global` on a single-combination rerun; idle keep-alive reuse 6/6, 2 MiB upload 6/6 (3.5–4.0 s through the proxy), SNI recovery 3/3. See `Docs/ReleaseExceptions/1.1.3.md`.
 - Performance: the engine and data path are unchanged from 1.1.2; proxied 2 MiB uploads took 3.5–4.0 s in the VM (1.1.2: 3.7–4.6 s) and 3.8 s on the Mac mini in both modes (1.1.2: 3.9 s TUN, 4.7 s transparent).
 
+## Mac App Store submission - 2026-10-02
+
+- Added a separate Store build graph for 1.1.2/build 2026100203, retaining TUN
+  and transparent proxy system extensions with Store-specific provisioning.
+- Store builds exclude Sparkle, independent updater metadata, updater menu
+  controls and updater sandbox exceptions; website builds retain their updater.
+- Added Store graph regression tests and an exact signed-bundle audit. The four
+  prescribed local regression suites, Store graph tests, signed-bundle/core/
+  license checks, installer signature and physical arm64 fast gate all passed.
+- Uploaded the Store candidate and submitted App Store Connect app 6818543727
+  at 22:54 CST. Apple showed Waiting for Review; release is automatic after
+  approval, free in 174 territories, with France excluded for encryption
+  authorization requirements. Review approval and public availability remain pending.
+- VM matrix scoring and Store-installed runtime acceptance remain incomplete;
+  see `Docs/ReleaseExceptions/1.1.2-app-store.md`. The listing reuses an existing
+  public 1.1.0 overview and does not claim it as this build's runtime evidence.
+  No networking-core change or measured performance improvement is claimed.
+
 ## [1.1.2] - 2026-10-02
 
 Quitting from the menu bar panel works again while connected, and every "copy proxy command" now copies the command that matches your local proxy. The network engine and extension code are unchanged from 1.1.1.
