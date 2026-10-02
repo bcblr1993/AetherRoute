@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import secrets
 import ssl
+import sys
 import threading
 import time
 from urllib.parse import parse_qs, urlsplit
@@ -38,6 +39,16 @@ class PeerState:
             if len(self.receipts) >= 256:
                 del self.receipts[next(iter(self.receipts))]
             self.receipts[request_id] = receipt
+
+
+class Server(http.server.ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        # A client that hangs up before the handler starts makes socketserver
+        # fail setting TCP_NODELAY (EINVAL). That connection is simply gone;
+        # keep the log free of a traceback that looks like a server fault.
+        if isinstance(sys.exc_info()[1], OSError):
+            return
+        super().handle_error(request, client_address)
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -224,7 +235,7 @@ def main():
     servers = []
     try:
         for bind, role in [(args.lan_bind, "lan"), ("127.0.0.1", "relay")]:
-            server = http.server.ThreadingHTTPServer((bind, args.port), Handler)
+            server = Server((bind, args.port), Handler)
             server.daemon_threads = True
             server.state, server.role = state, role
             server.socket = context.wrap_socket(server.socket, server_side=True)

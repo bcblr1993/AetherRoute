@@ -571,7 +571,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 case .resetNetwork:
                     self.handleResetNetwork()
                 case .reloadProfile:
-                    fatalError("Handled above")
+                    // Answered by the early branch above; never crash the
+                    // extension (and the user's network) if that changes.
+                    .failure(.invalidRequest)
                 }
             } catch is ProxySelectionProviderMessageError {
                 response = .failure(.invalidRequest)

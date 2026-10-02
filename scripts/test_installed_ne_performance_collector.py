@@ -554,7 +554,7 @@ class HTTPSPeerIntegrationTests(unittest.TestCase):
                 super().setup()
                 self.server.nodelay.append(self.connection.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY))
 
-        class CountingServer(peer.http.server.ThreadingHTTPServer):
+        class CountingServer(peer.Server):
             daemon_threads = True
 
             def get_request(self):

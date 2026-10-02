@@ -14,7 +14,11 @@ TARGET=aarch64-apple-darwin
 DESTINATION="$ROOT/Core/Artifacts/macos-arm64"
 FEATURES=${AETHERROUTE_DIRECT_CORE_FEATURES:-aether-embedded}
 ARTIFACT=libclashrs-direct.a
-export MACOSX_DEPLOYMENT_TARGET=14.0
+# Target objects only: see rustc_target_deployment.sh for why host proc macros
+# must not inherit a deployment target.
+unset MACOSX_DEPLOYMENT_TARGET
+export AETHERROUTE_TARGET_DEPLOYMENT=14.0
+export RUSTC_WRAPPER="$ROOT/scripts/rustc_target_deployment.sh"
 # `ring` and other C/assembly dependencies embed their source paths through the
 # C compiler, which Rust's --remap-path-prefix cannot reach. Map the same root
 # for clang so those translation units stay anonymous too.

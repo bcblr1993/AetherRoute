@@ -4,6 +4,25 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.3] - 2026-10-03
+
+A maintenance release: plain HTTP proxy nodes are now covered by an automated test, clean builds of the network engine work again on macOS 27, and both system extensions can no longer crash on an unexpected control message. Routing behaviour is unchanged from 1.1.2.
+
+### Fixed
+
+- Build: compiling the network engine from a clean checkout failed on macOS 27 (`E0463: can't find crate for time_macros`). The macOS 14 deployment target was applied to the whole build, including the compiler plug-ins (proc macros) that rustc loads back into itself, which rustc 1.96 then could not read. Only a warm build cache had kept releases working. The deployment target now applies to the shipped engine only, through `scripts/rustc_target_deployment.sh`; the engine objects still target macOS 14.
+- Extensions: the TUN and transparent proxy extensions stopped the whole process (and the network) if a "reload profile" message ever reached the generic message path. It is answered earlier, so this could not happen today; the path now returns an invalid-request reply instead of crashing.
+- Test tooling: the installed-extension performance peer no longer prints a traceback when a client disconnects before its request is handled.
+
+### Added
+
+- `scripts/test_http_node_dial.sh` (part of `./scripts/test.sh`): drives the production engine through its local HTTP and SOCKS ports to a loopback HTTP CONNECT node that requires a username and password, and fails unless the node relays both requests. Fully offline.
+
+### Notes
+
+- Plain `type: http` nodes: in September (1.0.4 and 1.0.5) a profile with an HTTP node was accepted but the engine never connected to the node. This no longer happens: on build 2026100204 in the `macos27` VM, an HTTP node on the host carried all traffic in both TUN and transparent proxy mode (connection checks, google.com, github.com, wikipedia.org), and the new test passes.
+- The protocol evidence and third-party license manifest record the rebuilt engine archives; their engine source is unchanged (`d9f3952`).
+
 ## [1.1.2] - 2026-10-02
 
 Quitting from the menu bar panel works again while connected, and every "copy proxy command" now copies the command that matches your local proxy. The network engine and extension code are unchanged from 1.1.1.
