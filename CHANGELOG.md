@@ -23,6 +23,13 @@ Settings and every form sheet now use the same Liquid Glass design as the main w
 - Contrast: rule kind tags, rule targets, the "Current" marks on Proxies and Profiles, the DNS runtime note and the Overview subtitle are stronger; notes under Settings cards are 11 pt so they stay legible on non-Retina displays.
 - Long translations: Overview row titles wrap and the mode controls widen to fit instead of drawing past the window; the Connections filter becomes a menu when a translation outgrows the toolbar.
 
+### Verified
+
+- Local regression: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` all passed.
+- Full UI test suite on the physical Mac mini (non-Retina, dark appearance): 42 of 42 passed, including the accessibility audits in light and dark appearance and long English text.
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`), notarized candidate with both system extensions upgraded to 2026100201: TUN — 2 MiB upload in 4.6 s, 6 MiB in 5.5 s, idle keep-alive reuse passed; transparent proxy — 2 MiB in 3.5 s, 6 MiB in 7.3 s, idle keep-alive reuse and SNI recovery passed. Remote arm64 gate `test_remote_arm64.sh fast` passed.
+- Tart VM 6-dimension matrix (`macos27`, build 2026100201): every combination passed idle keep-alive reuse, the 2 MiB upload (3.5–4.2 s) and, for the transparent engine, SNI recovery. Reachability probes timed out intermittently across two runs; see `Docs/ReleaseExceptions/1.1.1.md`. VM temporary files were cleaned up.
+
 ## [1.1.0] - 2026-10-01
 
 A redesign of the whole interface in macOS 26 Liquid Glass, with simpler Proxies, DNS, Profiles and Rules pages. The network engine and extension code are unchanged from 1.0.38.
