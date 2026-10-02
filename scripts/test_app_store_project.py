@@ -7,13 +7,13 @@ import plistlib
 import subprocess
 import tempfile
 import unittest
-from generate_app_store_project import ROOT, derive
+from generate_app_store_project import ROOT, XCODEGEN, derive
 
 
 class StoreProjectTests(unittest.TestCase):
     def test_store_channel_preserves_routing_without_modifying_original(self):
         original = json.loads(subprocess.check_output(
-            ['xcodegen', 'dump', '--spec', str(ROOT / 'project.yml'), '--type', 'json', '--no-env']))
+            [XCODEGEN, 'dump', '--spec', str(ROOT / 'project.yml'), '--type', 'json', '--no-env']))
         before = json.dumps(original, sort_keys=True)
         with tempfile.TemporaryDirectory() as directory:
             output = pathlib.Path(directory)
