@@ -48,7 +48,7 @@ struct ProviderRow: View {
                 Text(provider.name).fontWeight(.medium)
                 Text(provider.sourceType.uppercased())
                     .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             }
             Spacer()
         }
@@ -146,7 +146,7 @@ struct TruncationNotice: View {
                 systemImage: "info.circle"
             )
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
         }
     }
 }

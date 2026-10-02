@@ -285,7 +285,7 @@ private struct ComponentLicenseDetail: View {
                         AppLocalization.string("No notice text was bundled for this component."),
                         systemImage: "exclamationmark.triangle"
                     )
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                 } else {
                     ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                         licenseBlock(block)
@@ -346,7 +346,7 @@ private struct ComponentLicenseDetail: View {
 private extension View {
     func licensePillStyle() -> some View {
         font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .padding(.horizontal, AetherVisual.s3)
             .padding(.vertical, AetherVisual.s2)
             .background(.quaternary, in: Capsule())

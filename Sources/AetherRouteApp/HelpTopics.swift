@@ -147,7 +147,7 @@ struct AetherHelpButton: View {
             isPresented.toggle()
         } label: {
             Image(systemName: "questionmark.circle")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
         }
         .buttonStyle(.borderless)
         .help(topic.title)
@@ -185,10 +185,10 @@ struct AetherHelpContent: View {
                         HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
                             if section.lines.count > 1 {
                                 Text(verbatim: "•")
-                                    .foregroundStyle(.tertiary)
+                                    .foregroundStyle(AetherVisual.tertiaryText)
                             }
                             Text(line)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AetherVisual.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .font(.callout)

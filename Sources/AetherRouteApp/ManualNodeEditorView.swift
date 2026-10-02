@@ -139,7 +139,7 @@ struct ManualNodeEditorSheet: View {
                 .accessibilityIdentifier("manual-node-name")
                 .fieldRow("Node name")
             if node.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("Enter a node name.").font(.caption).foregroundStyle(.secondary)
+                Text("Enter a node name.").font(.caption).foregroundStyle(AetherVisual.secondaryText)
             }
             TextField("Server", text: $node.server)
                 .textContentType(.URL)
@@ -252,7 +252,7 @@ struct ManualNodeEditorSheet: View {
                 }
                 Text("The selected key is read into memory, never displayed, and saved only in the encrypted profile library.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             case .shadowQUIC:
                 TextField("Username", text: $node.username)
                     .fieldRow("Username")
@@ -299,7 +299,7 @@ struct ManualNodeEditorSheet: View {
                 Toggle("Use TLS", isOn: $node.tls.enabled)
             } else if usesTLSIdentity {
                 Label("TLS is required by this protocol", systemImage: "lock.fill")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             }
 
             if node.tls.enabled || usesTLSIdentity {
@@ -365,7 +365,7 @@ struct ManualNodeEditorSheet: View {
             switch node.protocolID {
             case .http:
                 Text("HTTP CONNECT uses TCP. Enable TLS above for HTTPS CONNECT.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             case .socks5, .shadowsocks, .vmess, .vless, .trojan, .anyTLS:
                 Toggle("UDP relay", isOn: $node.udp)
                 if node.protocolID == .vless {
@@ -472,14 +472,14 @@ struct ManualNodeEditorSheet: View {
             systemImage: "clock.arrow.circlepath"
         )
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(AetherVisual.secondaryText)
 #else
         Label(
             AppLocalization.string("Stored in the encrypted profile library"),
             systemImage: "lock.fill"
         )
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(AetherVisual.secondaryText)
 #endif
     }
 

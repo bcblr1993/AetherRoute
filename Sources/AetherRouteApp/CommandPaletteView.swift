@@ -55,7 +55,7 @@ struct CommandPaletteView: View {
             HStack(spacing: AetherVisual.s3) {
                 Image(systemName: "magnifyingglass")
                     .font(.title3)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .accessibilityHidden(true)
                 TextField(AppLocalization.string("Search actions, pages and nodes"), text: $query)
                     .textFieldStyle(.plain)
@@ -71,7 +71,7 @@ struct CommandPaletteView: View {
             if results.isEmpty {
                 Text(AppLocalization.string("No matching commands"))
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .frame(maxWidth: .infinity)
                     .padding(AetherVisual.s6)
             } else {
@@ -113,7 +113,7 @@ struct CommandPaletteView: View {
                 Spacer()
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .padding(.horizontal, AetherVisual.s4)
             .padding(.vertical, AetherVisual.s2)
         }
@@ -145,7 +145,7 @@ struct CommandPaletteView: View {
         }
         return Text(title)
         .font(.caption.weight(.semibold))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(AetherVisual.secondaryText)
         .padding(.horizontal, AetherVisual.s2)
         .padding(.vertical, AetherVisual.s1)
     }
@@ -303,7 +303,7 @@ private struct CommandPaletteRow: View {
         HStack(spacing: AetherVisual.s3) {
             Image(systemName: item.symbol)
                 .font(.body)
-                .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                .foregroundStyle(isSelected ? AnyShapeStyle(Color.white) : AnyShapeStyle(AetherVisual.secondaryText))
                 .frame(width: AetherVisual.s5)
                 .accessibilityHidden(true)
             Text(item.title)
@@ -320,7 +320,7 @@ private struct CommandPaletteRow: View {
             Spacer(minLength: AetherVisual.s2)
             Text(item.subtitle)
                 .font(.caption)
-                .foregroundStyle(isSelected ? Color.white.opacity(0.8) : Color.secondary)
+                .foregroundStyle(isSelected ? AnyShapeStyle(Color.white.opacity(0.8)) : AnyShapeStyle(AetherVisual.secondaryText))
                 .lineLimit(1)
         }
         .padding(.horizontal, AetherVisual.s2)

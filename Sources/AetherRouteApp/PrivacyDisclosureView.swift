@@ -34,7 +34,7 @@ struct PrivacyDisclosureView: View {
                         .foregroundStyle(.primary)
                     Text(AppLocalization.string("Privacy commitments summary"))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: AetherVisual.s2)
@@ -71,7 +71,7 @@ struct PrivacyDisclosureView: View {
         } else {
             Text(AppLocalization.string("Not accepted"))
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
         }
     }
 
@@ -87,7 +87,7 @@ struct PrivacyDisclosureView: View {
                 dataFlow
                 Text(AppLocalization.string("Only import subscriptions from providers you trust."))
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: 560)
@@ -111,7 +111,7 @@ struct PrivacyDisclosureView: View {
                 .foregroundStyle(.primary)
             Text(AppLocalization.string("AetherRoute does one thing: forward your traffic by your rules."))
                 .font(.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -130,7 +130,7 @@ struct PrivacyDisclosureView: View {
                             .foregroundStyle(.primary)
                         Text(fact.detail)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AetherVisual.secondaryText)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -156,7 +156,7 @@ struct PrivacyDisclosureView: View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
             Text(AppLocalization.string("Once connected, data goes only here"))
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: 0) {
                 flowNode(
@@ -166,7 +166,7 @@ struct PrivacyDisclosureView: View {
                 )
                 Image(systemName: "arrow.down")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(AetherVisual.tertiaryText)
                     .frame(width: 28)
                     .padding(.vertical, AetherVisual.s1)
                     .accessibilityHidden(true)
@@ -179,11 +179,11 @@ struct PrivacyDisclosureView: View {
                 Label {
                     Text(AppLocalization.string("Subscription updates contact your provider; rule updates come from public sources after you connect."))
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                 }
             }
             .padding(AetherVisual.s4)
@@ -203,7 +203,7 @@ struct PrivacyDisclosureView: View {
                     .foregroundStyle(.primary)
                 Text(detail)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -251,7 +251,7 @@ struct PrivacyDisclosureView: View {
 
                 Text(AppLocalization.string("Nothing is configured or connected until you continue."))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity)

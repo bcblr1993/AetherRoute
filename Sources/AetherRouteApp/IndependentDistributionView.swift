@@ -38,7 +38,8 @@ struct IndependentDistributionView: View {
             }
         }
         .task { distribution.loadLocalReceipt() }
-        .accessibilityIdentifier("independent-distribution-view")
+        // No identifier here: embedded, this view is several form sections,
+        // and one identifier was copied onto every row they contain.
     }
 
     /// About in Settings: grouped-form sections. The free edition shows only
@@ -57,7 +58,7 @@ struct IndependentDistributionView: View {
             HStack(spacing: AetherVisual.s3) {
                 // The section header already says "Software Updates".
                 Text(lastCheckDescription)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: AetherVisual.s2)
                 Button(AppLocalization.string("Check Now")) {

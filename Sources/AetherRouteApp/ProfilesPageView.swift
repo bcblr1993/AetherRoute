@@ -32,7 +32,7 @@ struct EmptyProfileOnboardingCard: View {
 
                     Text(AppLocalization.string("Import a subscription URL or configuration file to get started with high-speed, secure routing."))
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -96,7 +96,7 @@ struct EmptyProfileOnboardingCard: View {
                     .foregroundStyle(Color.accentColor)
                 Text(AppLocalization.string("Supports Clash YAML/Meta, V2Ray/Base64 share links (VMess, VLESS, Trojan, SS, Hysteria2), automatic latency testing, and smart rule routing."))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer()
             }
@@ -124,7 +124,7 @@ struct ExternalSubscriptionConfirmationSheet: View {
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 Text("Address")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                 Label(request.providerHost, systemImage: "lock.fill")
                     .font(.body.weight(.medium))
                     .textSelection(.enabled)
@@ -132,7 +132,7 @@ struct ExternalSubscriptionConfirmationSheet: View {
                     .accessibilityIdentifier("external-subscription-host")
                 Text("AetherRoute will not access this address until you confirm.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             }
             .padding(AetherVisual.s4)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -146,7 +146,7 @@ struct ExternalSubscriptionConfirmationSheet: View {
                 systemImage: "checkmark.shield"
             )
             .font(.callout)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
 
             if !tunnel.canImportOrAddProfileRegardlessOfPrivacy {
@@ -162,14 +162,14 @@ struct ExternalSubscriptionConfirmationSheet: View {
                     systemImage: "checkmark.circle"
                 )
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
             } else if !tunnel.hasAcceptedPrivacyDisclosure {
                 Label(
                     AppLocalization.string("Confirming will accept the network privacy review and activate this subscription."),
                     systemImage: "checkmark.shield"
                 )
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
             }
 
             if tunnel.profileMessageIsError,
@@ -503,7 +503,7 @@ struct ProfilesView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             }
             .buttonStyle(.plain)
         }
@@ -588,7 +588,7 @@ struct ProfilesView: View {
 
                             Image(systemName: "arrow.right")
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AetherVisual.secondaryText)
                         }
 
                         Text(AppLocalization.string("Add Subscription…"))
@@ -628,7 +628,7 @@ struct ProfilesView: View {
 
                             Image(systemName: "arrow.right")
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AetherVisual.secondaryText)
                         }
 
                         Text(AppLocalization.string("Import Profile…"))
@@ -668,7 +668,7 @@ struct ProfilesView: View {
 
                             Image(systemName: "arrow.right")
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AetherVisual.secondaryText)
                         }
 
                         Text(AppLocalization.string("iCloud Sync…"))
@@ -720,7 +720,7 @@ struct ProfilesView: View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             Text(AppLocalization.string("My profiles"))
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .padding(.horizontal, AetherVisual.s2)
                 .accessibilityAddTraits(.isHeader)
 
@@ -761,7 +761,7 @@ struct ProfilesView: View {
                 systemImage: "lock.fill"
             )
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .padding(.horizontal, AetherVisual.s2)
             .padding(.top, AetherVisual.s1)
         }
@@ -862,7 +862,7 @@ struct RoutingResourcesCard: View {
                         .font(.headline)
                     Text(summary)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("routing-rules-summary")
                 }
@@ -940,7 +940,7 @@ struct RoutingResourcesCard: View {
                     if let editLockReason {
                         Label(editLockReason, systemImage: "lock")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AetherVisual.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("routing-resources-lock-reason")
                     }
@@ -1118,7 +1118,7 @@ private struct ManagedProfileRow: View {
                     .lineLimit(1)
                 Text(detail)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .lineLimit(1)
             }
 
@@ -1449,7 +1449,7 @@ struct SubscriptionEditorSheet: View {
 #endif
             }
             .font(.callout)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
 
             HStack {

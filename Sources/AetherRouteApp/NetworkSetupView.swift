@@ -87,13 +87,13 @@ struct NetworkSetupView: View {
                 if isOnboarding {
                     Text(AppLocalization.string("Step 2 of 2"))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                 }
                 Text(AppLocalization.string("Set Up Network Permissions"))
                     .font(.largeTitle.weight(.bold))
                 Text(AppLocalization.string("AetherRoute needs two macOS permissions for each network engine. Grant them once now, and connecting or switching engines later will never stop for a prompt."))
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -122,7 +122,7 @@ struct NetworkSetupView: View {
             if let footnote {
                 Text(footnote)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
@@ -227,7 +227,7 @@ private struct NetworkSetupEngineCard: View {
                 }
                 Text(mode.localizedDetail)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 if let hint {
                     Text(hint)
@@ -354,12 +354,12 @@ struct NetworkSetupGuide: View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
             Text(AppLocalization.string("What you will be asked"))
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
             ForEach(Step.allCases, id: \.self) { step in
                 HStack(alignment: .top, spacing: AetherVisual.s3) {
                     Text(verbatim: "\(step.rawValue)")
                         .font(.callout.weight(.bold).monospacedDigit())
-                        .foregroundStyle(step == activeStep ? Color.white : Color.secondary)
+                        .foregroundStyle(step == activeStep ? AnyShapeStyle(Color.white) : AnyShapeStyle(AetherVisual.secondaryText))
                         .frame(width: AetherVisual.s5, height: AetherVisual.s5)
                         .background(step == activeStep ? Color.accentColor : Color.secondary.opacity(0.15), in: Circle())
                     VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
@@ -367,7 +367,7 @@ struct NetworkSetupGuide: View {
                             .font(.callout.weight(.semibold))
                         Text(detail(step))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AetherVisual.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

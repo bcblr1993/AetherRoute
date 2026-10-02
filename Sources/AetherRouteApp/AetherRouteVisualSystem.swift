@@ -62,6 +62,12 @@ enum AetherVisual {
     static let sectionSpacing = s4
     /// Reading width for forms and settings-like pages.
     static let contentMaxWidth: CGFloat = 720
+    /// Secondary and tertiary text as plain greys. Liquid Glass renders the
+    /// hierarchical `.secondary`/`.tertiary` styles — and AppKit's label
+    /// colours — vibrantly, which on a glass card measured about 3:1, under
+    /// the 4.5:1 small text needs. These keep about 6:1 in both appearances.
+    static let secondaryText = AetherTextStyle(light: 0.33, dark: 0.74)
+    static let tertiaryText = AetherTextStyle(light: 0.40, dark: 0.66)
     static let formMaxWidth: CGFloat = 720
     /// Dashboard and list pages use more of a large window before centering,
     /// so a maximized window does not read as half-loaded.
@@ -355,7 +361,7 @@ struct AetherSearchField: View {
     var body: some View {
         HStack(spacing: AetherVisual.sCompact) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .accessibilityHidden(true)
             TextField(prompt, text: $text)
                 .textFieldStyle(.plain)
@@ -367,7 +373,7 @@ struct AetherSearchField: View {
                     text = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(AetherVisual.tertiaryText)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(AppLocalization.string("Clear"))
@@ -439,7 +445,7 @@ struct AetherCountBadge: View {
     var body: some View {
         Text(verbatim: "\(count)")
             .font(.caption.weight(.medium).monospacedDigit())
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .padding(.horizontal, AetherVisual.sCompact)
             .padding(.vertical, AetherVisual.sMicro)
             .background(Color.secondary.opacity(0.12), in: Capsule())
@@ -502,7 +508,7 @@ struct AetherSheetHeader<Accessory: View>: View {
                 if let subtitle {
                     Text(subtitle)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -665,7 +671,7 @@ struct AetherRegionCode: View {
             if let region = AetherRegionFlag.region(for: name) {
                 Text(verbatim: region.code)
                     .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .frame(width: 26, height: 18)
                     .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
             } else if reservesSlot {
@@ -998,7 +1004,7 @@ private struct AetherGlassFormSection: View {
                     section.header
                 }
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .padding(.horizontal, AetherVisual.s1)
                 .accessibilityAddTraits(.isHeader)
             }
@@ -1022,7 +1028,7 @@ private struct AetherGlassFormSection: View {
                     section.footer
                 }
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, AetherVisual.s1)
             }
@@ -1044,7 +1050,10 @@ struct AetherRowToggleStyle: ToggleStyle {
                 .labelsHidden()
                 .accessibilityHidden(true)
         }
+        // The whole row toggles, so a click on the label works too (and the
+        // accessibility element, which spans the row, presses the switch).
         .contentShape(Rectangle())
+        .onTapGesture { configuration.isOn.toggle() }
         .accessibilityRepresentation {
             // A hidden label becomes the switch's own name instead of a
             // separate text element it merely points to.
@@ -1064,5 +1073,19 @@ struct AetherRowLabeledContentStyle: LabeledContentStyle {
             configuration.content
                 .multilineTextAlignment(.trailing)
         }
+    }
+}
+
+
+/// A grey resolved from the view's own colour scheme when it renders. A
+/// plain colour is never drawn vibrantly, and unlike a dynamic `NSColor`
+/// accessibility reports the grey that is on screen even when the app's
+/// appearance differs from the system's.
+struct AetherTextStyle: ShapeStyle {
+    let light: Double
+    let dark: Double
+
+    func resolve(in environment: EnvironmentValues) -> Color {
+        Color(white: environment.colorScheme == .dark ? dark : light)
     }
 }

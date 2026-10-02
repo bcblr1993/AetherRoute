@@ -21,7 +21,7 @@ struct ProfileCloudSyncSheet: View {
 
                 Text(AppLocalization.string("Profiles are encrypted with AES-256-GCM before being stored in iCloud. The encryption key is protected by iCloud Keychain and synchronizes across devices with the same Apple ID."))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(AetherVisual.s4)
@@ -34,7 +34,7 @@ struct ProfileCloudSyncSheet: View {
                     Label("Enabled · no completed sync yet", systemImage: "clock")
                 }
                 Text("Enabling sync does not confirm completion. Automatic sync merges profiles; review the result before using Force Pull or Force Push.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 VStack(alignment: .leading, spacing: AetherVisual.s3) {
                     if let status = cloudSync.statusMessage {
@@ -51,10 +51,10 @@ struct ProfileCloudSyncSheet: View {
                         HStack {
                             Text(AppLocalization.string("Last Synced:"))
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AetherVisual.secondaryText)
                             Text(lastSync.formatted(date: .abbreviated, time: .standard))
                                 .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AetherVisual.secondaryText)
                         }
                     }
 

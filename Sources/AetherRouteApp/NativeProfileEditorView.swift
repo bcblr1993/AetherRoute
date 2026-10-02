@@ -86,7 +86,7 @@ struct NativeProfileEditorSheet: View {
             ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
                 HStack(spacing: AetherVisual.s4) {
                     Image(systemName: "line.3.horizontal")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(AetherVisual.tertiaryText)
                         .help(AppLocalization.string("Drag to reorder"))
                         .accessibilityHidden(true)
 
@@ -105,7 +105,7 @@ struct NativeProfileEditorSheet: View {
                             verbatim: "\(node.protocolID.displayName) · \(node.server):\(node.port)"
                         )
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AetherVisual.secondaryText)
                             .lineLimit(1)
                     }
 
@@ -158,7 +158,7 @@ struct NativeProfileEditorSheet: View {
                     systemImage: "lock.fill"
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
             }
 
             if let removedNode {

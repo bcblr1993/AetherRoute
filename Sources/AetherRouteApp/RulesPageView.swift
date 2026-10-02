@@ -222,12 +222,12 @@ struct RulesView: View {
             HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .accessibilityAddTraits(.isHeader)
                 if let note {
                     Text(note)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                 }
             }
             .padding(.horizontal, AetherVisual.s2)
@@ -244,7 +244,7 @@ struct RulesView: View {
             HStack(spacing: AetherVisual.s2) {
                 HStack(spacing: AetherVisual.s2) {
                     Image(systemName: "globe")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .accessibilityHidden(true)
                     TextField(
                         AppLocalization.string("Enter a website or IP to see which route it takes"),
@@ -261,7 +261,7 @@ struct RulesView: View {
                             hasAttemptedMatch = false
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AetherVisual.secondaryText)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(AppLocalization.string("Clear"))
@@ -296,7 +296,7 @@ struct RulesView: View {
                     }
                     Image(systemName: "arrow.right")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .accessibilityHidden(true)
                     RuleTargetLabel(target: result.target)
                     Spacer(minLength: AetherVisual.s2)
@@ -317,7 +317,7 @@ struct RulesView: View {
             } else if hasAttemptedMatch && !testQuery.isEmpty {
                 Label(matchExplanation, systemImage: "info.circle")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("rule-test-explanation")
                     .transition(AetherVisual.insertion)
@@ -325,7 +325,7 @@ struct RulesView: View {
                 HStack(spacing: AetherVisual.s1) {
                     Text(AppLocalization.string("Try:"))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                     ForEach(["google.com", "apple.com", "github.com", "bilibili.com"], id: \.self) { domain in
                         Button(domain) {
                             testQuery = domain
@@ -359,7 +359,7 @@ struct RulesView: View {
                 if let msg = tunnel.customRuleMessage {
                     Label(msg, systemImage: tunnel.customRuleMessageIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                         .font(.caption)
-                        .foregroundStyle(tunnel.customRuleMessageIsError ? Color.red : Color.secondary)
+                        .foregroundStyle(tunnel.customRuleMessageIsError ? AnyShapeStyle(Color.red) : AnyShapeStyle(AetherVisual.secondaryText))
                         .padding(.horizontal, AetherVisual.s4)
                         .padding(.top, AetherVisual.s3)
                         .transition(AetherVisual.insertion)
@@ -368,7 +368,7 @@ struct RulesView: View {
                     HStack(spacing: AetherVisual.s3) {
                         Text(AppLocalization.string("No custom rules yet. To always send a site direct or through the proxy, add a rule here."))
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AetherVisual.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: AetherVisual.s2)
                         Button(AppLocalization.string("Add")) {
@@ -460,7 +460,7 @@ struct RulesView: View {
                     if let modeNote {
                         Label(modeNote, systemImage: "info.circle")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AetherVisual.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, AetherVisual.s4)
                             .padding(.bottom, AetherVisual.s2)
@@ -471,7 +471,7 @@ struct RulesView: View {
                     if displayedRules.isEmpty {
                         Text(AppLocalization.string("No rules match. Try another filter or clear the search."))
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AetherVisual.secondaryText)
                             .frame(maxWidth: .infinity)
                             .padding(AetherVisual.s5)
                     } else {
@@ -511,7 +511,7 @@ struct RulesView: View {
                 .buttonStyle(.link)
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .padding(.horizontal, AetherVisual.s2)
             .padding(.top, AetherVisual.s1)
         }
@@ -590,7 +590,7 @@ struct RuleKindTag: View {
     var body: some View {
         Text(verbatim: kind.uppercased())
             .font(.caption2.monospaced().weight(.semibold))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .padding(.horizontal, AetherVisual.sCompact)
             .padding(.vertical, AetherVisual.sMicro)
             .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
@@ -655,7 +655,7 @@ private struct RuleRow: View {
         HStack(spacing: AetherVisual.s3) {
             Text(verbatim: "\(rule.order)")
                 .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .frame(width: 28, alignment: .trailing)
 
             if rule.isCustom {
@@ -692,7 +692,7 @@ private struct RuleRow: View {
                 } label: {
                     Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
                         .font(.caption)
-                        .foregroundStyle(showCopied ? Color.green : Color.secondary)
+                        .foregroundStyle(showCopied ? AnyShapeStyle(Color.green) : AnyShapeStyle(AetherVisual.secondaryText))
                         .frame(width: 22, height: 22)
                 }
                 .buttonStyle(.aetherPressable)
@@ -811,7 +811,7 @@ struct CustomRuleRow: View {
                 HStack(spacing: AetherVisual.s1) {
                     Text(rule.value)
                         .font(.system(.callout, design: .monospaced, weight: .semibold))
-                        .foregroundStyle(rule.isEnabled ? .primary : .secondary)
+                        .foregroundStyle(rule.isEnabled ? AnyShapeStyle(Color.primary) : AnyShapeStyle(AetherVisual.secondaryText))
                         .lineLimit(1)
 
                     if rule.noResolve {
@@ -835,7 +835,7 @@ struct CustomRuleRow: View {
 
             Image(systemName: "arrow.right")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(AetherVisual.tertiaryText)
 
             RuleTargetLabel(target: rule.target.rawString)
                 .frame(maxWidth: 160, alignment: .trailing)
@@ -1138,7 +1138,7 @@ struct CustomRuleEditorSheet: View {
                     } else if !testExplanation.isEmpty {
                         HStack(spacing: AetherVisual.s2) {
                             Image(systemName: "info.circle.fill")
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(AetherVisual.secondaryText)
                             Text(testExplanation)
                                 .font(.caption)
                                 .foregroundStyle(.primary)
@@ -1201,7 +1201,7 @@ struct CustomRuleEditorSheet: View {
 
     private func fieldLabel(_ title: String) -> some View {
         Text(title)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .gridColumnAlignment(.trailing)
     }
 

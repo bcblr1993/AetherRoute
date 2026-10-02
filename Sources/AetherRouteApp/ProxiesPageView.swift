@@ -102,7 +102,7 @@ struct ProxiesView: View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             Text(AppLocalization.string("Proxy groups"))
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .padding(.horizontal, AetherVisual.s2)
                 .accessibilityAddTraits(.isHeader)
             VStack(spacing: AetherVisual.sMicro) {
@@ -217,7 +217,7 @@ private struct ProxyGroupTabButton: View {
                         .lineLimit(1)
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .lineLimit(1)
                 }
                 if fillsWidth {
@@ -296,7 +296,7 @@ private struct ActiveProxyGroupView: View {
             if members.isEmpty {
                 Text(AppLocalization.string("This group has no nodes."))
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .padding(AetherVisual.s4)
             } else {
                 nodeList
@@ -332,7 +332,7 @@ private struct ActiveProxyGroupView: View {
                         systemImage: "checkmark.circle"
                     )
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .transition(AetherVisual.insertion)
                 }
             }
@@ -358,14 +358,14 @@ private struct ActiveProxyGroupView: View {
         if let selectedMember {
             HStack(spacing: AetherVisual.s1) {
                 Text(AppLocalization.string("Current node"))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                 Text(selectedMember)
                     .fontWeight(.semibold)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if !isBuiltInOutlet(selectedMember), status(for: selectedMember).isMeasured {
                     Text(verbatim: "·")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                     ProxyLatencyText(status: status(for: selectedMember))
                 }
             }
@@ -379,7 +379,7 @@ private struct ActiveProxyGroupView: View {
                     : AppLocalization.string("Chooses a node once connected")
             )
             .font(.subheadline)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
         }
     }
 
@@ -426,7 +426,7 @@ private struct ActiveProxyGroupView: View {
                         .font(.body.weight(.semibold))
                     Text(AppLocalization.string("When on, AetherRoute uses the node with the lowest latency, so you never switch by hand."))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: AetherVisual.s3)
@@ -458,7 +458,7 @@ private struct ActiveProxyGroupView: View {
                     .foregroundStyle(Color.accentColor)
             }
             .font(.subheadline)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -660,7 +660,7 @@ private struct ProxyNodeRow: View {
             if showsSelectionControl {
                 Image(systemName: row.isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.body)
-                    .foregroundStyle(row.isSelected ? Color.accentColor : Color.secondary.opacity(0.5))
+                    .foregroundStyle(row.isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(AetherVisual.secondaryText.opacity(0.5)))
                     .contentTransition(.symbolEffect(.replace))
                     .frame(width: AetherVisual.s5)
                     .accessibilityHidden(true)
@@ -761,7 +761,7 @@ struct ProxyInventorySheet: View {
                     .font(.title3.weight(.semibold))
                 Text(AppLocalization.string("For troubleshooting subscription parsing or protocol support."))
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: AetherVisual.s4) {

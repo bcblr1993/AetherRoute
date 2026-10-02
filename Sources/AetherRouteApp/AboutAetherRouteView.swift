@@ -82,7 +82,7 @@ struct AboutAetherRouteView: View {
             Text(AppLocalization.string("Connect to the world, a little more easily."))
                 .font(.headline)
             Text(AppLocalization.string("A native, lightweight network connection experience, tuned for Apple silicon."))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -98,7 +98,7 @@ struct AboutAetherRouteView: View {
                 .accessibilityHidden(true)
             Text(releaseChannelDescription)
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .accessibilityIdentifier("about-release-channel")
         }
         .padding(.horizontal, AetherVisual.s2)
@@ -116,7 +116,7 @@ struct AboutAetherRouteView: View {
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(AetherVisual.tertiaryText)
             }
             .contentShape(Rectangle())
         }
@@ -146,7 +146,7 @@ struct AboutAetherRouteView: View {
                 Spacer()
                 Image(systemName: "arrow.up.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(AetherVisual.tertiaryText)
             }
             .contentShape(Rectangle())
         }
@@ -159,13 +159,13 @@ struct AboutAetherRouteView: View {
         VStack(spacing: AetherVisual.s2) {
             Text(AppLocalization.string("Aether Native · A little more thought for your Mac and iPhone."))
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
             HStack(spacing: AetherVisual.s3) {
                 Label(AppLocalization.string("Apple silicon"), systemImage: "apple.logo")
                 Label(AppLocalization.string("Native macOS"), systemImage: "swift")
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)

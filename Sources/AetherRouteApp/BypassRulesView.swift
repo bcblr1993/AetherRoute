@@ -57,7 +57,7 @@ struct BypassRulesSection: View {
 
             if tunnel.bypassPolicy.rules.isEmpty {
                 Text(AppLocalization.string("All supported traffic follows the selected routing mode."))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             } else {
                 ForEach(tunnel.bypassPolicy.rules, id: \.id) { rule in
                     BypassRuleRowView(
@@ -83,7 +83,7 @@ struct BypassRulesSection: View {
                         Int64(tunnel.bypassPolicy.rules.count)
                     )
                 )
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .contentTransition(.numericText())
             }
         } footer: {
@@ -101,7 +101,7 @@ struct BypassRulesSection: View {
                 .foregroundStyle(Color.accentColor)
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
         }
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.bypassPolicy.rules.count)
@@ -155,7 +155,7 @@ private struct BypassRuleRowView: View {
         HStack(spacing: AetherVisual.s3) {
             Image(systemName: symbol(for: rule.kind))
                 .font(.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .frame(width: AetherVisual.s5)
                 .accessibilityHidden(true)
 
@@ -165,7 +165,7 @@ private struct BypassRuleRowView: View {
                     .textSelection(.enabled)
                 Text(scope(for: rule.kind))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             }
             Spacer()
             Button(role: .destructive, action: onRemove) {

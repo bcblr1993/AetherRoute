@@ -98,7 +98,7 @@ struct ProfileArchivePasswordSheet: View {
                     )
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
             }
 
             HStack {

@@ -311,14 +311,10 @@ struct ContentView: View {
                     max: AetherVisual.sidebarWidth
                 )
         } detail: {
-            // A stack of its own: on a page whose root is a scroll view these
-            // modifiers otherwise replace the page's own identifier.
-            VStack(spacing: 0) {
-                detail
-            }
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("Selected page content")
-                .accessibilityIdentifier("aetherroute-selected-page")
+            // No label or identifier of its own: every page's root is a scroll
+            // view, and wrapper modifiers landed on it and replaced the page's
+            // identifier ("overview-page", "rules-page", …).
+            detail
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar(removing: .sidebarToggle)
@@ -519,7 +515,9 @@ struct ContentView: View {
     private var sidebarVersionLabel: some View {
         Text(verbatim: currentAppVersion)
             .font(.system(.caption, design: .monospaced, weight: .medium))
-            .foregroundStyle(.primary)
+            // A resolved grey: on the glass sidebar `.primary` was drawn
+            // vibrantly and failed the contrast audit.
+            .foregroundStyle(AetherVisual.secondaryText)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
             .padding(.trailing, AetherVisual.s2)
@@ -868,7 +866,7 @@ private struct OverviewView: View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             Text(AppLocalization.string("Overview route section"))
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .padding(.horizontal, AetherVisual.s2)
                 .accessibilityAddTraits(.isHeader)
             VStack(spacing: 0) {
@@ -936,7 +934,7 @@ private struct RecoverySection: View {
                 .accessibilityHidden(true)
             Text(recoveryDetail)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: AetherVisual.s2)
             // A withdrawn permission (extension switched off, configuration
@@ -1008,7 +1006,7 @@ private struct ConnectionHero: View {
                         .accessibilityValue(Text(tunnel.statusDetail))
                     heroSubtitle
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.opacity)
                 }
@@ -1023,7 +1021,7 @@ private struct ConnectionHero: View {
                         .foregroundStyle(tunnel.isFailed ? Color.orange : Color.accentColor)
                 }
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, ConnectionMedallion.heroSize + AetherVisual.s5)
                 .transition(.opacity)
@@ -1075,7 +1073,7 @@ private struct ConnectionHero: View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
             Text("In System Settings, open General > Login Items & Extensions > Network Extensions, then enable AetherRoute. This window will update after approval.")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: AetherVisual.s3) {
                 Button {
@@ -1262,7 +1260,7 @@ struct ModeHint: View {
     var body: some View {
         Text(text)
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .lineLimit(1)
             .truncationMode(.tail)
             .contentTransition(.opacity)
@@ -1285,10 +1283,13 @@ private struct OverviewRow<Trailing: View>: View {
         HStack(spacing: AetherVisual.s3) {
             AetherIconTile(symbol: symbol, color: tint, size: 26)
             HStack(spacing: AetherVisual.s1) {
+                // Wraps rather than widening the row: long translations
+                // pushed the page past a narrow window.
                 Text(title)
                     .font(.body)
                     .foregroundStyle(.primary)
-                    .fixedSize()
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let help {
                     AetherHelpButton(topic: help)
                         .controlSize(.small)
@@ -1336,11 +1337,11 @@ private struct OverviewExitRow: View {
                         }
                     } else {
                         Text(AppLocalization.string("Choose a node"))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AetherVisual.secondaryText)
                     }
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(AetherVisual.tertiaryText)
                 }
             }
             .contentShape(Rectangle())
@@ -1460,7 +1461,7 @@ private struct OverviewRouteCheckRow: View {
                             .symbolEffect(.pulse, isActive: quality == .verifying)
                     }
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .help(detail(quality))
                     Button(AppLocalization.string("Check")) {
                         openSettings()
@@ -1478,7 +1479,7 @@ private struct OverviewRouteCheckRow: View {
                 } else {
                     Text(AppLocalization.string("Available once connected"))
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                 }
             }
         }
@@ -1684,7 +1685,7 @@ private struct LiveTelemetryMetric: View {
                 Text(label)
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             LiveTelemetryMetricValue(
                 metric: metric,
                 isConnected: isConnected,
@@ -1707,12 +1708,12 @@ private struct LiveTelemetryMetricValue: View {
             Text(parts.number)
                 .font(.system(size: 30, weight: .semibold))
                 .monospacedDigit()
-                .foregroundStyle(isConnected ? Color.primary : Color.secondary)
+                .foregroundStyle(isConnected ? AnyShapeStyle(Color.primary) : AnyShapeStyle(AetherVisual.secondaryText))
                 .aetherNumericValue(parts.number)
             if let unit = parts.unit {
                 Text(unit)
                     .font(.callout.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             }
         }
     }
@@ -1752,7 +1753,7 @@ private struct TrafficCard: View {
                 Spacer(minLength: AetherVisual.s2)
                 Text(AppLocalization.string("Last 30 seconds"))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             }
             HStack(alignment: .bottom, spacing: AetherVisual.s6 * 2) {
                 LiveTelemetryMetric(
@@ -1784,7 +1785,7 @@ private struct TrafficCard: View {
             } else {
                 Text(AppLocalization.string("Once connected, live download and upload curves appear here."))
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .frame(maxWidth: .infinity, minHeight: 96)
                     .overlay {
                         RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
@@ -1836,7 +1837,7 @@ private struct LiveTrafficHistoryGraph: View {
                         String.localizedStringWithFormat(AppLocalization.string("Peak %@"), $0)
                     } ?? " ")
                     .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .aetherNumericValue(peakRate(samples) ?? "")
                 }
                 ZStack {
@@ -1849,7 +1850,7 @@ private struct LiveTrafficHistoryGraph: View {
                     if samples.count < 2 {
                         Text(AppLocalization.string("Collecting traffic samples…"))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AetherVisual.secondaryText)
                             .transition(.opacity)
                     }
                 }
@@ -1862,7 +1863,7 @@ private struct LiveTrafficHistoryGraph: View {
                     Text(AppLocalization.string("Now"))
                 }
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
             }
         }
     }
@@ -1892,7 +1893,7 @@ private struct LiveTrafficHistoryGraph: View {
             }
         }
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(AetherVisual.secondaryText)
         .contentTransition(.opacity)
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: isRealtime)
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: isBackground)

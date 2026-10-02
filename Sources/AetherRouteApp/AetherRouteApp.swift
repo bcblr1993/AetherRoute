@@ -820,7 +820,7 @@ private struct MenuBarContent: View {
                     .font(.subheadline.weight(.semibold))
                 Text(detail)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -851,7 +851,7 @@ private struct MenuBarContent: View {
                     .animation(AetherVisual.animation(AetherVisual.quickFade), value: tunnel.compactStatusTitle)
                 headerSubtitle
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .lineLimit(1)
             }
             Spacer(minLength: AetherVisual.s2)
@@ -1151,7 +1151,7 @@ private struct MenuBarContent: View {
                         .font(.headline)
                     Text("Connection controls are locked")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                 }
                 Spacer()
             }
@@ -1164,7 +1164,7 @@ private struct MenuBarContent: View {
                     ? AppLocalization.string("Finish granting the network permissions in the main window before connecting.")
                     : AppLocalization.string("Review how profiles, network traffic, and DNS requests are handled before AetherRoute creates a network extension configuration."))
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Button {
@@ -1259,7 +1259,7 @@ private struct MenuNodeListInline: View {
                 HStack(spacing: AetherVisual.s1) {
                     Image(systemName: "magnifyingglass")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                     TextField(AppLocalization.string("Search nodes"), text: $searchText)
                         .textFieldStyle(.plain)
                         .font(.subheadline)
@@ -1270,7 +1270,7 @@ private struct MenuNodeListInline: View {
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AetherVisual.secondaryText)
                         }
                         .buttonStyle(.plain)
                     }
@@ -1286,13 +1286,13 @@ private struct MenuNodeListInline: View {
             if orderedMembers.isEmpty {
                 Text(AppLocalization.string("No nodes available"))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .padding(.vertical, AetherVisual.s2)
                     .frame(maxWidth: .infinity, alignment: .center)
             } else if filteredMembers.isEmpty {
                 Text(AppLocalization.string("No matching nodes"))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .padding(.vertical, AetherVisual.s2)
                     .frame(maxWidth: .infinity, alignment: .center)
             } else {
@@ -1326,12 +1326,12 @@ private struct MenuNodeListInline: View {
             if group.strategy.lowercased() != "select" {
                 Text(AppLocalization.string("This group is automatically managed by latency tests."))
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             }
             if let message = tunnel.proxySelectionMessages[group.name] {
                 Text(verbatim: message)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("menu-node-message")
             }
@@ -1472,7 +1472,7 @@ private struct MenuSelectedNodeTitle: View {
             if leaf != nil, let member {
                 Text(verbatim: "· \(member)")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .lineLimit(1)
             }
         }
@@ -1546,7 +1546,7 @@ private struct MenuLiveTrafficMetric: View {
         VStack(alignment: .leading, spacing: AetherVisual.s1) {
             Label(title, systemImage: symbol)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
             if isLive {
                 MenuLiveTrafficValue(metric: metric, telemetry: telemetry)
             } else {
@@ -1755,16 +1755,10 @@ private struct SettingsView: View {
             .accessibilityLabel("Settings navigation")
             .accessibilityIdentifier("aetherroute-settings-navigation")
         } detail: {
-            // A stack of its own, so the detail's label and identifier wrap
-            // the pane instead of replacing the pane's own (a Form is a
-            // single scroll view, and both sets of modifiers landed on it).
-            VStack(spacing: 0) {
-                selectedSettings
-            }
+            // No label or identifier of its own: each pane is one scroll view,
+            // and wrapper modifiers replaced the pane's identifier.
+            selectedSettings
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("AetherRoute settings")
-                .accessibilityIdentifier("aetherroute-settings-detail")
                 .task(id: selectedTab) {
                     await Task.yield()
                     guard let selectedTab else { return }
@@ -1857,7 +1851,7 @@ private struct SettingsView: View {
                         "Network settings remain locked until the privacy disclosure is accepted.",
                         systemImage: "lock.fill"
                     )
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                 }
             }
         }
@@ -2095,9 +2089,6 @@ private struct SettingsView: View {
                 )
             }
             .disabled(!canEditLocalProxyPorts)
-            // Form labels do not dim when disabled, so the gray port alone
-            // looked like an empty placeholder; the whole row dims instead.
-            .foregroundStyle(canEditLocalProxyPorts ? .primary : .secondary)
 
             LabeledContent("Additional SOCKS5-only port") {
                 LocalProxyPortField(
@@ -2108,7 +2099,6 @@ private struct SettingsView: View {
                 )
             }
             .disabled(!canEditLocalProxyPorts)
-            .foregroundStyle(canEditLocalProxyPorts ? .primary : .secondary)
 
             HStack {
                 AetherCopyButton(
@@ -2225,7 +2215,7 @@ private struct SettingsView: View {
 
                 Label {
                     Text(shortcutStatusText)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                 } icon: {
                     Image(systemName: shortcutStatusSymbol)
                         .foregroundStyle(shortcutStatusColor)
@@ -2255,7 +2245,7 @@ private struct SettingsView: View {
 
             Label(notificationStatusText, systemImage: notificationStatusSymbol)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
 
         } header: {
             Text("Automation")
@@ -2424,7 +2414,7 @@ private struct LocalProxyPortField: View {
         HStack(spacing: AetherVisual.s1) {
             Text(verbatim: "127.0.0.1:")
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
             TextField(title, text: $text)
                 .labelsHidden()
                 .textFieldStyle(.roundedBorder)

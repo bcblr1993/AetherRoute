@@ -498,7 +498,7 @@ struct SupportDiagnosticsView: View {
                         .font(.title2.weight(.semibold))
                     Text(AppLocalization.string("Inspect end-to-end network health or generate a bounded support report."))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -512,7 +512,7 @@ struct SupportDiagnosticsView: View {
                             .font(.subheadline.weight(.semibold))
                         Text(AppLocalization.string("Maximum 64 KiB. Review the file before sharing it."))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AetherVisual.secondaryText)
                     }
                     Spacer()
                     Button {
@@ -598,7 +598,7 @@ struct SupportDiagnosticsView: View {
                 Text(tunnel.compactStatusTitle)
                     .font(.body.weight(.medium))
                 Text(tunnel.statusDetail)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .lineLimit(1)
                 Spacer(minLength: AetherVisual.s2)
                 Button(AppLocalization.string("View connections")) {
@@ -615,7 +615,7 @@ struct SupportDiagnosticsView: View {
                     Text(AppLocalization.string("Live Connectivity Diagnostics"))
                     Text(AppLocalization.string("Real-time inspection of tunnel adapter, Fake-IP DNS, and outbound TLS path."))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: AetherVisual.s2)
@@ -647,7 +647,7 @@ struct SupportDiagnosticsView: View {
                         Text(AppLocalization.string("Node inventory & providers"))
                         Text(AppLocalization.string("For troubleshooting subscription parsing or protocol support."))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AetherVisual.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: AetherVisual.s2)
@@ -669,7 +669,7 @@ struct SupportDiagnosticsView: View {
             HStack(spacing: AetherVisual.s3) {
                 // The section header already says "Support report".
                 Text(AppLocalization.string("Maximum 64 KiB. Review the file before sharing it."))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: AetherVisual.s2)
                 Button {
@@ -777,7 +777,7 @@ struct SupportDiagnosticsView: View {
                         .font(.headline)
                     Text(AppLocalization.string("Real-time inspection of tunnel adapter, Fake-IP DNS, and outbound TLS path."))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                 }
 
                 Spacer()
@@ -788,7 +788,7 @@ struct SupportDiagnosticsView: View {
                             .controlSize(.small)
                         Text(AppLocalization.string("Diagnosing..."))
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AetherVisual.secondaryText)
                     }
                     .padding(.horizontal, AetherVisual.s2)
                 } else if diagnosticsEngine.report != nil {
@@ -831,7 +831,7 @@ struct SupportDiagnosticsView: View {
                     .font(.callout.weight(.medium))
                 Text(tunnel.statusDetail)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .lineLimit(1)
                 Spacer(minLength: AetherVisual.s2)
                 Button {
@@ -919,7 +919,7 @@ struct SupportDiagnosticsView: View {
         HStack(spacing: AetherVisual.s3) {
             Image(systemName: symbol)
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .frame(width: 22, alignment: .center)
 
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
@@ -931,7 +931,7 @@ struct SupportDiagnosticsView: View {
                 }
                 Text(detail)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .lineLimit(1)
             }
         }
@@ -1001,7 +1001,7 @@ struct SupportDiagnosticsView: View {
                 Spacer()
                 Text(String(format: "%.0f ms", report.totalDurationMs))
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             }
 
             Text(AppLocalization.string(report.verdict.recommendationKey))
@@ -1057,7 +1057,7 @@ struct SupportDiagnosticsView: View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             Text(verbatim: AppLocalization.string(title))
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .padding(.horizontal, AetherVisual.s1)
 
             VStack(alignment: .leading, spacing: AetherVisual.s2) {

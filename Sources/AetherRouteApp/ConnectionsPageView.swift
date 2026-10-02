@@ -69,7 +69,7 @@ struct ConnectionsView: View {
             }
                 .layoutPriority(1)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, AetherVisual.pageHorizontalPadding)
                 .padding(.vertical, AetherVisual.s2)
@@ -172,6 +172,8 @@ struct ConnectionsView: View {
                 ContentUnavailableView.search(text: searchText)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            // Ideal widths sum to what fits the narrowest window inside the
+            // glass panel; Destination takes any extra width.
             Table(rows) {
                 TableColumn(AppLocalization.string("Destination")) { row in
                     ConnectionDestinationCell(connection: row.connection)
@@ -182,25 +184,25 @@ struct ConnectionsView: View {
                         }
                         .onTapGesture(count: 2) { inspectedConnection = row }
                 }
-                .width(min: 124, ideal: 190, max: 520)
+                .width(min: 110, ideal: 130, max: 520)
                 TableColumn(AppLocalization.string("Matched rule")) { row in
                     ConnectionRuleCell(connection: row.connection)
                 }
-                .width(min: 100, ideal: 110, max: 400)
+                .width(min: 76, ideal: 84, max: 400)
                 TableColumn(AppLocalization.string("Outlet")) { row in
                     ConnectionOutletCell(connection: row.connection)
                 }
-                .width(min: 100, ideal: 124, max: 320)
+                .width(min: 84, ideal: 96, max: 320)
                 TableColumn(AppLocalization.string("Traffic")) { row in
                     ConnectionTrafficCell(connection: row.connection)
                 }
-                .width(min: 76, ideal: 80, max: 120)
+                .width(min: 64, ideal: 70, max: 120)
                 // Numbers sit on the right; the title follows them.
                 .alignment(.numeric)
                 TableColumn(AppLocalization.string("Duration")) { row in
                     ConnectionDurationCell(connection: row.connection)
                 }
-                .width(min: 72, ideal: 84, max: 100)
+                .width(min: 56, ideal: 60, max: 100)
                 .alignment(.numeric)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: false))
@@ -376,7 +378,7 @@ private struct SessionBar: View {
             if !tunnel.isConnected {
                 Text(AppLocalization.string("Traffic is using the normal network path"))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .lineLimit(1)
             }
 
@@ -386,7 +388,7 @@ private struct SessionBar: View {
                         .font(.body.monospacedDigit())
                 } icon: {
                     Image(systemName: "clock")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                 }
                 .accessibilityLabel("Elapsed")
                 Divider().frame(height: 18).opacity(0.4)
@@ -499,7 +501,7 @@ private struct ConnectionDestinationCell: View {
                     .accessibilityHidden(true)
                 Text(connection.transport == .tcp ? "TCP" : "UDP")
                     .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -526,7 +528,7 @@ private struct ConnectionRuleCell: View {
         HStack(spacing: AetherVisual.s1) {
             Text(verbatim: ClashRuleKindName.display(connection.rule))
                 .font(.caption2.monospaced().weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .padding(.horizontal, AetherVisual.s1)
                 .padding(.vertical, 1)
                 .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))

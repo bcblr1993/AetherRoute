@@ -83,7 +83,7 @@ struct DNSView: View {
                     .font(.headline)
                 Text(caption)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding([.horizontal, .top], AetherVisual.s4)
@@ -96,7 +96,7 @@ struct DNSView: View {
                     VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                         Text(stat.0)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AetherVisual.secondaryText)
                         Text(stat.1)
                             .font(.title3.weight(.semibold).monospacedDigit())
                             .foregroundStyle(.primary)
@@ -138,7 +138,7 @@ struct DNSView: View {
                             : AppLocalization.string("Encryption")
                     )
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, AetherVisual.s4)
@@ -452,7 +452,7 @@ struct DNSView: View {
                     .font(.body.weight(.semibold))
                 Text(AppLocalization.string("With Transparent Proxy, apps use the system DNS. Switch to TUN to adjust the resolution mode, IPv6 and more here."))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: AetherVisual.s3)
@@ -526,7 +526,7 @@ struct DNSView: View {
             // Hosts has no override: it always follows the profile.
             policyRow(AppLocalization.string("Hosts mapping"), help: .dnsHosts, isChanged: false) {
                 Text(followProfileTitle(onOffTitle(dns.usesHosts)))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
             }
 
             // Saving this card's own change locks it for a moment; that is
@@ -536,7 +536,7 @@ struct DNSView: View {
                 Divider().padding(.horizontal, AetherVisual.s4)
                 Label(reason, systemImage: "lock")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, AetherVisual.s4)
@@ -554,7 +554,7 @@ struct DNSView: View {
                 }
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, AetherVisual.s4)

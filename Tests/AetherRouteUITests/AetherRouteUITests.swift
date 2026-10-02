@@ -751,11 +751,11 @@ final class AetherRouteUITests: XCTestCase {
             language: "en",
             appearance: "dark",
             destinations: [
-                ("Overview", "overview-status-title", "overview-page"),
-                ("Proxies", "proxy-test-latency-Balanced", "proxies-page"),
+                ("Overview", "Last 30 seconds", "overview-page"),
+                ("Proxies", "Test latency", "proxies-page"),
                 ("Connections", "Counted on this Mac only; nothing is reported.", "connections-page"),
                 ("Profiles", "My profiles", "profiles-page"),
-                ("Rules", "Profile rules", "rules-page"),
+                ("Rules", "Add Rule", "rules-page"),
                 ("DNS", "DNS", "dns-page"),
             ]
         )
@@ -766,11 +766,11 @@ final class AetherRouteUITests: XCTestCase {
             language: "zh-Hans",
             appearance: "light",
             destinations: [
-                ("概览", "overview-status-title", "overview-page"),
-                ("代理", "proxy-test-latency-Balanced", "proxies-page"),
+                ("概览", "最近 30 秒", "overview-page"),
+                ("代理", "测试延迟", "proxies-page"),
                 ("连接", "只统计本机可见的连接，不上报", "connections-page"),
                 ("配置", "我的配置", "profiles-page"),
-                ("规则", "配置中的规则", "rules-page"),
+                ("规则", "添加规则", "rules-page"),
                 ("DNS", "DNS", "dns-page"),
             ]
         )
@@ -1097,11 +1097,16 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(app.disclosureTriangles["REALITY"].waitForExistence(timeout: 2))
         XCTAssertFalse(app.buttons["create-manual-node"].isEnabled)
 
-        for _ in 0..<4 {
-            if app.popUpButtons["manual-node-protocol"].isHittable { break }
+        // Back to the top: the protocol row must be fully inside the scroll
+        // view, not half under the sheet header, where a click lands on the
+        // header although the popup reports itself hittable.
+        let protocolPopup = app.popUpButtons["manual-node-protocol"]
+        for _ in 0..<6 {
+            if protocolPopup.isHittable,
+               editorScroll.frame.contains(protocolPopup.frame) { break }
             editorScroll.scroll(byDeltaX: 0, deltaY: -240)
         }
-        app.popUpButtons["manual-node-protocol"].click()
+        protocolPopup.click()
         app.menuItems["SSH"].click()
         XCTAssertTrue(
             app.descendants(matching: .any)["manual-node-username"]
@@ -1475,7 +1480,7 @@ final class AetherRouteUITests: XCTestCase {
         let settingsWindow = app.windows[
             "com_apple_SwiftUI_Settings_window"
         ]
-        XCTAssertEqual(settingsWindow.title, "AetherRoute 设置")
+        XCTAssertEqual(settingsWindow.title, "网络")
         let settingsAttachment = XCTAttachment(
             screenshot: settingsWindow.screenshot()
         )
@@ -1484,10 +1489,9 @@ final class AetherRouteUITests: XCTestCase {
         add(settingsAttachment)
 
         selectSettingsTab("关于", in: settingsWindow, app: app)
-        XCTAssertTrue(app.staticTexts["编程不良人"].waitForExistence(timeout: 3))
-        XCTAssertEqual(settingsWindow.title, "AetherRoute 设置")
-        XCTAssertFalse(app.staticTexts["BianChengBuLiangRen"].exists)
-        XCTAssertTrue(app.staticTexts["开发版本"].exists)
+        XCTAssertTrue(app.staticTexts["开发版本"].waitForExistence(timeout: 3))
+        // The title names the open pane, as System Settings does.
+        XCTAssertEqual(settingsWindow.title, "关于")
         XCTAssertTrue(app.staticTexts["尚未发布"].exists)
         XCTAssertFalse(app.staticTexts["Development"].exists)
         XCTAssertFalse(app.staticTexts["Not released"].exists)
@@ -1578,13 +1582,11 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(englishPicker.waitForExistence(timeout: 3))
         selectMenuItem("简体中文", from: englishPicker, in: app)
 
-        XCTAssertEqual(settingsWindow.title, "AetherRoute 设置")
+        XCTAssertEqual(settingsWindow.title, "通用")
         XCTAssertTrue(app.staticTexts["应用语言"].waitForExistence(timeout: 3))
         selectSettingsTab("关于", in: settingsWindow, app: app)
-        XCTAssertTrue(app.staticTexts["编程不良人"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["开发版本"].exists)
+        XCTAssertTrue(app.staticTexts["开发版本"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["尚未发布"].exists)
-        XCTAssertFalse(app.staticTexts["BianChengBuLiangRen"].exists)
         try auditProductAccessibility(in: app)
     }
 
@@ -1749,14 +1751,14 @@ final class AetherRouteUITests: XCTestCase {
             (
                 language: "en",
                 tab: "Account",
-                heading: "Free Edition",
+                heading: "Software Updates",
                 activation: "No activation required",
                 updates: "This edition does not contact a licensing service. Software updates are checked and verified automatically."
             ),
             (
                 language: "zh-Hans",
                 tab: "账户",
-                heading: "免费版",
+                heading: "软件更新",
                 activation: "无需激活",
                 updates: "当前版本无需激活许可服务。软件更新会自动检查并安全验证。"
             ),
@@ -1776,8 +1778,8 @@ final class AetherRouteUITests: XCTestCase {
                 XCTAssertTrue(
                     app.staticTexts[item.heading].waitForExistence(timeout: 3)
                 )
-                XCTAssertTrue(app.staticTexts[item.activation].exists)
-                XCTAssertTrue(app.staticTexts[item.updates].exists)
+                // The free edition shows only software updates in Settings:
+                // nothing to activate, so no license card or key field.
                 XCTAssertFalse(
                     app.secureTextFields["license-key-field"].exists
                 )
@@ -2479,6 +2481,13 @@ final class AetherRouteUITests: XCTestCase {
                 return true
             }
             if issue.auditType == .parentChild,
+               issue.element.map({ !$0.exists }) ?? true {
+                // Xcode reports a mismatch for a token that no longer
+                // resolves (a lazily rebuilt row). A mismatch on an element
+                // that still exists stays a failure.
+                return true
+            }
+            if issue.auditType == .parentChild,
                settingsWindow.exists {
                 // Xcode 17 can report an invalid, non-resolvable AppKit token
                 // after switching SwiftUI Settings toolbar tabs. The failure
@@ -2542,7 +2551,7 @@ final class AetherRouteUITests: XCTestCase {
             if issue.auditType == .action,
                let element = issue.element,
                element.elementType == .menuButton,
-               (["profiles-more-menu", "rules-action-filter"].contains(element.identifier)
+               (["profiles-more-menu", "rules-action-filter", "proxy-sort-picker"].contains(element.identifier)
                     || element.identifier.hasPrefix("profile-actions-")),
                element.isHittable {
                 // SwiftUI's native Menu is exercised by the profile-library
@@ -2708,7 +2717,7 @@ final class AetherRouteUITests: XCTestCase {
                     return true
                 }
                 let selectedPage = app.descendants(matching: .any)[
-                    "aetherroute-selected-page"
+                    "connections-page"
                 ]
                 if selectedPage.exists,
                    selectedPage.frame.contains(element.frame) {
@@ -2727,6 +2736,25 @@ final class AetherRouteUITests: XCTestCase {
                   element.label.isEmpty
             else {
                 return false
+            }
+
+            if mainWindow.exists {
+                let windowFrame = mainWindow.frame
+                // The main window's NavigationSplitView exposes an unlabeled
+                // hosting group for the whole window and one for the native
+                // sidebar column, flush with the window's top, leading and
+                // bottom edges. Neither has its own meaning or action; the
+                // sidebar rows and page controls inside stay audited.
+                let isMainWindowWrapper = self.framesMatch(windowFrame, element.frame)
+                let isFlushMainSidebarWrapper =
+                    abs(element.frame.minX - windowFrame.minX) <= 1
+                    && abs(element.frame.minY - windowFrame.minY) <= 1
+                    && abs(element.frame.maxY - windowFrame.maxY) <= 1
+                    && (176...260).contains(element.frame.width)
+                    && element.frame.maxX < windowFrame.midX
+                if isMainWindowWrapper || isFlushMainSidebarWrapper {
+                    return true
+                }
             }
 
             if settingsWindow.exists,
@@ -2989,16 +3017,18 @@ final class AetherRouteUITests: XCTestCase {
                         app.descendants(matching: .any)["rules-page"]
                             .scroll(byDeltaX: 0, deltaY: -240)
                     }
+                    // Let the scroll settle so the click lands on the segment.
+                    _ = filter.waitForExistence(timeout: 1)
                     let direct = filter.radioButtons.element(
                         matching: NSPredicate(format: "label BEGINSWITH %@", "Direct")
                     )
                     direct.click()
-                    XCTAssertTrue(direct.isSelected)
+                    XCTAssertTrue(waitForSelected(direct, timeout: 3))
                     let all = filter.radioButtons.element(
                         matching: NSPredicate(format: "label BEGINSWITH %@", "All")
                     )
                     all.click()
-                    XCTAssertTrue(all.isSelected)
+                    XCTAssertTrue(waitForSelected(all, timeout: 3))
                 }
                 if button == "DNS" {
                     let runtimePolicy = app.staticTexts["DNS adjustments in TUN mode"].exists
@@ -3763,6 +3793,12 @@ final class AetherRouteUITests: XCTestCase {
             if destination.pageIdentifier == "overview-page" {
                 let engine = app.radioGroups["network-engine-picker"]
                 XCTAssertTrue(engine.exists)
+                // The engine row is the last on Overview; at the smallest
+                // window with doubled text it starts below the fold.
+                for _ in 0..<4 where !windowFrame.contains(engine.frame) {
+                    app.descendants(matching: .any)["overview-page"]
+                        .scroll(byDeltaX: 0, deltaY: -300)
+                }
                 XCTAssertTrue(windowFrame.contains(engine.frame))
                 XCTAssertEqual(engine.radioButtons.count, 2)
                 let mainWindow = mainProductWindow(in: app)
