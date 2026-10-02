@@ -28,6 +28,15 @@ case " ${SWIFT_ACTIVE_COMPILATION_CONDITIONS:-} " in
     echo "QA automation fixture present; this build is local QA only." ;;
 esac
 
+# The Store edition has no updater and no independent distribution UI. Only
+# the generated Store graph (scripts/generate_app_store_project.py, which
+# swaps this guard for guard_app_store_build.sh) may compile it; a website
+# build carrying the flag would leave users with no way to update.
+case " ${SWIFT_ACTIVE_COMPILATION_CONDITIONS:-} " in
+  *' AETHERROUTE_APP_STORE '*)
+    fail "AETHERROUTE_APP_STORE belongs to the generated Store project only" ;;
+esac
+
 # A few isolated gates compile an optimized product in a disposable root but
 # never install or launch its Network Extensions. They must opt in explicitly,
 # remain non-stable, use the build action, and carry a compile-time fixture

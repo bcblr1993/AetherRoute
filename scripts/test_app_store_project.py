@@ -49,6 +49,14 @@ class StoreProjectTests(unittest.TestCase):
                                            SWIFT_ACTIVE_COMPILATION_CONDITIONS='AETHERROUTE_QA_AUTOMATION'),
                                            capture_output=True).returncode, 0)
 
+    def test_developer_id_guard_rejects_store_edition(self):
+        guard = str(ROOT / 'scripts/guard_developer_id_network_extension_build.sh')
+        env = dict(os.environ, CONFIGURATION='Release',
+                   SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) AETHERROUTE_INDEPENDENT AETHERROUTE_APP_STORE')
+        result = subprocess.run(['sh', guard], env=env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('AETHERROUTE_APP_STORE', result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()
