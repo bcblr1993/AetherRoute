@@ -4,6 +4,24 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.4] - 2026-10-03
+
+The menu bar panel's traffic graph now matches Overview. Routing, the network engine and both extensions are unchanged from 1.1.3.
+
+### Changed
+
+- Menu bar panel: download and upload are drawn in one graph on a shared scale, over the same 30-second window as Overview's live traffic, with the same coloured legend dots. Before, each had its own tiny line scaled to itself, so a small upload filled its line and looked like a spike, and the curves never matched Overview. The graph animates only while the panel is open.
+
+### Added
+
+- UI test `testEveryProxyGroupCanBeOpened`: every group in the Proxies column opens, including automatic groups (url-test, fallback), which explain why their nodes are chosen automatically instead of letting you pick one.
+- Mac App Store channel (from the 1.1.2 submission) is now covered by `./scripts/test.sh`, and website builds refuse the Store compile flag, which would ship without an updater.
+- `scripts/test_ui_in_vm.sh` runs the UI suite on the Tart VM or, with `AETHERROUTE_UI_REMOTE`, another Mac such as the physical Mac mini, using products built and signed on this Mac.
+
+### Notes
+
+- Protocol evidence and the license manifest record engine archives rebuilt in the main checkout; the engine source is unchanged (`d9f3952`). The archives' bytes depend on the checkout path, so the 1.1.3 hashes (built in a separate worktree) did not reproduce here.
+
 ## [1.1.3] - 2026-10-03
 
 A maintenance release: plain HTTP proxy nodes are now covered by an automated test, clean builds of the network engine work again on macOS 27, and both system extensions can no longer crash on an unexpected control message. Routing behaviour is unchanged from 1.1.2.
