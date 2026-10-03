@@ -26,6 +26,14 @@ Every proxy group can be chosen again, and the menu bar panel's traffic graph no
 
 - Protocol evidence and the license manifest record engine archives rebuilt in the main checkout; the engine source is unchanged (`d9f3952`). The archives' bytes depend on the checkout path, so the 1.1.3 hashes (built in a separate worktree) did not reproduce here.
 
+### Verified
+
+- Local regression: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` (now including the Store channel tests) passed with no compiler warnings.
+- Proxy groups: `testEveryProxyGroupCanBeOpened` failed on the physical Mac mini before the fix (the click never reached the group) and passed four runs in a row after it, in wide and narrow windows; screenshots show the page unchanged.
+- Full UI suite on the physical Mac mini (build 2026100303): 42 of 43 passed in one run; the remaining profile context-menu test passed on two separate reruns. Host network state was unchanged.
+- Physical Apple Silicon Mac mini, notarized stable candidate with both system extensions upgraded to 2026100303: TUN — 2 MiB upload in 3.5 s, idle keep-alive reuse passed; transparent proxy — 2 MiB in 3.7 s, idle keep-alive reuse and SNI recovery passed. Remote arm64 gate `test_remote_arm64.sh fast` passed.
+- Tart VM 6-dimension matrix (`macos27`, build 2026100303): all six combinations passed, `tun/rule` on a single-combination rerun after one IPv6 probe timeout; idle keep-alive reuse 6/6, 2 MiB upload 6/6, SNI recovery 3/3. See `Docs/ReleaseExceptions/1.1.4.md`.
+
 ## [1.1.3] - 2026-10-03
 
 A maintenance release: plain HTTP proxy nodes are now covered by an automated test, clean builds of the network engine work again on macOS 27, and both system extensions can no longer crash on an unexpected control message. Routing behaviour is unchanged from 1.1.2.
