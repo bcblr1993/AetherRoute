@@ -25,7 +25,8 @@ STAMP=$(date -u '+%Y%m%dT%H%M%SZ')
 case "$EVIDENCE" in /*) ;; *) EVIDENCE="$ROOT/$EVIDENCE" ;; esac
 mkdir -p "$EVIDENCE"
 EXPORT="$EVIDENCE/products"
-REMOTE_DIR=/tmp/aetherroute-ui-vm
+# The test launcher only accepts a HOME under an "aetherroute-ui-tests.*" root.
+REMOTE_DIR=/tmp/aetherroute-ui-tests.remote
 SSH_OPTIONS="-o BatchMode=yes -o ConnectTimeout=10"
 
 # AETHERROUTE_UI_REMOTE=user@host runs on another Mac (e.g. the physical
@@ -90,7 +91,7 @@ vm "cd '$REMOTE_DIR' && \
 
 echo "==> Collecting results"
 rsync -a -e "ssh $SSH_OPTIONS" "$REMOTE:$REMOTE_DIR/result.xcresult/" "$EVIDENCE/result.xcresult/" 2>/dev/null || true
-vm "rm -rf '$REMOTE_DIR'; pkill -f aetherroute-ui-vm 2>/dev/null; true"
+vm "rm -rf '$REMOTE_DIR'; pkill -f aetherroute-ui-tests.remote 2>/dev/null; true"
 find "$EXPORT" -depth -delete 2>/dev/null || true
 
 network_after=$(host_network_hash)
