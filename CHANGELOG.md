@@ -6,7 +6,11 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [1.1.4] - 2026-10-03
 
-The menu bar panel's traffic graph now matches Overview. Routing, the network engine and both extensions are unchanged from 1.1.3.
+Every proxy group can be chosen again, and the menu bar panel's traffic graph now matches Overview. Routing, the network engine and both extensions are unchanged from 1.1.3.
+
+### Fixed
+
+- Proxies: clicking a proxy group (for example an automatic `url-test` group such as "SS-Proxy-AUTO") often did nothing, so only the first group could be opened. On macOS 27 the page's shared Liquid Glass container kept the click areas of glass cards that had moved or been replaced — when the page switched between its narrow and wide layouts, or a different group's card appeared — and those invisible areas swallowed clicks on the groups. The Proxies page no longer uses the shared container, and it picks its layout in the first frame instead of drawing the narrow layout and then switching. It looks the same as before.
 
 ### Changed
 
@@ -14,7 +18,7 @@ The menu bar panel's traffic graph now matches Overview. Routing, the network en
 
 ### Added
 
-- UI test `testEveryProxyGroupCanBeOpened`: every group in the Proxies column opens, including automatic groups (url-test, fallback), which explain why their nodes are chosen automatically instead of letting you pick one.
+- UI test `testEveryProxyGroupCanBeOpened`: in wide and narrow windows, every group opens in any order, including automatic groups (url-test, fallback), which explain why their nodes are chosen automatically instead of letting you pick one.
 - Mac App Store channel (from the 1.1.2 submission) is now covered by `./scripts/test.sh`, and website builds refuse the Store compile flag, which would ship without an updater.
 - `scripts/test_ui_in_vm.sh` runs the UI suite on the Tart VM or, with `AETHERROUTE_UI_REMOTE`, another Mac such as the physical Mac mini, using products built and signed on this Mac.
 

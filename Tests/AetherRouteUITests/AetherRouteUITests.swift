@@ -610,37 +610,42 @@ final class AetherRouteUITests: XCTestCase {
         }
     }
 
-    /// Every group in the Proxies column opens, including groups that pick
-    /// their own node (url-test, fallback); those explain why their nodes
-    /// cannot be clicked instead of looking broken.
+    /// Every group opens, in the column beside the card (wide windows) and in
+    /// the bar above it (narrow), in any order: the card's Liquid Glass once
+    /// swallowed these clicks, so only the first group could be chosen.
+    /// Groups that pick their own node (url-test, fallback) explain why their
+    /// nodes cannot be clicked instead of looking broken.
     func testEveryProxyGroupCanBeOpened() {
-        let app = launchReviewApp(
-            appearance: "light",
-            windowSize: "1200x800",
-            section: "proxies",
-            reviewProfile: "groups"
-        )
-        XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
-        let title = app.staticTexts["proxy-active-group-name"]
-        let note = app.descendants(matching: .any)["proxy-group-automatic-note"]
-        for (group, choosesItsOwnNode) in [("Auto", true), ("Streaming", true), ("Balanced", false)] {
-            let button = app.buttons["proxy-group-\(group)"]
-            XCTAssertTrue(button.waitForExistence(timeout: 3), "\(group) is not listed.")
-            XCTAssertTrue(button.isEnabled, "\(group) cannot be clicked.")
-            button.click()
-            let opened = NSPredicate(format: "value == %@ OR label == %@", group, group)
-            expectation(for: opened, evaluatedWith: title)
-            waitForExpectations(timeout: 3)
-            if choosesItsOwnNode {
-                XCTAssertTrue(note.waitForExistence(timeout: 2), "\(group) does not explain its automatic choice.")
-            } else {
-                XCTAssertTrue(
-                    app.descendants(matching: .any)["proxy-auto-select-\(group)"].waitForExistence(timeout: 2),
-                    "\(group) lost its manual controls."
-                )
+        for windowSize in ["1200x800", "820x700"] {
+            let app = launchReviewApp(
+                appearance: "light",
+                windowSize: windowSize,
+                section: "proxies",
+                reviewProfile: "groups"
+            )
+            XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))
+            let title = app.staticTexts["proxy-active-group-name"]
+            let note = app.descendants(matching: .any)["proxy-group-automatic-note"]
+            for (group, choosesItsOwnNode) in [
+                ("Auto", true), ("Streaming", true), ("Balanced", false), ("Streaming", true),
+            ] {
+                let button = app.buttons["proxy-group-\(group)"]
+                XCTAssertTrue(button.waitForExistence(timeout: 3), "\(group) is not listed at \(windowSize).")
+                button.click()
+                let opened = NSPredicate(format: "value == %@ OR label == %@", group, group)
+                expectation(for: opened, evaluatedWith: title)
+                waitForExpectations(timeout: 3)
+                if choosesItsOwnNode {
+                    XCTAssertTrue(note.waitForExistence(timeout: 2), "\(group) does not explain its automatic choice.")
+                } else {
+                    XCTAssertTrue(
+                        app.descendants(matching: .any)["proxy-auto-select-\(group)"].waitForExistence(timeout: 2),
+                        "\(group) lost its manual controls."
+                    )
+                }
             }
+            app.terminate()
         }
-        app.terminate()
     }
 
     func testPrivacyDisclosureBlocksNetworkFeaturesUntilAccepted() throws {

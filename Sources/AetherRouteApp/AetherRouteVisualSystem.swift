@@ -314,6 +314,7 @@ extension AetherPageHeader where Accessory == EmptyView {
 
 private struct AetherPageContentModifier: ViewModifier {
     let width: AetherPageWidth
+    var sharesGlassContainer = true
 
     func body(content: Content) -> some View {
         glassContainer(
@@ -335,7 +336,7 @@ private struct AetherPageContentModifier: ViewModifier {
     /// spacing keeps neighbouring cards from merging into each other.
     @ViewBuilder
     private func glassContainer<V: View>(_ view: V) -> some View {
-        if #available(macOS 26, *) {
+        if sharesGlassContainer, #available(macOS 26, *) {
             GlassEffectContainer(spacing: 0) { view }
         } else {
             view
@@ -346,8 +347,8 @@ private struct AetherPageContentModifier: ViewModifier {
 extension View {
     /// Applies the shared page margins and width class to a page's scroll
     /// content. Use exactly once per primary page.
-    func aetherPageContent(_ width: AetherPageWidth) -> some View {
-        modifier(AetherPageContentModifier(width: width))
+    func aetherPageContent(_ width: AetherPageWidth, sharesGlassContainer: Bool = true) -> some View {
+        modifier(AetherPageContentModifier(width: width, sharesGlassContainer: sharesGlassContainer))
     }
 }
 

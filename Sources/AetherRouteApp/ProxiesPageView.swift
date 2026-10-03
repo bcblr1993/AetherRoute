@@ -7,8 +7,6 @@ import SwiftUI
 struct ProxiesView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var selectedGroupId: Int?
-    /// Wide enough for the groups to sit in a column beside their members.
-    @State private var isWideGroupLayout = false
 
     var body: some View {
         Group {
@@ -33,6 +31,20 @@ struct ProxiesView: View {
     }
 
     private func content(summary: ProfileConfigurationSummary) -> some View {
+        // Wide enough for the groups to sit in a column beside their
+        // members, read from the page's size in the first layout pass. (A
+        // state set by onGeometryChange drew the narrow layout first and
+        // then switched, moving every glass panel on the page.)
+        GeometryReader { page in
+            let isWideGroupLayout = page.size.width >= Self.wideGroupLayoutWidth
+            groupsAndCard(summary: summary, isWideGroupLayout: isWideGroupLayout)
+        }
+    }
+
+    private func groupsAndCard(
+        summary: ProfileConfigurationSummary,
+        isWideGroupLayout: Bool
+    ) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
                 AetherPageHeader(.proxies)
@@ -67,12 +79,11 @@ struct ProxiesView: View {
                     )
                 }
             }
-            .aetherPageContent(.wide)
-            .onGeometryChange(for: Bool.self) { proxy in
-                proxy.size.width >= Self.wideGroupLayoutWidth
-            } action: { isWide in
-                isWideGroupLayout = isWide
-            }
+            // Not in the shared page glass container: on macOS 27 it kept the
+            // click areas of glass panels that had moved or gone (layout
+            // switches, a new group card), and those swallowed clicks on the
+            // groups, so often only one group could be chosen.
+            .aetherPageContent(.wide, sharesGlassContainer: false)
             .animation(AetherVisual.animation(AetherVisual.panelSpring), value: isWideGroupLayout)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(AppLocalization.string("Proxy configuration"))
