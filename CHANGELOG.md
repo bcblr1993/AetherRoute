@@ -4,6 +4,31 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.7] - 2026-10-04
+
+Shadowsocks nodes no longer send UDP packets twice, and connections through SSH nodes no longer drop after 5 seconds of silence. Both were found by a stronger protocol interoperability suite, which now also covers bulk transfers, idle reuse, bursts of UDP datagrams and certificate verification for all twelve protocols. Other protocols, routing and both extensions behave as in 1.1.6.
+
+### Fixed
+
+- Shadowsocks: the first UDP datagram of a session, and any datagram sent while the socket was briefly busy, reached the server twice. When the first send was not ready, the retry queued the same datagram again. A plain Shadowsocks server forwarded both copies (DNS, QUIC, games and calls saw duplicate packets); a Shadowsocks 2022 server rejected the second with "packet id not unique". Each datagram is now sent once.
+- SSH: every connection through an SSH node closed after 5 seconds without traffic, so pooled browser connections, streamed AI responses and long polling broke whenever they paused. The session no longer expires on silence; it ends when the connection closes, and a keepalive every 30 seconds (3 unanswered close it) still detects a server that went away.
+
+### Added
+
+- Protocol interoperability suite (engine `interop_tests.rs`, run against sing-box, Xray, Mihomo, wireguard-go and OpenSSH on loopback): every case now sends 2 MiB in both directions at once, reuses the same connection after an idle wait (`AETHER_INTEROP_IDLE_SECS`, default 5 s) and echoes 8 UDP datagrams, reporting any datagram that arrives twice. New cases: VMess over TLS, VLESS over TLS and TUIC v5 QUIC relay, plus UDP over WebSocket, gRPC and HTTP/2 for VMess, VLESS and Trojan (24 matrix cases, up from 21). Every TLS case is also run with certificate verification on and must refuse the self-signed test server. `AETHER_INTEROP_CASES` runs a subset.
+
+### Notes
+
+- Known compatibility gaps, unchanged: a `fingerprint` (certificate pin) does not let a self-signed node connect without `skip-cert-verify` as it does in Mihomo (VMess, VLESS and Trojan ignore the field; Hysteria2 checks the pin but still requires a public CA), and Hysteria2 ignores `ca` / `ca-str`.
+- VMess with an explicit `cipher: aes-128-gcm` runs at about 33 MiB/s on loopback against 115 MiB/s for ChaCha20-Poly1305; `cipher: auto` already picks ChaCha20 on Apple silicon.
+
+### Verified
+
+- Protocol interoperability, debug and release builds: 24 matrix cases × 2 cycles, 26 certificate rejections, VLESS REALITY, WireGuard, ShadowQUIC and OpenSSH (also with a 50 s idle) all passed. Engine loopback throughput is unchanged (VLESS 1.9–2.0 GiB/s, Trojan 1.0 GiB/s, Shadowsocks 2022 0.66 GiB/s). The new Shadowsocks unit test fails on the previous engine and passes now.
+- Local regression: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` passed with no compiler warnings.
+- Tart VM 6-dimension matrix (`macos27`, build 2026100403): all six combinations passed in one run; idle keep-alive reuse 6/6, 2 MiB upload 6/6 (3.6–4.0 s), SNI recovery 3/3.
+- Physical Apple Silicon Mac mini, notarized stable candidate with both system extensions at 1.1.7/2026100403: TUN and transparent proxy idle keep-alive reuse, 2 MiB upload and transparent SNI recovery passed; remote arm64 gate `test_remote_arm64.sh fast` passed. An A/B run against 1.1.6 on the same Mac in the same hour gave the same upload times once warmed up (1.1.7: 3.7–4.4 s, 1.1.6: 3.3–3.7 s; the first upload after connecting is slower on both).
+
 ## [1.1.6] - 2026-10-04
 
 Rule resources (Country.mmdb and GeoSite.dat) now keep themselves current: AetherRoute checks them weekly while connected, downloads only when the upstream actually changed, and Download & Verify works without disconnecting. Routing, the network engine and both extensions are unchanged from 1.1.5.
