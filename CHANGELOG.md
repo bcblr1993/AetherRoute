@@ -4,6 +4,28 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.6] - 2026-10-04
+
+Rule resources (Country.mmdb and GeoSite.dat) now keep themselves current: AetherRoute checks them weekly while connected, downloads only when the upstream actually changed, and Download & Verify works without disconnecting. Routing, the network engine and both extensions are unchanged from 1.1.5.
+
+### Added
+
+- Rules → Rule resources → Advanced: a "Check for updates automatically" switch (on by default) with the date of the last check. While connected, AetherRoute looks every 6 hours (with up to 15 minutes of random delay) for resources that reached 7 days, so the upstream sees at most one check a week.
+- Each check fetches the upstream SHA-256 file (under 100 bytes) first. If it matches the installed database, only the check date is recorded (`lastCheckedAt` in the resource metadata); the multi-megabyte database is downloaded only when it changed. An unchanged, checked database also counts as current for the 30-day limit.
+- Download & Verify works while connected. New data is verified and saved, and applies on the next connection; the running tunnel keeps the copy it started with. Importing a file still needs a disconnect.
+
+### Changed
+
+- Automatic updates used to start only after a resource was 30 days old, the same day it expired, once per day after connecting. They now start at 7 days and retry after 1, 6 and 24 hours on failure, leaving about three weeks before the 30-day limit. From 25 days the card asks you to update.
+- Resources you imported yourself are still never replaced automatically. Metadata written by earlier versions loads unchanged.
+
+### Verified
+
+- Local regression: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` passed with no compiler warnings. Six new unit tests cover the checksum-first refresh, unchanged upstream renewing an expired MaxMind database without a download, a concurrent import winning over a check, metadata from 1.1.5, a check date in the future, and the weekly/backoff policy.
+- Tart VM 6-dimension matrix (`macos27`, build 2026100402): all six combinations passed in one run; idle keep-alive reuse 6/6, 2 MiB upload 6/6 (3.5–4.3 s), SNI recovery 3/3.
+- Physical Apple Silicon Mac mini, notarized stable candidate with both system extensions at 1.1.6/2026100402: TUN — 2 MiB upload in 3.5 s (1.1.4: 3.5 s), idle keep-alive reuse passed; transparent proxy — 2 MiB in 3.9 s (1.1.4: 3.7 s), idle keep-alive reuse and SNI recovery passed. Remote arm64 gate `test_remote_arm64.sh fast` passed.
+- On the Mac mini, connecting replaced a 29-day-old bundled GeoSite.dat and an 11-day-old Country.mmdb with the current upstream releases; both SHA-256 values match the published checksums.
+
 ## [1.1.5] - 2026-10-04
 
 This release fixes a potential fatal crash in iCloud profile synchronization during first launch or empty state, eliminates a data race during network recovery in the packet tunnel provider, and adds App Store export compliance exemption metadata.
