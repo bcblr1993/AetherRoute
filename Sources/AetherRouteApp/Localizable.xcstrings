@@ -12332,6 +12332,96 @@
           }
         }
       }
+    },
+    "Check for updates automatically": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动检查更新"
+          }
+        }
+      }
+    },
+    "Off. Use Download & Verify to update manually.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已关闭。可使用“下载并校验”手动更新。"
+          }
+        }
+      }
+    },
+    "Checks weekly while connected. Updates apply on the next connection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接期间每周检查一次，更新在下次连接时生效。"
+          }
+        }
+      }
+    },
+    "Checks weekly while connected. Last checked %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接期间每周检查一次。上次检查：%@。"
+          }
+        }
+      }
+    },
+    "Checking for rule updates…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查规则更新…"
+          }
+        }
+      }
+    },
+    "Rule data is almost 30 days old. Choose Download & Verify to update it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则数据即将超过 30 天，请点击“下载并校验”更新。"
+          }
+        }
+      }
+    },
+    "Import is available after disconnecting. Downloaded updates apply on the next connection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "断开连接后可导入。下载的更新将在下次连接时生效。"
+          }
+        }
+      }
+    },
+    "Routing resources are already up to date.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路由资源已是最新版本。"
+          }
+        }
+      }
+    },
+    "Routing resources were downloaded and verified. They apply on the next connection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路由资源已下载并通过校验，将在下次连接时生效。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

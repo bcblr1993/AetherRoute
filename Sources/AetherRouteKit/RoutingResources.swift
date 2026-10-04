@@ -48,13 +48,17 @@ public struct RoutingResourceRecord: Codable, Equatable, Sendable {
     public let byteCount: Int
     public let installedAt: Date
     public let origin: RoutingResourceOrigin
+    /// When the upstream checksum last matched these exact bytes. Absent in
+    /// metadata written before 1.1.6, which decodes it as nil.
+    public let lastCheckedAt: Date?
 
     public init(
         kind: RoutingResourceKind,
         sha256: String,
         byteCount: Int,
         installedAt: Date,
-        origin: RoutingResourceOrigin
+        origin: RoutingResourceOrigin,
+        lastCheckedAt: Date? = nil
     ) {
         formatVersion = Self.currentFormatVersion
         self.kind = kind
@@ -62,6 +66,46 @@ public struct RoutingResourceRecord: Codable, Equatable, Sendable {
         self.byteCount = byteCount
         self.installedAt = installedAt
         self.origin = origin
+        self.lastCheckedAt = lastCheckedAt
+    }
+
+    /// The last time these bytes were known to match their upstream release:
+    /// installation, or a later checksum check that found nothing newer.
+    public var verifiedCurrentAt: Date {
+        max(installedAt, lastCheckedAt ?? installedAt)
+    }
+}
+
+/// When AetherRoute looks upstream for newer routing databases. The country
+/// database is rebuilt weekly and the domain list changes in small steps, so
+/// a weekly checksum check keeps both current without daily downloads, and
+/// leaves three weeks of retries before the 30-day expiry is reached.
+public enum RoutingResourceRefreshPolicy {
+    public static let checkInterval: TimeInterval = 7 * 24 * 60 * 60
+    public static let expiryWarningAge: TimeInterval = 25 * 24 * 60 * 60
+    public static let retryDelays: [TimeInterval] = [
+        60 * 60, 6 * 60 * 60, 24 * 60 * 60,
+    ]
+
+    /// User imports are never replaced automatically.
+    public static func isDue(
+        _ record: RoutingResourceRecord,
+        now: Date
+    ) -> Bool {
+        record.origin != .userProvided
+            && now.timeIntervalSince(record.verifiedCurrentAt) >= checkInterval
+    }
+
+    public static func isNearingExpiry(
+        _ record: RoutingResourceRecord,
+        now: Date
+    ) -> Bool {
+        now.timeIntervalSince(record.verifiedCurrentAt) >= expiryWarningAge
+    }
+
+    public static func retryDelay(afterConsecutiveFailures failures: Int) -> TimeInterval {
+        guard failures > 0 else { return 0 }
+        return retryDelays[min(failures, retryDelays.count) - 1]
     }
 }
 
@@ -295,18 +339,7 @@ public struct RoutingResourceStore: Sendable {
             installedAt: normalizedInstallDate,
             origin: origin
         )
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .secondsSince1970
-        encoder.outputFormatting = [.sortedKeys]
-        let metadata: Data
-        do {
-            metadata = try encoder.encode(record)
-        } catch {
-            throw RoutingResourceError.metadataEncodingFailed(kind)
-        }
-        guard metadata.count <= Self.maximumMetadataBytes else {
-            throw RoutingResourceError.metadataEncodingFailed(kind)
-        }
+        let metadata = try Self.encodedMetadata(record)
 
         // Finish both writes, file protection and validation without changing
         // the live pair. Staging shares the resource filesystem so committing
@@ -346,6 +379,67 @@ public struct RoutingResourceStore: Sendable {
         }
         try removeStagingDirectory(stagingDirectory, fileManager: fileManager)
         return committed
+    }
+
+    /// Records that the upstream checksum still matches the installed bytes,
+    /// without rewriting the database. Only the metadata file changes, and
+    /// only while the resource is still exactly `expectedRecord`.
+    @discardableResult
+    public func recordUpstreamCheck(
+        for expectedRecord: RoutingResourceRecord,
+        checkedAt: Date = .now,
+        fileManager: FileManager = .default
+    ) throws -> RoutingResourceRecord {
+        let kind = expectedRecord.kind
+        let lock = try acquireCommitLock()
+        defer {
+            flock(lock, LOCK_UN)
+            Darwin.close(lock)
+        }
+        try Task.checkCancellation()
+        let current = try loadVerifiedRecord(for: kind, fileManager: fileManager)
+        guard current == expectedRecord else {
+            throw RoutingResourceError.superseded(kind)
+        }
+        let normalizedCheckDate = Date(
+            timeIntervalSince1970: checkedAt.timeIntervalSince1970.rounded(.down)
+        )
+        let record = RoutingResourceRecord(
+            kind: kind,
+            sha256: current.sha256,
+            byteCount: current.byteCount,
+            installedAt: current.installedAt,
+            origin: current.origin,
+            lastCheckedAt: max(normalizedCheckDate, current.lastCheckedAt ?? normalizedCheckDate)
+        )
+        // An atomic write replaces the metadata by rename; readers hold the
+        // shared lock, so they see either the previous or the new record.
+        try writeProtected(
+            try Self.encodedMetadata(record),
+            to: metadataURL(for: kind),
+            fileManager: fileManager
+        )
+        let committed = try loadVerifiedRecord(for: kind, fileManager: fileManager)
+        guard committed == record else {
+            throw RoutingResourceError.metadataMismatch(kind)
+        }
+        return committed
+    }
+
+    private static func encodedMetadata(_ record: RoutingResourceRecord) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        encoder.outputFormatting = [.sortedKeys]
+        let metadata: Data
+        do {
+            metadata = try encoder.encode(record)
+        } catch {
+            throw RoutingResourceError.metadataEncodingFailed(record.kind)
+        }
+        guard metadata.count <= maximumMetadataBytes else {
+            throw RoutingResourceError.metadataEncodingFailed(record.kind)
+        }
+        return metadata
     }
 
     private func commitPreparedResource(
@@ -481,7 +575,12 @@ public struct RoutingResourceStore: Sendable {
         guard age >= -clockSkewTolerance else {
             throw RoutingResourceError.metadataDateInFuture(record.kind)
         }
-        return age > maximumResourceAge ? .stale(record) : .ready(record)
+        if let lastCheckedAt = record.lastCheckedAt,
+           now.timeIntervalSince(lastCheckedAt) < -clockSkewTolerance {
+            throw RoutingResourceError.metadataDateInFuture(record.kind)
+        }
+        let freshness = now.timeIntervalSince(record.verifiedCurrentAt)
+        return freshness > maximumResourceAge ? .stale(record) : .ready(record)
     }
 
     private func acquireCommitLock(shared: Bool = false) throws -> Int32 {
@@ -775,6 +874,17 @@ public struct RoutingResourceRemoteDescriptor: Equatable, Sendable {
     }
 }
 
+public enum RoutingResourceRefreshOutcome: Equatable, Sendable {
+    case updated(RoutingResourceRecord)
+    case alreadyCurrent(RoutingResourceRecord)
+
+    public var record: RoutingResourceRecord {
+        switch self {
+        case let .updated(record), let .alreadyCurrent(record): record
+        }
+    }
+}
+
 public struct RoutingResourceHTTPResponse: Equatable, Sendable {
     public let data: Data
     public let statusCode: Int
@@ -883,14 +993,55 @@ public struct RoutingResourceDownloadClient: Sendable {
         fileManager: FileManager = .default,
         replacing expectedRecord: RoutingResourceRecord? = nil
     ) async throws -> RoutingResourceRecord {
+        let expectedSHA256 = try await upstreamChecksum(for: descriptor)
+        return try await install(
+            descriptor, expectedSHA256: expectedSHA256, into: store,
+            fileManager: fileManager, replacing: expectedRecord
+        )
+    }
+
+    /// Fetches the small upstream checksum first and downloads the database
+    /// only when it differs from `current`. An unchanged resource just records
+    /// the check, which also renews how long it stays usable.
+    public func refresh(
+        _ descriptor: RoutingResourceRemoteDescriptor,
+        into store: RoutingResourceStore,
+        current: RoutingResourceRecord?,
+        fileManager: FileManager = .default
+    ) async throws -> RoutingResourceRefreshOutcome {
+        let expectedSHA256 = try await upstreamChecksum(for: descriptor)
+        if let current, current.kind == descriptor.kind,
+           current.sha256 == expectedSHA256 {
+            try Task.checkCancellation()
+            return .alreadyCurrent(try store.recordUpstreamCheck(
+                for: current, checkedAt: now(), fileManager: fileManager
+            ))
+        }
+        return .updated(try await install(
+            descriptor, expectedSHA256: expectedSHA256, into: store,
+            fileManager: fileManager, replacing: current
+        ))
+    }
+
+    private func upstreamChecksum(
+        for descriptor: RoutingResourceRemoteDescriptor
+    ) async throws -> String {
         try Task.checkCancellation()
         let checksumResponse = try await transport(
             descriptor.checksumURL,
             4 * 1_024
         )
         try Self.validate(response: checksumResponse, maximumBytes: 4 * 1_024)
-        let expectedSHA256 = try Self.parseChecksum(checksumResponse.data)
+        return try Self.parseChecksum(checksumResponse.data)
+    }
 
+    private func install(
+        _ descriptor: RoutingResourceRemoteDescriptor,
+        expectedSHA256: String,
+        into store: RoutingResourceStore,
+        fileManager: FileManager,
+        replacing expectedRecord: RoutingResourceRecord?
+    ) async throws -> RoutingResourceRecord {
         try Task.checkCancellation()
         let resourceResponse = try await transport(
             descriptor.resourceURL,

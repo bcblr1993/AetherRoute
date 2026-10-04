@@ -868,7 +868,7 @@ struct RoutingResourcesCard: View {
                 }
                 Spacer(minLength: 0)
 
-                if tunnel.isUpdatingRoutingResources {
+                if isWorking {
                     ProgressView()
                         .controlSize(.small)
                         .accessibilityLabel("Preparing routing rules…")
@@ -906,6 +906,22 @@ struct RoutingResourcesCard: View {
                         resourceRow(kind)
                     }
 
+                    Toggle(isOn: Binding(
+                        get: { tunnel.isAutomaticRoutingResourceUpdateEnabled },
+                        set: { tunnel.setAutomaticRoutingResourceUpdateEnabled($0) }
+                    )) {
+                        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                            Text(AppLocalization.string("Check for updates automatically"))
+                            Text(automaticUpdateDetail)
+                                .font(.caption)
+                                .foregroundStyle(AetherVisual.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .toggleStyle(AetherRowToggleStyle())
+                    .disabled(!tunnel.hasAcceptedPrivacyDisclosure)
+                    .accessibilityIdentifier("routing-resources-auto-update")
+
                     if let message = tunnel.routingResourceMessage {
                         Label(
                             message,
@@ -927,15 +943,13 @@ struct RoutingResourcesCard: View {
                         AetherProgressButtonLabel(
                             AppLocalization.string("Download & Verify"),
                             systemImage: "arrow.down.shield",
-                            isWorking: tunnel.isUpdatingRoutingResources
+                            isWorking: isWorking
                         )
                     }
                     .aetherGlassButton()
-                    .disabled(
-                        !tunnel.canModifyProfiles
-                            || tunnel.isUpdatingRoutingResources
-                    )
-                    .help(editLockReason ?? "")
+                    .disabled(!tunnel.canDownloadRoutingResources)
+                    .help(tunnel.canDownloadRoutingResources ? "" : editLockReason ?? "")
+                    .accessibilityIdentifier("routing-resources-download")
 
                     if let editLockReason {
                         Label(editLockReason, systemImage: "lock")
@@ -960,9 +974,46 @@ struct RoutingResourcesCard: View {
     }
 
     /// A running download already shows progress; only explain a lock the
-    /// person cannot see the cause of.
+    /// person cannot see the cause of. While connected only Import is locked.
     private var editLockReason: String? {
-        tunnel.isUpdatingRoutingResources ? nil : tunnel.profileEditLockReason
+        guard !isWorking, let reason = tunnel.profileEditLockReason else { return nil }
+        return tunnel.isConnected
+            ? AppLocalization.string("Import is available after disconnecting. Downloaded updates apply on the next connection.")
+            : reason
+    }
+
+    private var isWorking: Bool {
+        tunnel.isUpdatingRoutingResources || tunnel.isRefreshingRoutingResources
+    }
+
+    private var installedRecords: [RoutingResourceRecord] {
+        tunnel.requiredRoutingResources.compactMap { kind in
+            switch tunnel.routingResourceStatuses[kind] {
+            case let .ready(record)?, let .stale(record)?: record
+            default: nil
+            }
+        }
+    }
+
+    private var automaticUpdateDetail: String {
+        guard tunnel.isAutomaticRoutingResourceUpdateEnabled else {
+            return AppLocalization.string("Off. Use Download & Verify to update manually.")
+        }
+        // The oldest check decides when the next weekly check is due.
+        guard let lastChecked = installedRecords.map(\.verifiedCurrentAt).min() else {
+            return AppLocalization.string("Checks weekly while connected. Updates apply on the next connection.")
+        }
+        return String.localizedStringWithFormat(
+            AppLocalization.string("Checks weekly while connected. Last checked %@."),
+            AppLocalization.date(lastChecked, date: .abbreviated, time: .omitted)
+        )
+    }
+
+    private var isNearingExpiry: Bool {
+        installedRecords.contains {
+            $0.origin != .userProvided
+                && RoutingResourceRefreshPolicy.isNearingExpiry($0, now: .now)
+        }
     }
 
     private var resourcesAreReady: Bool {
@@ -975,11 +1026,17 @@ struct RoutingResourcesCard: View {
         if tunnel.isUpdatingRoutingResources {
             return AppLocalization.string("Preparing routing rules…")
         }
+        if tunnel.isRefreshingRoutingResources {
+            return AppLocalization.string("Checking for rule updates…")
+        }
         if tunnel.routingResourceMessageIsError {
             return AppLocalization.string("Routing rules need attention. Try preparing them again.")
         }
         // "Ready" under a "Routing rules" heading repeated the heading; the
         // age of the data is the one fact worth showing once it is usable.
+        if resourcesAreReady, isNearingExpiry {
+            return AppLocalization.string("Rule data is almost 30 days old. Choose Download & Verify to update it.")
+        }
         if resourcesAreReady, let installedAt = oldestResourceInstallDate {
             return String.localizedStringWithFormat(
                 AppLocalization.string("Verified · updated %@"),
@@ -1028,10 +1085,7 @@ struct RoutingResourcesCard: View {
             }
             .aetherGlassButton()
             .controlSize(.small)
-            .disabled(
-                !tunnel.canModifyProfiles
-                    || tunnel.isUpdatingRoutingResources
-            )
+            .disabled(!tunnel.canModifyProfiles || isWorking)
             .help(editLockReason ?? "")
         }
         .padding(.horizontal, AetherVisual.s5)

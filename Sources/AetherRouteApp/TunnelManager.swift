@@ -281,6 +281,10 @@ final class TunnelManager: ObservableObject {
     @Published var routingResourceStatuses:
         [RoutingResourceKind: RoutingResourceStatus] = [:]
     @Published var isUpdatingRoutingResources = false
+    /// A check or download that applies on the next connection. Unlike
+    /// `isUpdatingRoutingResources` it never holds back connection controls.
+    @Published var isRefreshingRoutingResources = false
+    @Published var isAutomaticRoutingResourceUpdateEnabled: Bool
     @Published var routingResourceMessage: String?
     @Published var routingResourceMessageIsError = false
     @Published var hasAcceptedPrivacyDisclosure: Bool
@@ -390,7 +394,9 @@ final class TunnelManager: ObservableObject {
     var profileImportTask: Task<Void, Never>?
     var routingResourceStatusTask: Task<Void, Never>?
     var routingResourceRefreshTask: Task<Void, Never>?
-    var lastAutomaticResourceRefreshAttempt: Date?
+    var routingResourceRefreshSchedule: Task<Void, Never>?
+    var automaticResourceRefreshFailures = 0
+    var nextAutomaticResourceRefreshAttempt: Date?
     let bundledResourceDirectoryURL = Bundle.main.resourceURL?
         .appendingPathComponent("RoutingResources", isDirectory: true)
     var connectionWatchdogTask: Task<Void, Never>?
@@ -469,6 +475,9 @@ final class TunnelManager: ObservableObject {
         localProxySettingsStore = LocalProxySettingsStore(defaults: userDefaults)
         localProxySettings = localProxySettingsStore.load()
         self.isDomesticOptimizationEnabled = DomesticRoutingOptimizer.isEnabled
+        self.isAutomaticRoutingResourceUpdateEnabled = userDefaults.object(
+            forKey: Self.automaticRoutingResourceUpdatePreferenceKey
+        ) as? Bool ?? true
         do {
             self.customRules = try CustomRuleStore.applicationGroup().load()
         } catch {

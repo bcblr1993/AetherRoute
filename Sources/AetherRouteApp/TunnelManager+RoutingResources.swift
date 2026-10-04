@@ -75,44 +75,139 @@ extension TunnelManager {
         refreshRoutingResourceStatuses()
     }
 
+    static let automaticRoutingResourceUpdatePreferenceKey =
+        "AetherRoute.AutomaticRoutingResourceUpdate"
+    /// How often a running connection looks for due resources. Each look is
+    /// local unless a resource reached `RoutingResourceRefreshPolicy.checkInterval`.
+    static let routingResourceScheduleInterval: TimeInterval = 6 * 60 * 60
+    static let routingResourceScheduleJitter: TimeInterval = 15 * 60
+
+    func setAutomaticRoutingResourceUpdateEnabled(_ enabled: Bool) {
+        isAutomaticRoutingResourceUpdateEnabled = enabled
+        userDefaults.set(enabled, forKey: Self.automaticRoutingResourceUpdatePreferenceKey)
+        if enabled {
+            automaticResourceRefreshFailures = 0
+            nextAutomaticResourceRefreshAttempt = nil
+            refreshDueRoutingResourcesInBackground()
+        } else {
+            routingResourceRefreshTask?.cancel()
+        }
+    }
+
+    /// Manual checks also work while connected: the running tunnel keeps the
+    /// copy it started with, and new data applies on the next connection.
+    var canDownloadRoutingResources: Bool {
+        guard hasAcceptedPrivacyDisclosure, !isUpdatingRoutingResources,
+              !isRefreshingRoutingResources else { return false }
+        return canModifyProfiles || (isConnected && !isTransitioning)
+    }
+
+    /// Runs on every connected report: starts the periodic schedule once and
+    /// checks right away. Downloads go through the working tunnel.
     func refreshOlderRoutingResourcesAfterConnection() {
-        guard !isUIReviewMode, hasAcceptedPrivacyDisclosure,
+        startRoutingResourceRefreshSchedule()
+        refreshDueRoutingResourcesInBackground()
+    }
+
+    private func startRoutingResourceRefreshSchedule() {
+        guard routingResourceRefreshSchedule == nil, !isUIReviewMode else { return }
+        routingResourceRefreshSchedule = Task { [weak self] in
+            while !Task.isCancelled {
+                // Jitter keeps Macs that connected together from all asking
+                // the upstream at the same minute.
+                let delay = Self.routingResourceScheduleInterval
+                    + .random(in: 0...Self.routingResourceScheduleJitter)
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+                self?.refreshDueRoutingResourcesInBackground()
+            }
+        }
+    }
+
+    /// Checks resources that reached the weekly interval. An unchanged
+    /// upstream checksum only records the check; a changed one downloads and
+    /// verifies the new database. Failures back off and never touch the
+    /// connection or the verified data already installed.
+    func refreshDueRoutingResourcesInBackground(now: Date = .now) {
+        guard isAutomaticRoutingResourceUpdateEnabled, !isUIReviewMode,
+              hasAcceptedPrivacyDisclosure, isConnected,
               routingResourceRefreshTask == nil,
-              lastAutomaticResourceRefreshAttempt.map({ Date.now.timeIntervalSince($0) >= 86_400 }) ?? true,
+              !isRefreshingRoutingResources, !isUpdatingRoutingResources,
+              nextAutomaticResourceRefreshAttempt.map({ now >= $0 }) ?? true,
               let rawYAML = activeProfile?.yaml else { return }
+        // Connected reports arrive often; the cached statuses avoid hashing
+        // both databases again when nothing can be due yet.
+        let mayBeDue = requiredRoutingResources.contains { kind in
+            switch routingResourceStatuses[kind] {
+            case nil: true
+            case let .ready(record)?, let .stale(record)?:
+                RoutingResourceRefreshPolicy.isDue(record, now: now)
+            case .missing?, .invalid?: false
+            }
+        }
+        guard mayBeDue else { return }
         let profileYAML = DomesticRoutingOptimizer.optimizedProfile(for: rawYAML)
-        lastAutomaticResourceRefreshAttempt = .now
         let storeFactory = routingResourceStoreFactory
         let downloadClient = routingResourceDownloadClient
         routingResourceRefreshTask = Task { [weak self] in
-            defer { self?.routingResourceRefreshTask = nil }
+            let result: (checked: Bool, failure: Error?)
             do {
-                try await Task.detached(priority: .utility) {
+                result = try await Task.detached(priority: .utility) {
                     let store = try storeFactory()
                     let required = ProfileConfigurationInspector.inspect(yaml: profileYAML)
                         .requiredRoutingResources
-                    for kind in required {
-                        guard case let .stale(record) = store.status(for: kind),
-                              record.origin != .userProvided else { continue }
+                    var checked = false
+                    var failure: Error?
+                    for kind in RoutingResourceKind.allCases where required.contains(kind) {
+                        let record: RoutingResourceRecord
+                        switch store.status(for: kind) {
+                        case let .ready(current), let .stale(current): record = current
+                        case .missing, .invalid: continue
+                        }
+                        guard RoutingResourceRefreshPolicy.isDue(record, now: .now) else { continue }
                         try Task.checkCancellation()
-                        try await downloadClient.downloadAndInstall(
-                            .maintainedDefault(for: kind), into: store,
-                            replacing: record
-                        )
+                        do {
+                            _ = try await downloadClient.refresh(
+                                .maintainedDefault(for: kind), into: store, current: record
+                            )
+                            checked = true
+                        } catch RoutingResourceError.superseded {
+                            // A newer import or download won; nothing to retry.
+                            checked = true
+                        } catch {
+                            if error is CancellationError { throw error }
+                            failure = failure ?? error
+                        }
                     }
+                    return (checked, failure)
                 }.value
-                self?.refreshRoutingResourceStatuses()
             } catch {
-                // An update failure never tears down a working connection or
-                // removes the checksum-verified offline baseline.
-                Self.runtimeLogger.info("stage=routingResourceRefresh deferred")
+                result = (false, nil)
+            }
+            guard let self else { return }
+            routingResourceRefreshTask = nil
+            if let failure = result.failure {
+                automaticResourceRefreshFailures += 1
+                let delay = RoutingResourceRefreshPolicy.retryDelay(
+                    afterConsecutiveFailures: automaticResourceRefreshFailures
+                )
+                nextAutomaticResourceRefreshAttempt = Date.now.addingTimeInterval(delay)
+                Self.runtimeLogger.info(
+                    "stage=routingResourceRefresh deferred failures=\(self.automaticResourceRefreshFailures, privacy: .public) retryAfter=\(Int(delay), privacy: .public) error=\(String(describing: type(of: failure)), privacy: .public)"
+                )
+            } else if result.checked {
+                automaticResourceRefreshFailures = 0
+                nextAutomaticResourceRefreshAttempt = nil
+                Self.runtimeLogger.info("stage=routingResourceRefresh checked")
+            }
+            if result.checked || result.failure != nil {
+                refreshRoutingResourceStatuses()
             }
         }
     }
 
     func downloadRequiredRoutingResources() async {
-        guard ensurePrivacyConsent(), canModifyProfiles,
-              !isUpdatingRoutingResources else { return }
+        guard ensurePrivacyConsent(), canDownloadRoutingResources else { return }
         guard !isUIReviewMode else {
             routingResourceMessage = AppLocalization.string(
                 "Routing resources are not written by the unsigned UI preview."
@@ -123,30 +218,57 @@ extension TunnelManager {
         let required = requiredRoutingResources
         guard !required.isEmpty else { return }
 
-        isUpdatingRoutingResources = true
+        // Connected: download beside the running tunnel without holding back
+        // its controls. Disconnected: keep Connect waiting for the result.
+        let appliesOnNextConnection = isEnabled
+        if appliesOnNextConnection {
+            isRefreshingRoutingResources = true
+        } else {
+            isUpdatingRoutingResources = true
+        }
         routingResourceMessage = AppLocalization.string(
             "Downloading and verifying routing resources…"
         )
         routingResourceMessageIsError = false
-        defer { isUpdatingRoutingResources = false }
+        defer {
+            if appliesOnNextConnection {
+                isRefreshingRoutingResources = false
+            } else {
+                isUpdatingRoutingResources = false
+            }
+        }
+        // Let a background check finish rather than racing its commit.
+        await routingResourceRefreshTask?.value
 
         let storeFactory = routingResourceStoreFactory
         let downloadClient = routingResourceDownloadClient
         do {
-            try await Task.detached(priority: .userInitiated) {
+            let outcomes = try await Task.detached(priority: .userInitiated) {
                 let store = try storeFactory()
+                var outcomes = [RoutingResourceRefreshOutcome]()
                 for kind in required {
-                    let descriptor = try RoutingResourceRemoteDescriptor
-                        .maintainedDefault(for: kind)
+                    let current: RoutingResourceRecord? = switch store.status(for: kind) {
+                    case let .ready(record), let .stale(record): record
+                    case .missing, .invalid: nil
+                    }
                     try Task.checkCancellation()
-                    try await downloadClient.downloadAndInstall(
-                        descriptor,
-                        into: store
-                    )
+                    outcomes.append(try await downloadClient.refresh(
+                        .maintainedDefault(for: kind), into: store, current: current
+                    ))
                 }
+                return outcomes
             }.value
+            automaticResourceRefreshFailures = 0
+            nextAutomaticResourceRefreshAttempt = nil
+            let anyUpdated = outcomes.contains {
+                if case .updated = $0 { true } else { false }
+            }
             routingResourceMessage = AppLocalization.string(
-                "Routing resources were downloaded and verified."
+                !anyUpdated
+                    ? "Routing resources are already up to date."
+                    : appliesOnNextConnection
+                        ? "Routing resources were downloaded and verified. They apply on the next connection."
+                        : "Routing resources were downloaded and verified."
             )
             routingResourceMessageIsError = false
         } catch {
