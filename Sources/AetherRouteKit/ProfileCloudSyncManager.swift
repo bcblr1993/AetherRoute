@@ -19,7 +19,7 @@ public struct CloudSyncPayload: Codable, Sendable, Equatable {
 
     public init(
         version: Int = Self.currentVersion,
-        updatedAtUnixMilliseconds: UInt64 = UInt64(Date().timeIntervalSince1970 * 1000),
+        updatedAtUnixMilliseconds: UInt64 = UInt64(max(0, Int64(Date().timeIntervalSince1970 * 1000))),
         deviceIdentifier: String,
         encryptedData: Data,
         sha256: String
@@ -181,7 +181,12 @@ public final class ProfileCloudSyncManager: ObservableObject {
         if let remoteData = kvStore.data(forKey: CloudSyncPayload.storageKey),
            let remotePayload = try? JSONDecoder().decode(CloudSyncPayload.self, from: remoteData) {
 
-            let lastLocalMillis = UInt64((lastSyncedAt ?? Date.distantPast).timeIntervalSince1970 * 1000)
+            let lastLocalMillis: UInt64
+            if let lastSyncedAt, lastSyncedAt.timeIntervalSince1970 > 0 {
+                lastLocalMillis = UInt64(lastSyncedAt.timeIntervalSince1970 * 1000)
+            } else {
+                lastLocalMillis = 0
+            }
 
             // If remote is newer, or local is empty while remote has profiles
             if (remotePayload.updatedAtUnixMilliseconds > lastLocalMillis && remotePayload.deviceIdentifier != deviceID)

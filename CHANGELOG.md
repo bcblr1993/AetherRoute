@@ -4,6 +4,22 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.5] - 2026-10-04
+
+This release fixes a potential fatal crash in iCloud profile synchronization during first launch or empty state, eliminates a data race during network recovery in the packet tunnel provider, and adds App Store export compliance exemption metadata.
+
+### Fixed
+
+- iCloud Sync: fixed a critical runtime trap (`SIGTRAP`) when pulling cloud payloads with an empty local catalog or uninitialized sync timestamp (`Date.distantPast` resulting in a negative float overflow when cast to `UInt64`).
+- Packet Tunnel: resolved an unprotected direct access to mutable `core` during `performNetworkRecovery`, ensuring calls strictly route through `currentCore()` under `coreLock` protection against race conditions with dynamic configuration reloads.
+- Compliance: declared `ITSAppUsesNonExemptEncryption` in `Config/App-Info.plist` to streamline App Store Connect processing without manual prompts.
+
+### Verified
+
+- Local regression: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` passed with zero warnings.
+- Tart VM 6-dimension matrix (`macos27`, build 2026100401): all six combinations passed; idle keep-alive reuse 6/6, 2 MiB upload 6/6, SNI recovery 3/3.
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`): notarized stable candidate verified with TUN / transparent proxy double mode, idle keep-alive reuse, large upload, and remote arm64 gate (`test_remote_arm64.sh fast`) 100% passed.
+
 ## [1.1.4] - 2026-10-03
 
 Every proxy group can be chosen again, and the menu bar panel's traffic graph now matches Overview. Routing, the network engine and both extensions are unchanged from 1.1.3.

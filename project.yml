@@ -48,8 +48,8 @@ settings:
     INFOPLIST_KEY_AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
     INFOPLIST_KEY_AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
     INFOPLIST_KEY_AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
-    MARKETING_VERSION: "1.1.4"
-    CURRENT_PROJECT_VERSION: "2026100303"
+    MARKETING_VERSION: "1.1.5"
+    CURRENT_PROJECT_VERSION: "2026100401"
   configs:
     Release:
       CODE_SIGN_STYLE: Manual
@@ -272,6 +272,7 @@ targets:
     info:
       path: Config/App-Info.plist
       properties:
+        ITSAppUsesNonExemptEncryption: false
         CFBundleDisplayName: AetherRoute
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)

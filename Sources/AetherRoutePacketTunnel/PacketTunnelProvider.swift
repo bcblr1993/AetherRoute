@@ -491,7 +491,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             "stage=networkRecovery begin reason=\(reason, privacy: .public) attempt=\(attempt, privacy: .public) interface=\(interface.name, privacy: .public) index=\(index, privacy: .public) signature=\(signature ?? "unknown", privacy: .public)"
         )
         do {
-            try core.resetNetworkState(interfaceIndex: index)
+            try currentCore().resetNetworkState(interfaceIndex: index)
             lastResetInterface = index
             lastResetSignature = signature
             resetSucceeded = true
