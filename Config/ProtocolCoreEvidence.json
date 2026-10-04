@@ -1,11 +1,11 @@
 {
   "artifacts": {
-    "flowCoreSHA256": "ada228ebcce1e6c2897f690908dd9032f05e1e5dfa56f0c72b0231d3238790c5",
+    "flowCoreSHA256": "a749e27e0d36d6696dbf42b6e38df715b85ba9ed52ef1175da80471fafd87dc6",
     "headerSHA256": "9792a14ba9aa02e210492221570f5bf05f3d5c1576c8d608087881ff6c22d8d1",
     "interopTestBinarySHA256": "b964b5724d0f553037600c45415ed0f78fc448da2f216fa234f259b3ec0895fa",
-    "packetFlowCoreSHA256": "0408d38b5c3a2575a82e6de8848c3560c604118c2ec2e0e5ecf09ca6212f4bdf"
+    "packetFlowCoreSHA256": "6bb43f2639240f9e338ae460b4a20107fa7cf2232c540faa348f34f97564dbca"
   },
-  "coreCommit": "d9f395203afa8b6bf3293b7e7aaba41f6bfd36df",
+  "coreCommit": "e3762b00ef90ee050b9af848b05c2ccf0186ad59",
   "coreFeatures": [
     "aether-tuic",
     "shadowquic",
@@ -32,15 +32,18 @@
     "Shadowsocks 2022",
     "Shadowsocks over ShadowTLS v3",
     "TUIC v5",
+    "TUIC v5 QUIC relay",
     "Trojan",
     "Trojan over WebSocket",
     "Trojan over gRPC",
     "VLESS",
     "VLESS over HTTP/2",
+    "VLESS over TLS",
     "VLESS over WebSocket",
     "VLESS over gRPC",
     "VMess",
     "VMess over HTTP/2",
+    "VMess over TLS",
     "VMess over WebSocket",
     "VMess over gRPC"
   ],
@@ -59,7 +62,7 @@
     "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
     "ffiSourceSHA256": "ca36a6df3df225f2dda2882fc9b185278145393d08148e0ed4e29ee57f5c077a",
     "flowFFISourceSHA256": "21e5677043303096439a2eb85f8fe7eb2521f599f343d575e68b55f63cfff393",
-    "interopTestsSHA256": "d45e96c4895bf11eded10ed25c27c1b18b5c1256928dd72ee37a03a82fca8eee",
+    "interopTestsSHA256": "4dd52264d51384a9a6cbd8f81c7ad853a4bf5f45a70f489127888bfda70c2ade",
     "outboundManagerSHA256": "a7200e3a318aef7588054aafbbaad3fd858c0be8d96339791c75866e6f2ceae1",
     "proxyManagerSHA256": "560fc42d699f21cf5a3801f587f6c76ddb1fce90bbe7a7b0a2eb69cf00ad9548",
     "selectorSourceSHA256": "b1092a6558910c5ab19e62eb613cdde72fe692a284d2b50f269b582fa25fc332"

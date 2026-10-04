@@ -43,7 +43,8 @@
         "VMess",
         "VMess over WebSocket",
         "VMess over gRPC",
-        "VMess over HTTP/2"
+        "VMess over HTTP/2",
+        "VMess over TLS"
       ],
       "interopTests": [],
       "runners": ["Tests/Interop/run-prebuilt-matrix.sh"],
@@ -56,7 +57,8 @@
         "VLESS",
         "VLESS over WebSocket",
         "VLESS over gRPC",
-        "VLESS over HTTP/2"
+        "VLESS over HTTP/2",
+        "VLESS over TLS"
       ],
       "interopTests": ["interoperates_vless_reality_with_xray"],
       "runners": [
@@ -84,7 +86,7 @@
     {
       "id": "tuic",
       "requiredCoreFeatures": ["aether-tuic"],
-      "interopCases": ["TUIC v5"],
+      "interopCases": ["TUIC v5", "TUIC v5 QUIC relay"],
       "interopTests": [],
       "runners": ["Tests/Interop/run-prebuilt-matrix.sh"],
       "uncoveredCatalogClaims": []

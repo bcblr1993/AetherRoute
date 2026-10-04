@@ -27,6 +27,18 @@
       "users": [{"name": "interop", "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811", "flow": ""}]
     },
     {
+      "type": "vmess", "tag": "vmess-tls-in",
+      "listen": "127.0.0.1", "listen_port": 59022,
+      "users": [{"name": "interop", "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811", "alterId": 0}],
+      "tls": {"enabled": true, "certificate_path": "__CERT__", "key_path": "__KEY__"}
+    },
+    {
+      "type": "vless", "tag": "vless-tls-in",
+      "listen": "127.0.0.1", "listen_port": 59023,
+      "users": [{"name": "interop", "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811", "flow": ""}],
+      "tls": {"enabled": true, "certificate_path": "__CERT__", "key_path": "__KEY__"}
+    },
+    {
       "type": "trojan", "tag": "trojan-in",
       "listen": "127.0.0.1", "listen_port": 59005,
       "users": [{"name": "interop", "password": "trojan-password"}],
