@@ -22,6 +22,16 @@
   sh Tests/RuntimeEnvironment/run.sh
   ./scripts/test.sh
   ```
+- 运行 12 种协议的真实互通门禁（`test.sh` 只校验运行脚本文本，不会真正连接）。首次运行先下载并校验第三方服务端（sing-box、shadow-tls、Xray、Mihomo，均按固定 SHA-256 校验；WireGuard 服务端从源码编译），缓存在已被忽略的 `build/interop-tools`：
+  ```bash
+  ./scripts/fetch_interop_tools.sh
+  ./scripts/test_protocol_interop_all.sh
+  ```
+  门禁编译与发布一致的 release 引擎，在本机回环上逐一对接 sing-box 矩阵（24 个用例）、VLESS REALITY、WireGuard、ShadowQUIC 与 OpenSSH；每个用例都检查 2 MiB 双向传输、空闲后复用、8 包 UDP（重复送达即失败），TLS 用例还必须在开启证书校验时拒绝自签证书。五项必须全部 PASS，日志与汇总在 `outputs/interop-<时间>/`。该门禁曾发现 Shadowsocks UDP 重复发包与 SSH 空闲 5 秒断开（1.1.7 修复）。
+  - 每次发布都必须运行；`Core/Engine` 有任何改动时必须在提交前运行。
+  - 修改 `interop_tests.rs` 后同步 `Config/ProtocolCoreEvidence.json`（`coreCommit`、`interopTestsSHA256`、`interopCases`）与 `Config/ProtocolReleaseMatrix.json`，并以 `./scripts/verify_protocol_matrix.sh` 校验。
+  - REALITY 用例的 Xray 服务端每次握手都会访问真实的 www.cloudflare.com，本机网络繁忙时单轮会慢 5–10 秒；单项超时先单独重跑该项确认，不要放宽其他用例。
+  - 排查时可用 `AETHER_INTEROP_CASES=名称,名称` 只跑部分矩阵用例，`AETHER_INTEROP_PROFILE=debug` 加快编译。
 
 > **第 2 步与第 3 步并行执行**：QA 候选包构建完成后，立即在后台同时启动虚拟机矩阵与物理真机门禁，不要串行等待。两者使用不同机器与目录，互不影响。注意：
 > - 启动前先把引擎静态库与许可证清单恢复为正常版（QA 候选包构建会留下诊断版核心，真机门禁会因 `protocol evidence SHA-256 mismatch` 失败）；

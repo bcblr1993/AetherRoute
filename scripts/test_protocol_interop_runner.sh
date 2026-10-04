@@ -25,4 +25,36 @@ require_line 'lsof -nP -a -p "$SHADOW_TLS_PID" -iTCP:59021 -sTCP:LISTEN'
 require_line "grep -Eq '\\*:59021|0\\.0\\.0\\.0:59021|\\[::\\]:59021'"
 require_line 'kill "$SHADOW_TLS_PID"'
 
+# The fetch script downloads exactly what the prebuilt runners pin.
+FETCH="$ROOT/scripts/fetch_interop_tools.sh"
+RUN_ALL="$ROOT/scripts/test_protocol_interop_all.sh"
+sh -n "$FETCH"
+sh -n "$RUN_ALL"
+fetch_pin() {
+  value=$(sed -n "s/^$1=//p" "$FETCH")
+  test -n "$value" || {
+    echo "fetch_interop_tools.sh is missing $1" >&2
+    exit 1
+  }
+  printf '%s\n' "$value"
+}
+require_pin() {
+  grep -F "$2" "$1" >/dev/null || {
+    echo "$(basename "$1") does not pin $2 like fetch_interop_tools.sh" >&2
+    exit 1
+  }
+}
+INTEROP="$ROOT/Tests/Interop"
+require_pin "$INTEROP/run-prebuilt-matrix.sh" "$(fetch_pin SING_BOX_SHA256)"
+require_pin "$INTEROP/run-prebuilt-matrix.sh" "sing-box version $(fetch_pin SING_BOX_VERSION)"
+require_pin "$INTEROP/run-prebuilt-matrix.sh" "$(fetch_pin SHADOW_TLS_SHA256)"
+require_pin "$INTEROP/run-prebuilt-matrix.sh" "shadow-tls $(fetch_pin SHADOW_TLS_VERSION)"
+require_pin "$INTEROP/run-prebuilt-reality.sh" "$(fetch_pin XRAY_SHA256)"
+require_pin "$INTEROP/run-prebuilt-reality.sh" "Xray $(fetch_pin XRAY_VERSION)"
+require_pin "$INTEROP/run-prebuilt-shadowquic.sh" "$(fetch_pin MIHOMO_SHA256)"
+require_pin "$INTEROP/run-prebuilt-shadowquic.sh" "v$(fetch_pin MIHOMO_VERSION).gz"
+require_pin "$RUN_ALL" "mihomo-darwin-arm64-v$(fetch_pin MIHOMO_VERSION).gz"
+require_pin "$RUNNER" "$(fetch_pin SING_BOX_SHA256)"
+require_pin "$RUNNER" "$(fetch_pin SHADOW_TLS_SHA256)"
+
 echo "Protocol interoperability runner guards verified"
