@@ -337,6 +337,9 @@ int main(int argc, char **argv) {
         "      - DIRECT\n"
         "      - REJECT\n"
         "rules:\n"
+        /* Application and process rules must not stop the TUN engine. */
+        "  - AETHER-APP,;/usr/bin/curl,REJECT\n"
+        "  - PROCESS-NAME,Safari,DIRECT\n"
         "  - MATCH,Route\n";
 
     char *legacy_result = clash_start(NULL, NULL, NULL, 1);
