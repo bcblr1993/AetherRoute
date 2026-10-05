@@ -4,6 +4,42 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-10-06
+
+AetherRoute now knows which app opened each connection, and can route an app as a whole: one app always direct, another always through a given proxy group, a third blocked, ahead of every other rule.
+
+### Added
+
+- Connections: an App column with the app's icon and name; hover for its signing identifier and path. Helper processes count as their app (a Chrome renderer is Chrome), and pages loaded through the system's WebKit process show as "Safari (web)".
+- Connections: Group by app shows one row per app with its connection count, outlets and traffic. Double-click an app, or choose Show only … from its context menu, to list just its connections. The connection inspector shows the app as well.
+- Rules: Application rules, checked before custom rules and the profile's rules. Add an app from those connected now or pick one in Finder, then choose Direct, a proxy group or Block for each. The same choices are on the Connections page's context menu (Rule for … › Always connect directly / Always use … / Always block).
+- Profile rules of type `PROCESS-NAME`, `PROCESS-PATH` and `PROCESS-PATH-REGEX` now work. Until now a profile containing one could not be used with the transparent proxy.
+- Help: "How do application rules work?" next to the new section.
+
+### Changed
+
+- Custom rules are now checked after application rules; the section says so.
+- Importing a profile that contains `AETHER-APP` (the internal type behind application rules) is refused, and such a rule in an existing profile is dropped, so a profile cannot add application rules of its own.
+- The route tester answers for a destination alone and skips application rules.
+
+### Notes
+
+- Transparent Proxy attributes every TCP and UDP connection. TUN attributes TCP connections; UDP and QUIC under TUN show "Unknown app" and follow the other rules, because the engine carries TUN UDP in one shared session.
+- The app information comes from macOS (Network Extension flow metadata; under TUN, the kernel's socket table read from the sandboxed extension) and needs no new permission. It stays on this Mac: diagnostics exports never include per-connection details.
+- Engine and host talk through new versioned entry points (`clash_flow_*_create_v2`, `*_telemetry_snapshot_v2`); the previous ones remain.
+
+### Fixed (before release)
+
+- Found on a physical Mac during verification: with any application rule saved, neither extension started. The extension ran the profile-import check on the profile the app compiles for it, and both engine entry points still refused process rules. The launch profile now accepts the app's own application rules, the engines start with them, and tests now start a real transparent engine and the TUN engine with application and process rules.
+
+### Verified
+
+- Engine: clash-ffi tests 37 (transparent) and 55 (TUN) passed; new tests cover strict ASA1 / ART2 encoding, the application-rule payload, matching (helpers, look-alike identifiers, sibling paths, executables), process rules on the reported app, an engine routing UDP by app end to end, and engine creation with application rules. The TUN core smoke test starts with application and process rules (the previous core fails it with the error seen on device).
+- App unit tests 404 + 84 + 22 passed (20 new: telemetry v1/v2, source-app encoding and identity, application rules, import refusal, launch snapshot); no compiler warnings; screenshots of the Connections page (list, grouped, inspector, narrow window, light and dark) and the Rules page.
+- Local regression `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` passed. Protocol interoperability gate (release build) passed all five gates after every engine change; one run failed a single Trojan UDP echo case and passed on rerun with the identical test binary.
+- Physical Apple Silicon Mac mini (LAN 192.168.50.226) in place of the Tart VM, notarized stable candidate 2026100602: tun and transparent × rule, global and direct all passed `test_runtime_acceptance.sh` with no failures; idle keep-alive reuse 6/6, 2 MiB upload 6/6, SNI recovery 3/3. Application rule on device, both engines: with `/usr/bin/curl` set to Block, curl was refused while python3 still reached the site (HTTP 200). Remote arm64 gate `test_remote_arm64.sh fast` passed. See `Docs/ReleaseExceptions/1.3.0.md`.
+- Resource figures from `./scripts/test.sh` (1.2.1 → 1.3.0): packet-flow startup peak RSS 12.2 → 12.2 MB, flow startup 9.4 → 9.4 MB; TCP performance gate flow-core peak RSS 55.7 → 59.8 MB, added p95 latency flow 0.041 → 0.034 ms and packet 0.161 → 0.071 ms, throughput ratio flow 47.1% → 46.8% and packet 36.8% → 44.1% of raw loopback.
+
 ## [1.2.1] - 2026-10-05
 
 Subscription profiles now show how much traffic is left and when the plan expires, and AetherRoute warns before either runs out. Routing, the network engine and both extensions are unchanged from 1.2.0.
