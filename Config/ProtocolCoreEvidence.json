@@ -5,7 +5,7 @@
     "interopTestBinarySHA256": "b964b5724d0f553037600c45415ed0f78fc448da2f216fa234f259b3ec0895fa",
     "packetFlowCoreSHA256": "6bb43f2639240f9e338ae460b4a20107fa7cf2232c540faa348f34f97564dbca"
   },
-  "coreCommit": "99688e72f8d3caf48dc18922f6237763105ea4bb",
+  "coreCommit": "08c4ae777fcf06256970df7a3ccd9d473f3465f9",
   "coreFeatures": [
     "aether-tuic",
     "shadowquic",

@@ -12422,6 +12422,16 @@
           }
         }
       }
+    },
+    "TUN already routes Terminal traffic, so this is usually unnecessary. Use it when domain lookups misbehave, while troubleshooting, or for a tool that bypasses TUN.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TUN 已接管终端流量，通常无需复制；仅在域名解析异常、排查问题或个别工具绕过 TUN 时使用。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

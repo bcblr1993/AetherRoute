@@ -2204,8 +2204,12 @@ private struct SettingsView: View {
                 "Switch to TUN to use the local proxy."
             )
         }
+        // TUN already carries Terminal traffic, so the copied environment is
+        // rarely needed; say when it still helps instead of implying a step.
         return AppLocalization.string(
             "AetherRoute binds only 127.0.0.1 and never changes the macOS system proxy. Shell commands affect only the terminal where you paste them."
+        ) + " " + AppLocalization.string(
+            "TUN already routes Terminal traffic, so this is usually unnecessary. Use it when domain lookups misbehave, while troubleshooting, or for a tool that bypasses TUN."
         )
     }
 
