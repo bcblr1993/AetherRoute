@@ -35,7 +35,7 @@ done
 
 mkdir -p "$TOOLS"
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-interop-tools.XXXXXX")
-trap 'rm -rf -- "$WORK_DIR"' EXIT HUP INT TERM
+trap 'find "$WORK_DIR" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 
 sha256() {
   shasum -a 256 "$1" | awk '{print $1}'
