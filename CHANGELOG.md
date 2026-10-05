@@ -4,6 +4,41 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-10-05
+
+Nodes with a self-signed certificate can now be used without skipping certificate verification: AetherRoute honours a pinned certificate fingerprint on every TLS protocol and a custom CA on Hysteria2 and TUIC, as Mihomo does.
+
+### Added
+
+- Certificate pinning (`fingerprint`, the server certificate's SHA-256) on VMess, VLESS (TLS, WebSocket, gRPC, HTTP/2), Trojan, AnyTLS, HTTP(S), SOCKS5 over TLS, Hysteria2 and TUIC. A matching pin replaces the CA and hostname checks, so a self-signed server connects with verification on. The pin is enforced even when `skip-cert-verify` is on, and the TLS handshake signature is always verified, so a copied certificate is not enough to impersonate the server. Colons and either letter case are accepted.
+- Custom CA (`ca` / `ca-str`) on Hysteria2 and TUIC: only the given CA is trusted and the hostname is still checked.
+- Importing a profile file turns readable `ca` files into `ca-str`, because the network extensions cannot open your files. When a file cannot be read, the import says which one, and only the nodes that use it refuse to connect.
+- Hysteria2 share links keep their `pinSHA256`. Adding a node by hand offers an optional certificate fingerprint field with format checking.
+- Settings › Network › Local proxy explains that in TUN mode Terminal traffic is already routed, so copying the shell environment is only needed for troubleshooting or tools that bypass TUN.
+- `./scripts/fetch_interop_tools.sh` and `./scripts/test_protocol_interop_all.sh` download the pinned third-party servers and run all five protocol interoperability gates in one step; the release checklist (AGENTS.md) now requires them for every release and engine change.
+
+### Changed
+
+- A malformed fingerprint or an unreadable CA now makes only that node refuse to connect, with the reason ("certificate fingerprint mismatch" or "unusable certificate settings"). Before, these options were ignored, and an AnyTLS node with a fingerprint failed to load, which also stopped every group that listed it.
+- **Behaviour change:** a subscription that sets both `fingerprint` and `skip-cert-verify: true` used to connect without checking the pin. The pin is now checked, as in Mihomo; a stale or wrong fingerprint makes that node fail with "certificate fingerprint mismatch".
+
+### Fixed
+
+- Engine test `start_and_stop` read its bundled database through a relative path and tried to download one when run from another directory.
+- `scripts/fetch_interop_tools.sh` cleaned its temporary directory in a way the repository's cleanup guard rejects, which broke `./scripts/test.sh`.
+
+### Notes
+
+- The engine's bundled web dashboard (not part of the app) had its npm lockfile refreshed: 22 advisories down to 7, all from the shadcn CLI's `braces` dependency, which has no fixed release.
+- uTLS client fingerprints (`client-fingerprint`) on non-REALITY nodes remain unsupported.
+
+### Verified
+
+- Engine unit tests 390 passed (9 new: fingerprint formats, pinning, wrong pin with skip-cert-verify, custom roots, unusable settings, signature policy, AnyTLS pin).
+- Protocol interoperability gate (release build, two cycles): all five gates passed. The interop server certificate now comes from a throwaway CA, so pinned certificates connect for all 13 TLS cases (26), Hysteria2 and TUIC connect with `ca-str` (8), wrong pins are refused even with verification skipped (26) and untrusted chains are refused (26).
+- App unit tests 380 + 84 + 20 passed (6 new); local regression `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` passed with no compiler warnings.
+- The Tart VM `macos27` was no longer available, so the 6-dimension matrix ran on the physical Apple Silicon Mac mini instead, with the notarized stable candidate and the same `test_runtime_acceptance.sh`: tun and transparent × rule, global and direct all passed; idle keep-alive reuse 6/6, 2 MiB upload 6/6 (3.5–4.5 s through the proxy, 12.4 s on transparent/direct), SNI recovery 3/3. Remote arm64 gate `test_remote_arm64.sh fast` passed. See `Docs/ReleaseExceptions/1.2.0.md`.
+
 ## [1.1.7] - 2026-10-04
 
 Shadowsocks nodes no longer send UDP packets twice, and connections through SSH nodes no longer drop after 5 seconds of silence. Both were found by a stronger protocol interoperability suite, which now also covers bulk transfers, idle reuse, bursts of UDP datagrams and certificate verification for all twelve protocols. Other protocols, routing and both extensions behave as in 1.1.6.

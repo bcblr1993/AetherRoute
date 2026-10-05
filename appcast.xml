@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.1.7 (Build 2026100403)</title>
-            <pubDate>Sun, 04 Oct 2026 21:24:27 +0800</pubDate>
-            <sparkle:version>2026100403</sparkle:version>
-            <sparkle:shortVersionString>1.1.7</sparkle:shortVersionString>
+            <title>Version 1.2.0 (Build 2026100501)</title>
+            <pubDate>Mon, 05 Oct 2026 16:27:41 +0800</pubDate>
+            <sparkle:version>2026100501</sparkle:version>
+            <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,33 +119,36 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.1.7 更新要点</span>
-  <span class="release-badge">Build 2026100403 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.2.0 更新要点</span>
+  <span class="release-badge">Build 2026100501 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 修复</span>
+  <span class="section-tag tag-feature">🚀 新功能：自签证书节点无需跳过校验</span>
   <ul>
-    <li><strong>Shadowsocks UDP 不再重复发包</strong>：每个 UDP 会话的第一个包（以及网络繁忙时的包）之前会被发送两次，影响 DNS、QUIC、游戏和语音；SS2022 服务端会报 “packet id not unique”。现在每个包只发一次。</li>
-    <li><strong>SSH 节点连接不再空闲 5 秒断开</strong>：经 SSH 节点的连接之前只要 5 秒没有数据就会被关闭，浏览器长连接、AI 流式回复、长轮询都会中断。现在空闲连接会一直保持，并每 30 秒保活一次。</li>
+    <li><strong>证书指纹固定</strong>：VMess、VLESS、Trojan、AnyTLS、HTTP(S)、SOCKS5、Hysteria2、TUIC 支持 <code>fingerprint</code>，指纹匹配即可安全连接自签证书的服务器，与 mihomo 行为一致；握手签名始终验证。</li>
+    <li><strong>自定义 CA</strong>：Hysteria2、TUIC 支持 <code>ca</code> / <code>ca-str</code>；导入配置文件时自动把可读取的 CA 文件内联为 ca-str。</li>
+    <li><strong>更友好的出错方式</strong>：指纹写错或 CA 读不到时，只让该节点拒绝连接并说明原因，其他节点和代理组照常使用。</li>
+    <li><strong>手动添加节点</strong>新增"证书指纹"输入框；Hysteria2 分享链接的 pinSHA256 会自动保留。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">✨ 更严格的协议测试</span>
+  <span class="section-tag tag-improve">✨ 改进与验证</span>
   <ul>
-    <li><strong>12 种协议全面加测</strong>：每个用例增加 2 MiB 双向传输、空闲后复用、多包 UDP 与证书校验检查；新增 VMess/VLESS over TLS、TUIC QUIC 模式，以及 WebSocket/gRPC/HTTP/2 下的 UDP。</li>
-    <li><strong>全量验证</strong>：Tart 虚拟机 6 维矩阵与 Apple Silicon 真机（TUN / 透明代理）全部通过。</li>
+    <li><strong>注意</strong>：订阅里同时写了指纹和"跳过证书校验"的节点，现在会校验指纹；指纹过期或填错的节点会提示"证书指纹不匹配"。</li>
+    <li>TUN 模式下本地代理处说明终端流量已被接管，一般无需复制终端代理环境。</li>
+    <li>12 种协议互通门禁新增指纹固定、自定义 CA 与错误指纹检查；Apple Silicon 真机 TUN / 透明代理 × 规则 / 全局 / 直连 6 个组合全部通过。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.1.7/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.2.0/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.1.7/AetherRoute-1.1.7-build-2026100403-arm64.dmg"
-                sparkle:edSignature="6Y3z3uigYR6DYemHHhyB7bdU8SWT6pO+RW8qaSiYI16BNnzezgSlwZwm+1iomQSbVnhaxvnkKr0gvrQnqYhdAw=="
-                length="26285471"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.2.0/AetherRoute-1.2.0-build-2026100501-arm64.dmg"
+                sparkle:edSignature="RiopRNpXPoyFWNp2nDrVCnxtNDB7+zg7M8adUWn2EXEVDNXHgsTijJNdQaA+UKM0Ic0d0cyJOOvznTOMvah+AA=="
+                length="25010210"
                 type="application/octet-stream" />
         </item>
     </channel>
