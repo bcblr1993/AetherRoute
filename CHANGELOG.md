@@ -4,6 +4,28 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-10-05
+
+Subscription profiles now show how much traffic is left and when the plan expires, and AetherRoute warns before either runs out. Routing, the network engine and both extensions are unchanged from 1.2.0.
+
+### Added
+
+- Profiles: a subscription row shows used / total traffic with a bar, the traffic left and the expiry date with the days remaining, from the provider's `subscription-userinfo` header. It turns orange when less than 10% is left or the plan ends within three days, and red once the traffic is used up or the plan has expired. The line wraps in narrow windows instead of cutting off the date.
+- Menu bar panel: a notice when the subscription in use needs attention, with a button to the Profiles page.
+- Settings › Automation › Subscription alerts (off by default): a system notification for the same conditions, at most once a day per subscription and kind. Turning it on is what asks for notification permission. Like connection notifications, it never includes the profile name or traffic figures.
+- Automatic updates follow the provider's `profile-update-interval` until you choose an interval yourself; Auto Update › Provider schedule returns to it. A new subscription takes its name from the provider's `content-disposition` file name when there is one.
+
+### Notes
+
+- The header is parsed leniently: keys in any case, `;` or `,` between fields, and a malformed field is ignored on its own without affecting the update. A response without the header keeps the last report. Subscriptions saved by earlier versions load unchanged.
+- Days remaining count calendar days, so a minute-aligned clock cannot show one day too many.
+
+### Verified
+
+- App unit tests 387 + 84 + 20 passed (7 new: header parsing, alert thresholds including exactly 10% left, calendar days, provider hints, legacy decoding, provider interval vs. user choice, fetch keeping the last report on 304); no compiler warnings; screenshots of the Profiles page (light, dark, narrow) and the menu bar notice.
+- Local regression `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` passed; protocol interoperability gate (release build) passed all five gates.
+- Physical Apple Silicon Mac mini (LAN 192.168.50.226) in place of the Tart VM, notarized stable candidate: tun and transparent × rule, global and direct all passed `test_runtime_acceptance.sh`; idle keep-alive reuse 6/6, 2 MiB upload 6/6, SNI recovery 3/3. Remote arm64 gate `test_remote_arm64.sh fast` passed. See `Docs/ReleaseExceptions/1.2.1.md`.
+
 ## [1.2.0] - 2026-10-05
 
 Nodes with a self-signed certificate can now be used without skipping certificate verification: AetherRoute honours a pinned certificate fingerprint on every TLS protocol and a custom CA on Hysteria2 and TUIC, as Mihomo does.

@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.2.0 (Build 2026100501)</title>
-            <pubDate>Mon, 05 Oct 2026 16:27:41 +0800</pubDate>
-            <sparkle:version>2026100501</sparkle:version>
-            <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
+            <title>Version 1.2.1 (Build 2026100502)</title>
+            <pubDate>Mon, 05 Oct 2026 22:01:33 +0800</pubDate>
+            <sparkle:version>2026100502</sparkle:version>
+            <sparkle:shortVersionString>1.2.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,36 +119,34 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.2.0 更新要点</span>
-  <span class="release-badge">Build 2026100501 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.2.1 更新要点</span>
+  <span class="release-badge">Build 2026100502 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🚀 新功能：自签证书节点无需跳过校验</span>
+  <span class="section-tag tag-feature">🚀 新功能：订阅流量与到期一目了然</span>
   <ul>
-    <li><strong>证书指纹固定</strong>：VMess、VLESS、Trojan、AnyTLS、HTTP(S)、SOCKS5、Hysteria2、TUIC 支持 <code>fingerprint</code>，指纹匹配即可安全连接自签证书的服务器，与 mihomo 行为一致；握手签名始终验证。</li>
-    <li><strong>自定义 CA</strong>：Hysteria2、TUIC 支持 <code>ca</code> / <code>ca-str</code>；导入配置文件时自动把可读取的 CA 文件内联为 ca-str。</li>
-    <li><strong>更友好的出错方式</strong>：指纹写错或 CA 读不到时，只让该节点拒绝连接并说明原因，其他节点和代理组照常使用。</li>
-    <li><strong>手动添加节点</strong>新增"证书指纹"输入框；Hysteria2 分享链接的 pinSHA256 会自动保留。</li>
+    <li><strong>订阅用量</strong>：配置页显示已用 / 总量、剩余流量与到期日（还剩几天），数据来自订阅服务商。</li>
+    <li><strong>提前提醒</strong>：剩余不足 10% 或 3 天内到期标为橙色，用完或已到期标为红色；菜单栏面板同步提示。</li>
+    <li><strong>可选系统通知</strong>：设置 › 自动化 › 订阅提醒通知（默认关闭），通知不包含配置名与流量数字。</li>
+    <li><strong>更聪明的自动更新</strong>：未自选间隔时按服务商建议的间隔更新订阅；新订阅自动采用服务商提供的名称。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">✨ 改进与验证</span>
+  <span class="section-tag tag-improve">✨ 验证</span>
   <ul>
-    <li><strong>注意</strong>：订阅里同时写了指纹和"跳过证书校验"的节点，现在会校验指纹；指纹过期或填错的节点会提示"证书指纹不匹配"。</li>
-    <li>TUN 模式下本地代理处说明终端流量已被接管，一般无需复制终端代理环境。</li>
-    <li>12 种协议互通门禁新增指纹固定、自定义 CA 与错误指纹检查；Apple Silicon 真机 TUN / 透明代理 × 规则 / 全局 / 直连 6 个组合全部通过。</li>
+    <li>12 种协议互通门禁全部通过；Apple Silicon 真机 TUN / 透明代理 × 规则 / 全局 / 直连 6 个组合全部通过。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.2.0/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.2.1/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.2.0/AetherRoute-1.2.0-build-2026100501-arm64.dmg"
-                sparkle:edSignature="RiopRNpXPoyFWNp2nDrVCnxtNDB7+zg7M8adUWn2EXEVDNXHgsTijJNdQaA+UKM0Ic0d0cyJOOvznTOMvah+AA=="
-                length="25010210"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.2.1/AetherRoute-1.2.1-build-2026100502-arm64.dmg"
+                sparkle:edSignature="79o0mttIK+N0weF2jUrU4krK+mG8IHX3+ZbUR3JdJLtmiplEykzSiRTKqrvI3g0hqyw55Q76LQRckA/nJzmWCQ=="
+                length="26335936"
                 type="application/octet-stream" />
         </item>
     </channel>
