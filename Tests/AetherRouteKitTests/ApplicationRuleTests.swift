@@ -98,6 +98,34 @@ final class ApplicationRuleTests: XCTestCase {
         XCTAssertNoThrow(try ProfileImportValidator.validate(data: lookalike))
     }
 
+    /// The host compiles application rules into the profile it launches the
+    /// extension with; that snapshot must validate (an extension refusing it
+    /// never connected once any application rule existed).
+    func testLaunchSnapshotAcceptsTheCompiledApplicationRules() throws {
+        let rule = try XCTUnwrap(CustomRule.application(
+            bundleIdentifier: nil, bundlePath: "/usr/bin/curl",
+            displayName: "curl", target: .direct
+        ))
+        let profile = """
+        proxies:
+          - {name: Node, type: direct}
+        rules:
+          - \(rule.toClashRuleString())
+          - MATCH,Node
+        """
+        XCTAssertTrue(profile.contains("AETHER-APP,;/usr/bin/curl,DIRECT"))
+        XCTAssertNoThrow(try ProviderLaunchSnapshot(
+            profileYAML: profile,
+            routingMode: .rule,
+            bypassPolicy: .empty,
+            dnsPolicy: .inherited,
+            proxySelections: [:],
+            routingResources: [:]
+        ))
+        // The same text imported as a profile is still refused.
+        XCTAssertThrowsError(try ProfileImportValidator.validate(data: Data(profile.utf8)))
+    }
+
     func testRouteTesterSkipsApplicationRules() {
         let rules = [
             RuleConfigurationSummary(

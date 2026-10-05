@@ -3,8 +3,12 @@ import Foundation
 public enum ProfileImportValidator {
     public static let maximumProfileBytes = 10 * 1_024 * 1_024
 
+    /// `allowsApplicationRules` is true only for the launch snapshot the host
+    /// compiles itself, which carries the user's application rules as
+    /// `AETHER-APP`; every profile from outside the app is refused one.
     public static func validate(
         data: Data,
+        allowsApplicationRules: Bool = false,
         cancellationCheck: () throws -> Void = {}
     ) throws {
         try cancellationCheck()
@@ -41,7 +45,7 @@ public enum ProfileImportValidator {
         // Application rules come only from the app's own rule list. Matched
         // as a rule type followed by a comma, so a proxy named "Aether-Apple"
         // is not mistaken for one.
-        if text.range(
+        if !allowsApplicationRules, text.range(
             of: #"(^|[\s\-'"\[(,])AETHER-APP\s*,"#,
             options: [.regularExpression, .caseInsensitive]
         ) != nil {

@@ -57,7 +57,11 @@ public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
             throw ProviderLaunchSnapshotError.profileEncodingFailed
         }
         do {
-            try ProfileImportValidator.validate(data: profileData)
+            // The host compiled this profile, application rules included.
+            try ProfileImportValidator.validate(
+                data: profileData,
+                allowsApplicationRules: true
+            )
         } catch {
             throw ProviderLaunchSnapshotError.invalidProfile
         }
