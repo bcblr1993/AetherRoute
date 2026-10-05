@@ -318,6 +318,25 @@ struct ManualNodeEditorSheet: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
                 }
+                if node.supportsCertificateFingerprint {
+                    TextField(
+                        "Certificate fingerprint (optional)",
+                        text: $node.tls.certificateFingerprint
+                    )
+                    .accessibilityIdentifier("manual-node-certificate-fingerprint")
+                    .fieldRow("Certificate fingerprint (optional)")
+                    Text(certificateFingerprintMessage
+                        ?? AppLocalization.string(
+                            "SHA-256 of the server certificate. When set, a self-signed server is trusted without skipping verification."
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(
+                            certificateFingerprintMessage == nil
+                                ? AnyShapeStyle(AetherVisual.secondaryText)
+                                : AnyShapeStyle(Color.orange)
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             if node.protocolID == .vless, node.tls.enabled {
@@ -566,6 +585,13 @@ struct ManualNodeEditorSheet: View {
 
     private var isCreateEnabled: Bool {
         (try? candidateForSubmission()) != nil
+    }
+
+    private var certificateFingerprintMessage: String? {
+        guard (try? node.validateCertificateFingerprint()) == nil else { return nil }
+        return AppLocalization.string(
+            "Certificate fingerprint must be 64 hexadecimal characters; colons are allowed."
+        )
     }
 
     private var realityValidationMessage: String? {

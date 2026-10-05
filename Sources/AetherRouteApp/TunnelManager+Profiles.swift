@@ -30,17 +30,30 @@ extension TunnelManager {
             do {
                 let store = try ProfileCatalogStore.applicationGroup()
                 let shouldActivate = !isEnabled || activeProfileID == nil
-                let catalog = try await ProfileFileImporter.importProfile(
+                let outcome = try await ProfileFileImporter.importProfileWithOutcome(
                     from: url,
                     into: store,
                     makeActive: shouldActivate
                 )
-                await applyProductionProfileCatalog(catalog)
+                await applyProductionProfileCatalog(outcome.catalog)
                 diagnosticEvents.record(.profileImported)
-                profileMessage = shouldActivate
-                    ? AppLocalization.string("Profile imported and activated.")
-                    : AppLocalization.string("Profile imported into library.")
-                profileMessageIsError = false
+                let unreadable = outcome.unreadableCertificateAuthorityPaths
+                if unreadable.isEmpty {
+                    profileMessage = shouldActivate
+                        ? AppLocalization.string("Profile imported and activated.")
+                        : AppLocalization.string("Profile imported into library.")
+                    profileMessageIsError = false
+                } else {
+                    // The profile works; only nodes pinned to these CA files
+                    // will refuse to connect, so say which and how to fix it.
+                    profileMessage = String.localizedStringWithFormat(
+                        AppLocalization.string(
+                            "Profile imported, but AetherRoute could not read the CA file %@. Nodes that use it will not connect; paste the certificate into ca-str instead."
+                        ),
+                        unreadable.joined(separator: ", ")
+                    )
+                    profileMessageIsError = true
+                }
             } catch is CancellationError {
                 profileMessage = AppLocalization.string("Profile import cancelled.")
                 profileMessageIsError = false

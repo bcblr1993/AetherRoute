@@ -50,6 +50,9 @@ public struct AetherNodeTLS: Codable, Equatable, Sendable {
     public var realityPublicKey: String
     public var realityShortID: String
     public var clientFingerprint: String
+    /// SHA-256 of the server certificate (Mihomo `fingerprint`). Pinning it
+    /// lets a self-signed server be used without skipping verification.
+    public var certificateFingerprint: String
 
     public init(
         enabled: Bool = false,
@@ -57,7 +60,8 @@ public struct AetherNodeTLS: Codable, Equatable, Sendable {
         skipCertificateVerification: Bool = false,
         realityPublicKey: String = "",
         realityShortID: String = "",
-        clientFingerprint: String = "chrome"
+        clientFingerprint: String = "chrome",
+        certificateFingerprint: String = ""
     ) {
         self.enabled = enabled
         self.serverName = serverName
@@ -65,6 +69,36 @@ public struct AetherNodeTLS: Codable, Equatable, Sendable {
         self.realityPublicKey = realityPublicKey
         self.realityShortID = realityShortID
         self.clientFingerprint = clientFingerprint
+        self.certificateFingerprint = certificateFingerprint
+    }
+
+    // Nodes saved before 1.2.0 have no certificate fingerprint.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try container.decode(Bool.self, forKey: .enabled)
+        serverName = try container.decode(String.self, forKey: .serverName)
+        skipCertificateVerification = try container.decode(
+            Bool.self,
+            forKey: .skipCertificateVerification
+        )
+        realityPublicKey = try container.decode(String.self, forKey: .realityPublicKey)
+        realityShortID = try container.decode(String.self, forKey: .realityShortID)
+        clientFingerprint = try container.decode(String.self, forKey: .clientFingerprint)
+        certificateFingerprint = try container.decodeIfPresent(
+            String.self,
+            forKey: .certificateFingerprint
+        ) ?? ""
+    }
+
+    /// The fingerprint as 64 lowercase hex digits, or nil when it is not a
+    /// SHA-256 (colons and either case are accepted, as in Mihomo).
+    public static func normalizedCertificateFingerprint(_ value: String) -> String? {
+        let hex = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ":", with: "")
+            .lowercased()
+        guard hex.count == 64, hex.allSatisfy(\.isHexDigit) else { return nil }
+        return hex
     }
 }
 
@@ -234,6 +268,7 @@ public extension AetherNode {
             ("Reality public key", tls.realityPublicKey),
             ("Reality short ID", tls.realityShortID),
             ("Client fingerprint", tls.clientFingerprint),
+            ("Certificate fingerprint", tls.certificateFingerprint),
             ("Transport path", transport.path),
             ("Transport host", transport.host),
             ("gRPC service name", transport.grpcServiceName),
@@ -316,6 +351,28 @@ public extension AetherNode {
         if protocolID == .vless,
            !tls.realityPublicKey.isEmpty || !tls.realityShortID.isEmpty {
             try validateRealityConfiguration()
+        }
+        try validateCertificateFingerprint()
+    }
+
+    /// Protocols whose TLS client honours a pinned certificate.
+    static let certificateFingerprintProtocols: Set<AetherNodeProtocol> = [
+        .http, .socks5, .vmess, .vless, .trojan, .hysteria2, .tuic, .anyTLS,
+    ]
+
+    var supportsCertificateFingerprint: Bool {
+        Self.certificateFingerprintProtocols.contains(protocolID)
+            && (tls.enabled || [.trojan, .hysteria2, .tuic, .anyTLS].contains(protocolID))
+            && tls.realityPublicKey.isEmpty
+            && tls.realityShortID.isEmpty
+    }
+
+    func validateCertificateFingerprint() throws {
+        let value = tls.certificateFingerprint
+        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard supportsCertificateFingerprint,
+              AetherNodeTLS.normalizedCertificateFingerprint(value) != nil else {
+            throw AetherNodeValidationError.invalidField("Certificate fingerprint")
         }
     }
 
@@ -647,6 +704,11 @@ public enum AetherNodeProfileCompiler {
             node.tls.skipCertificateVerification,
             to: &lines
         )
+        if let fingerprint = AetherNodeTLS.normalizedCertificateFingerprint(
+            node.tls.certificateFingerprint
+        ) {
+            field("fingerprint", fingerprint, to: &lines)
+        }
     }
 
     private static func appendTransport(

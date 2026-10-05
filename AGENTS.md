@@ -27,7 +27,7 @@
   ./scripts/fetch_interop_tools.sh
   ./scripts/test_protocol_interop_all.sh
   ```
-  门禁编译与发布一致的 release 引擎，在本机回环上逐一对接 sing-box 矩阵（24 个用例）、VLESS REALITY、WireGuard、ShadowQUIC 与 OpenSSH；每个用例都检查 2 MiB 双向传输、空闲后复用、8 包 UDP（重复送达即失败），TLS 用例还必须在开启证书校验时拒绝自签证书。五项必须全部 PASS，日志与汇总在 `outputs/interop-<时间>/`。该门禁曾发现 Shadowsocks UDP 重复发包与 SSH 空闲 5 秒断开（1.1.7 修复）。
+  门禁编译与发布一致的 release 引擎，在本机回环上逐一对接 sing-box 矩阵（24 个用例）、VLESS REALITY、WireGuard、ShadowQUIC 与 OpenSSH；每个用例都检查 2 MiB 双向传输、空闲后复用、8 包 UDP（重复送达即失败），TLS 用例还必须通过证书指纹固定（Hysteria2、TUIC 另测 `ca-str` 自定义 CA）、拒绝错误指纹，并在开启证书校验时拒绝不受信任的证书（服务端证书由 `Tests/Interop/make-test-pki.sh` 生成的临时 CA 签发）。五项必须全部 PASS，日志与汇总在 `outputs/interop-<时间>/`。该门禁曾发现 Shadowsocks UDP 重复发包与 SSH 空闲 5 秒断开（1.1.7 修复）。
   - 每次发布都必须运行；`Core/Engine` 有任何改动时必须在提交前运行。
   - 修改 `interop_tests.rs` 后同步 `Config/ProtocolCoreEvidence.json`（`coreCommit`、`interopTestsSHA256`、`interopCases`）与 `Config/ProtocolReleaseMatrix.json`，并以 `./scripts/verify_protocol_matrix.sh` 校验。
   - REALITY 用例的 Xray 服务端每次握手都会访问真实的 www.cloudflare.com，本机网络繁忙时单轮会慢 5–10 秒；单项超时先单独重跑该项确认，不要放宽其他用例。

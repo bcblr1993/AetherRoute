@@ -12432,6 +12432,46 @@
           }
         }
       }
+    },
+    "Profile imported, but AetherRoute could not read the CA file %@. Nodes that use it will not connect; paste the certificate into ca-str instead.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置已导入，但 AetherRoute 读取不到 CA 文件 %@。使用它的节点将无法连接；请把证书内容粘贴到 ca-str 字段。"
+          }
+        }
+      }
+    },
+    "Certificate fingerprint (optional)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "证书指纹（可选）"
+          }
+        }
+      }
+    },
+    "SHA-256 of the server certificate. When set, a self-signed server is trusted without skipping verification.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器证书的 SHA-256。填写后，无需跳过证书校验即可信任自签证书的服务器。"
+          }
+        }
+      }
+    },
+    "Certificate fingerprint must be 64 hexadecimal characters; colons are allowed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "证书指纹应为 64 位十六进制字符，可用冒号分隔。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

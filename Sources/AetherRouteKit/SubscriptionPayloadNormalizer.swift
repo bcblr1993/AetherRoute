@@ -367,7 +367,9 @@ public enum SubscriptionPayloadNormalizer {
             tls: AetherNodeTLS(
                 enabled: true,
                 serverName: first(query, "sni", "peer") ?? "",
-                skipCertificateVerification: flag(query, "insecure", "allowinsecure")
+                skipCertificateVerification: flag(query, "insecure", "allowinsecure"),
+                // Hysteria2 share links pin the certificate as pinSHA256.
+                certificateFingerprint: first(query, "pinsha256") ?? ""
             ),
             obfuscation: query["obfs"] ?? "",
             obfuscationPassword: first(query, "obfs-password", "obfspassword") ?? "",

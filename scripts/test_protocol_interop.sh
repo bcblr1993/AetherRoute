@@ -55,10 +55,12 @@ verify_sha256 "$EXPECTED_SING_BOX_SHA256" "$SING_BOX_BIN"
 verify_sha256 "$EXPECTED_SHADOW_TLS_SHA256" "$SHADOW_TLS_BIN"
 "$SING_BOX_BIN" version | grep -F "sing-box version 1.13.15" >/dev/null
 "$SHADOW_TLS_BIN" --version | grep -F "shadow-tls 0.2.25" >/dev/null
-openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
-  -subj /CN=localhost \
-  -keyout "$WORK_DIR/key.pem" \
-  -out "$WORK_DIR/cert.pem" >/dev/null 2>&1
+# A test CA signs the localhost server certificate, so the tests can check
+# certificate pinning (fingerprint) and custom roots (ca-str) as well as the
+# refusal of an untrusted chain.
+AETHER_INTEROP_CERT_FINGERPRINT=$(sh "$ROOT/Tests/Interop/make-test-pki.sh" "$WORK_DIR")
+AETHER_INTEROP_CA_FILE=$WORK_DIR/ca.pem
+export AETHER_INTEROP_CERT_FINGERPRINT AETHER_INTEROP_CA_FILE
 sed \
   -e "s|__CERT__|$WORK_DIR/cert.pem|g" \
   -e "s|__KEY__|$WORK_DIR/key.pem|g" \
