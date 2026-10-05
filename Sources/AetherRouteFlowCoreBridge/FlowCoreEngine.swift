@@ -146,15 +146,21 @@ public final class FlowCoreEngine: @unchecked Sendable {
 
     public func makeTCPFlow(
         source: FlowEndpoint?,
-        destination: FlowEndpoint
+        destination: FlowEndpoint,
+        sourceApp: FlowSourceApp? = nil
     ) throws -> any RustTCPFlowBridge {
-        try storage.makeTCPFlow(source: source, destination: destination)
+        try storage.makeTCPFlow(
+            source: source,
+            destination: destination,
+            sourceApp: sourceApp
+        )
     }
 
     public func makeUDPFlow(
-        source: FlowEndpoint
+        source: FlowEndpoint,
+        sourceApp: FlowSourceApp? = nil
     ) throws -> any RustUDPFlowBridge {
-        try storage.makeUDPFlow(source: source)
+        try storage.makeUDPFlow(source: source, sourceApp: sourceApp)
     }
 
     public func selectorSnapshot(group: String) throws -> ProxySelectionSnapshot {
@@ -263,7 +269,8 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
 
     func makeTCPFlow(
         source: FlowEndpoint?,
-        destination: FlowEndpoint
+        destination: FlowEndpoint,
+        sourceApp: FlowSourceApp?
     ) throws -> any RustTCPFlowBridge {
         let destination = try validatedEndpoint(
             destination,
@@ -286,11 +293,26 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
                 guard phase == .running, let handle else {
                     throw FlowCoreEngineError.engineClosed
                 }
-                let created = backend.tcpCreate(
+                var created = backend.tcpCreate(
                     engine: handle,
                     source: sourceData,
-                    destination: destinationData
+                    destination: destinationData,
+                    sourceApp: sourceApp?.encoded
                 )
+                // The app description is advisory: if this engine refuses
+                // it, carry the flow without one rather than drop it.
+                if created.status == FlowCoreABIStatus.invalidArgument,
+                   sourceApp != nil {
+                    FlowCoreRuntimeLog.logger.error(
+                        "stage=createFlow transport=tcp sourceApp=rejected"
+                    )
+                    created = backend.tcpCreate(
+                        engine: handle,
+                        source: sourceData,
+                        destination: destinationData,
+                        sourceApp: nil
+                    )
+                }
                 FlowCoreRuntimeLog.logger.debug(
                     "stage=createFlow transport=tcp status=\(created.status, privacy: .public)"
                 )
@@ -313,7 +335,8 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
     }
 
     func makeUDPFlow(
-        source: FlowEndpoint
+        source: FlowEndpoint,
+        sourceApp: FlowSourceApp?
     ) throws -> any RustUDPFlowBridge {
         let source = try validatedEndpoint(
             source,
@@ -328,10 +351,22 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
                 guard phase == .running, let handle else {
                     throw FlowCoreEngineError.engineClosed
                 }
-                let created = backend.udpCreate(
+                var created = backend.udpCreate(
                     engine: handle,
-                    source: sourceData
+                    source: sourceData,
+                    sourceApp: sourceApp?.encoded
                 )
+                if created.status == FlowCoreABIStatus.invalidArgument,
+                   sourceApp != nil {
+                    FlowCoreRuntimeLog.logger.error(
+                        "stage=createFlow transport=udp sourceApp=rejected"
+                    )
+                    created = backend.udpCreate(
+                        engine: handle,
+                        source: sourceData,
+                        sourceApp: nil
+                    )
+                }
                 FlowCoreRuntimeLog.logger.debug(
                     "stage=createFlow transport=udp status=\(created.status, privacy: .public)"
                 )

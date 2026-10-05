@@ -420,7 +420,22 @@ extension TunnelManager {
                         : UInt64(max(0, reviewNow - 140) * 1_000),
                     rule: "DomainSuffix",
                     rulePayload: "apple.com",
-                    proxyChain: "Balanced → Singapore Edge"
+                    proxyChain: "Balanced → Singapore Edge",
+                    sourceAppIdentifier: "com.apple.WebKit.Networking",
+                    sourceAppPath: "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking"
+                ),
+                ConnectionTelemetry(
+                    transport: .tcp,
+                    destination: "api.github.com",
+                    destinationPort: 443,
+                    uploadTotal: 24_000,
+                    downloadTotal: 310_000,
+                    startedAtUnixMilliseconds: UInt64(max(0, reviewNow - 32) * 1_000),
+                    rule: "GeoSite",
+                    rulePayload: "github",
+                    proxyChain: "Balanced → Singapore Edge",
+                    sourceAppIdentifier: "com.apple.curl",
+                    sourceAppPath: "/usr/bin/curl"
                 ),
                 ConnectionTelemetry(
                     transport: .udp,
@@ -489,6 +504,31 @@ extension TunnelManager {
         return connections
     }
 
+    /// Rules for the showcase screenshots, never the user's own.
+    static var showcaseReviewCustomRules: [CustomRule] {
+        [
+            CustomRule.application(
+                bundleIdentifier: "com.anthropic.claudefordesktop",
+                bundlePath: "/Applications/Claude.app",
+                displayName: "Claude",
+                target: .proxy("Balanced")
+            ),
+            CustomRule.application(
+                bundleIdentifier: nil,
+                bundlePath: "/usr/bin/git",
+                displayName: "git",
+                target: .proxy("Auto")
+            ),
+            CustomRule.application(
+                bundleIdentifier: "com.apple.WebKit.Networking",
+                bundlePath: nil,
+                displayName: "Safari (web)",
+                target: .direct
+            ),
+            CustomRule(kind: .domainSuffix, value: "corp.example", target: .direct),
+        ].compactMap { $0 }
+    }
+
     /// A believable set of flows for the website's screenshots.
     static func showcaseReviewConnections(now: TimeInterval) -> [ConnectionTelemetry] {
         let flows: [(NetworkTelemetryTransport, String, UInt16, UInt64, UInt64, Double, String, String, String)] = [
@@ -507,7 +547,24 @@ extension TunnelManager {
             (.tcp, "192.168.1.10", 8080, 18_000, 92_000, 67, "IPCIDR", "192.168.0.0/16", "DIRECT"),
             (.tcp, "fonts.gstatic.com", 443, 21_000, 864_000, 12, "GeoSite", "google", "Auto → Hong Kong 01"),
         ]
-        return flows.map { flow in
+        // The app behind each flow above, as the transparent proxy reports it.
+        let apps: [(String, String)] = [
+            ("com.google.Chrome.helper", "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper"),
+            ("com.anthropic.claudefordesktop", "/Applications/Claude.app/Contents/MacOS/Claude"),
+            ("com.anthropic.claudefordesktop", "/Applications/Claude.app/Contents/MacOS/Claude"),
+            ("com.apple.WebKit.Networking", ""),
+            ("com.apple.git", "/usr/bin/git"),
+            ("com.google.Chrome.helper", "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper"),
+            ("com.google.Chrome.helper", "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper"),
+            ("com.apple.WebKit.Networking", ""),
+            ("com.apple.cloudd", "/System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd"),
+            ("com.apple.nsurlsessiond", "/usr/libexec/nsurlsessiond"),
+            ("com.apple.WebKit.Networking", ""),
+            ("", ""),
+            ("com.apple.Terminal", "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal"),
+            ("com.google.Chrome.helper", "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper"),
+        ]
+        return zip(flows, apps).map { flow, app in
             ConnectionTelemetry(
                 transport: flow.0,
                 destination: flow.1,
@@ -517,7 +574,9 @@ extension TunnelManager {
                 startedAtUnixMilliseconds: UInt64(max(0, now - flow.5) * 1_000),
                 rule: flow.6,
                 rulePayload: flow.7,
-                proxyChain: flow.8
+                proxyChain: flow.8,
+                sourceAppIdentifier: app.0,
+                sourceAppPath: app.1
             )
         }
     }

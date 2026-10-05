@@ -11,13 +11,17 @@ private enum TransparentLifecycleLog {
 /// The production conformance lives in AetherRouteFlowCoreBridge; tests use an
 /// in-memory engine and never load or start a Network Extension.
 public protocol TransparentProxyFlowEngine: AnyObject, Sendable {
+    /// `sourceApp` is the flow's originating app, reported back in telemetry
+    /// and matched by application rules; nil when the platform gave none.
     func makeTCPFlow(
         source: FlowEndpoint?,
-        destination: FlowEndpoint
+        destination: FlowEndpoint,
+        sourceApp: FlowSourceApp?
     ) throws -> any RustTCPFlowBridge
 
     func makeUDPFlow(
-        source: FlowEndpoint
+        source: FlowEndpoint,
+        sourceApp: FlowSourceApp?
     ) throws -> any RustUDPFlowBridge
 
     func selectorSnapshot(group: String) throws -> ProxySelectionState
@@ -188,6 +192,12 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         identityGuard.evaluate(flow: flow).disposition
     }
 
+    public func identityEvaluation(
+        for flow: NEAppProxyFlow
+    ) -> TransparentProxySelfIdentityGuard.Evaluation {
+        identityGuard.evaluate(flow: flow)
+    }
+
     func identityDisposition(
         auditToken: Data?
     ) -> TransparentProxySelfIdentityGuard.Disposition {
@@ -200,7 +210,8 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
     public func claimTCP(
         components: TransparentTCPIngressComponents,
         source: FlowEndpoint?,
-        destination: FlowEndpoint
+        destination: FlowEndpoint,
+        sourceApp: FlowSourceApp? = nil
     ) -> TransparentProxyIngressClaimResult {
         admissionLock.lock()
         guard acceptingFlows else {
@@ -210,7 +221,8 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         let result = coordinator.claimTCP(components: components) { [engine] in
             try engine.makeTCPFlow(
                 source: source,
-                destination: destination
+                destination: destination,
+                sourceApp: sourceApp
             )
         }
         admissionLock.unlock()
@@ -222,7 +234,8 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
     @discardableResult
     public func claimUDP(
         components: TransparentUDPIngressComponents,
-        localSource: FlowEndpoint?
+        localSource: FlowEndpoint?,
+        sourceApp: FlowSourceApp? = nil
     ) -> TransparentProxyIngressClaimResult {
         admissionLock.lock()
         guard acceptingFlows else {
@@ -233,7 +246,7 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
             components: components,
             localSource: localSource
         ) { [engine] source in
-            try engine.makeUDPFlow(source: source)
+            try engine.makeUDPFlow(source: source, sourceApp: sourceApp)
         }
         admissionLock.unlock()
         return result
@@ -585,6 +598,12 @@ public final class TransparentProxyProviderLifecycleController:
         identityGuard.evaluate(flow: flow).disposition
     }
 
+    public func identityEvaluation(
+        for flow: NEAppProxyFlow
+    ) -> TransparentProxySelfIdentityGuard.Evaluation {
+        identityGuard.evaluate(flow: flow)
+    }
+
     func identityDisposition(
         auditToken: Data?
     ) -> TransparentProxySelfIdentityGuard.Disposition {
@@ -598,13 +617,15 @@ public final class TransparentProxyProviderLifecycleController:
     public func claimTCP(
         components: TransparentTCPIngressComponents,
         source: FlowEndpoint?,
-        destination: FlowEndpoint
+        destination: FlowEndpoint,
+        sourceApp: FlowSourceApp? = nil
     ) -> Bool {
         guard let runtime = runningRuntime() else { return false }
         runtime.claimTCP(
             components: components,
             source: source,
-            destination: destination
+            destination: destination,
+            sourceApp: sourceApp
         )
         return true
     }
@@ -612,12 +633,14 @@ public final class TransparentProxyProviderLifecycleController:
     @discardableResult
     public func claimUDP(
         components: TransparentUDPIngressComponents,
-        localSource: FlowEndpoint?
+        localSource: FlowEndpoint?,
+        sourceApp: FlowSourceApp? = nil
     ) -> Bool {
         guard let runtime = runningRuntime() else { return false }
         runtime.claimUDP(
             components: components,
-            localSource: localSource
+            localSource: localSource,
+            sourceApp: sourceApp
         )
         return true
     }

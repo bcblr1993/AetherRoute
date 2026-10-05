@@ -23,6 +23,9 @@ public enum ClashRuleKindName {
         "inport": "IN-PORT",
         "processname": "PROCESS-NAME",
         "processpath": "PROCESS-PATH",
+        "processpathregex": "PROCESS-PATH-REGEX",
+        // AetherRoute's application rule; its payload is the app's name.
+        "aetherapp": "APP",
         "ruleset": "RULE-SET",
         "network": "NETWORK",
         "match": "MATCH",

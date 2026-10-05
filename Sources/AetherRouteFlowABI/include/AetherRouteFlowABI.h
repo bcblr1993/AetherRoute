@@ -141,6 +141,43 @@ typedef struct aetherroute_flow_abi_v4 {
 
 int32_t aetherroute_flow_abi_load_v4(aetherroute_flow_abi_v4_t *output);
 
+/*
+ * V5 (1.3.0) adds flow creation that carries the originating app (an `ASA1`
+ * description, see clashrs.h) and the `ART2` telemetry snapshot that reports
+ * it back per connection. The V2 create and telemetry entries stay in place.
+ */
+typedef struct aetherroute_flow_abi_v5 {
+    uint32_t struct_size;
+    aetherroute_flow_abi_v4_t v4;
+    int32_t (*tcp_create_v2)(
+        void *,
+        const uint8_t *,
+        size_t,
+        const uint8_t *,
+        size_t,
+        const uint8_t *,
+        size_t,
+        void **
+    );
+    int32_t (*udp_create_v2)(
+        void *,
+        const uint8_t *,
+        size_t,
+        const uint8_t *,
+        size_t,
+        void **
+    );
+    int32_t (*telemetry_snapshot_v2)(
+        void *,
+        uint32_t,
+        uint8_t *,
+        size_t,
+        size_t *
+    );
+} aetherroute_flow_abi_v5_t;
+
+int32_t aetherroute_flow_abi_load_v5(aetherroute_flow_abi_v5_t *output);
+
 #ifdef __cplusplus
 }
 #endif

@@ -131,6 +131,7 @@ int clash_flow_tcp_create_v2(engine,
 **引擎**
 - `Session` 新增 `source_app: Option<SourceApp { signing_identifier, executable_path }>`；跟踪连接时一并保存。
 - TUN（视 M0）：在新连接建立时按五元组查询，结果写入同一字段；查询失败为 `None`。
+  - **M2 实现说明**：TUN 只对 **TCP** 做归属（`net.inet.tcp.pcblist_n` 按本地/远端端口匹配 → `so_last_pid` → `proc_pidpath`，表缓存 250 ms、未命中最多每毫秒重读一次，pid→路径缓存 30 秒）。TUN 的 UDP 由引擎合并成单个数据报会话转发，没有逐流的会话可以挂来源 App，因此 TUN 下 UDP（含 QUIC）显示"未知应用"、不受应用规则约束；透明代理模式下 TCP 与 UDP 均有来源 App。TUN 只能拿到路径，没有签名标识。
 
 **遥测 v2**（新增 `clash_flow_telemetry_snapshot_v2` / `clash_packet_telemetry_snapshot_v2`，保留 v1）
 - 魔数 `ART2`；每条连接在 v1 的四个字符串之后追加两个长度字段与内容：`app_identifier`、`app_path`（各上限 512 字节，沿用现有的非 UTF-8 清理与截断）；总大小上限不变（1 MiB）。

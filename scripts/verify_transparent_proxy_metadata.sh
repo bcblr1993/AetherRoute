@@ -31,8 +31,11 @@ clash_flow_selector_select_v1
 clash_flow_selector_latency_v1
 clash_flow_selector_active_latency_v1
 clash_flow_telemetry_snapshot_v1
+clash_flow_telemetry_snapshot_v2
 clash_flow_tcp_create
+clash_flow_tcp_create_v2
 clash_flow_udp_create
+clash_flow_udp_create_v2
 clash_flow_activate
 clash_flow_tcp_write
 clash_flow_tcp_finish_write
@@ -140,8 +143,8 @@ verify_core_artifact() {
   done
   flow_symbol_count=$(awk '{print $NF}' \
     "$core_symbols_directory/symbols.txt" | grep -Ec '^_clash_flow_' || true)
-  # 20 since clash_flow_diagnostics_snapshot_v1; see scripts/build_core.sh.
-  test "$flow_symbol_count" -eq 20 || \
+  # 23 since 1.3.0's source-app entry points; see scripts/build_core.sh.
+  test "$flow_symbol_count" -eq 23 || \
     fail "core artifact exposes an unexpected Flow ABI count: $flow_symbol_count"
   if awk '{print $NF}' "$core_symbols_directory/symbols.txt" \
     | grep -Eq '^_clash_(start|shutdown|packet_|push_packet_|install_packet_|uninstall_packet_|is_packet_)'; then

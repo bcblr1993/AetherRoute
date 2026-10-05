@@ -15,6 +15,14 @@ struct ConnectionsView: View {
     @State private var searchText = ""
     @State private var pausedConnections: [ConnectionTelemetry]?
     @State private var inspectedConnection: ConnectionTableItem?
+    @State private var groupsByApp = false
+    /// Limits the list to one app (`SourceAppPresentation.groupingKey`).
+    @State private var appFilter: AppFilter?
+
+    private struct AppFilter: Equatable {
+        let key: String
+        let name: String
+    }
 
     private var displayedConnections: [ConnectionTelemetry] {
         pausedConnections ?? telemetry.snapshot.connections
@@ -47,7 +55,7 @@ struct ConnectionsView: View {
             if displayedConnections.isEmpty {
                 emptyState
             } else {
-                connectionList(rows: rows)
+                connectionList(rows: rows, apps: groupsByApp ? appRows(rows) : nil)
                     .overlay {
                         // A search or filter that matches nothing says so
                         // instead of leaving a bare table.
@@ -83,8 +91,10 @@ struct ConnectionsView: View {
         .telemetryDemand(source: "connections")
 #if DEBUG
         .task {
-            if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_SHEET"] == "inspector" {
-                inspectedConnection = connectionRows.first
+            switch ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_SHEET"] {
+            case "inspector": inspectedConnection = connectionRows.first
+            case "apps": groupsByApp = true
+            default: break
             }
         }
 #endif
@@ -92,7 +102,10 @@ struct ConnectionsView: View {
             ConnectionInspector(connection: row.connection)
         }
         .onChange(of: tunnel.isConnected) { _, connected in
-            if !connected { pausedConnections = nil }
+            if !connected {
+                pausedConnections = nil
+                appFilter = nil
+            }
         }
     }
 
@@ -140,7 +153,10 @@ struct ConnectionsView: View {
         .padding(AetherVisual.s6)
     }
 
-    private func connectionList(rows: [ConnectionTableItem]) -> some View {
+    private func connectionList(
+        rows: [ConnectionTableItem],
+        apps: [ConnectionAppRow]?
+    ) -> some View {
         // Counted once per sample, not once per filter and layout candidate:
         // with 2,000 flows that was 8 passes over every proxy chain.
         let counts = outletCounts
@@ -173,52 +189,231 @@ struct ConnectionsView: View {
             .padding(.horizontal, AetherVisual.s3)
             .padding(.vertical, AetherVisual.s3)
 
+            if let appFilter {
+                appFilterBar(appFilter)
+            }
+
             if rows.isEmpty {
                 ContentUnavailableView.search(text: searchText)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            // Ideal widths sum to what fits the narrowest window inside the
-            // glass panel; Destination takes any extra width.
-            Table(rows) {
-                TableColumn(AppLocalization.string("Destination")) { row in
-                    ConnectionDestinationCell(connection: row.connection)
-                        .help(Text(verbatim: row.connection.destinationAddress))
-                        .contextMenu {
-                            Button("Copy destination") { copyDestination(row.connection) }
-                            Button("Connection details") { inspectedConnection = row }
-                        }
-                        .onTapGesture(count: 2) { inspectedConnection = row }
-                }
-                .width(min: 110, ideal: 130, max: 520)
-                TableColumn(AppLocalization.string("Matched rule")) { row in
-                    ConnectionRuleCell(connection: row.connection)
-                }
-                .width(min: 76, ideal: 84, max: 400)
-                TableColumn(AppLocalization.string("Outlet")) { row in
-                    ConnectionOutletCell(connection: row.connection)
-                }
-                .width(min: 84, ideal: 96, max: 320)
-                TableColumn(AppLocalization.string("Traffic")) { row in
-                    ConnectionTrafficCell(connection: row.connection)
-                }
-                .width(min: 64, ideal: 70, max: 120)
-                // Numbers sit on the right; the title follows them.
-                .alignment(.numeric)
-                TableColumn(AppLocalization.string("Duration")) { row in
-                    ConnectionDurationCell(connection: row.connection)
-                }
-                .width(min: 56, ideal: 60, max: 100)
-                .alignment(.numeric)
+            if let apps {
+                appTable(apps)
+            } else {
+                connectionTable(rows)
             }
-            .tableStyle(.inset(alternatesRowBackgrounds: false))
-            .scrollContentBackground(.hidden)
-            .accessibilityLabel(AppLocalization.string("Connections"))
-            .accessibilityIdentifier("connections-table")
-            .scrollIndicators(.hidden, axes: .horizontal)
         }
         .aetherPanel()
         .padding(.horizontal, AetherVisual.pageHorizontalPadding)
         .padding(.bottom, AetherVisual.s2)
+    }
+
+    private func appFilterBar(_ filter: AppFilter) -> some View {
+        HStack(spacing: AetherVisual.s2) {
+            Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+            Text(AppLocalization.format("Only connections from %@", filter.name))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            Button(AppLocalization.string("Show all apps")) {
+                withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                    appFilter = nil
+                }
+            }
+            .buttonStyle(.link)
+            .accessibilityIdentifier("connections-clear-app-filter")
+        }
+        .font(.callout)
+        .padding(.horizontal, AetherVisual.s4)
+        .padding(.bottom, AetherVisual.s2)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("connections-app-filter")
+    }
+
+    // Ideal widths sum to what fits the narrowest window inside the glass
+    // panel; Destination takes any extra width.
+    private func connectionTable(_ rows: [ConnectionTableItem]) -> some View {
+        Table(rows) {
+            TableColumn(AppLocalization.string("App")) { row in
+                let app = SourceAppDirectory.shared.presentation(for: row.connection)
+                ConnectionAppCell(app: app)
+                    .contextMenu { appContextMenu(app) }
+            }
+            .width(min: 56, ideal: 76, max: 260)
+            TableColumn(AppLocalization.string("Destination")) { row in
+                ConnectionDestinationCell(connection: row.connection)
+                    .help(Text(verbatim: row.connection.destinationAddress))
+                    .contextMenu {
+                        Button("Copy destination") { copyDestination(row.connection) }
+                        Button("Connection details") { inspectedConnection = row }
+                        Divider()
+                        appContextMenu(
+                            SourceAppDirectory.shared.presentation(for: row.connection)
+                        )
+                    }
+                    .onTapGesture(count: 2) { inspectedConnection = row }
+            }
+            .width(min: 100, ideal: 118, max: 520)
+            TableColumn(AppLocalization.string("Matched rule")) { row in
+                ConnectionRuleCell(connection: row.connection)
+            }
+            .width(min: 76, ideal: 84, max: 400)
+            TableColumn(AppLocalization.string("Outlet")) { row in
+                ConnectionOutletCell(connection: row.connection)
+            }
+            .width(min: 84, ideal: 96, max: 320)
+            TableColumn(AppLocalization.string("Traffic")) { row in
+                ConnectionTrafficCell(connection: row.connection)
+            }
+            .width(min: 64, ideal: 70, max: 120)
+            // Numbers sit on the right; the title follows them.
+            .alignment(.numeric)
+            TableColumn(AppLocalization.string("Duration")) { row in
+                ConnectionDurationCell(connection: row.connection)
+            }
+            .width(min: 56, ideal: 60, max: 100)
+            .alignment(.numeric)
+        }
+        .tableStyle(.inset(alternatesRowBackgrounds: false))
+        .scrollContentBackground(.hidden)
+        .accessibilityLabel(AppLocalization.string("Connections"))
+        .accessibilityIdentifier("connections-table")
+        .scrollIndicators(.hidden, axes: .horizontal)
+    }
+
+    /// One row per app: how many connections it has open and their traffic.
+    /// Double-click (or the context menu) lists that app's connections.
+    private func appTable(_ apps: [ConnectionAppRow]) -> some View {
+        Table(apps) {
+            TableColumn(AppLocalization.string("App")) { row in
+                ConnectionAppCell(app: row.app)
+                    .contextMenu { appContextMenu(row.app) }
+                    .onTapGesture(count: 2) { showOnly(row.app) }
+            }
+            .width(min: 140, ideal: 220, max: 520)
+            TableColumn(AppLocalization.string("Connections")) { row in
+                Text(verbatim: "\(row.connectionCount)")
+                    .font(.body.monospacedDigit())
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .width(min: 72, ideal: 84, max: 120)
+            .alignment(.numeric)
+            TableColumn(AppLocalization.string("Outlet")) { row in
+                Text(row.outletSummary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(row.outletSummary)
+            }
+            .width(min: 84, ideal: 120, max: 320)
+            TableColumn(AppLocalization.string("Traffic")) { row in
+                VStack(alignment: .trailing, spacing: AetherVisual.s1) {
+                    Text(verbatim: "↓ \(formattedBytes(row.downloadTotal))")
+                    Text(verbatim: "↑ \(formattedBytes(row.uploadTotal))")
+                }
+                .font(.body.monospacedDigit())
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .width(min: 64, ideal: 80, max: 120)
+            .alignment(.numeric)
+        }
+        .tableStyle(.inset(alternatesRowBackgrounds: false))
+        .scrollContentBackground(.hidden)
+        .accessibilityLabel(AppLocalization.string("Apps"))
+        .accessibilityIdentifier("connections-app-table")
+        .scrollIndicators(.hidden, axes: .horizontal)
+    }
+
+    @ViewBuilder
+    private func appContextMenu(_ app: SourceAppPresentation) -> some View {
+        if let subject = SourceAppDirectory.shared.ruleSubject(for: app) {
+            let existing = tunnel.applicationRule(
+                bundleIdentifier: subject.bundleIdentifier,
+                bundlePath: subject.bundlePath
+            )
+            Menu(AppLocalization.format("Rule for %@", app.displayName)) {
+                ForEach(applicationRuleTargets, id: \.rawString) { target in
+                    Button {
+                        Task {
+                            await tunnel.setApplicationRule(
+                                bundleIdentifier: subject.bundleIdentifier,
+                                bundlePath: subject.bundlePath,
+                                displayName: app.displayName,
+                                target: target
+                            )
+                        }
+                    } label: {
+                        if existing?.target == target {
+                            Label(applicationTargetTitle(target), systemImage: "checkmark")
+                        } else {
+                            Text(applicationTargetTitle(target))
+                        }
+                    }
+                }
+                if let existing {
+                    Divider()
+                    Button(AppLocalization.string("Remove rule"), role: .destructive) {
+                        Task { await tunnel.deleteCustomRule(id: existing.id) }
+                    }
+                }
+            }
+            Divider()
+        }
+        if !app.isUnknown {
+            Button(AppLocalization.format("Show only %@", app.displayName)) {
+                showOnly(app)
+            }
+            if let path = app.identity?.bundlePath ?? app.identity?.executablePath {
+                Button(AppLocalization.string("Show in Finder")) {
+                    NSWorkspace.shared.activateFileViewerSelecting(
+                        [URL(fileURLWithPath: path)]
+                    )
+                }
+            }
+        }
+    }
+
+    /// Direct, reject, and each proxy group of the active profile.
+    private var applicationRuleTargets: [CustomRuleTarget] {
+        let groups = (tunnel.activeProfileSummary?.proxyGroups ?? []).map(\.name)
+        return [.direct] + groups.prefix(8).map { .proxy($0) } + [.reject]
+    }
+
+    private func applicationTargetTitle(_ target: CustomRuleTarget) -> String {
+        switch target {
+        case .direct: AppLocalization.string("Always connect directly")
+        case .reject: AppLocalization.string("Always block")
+        case let .proxy(group): AppLocalization.format("Always use %@", group)
+        }
+    }
+
+    private func showOnly(_ app: SourceAppPresentation) {
+        withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+            appFilter = AppFilter(key: app.groupingKey, name: app.displayName)
+            groupsByApp = false
+        }
+    }
+
+    private func appRows(_ rows: [ConnectionTableItem]) -> [ConnectionAppRow] {
+        let directory = SourceAppDirectory.shared
+        var groups: [String: ConnectionAppRow] = [:]
+        for row in rows {
+            let app = directory.presentation(for: row.connection)
+            groups[app.groupingKey, default: ConnectionAppRow(app: app)]
+                .add(row.connection)
+        }
+        return groups.values.sorted { lhs, rhs in
+            switch sort {
+            case .traffic:
+                return lhs.downloadTotal + lhs.uploadTotal
+                    > rhs.downloadTotal + rhs.uploadTotal
+            case .destination:
+                return lhs.app.displayName.localizedStandardCompare(
+                    rhs.app.displayName
+                ) == .orderedAscending
+            }
+        }
     }
 
     private func menuFilter() -> some View {
@@ -248,6 +443,21 @@ struct ConnectionsView: View {
 
     private var connectionActions: some View {
         HStack(spacing: AetherVisual.s2) {
+            Button {
+                withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                    groupsByApp.toggle()
+                }
+            } label: {
+                Label(
+                    AppLocalization.string("Group by app"),
+                    systemImage: "square.stack.3d.up"
+                )
+            }
+            .aetherGlassButton()
+            .tint(groupsByApp ? .accentColor : nil)
+            .help(AppLocalization.string(groupsByApp ? "Show each connection" : "Group by app"))
+            .accessibilityValue(Text(AppLocalization.string(groupsByApp ? "On" : "Off")))
+            .accessibilityIdentifier("connections-group-by-app")
             Button {
                 withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
                     pausedConnections = pausedConnections == nil ? telemetry.snapshot.connections : nil
@@ -302,10 +512,14 @@ struct ConnectionsView: View {
     }
 
     private var connectionRows: [ConnectionTableItem] {
-        ConnectionTableItem.identify(displayedConnections)
+        let directory = SourceAppDirectory.shared
+        return ConnectionTableItem.identify(displayedConnections)
             .filter {
-                ConnectionOutlet(proxyChain: $0.connection.proxyChain).matches(filter)
+                let app = directory.presentation(for: $0.connection)
+                return ConnectionOutlet(proxyChain: $0.connection.proxyChain).matches(filter)
+                    && (appFilter == nil || appFilter?.key == app.groupingKey)
                     && (searchText.isEmpty
+                        || app.displayName.localizedCaseInsensitiveContains(searchText)
                         || $0.connection.destination.localizedCaseInsensitiveContains(searchText)
                         || $0.connection.rule.localizedCaseInsensitiveContains(searchText)
                         || $0.connection.ruleSummary.localizedCaseInsensitiveContains(searchText)
@@ -493,6 +707,62 @@ private struct SessionBar: View {
 
 }
 
+/// The app's icon and name; the identifier and path show on hover.
+private struct ConnectionAppCell: View {
+    let app: SourceAppPresentation
+
+    var body: some View {
+        HStack(spacing: AetherVisual.s2) {
+            Image(nsImage: SourceAppDirectory.shared.icon(for: app))
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 18, height: 18)
+                .opacity(app.isUnknown ? 0.45 : 1)
+                .accessibilityHidden(true)
+            Text(app.displayName)
+                .font(.body.weight(.medium))
+                .foregroundStyle(app.isUnknown ? AnyShapeStyle(AetherVisual.secondaryText) : AnyShapeStyle(.primary))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .help(Text(verbatim: app.detail))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("connection-app")
+    }
+}
+
+/// One app's connections, summed for the grouped view.
+private struct ConnectionAppRow: Identifiable {
+    let app: SourceAppPresentation
+    private(set) var connectionCount = 0
+    private(set) var uploadTotal: UInt64 = 0
+    private(set) var downloadTotal: UInt64 = 0
+    private var outlets: [String] = []
+
+    init(app: SourceAppPresentation) {
+        self.app = app
+    }
+
+    var id: String { app.groupingKey }
+
+    /// The distinct outlets, most used first ("Tokyo, DIRECT").
+    var outletSummary: String {
+        var counts: [String: Int] = [:]
+        for outlet in outlets { counts[outlet, default: 0] += 1 }
+        return counts.sorted { $0.value > $1.value || ($0.value == $1.value && $0.key < $1.key) }
+            .map(\.key)
+            .joined(separator: ", ")
+    }
+
+    mutating func add(_ connection: ConnectionTelemetry) {
+        connectionCount += 1
+        uploadTotal &+= connection.uploadTotal
+        downloadTotal &+= connection.downloadTotal
+        outlets.append(ConnectionOutlet(proxyChain: connection.proxyChain).localizedTitle)
+    }
+}
+
 private struct ConnectionDestinationCell: View {
     let connection: ConnectionTelemetry
 
@@ -653,6 +923,9 @@ private struct ConnectionInspector: View {
     let connection: ConnectionTelemetry
 
     private var destination: String { connection.destinationAddress }
+    private var app: SourceAppPresentation {
+        SourceAppDirectory.shared.presentation(for: connection)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -664,6 +937,21 @@ private struct ConnectionInspector: View {
             .padding([.horizontal, .top], AetherVisual.dialogPadding)
 
             Form {
+                Section(AppLocalization.string("App")) {
+                    LabeledContent(AppLocalization.string("Name"), value: app.displayName)
+                    if !connection.sourceAppIdentifier.isEmpty {
+                        LabeledContent(
+                            AppLocalization.string("Signing identifier"),
+                            value: connection.sourceAppIdentifier
+                        )
+                    }
+                    if !connection.sourceAppPath.isEmpty {
+                        LabeledContent(
+                            AppLocalization.string("Executable"),
+                            value: connection.sourceAppPath
+                        )
+                    }
+                }
                 Section(AppLocalization.string("Route")) {
                     LabeledContent(AppLocalization.string("Transport"), value: connection.transport == .tcp ? "TCP" : "UDP")
                     LabeledContent(AppLocalization.string("Matched rule"), value: connection.ruleSummary)

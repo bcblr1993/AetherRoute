@@ -12622,6 +12622,396 @@
           }
         }
       }
+    },
+    "Unknown app": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知应用"
+          }
+        }
+      }
+    },
+    "The system did not report which app opened this connection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统没有报告是哪个应用发起了这条连接。"
+          }
+        }
+      }
+    },
+    "System background downloads": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统后台下载"
+          }
+        }
+      }
+    },
+    "Only connections from %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅显示 %@ 的连接"
+          }
+        }
+      }
+    },
+    "Show all apps": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示全部应用"
+          }
+        }
+      }
+    },
+    "App": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用"
+          }
+        }
+      }
+    },
+    "Apps": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用"
+          }
+        }
+      }
+    },
+    "Show only %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只看 %@"
+          }
+        }
+      }
+    },
+    "Show in Finder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在访达中显示"
+          }
+        }
+      }
+    },
+    "Group by app": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按应用分组"
+          }
+        }
+      }
+    },
+    "Show each connection": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "逐条显示连接"
+          }
+        }
+      }
+    },
+    "Signing identifier": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "签名标识"
+          }
+        }
+      }
+    },
+    "Executable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可执行文件"
+          }
+        }
+      }
+    },
+    "Safari (web)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safari（网页）"
+          }
+        }
+      }
+    },
+    "Application rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用规则"
+          }
+        }
+      }
+    },
+    "Checked before every other rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "优先于其他所有规则"
+          }
+        }
+      }
+    },
+    "In TUN mode, application rules apply to TCP connections only. UDP and QUIC traffic is not attributed to an app.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TUN 模式下，应用规则只对 TCP 连接生效；UDP 与 QUIC 流量无法识别来源应用。"
+          }
+        }
+      }
+    },
+    "No application rules yet. To send one app direct or through a proxy whatever it connects to, add it here or right-click it on the Connections page.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有应用规则。想让某个应用无论访问什么都直连或走代理，可在这里添加，或在“连接”页右键该应用。"
+          }
+        }
+      }
+    },
+    "Connected now": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前联网的应用"
+          }
+        }
+      }
+    },
+    "Choose an App…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择应用…"
+          }
+        }
+      }
+    },
+    "Add App": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加应用"
+          }
+        }
+      }
+    },
+    "Block": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒绝"
+          }
+        }
+      }
+    },
+    "Rule for %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的规则"
+          }
+        }
+      }
+    },
+    "Remove rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除规则"
+          }
+        }
+      }
+    },
+    "Always connect directly": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "始终直连"
+          }
+        }
+      }
+    },
+    "Always block": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "始终拒绝"
+          }
+        }
+      }
+    },
+    "Always use %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "始终使用 %@"
+          }
+        }
+      }
+    },
+    "This app cannot be used in a rule.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个应用无法用于规则。"
+          }
+        }
+      }
+    },
+    "Application rules match the app that opens a connection, so they cannot be tested by destination.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用规则按发起连接的应用匹配，无法按目标地址测试。"
+          }
+        }
+      }
+    },
+    "The profile uses the rule type ‘%@’, which is reserved for AetherRoute’s application rules.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置使用了规则类型“%@”，它保留给 AetherRoute 的应用规则使用。"
+          }
+        }
+      }
+    },
+    "Checked after application rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅次于应用规则"
+          }
+        }
+      }
+    },
+    "How do application rules work?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用规则如何生效？"
+          }
+        }
+      }
+    },
+    "An application rule decides where one app's connections go, whatever website they are for. It is checked before custom rules and the profile's rules.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用规则决定某个应用的连接走向，不论它访问哪个网站。它在自定义规则和配置中的规则之前匹配。"
+          }
+        }
+      }
+    },
+    "Helper processes count as their app, so a rule for a browser also covers its tabs and plug-ins.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "辅助进程算作所属应用，因此浏览器的规则也覆盖它的标签页和插件。"
+          }
+        }
+      }
+    },
+    "Safari and other apps that show web pages load them through the system's WebKit process; a rule for “Safari (web)” covers all of them.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safari 及其他显示网页的应用都通过系统的 WebKit 进程加载网页；“Safari（网页）”的规则对它们全部生效。"
+          }
+        }
+      }
+    },
+    "Engines": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "引擎"
+          }
+        }
+      }
+    },
+    "Transparent Proxy: every TCP and UDP connection is matched.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "透明代理：所有 TCP 与 UDP 连接都会匹配。"
+          }
+        }
+      }
+    },
+    "TUN: TCP connections are matched; UDP and QUIC traffic cannot be traced to an app and follows the other rules.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TUN：TCP 连接会匹配；UDP 与 QUIC 流量无法追溯到应用，按其他规则处理。"
+          }
+        }
+      }
+    },
+    "Profile rules of type PROCESS-NAME, PROCESS-PATH and PROCESS-PATH-REGEX work the same way.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置中的 PROCESS-NAME、PROCESS-PATH 和 PROCESS-PATH-REGEX 规则同样按此方式生效。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -15,6 +15,11 @@ public struct ConnectionTelemetry: Sendable, Equatable {
     public let rule: String
     public let rulePayload: String
     public let proxyChain: String
+    /// The originating app's signing identifier (transparent proxy only).
+    /// Empty when the engine reported none or spoke `ART1`.
+    public let sourceAppIdentifier: String
+    /// The originating executable's path. Empty when unknown.
+    public let sourceAppPath: String
 
     public init(
         transport: NetworkTelemetryTransport,
@@ -25,7 +30,9 @@ public struct ConnectionTelemetry: Sendable, Equatable {
         startedAtUnixMilliseconds: UInt64,
         rule: String,
         rulePayload: String,
-        proxyChain: String
+        proxyChain: String,
+        sourceAppIdentifier: String = "",
+        sourceAppPath: String = ""
     ) {
         self.transport = transport
         self.destination = destination
@@ -36,6 +43,8 @@ public struct ConnectionTelemetry: Sendable, Equatable {
         self.rule = rule
         self.rulePayload = rulePayload
         self.proxyChain = proxyChain
+        self.sourceAppIdentifier = sourceAppIdentifier
+        self.sourceAppPath = sourceAppPath
     }
 }
 
@@ -79,22 +88,39 @@ public enum NetworkTelemetryCodecError: Error, Sendable, Equatable {
     case invalidString
 }
 
-/// Stable `ART1` binary codec shared by both providers and the host. It has no
-/// source address, user identity, resolved-IP, or internal UUID fields.
+/// Binary codec shared by both providers and the host. It has no source
+/// address, user identity, resolved-IP, or internal UUID fields.
+///
+/// `ART1` carries four strings per connection. `ART2` (1.3.0) appends the
+/// originating app's signing identifier and executable path, each at most
+/// `maximumSourceAppBytes`. The decoder accepts both, so a host and an engine
+/// from different builds still agree.
 public enum NetworkTelemetryCodec {
+    public enum Version: Sendable {
+        case v1
+        case v2
+    }
+
     public static let maximumConnections = 128
     public static let maximumStringBytes = 1_024
+    public static let maximumSourceAppBytes = 512
     public static let maximumMessageBytes = 1_048_576
 
     private static let magic: [UInt8] = [0x41, 0x52, 0x54, 0x31]
+    private static let magicV2: [UInt8] = [0x41, 0x52, 0x54, 0x32]
     private static let headerBytes = 48
     private static let recordHeaderBytes = 44
+    private static let sourceAppHeaderBytes = 8
 
-    public static func encode(_ snapshot: NetworkTelemetrySnapshot) throws -> Data {
+    public static func encode(
+        _ snapshot: NetworkTelemetrySnapshot,
+        version: Version = .v2
+    ) throws -> Data {
         guard snapshot.connections.count <= maximumConnections else {
             throw NetworkTelemetryCodecError.tooLarge
         }
-        var output = Data(magic)
+        let includesSourceApp = version == .v2
+        var output = Data(includesSourceApp ? magicV2 : magic)
         for value in [
             snapshot.uploadBytesPerSecond,
             snapshot.downloadBytesPerSecond,
@@ -110,19 +136,31 @@ public enum NetworkTelemetryCodec {
             let rule = try stringData(connection.rule, allowsEmpty: true)
             let payload = try stringData(connection.rulePayload, allowsEmpty: true)
             let chain = try stringData(connection.proxyChain, allowsEmpty: true)
+            var strings = [destination, rule, payload, chain]
+            if includesSourceApp {
+                strings.append(try stringData(
+                    connection.sourceAppIdentifier,
+                    allowsEmpty: true,
+                    maximumBytes: maximumSourceAppBytes
+                ))
+                strings.append(try stringData(
+                    connection.sourceAppPath,
+                    allowsEmpty: true,
+                    maximumBytes: maximumSourceAppBytes
+                ))
+            }
             output.append(connection.transport.rawValue)
             output.append(0)
             appendUInt16(connection.destinationPort, to: &output)
             appendUInt64(connection.uploadTotal, to: &output)
             appendUInt64(connection.downloadTotal, to: &output)
             appendUInt64(connection.startedAtUnixMilliseconds, to: &output)
-            for value in [destination, rule, payload, chain] {
+            for value in strings {
                 appendUInt32(UInt32(value.count), to: &output)
             }
-            output.append(destination)
-            output.append(rule)
-            output.append(payload)
-            output.append(chain)
+            for value in strings {
+                output.append(value)
+            }
             guard output.count <= maximumMessageBytes else {
                 throw NetworkTelemetryCodecError.tooLarge
             }
@@ -135,8 +173,14 @@ public enum NetworkTelemetryCodec {
             (headerBytes...maximumMessageBytes).contains(data.count)
         else { throw NetworkTelemetryCodecError.tooLarge }
         let bytes = [UInt8](data)
+        let header = Array(bytes[0..<4])
+        guard header == magic || header == magicV2 else {
+            throw NetworkTelemetryCodecError.malformed
+        }
+        let includesSourceApp = header == magicV2
+        let recordBytes = recordHeaderBytes
+            + (includesSourceApp ? sourceAppHeaderBytes : 0)
         guard
-            Array(bytes[0..<4]) == magic,
             let uploadRate = readUInt64(bytes, at: 4),
             let downloadRate = readUInt64(bytes, at: 12),
             let uploadTotal = readUInt64(bytes, at: 20),
@@ -151,7 +195,7 @@ public enum NetworkTelemetryCodec {
         connections.reserveCapacity(Int(count))
         for _ in 0..<count {
             guard
-                offset + recordHeaderBytes <= bytes.count,
+                offset + recordBytes <= bytes.count,
                 let transport = NetworkTelemetryTransport(rawValue: bytes[offset]),
                 bytes[offset + 1] == 0,
                 let port = readUInt16(bytes, at: offset + 2),
@@ -163,7 +207,17 @@ public enum NetworkTelemetryCodec {
                 let payloadLength = readUInt32(bytes, at: offset + 36),
                 let chainLength = readUInt32(bytes, at: offset + 40)
             else { throw NetworkTelemetryCodecError.malformed }
-            offset += recordHeaderBytes
+            var appIdentifierLength: UInt32 = 0
+            var appPathLength: UInt32 = 0
+            if includesSourceApp {
+                guard
+                    let identifier = readUInt32(bytes, at: offset + 44),
+                    let path = readUInt32(bytes, at: offset + 48)
+                else { throw NetworkTelemetryCodecError.malformed }
+                appIdentifierLength = identifier
+                appPathLength = path
+            }
+            offset += recordBytes
             let destination = try readString(
                 bytes,
                 offset: &offset,
@@ -188,6 +242,20 @@ public enum NetworkTelemetryCodec {
                 length: chainLength,
                 allowsEmpty: true
             )
+            let appIdentifier = try readString(
+                bytes,
+                offset: &offset,
+                length: appIdentifierLength,
+                allowsEmpty: true,
+                maximumBytes: maximumSourceAppBytes
+            )
+            let appPath = try readString(
+                bytes,
+                offset: &offset,
+                length: appPathLength,
+                allowsEmpty: true,
+                maximumBytes: maximumSourceAppBytes
+            )
             connections.append(
                 ConnectionTelemetry(
                     transport: transport,
@@ -198,7 +266,9 @@ public enum NetworkTelemetryCodec {
                     startedAtUnixMilliseconds: started,
                     rule: rule,
                     rulePayload: payload,
-                    proxyChain: chain
+                    proxyChain: chain,
+                    sourceAppIdentifier: appIdentifier,
+                    sourceAppPath: appPath
                 )
             )
         }
@@ -217,11 +287,12 @@ public enum NetworkTelemetryCodec {
 
     private static func stringData(
         _ value: String,
-        allowsEmpty: Bool
+        allowsEmpty: Bool,
+        maximumBytes: Int = maximumStringBytes
     ) throws -> Data {
         guard
             let data = value.data(using: .utf8),
-            data.count <= maximumStringBytes,
+            data.count <= maximumBytes,
             (allowsEmpty || !data.isEmpty),
             !data.contains(0)
         else { throw NetworkTelemetryCodecError.invalidString }
@@ -232,9 +303,10 @@ public enum NetworkTelemetryCodec {
         _ bytes: [UInt8],
         offset: inout Int,
         length: UInt32,
-        allowsEmpty: Bool
+        allowsEmpty: Bool,
+        maximumBytes: Int = maximumStringBytes
     ) throws -> String {
-        guard length <= maximumStringBytes else {
+        guard length <= maximumBytes else {
             throw NetworkTelemetryCodecError.tooLarge
         }
         let (end, overflow) = offset.addingReportingOverflow(Int(length))

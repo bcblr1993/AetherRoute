@@ -16,6 +16,7 @@ public enum ProfileOperationIssue: Equatable, Sendable {
     case profileTooLarge(Int)
     case profileNotUTF8
     case forbiddenExecutableKey(String)
+    case reservedRule(String)
     case missingProxyDefinition
     case unsupportedSubscriptionFormat
     case invalidSubscriptionBase64
@@ -46,6 +47,7 @@ public enum ProfileOperationIssue: Equatable, Sendable {
             case let .forbiddenExecutableKey(key):
                 self = .forbiddenExecutableKey(key)
             case .missingProxyDefinition: self = .missingProxyDefinition
+            case let .reservedRule(kind): self = .reservedRule(kind)
             }
         case let error as SubscriptionPayloadError:
             switch error {

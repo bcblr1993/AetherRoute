@@ -1069,6 +1069,11 @@ extension TunnelManager {
             return AppLocalization.string(
                 "No proxies or proxy providers were found in the profile."
             )
+        case let .reservedRule(kind):
+            return String.localizedStringWithFormat(
+                AppLocalization.string("The profile uses the rule type ‘%@’, which is reserved for AetherRoute’s application rules."),
+                kind
+            )
         case .unsupportedSubscriptionFormat:
             return AppLocalization.string(
                 "The subscription is neither supported YAML nor a share-link list."

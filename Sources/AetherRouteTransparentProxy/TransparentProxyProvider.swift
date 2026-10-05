@@ -745,7 +745,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     }
 
     private func handleAdmittedFlow(_ flow: NEAppProxyFlow) -> Bool {
-        switch runtimeController.identityDisposition(for: flow) {
+        let evaluation = runtimeController.identityEvaluation(for: flow)
+        switch evaluation.disposition {
         case .bypass:
             Self.aggregator.record(.flowBypassed)
             Self.runtimeLog.verbose(
@@ -769,11 +770,18 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 )
                 return failClosed(flow)
             }
-            return claimTCP(tcpFlow)
+            return claimTCP(
+                tcpFlow,
+                sourceApp: TransparentProxySourceAppResolver
+                    .sourceApp(for: evaluation)
+            )
         }
     }
 
-    private func claimTCP(_ flow: NEAppProxyTCPFlow) -> Bool {
+    private func claimTCP(
+        _ flow: NEAppProxyTCPFlow,
+        sourceApp: FlowSourceApp?
+    ) -> Bool {
         do {
             Self.runtimeLog.verbose("stage=claimTCP destinationDecode begin")
             let destination = try NetworkExtensionFlowLifecycle
@@ -786,7 +794,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 // endpoint. Source-IP/source-port rules are intentionally
                 // outside this first honest transparent mode.
                 source: nil,
-                destination: destination
+                destination: destination,
+                sourceApp: sourceApp
             ) else {
                 Self.runtimeLog.failure(
                     "stage=claimTCP result=rejected destination=\(String(describing: destination))"
@@ -809,7 +818,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     private func claimUDP(
         _ flow: NEAppProxyUDPFlow,
         initialRemoteEndpoint: Network.NWEndpoint,
-        admittedAt: UInt64
+        admittedAt: UInt64,
+        sourceApp: FlowSourceApp?
     ) -> Bool {
         do {
             Self.runtimeLog.verbose("stage=claimUDP endpointDecode begin")
@@ -830,7 +840,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             Self.runtimeLog.verbose("stage=claimUDP components success")
             guard runtimeController.claimUDP(
                 components: components.ingress,
-                localSource: localSource
+                localSource: localSource,
+                sourceApp: sourceApp
             ) else {
                 Self.runtimeLog.failure(
                     "stage=claimUDP result=rejected endpoint=\(String(describing: initialRemoteEndpoint))"
@@ -1076,7 +1087,8 @@ extension TransparentProxyProvider: NEAppProxyUDPFlowHandling {
         initialRemoteEndpoint remoteEndpoint: Network.NWEndpoint,
         admittedAt: UInt64
     ) -> Bool {
-        switch runtimeController.identityDisposition(for: flow) {
+        let evaluation = runtimeController.identityEvaluation(for: flow)
+        switch evaluation.disposition {
         case .bypass:
             Self.aggregator.record(.flowBypassed)
             Self.runtimeLog.verbose(
@@ -1095,7 +1107,9 @@ extension TransparentProxyProvider: NEAppProxyUDPFlowHandling {
             return claimUDP(
                 flow,
                 initialRemoteEndpoint: remoteEndpoint,
-                admittedAt: admittedAt
+                admittedAt: admittedAt,
+                sourceApp: TransparentProxySourceAppResolver
+                    .sourceApp(for: evaluation)
             )
         }
     }

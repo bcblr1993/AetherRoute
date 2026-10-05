@@ -11,6 +11,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
     case dnsIPv6
     case dnsRespectRules
     case dnsHosts
+    case applicationRules
 
     var id: String { rawValue }
 
@@ -29,6 +30,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
         case .dnsIPv6: AppLocalization.string("IPv6 answers")
         case .dnsRespectRules: AppLocalization.string("Rule-aware queries")
         case .dnsHosts: AppLocalization.string("Hosts mapping")
+        case .applicationRules: AppLocalization.string("How do application rules work?")
         }
     }
 
@@ -131,6 +133,27 @@ enum HelpTopic: String, CaseIterable, Identifiable {
                     AppLocalization.string("Hosts entries in the profile pin a domain to a fixed IP address, like the system hosts file."),
                     AppLocalization.string("This follows the profile and is shown here for reference; edit the profile to change it."),
                 ]),
+            ]
+        case .applicationRules:
+            [
+                Section(heading: nil, lines: [
+                    AppLocalization.string("An application rule decides where one app's connections go, whatever website they are for. It is checked before custom rules and the profile's rules."),
+                    AppLocalization.string("Helper processes count as their app, so a rule for a browser also covers its tabs and plug-ins."),
+                    AppLocalization.string("Safari and other apps that show web pages load them through the system's WebKit process; a rule for “Safari (web)” covers all of them."),
+                ]),
+                Section(
+                    heading: AppLocalization.string("Engines"),
+                    lines: [
+                        AppLocalization.string("Transparent Proxy: every TCP and UDP connection is matched."),
+                        AppLocalization.string("TUN: TCP connections are matched; UDP and QUIC traffic cannot be traced to an app and follows the other rules."),
+                    ]
+                ),
+                Section(
+                    heading: AppLocalization.string("Profiles"),
+                    lines: [
+                        AppLocalization.string("Profile rules of type PROCESS-NAME, PROCESS-PATH and PROCESS-PATH-REGEX work the same way."),
+                    ]
+                ),
             ]
         }
     }

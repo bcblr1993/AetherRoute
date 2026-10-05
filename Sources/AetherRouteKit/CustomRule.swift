@@ -7,10 +7,17 @@ public enum CustomRuleKind: String, Codable, CaseIterable, Sendable {
     case ipCIDR = "IP-CIDR"
     case ipCIDR6 = "IP-CIDR6"
     case geoIP = "GEOIP"
+    /// An application rule (1.3.0). Created only from an app the user picks,
+    /// never parsed from rule text or accepted from a profile; see
+    /// `CustomRule.application(...)`.
+    case application = "AETHER-APP"
 
     public var displayName: String {
         rawValue
     }
+
+    /// The kinds a user can type in the rule editor.
+    public static let editableKinds: [Self] = allCases.filter { $0 != .application }
 }
 
 public enum CustomRuleTarget: Codable, Equatable, Hashable, Sendable {
@@ -76,6 +83,42 @@ public struct CustomRule: Codable, Identifiable, Equatable, Sendable {
         self.comment = comment?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// A rule for one app: its connections go to `target` before any other
+    /// rule is considered. The payload is `<bundleIdentifier>;<bundlePath>`
+    /// with the path percent-encoded, so a comma or semicolon in a folder
+    /// name cannot split the rule. The display name is kept in `comment`.
+    public static func application(
+        id: UUID = UUID(),
+        bundleIdentifier: String?,
+        bundlePath: String?,
+        displayName: String,
+        target: CustomRuleTarget,
+        isEnabled: Bool = true
+    ) -> CustomRule? {
+        let identifier = (bundleIdentifier ?? "").trimmingCharacters(in: .whitespaces)
+        let path = (bundlePath ?? "").trimmingCharacters(in: .whitespaces)
+        guard
+            let encodedPath = path.addingPercentEncoding(
+                withAllowedCharacters: ApplicationRuleMatch.pathAllowed
+            )
+        else { return nil }
+        let rule = CustomRule(
+            id: id,
+            kind: .application,
+            value: "\(identifier);\(encodedPath)",
+            target: target,
+            isEnabled: isEnabled,
+            comment: displayName
+        )
+        return CustomRuleValidator.validate(rule).isValid ? rule : nil
+    }
+
+    /// The app an `.application` rule names; nil for every other kind.
+    public var applicationMatch: ApplicationRuleMatch? {
+        guard kind == .application else { return nil }
+        return ApplicationRuleMatch(payload: value)
+    }
+
     public func toClashRuleString() -> String {
         var parts: [String] = [kind.rawValue, value, target.rawString]
         if noResolve && (kind == .ipCIDR || kind == .ipCIDR6 || kind == .geoIP) {
@@ -105,7 +148,7 @@ public struct CustomRule: Codable, Identifiable, Equatable, Sendable {
         }
 
         let kindRaw = tokens[0].uppercased()
-        guard let kind = CustomRuleKind(rawValue: kindRaw) else {
+        guard let kind = CustomRuleKind(rawValue: kindRaw), kind != .application else {
             throw CustomRuleParseError.unsupportedKind(tokens[0])
         }
 
@@ -197,6 +240,10 @@ public enum CustomRuleValidator {
             return validateIPv6CIDR(trimmedVal)
         case .geoIP:
             return validateGeoIP(trimmedVal)
+        case .application:
+            return ApplicationRuleMatch(payload: trimmedVal) == nil
+                ? .invalid(reason: "应用规则需要合法的签名标识或 .app 路径")
+                : .valid
         }
     }
 
@@ -302,5 +349,47 @@ public enum CustomRuleValidator {
             return .invalid(reason: "GEOIP 必须是 2 位国家代码，例如 CN, US, HK")
         }
         return .valid
+    }
+}
+
+/// The bundle an application rule matches, decoded from its payload.
+/// Matches the engine's `AETHER-APP` rule: the connection's signing
+/// identifier equals `bundleIdentifier` or starts with it plus "." (helpers),
+/// or its executable lies inside `bundlePath`.
+public struct ApplicationRuleMatch: Equatable, Sendable {
+    /// Path characters left as-is; everything else, including `,` `;` `%`
+    /// and spaces, is percent-encoded in the payload.
+    static let pathAllowed: CharacterSet = {
+        var set = CharacterSet.alphanumerics
+        set.insert(charactersIn: "/._-+~@()")
+        return set
+    }()
+
+    public static let maximumFieldBytes = 512
+
+    public let bundleIdentifier: String?
+    public let bundlePath: String?
+
+    public init?(payload: String) {
+        guard let separator = payload.firstIndex(of: ";") else { return nil }
+        let identifier = String(payload[..<separator])
+        let encodedPath = String(payload[payload.index(after: separator)...])
+        guard let path = encodedPath.removingPercentEncoding else { return nil }
+        let identifierCharacters = CharacterSet.alphanumerics
+            .union(CharacterSet(charactersIn: ".-_"))
+        guard
+            identifier.utf8.count <= Self.maximumFieldBytes,
+            path.utf8.count <= Self.maximumFieldBytes,
+            identifier.unicodeScalars.allSatisfy(identifierCharacters.contains),
+            !identifier.hasPrefix("."), !identifier.hasSuffix("."),
+            path.isEmpty || (path.hasPrefix("/") && path.count > 1 && !path.hasSuffix("/")),
+            !path.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }),
+            !identifier.isEmpty || !path.isEmpty,
+            encodedPath.unicodeScalars.allSatisfy({
+                Self.pathAllowed.contains($0) || $0 == "%"
+            })
+        else { return nil }
+        self.bundleIdentifier = identifier.isEmpty ? nil : identifier
+        self.bundlePath = path.isEmpty ? nil : path
     }
 }

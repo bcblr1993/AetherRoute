@@ -38,6 +38,15 @@ public enum ProfileImportValidator {
         guard keys.contains("proxies") || keys.contains("proxy-providers") else {
             throw ProfileImportError.missingProxyDefinition
         }
+        // Application rules come only from the app's own rule list. Matched
+        // as a rule type followed by a comma, so a proxy named "Aether-Apple"
+        // is not mistaken for one.
+        if text.range(
+            of: #"(^|[\s\-'"\[(,])AETHER-APP\s*,"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil {
+            throw ProfileImportError.reservedRule("AETHER-APP")
+        }
     }
 
     /// Extracts YAML mapping keys without treating comments, quoted values, URLs,
@@ -139,6 +148,7 @@ public enum ProfileImportError: LocalizedError, Equatable {
     case notUTF8
     case forbiddenExecutableKey(String)
     case missingProxyDefinition
+    case reservedRule(String)
 
     public var errorDescription: String? {
         switch self {
@@ -147,6 +157,7 @@ public enum ProfileImportError: LocalizedError, Equatable {
         case .notUTF8: "The profile is not UTF-8 text."
         case let .forbiddenExecutableKey(key): "Executable profile key '\(key)' is not allowed."
         case .missingProxyDefinition: "No proxies or proxy providers were found."
+        case let .reservedRule(kind): "The profile uses the reserved rule type '\(kind)'."
         }
     }
 }

@@ -221,6 +221,15 @@ int32_t clash_packet_telemetry_snapshot_v1(
     size_t output_capacity,
     size_t *required_length
 );
+/* "ART2": ART1 plus, per connection, two more length-prefixed strings after
+ * the proxy chain: the source app's code-signing identifier and executable
+ * path (each at most 512 bytes, empty when unknown). */
+int32_t clash_packet_telemetry_snapshot_v2(
+    uint32_t maximum_connections,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+);
 /* Data-plane counters as an "ARD1" blob: magic, count, then that many
  * big-endian uint64 values. Pass a NULL output with zero capacity to learn the
  * required length. Ordinals and numbers only, never endpoints or names, so
@@ -310,6 +319,14 @@ int32_t clash_flow_telemetry_snapshot_v1(
     size_t output_capacity,
     size_t *required_length
 );
+/* "ART2" variant: each connection also carries its source app. */
+int32_t clash_flow_telemetry_snapshot_v2(
+    clash_flow_engine_t *engine,
+    uint32_t maximum_connections,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+);
 
 /*
  * Endpoint v1 is a strict byte string:
@@ -330,6 +347,31 @@ int32_t clash_flow_udp_create(
     clash_flow_engine_t *engine,
     const uint8_t *source_endpoint,
     size_t source_endpoint_length,
+    clash_flow_t **output
+);
+/*
+ * The same with the app that opened the flow: "ASA1", then a big-endian
+ * uint16 length and UTF-8 bytes for the code-signing identifier, then the
+ * same for the executable path. Each field holds at most 512 bytes and may be
+ * empty, but not both. A zero length means unknown; a malformed description
+ * returns CLASH_FLOW_INVALID_ARGUMENT so the caller can retry without it.
+ */
+int32_t clash_flow_tcp_create_v2(
+    clash_flow_engine_t *engine,
+    const uint8_t *source_endpoint,
+    size_t source_endpoint_length,
+    const uint8_t *destination_endpoint,
+    size_t destination_endpoint_length,
+    const uint8_t *source_app,
+    size_t source_app_length,
+    clash_flow_t **output
+);
+int32_t clash_flow_udp_create_v2(
+    clash_flow_engine_t *engine,
+    const uint8_t *source_endpoint,
+    size_t source_endpoint_length,
+    const uint8_t *source_app,
+    size_t source_app_length,
     clash_flow_t **output
 );
 int32_t clash_flow_activate(clash_flow_t *flow);

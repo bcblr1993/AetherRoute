@@ -78,6 +78,7 @@ public enum SubscriptionPayloadNormalizer {
             )
         } catch let error as ProfileImportError {
             if case .forbiddenExecutableKey = error { throw error }
+            if case .reservedRule = error { throw error }
             if let lines = shareLines(in: text) {
                 return try compile(lines: lines)
             }
@@ -101,6 +102,7 @@ public enum SubscriptionPayloadNormalizer {
                 if case .forbiddenExecutableKey = decodedError {
                     throw decodedError
                 }
+                if case .reservedRule = decodedError { throw decodedError }
                 guard let lines = shareLines(in: decodedText) else {
                     throw SubscriptionPayloadError.unsupportedFormat
                 }

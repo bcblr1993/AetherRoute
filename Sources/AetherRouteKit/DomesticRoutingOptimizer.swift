@@ -609,6 +609,14 @@ public enum DomesticRoutingOptimizer {
 
     // MARK: - Rules Section Optimization
 
+    /// `AETHER-APP` is generated only from the user's application rules; one
+    /// written into a profile is dropped rather than trusted.
+    static func isApplicationRule(_ rule: String) -> Bool {
+        rule.split(separator: ",", maxSplits: 1).first?
+            .trimmingCharacters(in: .whitespaces)
+            .uppercased() == CustomRuleKind.application.rawValue
+    }
+
     private static func optimizeRulesSection(_ existingLines: [String]?, customRules: [CustomRule] = []) -> [String] {
         var rawRules: [String] = []
 
@@ -622,7 +630,8 @@ public enum DomesticRoutingOptimizer {
                         ruleContent = String(ruleContent[..<hashIdx]).trimmingCharacters(in: .whitespaces)
                     }
                     let clean = unquote(ruleContent)
-                    if !clean.isEmpty && clean != "-" && clean != "''" && clean != "\"\"" {
+                    if !clean.isEmpty && clean != "-" && clean != "''" && clean != "\"\""
+                        && !isApplicationRule(clean) {
                         rawRules.append(clean)
                     }
                 }
@@ -632,8 +641,12 @@ public enum DomesticRoutingOptimizer {
         var seenNormalized = Set<String>()
         var newRules: [String] = []
 
-        // 1. User custom rules injected at top priority
-        for rule in customRules where rule.isEnabled {
+        // 1. User rules at top priority: application rules first (they name
+        //    the app outright, so they outrank any destination rule), then
+        //    custom rules in the user's order.
+        let orderedCustomRules = customRules.filter { $0.kind == .application }
+            + customRules.filter { $0.kind != .application }
+        for rule in orderedCustomRules where rule.isEnabled {
             let clashRule = rule.toClashRuleString()
             let norm = normalizedRuleString(clashRule)
             if !seenNormalized.contains(norm) {

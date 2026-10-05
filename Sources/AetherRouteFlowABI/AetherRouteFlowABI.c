@@ -75,6 +75,31 @@ extern int32_t clash_flow_udp_create(
     size_t,
     clash_flow_t **
 );
+extern int32_t clash_flow_telemetry_snapshot_v2(
+    clash_flow_engine_t *,
+    uint32_t,
+    uint8_t *,
+    size_t,
+    size_t *
+);
+extern int32_t clash_flow_tcp_create_v2(
+    clash_flow_engine_t *,
+    const uint8_t *,
+    size_t,
+    const uint8_t *,
+    size_t,
+    const uint8_t *,
+    size_t,
+    clash_flow_t **
+);
+extern int32_t clash_flow_udp_create_v2(
+    clash_flow_engine_t *,
+    const uint8_t *,
+    size_t,
+    const uint8_t *,
+    size_t,
+    clash_flow_t **
+);
 extern int32_t clash_flow_activate(clash_flow_t *);
 extern int32_t clash_flow_tcp_write(
     clash_flow_t *,
@@ -275,6 +300,62 @@ static int32_t udp_create_adapter(
     );
 }
 
+static int32_t telemetry_snapshot_v2_adapter(
+    void *engine,
+    uint32_t maximum_connections,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+) {
+    return clash_flow_telemetry_snapshot_v2(
+        (clash_flow_engine_t *)engine,
+        maximum_connections,
+        output,
+        output_capacity,
+        required_length
+    );
+}
+
+static int32_t tcp_create_v2_adapter(
+    void *engine,
+    const uint8_t *source,
+    size_t source_length,
+    const uint8_t *destination,
+    size_t destination_length,
+    const uint8_t *source_app,
+    size_t source_app_length,
+    void **output
+) {
+    return clash_flow_tcp_create_v2(
+        (clash_flow_engine_t *)engine,
+        source,
+        source_length,
+        destination,
+        destination_length,
+        source_app,
+        source_app_length,
+        (clash_flow_t **)output
+    );
+}
+
+static int32_t udp_create_v2_adapter(
+    void *engine,
+    const uint8_t *source,
+    size_t source_length,
+    const uint8_t *source_app,
+    size_t source_app_length,
+    void **output
+) {
+    return clash_flow_udp_create_v2(
+        (clash_flow_engine_t *)engine,
+        source,
+        source_length,
+        source_app,
+        source_app_length,
+        (clash_flow_t **)output
+    );
+}
+
 static int32_t activate_adapter(void *flow) {
     return clash_flow_activate((clash_flow_t *)flow);
 }
@@ -428,5 +509,24 @@ int32_t aetherroute_flow_abi_load_v4(aetherroute_flow_abi_v4_t *output) {
         return 0;
     }
     output->selector_active_latency = selector_active_latency_adapter;
+    return 1;
+}
+
+int32_t aetherroute_flow_abi_load_v5(aetherroute_flow_abi_v5_t *output) {
+    if (output == NULL || output->struct_size != sizeof(*output)) {
+        return 0;
+    }
+    const uint32_t struct_size = output->struct_size;
+    memset(output, 0, sizeof(*output));
+    output->struct_size = struct_size;
+    output->v4.struct_size = sizeof(output->v4);
+    if (aetherroute_flow_abi_load_v4(&output->v4) != 1) {
+        memset(output, 0, sizeof(*output));
+        output->struct_size = struct_size;
+        return 0;
+    }
+    output->tcp_create_v2 = tcp_create_v2_adapter;
+    output->udp_create_v2 = udp_create_v2_adapter;
+    output->telemetry_snapshot_v2 = telemetry_snapshot_v2_adapter;
     return 1;
 }

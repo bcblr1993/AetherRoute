@@ -802,14 +802,16 @@ private final class RuntimeFakeEngine:
 
     func makeTCPFlow(
         source: FlowEndpoint?,
-        destination: FlowEndpoint
+        destination: FlowEndpoint,
+        sourceApp: FlowSourceApp?
     ) throws -> any RustTCPFlowBridge {
         lock.withLock { tcpCalls += 1 }
         throw RuntimeTestError.injected
     }
 
     func makeUDPFlow(
-        source: FlowEndpoint
+        source: FlowEndpoint,
+        sourceApp: FlowSourceApp?
     ) throws -> any RustUDPFlowBridge {
         throw RuntimeTestError.injected
     }

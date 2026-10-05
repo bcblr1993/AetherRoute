@@ -75,6 +75,49 @@ extension TunnelManager {
         }
     }
 
+    /// The application rule that names this app, if any.
+    func applicationRule(
+        bundleIdentifier: String?,
+        bundlePath: String?
+    ) -> CustomRule? {
+        customRules.first { rule in
+            guard let match = rule.applicationMatch else { return false }
+            if let bundlePath, let path = match.bundlePath {
+                return path == bundlePath
+            }
+            return bundleIdentifier != nil && match.bundleIdentifier == bundleIdentifier
+        }
+    }
+
+    /// Sends one app's connections to `target`, replacing the app's existing
+    /// rule so the list never holds two rules for the same app.
+    @discardableResult
+    func setApplicationRule(
+        bundleIdentifier: String?,
+        bundlePath: String?,
+        displayName: String,
+        target: CustomRuleTarget
+    ) async -> Bool {
+        let existing = applicationRule(
+            bundleIdentifier: bundleIdentifier,
+            bundlePath: bundlePath
+        )
+        guard let rule = CustomRule.application(
+            id: existing?.id ?? UUID(),
+            bundleIdentifier: bundleIdentifier,
+            bundlePath: bundlePath,
+            displayName: displayName,
+            target: target
+        ) else {
+            customRuleMessage = AppLocalization.string("This app cannot be used in a rule.")
+            customRuleMessageIsError = true
+            return false
+        }
+        return existing == nil
+            ? await addCustomRule(rule)
+            : await updateCustomRule(rule)
+    }
+
     func reloadCustomRulesLive() async {
         guard !isUIReviewMode, state == .connected else { return }
         do {

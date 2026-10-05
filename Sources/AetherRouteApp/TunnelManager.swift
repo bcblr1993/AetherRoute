@@ -516,6 +516,12 @@ final class TunnelManager: ObservableObject {
         }
         networkEngineMode = initialNetworkEngine
         isUIReviewMode = reviewState != nil
+#if DEBUG
+        if reviewState != nil,
+           environment["AETHERROUTE_UI_REVIEW_PROFILE"] == "showcase" {
+            customRules = Self.showcaseReviewCustomRules
+        }
+#endif
         routingMode = reviewState == nil
             ? routingModePreferenceStore.load()
             : .rule

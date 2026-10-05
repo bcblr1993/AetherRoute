@@ -184,6 +184,39 @@ final class FlowCoreBridgeTests: XCTestCase {
         XCTAssertEqual(backend.telemetryCalls, 1)
     }
 
+    func testFlowCreationPassesTheEncodedSourceApp() throws {
+        let backend = MockFlowCoreABI()
+        let engine = try makeEngine(backend: backend)
+        let app = try XCTUnwrap(FlowSourceApp(
+            signingIdentifier: "com.apple.Safari",
+            executablePath: nil
+        ))
+        _ = try engine.makeTCPFlow(
+            source: nil,
+            destination: tcpDestination(port: 443),
+            sourceApp: app
+        )
+        XCTAssertEqual(
+            backend.lastTCPSourceApp,
+            Data("ASA1".utf8) + Data([0, 16]) + Data("com.apple.Safari".utf8)
+                + Data([0, 0])
+        )
+        _ = try engine.makeUDPFlow(source: udpSource(port: 50_010))
+        XCTAssertNil(backend.lastUDPSourceApp)
+    }
+
+    func testRejectedSourceAppFallsBackToAPlainFlow() throws {
+        let backend = MockFlowCoreABI()
+        backend.rejectsSourceApp = true
+        let engine = try makeEngine(backend: backend)
+        _ = try engine.makeTCPFlow(
+            source: nil,
+            destination: tcpDestination(port: 443),
+            sourceApp: FlowSourceApp(signingIdentifier: "a", executablePath: nil)
+        )
+        XCTAssertNil(backend.lastTCPSourceApp)
+    }
+
     func testSynchronousABIRejectionCompletesExactlyOnceWithFullToken() throws {
         let backend = MockFlowCoreABI()
         backend.tcpWriteStatus = FlowCoreABIStatus.backpressure
@@ -618,6 +651,9 @@ private final class MockFlowCoreABI: FlowCoreABIBackend, @unchecked Sendable {
     private(set) var routingModeUpdates: [RoutingMode] = []
     private(set) var selectorLatencyCalls = 0
     private(set) var telemetryCalls = 0
+    var lastTCPSourceApp: Data?
+    var rejectsSourceApp = false
+    var lastUDPSourceApp: Data?
     private var selectedSelectorMember = "Singapore"
     private let selectorMembers = ["Singapore", "Tokyo"]
 
@@ -758,8 +794,14 @@ private final class MockFlowCoreABI: FlowCoreABIBackend, @unchecked Sendable {
     func tcpCreate(
         engine _: FlowCoreABIHandle,
         source _: Data?,
-        destination _: Data
+        destination _: Data,
+        sourceApp: Data?
     ) -> (status: Int32, handle: FlowCoreABIHandle?) {
+        let rejected = lock.withLock { () -> Bool in
+            lastTCPSourceApp = sourceApp
+            return rejectsSourceApp && sourceApp != nil
+        }
+        if rejected { return (FlowCoreABIStatus.invalidArgument, nil) }
         if lock.withLock({ blockTCPCreate }) {
             tcpCreateEntered.signal()
             tcpCreateRelease.wait()
@@ -769,9 +811,11 @@ private final class MockFlowCoreABI: FlowCoreABIBackend, @unchecked Sendable {
 
     func udpCreate(
         engine _: FlowCoreABIHandle,
-        source _: Data
+        source _: Data,
+        sourceApp: Data?
     ) -> (status: Int32, handle: FlowCoreABIHandle?) {
-        (FlowCoreABIStatus.success, makeHandle())
+        lock.withLock { lastUDPSourceApp = sourceApp }
+        return (FlowCoreABIStatus.success, makeHandle())
     }
 
     func activate(_: FlowCoreABIHandle) -> Int32 {

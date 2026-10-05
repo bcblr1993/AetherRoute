@@ -19,5 +19,22 @@ int main(void) {
     if (aetherroute_flow_abi_load_v4(&v4) != 1) {
         return 4;
     }
-    return v4.selector_active_latency != NULL ? 0 : 5;
+    if (v4.selector_active_latency == NULL) {
+        return 5;
+    }
+    aetherroute_flow_abi_v5_t v5 = {0};
+    v5.struct_size = (uint32_t)sizeof(v5);
+    if (aetherroute_flow_abi_load_v5(&v5) != 1) {
+        return 6;
+    }
+    if (v5.v4.selector_active_latency == NULL
+        || v5.tcp_create_v2 == NULL
+        || v5.udp_create_v2 == NULL
+        || v5.telemetry_snapshot_v2 == NULL) {
+        return 7;
+    }
+    /* A caller built against a different table size is refused. */
+    aetherroute_flow_abi_v5_t mismatched = {0};
+    mismatched.struct_size = (uint32_t)sizeof(v4);
+    return aetherroute_flow_abi_load_v5(&mismatched) == 0 ? 0 : 8;
 }

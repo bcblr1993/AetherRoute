@@ -309,6 +309,10 @@ public enum RouteMatchEngine {
             switch kind {
             case "MATCH", "FINAL":
                 matches = true
+            case "AETHER-APP":
+                // Depends on the app making the request; the tester asks
+                // about a destination alone, as for an app without a rule.
+                matches = false
             case "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD":
                 guard let criteria, !criteria.isEmpty else {
                     return .indeterminate(ruleOrder: rule.order)
@@ -1102,6 +1106,19 @@ private struct Parser {
         appendRule(pending.value)
     }
 
+    /// "Claude" for `com.anthropic.claudefordesktop;/Applications/Claude.app`.
+    static func applicationName(_ payload: String) -> String {
+        guard let separator = payload.firstIndex(of: ";") else { return payload }
+        let identifier = String(payload[..<separator])
+        let path = String(payload[payload.index(after: separator)...])
+            .removingPercentEncoding ?? ""
+        if !path.isEmpty {
+            let name = (path as NSString).lastPathComponent
+            return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
+        }
+        return identifier.isEmpty ? payload : identifier
+    }
+
     private mutating func appendRule(_ rawValue: String) {
         let value = Self.scalar(rawValue)
         let fields = Self.splitTopLevel(value, separator: ",").map(Self.scalar)
@@ -1128,7 +1145,8 @@ private struct Parser {
                 id: rules.count,
                 order: order,
                 kind: kind,
-                criteria: criteria,
+                criteria: kind.uppercased() == "AETHER-APP"
+                    ? criteria.map(Self.applicationName) : criteria,
                 target: target,
                 isCustom: isCustom
             )

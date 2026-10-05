@@ -566,7 +566,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             var requiredLength = 0
             let status = telemetryOutputBuffer.withUnsafeMutableBytes {
                 outputBytes in
-                clash_packet_telemetry_snapshot_v1(
+                clash_packet_telemetry_snapshot_v2(
                     UInt32(maximumConnections),
                     outputBytes.bindMemory(to: UInt8.self).baseAddress,
                     outputBytes.count,

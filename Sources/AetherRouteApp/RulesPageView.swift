@@ -115,6 +115,8 @@ struct RulesView: View {
 
                             routeTester(summary: summary, scrollProxy: scrollProxy)
 
+                            ApplicationRulesSection()
+
                             customRulesSection(summary: summary)
 
                             if !summary.ruleProviders.isEmpty {
@@ -355,7 +357,7 @@ struct RulesView: View {
     private func customRulesSection(summary: ProfileConfigurationSummary) -> some View {
         section(
             title: AppLocalization.string("Custom rules"),
-            note: AppLocalization.string("Highest priority")
+            note: AppLocalization.string("Checked after application rules")
         ) {
             VStack(alignment: .leading, spacing: 0) {
                 if let msg = tunnel.customRuleMessage {
@@ -366,7 +368,7 @@ struct RulesView: View {
                         .padding(.top, AetherVisual.s3)
                         .transition(AetherVisual.insertion)
                 }
-                if tunnel.customRules.isEmpty {
+                if destinationRules.isEmpty {
                     HStack(spacing: AetherVisual.s3) {
                         Text(AppLocalization.string("No custom rules yet. To always send a site direct or through the proxy, add a rule here."))
                             .font(.subheadline)
@@ -383,7 +385,7 @@ struct RulesView: View {
                     .padding(AetherVisual.s4)
                 } else {
                     VStack(spacing: AetherVisual.sCompact) {
-                        ForEach(tunnel.customRules) { rule in
+                        ForEach(destinationRules) { rule in
                             CustomRuleRow(
                                 rule: rule,
                                 onToggle: {
@@ -408,8 +410,14 @@ struct RulesView: View {
                 }
             }
             .aetherPanel()
-            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.customRules.map(\.id))
+            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: destinationRules.map(\.id))
         }
+    }
+
+    /// Custom rules other than application rules, which have their own
+    /// section above.
+    private var destinationRules: [CustomRule] {
+        tunnel.customRules.filter { $0.kind != .application }
     }
 
     // MARK: Profile rules
@@ -1037,7 +1045,7 @@ struct CustomRuleEditorSheet: View {
                     GridRow {
                         fieldLabel(AppLocalization.string("Rule kind"))
                         Picker(AppLocalization.string("Rule kind"), selection: $selectedKind) {
-                            ForEach(CustomRuleKind.allCases, id: \.self) { kind in
+                            ForEach(CustomRuleKind.editableKinds, id: \.self) { kind in
                                 Text(kind.displayName).tag(kind)
                             }
                         }
@@ -1218,6 +1226,7 @@ struct CustomRuleEditorSheet: View {
         case .ipCIDR: AppLocalization.string("e.g. 100.64.0.0/10 or 192.168.1.0/24")
         case .ipCIDR6: AppLocalization.string("e.g. fd7a:115c:a1e0::/48")
         case .geoIP: AppLocalization.string("e.g. CN or US")
+        case .application: ""
         }
     }
 
@@ -1256,6 +1265,10 @@ struct CustomRuleEditorSheet: View {
             destination = ipPart
         case .geoIP:
             destination = "223.5.5.5"
+        case .application:
+            // Matched by the connecting app, not a destination.
+            testExplanation = AppLocalization.string("Application rules match the app that opens a connection, so they cannot be tested by destination.")
+            return
         }
 
         switch RouteMatchEngine.assess(destination: destination, against: simulatedList, totalRuleCount: simulatedList.count) {
