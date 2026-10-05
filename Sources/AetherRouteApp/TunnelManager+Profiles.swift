@@ -473,7 +473,8 @@ extension TunnelManager {
             let shouldActivate = !isEnabled || activeProfileID == nil
             switch try await subscriptionClient.fetch(subscription) {
             case let .updated(data, metadata, report):
-                let suggestedName = subscriptionDisplayName(for: url)
+                let suggestedName = metadata.providerProfileName
+                    ?? subscriptionDisplayName(for: url)
 #if AETHERROUTE_DEVELOPMENT_PREVIEW
                 if isUIReviewMode {
                     try installPreviewSubscriptionProfile(
@@ -799,20 +800,20 @@ extension TunnelManager {
         }
     }
 
-    func updateSubscriptionInterval(id: UUID, interval: TimeInterval?) async {
+    func updateSubscriptionInterval(
+        id: UUID,
+        interval: TimeInterval?,
+        followProvider: Bool = false
+    ) async {
         guard canModifyProfile(id: id),
               let index = profiles.firstIndex(where: { $0.id == id }),
               let sub = profiles[index].profile.subscription else { return }
         isUpdatingProfiles = true
         defer { isUpdatingProfiles = false }
         do {
-            let updatedSub = try ProfileSubscription(
-                url: sub.url,
-                etag: sub.etag,
-                lastModified: sub.lastModified,
-                lastCheckedAt: sub.lastCheckedAt,
-                lastUpdatedAt: sub.lastUpdatedAt,
-                autoUpdateInterval: interval
+            let updatedSub = try sub.withAutoUpdate(
+                interval: interval,
+                followProvider: followProvider
             )
             let existing = profiles[index].profile
             let updatedProfile = ActiveProfile(

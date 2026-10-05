@@ -815,6 +815,18 @@ private struct MenuBarContent: View {
                     section: .overview
                 )
                 .accessibilityIdentifier("menu-connection-failure")
+            } else if let notice = subscriptionNotice {
+                menuNotice(
+                    symbol: notice.alert.isSevere
+                        ? "exclamationmark.octagon.fill"
+                        : "exclamationmark.triangle.fill",
+                    tint: notice.alert.isSevere ? .red : .orange,
+                    title: notice.title,
+                    detail: notice.detail,
+                    action: AppLocalization.string("Profiles"),
+                    section: .profiles
+                )
+                .accessibilityIdentifier("menu-subscription-notice")
             }
 
             routeGroup
@@ -823,6 +835,21 @@ private struct MenuBarContent: View {
         }
         .padding(AetherVisual.s4)
         .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.isConnected)
+    }
+
+    /// The active subscription running out or ended, worded for the panel.
+    private var subscriptionNotice: (alert: SubscriptionUsageAlert, title: String, detail: String)? {
+        guard let usage = tunnel.activeProfile?.subscription?.usage else { return nil }
+        let alert = SubscriptionUsageAlert.evaluate(usage, now: .now)
+        let title: String
+        switch alert {
+        case .none: return nil
+        case .low: title = AppLocalization.string("Subscription traffic is running low")
+        case .expiring: title = AppLocalization.string("Subscription expires soon")
+        case .exhausted: title = AppLocalization.string("Subscription traffic is used up")
+        case .expired: title = AppLocalization.string("Subscription has expired")
+        }
+        return (alert, title, SubscriptionUsageLine.summary(usage, alert: alert, now: .now))
     }
 
     private static let groupRadius: CGFloat = 14
@@ -2290,6 +2317,18 @@ private struct SettingsView: View {
             .accessibilityHint(
                 Text("Shortcuts work while AetherRoute is running and do not require Accessibility access. Notifications are optional and never include profile names, addresses, or traffic details.")
             )
+
+            Toggle(
+                "Subscription alerts",
+                isOn: Binding(
+                    get: { automation.subscriptionNotificationsEnabled },
+                    set: { enabled in
+                        Task { await automation.setSubscriptionNotificationsEnabled(enabled) }
+                    }
+                )
+            )
+            .accessibilityIdentifier("subscription-notifications-toggle")
+            .help(AppLocalization.string("Notify me when the subscription in use is about to expire or has little traffic left."))
 
             Label(notificationStatusText, systemImage: notificationStatusSymbol)
                 .font(.caption)

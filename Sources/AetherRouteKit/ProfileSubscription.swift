@@ -9,6 +9,16 @@ public struct ProfileSubscription: Codable, Equatable, Sendable {
     public let lastCheckedAt: Date?
     public let lastUpdatedAt: Date?
     public let autoUpdateInterval: TimeInterval?
+    // Added in 1.2.1; profiles saved earlier decode these as nil.
+    /// Traffic and expiry from the provider's `subscription-userinfo`.
+    public let usage: SubscriptionUsage?
+    /// The provider's `profile-update-interval`, followed until the user
+    /// picks an interval of their own.
+    public let providerUpdateInterval: TimeInterval?
+    /// Whether the user chose `autoUpdateInterval` (nil: not yet).
+    public let isAutoUpdateIntervalCustomized: Bool?
+    /// The profile name from `content-disposition`.
+    public let providerProfileName: String?
 
     public init(
         url: URL,
@@ -16,7 +26,11 @@ public struct ProfileSubscription: Codable, Equatable, Sendable {
         lastModified: String? = nil,
         lastCheckedAt: Date? = nil,
         lastUpdatedAt: Date? = nil,
-        autoUpdateInterval: TimeInterval? = defaultAutoUpdateInterval
+        autoUpdateInterval: TimeInterval? = defaultAutoUpdateInterval,
+        usage: SubscriptionUsage? = nil,
+        providerUpdateInterval: TimeInterval? = nil,
+        isAutoUpdateIntervalCustomized: Bool? = nil,
+        providerProfileName: String? = nil
     ) throws {
         try ProfileSubscriptionClient.validateSubscriptionURL(url)
         self.url = url
@@ -31,12 +45,49 @@ public struct ProfileSubscription: Codable, Equatable, Sendable {
             }
         }
         self.autoUpdateInterval = autoUpdateInterval
+        self.usage = usage
+        self.providerUpdateInterval = providerUpdateInterval
+        self.isAutoUpdateIntervalCustomized = isAutoUpdateIntervalCustomized
+        self.providerProfileName = Self.nonEmpty(providerProfileName)
+    }
+
+    /// The interval automatic updates use: the provider's suggestion while
+    /// the user has not chosen one, otherwise the user's choice. Turning
+    /// automatic updates off (nil) always wins.
+    public var effectiveAutoUpdateInterval: TimeInterval? {
+        guard let autoUpdateInterval else { return nil }
+        if isAutoUpdateIntervalCustomized != true, let providerUpdateInterval {
+            return max(15 * 60, providerUpdateInterval)
+        }
+        return autoUpdateInterval
     }
 
     public func isDue(at date: Date = .now) -> Bool {
-        guard let autoUpdateInterval else { return false }
+        guard let interval = effectiveAutoUpdateInterval else { return false }
         guard let lastCheckedAt else { return true }
-        return date.timeIntervalSince(lastCheckedAt) >= autoUpdateInterval
+        return date.timeIntervalSince(lastCheckedAt) >= interval
+    }
+
+    /// This subscription with the user's automatic-update choice. `nil`
+    /// turns updates off; `followProvider` returns to the provider's schedule.
+    public func withAutoUpdate(
+        interval: TimeInterval?,
+        followProvider: Bool = false
+    ) throws -> Self {
+        try Self(
+            url: url,
+            etag: etag,
+            lastModified: lastModified,
+            lastCheckedAt: lastCheckedAt,
+            lastUpdatedAt: lastUpdatedAt,
+            autoUpdateInterval: followProvider
+                ? (autoUpdateInterval ?? Self.defaultAutoUpdateInterval)
+                : interval,
+            usage: usage,
+            providerUpdateInterval: providerUpdateInterval,
+            isAutoUpdateIntervalCustomized: !followProvider,
+            providerProfileName: providerProfileName
+        )
     }
 
     private static func nonEmpty(_ value: String?) -> String? {
@@ -333,7 +384,19 @@ public struct ProfileSubscriptionClient: Sendable {
                 ?? subscription.lastModified,
             lastCheckedAt: checkedAt,
             lastUpdatedAt: updatedAt,
-            autoUpdateInterval: subscription.autoUpdateInterval
+            autoUpdateInterval: subscription.autoUpdateInterval,
+            // A response without the header keeps what was last reported.
+            usage: SubscriptionUsage.parse(
+                header: response.headers["subscription-userinfo"],
+                reportedAt: checkedAt
+            ) ?? subscription.usage,
+            providerUpdateInterval: SubscriptionResponseHints.updateInterval(
+                header: response.headers["profile-update-interval"]
+            ) ?? subscription.providerUpdateInterval,
+            isAutoUpdateIntervalCustomized: subscription.isAutoUpdateIntervalCustomized,
+            providerProfileName: SubscriptionResponseHints.profileName(
+                contentDisposition: response.headers["content-disposition"]
+            ) ?? subscription.providerProfileName
         )
     }
 }

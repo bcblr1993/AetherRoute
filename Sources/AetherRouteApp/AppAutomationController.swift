@@ -25,9 +25,18 @@ final class AppAutomationController: ObservableObject {
     @Published private(set) var shortcutMessage: String?
     @Published private(set) var notificationsEnabled: Bool
     @Published private(set) var notificationPermission: NotificationPermissionState
+    @Published private(set) var subscriptionNotificationsEnabled: Bool
 
     private static let notificationsPreferenceKey =
         "AetherRoute.ConnectionNotificationsEnabled"
+    private static let subscriptionNotificationsPreferenceKey =
+        "AetherRoute.SubscriptionNotificationsEnabled"
+    private static let subscriptionAlertHistoryKey =
+        "AetherRoute.SubscriptionAlertLastSent"
+    private static let subscriptionNotificationIdentifier =
+        "AetherRoute.SubscriptionAttention"
+    /// The same alert for the same profile is repeated at most once a day.
+    private static let subscriptionAlertInterval: TimeInterval = 24 * 60 * 60
     private static let notificationIdentifier =
         "AetherRoute.ConnectionAttention"
 
@@ -41,6 +50,7 @@ final class AppAutomationController: ObservableObject {
     private var stateObservation: AnyCancellable?
     private var licenseAccessObservation: AnyCancellable?
     private var privacyObservation: AnyCancellable?
+    private var subscriptionObservation: AnyCancellable?
     private var licenseRefreshTask: Task<Void, Never>?
     private var previousTunnelState: TunnelManager.State
 
@@ -72,14 +82,27 @@ final class AppAutomationController: ObservableObject {
             notificationsEnabled = true
             notificationPermission = .authorized
             shortcutState = .active
+            subscriptionNotificationsEnabled = false
         } else {
             shortcutPreferences = shortcutStore.load()
             notificationsEnabled = userDefaults.bool(
                 forKey: Self.notificationsPreferenceKey
             )
             notificationPermission = .notRequested
+            subscriptionNotificationsEnabled = userDefaults.bool(
+                forKey: Self.subscriptionNotificationsPreferenceKey
+            )
         }
 
+        // Every subscription refresh replaces the active profile, so its usage
+        // is re-checked whenever the provider reports new numbers.
+        subscriptionObservation = tunnel.$activeProfile
+            .map { $0?.subscription?.usage }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] usage in
+                self?.notifyIfSubscriptionNeedsAttention(usage)
+            }
         stateObservation = tunnel.$state
             .dropFirst()
             .sink { [weak self] state in
@@ -125,6 +148,81 @@ final class AppAutomationController: ObservableObject {
         var updated = shortcutPreferences
         updated.assign(key, to: action)
         persistAndApply(updated)
+    }
+
+    /// Optional, off by default: permission is only requested when the
+    /// person turns this on.
+    func setSubscriptionNotificationsEnabled(_ isEnabled: Bool) async {
+        guard !isUIReviewMode else {
+            subscriptionNotificationsEnabled = isEnabled
+            return
+        }
+        if !isEnabled {
+            subscriptionNotificationsEnabled = false
+            userDefaults.set(false, forKey: Self.subscriptionNotificationsPreferenceKey)
+            notificationCenter.removePendingNotificationRequests(
+                withIdentifiers: [Self.subscriptionNotificationIdentifier]
+            )
+            return
+        }
+        let granted: Bool
+        do {
+            granted = try await notificationCenter.requestAuthorization(
+                options: [.alert, .sound]
+            )
+            notificationPermission = granted ? .authorized : .denied
+        } catch {
+            granted = false
+            notificationPermission = .unavailable
+        }
+        subscriptionNotificationsEnabled = granted
+        userDefaults.set(granted, forKey: Self.subscriptionNotificationsPreferenceKey)
+        if granted {
+            notifyIfSubscriptionNeedsAttention(tunnel.activeProfile?.subscription?.usage)
+        }
+    }
+
+    private func notifyIfSubscriptionNeedsAttention(_ usage: SubscriptionUsage?) {
+        guard subscriptionNotificationsEnabled, !isUIReviewMode,
+              let profileID = tunnel.activeProfileID else { return }
+        let alert = SubscriptionUsageAlert.evaluate(usage, now: .now)
+        let kind: String
+        let title: String
+        switch alert {
+        case .none: return
+        case .low:
+            kind = "low"
+            title = AppLocalization.string("Subscription traffic is running low")
+        case .expiring:
+            kind = "expiring"
+            title = AppLocalization.string("Subscription expires soon")
+        case .exhausted:
+            kind = "exhausted"
+            title = AppLocalization.string("Subscription traffic is used up")
+        case .expired:
+            kind = "expired"
+            title = AppLocalization.string("Subscription has expired")
+        }
+        var history = userDefaults.dictionary(forKey: Self.subscriptionAlertHistoryKey)
+            as? [String: Double] ?? [:]
+        let key = "\(profileID.uuidString)|\(kind)"
+        let now = Date.now.timeIntervalSince1970
+        if let last = history[key], now - last < Self.subscriptionAlertInterval { return }
+        history[key] = now
+        // Keep the record small: drop entries older than a week.
+        history = history.filter { now - $0.value < 7 * 24 * 60 * 60 }
+        userDefaults.set(history, forKey: Self.subscriptionAlertHistoryKey)
+
+        // Like connection alerts, no profile name or traffic figures.
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = AppLocalization.string("Open AetherRoute to see your subscription details.")
+        content.sound = .default
+        notificationCenter.add(UNNotificationRequest(
+            identifier: Self.subscriptionNotificationIdentifier,
+            content: content,
+            trigger: nil
+        ))
     }
 
     func setNotificationsEnabled(_ isEnabled: Bool) async {

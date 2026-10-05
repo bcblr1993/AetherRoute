@@ -547,11 +547,22 @@ final class TunnelManager: ObservableObject {
             let reviewSubscription: ProfileSubscription?
             if environment["AETHERROUTE_UI_REVIEW_SUBSCRIPTION"] == "1",
                let url = URL(string: "https://profiles.example/config.yaml") {
+                // Usage is relative to now so the card always shows the
+                // "running low" state: 93% of 200 GiB used, 12 days left.
+                let gib: UInt64 = 1 << 30
                 reviewSubscription = try? ProfileSubscription(
                     url: url,
                     etag: "\"review-7\"",
                     lastCheckedAt: Date(timeIntervalSince1970: 1_775_003_300),
-                    lastUpdatedAt: Date(timeIntervalSince1970: 1_775_000_000)
+                    lastUpdatedAt: Date(timeIntervalSince1970: 1_775_000_000),
+                    usage: SubscriptionUsage(
+                        uploadBytes: 14 * gib,
+                        downloadBytes: 172 * gib,
+                        totalBytes: 200 * gib,
+                        expiresAt: Date.now.addingTimeInterval(12 * 86_400),
+                        reportedAt: Date.now.addingTimeInterval(-20 * 60)
+                    ),
+                    providerUpdateInterval: 12 * 3_600
                 )
             } else {
                 reviewSubscription = nil

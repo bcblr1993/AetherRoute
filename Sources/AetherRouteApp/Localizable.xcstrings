@@ -12472,6 +12472,156 @@
           }
         }
       }
+    },
+    "Provider schedule (every %lld hours)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按服务商建议（每 %lld 小时）"
+          }
+        }
+      }
+    },
+    "Reported by the provider %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务商于 %@ 提供的数据"
+          }
+        }
+      }
+    },
+    "%@ of %@ used": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已用 %@ / %@"
+          }
+        }
+      }
+    },
+    "%@ left": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剩余 %@"
+          }
+        }
+      }
+    },
+    "%@ used": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已用 %@"
+          }
+        }
+      }
+    },
+    "Expired": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已到期"
+          }
+        }
+      }
+    },
+    "Traffic used up": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "流量已用完"
+          }
+        }
+      }
+    },
+    "Expires %@ (%lld days)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 到期（还剩 %lld 天）"
+          }
+        }
+      }
+    },
+    "Subscription traffic is running low": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅流量即将用完"
+          }
+        }
+      }
+    },
+    "Subscription expires soon": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅即将到期"
+          }
+        }
+      }
+    },
+    "Subscription traffic is used up": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅流量已用完"
+          }
+        }
+      }
+    },
+    "Subscription has expired": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅已到期"
+          }
+        }
+      }
+    },
+    "Subscription alerts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅提醒通知"
+          }
+        }
+      }
+    },
+    "Notify me when the subscription in use is about to expire or has little traffic left.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前使用的订阅即将到期或流量不足时发送通知。"
+          }
+        }
+      }
+    },
+    "Open AetherRoute to see your subscription details.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 AetherRoute 查看订阅详情。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

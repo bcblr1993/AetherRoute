@@ -1174,6 +1174,9 @@ private struct ManagedProfileRow: View {
                     .font(.caption)
                     .foregroundStyle(AetherVisual.secondaryText)
                     .lineLimit(1)
+                if let usage = managed.profile.subscription?.usage {
+                    SubscriptionUsageLine(usage: usage)
+                }
             }
 
             Spacer(minLength: AetherVisual.s2)
@@ -1225,6 +1228,21 @@ private struct ManagedProfileRow: View {
 
                 if isSubscription {
                     Menu(AppLocalization.string("Auto Update")) {
+                        if let hint = managed.profile.subscription?.providerUpdateInterval {
+                            Button(AppLocalization.format(
+                                "Provider schedule (every %lld hours)",
+                                Int64((hint / 3600).rounded())
+                            )) {
+                                Task {
+                                    await tunnel.updateSubscriptionInterval(
+                                        id: managed.id,
+                                        interval: nil,
+                                        followProvider: true
+                                    )
+                                }
+                            }
+                            Divider()
+                        }
                         Button(AppLocalization.string("Manual only")) {
                             Task { await tunnel.updateSubscriptionInterval(id: managed.id, interval: nil) }
                         }
@@ -1560,5 +1578,102 @@ private enum ProfileNodeCountCache {
 
     static func key(for managed: ManagedProfile) -> Key {
         Key(id: managed.id, importedAt: managed.profile.importedAt, length: managed.profile.yaml.utf8.count)
+    }
+}
+
+/// Used and total traffic with the expiry date, coloured once the
+/// subscription is running out or has ended.
+struct SubscriptionUsageLine: View {
+    let usage: SubscriptionUsage
+
+    var body: some View {
+        TimelineView(.everyMinute) { context in
+            let alert = SubscriptionUsageAlert.evaluate(usage, now: context.date)
+            HStack(spacing: AetherVisual.s2) {
+                if let fraction = usage.usedFraction {
+                    // Drawn rather than ProgressView, which turns grey in an
+                    // inactive window and would hide the warning colour.
+                    Capsule()
+                        .fill(Color.primary.opacity(0.12))
+                        .overlay(alignment: .leading) {
+                            GeometryReader { proxy in
+                                Capsule()
+                                    .fill(tint(for: alert))
+                                    .frame(width: max(4, proxy.size.width * fraction))
+                            }
+                        }
+                        .frame(width: 96, height: 5)
+                        .accessibilityHidden(true)
+                }
+                Text(Self.summary(usage, alert: alert, now: context.date))
+                    .font(.caption)
+                    .foregroundStyle(
+                        alert == .none
+                            ? AnyShapeStyle(AetherVisual.secondaryText)
+                            : AnyShapeStyle(tint(for: alert))
+                    )
+                    // Two lines rather than cutting off the expiry in a
+                    // narrow window.
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .help(AppLocalization.format(
+                "Reported by the provider %@",
+                AppLocalization.date(usage.reportedAt, date: .abbreviated, time: .shortened)
+            ))
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("subscription-usage")
+        }
+    }
+
+    private func tint(for alert: SubscriptionUsageAlert) -> Color {
+        switch alert {
+        case .none: .accentColor
+        case .low, .expiring: .orange
+        case .exhausted, .expired: .red
+        }
+    }
+
+    static func summary(
+        _ usage: SubscriptionUsage,
+        alert: SubscriptionUsageAlert,
+        now: Date
+    ) -> String {
+        var parts = [String]()
+        if let total = usage.totalBytes, total > 0 {
+            parts.append(AppLocalization.format(
+                "%@ of %@ used",
+                bytes(usage.usedBytes ?? 0),
+                bytes(total)
+            ))
+            if let remaining = usage.remainingBytes, remaining > 0 {
+                parts.append(AppLocalization.format("%@ left", bytes(remaining)))
+            }
+        } else if let used = usage.usedBytes {
+            parts.append(AppLocalization.format("%@ used", bytes(used)))
+        }
+        switch alert {
+        case .expired:
+            parts.append(AppLocalization.string("Expired"))
+        case .exhausted:
+            parts.append(AppLocalization.string("Traffic used up"))
+        default:
+            if let expiresAt = usage.expiresAt,
+               let days = usage.daysUntilExpiry(now: now) {
+                parts.append(AppLocalization.format(
+                    "Expires %@ (%lld days)",
+                    AppLocalization.date(expiresAt, date: .abbreviated, time: .omitted),
+                    Int64(days)
+                ))
+            }
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func bytes(_ value: UInt64) -> String {
+        ByteCountFormatter.string(
+            fromByteCount: Int64(clamping: value),
+            countStyle: .binary
+        )
     }
 }
