@@ -232,7 +232,11 @@ public enum DomesticRoutingOptimizer {
     /// Optimizes the provided raw YAML configuration for domestic download speed and
     /// Apple services acceleration while preserving proxy routing for foreign domains,
     /// with user custom rules injected at top priority.
-    public static func optimizedProfile(for yaml: String, customRules: [CustomRule] = []) -> String {
+    public static func optimizedProfile(
+        for yaml: String,
+        customRules: [CustomRule] = [],
+        remoteRules: [String] = []
+    ) -> String {
         guard !yaml.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return yaml }
         let lines = yaml.components(separatedBy: "\n")
         guard !lines.isEmpty else { return yaml }
@@ -242,7 +246,11 @@ public enum DomesticRoutingOptimizer {
         var resultLines: [String] = []
 
         let optimizedDNSLines = optimizeDNSSection(sections["dns"], customRules: customRules)
-        let optimizedRuleLines = optimizeRulesSection(sections["rules"], customRules: customRules)
+        let optimizedRuleLines = optimizeRulesSection(
+            sections["rules"],
+            customRules: customRules,
+            remoteRules: remoteRules
+        )
 
         var emittedSections = Set<String>()
 
@@ -617,7 +625,11 @@ public enum DomesticRoutingOptimizer {
             .uppercased() == CustomRuleKind.application.rawValue
     }
 
-    private static func optimizeRulesSection(_ existingLines: [String]?, customRules: [CustomRule] = []) -> [String] {
+    private static func optimizeRulesSection(
+        _ existingLines: [String]?,
+        customRules: [CustomRule] = [],
+        remoteRules: [String] = []
+    ) -> [String] {
         var rawRules: [String] = []
 
         if let lines = existingLines {
@@ -655,7 +667,16 @@ public enum DomesticRoutingOptimizer {
             }
         }
 
-        // 2. High priority domestic / VPN bypass rules
+        // 2. High priority remote rule-providers
+        for rule in remoteRules {
+            let norm = normalizedRuleString(rule)
+            if !seenNormalized.contains(norm) {
+                newRules.append(rule)
+                seenNormalized.insert(norm)
+            }
+        }
+
+        // 3. High priority domestic / VPN bypass rules
         for rule in highPriorityBypassRules {
             let norm = normalizedRuleString(rule)
             if !seenNormalized.contains(norm) {

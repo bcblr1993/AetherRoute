@@ -5,6 +5,7 @@ import OSLog
 
 public extension Notification.Name {
     static let aetherRouteCloudSyncDidUpdateProfiles = Notification.Name("com.aetherroute.cloudSyncDidUpdateProfiles")
+    static let aetherRouteCloudSyncDidUpdateRuleProviders = Notification.Name("com.aetherroute.cloudSyncDidUpdateRuleProviders")
 }
 
 public struct CloudSyncPayload: Codable, Sendable, Equatable {
@@ -176,6 +177,9 @@ public final class ProfileCloudSyncManager: ObservableObject {
         let catalogStore = try ProfileCatalogStore.applicationGroup()
         let localCatalog = try catalogStore.loadOrMigrate()
 
+        // Synchronize lightweight rule providers alongside profiles
+        await syncRuleProviders()
+
         // 1. Fetch remote payload
         kvStore.synchronize()
         if let remoteData = kvStore.data(forKey: CloudSyncPayload.storageKey),
@@ -257,6 +261,10 @@ public final class ProfileCloudSyncManager: ObservableObject {
         do {
             let catalogStore = try ProfileCatalogStore.applicationGroup()
             let (applied, _) = try await applyRemotePayload(remotePayload, to: catalogStore)
+            if let remoteRuleData = kvStore.data(forKey: RuleProviderSyncPayload.storageKey) {
+                let updatedProviders = await RuleProviderEngine.shared.mergeCloudSyncPayload(remoteRuleData)
+                NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateRuleProviders, object: updatedProviders)
+            }
             self.lastSyncedAt = Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0)
             self.statusMessage = "已强制从 iCloud 拉取配置 (\(applied.profiles.count) 个配置)"
             return true
@@ -284,6 +292,11 @@ public final class ProfileCloudSyncManager: ObservableObject {
         defer { isSyncing = false }
         self.statusMessage = "正在上传配置至 iCloud..."
 
+        if let localRulePayload = await RuleProviderEngine.shared.exportCloudSyncPayload(deviceIdentifier: deviceID) {
+            kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
+            kvStore.synchronize()
+        }
+
         let catalogStore = try ProfileCatalogStore.applicationGroup()
         let localCatalog = try catalogStore.loadOrMigrate()
         guard !localCatalog.profiles.isEmpty else {
@@ -299,6 +312,17 @@ public final class ProfileCloudSyncManager: ObservableObject {
         } catch {
             self.statusMessage = "上传失败: \(error.localizedDescription)"
             throw error
+        }
+    }
+
+    private func syncRuleProviders() async {
+        if let remoteRuleData = kvStore.data(forKey: RuleProviderSyncPayload.storageKey) {
+            let updatedProviders = await RuleProviderEngine.shared.mergeCloudSyncPayload(remoteRuleData)
+            NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateRuleProviders, object: updatedProviders)
+        }
+        if let localRulePayload = await RuleProviderEngine.shared.exportCloudSyncPayload(deviceIdentifier: deviceID) {
+            kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
+            kvStore.synchronize()
         }
     }
 

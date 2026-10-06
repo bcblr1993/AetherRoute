@@ -1157,9 +1157,10 @@ final class TunnelManager: ObservableObject {
         defer { isUpdatingRoutingResources = false }
         let rawProfileYAML = activeProfile.yaml
         let currentCustomRules = customRules
+        let remoteRules = await RuleProviderEngine.shared.compileActiveRules()
         let profileYAML = isDomesticOptimizationEnabled
-            ? DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML, customRules: currentCustomRules)
-            : (currentCustomRules.isEmpty ? rawProfileYAML : DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML, customRules: currentCustomRules))
+            ? DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML, customRules: currentCustomRules, remoteRules: remoteRules)
+            : (currentCustomRules.isEmpty && remoteRules.isEmpty ? rawProfileYAML : DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML, customRules: currentCustomRules, remoteRules: remoteRules))
 #if AETHERROUTE_QA_AUTOMATION
         if let appGroupDir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup)?
             .appendingPathComponent("Library/Application Support/AetherRoute", isDirectory: true) {

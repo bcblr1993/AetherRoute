@@ -4,6 +4,22 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] - 2026-10-06
+
+AetherRoute now supports Rule Providers for subscribing to and managing external rule sets, dynamically compiling active rules into routing chains with safety budgets, and syncing providers across devices via iCloud.
+
+### Added
+
+- Rule Providers: Support subscribing to remote rule sets in domain, ipcidr, and classical formats with customizable targets (Direct, Proxy, Reject) and update intervals.
+- Dynamic Rule Compilation: Active rule providers are compiled into routing chains upon connection or profile switch, placed with correct precedence between custom rules and base profile rules.
+- Jetsam Safety Guard: Strict rule budgets enforced per provider (up to 2,500 rules) and globally (up to 8,000 rules) to prevent Network Extension 15MB Jetsam termination on iOS/macOS.
+- iCloud Roaming: Automatic synchronization of rule provider configurations and enablement states across Mac and iOS devices using iCloud Key-Value Storage.
+
+### Verified
+
+- App unit tests and regression gates passed: `RuleProviderEngineTests` (download, caching, parsing, budget trimming, export/import sync payload), `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, and `./scripts/test.sh` 100% passed.
+- Physical Apple Silicon Mac mini (LAN 192.168.50.226) in place of Tart VM: remote arm64 gate `test_remote_arm64.sh fast` passed; runtime verification for both TUN and Transparent proxy passed idle keep-alive reuse (6/6) and 2 MiB large upload (6/6). See `Docs/ReleaseExceptions/1.3.1.md`.
+
 ## [1.3.0] - 2026-10-06
 
 AetherRoute now knows which app opened each connection, and can route an app as a whole: one app always direct, another always through a given proxy group, a third blocked, ahead of every other rule.
