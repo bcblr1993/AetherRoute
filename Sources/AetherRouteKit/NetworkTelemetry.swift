@@ -167,11 +167,12 @@ public enum NetworkTelemetryCodec {
             throw NetworkTelemetryCodecError.tooLarge
         }
         let includesSourceApp = version != .v1
-        var output = Data(switch version {
+        let headerMagic: [UInt8] = switch version {
         case .v1: magic
         case .v2: magicV2
         case .v3: magicV3
-        })
+        }
+        var output = Data(headerMagic)
         for value in [
             snapshot.uploadBytesPerSecond,
             snapshot.downloadBytesPerSecond,

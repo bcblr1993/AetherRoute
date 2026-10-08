@@ -1,9 +1,9 @@
 {
   "artifacts": {
-    "flowCoreSHA256": "6651c636e5b84f91855004c447f532e390fb9a7752e9b84ddba012118dc0e057",
+    "flowCoreSHA256": "5a27f5388940771425282a989cda58a6b9b26b49493ad3b82d796c42fd8c0d97",
     "headerSHA256": "93b377006a7583453ad306bdccfa843221848807d70790cbc2224cd320ec08de",
-    "interopTestBinarySHA256": "b964b5724d0f553037600c45415ed0f78fc448da2f216fa234f259b3ec0895fa",
-    "packetFlowCoreSHA256": "bd5030f87b4664492f40cde219b9624f9d2f165c222cd5c7ff2a523edd2573ad"
+    "interopTestBinarySHA256": "65859d87d94f4b6cf082874e478882e91d73609a15c60ba27950b0f71a466d59",
+    "packetFlowCoreSHA256": "a587c4b5148d3bc32ddfadcf1b238a0a6e37ec55cafc0faf3b9045761bce2853"
   },
   "coreCommit": "73f29c5a5e3de919cd5b462703db86f64f2bf6fd",
   "coreFeatures": [
