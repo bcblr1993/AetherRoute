@@ -209,6 +209,12 @@ public final class FlowCoreEngine: @unchecked Sendable {
         try storage.telemetrySnapshot(maximumConnections: maximumConnections)
     }
 
+    /// Closes the active connections an `ARC1` request selects and returns
+    /// how many the engine was told to close.
+    public func closeConnections(request: Data) throws -> UInt64 {
+        try storage.closeConnections(request: request)
+    }
+
     /// Idempotent engine callback barrier. Completion is never invoked from a
     /// Rust callback and runs only after all child flow destroy barriers.
     public func shutdown(completion: @escaping @Sendable () -> Void) {
@@ -559,6 +565,25 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
                     throw Self.selectorError(result.status, selecting: false)
                 }
                 return try NetworkTelemetryCodec.decode(snapshot)
+            }
+        }
+    }
+
+    func closeConnections(request: Data) throws -> UInt64 {
+        guard ConnectionCloseRequestCodec.isValid(request) else {
+            throw FlowCoreEngineError.selectorUnavailable
+        }
+        return try gate.withLock {
+            guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
+            return try queue.sync {
+                guard phase == .running, let handle else {
+                    throw FlowCoreEngineError.engineClosed
+                }
+                let result = backend.closeConnections(engine: handle, request: request)
+                guard result.status == FlowCoreABIStatus.success else {
+                    throw Self.selectorError(result.status, selecting: false)
+                }
+                return result.closedCount
             }
         }
     }

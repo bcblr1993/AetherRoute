@@ -66,10 +66,15 @@ extension TunnelManager {
             !isUIReviewMode,
             telemetryPollingTask == nil
         else { return }
+        // Statistics need a sample now and then even with no traffic view
+        // open; once a minute is enough because the engine keeps exact
+        // lifetime totals between samples.
         let cadence: TelemetryCadence = if isRealtimeTelemetryPreferred {
             .realtime
         } else if isBackgroundTelemetryPreferred {
             .background
+        } else if isTrafficStatisticsEnabled {
+            .statistics
         } else {
             .healthOnly
         }
@@ -96,6 +101,9 @@ extension TunnelManager {
     func stopTelemetryPolling() {
         telemetryPollingTask?.cancel()
         telemetryPollingTask = nil
+        // The next sample sets a new baseline instead of counting a gap.
+        trafficAccumulator.reset()
+        saveTrafficLedgerIfNeeded(force: true)
     }
 
     func handleRuntimeEnvironmentEvent(
@@ -461,6 +469,7 @@ extension TunnelManager {
     /// automatic-group leaves derived from it.
     func publishTelemetry(_ snapshot: NetworkTelemetrySnapshot) {
         telemetryViewModel.update(snapshot)
+        recordTrafficStatistics(snapshot)
         let automaticGroups = (activeProfileSummary?.proxyGroups ?? [])
             .filter { $0.strategy.lowercased() != "select" }
             .map(\.name)

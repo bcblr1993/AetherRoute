@@ -32,6 +32,9 @@ protocol CoreBridge: Sendable {
     ) throws -> NetworkTelemetrySnapshot
     func dataPlaneDiagnosticsSnapshot() throws -> DataPlaneDiagnosticSnapshot
     func resetNetworkState(interfaceIndex: UInt32) throws
+    /// Closes the active connections an `ARC1` request selects and returns
+    /// how many the engine was told to close.
+    func closeConnections(request: Data) throws -> UInt64
     /// Signals the engine to stop and calls `completion` as soon as the tunnel
     /// is safe to tear down — it does **not** wait for the engine to unwind.
     /// The join continues on a background queue; see `RustCoreBridge.stop`.
@@ -566,7 +569,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             var requiredLength = 0
             let status = telemetryOutputBuffer.withUnsafeMutableBytes {
                 outputBytes in
-                clash_packet_telemetry_snapshot_v2(
+                clash_packet_telemetry_snapshot_v3(
                     UInt32(maximumConnections),
                     outputBytes.bindMemory(to: UInt8.self).baseAddress,
                     outputBytes.count,
@@ -581,6 +584,29 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             return try NetworkTelemetryCodec.decode(
                 telemetryOutputBuffer.prefix(requiredLength)
             )
+        }
+    }
+
+    func closeConnections(request: Data) throws -> UInt64 {
+        guard ConnectionCloseRequestCodec.isValid(request) else {
+            throw PacketTunnelSelectorError.rejected
+        }
+        return try controlLock.withLock {
+            guard isRunning(), clash_packet_flow_ready() == 1 else {
+                throw PacketTunnelSelectorError.unavailable
+            }
+            var closed: UInt64 = 0
+            let status = request.withUnsafeBytes { bytes in
+                clash_packet_close_connections_v1(
+                    bytes.bindMemory(to: UInt8.self).baseAddress,
+                    bytes.count,
+                    &closed
+                )
+            }
+            guard status == CLASH_FLOW_OK else {
+                throw Self.selectorError(status, selecting: false)
+            }
+            return closed
         }
     }
 

@@ -325,6 +325,9 @@ extension TunnelManager {
                            ProxyConnectionReadinessPolicy.groupsToVerify(summary: summary).first?.name == groupName {
                             _ = try? await client.select(group: "GLOBAL", member: groupName)
                         }
+                        if previous.selectedMember != requestedMember {
+                            await closeConnectionsAfterProxySwitch(group: groupName)
+                        }
                     } catch {
                         if let previousMember = previous.selectedMember,
                            previousMember != requestedMember {

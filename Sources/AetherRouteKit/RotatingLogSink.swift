@@ -71,6 +71,28 @@ public final class RotatingLogSink: @unchecked Sendable {
         )
     }
 
+    /// The last `maximumBytes` of what this sink wrote, oldest first: the end
+    /// of the previous file followed by the current one. Starts at a line
+    /// boundary so no record is cut in half. Records still queued for the
+    /// writer are not included.
+    public func tail(maximumBytes: Int) -> String {
+        guard maximumBytes > 0 else { return "" }
+        var data = Data()
+        for url in [rotatedURL(index: 1), currentFileURL] {
+            if let contents = fileManager.contents(atPath: url.path) {
+                data.append(contents)
+            }
+        }
+        guard data.count > maximumBytes else {
+            return String(decoding: data, as: UTF8.self)
+        }
+        var slice = data.suffix(maximumBytes)
+        if let newline = slice.firstIndex(of: 0x0a) {
+            slice = slice[slice.index(after: newline)...]
+        }
+        return String(decoding: slice, as: UTF8.self)
+    }
+
     public func statistics() -> RotatingLogSinkStatistics {
         lock.lock()
         defer { lock.unlock() }

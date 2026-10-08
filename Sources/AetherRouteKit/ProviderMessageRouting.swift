@@ -21,7 +21,8 @@ public enum ProviderMessageClass: Sendable, Equatable {
         case .latency, .activeLatency:
             self = .probe
         case .snapshot, .select, .telemetry, .diagnostics,
-             .setRoutingMode, .resetNetwork, .reloadProfile(_):
+             .setRoutingMode, .resetNetwork, .reloadProfile(_),
+             .closeConnections(_), .recentLog, .setDiagnosticLogLevel:
             self = .control
         }
     }

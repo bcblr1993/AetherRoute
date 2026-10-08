@@ -22,6 +22,16 @@ public enum ProxySelectionProviderRequest: Sendable, Equatable {
     case setRoutingMode(RoutingMode)
     case resetNetwork
     case reloadProfile(Data)
+    /// Closes the active connections an `ARC1` request selects; see
+    /// `ConnectionCloseRequestCodec`.
+    case closeConnections(Data)
+    /// The end of the provider's own diagnostic log, at most this many KiB.
+    /// The host cannot read the file itself: a Developer ID system
+    /// extension writes it into root's App Group container.
+    case recentLog(maximumKilobytes: UInt16)
+    /// Applies a diagnostic log level at once. The level otherwise reaches a
+    /// running extension only with its next launch snapshot.
+    case setDiagnosticLogLevel(DiagnosticLogLevel)
 }
 
 public enum ProxySelectionProviderFailure: UInt8, Sendable, Equatable {
@@ -40,6 +50,11 @@ public enum ProxySelectionProviderResponse: Sendable, Equatable {
     case routingMode(RoutingMode)
     case networkReset
     case profileReloaded
+    /// How many connections the engine was told to close.
+    case connectionsClosed(UInt32)
+    /// UTF-8 log text, possibly empty when debug logging is off.
+    case recentLog(Data)
+    case diagnosticLogLevelApplied
     case failure(ProxySelectionProviderFailure)
 }
 
@@ -62,6 +77,7 @@ public enum ProxySelectionProviderMessageCodec {
     public static let maximumMessageBytes = 1_048_576
     public static let minimumLatencyTimeoutMilliseconds: UInt32 = 100
     public static let maximumLatencyTimeoutMilliseconds: UInt32 = 30_000
+    public static let maximumRecentLogKilobytes: UInt16 = 512
 
     private static let requestMagic: [UInt8] = [0x41, 0x52, 0x51, 0x31]
     private static let responseMagic: [UInt8] = [0x41, 0x52, 0x50, 0x31]
@@ -171,6 +187,31 @@ public enum ProxySelectionProviderMessageCodec {
             group = payload
             member = Data()
             reserved = [0, 0, 0]
+        case let .closeConnections(payload):
+            guard ConnectionCloseRequestCodec.isValid(payload) else {
+                throw ProxySelectionProviderMessageError.malformed
+            }
+            operation = 10
+            group = payload
+            member = Data()
+            reserved = [0, 0, 0]
+        case let .recentLog(maximumKilobytes):
+            guard (1...maximumRecentLogKilobytes).contains(maximumKilobytes) else {
+                throw ProxySelectionProviderMessageError.malformed
+            }
+            operation = 11
+            group = Data()
+            member = Data()
+            reserved = [
+                0,
+                UInt8(maximumKilobytes >> 8),
+                UInt8(maximumKilobytes & 0xff),
+            ]
+        case let .setDiagnosticLogLevel(level):
+            operation = 12
+            group = Data()
+            member = Data()
+            reserved = [UInt8(level.rawValue), 0, 0]
         }
 
         var output = Data(requestMagic)
@@ -300,6 +341,34 @@ public enum ProxySelectionProviderMessageCodec {
             else { throw ProxySelectionProviderMessageError.malformed }
             let payload = Data(bytes[groupStart..<memberStart])
             return .reloadProfile(payload)
+        case 10:
+            let payload = Data(bytes[groupStart..<memberStart])
+            guard
+                bytes[5] == 0,
+                bytes[6] == 0,
+                bytes[7] == 0,
+                memberLength == 0,
+                ConnectionCloseRequestCodec.isValid(payload)
+            else { throw ProxySelectionProviderMessageError.malformed }
+            return .closeConnections(payload)
+        case 11:
+            let maximumKilobytes = UInt16(bytes[6]) << 8 | UInt16(bytes[7])
+            guard
+                bytes[5] == 0,
+                groupLength == 0,
+                memberLength == 0,
+                (1...maximumRecentLogKilobytes).contains(maximumKilobytes)
+            else { throw ProxySelectionProviderMessageError.malformed }
+            return .recentLog(maximumKilobytes: maximumKilobytes)
+        case 12:
+            guard
+                bytes[6] == 0,
+                bytes[7] == 0,
+                groupLength == 0,
+                memberLength == 0,
+                let level = DiagnosticLogLevel(rawValue: Int(bytes[5]))
+            else { throw ProxySelectionProviderMessageError.malformed }
+            return .setDiagnosticLogLevel(level)
         default:
             throw ProxySelectionProviderMessageError.malformed
         }
@@ -423,6 +492,31 @@ public enum ProxySelectionProviderMessageCodec {
             appendUInt32(noSelection, to: &output)
             appendUInt32(0, to: &output)
             return output
+        case let .connectionsClosed(count):
+            var output = Data(responseMagic)
+            output.append(9)
+            output.append(contentsOf: [0, 0, 0])
+            appendUInt32(noSelection, to: &output)
+            appendUInt32(count, to: &output)
+            return output
+        case let .recentLog(text):
+            guard text.count <= Int(maximumRecentLogKilobytes) * 1_024 else {
+                throw ProxySelectionProviderMessageError.tooLarge
+            }
+            var output = Data(responseMagic)
+            output.append(10)
+            output.append(contentsOf: [0, 0, 0])
+            appendUInt32(noSelection, to: &output)
+            appendUInt32(UInt32(text.count), to: &output)
+            output.append(text)
+            return output
+        case .diagnosticLogLevelApplied:
+            var output = Data(responseMagic)
+            output.append(11)
+            output.append(contentsOf: [0, 0, 0])
+            appendUInt32(noSelection, to: &output)
+            appendUInt32(0, to: &output)
+            return output
         }
     }
 
@@ -483,18 +577,40 @@ public enum ProxySelectionProviderMessageCodec {
                 data.count == responseHeaderBytes,
                 routingMode(code: bytes[5]) != nil
             else { throw ProxySelectionProviderMessageError.malformed }
-        case 7, 8:
+        case 7, 8, 11:
             guard
                 bytes[5] == 0,
                 selectedIndex == noSelection,
                 memberCount == 0,
                 data.count == responseHeaderBytes
             else { throw ProxySelectionProviderMessageError.malformed }
+        case 9:
+            guard
+                bytes[5] == 0,
+                selectedIndex == noSelection,
+                data.count == responseHeaderBytes
+            else { throw ProxySelectionProviderMessageError.malformed }
+        case 10:
+            guard
+                bytes[5] == 0,
+                selectedIndex == noSelection,
+                memberCount <= UInt32(maximumRecentLogKilobytes) * 1_024,
+                data.count == responseHeaderBytes + Int(memberCount)
+            else { throw ProxySelectionProviderMessageError.malformed }
         default:
             throw ProxySelectionProviderMessageError.malformed
         }
 
         var offset = responseHeaderBytes
+        if bytes[4] == 11 {
+            return .diagnosticLogLevelApplied
+        }
+        if bytes[4] == 10 {
+            return .recentLog(Data(bytes[responseHeaderBytes...]))
+        }
+        if bytes[4] == 9 {
+            return .connectionsClosed(memberCount)
+        }
         if bytes[4] == 8 {
             return .profileReloaded
         }

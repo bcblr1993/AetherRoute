@@ -245,6 +245,11 @@ struct ConnectionsView: View {
                     .contextMenu {
                         Button(AppLocalization.string("Copy destination")) { copyDestination(row.connection) }
                         Button(AppLocalization.string("Connection details")) { inspectedConnection = row }
+                        if tunnel.isConnected {
+                            Button(AppLocalization.string("Close Connection")) {
+                                close(.init(row: row.connection))
+                            }
+                        }
                         Divider()
                         appContextMenu(
                             SourceAppDirectory.shared.presentation(for: row.connection)
@@ -357,6 +362,11 @@ struct ConnectionsView: View {
             }
             Divider()
         }
+        if tunnel.isConnected {
+            Button(AppLocalization.format("Close Connections of %@", app.displayName)) {
+                closeConnections(of: app)
+            }
+        }
         if !app.isUnknown {
             Button(AppLocalization.format("Show only %@", app.displayName)) {
                 showOnly(app)
@@ -382,6 +392,29 @@ struct ConnectionsView: View {
         case .direct: AppLocalization.string("Always connect directly")
         case .reject: AppLocalization.string("Always block")
         case let .proxy(group): AppLocalization.format("Always use %@", group)
+        }
+    }
+
+    /// Sends one close request and leaves the list to the next telemetry
+    /// sample; the apps that owned the connections reconnect on their own.
+    private func close(_ request: ConnectionCloseRequest) {
+        Task { await tunnel.closeConnections(request) }
+    }
+
+    /// An app here can stand for several processes (a browser and its
+    /// helpers), each with its own signing identity, so every identity the
+    /// list currently shows for it is closed.
+    private func closeConnections(of app: SourceAppPresentation) {
+        let directory = SourceAppDirectory.shared
+        let apps = displayedConnections
+            .filter { directory.presentation(for: $0).groupingKey == app.groupingKey }
+            .map(ConnectionCloseApp.init(of:))
+        let requests = ConnectionCloseRequest.closing(apps: apps)
+        guard !requests.isEmpty else { return }
+        Task {
+            for request in requests {
+                await tunnel.closeConnections(request)
+            }
         }
     }
 
@@ -483,6 +516,15 @@ struct ConnectionsView: View {
             .frame(width: 112)
 
             if tunnel.isConnected {
+                // Ends every listed flow but keeps the tunnel up; apps open
+                // fresh connections, which follow the current rules and nodes.
+                Button(AppLocalization.string("Close All"), systemImage: "xmark.circle") {
+                    close(.all)
+                }
+                .aetherGlassButton()
+                .disabled(tunnel.isTransitioning || telemetry.snapshot.connections.isEmpty)
+                .help(AppLocalization.string("Close all connections without disconnecting"))
+                .accessibilityIdentifier("close-all-connections")
                 // This stops the tunnel, not only the listed flows, so it says
                 // "Disconnect" like the overview and confirms first.
                 Button(AppLocalization.string("Disconnect"), systemImage: "power") {

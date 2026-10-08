@@ -40,6 +40,13 @@ struct TelemetryPollingScheduleTests {
         #expect(result.health == [15, 30, 45, 60])
     }
 
+    @Test("statistics only: traffic once a minute, route health still every 15 s")
+    func statisticsCadenceKeepsHealthInterval() {
+        let result = timeline(.statistics, seconds: 120)
+        #expect(result.telemetry == [60, 120])
+        #expect(result.health == [15, 30, 45, 60, 75, 90, 105, 120])
+    }
+
     @Test("nothing visible: no traffic polling, route health every 15 s")
     func healthOnlyCadence() {
         let result = timeline(.healthOnly, seconds: 45)

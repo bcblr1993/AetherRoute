@@ -195,6 +195,15 @@ int32_t clash_packet_selector_select_v1(
 int32_t clash_packet_set_routing_mode_v1(int32_t routing_mode);
 int32_t clash_packet_reset_network_state_v1(void);
 int32_t clash_packet_reset_network_state_on_interface_v1(uint32_t interface_index);
+/*
+ * Closes the active connections an "ARC1" request selects and writes how many
+ * were signalled. See clash_flow_close_connections_v1 for the format.
+ */
+int32_t clash_packet_close_connections_v1(
+    const uint8_t *request,
+    size_t request_length,
+    uint64_t *closed_count
+);
 int32_t clash_packet_selector_latency_v1(
     const uint8_t *group,
     size_t group_length,
@@ -225,6 +234,17 @@ int32_t clash_packet_telemetry_snapshot_v1(
  * the proxy chain: the source app's code-signing identifier and executable
  * path (each at most 512 bytes, empty when unknown). */
 int32_t clash_packet_telemetry_snapshot_v2(
+    uint32_t maximum_connections,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+);
+/* "ART3": ART2 followed by lifetime traffic totals per (source app, proxy
+ * chain), covering every connection, not only the listed ones: a uint32
+ * count (at most 256, largest first), then per total uint64 upload, uint64
+ * download, three uint32 lengths and the identifier, path and chain strings.
+ * Totals that would exceed the 1 MiB bound are left out. */
+int32_t clash_packet_telemetry_snapshot_v3(
     uint32_t maximum_connections,
     uint8_t *output,
     size_t output_capacity,
@@ -311,6 +331,8 @@ int32_t clash_flow_selector_active_latency_v1(
  * download rate, upload total, download total, memory), connection count, and
  * bounded active-connection records. It excludes source addresses, users,
  * resolved IPs, and internal UUIDs. Maximum connection count is 128.
+ * A proxy chain lists its hops joined by " → " from the rule's target group
+ * to the node that carried the flow, e.g. "Proxy → Auto → Tokyo".
  */
 int32_t clash_flow_telemetry_snapshot_v1(
     clash_flow_engine_t *engine,
@@ -326,6 +348,34 @@ int32_t clash_flow_telemetry_snapshot_v2(
     uint8_t *output,
     size_t output_capacity,
     size_t *required_length
+);
+/* "ART3" variant: ART2 plus lifetime traffic totals per (source app, proxy
+ * chain); see clash_packet_telemetry_snapshot_v3 for the layout. */
+int32_t clash_flow_telemetry_snapshot_v3(
+    clash_flow_engine_t *engine,
+    uint32_t maximum_connections,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+);
+/*
+ * Closes the active connections an "ARC1" request selects and writes how many
+ * were signalled. Integers are big-endian; strings are a uint16 length then
+ * UTF-8 bytes. After the magic comes one kind byte:
+ *   0  every connection
+ *   1  one source app: signing identifier, executable path
+ *   2  one telemetry row: network (1 TCP, 2 UDP), destination, uint16 port,
+ *      int64 start time in Unix milliseconds
+ *   3  connections whose proxy chain contains the named group or proxy
+ *   4  several source apps: uint16 count (1-64), then that many
+ *      identifier, path pairs, each matched like kind 1
+ * The request is at most 4096 bytes and must be consumed exactly.
+ */
+int32_t clash_flow_close_connections_v1(
+    clash_flow_engine_t *engine,
+    const uint8_t *request,
+    size_t request_length,
+    uint64_t *closed_count
 );
 
 /*

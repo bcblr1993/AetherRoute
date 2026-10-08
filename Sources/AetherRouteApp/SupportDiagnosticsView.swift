@@ -469,6 +469,7 @@ struct SupportDiagnosticsView: View {
     @State private var statusIsError = false
     @State private var isCreatingReport = false
     @State private var isInventoryPresented = false
+    @State private var isLogViewerPresented = false
 
     /// Embedded in the Privacy & Diagnostics settings page, which owns the
     /// scroll view and page margins.
@@ -660,6 +661,24 @@ struct SupportDiagnosticsView: View {
                     ProxyInventorySheet()
                         .environmentObject(tunnel)
                 }
+            }
+            HStack(spacing: AetherVisual.s3) {
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                    Text(AppLocalization.string("Logs"))
+                    Text(AppLocalization.string("What AetherRoute and its network extension recorded on this Mac."))
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: AetherVisual.s2)
+                Button(AppLocalization.string("View Logs…")) {
+                    isLogViewerPresented = true
+                }
+                .accessibilityIdentifier("view-logs")
+            }
+            .sheet(isPresented: $isLogViewerPresented) {
+                DiagnosticLogViewer()
+                    .environmentObject(tunnel)
             }
         } header: {
             Text(AppLocalization.string("Diagnostics"))

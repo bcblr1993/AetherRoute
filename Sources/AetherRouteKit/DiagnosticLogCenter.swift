@@ -82,6 +82,18 @@ public final class DiagnosticLogCenter: @unchecked Sendable {
         levelOverride = level
     }
 
+    /// The end of this process's log file, or an empty string when nothing
+    /// was written (debug logging off, or no App Group container).
+    public func recentLog(maximumBytes: Int) -> String {
+        sink?.tail(maximumBytes: maximumBytes) ?? ""
+    }
+
+    /// `recentLog` as bytes that never exceed `maximumBytes`, for the
+    /// provider-message reply.
+    public func recentLogData(maximumBytes: Int) -> Data {
+        Data(recentLog(maximumBytes: maximumBytes).utf8).suffix(maximumBytes)
+    }
+
     public func log(category: String) -> DiagnosticLog {
         lock.lock()
         if let existing = logs[category] {

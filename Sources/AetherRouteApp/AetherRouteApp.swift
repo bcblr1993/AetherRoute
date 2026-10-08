@@ -1997,6 +1997,44 @@ private struct SettingsView: View {
                 Text(AppLocalization.string("Routing mode changes apply immediately when connected. Switching engines reconnects automatically. Network optimization applies on the next connection or profile reload."))
             }
 
+            Section {
+                Toggle(
+                    AppLocalization.string("Close connections when switching nodes"),
+                    isOn: Binding(
+                        get: { tunnel.closesConnectionsOnProxySwitch },
+                        set: { tunnel.setClosesConnectionsOnProxySwitch($0) }
+                    )
+                )
+                .accessibilityIdentifier("close-connections-on-switch-toggle")
+                Toggle(
+                    AppLocalization.string("Test latency when opening Proxies"),
+                    isOn: Binding(
+                        get: { tunnel.testsLatencyWhenProxiesOpen },
+                        set: { tunnel.setTestsLatencyWhenProxiesOpen($0) }
+                    )
+                )
+                .accessibilityIdentifier("latency-on-open-toggle")
+            } header: {
+                Text(AppLocalization.string("Proxies"))
+            } footer: {
+                Text(AppLocalization.string("Closing connections makes a new node take effect at once; apps reconnect on their own. The latency test runs at most once a minute, only while connected."))
+            }
+
+            Section {
+                Toggle(
+                    AppLocalization.string("Record traffic statistics"),
+                    isOn: Binding(
+                        get: { tunnel.isTrafficStatisticsEnabled },
+                        set: { tunnel.setTrafficStatisticsEnabled($0) }
+                    )
+                )
+                .accessibilityIdentifier("traffic-statistics-toggle")
+            } header: {
+                Text(AppLocalization.string("Statistics"))
+            } footer: {
+                Text(AppLocalization.string("Daily totals by app and by node for the last 30 days, encrypted on this Mac and never uploaded. Off until you turn it on. Open them from Overview › Statistics."))
+            }
+
 #if AETHERROUTE_INDEPENDENT
             localProxySection
 #endif

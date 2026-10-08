@@ -178,6 +178,31 @@ typedef struct aetherroute_flow_abi_v5 {
 
 int32_t aetherroute_flow_abi_load_v5(aetherroute_flow_abi_v5_t *output);
 
+/*
+ * V6 (1.4.0) adds closing active connections by an "ARC1" request and the
+ * "ART3" telemetry snapshot, which appends lifetime traffic totals per
+ * (source app, proxy chain).
+ */
+typedef struct aetherroute_flow_abi_v6 {
+    uint32_t struct_size;
+    aetherroute_flow_abi_v5_t v5;
+    int32_t (*close_connections_v1)(
+        void *,
+        const uint8_t *,
+        size_t,
+        uint64_t *
+    );
+    int32_t (*telemetry_snapshot_v3)(
+        void *,
+        uint32_t,
+        uint8_t *,
+        size_t,
+        size_t *
+    );
+} aetherroute_flow_abi_v6_t;
+
+int32_t aetherroute_flow_abi_load_v6(aetherroute_flow_abi_v6_t *output);
+
 #ifdef __cplusplus
 }
 #endif

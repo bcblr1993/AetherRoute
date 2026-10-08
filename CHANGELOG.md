@@ -4,6 +4,36 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-10-08
+
+AetherRoute can now close connections without disconnecting, shows its own logs, imports nodes from pasted links, QR images or the screen, and keeps encrypted local traffic statistics by app and node.
+
+### Added
+
+- Close connections: Connections › Close All, plus Close Connection and Close Connections of … in the context menus. The tunnel stays up and apps reconnect on their own. Closing an app that runs as several processes (a browser and its helpers) is one batched request.
+- Switching a group's node closes the connections that still run through that group, nested groups included, so the new node takes effect at once (Settings › Network › Proxies, on by default).
+- Logs: Settings › Privacy & Diagnostics › View Logs… shows what the app and the running network extension recorded, with a recording level (Off / Standard / Verbose), source and error filters, search and copy. A new level applies at once, also to the running extension. Nothing leaves the Mac.
+- Optional latency test when the Proxies page opens (Settings › Network, off by default), at most once a minute per group and only while connected.
+- Import Node Links…: paste `vless://`, `ss://`, `hy2://` … links (one per line or a Base64 list), or read them from a QR code: choose an image, drop one (also straight from Finder), paste a screenshot, or Scan Screen to read a code shown in another app (asks for Screen Recording permission the first time; nothing is saved). The nodes become one editable native profile; invalid lines are skipped and counted.
+- Traffic statistics: Overview › Statistics… shows today, the last 7 or 30 calendar days by app and by exit node. Off until turned on (Settings › Network › Statistics, or Turn On in the sheet). Stored sealed with AES-256-GCM under the profile key, excluded from backups, and can be cleared.
+
+### Changed
+
+- Engine (aetherroute-core `73f29c5`):
+  - `clash_flow_close_connections_v1` / `clash_packet_close_connections_v1` take an `ARC1` request; kind 4 closes several apps at once.
+  - `clash_flow_telemetry_snapshot_v3` / `clash_packet_telemetry_snapshot_v3` return `ART3`: `ART2` plus lifetime traffic totals per (source app, proxy chain), covering every connection rather than the listed ones. Statistics split traffic exactly from them and sample once a minute when no traffic view is open (instead of every 10 s).
+  - Flow ABI table v6 carries both new entry points. Flow ABI symbol count 23 → 25.
+- Provider messages gain close-connections (op 10), recent-log (op 11) and set-log-level (op 12) requests.
+
+### Fixed
+
+- Proxy chains in telemetry now read from the rule's target group to the node that carried the flow ("Proxy → Auto → Tokyo"). The engine recorded them node-first, so the Connections outlet column and the automatic group's current node showed the outermost group instead of the node.
+
+### Notes
+
+- uTLS browser fingerprints are not part of 1.4: the engine's TLS stack (rustls) cannot shape a browser ClientHello, so this needs a separate TLS implementation and its own evaluation.
+- `Config/ProtocolCoreEvidence.json` carries the new core commit and source hashes; its artifact hashes (`flowCoreSHA256`, `packetFlowCoreSHA256`, `interopTestBinarySHA256`) must be refreshed from the rebuilt cores before release.
+
 ## [1.3.3] - 2026-10-08
 
 AetherRoute now features a unified, refined macOS design system (AetherRouteVisualSystem) with standardized row height tiers, card padding, inline controls, native sheet footers, inline status messaging, and reinforced design token guards.

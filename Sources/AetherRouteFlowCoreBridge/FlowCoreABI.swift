@@ -28,6 +28,13 @@ struct FlowCoreABIUDPReadResponse: Sendable {
 }
 
 protocol FlowCoreABIBackend: AnyObject, Sendable {
+    /// Requirement so the live backend's implementation is dispatched
+    /// dynamically; the extension below supplies a default for test doubles.
+    func closeConnections(
+        engine: FlowCoreABIHandle,
+        request: Data
+    ) -> (status: Int32, closedCount: UInt64)
+
     func engineCreate(
         profile: Data,
         workingDirectory: Data,
@@ -127,6 +134,18 @@ protocol FlowCoreABIBackend: AnyObject, Sendable {
     func destroy(_ flow: FlowCoreABIHandle) -> Int32
 }
 
+extension FlowCoreABIBackend {
+    /// Closes the active connections an `ARC1` request selects. Backends
+    /// without the entry point (test doubles, older engines) report an
+    /// internal error rather than pretending to have closed anything.
+    func closeConnections(
+        engine: FlowCoreABIHandle,
+        request: Data
+    ) -> (status: Int32, closedCount: UInt64) {
+        (FlowCoreABIStatus.internalError, 0)
+    }
+}
+
 enum FlowCoreABIStatus {
     static let success: Int32 = 0
     static let invalidArgument: Int32 = 1
@@ -146,14 +165,14 @@ enum FlowCoreABIStatus {
 }
 
 final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
-    private let table: aetherroute_flow_abi_v5_t
+    private let table: aetherroute_flow_abi_v6_t
 
     init() throws {
-        var table = aetherroute_flow_abi_v5_t()
+        var table = aetherroute_flow_abi_v6_t()
         table.struct_size = UInt32(
-            MemoryLayout<aetherroute_flow_abi_v5_t>.size
+            MemoryLayout<aetherroute_flow_abi_v6_t>.size
         )
-        guard aetherroute_flow_abi_load_v5(&table) == 1 else {
+        guard aetherroute_flow_abi_load_v6(&table) == 1 else {
             throw FlowCoreEngineError.flowABIUnavailable
         }
         self.table = table
@@ -164,7 +183,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         workingDirectory: Data,
         configuration: FlowCoreEngineConfiguration
     ) -> (status: Int32, handle: FlowCoreABIHandle?) {
-        guard let function = table.v4.v3.v2.engine_create else {
+        guard let function = table.v5.v4.v3.v2.engine_create else {
             return (FlowCoreABIStatus.internalError, nil)
         }
         var options = clash_flow_engine_options_v1_t(
@@ -197,8 +216,8 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
             return (status, nil)
         }
         if let routingMode = configuration.routingMode {
-            guard let setRoutingMode = table.v4.v3.engine_set_routing_mode else {
-                _ = table.v4.v3.v2.engine_destroy?(output)
+            guard let setRoutingMode = table.v5.v4.v3.engine_set_routing_mode else {
+                _ = table.v5.v4.v3.v2.engine_destroy?(output)
                 return (FlowCoreABIStatus.internalError, nil)
             }
             let modeStatus = setRoutingMode(
@@ -206,7 +225,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
                 routingMode.packetFlowABIValue
             )
             guard modeStatus == FlowCoreABIStatus.success else {
-                _ = table.v4.v3.v2.engine_destroy?(output)
+                _ = table.v5.v4.v3.v2.engine_destroy?(output)
                 return (modeStatus, nil)
             }
         }
@@ -217,7 +236,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
     }
 
     func engineDestroy(_ engine: FlowCoreABIHandle) -> Int32 {
-        guard let function = table.v4.v3.v2.engine_destroy else {
+        guard let function = table.v5.v4.v3.v2.engine_destroy else {
             return FlowCoreABIStatus.internalError
         }
         return function(engine.rawValue)
@@ -227,7 +246,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         _ engine: FlowCoreABIHandle,
         mode: RoutingMode
     ) -> Int32 {
-        guard let function = table.v4.v3.engine_set_routing_mode else {
+        guard let function = table.v5.v4.v3.engine_set_routing_mode else {
             return FlowCoreABIStatus.internalError
         }
         return function(engine.rawValue, mode.packetFlowABIValue)
@@ -237,7 +256,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         engine: FlowCoreABIHandle,
         group: Data
     ) -> (status: Int32, snapshot: Data?) {
-        guard let function = table.v4.v3.v2.selector_snapshot else {
+        guard let function = table.v5.v4.v3.v2.selector_snapshot else {
             return (FlowCoreABIStatus.internalError, nil)
         }
         var required = 0
@@ -284,7 +303,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         group: Data,
         member: Data
     ) -> Int32 {
-        guard let function = table.v4.v3.v2.selector_select else {
+        guard let function = table.v5.v4.v3.v2.selector_select else {
             return FlowCoreABIStatus.internalError
         }
         return group.withUnsafeBytes { groupBytes in
@@ -306,7 +325,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         url: Data,
         timeoutMilliseconds: UInt32
     ) -> (status: Int32, latencies: Data?) {
-        guard let function = table.v4.v3.v2.selector_latency else {
+        guard let function = table.v5.v4.v3.v2.selector_latency else {
             return (FlowCoreABIStatus.internalError, nil)
         }
         guard let outputCapacity = ProxySelectionProviderMessageCodec
@@ -350,7 +369,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         url: Data,
         timeoutMilliseconds: UInt32
     ) -> (status: Int32, latencies: Data?) {
-        guard let function = table.v4.selector_active_latency else {
+        guard let function = table.v5.v4.selector_active_latency else {
             return (FlowCoreABIStatus.internalError, nil)
         }
         guard let outputCapacity = ProxySelectionProviderMessageCodec
@@ -383,13 +402,33 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         return (copyStatus, latencies)
     }
 
+    func closeConnections(
+        engine: FlowCoreABIHandle,
+        request: Data
+    ) -> (status: Int32, closedCount: UInt64) {
+        guard let function = table.close_connections_v1 else {
+            return (FlowCoreABIStatus.internalError, 0)
+        }
+        var closed: UInt64 = 0
+        let status = request.withUnsafeBytes { bytes in
+            function(
+                engine.rawValue,
+                bytes.bindMemory(to: UInt8.self).baseAddress,
+                bytes.count,
+                &closed
+            )
+        }
+        return (status, closed)
+    }
+
     func telemetrySnapshot(
         engine: FlowCoreABIHandle,
         maximumConnections: UInt32
     ) -> (status: Int32, snapshot: Data?) {
-        // ART2 adds each connection's originating app. The decoder also
-        // accepts ART1, which the same engine still serves to older hosts.
-        guard let function = table.telemetry_snapshot_v2 else {
+        // ART3 adds per-(app, chain) lifetime totals to ART2's connections
+        // and their originating apps. The decoder also accepts ART1 and
+        // ART2, which the same engine still serves to older hosts.
+        guard let function = table.telemetry_snapshot_v3 else {
             return (FlowCoreABIStatus.internalError, nil)
         }
         var required = 0
@@ -445,7 +484,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         destination: Data,
         sourceApp: Data?
     ) -> (status: Int32, handle: FlowCoreABIHandle?) {
-        guard let function = table.tcp_create_v2 else {
+        guard let function = table.v5.tcp_create_v2 else {
             return (FlowCoreABIStatus.internalError, nil)
         }
         let source = source ?? Data()
@@ -475,7 +514,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         source: Data,
         sourceApp: Data?
     ) -> (status: Int32, handle: FlowCoreABIHandle?) {
-        guard let function = table.udp_create_v2 else {
+        guard let function = table.v5.udp_create_v2 else {
             return (FlowCoreABIStatus.internalError, nil)
         }
         let sourceApp = sourceApp ?? Data()
@@ -496,7 +535,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
     }
 
     func activate(_ flow: FlowCoreABIHandle) -> Int32 {
-        table.v4.v3.v2.activate?(flow.rawValue) ?? FlowCoreABIStatus.internalError
+        table.v5.v4.v3.v2.activate?(flow.rawValue) ?? FlowCoreABIStatus.internalError
     }
 
     func tcpWrite(
@@ -505,7 +544,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         token: UInt64,
         completion: @escaping @Sendable (UInt64, Int32) -> Void
     ) -> Int32 {
-        guard let function = table.v4.v3.v2.tcp_write else {
+        guard let function = table.v5.v4.v3.v2.tcp_write else {
             return FlowCoreABIStatus.internalError
         }
         let context = FlowCoreCompletionContext(
@@ -536,7 +575,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         token: UInt64,
         completion: @escaping @Sendable (UInt64, Int32) -> Void
     ) -> Int32 {
-        guard let function = table.v4.v3.v2.tcp_finish_write else {
+        guard let function = table.v5.v4.v3.v2.tcp_finish_write else {
             return FlowCoreABIStatus.internalError
         }
         let context = FlowCoreCompletionContext(
@@ -564,7 +603,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         token: UInt64,
         completion: @escaping @Sendable (FlowCoreABITCPReadResponse) -> Void
     ) -> Int32 {
-        guard let function = table.v4.v3.v2.tcp_read else {
+        guard let function = table.v5.v4.v3.v2.tcp_read else {
             return FlowCoreABIStatus.internalError
         }
         let context = FlowCoreTCPReadContext(
@@ -594,7 +633,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         token: UInt64,
         completion: @escaping @Sendable (UInt64, Int32) -> Void
     ) -> Int32 {
-        guard let function = table.v4.v3.v2.udp_write else {
+        guard let function = table.v5.v4.v3.v2.udp_write else {
             return FlowCoreABIStatus.internalError
         }
 
@@ -644,7 +683,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         token: UInt64,
         completion: @escaping @Sendable (FlowCoreABIUDPReadResponse) -> Void
     ) -> Int32 {
-        guard let function = table.v4.v3.v2.udp_read else {
+        guard let function = table.v5.v4.v3.v2.udp_read else {
             return FlowCoreABIStatus.internalError
         }
         let context = FlowCoreUDPReadContext(
@@ -671,11 +710,11 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
     }
 
     func cancel(_ flow: FlowCoreABIHandle) -> Int32 {
-        table.v4.v3.v2.cancel?(flow.rawValue) ?? FlowCoreABIStatus.internalError
+        table.v5.v4.v3.v2.cancel?(flow.rawValue) ?? FlowCoreABIStatus.internalError
     }
 
     func destroy(_ flow: FlowCoreABIHandle) -> Int32 {
-        table.v4.v3.v2.destroy?(flow.rawValue) ?? FlowCoreABIStatus.internalError
+        table.v5.v4.v3.v2.destroy?(flow.rawValue) ?? FlowCoreABIStatus.internalError
     }
 }
 

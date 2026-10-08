@@ -230,6 +230,7 @@ struct ProfilesView: View {
     @State private var isDropTargeted = false
     @State private var isFileImporterPresented = false
     @State private var isManualNodeEditorPresented = false
+    @State private var isShareLinkImportPresented = false
     @State private var isSubscriptionEditorPresented = false
     @State private var subscriptionURL = ""
     @State private var searchText = ""
@@ -346,6 +347,10 @@ struct ProfilesView: View {
             SubscriptionEditorSheet(urlText: $subscriptionURL)
                 .environmentObject(tunnel)
         }
+        .sheet(isPresented: $isShareLinkImportPresented) {
+            ShareLinkImportSheet()
+                .environmentObject(tunnel)
+        }
         .sheet(isPresented: $isManualNodeEditorPresented) {
             ManualNodeEditorSheet()
                 .environmentObject(tunnel)
@@ -431,6 +436,13 @@ struct ProfilesView: View {
                 }
                 .disabled(!tunnel.canImportOrAddProfile)
                 .accessibilityIdentifier("add-manual-node")
+
+                Button(AppLocalization.string("Import Node Links…"), systemImage: "qrcode.viewfinder") {
+                    tunnel.clearProfileMessage()
+                    isShareLinkImportPresented = true
+                }
+                .disabled(!tunnel.canImportOrAddProfile)
+                .accessibilityIdentifier("import-share-links")
             } label: {
                 Label(AppLocalization.string("Add"), systemImage: "plus")
             }
