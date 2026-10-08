@@ -28,7 +28,7 @@ struct PrivacyDisclosureView: View {
     private var summaryRow: some View {
         Section {
             HStack(spacing: AetherVisual.s3) {
-                AetherIconTile(symbol: "checkmark.shield.fill", color: .blue, size: 28)
+                AetherIconTile(symbol: "checkmark.shield.fill", color: .blue, size: AetherVisual.rowTileSize)
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     Text(AppLocalization.string("Privacy commitments"))
                         .foregroundStyle(.primary)
@@ -49,7 +49,7 @@ struct PrivacyDisclosureView: View {
             .sheet(isPresented: $showsCommitments) {
                 PrivacyDisclosureView(isOnboarding: false, isSheet: true)
                     .environmentObject(tunnel)
-                    .frame(width: 620, height: 600)
+                    .aetherLargeSheetFrame()
             }
         } header: {
             Text(AppLocalization.string("Privacy"))
@@ -102,7 +102,7 @@ struct PrivacyDisclosureView: View {
 
     private var header: some View {
         VStack(spacing: AetherVisual.s3) {
-            AetherIconTile(symbol: "checkmark.shield.fill", color: .blue, size: 56)
+            AetherIconTile(symbol: "checkmark.shield.fill", color: .blue, size: AetherVisual.heroTileSize)
                 .scaleEffect(hasAppeared ? 1 : 0.8)
                 .opacity(hasAppeared ? 1 : 0)
                 .animation(AetherVisual.animation(AetherVisual.panelSpring), value: hasAppeared)
@@ -123,7 +123,7 @@ struct PrivacyDisclosureView: View {
         HStack(alignment: .top, spacing: AetherVisual.s2) {
             ForEach(Array(PrivacyFact.allCases.enumerated()), id: \.element) { index, fact in
                 VStack(spacing: AetherVisual.s2) {
-                    AetherIconTile(symbol: fact.symbol, color: fact.color, size: 34)
+                    AetherIconTile(symbol: fact.symbol, color: fact.color, size: AetherVisual.cardTileSize)
                     VStack(spacing: AetherVisual.sMicro) {
                         Text(fact.title)
                             .font(.headline)
@@ -153,10 +153,11 @@ struct PrivacyDisclosureView: View {
 
     /// Where data goes once connected: shown, not tucked behind a link.
     private var dataFlow: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
             Text(AppLocalization.string("Once connected, data goes only here"))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(AetherVisual.secondaryText)
+                .padding(.horizontal, AetherVisual.sectionHeaderInset)
                 .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: 0) {
                 flowNode(
@@ -196,7 +197,7 @@ struct PrivacyDisclosureView: View {
 
     private func flowNode(symbol: String, color: Color, title: String, detail: String) -> some View {
         HStack(alignment: .center, spacing: AetherVisual.s3) {
-            AetherIconTile(symbol: symbol, color: color, size: 28)
+            AetherIconTile(symbol: symbol, color: color, size: AetherVisual.rowTileSize)
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 Text(title)
                     .font(.headline)

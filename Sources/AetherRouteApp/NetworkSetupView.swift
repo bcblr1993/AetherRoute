@@ -297,7 +297,7 @@ private struct NetworkSetupStatusBadge: View {
         .foregroundStyle(color)
         .padding(.horizontal, AetherVisual.pillHorizontalPadding)
         .padding(.vertical, AetherVisual.pillVerticalPadding)
-        .background(color.opacity(0.12), in: Capsule())
+        .background(AetherVisual.tintFill(color), in: Capsule())
         .contentTransition(.opacity)
     }
 

@@ -3,36 +3,33 @@ import SwiftUI
 
 struct FeatureSection<Content: View, Accessory: View>: View {
     let title: String
-    let symbol: String
     var count: Int?
     let accessory: Accessory
     let content: Content
 
     init(
         title: String,
-        symbol: String,
         count: Int? = nil,
         @ViewBuilder accessory: () -> Accessory,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
-        self.symbol = symbol
         self.count = count
         self.accessory = accessory()
         self.content = content()
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            AetherSectionHeader(title: title, symbol: symbol, count: count) { accessory }
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            AetherSectionHeader(title: title, count: count) { accessory }
             content
         }
     }
 }
 
 extension FeatureSection where Accessory == EmptyView {
-    init(title: String, symbol: String, count: Int? = nil, @ViewBuilder content: () -> Content) {
-        self.init(title: title, symbol: symbol, count: count, accessory: { EmptyView() }, content: content)
+    init(title: String, count: Int? = nil, @ViewBuilder content: () -> Content) {
+        self.init(title: title, count: count, accessory: { EmptyView() }, content: content)
     }
 }
 
@@ -106,7 +103,7 @@ struct StatePill: View {
         .padding(.horizontal, AetherVisual.pillHorizontalPadding)
         .padding(.vertical, AetherVisual.pillVerticalPadding)
         .background(
-            color.opacity(0.12),
+            AetherVisual.tintFill(color),
             in: Capsule()
         )
     }
@@ -160,12 +157,12 @@ struct DiscardChangesModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .interactiveDismissDisabled(isDirty || isSaving)
-            .confirmationDialog("Discard unsaved changes?", isPresented: Binding(
+            .confirmationDialog(AppLocalization.string("Discard unsaved changes?"), isPresented: Binding(
                 get: { requested && isDirty },
                 set: { requested = $0 }
             ), titleVisibility: .visible) {
-                Button("Discard Changes", role: .destructive) { dismiss() }
-                Button("Keep Editing", role: .cancel) { requested = false }
+                Button(AppLocalization.string("Discard Changes"), role: .destructive) { dismiss() }
+                Button(AppLocalization.string("Keep Editing"), role: .cancel) { requested = false }
             }
             .onChange(of: requested) { _, value in
                 if value && !isDirty && !isSaving { dismiss() }

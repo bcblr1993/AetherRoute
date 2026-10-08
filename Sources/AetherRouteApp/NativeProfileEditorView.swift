@@ -26,14 +26,7 @@ struct NativeProfileEditorSheet: View {
             Divider()
             footer
         }
-        .frame(
-            minWidth: 560,
-            idealWidth: 680,
-            maxWidth: 900,
-            minHeight: 480,
-            idealHeight: 600,
-            maxHeight: 760
-        )
+        .aetherLargeSheetFrame()
         .disabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: nodes != (profile.profile.nativeNodes ?? []), isSaving: isSaving, requested: $requestsCancel))
         .sheet(isPresented: $isAddingNode) {
@@ -50,7 +43,8 @@ struct NativeProfileEditorSheet: View {
         AetherSheetHeader(
             symbol: "point.3.connected.trianglepath.dotted",
             title: AppLocalization.string("Edit Native Profile"),
-            subtitle: profile.profile.name
+            subtitle: profile.profile.name,
+            tint: AetherVisual.manualNodesTint
         ) {
             Button(AppLocalization.string("Add Node"), systemImage: "plus") {
                 isAddingNode = true
@@ -61,7 +55,7 @@ struct NativeProfileEditorSheet: View {
                     || nodes.count >= AetherNodeProfileCompiler.maximumNodes
             )
         }
-        .padding(AetherVisual.s6)
+        .padding(AetherVisual.dialogPadding)
     }
 
     @ViewBuilder
@@ -90,12 +84,10 @@ struct NativeProfileEditorSheet: View {
                         .help(AppLocalization.string("Drag to reorder"))
                         .accessibilityHidden(true)
 
-                    Text(node.protocolID.displayName.prefix(1))
-                        .font(.callout.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.accentColor, in: Circle())
-                        .accessibilityHidden(true)
+                    AetherMonogramTile(
+                        text: String(node.protocolID.displayName.prefix(1)),
+                        color: AetherVisual.manualNodesTint
+                    )
 
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
                         Text(node.name)

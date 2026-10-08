@@ -33,6 +33,8 @@ connection states, privacy onboarding and the menu bar panel.
       every violation at once.
 - [ ] One card style per surface; a disclosure, list or table sits on the same
       inset as the cards around it.
+- [ ] Icons, headings, empty states, pills, fills and sheets use the shared
+      components listed under "Shared components" in `Docs/Design.md`.
 - [ ] Nothing clips or truncates at 800 points or at the minimum window with
       doubled text. Truncation that remains is deliberate, keeps the
       distinguishing part (head truncation for host names) and has a tooltip.

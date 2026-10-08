@@ -41,6 +41,46 @@ keyboard focus, VoiceOver semantics, and Reduce Motion.
   values.
 - Regions are named by text codes (SG, JP), not flags.
 
+## Shared components
+
+Each kind of element has one component and one set of tokens in
+`AetherVisual`; `scripts/verify_ui_design_tokens.sh` rejects the usual ways
+around them.
+
+- **Icons.** `AetherIconTile` (a white symbol on a colour tile) names a thing;
+  `AetherMonogramTile` does the same with a letter. `AetherStatusSymbol` (a
+  coloured symbol, no tile) reports a state such as ready, stale or failed.
+  A tinted translucent square is neither and is not used. Tiles take one of
+  five sizes: `iconTileSize` 22 (sidebar, table cells), `rowTileSize` 26
+  (System Settings rows; dividers start at `rowDividerInset`),
+  `cardTileSize` 34 (cards, two-line rows), `sheetIconSize` 44 (sheet
+  headers, onboarding) and `heroTileSize` 56 (one centred welcome).
+- **Tile colours.** One per page (`AppSection.tileColor`), Settings pane,
+  profile kind (`subscriptionTint`, `manualNodesTint`, `localProfileTint`)
+  and setting. A sheet header takes the colour of what it is about.
+- **Section headings.** The quiet System Settings heading: subheadline
+  semibold in secondary text, inset `sectionHeaderInset` from the card, an
+  optional count and trailing actions (`AetherSectionHeader`,
+  `FeatureSection`). Card titles inside a card use `.headline`.
+- **Empty states.** A page or section with nothing to show uses
+  `FeatureEmptyState` (a card). A search that matches nothing, a list
+  placeholder inside a sheet and an unselected detail pane use the native
+  `ContentUnavailableView` on the surface they replace.
+- **Pills and badges.** `StatePill` for state; other capsules use
+  `pillHorizontalPadding`/`pillVerticalPadding`. Fills come from
+  `neutralFill`, `tintFill(_:)`, `subtleFill`, `hoverFill` and
+  `selectionFill`; inline messages use `aetherCallout(tint:)`.
+- **Radii.** `panelRadius` for every card, `compactPanelRadius` for glass
+  groups on compact surfaces (menu bar panel, Connections session bar),
+  `cardRadius` or smaller for anything inside a card.
+- **Sheets.** Small single-purpose sheets use `aetherSheetFrame()`; sheets
+  holding a list, long form or document use `aetherLargeSheetFrame()`
+  (a split sheet passes `splitSheetMinWidth`). Sheet content is inset
+  `dialogPadding`.
+- **Copy.** Interface strings go through `AppLocalization.string`, so the
+  language chosen in Settings applies everywhere; names that are never
+  translated use `Text(verbatim:)`.
+
 ## Motion and interaction
 
 Motion explains what changed; it never makes the user wait. Every timing

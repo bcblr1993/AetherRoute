@@ -175,7 +175,7 @@ struct ContentView: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("AetherRoute application content")
+        .accessibilityLabel(AppLocalization.string("AetherRoute application content"))
         .accessibilityIdentifier("aetherroute-semantic-root")
         .frame(minWidth: AetherVisual.windowMinWidth, minHeight: AetherVisual.windowMinHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -245,7 +245,7 @@ struct ContentView: View {
                 .environmentObject(tunnel)
         }
         .alert(
-            "Cannot Open Subscription Link",
+            AppLocalization.string("Cannot Open Subscription Link"),
             isPresented: Binding(
                 get: { tunnel.externalSubscriptionLinkError != nil },
                 set: { isPresented in
@@ -255,7 +255,7 @@ struct ContentView: View {
                 }
             )
         ) {
-            Button("OK", role: .cancel) {
+            Button(AppLocalization.string("OK"), role: .cancel) {
                 tunnel.dismissExternalSubscriptionLinkError()
             }
         } message: {
@@ -303,7 +303,7 @@ struct ContentView: View {
         NavigationSplitView {
             sidebar
                 .accessibilityElement(children: .contain)
-                .accessibilityLabel("Primary navigation")
+                .accessibilityLabel(AppLocalization.string("Primary navigation"))
                 .accessibilityIdentifier("aetherroute-primary-navigation")
                 .navigationSplitViewColumnWidth(
                     min: AetherVisual.sidebarWidth,
@@ -319,7 +319,7 @@ struct ContentView: View {
         .navigationSplitViewStyle(.balanced)
         .toolbar(removing: .sidebarToggle)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Primary navigation and content")
+        .accessibilityLabel(AppLocalization.string("Primary navigation and content"))
         .accessibilityIdentifier("aetherroute-navigation-split")
     }
 
@@ -395,7 +395,7 @@ struct ContentView: View {
                 AetherRouteBrandTile(size: 28, isActive: tunnel.isConnected)
 
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    Text("AetherRoute")
+                    Text(verbatim: "AetherRoute")
                         .font(.headline.weight(.bold))
                         .tracking(-0.2)
                         .foregroundStyle(.primary)
@@ -871,7 +871,7 @@ private struct OverviewView: View {
             Text(AppLocalization.string("Overview route section"))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(AetherVisual.secondaryText)
-                .padding(.horizontal, AetherVisual.s2)
+                .padding(.horizontal, AetherVisual.sectionHeaderInset)
                 .accessibilityAddTraits(.isHeader)
             VStack(spacing: 0) {
                 OverviewExitRow()
@@ -971,7 +971,7 @@ private struct RecoverySection: View {
                 isNetworkSetupPresented = false
             }
             .environmentObject(tunnel)
-            .frame(width: AetherVisual.formMaxWidth, height: AetherVisual.windowHeight - AetherVisual.s6 * 2)
+            .aetherLargeSheetFrame()
         }
     }
 
@@ -1076,7 +1076,7 @@ private struct ConnectionHero: View {
 
     private var approvalControls: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            Text("In System Settings, open General > Login Items & Extensions > Network Extensions, then enable AetherRoute. This window will update after approval.")
+            Text(AppLocalization.string("In System Settings, open General > Login Items & Extensions > Network Extensions, then enable AetherRoute. This window will update after approval."))
                 .font(.subheadline)
                 .foregroundStyle(AetherVisual.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1088,14 +1088,14 @@ private struct ConnectionHero: View {
                         NSWorkspace.shared.open(settings)
                     }
                 } label: {
-                    Label("Open System Settings", systemImage: "gearshape")
+                    Label(AppLocalization.string("Open System Settings"), systemImage: "gearshape")
                 }
                 .aetherGlassButton(prominent: true)
                 .accessibilityIdentifier("extension-approval-open-settings")
                 Button {
                     Task { await tunnel.recheckSystemExtensionApproval() }
                 } label: {
-                    Label("Check Again", systemImage: "arrow.clockwise")
+                    Label(AppLocalization.string("Check Again"), systemImage: "arrow.clockwise")
                 }
                 .aetherGlassButton()
                 .accessibilityIdentifier("extension-approval-recheck")
@@ -1315,7 +1315,7 @@ private struct OverviewRow<Trailing: View>: View {
 private struct OverviewRowDivider: View {
     var body: some View {
         Divider()
-            .padding(.leading, AetherVisual.s4 + AetherVisual.rowTileSize + AetherVisual.s3)
+            .padding(.leading, AetherVisual.rowDividerInset)
     }
 }
 

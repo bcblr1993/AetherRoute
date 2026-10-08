@@ -74,7 +74,8 @@ struct ProfileArchivePasswordSheet: View {
             AetherSheetHeader(
                 symbol: "lock.shield.fill",
                 title: mode.title,
-                subtitle: mode.detail
+                subtitle: mode.detail,
+                tint: AppSection.profiles.tileColor
             )
 
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
@@ -102,7 +103,7 @@ struct ProfileArchivePasswordSheet: View {
             }
 
             HStack {
-                Button("Cancel", role: .cancel) { dismiss() }
+                Button(AppLocalization.string("Cancel"), role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .disabled(isWorking)
                 Spacer()
@@ -127,7 +128,7 @@ struct ProfileArchivePasswordSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(minWidth: AetherVisual.sheetMinWidth, idealWidth: AetherVisual.sheetIdealWidth, maxWidth: AetherVisual.sheetMaxWidth)
+        .aetherSheetFrame()
         .interactiveDismissDisabled(isWorking)
     }
 

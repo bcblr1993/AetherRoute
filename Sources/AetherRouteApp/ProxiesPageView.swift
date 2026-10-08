@@ -114,7 +114,7 @@ struct ProxiesView: View {
             Text(AppLocalization.string("Proxy groups"))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(AetherVisual.secondaryText)
-                .padding(.horizontal, AetherVisual.s2)
+                .padding(.horizontal, AetherVisual.sectionHeaderInset)
                 .accessibilityAddTraits(.isHeader)
             VStack(spacing: AetherVisual.sMicro) {
                 ForEach(groups) { group in
@@ -220,7 +220,7 @@ private struct ProxyGroupTabButton: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: AetherVisual.sRow) {
-                AetherIconTile(symbol: proxyGroupSymbol(group.strategy), color: proxyGroupTint(group.strategy), size: 28)
+                AetherIconTile(symbol: proxyGroupSymbol(group.strategy), color: proxyGroupTint(group.strategy), size: AetherVisual.rowTileSize)
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     Text(group.name)
                         .font(.body.weight(.semibold))
@@ -240,7 +240,7 @@ private struct ProxyGroupTabButton: View {
             .contentShape(RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
             .background(
                 isSelected
-                    ? Color.accentColor.opacity(0.22)
+                    ? AetherVisual.selectionFill
                     : (isHovered ? AetherVisual.hoverFill : Color.clear),
                 in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
             )
@@ -692,7 +692,7 @@ private struct ProxyNodeRow: View {
                     .foregroundStyle(AetherReadableTint(color: .green))
                     .padding(.horizontal, AetherVisual.s1)
                     .padding(.vertical, AetherVisual.sMicro)
-                    .background(Color.green.opacity(0.14), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+                    .background(AetherVisual.tintFill(.green), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
                     .transition(.opacity)
             }
             Spacer(minLength: AetherVisual.s2)
@@ -704,7 +704,7 @@ private struct ProxyNodeRow: View {
 
     private var rowFill: Color {
         if row.isSelected {
-            return showsSelectionControl ? Color.accentColor.opacity(0.08) : Color.green.opacity(0.07)
+            return AetherVisual.selectionFill
         }
         return isHovered ? AetherVisual.hoverFill : Color.clear
     }
@@ -784,7 +784,7 @@ struct ProxyInventorySheet: View {
                             ProxyNodeInventory(proxies: summary.proxies, groups: summary.proxyGroups)
                         }
                         if !summary.proxyProviders.isEmpty {
-                            FeatureSection(title: AppLocalization.string("Providers"), symbol: "shippingbox") {
+                            FeatureSection(title: AppLocalization.string("Providers")) {
                                 VStack(spacing: 0) {
                                     ForEach(summary.proxyProviders) { provider in
                                         ProviderRow(provider: provider)
@@ -806,7 +806,7 @@ struct ProxyInventorySheet: View {
             }
         }
         .padding(AetherVisual.s5)
-        .frame(width: 640, height: 520)
+        .aetherLargeSheetFrame()
         .accessibilityIdentifier("proxy-inventory-sheet")
     }
 }
@@ -816,7 +816,7 @@ private struct ProxyNodeInventory: View {
     let groups: [ProxyGroupConfigurationSummary]
 
     var body: some View {
-        FeatureSection(title: AppLocalization.string("Nodes"), symbol: "server.rack") {
+        FeatureSection(title: AppLocalization.string("Nodes")) {
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 Text(inventorySummary)
                     .font(.caption.weight(.medium))

@@ -22,18 +22,44 @@ enum AetherVisual {
     static let s5: CGFloat = 20
     static let s6: CGFloat = 24
 
+    // Radii, smallest to largest. A card is always `panelRadius` glass
+    // (`aetherPanel()`); anything drawn inside a card uses `cardRadius` or
+    // smaller so nested corners stay concentric.
+    /// Badges and tags.
     static let badgeRadius: CGFloat = 4
+    /// Controls, search fields and hover highlights.
     static let controlRadius: CGFloat = 6
+    /// Small filled wells inside a row.
     static let insetRadius: CGFloat = 8
+    /// A surface nested in a card: a selectable group row, a placeholder,
+    /// a status callout.
     static let cardRadius: CGFloat = 10
+    /// Every top-level card.
     static let panelRadius: CGFloat = 18
     /// Glass groups on compact surfaces: the menu bar panel and the
     /// Connections session bar, where 18 pt reads as a capsule.
     static let compactPanelRadius: CGFloat = 14
     static let sidebarRadius: CGFloat = 16
 
+    /// Tile colours of the three kinds of profile, shared by the profile
+    /// list, the onboarding cards and the sheets that create each kind.
+    static let subscriptionTint = Color.teal
+    static let manualNodesTint = Color.indigo
+    static let localProfileTint = Color.orange
+    static let iCloudTint = Color.blue
+
+    // Fills, weakest to strongest. Every drawn background picks one of
+    // these instead of its own opacity.
+    /// A quiet well behind grouped text (status lists, code samples).
+    static let subtleFill = Color.secondary.opacity(0.06)
     /// Background of a hovered row or button that draws its own fill.
     static let hoverFill = Color.secondary.opacity(0.12)
+    /// Neutral badges, tags, chips and count capsules.
+    static let neutralFill = Color.secondary.opacity(0.12)
+    /// The selected row in a list the app draws itself.
+    static let selectionFill = Color.accentColor.opacity(0.16)
+    /// A badge, pill or round icon button tinted by what it marks.
+    static func tintFill(_ color: Color) -> Color { color.opacity(0.12) }
 
     // MARK: - Motion
     //
@@ -66,6 +92,9 @@ enum AetherVisual {
     static let pageBottomPadding = s6
     /// Space between top-level blocks of a page, including after its header.
     static let sectionSpacing = s4
+    /// How far a group's heading and footnote sit in from its card's edge,
+    /// on pages and in Settings alike.
+    static let sectionHeaderInset = s2
     /// Reading width for forms and settings-like pages.
     static let contentMaxWidth: CGFloat = 720
     /// Secondary and tertiary text as plain greys. Liquid Glass renders the
@@ -94,11 +123,21 @@ enum AetherVisual {
     /// line up wherever they sit side by side.
     static let pillHorizontalPadding = s2
     static let pillVerticalPadding = s1
-    /// Symbol tile at the top of every sheet.
-    static let sheetIconSize: CGFloat = 44
+    // Icon tiles come in five sizes and no others:
+    /// Sidebar rows and tiles inline with text (table cells).
+    static let iconTileSize: CGFloat = 22
     /// Colour tile leading a System Settings-style row (Overview route
-    /// group). Row dividers start after it, so both read this one value.
+    /// group, DNS settings, menu bar rows). Row dividers start after it.
     static let rowTileSize: CGFloat = 26
+    /// Leading tile of a card or a two-line list row.
+    static let cardTileSize: CGFloat = 34
+    /// Symbol tile at the top of every sheet and onboarding card.
+    static let sheetIconSize: CGFloat = 44
+    /// The single tile above a centred empty or welcome state.
+    static let heroTileSize: CGFloat = 56
+    /// Where a divider between rows that lead with a `rowTileSize` tile
+    /// starts: past the row inset, the tile and the gap after it.
+    static let rowDividerInset = s4 + rowTileSize + s3
     /// Gap between the drawn connection switch's track and its knob.
     static let switchKnobInset: CGFloat = 3
     /// Status dots beside a row title or in a pill.
@@ -108,8 +147,17 @@ enum AetherVisual {
     static let sheetMinWidth: CGFloat = 460
     static let sheetIdealWidth: CGFloat = 520
     static let sheetMaxWidth: CGFloat = 680
+    /// Sheets that hold a list, a long form or a document: node editors,
+    /// the node inventory, network setup, privacy commitments, licenses.
+    static let largeSheetMinWidth: CGFloat = 560
+    static let largeSheetIdealWidth: CGFloat = 680
+    static let largeSheetMaxWidth: CGFloat = 900
+    static let largeSheetMinHeight: CGFloat = 480
+    static let largeSheetIdealHeight: CGFloat = 600
+    static let largeSheetMaxHeight: CGFloat = 760
+    /// A large sheet with a sidebar and a detail pane (licenses).
+    static let splitSheetMinWidth: CGFloat = 760
     static let onboardingTopPadding = s6 + s5
-    static let wideListIndent = s6 * 2 + s2
     /// Distance from the window top to floating overlays (command palette).
     static let overlayTopInset = s6 * 3
     static let tableContentIndent = s6 * 3
@@ -132,7 +180,7 @@ struct AetherRouteBrandTile: View {
             .renderingMode(.original)
             .aspectRatio(contentMode: .fit)
             .frame(width: size, height: size)
-            .accessibilityLabel("AetherRoute")
+            .accessibilityLabel(Text(verbatim: "AetherRoute"))
     }
 }
 
@@ -262,7 +310,7 @@ enum AetherPageWidth {
 struct AetherIconTile: View {
     let symbol: String
     let color: Color
-    var size: CGFloat = 22
+    var size: CGFloat = AetherVisual.iconTileSize
 
     var body: some View {
         Image(systemName: symbol)
@@ -271,6 +319,45 @@ struct AetherIconTile: View {
             .frame(width: size, height: size)
             .background(color.gradient, in: RoundedRectangle(cornerRadius: size * 0.27, style: .continuous))
             .accessibilityHidden(true)
+    }
+}
+
+/// `AetherIconTile` with a letter instead of a symbol (a node's protocol).
+struct AetherMonogramTile: View {
+    let text: String
+    let color: Color
+    var size: CGFloat = AetherVisual.cardTileSize
+
+    var body: some View {
+        Text(verbatim: text)
+            .font(.system(size: size * 0.42, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(color.gradient, in: RoundedRectangle(cornerRadius: size * 0.27, style: .continuous))
+            .accessibilityHidden(true)
+    }
+}
+
+/// A state symbol in the column where rows put their tile: green ready,
+/// orange stale or restricted, red failed, grey absent. It has no tile on
+/// purpose; a coloured tile names a thing and must never carry state.
+struct AetherStatusSymbol: View {
+    let symbol: String
+    let color: Color
+    var size: CGFloat = AetherVisual.cardTileSize
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.6, weight: .semibold))
+            .foregroundStyle(style)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
+
+    private var style: AnyShapeStyle {
+        color == .secondary
+            ? AnyShapeStyle(AetherVisual.secondaryText)
+            : AnyShapeStyle(AetherReadableTint(color: color))
     }
 }
 
@@ -469,42 +556,39 @@ struct AetherCountBadge: View {
             .foregroundStyle(AetherVisual.secondaryText)
             .padding(.horizontal, AetherVisual.sCompact)
             .padding(.vertical, AetherVisual.sMicro)
-            .background(Color.secondary.opacity(0.12), in: Capsule())
+            .background(AetherVisual.neutralFill, in: Capsule())
             .aetherNumericValue(count)
     }
 }
 
-/// The heading above a group of cards on every page: symbol, title, an
-/// optional count and optional trailing actions. Pages used to mix plain
-/// text headings, symbol headings and card titles repeating the heading.
+/// The quiet heading above a group of cards, as in System Settings: the
+/// title in secondary semibold, an optional count and optional trailing
+/// actions, inset like every other page heading and the Settings forms.
 struct AetherSectionHeader<Accessory: View>: View {
     let title: String
-    let symbol: String
     var count: Int?
     @ViewBuilder var accessory: () -> Accessory
 
     var body: some View {
-        HStack(spacing: AetherVisual.s2) {
-            Label {
-                Text(title)
-            } icon: {
-                Image(systemName: symbol)
-            }
-            .font(.headline)
+        HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(AetherVisual.secondaryText)
             if let count {
                 AetherCountBadge(count: count)
             }
             Spacer(minLength: AetherVisual.s2)
             accessory()
         }
+        .padding(.horizontal, AetherVisual.sectionHeaderInset)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isHeader)
     }
 }
 
 extension AetherSectionHeader where Accessory == EmptyView {
-    init(title: String, symbol: String, count: Int? = nil) {
-        self.init(title: title, symbol: symbol, count: count) { EmptyView() }
+    init(title: String, count: Int? = nil) {
+        self.init(title: title, count: count) { EmptyView() }
     }
 }
 
@@ -516,12 +600,15 @@ struct AetherSheetHeader<Accessory: View>: View {
     let symbol: String
     let title: String
     var subtitle: String?
+    /// The colour of what the sheet is about: the same colour its page,
+    /// profile kind or Settings pane uses for its tile.
+    var tint: Color = .blue
     @ViewBuilder var accessory: () -> Accessory
 
     var body: some View {
         HStack(alignment: .center, spacing: AetherVisual.s4) {
             // The same colour tile as the sidebar and rows, larger.
-            AetherIconTile(symbol: symbol, color: .blue, size: AetherVisual.sheetIconSize)
+            AetherIconTile(symbol: symbol, color: tint, size: AetherVisual.sheetIconSize)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(title)
                     .font(.title3.weight(.semibold))
@@ -540,8 +627,8 @@ struct AetherSheetHeader<Accessory: View>: View {
 }
 
 extension AetherSheetHeader where Accessory == EmptyView {
-    init(symbol: String, title: String, subtitle: String? = nil) {
-        self.init(symbol: symbol, title: title, subtitle: subtitle) { EmptyView() }
+    init(symbol: String, title: String, subtitle: String? = nil, tint: Color = .blue) {
+        self.init(symbol: symbol, title: title, subtitle: subtitle, tint: tint) { EmptyView() }
     }
 }
 
@@ -554,6 +641,41 @@ extension View {
 
     func aetherPanel() -> some View {
         modifier(AetherPanelModifier())
+    }
+
+    /// An inline message tinted by its meaning (green done, orange warning,
+    /// red failed), drawn the same way wherever one appears.
+    func aetherCallout(tint: Color) -> some View {
+        background(
+            tint.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                .strokeBorder(tint.opacity(0.2), lineWidth: 0.5)
+        }
+    }
+
+    /// The width every small single-purpose sheet takes.
+    func aetherSheetFrame() -> some View {
+        frame(
+            minWidth: AetherVisual.sheetMinWidth,
+            idealWidth: AetherVisual.sheetIdealWidth,
+            maxWidth: AetherVisual.sheetMaxWidth
+        )
+    }
+
+    /// The size range every large sheet takes. A split sheet passes a wider
+    /// minimum so its sidebar and detail pane both fit.
+    func aetherLargeSheetFrame(minWidth: CGFloat = AetherVisual.largeSheetMinWidth) -> some View {
+        frame(
+            minWidth: minWidth,
+            idealWidth: max(minWidth, AetherVisual.largeSheetIdealWidth),
+            maxWidth: AetherVisual.largeSheetMaxWidth,
+            minHeight: AetherVisual.largeSheetMinHeight,
+            idealHeight: AetherVisual.largeSheetIdealHeight,
+            maxHeight: AetherVisual.largeSheetMaxHeight
+        )
     }
 
     func aetherHoverHighlight(
@@ -587,7 +709,7 @@ struct AetherProtocolBadge: View {
             .foregroundStyle(badgeColor == .secondary ? Color.secondary : badgeColor)
             .padding(.horizontal, AetherVisual.s1)
             .padding(.vertical, AetherVisual.sMicro)
-            .background(badgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+            .background(AetherVisual.tintFill(badgeColor), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
     }
 
     private var displayType: String {
@@ -694,7 +816,7 @@ struct AetherRegionCode: View {
                     .font(.system(.caption2, design: .rounded, weight: .bold))
                     .foregroundStyle(AetherVisual.secondaryText)
                     .frame(width: 26, height: 18)
-                    .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+                    .background(AetherVisual.neutralFill, in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
             } else if reservesSlot {
                 Color.clear.frame(width: 26, height: 18)
             }
@@ -994,7 +1116,7 @@ private struct AetherGlassFormSection: View {
                 }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(AetherVisual.secondaryText)
-                .padding(.horizontal, AetherVisual.s1)
+                .padding(.horizontal, AetherVisual.sectionHeaderInset)
                 .accessibilityAddTraits(.isHeader)
             }
             if !section.content.isEmpty {
@@ -1021,7 +1143,7 @@ private struct AetherGlassFormSection: View {
                 .font(.subheadline)
                 .foregroundStyle(AetherVisual.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, AetherVisual.s1)
+                .padding(.horizontal, AetherVisual.sectionHeaderInset)
             }
         }
     }

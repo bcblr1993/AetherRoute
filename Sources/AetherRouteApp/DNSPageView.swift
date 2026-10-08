@@ -208,7 +208,7 @@ struct DNSView: View {
                         .padding(.horizontal, AetherVisual.pillHorizontalPadding)
                         .padding(.vertical, AetherVisual.pillVerticalPadding)
                         .background(
-                            transportColor(transport).opacity(0.12),
+                            AetherVisual.tintFill(transportColor(transport)),
                             in: Capsule()
                         )
                     }
@@ -290,7 +290,7 @@ struct DNSView: View {
                 .padding(.horizontal, AetherVisual.pillHorizontalPadding)
                 .padding(.vertical, AetherVisual.pillVerticalPadding)
                 .background(
-                    Color.accentColor.opacity(0.12),
+                    AetherVisual.tintFill(.accentColor),
                     in: Capsule()
                 )
             }
@@ -322,16 +322,16 @@ struct DNSView: View {
     private func resolutionBehaviorSection(
         _ dns: DNSConfigurationSummary
     ) -> some View {
-        FeatureSection(title: AppLocalization.string("Resolution behavior"), symbol: "switch.2") {
+        FeatureSection(title: AppLocalization.string("Resolution behavior")) {
             VStack(spacing: 0) {
                 DNSSettingRow(
                     title: AppLocalization.string("Enhanced mode"),
                     detail: modeDetail(dns.mode),
                     value: modeTitle(dns.mode),
                     symbol: modeSymbol(dns.mode),
-                    tint: modeColor(dns.mode)
+                    tint: .blue
                 )
-                Divider().padding(.leading, AetherVisual.wideListIndent)
+                Divider().padding(.leading, AetherVisual.rowDividerInset)
                 DNSSettingRow(
                     title: AppLocalization.string("IPv6 answers"),
                     detail: dns.allowsIPv6
@@ -341,9 +341,9 @@ struct DNSView: View {
                         ? AppLocalization.string("Allowed")
                         : AppLocalization.string("Filtered"),
                     symbol: "6.circle",
-                    tint: dns.allowsIPv6 ? .accentColor : .secondary
+                    tint: .teal
                 )
-                Divider().padding(.leading, AetherVisual.wideListIndent)
+                Divider().padding(.leading, AetherVisual.rowDividerInset)
                 DNSSettingRow(
                     title: AppLocalization.string("Rule-aware queries"),
                     detail: dns.respectsRules
@@ -353,9 +353,9 @@ struct DNSView: View {
                         ? AppLocalization.string("On")
                         : AppLocalization.string("Off"),
                     symbol: "arrow.triangle.branch",
-                    tint: dns.respectsRules ? .accentColor : .secondary
+                    tint: .purple
                 )
-                Divider().padding(.leading, AetherVisual.wideListIndent)
+                Divider().padding(.leading, AetherVisual.rowDividerInset)
                 DNSSettingRow(
                     title: AppLocalization.string("Hosts mapping"),
                     detail: dns.usesHosts
@@ -365,7 +365,7 @@ struct DNSView: View {
                         ? AppLocalization.string("On")
                         : AppLocalization.string("Off"),
                     symbol: "house.and.flag",
-                    tint: dns.usesHosts ? .blue : .secondary
+                    tint: .indigo
                 )
             }
             .aetherPanel()
@@ -441,12 +441,7 @@ struct DNSView: View {
     /// card of controls that cannot be used: why, and the way to TUN.
     private var transparentProxyNotice: some View {
         HStack(spacing: AetherVisual.s3) {
-            Image(systemName: "info.circle")
-                .font(.title3)
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 36, height: 36)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous))
-                .accessibilityHidden(true)
+            AetherStatusSymbol(symbol: "info.circle.fill", color: .blue)
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 Text(AppLocalization.string("Transparent Proxy is on"))
                     .font(.body.weight(.semibold))
@@ -805,12 +800,8 @@ private struct DNSSettingRow: View {
     let tint: Color
 
     var body: some View {
-        HStack(spacing: AetherVisual.s4) {
-            Image(systemName: symbol)
-                .foregroundStyle(tint)
-                .frame(width: 34, height: 34)
-                .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
-                .accessibilityHidden(true)
+        HStack(spacing: AetherVisual.s3) {
+            AetherIconTile(symbol: symbol, color: tint, size: AetherVisual.rowTileSize)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(title)
                     .font(.body.weight(.medium))
@@ -821,13 +812,12 @@ private struct DNSSettingRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: AetherVisual.s3)
+            // The value trails as plain text, as in System Settings; the
+            // tile colour names the setting and says nothing about its value.
             Text(value)
                 .font(.body.weight(.medium))
-                .foregroundStyle(.primary)
+                .foregroundStyle(AetherVisual.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, AetherVisual.s3)
-                .padding(.vertical, AetherVisual.s2)
-                .background(tint.opacity(0.09), in: Capsule())
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s3)

@@ -62,6 +62,19 @@ fail_if_found \
   'cornerRadius:[[:space:]]*AetherVisual\.s(Micro|Compact|Row|[0-9])'
 
 fail_if_found \
+  "icon tiles take one of the five AetherVisual tile sizes" \
+  '(AetherIconTile|AetherMonogramTile|AetherStatusSymbol)\([^)]*size:[[:space:]]*[0-9]'
+
+fail_if_found \
+  "drawn grey backgrounds use AetherVisual.subtleFill, hoverFill or neutralFill" \
+  '\.background\([[:space:]]*Color\.(secondary|primary)\.opacity\(' \
+  -g '!AetherRouteVisualSystem.swift'
+
+fail_if_found \
+  "interface copy goes through AppLocalization.string so the in-app language applies (use Text(verbatim:) for names)" \
+  '\b(Text|Label|Button|Toggle|Section|Picker|TextField|SecureField|LabeledContent|help|accessibilityLabel|accessibilityHint|confirmationDialog)\([[:space:]]*"[^"]'
+
+fail_if_found \
   "literal font sizes are forbidden; use a system text style such as .caption or .body (sizes relative to a container are allowed)" \
   '\.system\([[:space:]]*size:[[:space:]]*[0-9]'
 

@@ -272,15 +272,7 @@ struct IndependentDistributionView: View {
     }
 
     private func statusIcon(symbol: String, tint: Color) -> some View {
-        Image(systemName: symbol)
-            .font(.title2.weight(.semibold))
-            .foregroundStyle(tint)
-            .frame(width: 36, height: 36)
-            .background(
-                tint.opacity(0.11),
-                in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-            )
-            .accessibilityHidden(true)
+        AetherStatusSymbol(symbol: symbol, color: tint)
     }
 
     private func activate() {

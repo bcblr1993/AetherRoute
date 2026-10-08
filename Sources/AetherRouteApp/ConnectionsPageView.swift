@@ -112,7 +112,7 @@ struct ConnectionsView: View {
     @ViewBuilder
     private func footerContents(visibleCount: Int) -> some View {
         if pausedConnections != nil {
-            Label("List paused · session counters are live", systemImage: "pause.circle.fill")
+            Label(AppLocalization.string("List paused · session counters are live"), systemImage: "pause.circle.fill")
                 .foregroundStyle(.orange)
                 .lineLimit(1)
                 .fixedSize()
@@ -135,22 +135,19 @@ struct ConnectionsView: View {
     /// The empty state explains what will appear here once connected, which
     /// also answers why it is empty now.
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label(
-                tunnel.isConnected
-                    ? AppLocalization.string("No active connections")
-                    : AppLocalization.string("No connections yet"),
-                systemImage: "arrow.left.arrow.right"
-            )
-        } description: {
-            Text(
-                tunnel.isConnected
-                    ? AppLocalization.string("Each live connection shows its destination, matched rule, outlet and traffic.")
-                    : AppLocalization.string("Connect to see each connection's destination, matched rule, outlet and traffic.")
-            )
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(AetherVisual.s6)
+        // The same empty-state card as Proxies, Rules and DNS.
+        FeatureEmptyState(
+            symbol: "arrow.left.arrow.right",
+            title: tunnel.isConnected
+                ? AppLocalization.string("No active connections")
+                : AppLocalization.string("No connections yet"),
+            detail: tunnel.isConnected
+                ? AppLocalization.string("Each live connection shows its destination, matched rule, outlet and traffic.")
+                : AppLocalization.string("Connect to see each connection's destination, matched rule, outlet and traffic.")
+        )
+        .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+        .padding(.top, AetherVisual.s2)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private func connectionList(
@@ -246,8 +243,8 @@ struct ConnectionsView: View {
                 ConnectionDestinationCell(connection: row.connection)
                     .help(Text(verbatim: row.connection.destinationAddress))
                     .contextMenu {
-                        Button("Copy destination") { copyDestination(row.connection) }
-                        Button("Connection details") { inspectedConnection = row }
+                        Button(AppLocalization.string("Copy destination")) { copyDestination(row.connection) }
+                        Button(AppLocalization.string("Connection details")) { inspectedConnection = row }
                         Divider()
                         appContextMenu(
                             SourceAppDirectory.shared.presentation(for: row.connection)
@@ -622,7 +619,7 @@ private struct SessionBar: View {
                     Image(systemName: "clock")
                         .foregroundStyle(AetherVisual.secondaryText)
                 }
-                .accessibilityLabel("Elapsed")
+                .accessibilityLabel(AppLocalization.string("Elapsed"))
                 Divider().frame(height: 18).opacity(0.4)
             }
 
@@ -819,7 +816,7 @@ private struct ConnectionRuleCell: View {
                 .foregroundStyle(AetherVisual.strongSecondaryText)
                 .padding(.horizontal, AetherVisual.s1)
                 .padding(.vertical, AetherVisual.sMicro)
-                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+                .background(AetherVisual.neutralFill, in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
                 .fixedSize()
             if !connection.rulePayload.isEmpty {
                 Text(verbatim: connection.rulePayload)
@@ -839,7 +836,7 @@ private struct ConnectionOutletCell: View {
 
     var body: some View {
         HStack(spacing: AetherVisual.s2) {
-            AetherIconTile(symbol: outletSymbol, color: outletTint, size: 20)
+            AetherIconTile(symbol: outletSymbol, color: outletTint, size: AetherVisual.iconTileSize)
             Text(outlet.localizedTitle)
                 .font(.body.weight(.medium))
                 .foregroundStyle(.primary)
@@ -899,7 +896,7 @@ private struct ConnectionDurationCell: View {
             .multilineTextAlignment(.trailing)
             .frame(maxWidth: .infinity, alignment: .trailing)
             .accessibilityIdentifier("connection-duration")
-            .accessibilityLabel(Text("Connection duration"))
+            .accessibilityLabel(Text(AppLocalization.string("Connection duration")))
             .accessibilityValue(text)
             .accessibilityHint(Text(
                 elapsed == nil
@@ -932,7 +929,8 @@ private struct ConnectionInspector: View {
             AetherSheetHeader(
                 symbol: connection.transport == .tcp ? "arrow.left.arrow.right" : "dot.radiowaves.left.and.right",
                 title: destination,
-                subtitle: AppLocalization.string("Snapshot captured when opened. Values do not refresh here.")
+                subtitle: AppLocalization.string("Snapshot captured when opened. Values do not refresh here."),
+                tint: AppSection.connections.tileColor
             )
             .padding([.horizontal, .top], AetherVisual.dialogPadding)
 
@@ -979,7 +977,7 @@ private struct ConnectionInspector: View {
             }
             .padding([.horizontal, .bottom], AetherVisual.dialogPadding)
         }
-        .frame(minWidth: AetherVisual.sheetMinWidth, idealWidth: AetherVisual.sheetIdealWidth, maxWidth: AetherVisual.sheetMaxWidth)
+        .aetherSheetFrame()
     }
 
     private func bytes(_ value: UInt64) -> String {

@@ -67,7 +67,7 @@ struct AboutAetherRouteView: View {
         }
         .aetherSettingsForm()
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("About AetherRoute")
+        .accessibilityLabel(AppLocalization.string("About AetherRoute"))
         .accessibilityIdentifier("about-page-content")
     }
 
@@ -103,7 +103,7 @@ struct AboutAetherRouteView: View {
         }
         .padding(.horizontal, AetherVisual.pillHorizontalPadding)
         .padding(.vertical, AetherVisual.pillVerticalPadding)
-        .background(Color.secondary.opacity(0.12), in: Capsule())
+        .background(AetherVisual.neutralFill, in: Capsule())
     }
 
     private var licensesRow: some View {
@@ -134,7 +134,7 @@ struct AboutAetherRouteView: View {
                 }
                 .padding(AetherVisual.s3)
             }
-            .frame(minWidth: 760, minHeight: 520)
+            .aetherLargeSheetFrame(minWidth: AetherVisual.splitSheetMinWidth)
         }
     }
 

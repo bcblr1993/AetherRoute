@@ -763,14 +763,8 @@ struct SupportDiagnosticsView: View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
             // Card Header
             HStack(spacing: AetherVisual.s3) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.12))
-                    Image(systemName: "stethoscope")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                }
-                .frame(width: 36, height: 36)
+                // Indigo: the Privacy pane's tile, where diagnostics live.
+                AetherIconTile(symbol: "stethoscope", color: .indigo, size: AetherVisual.cardTileSize)
 
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     Text(AppLocalization.string("Live Connectivity Diagnostics"))
@@ -1010,14 +1004,7 @@ struct SupportDiagnosticsView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(AetherVisual.s3)
-        .background(
-            RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-                .fill(tintColor.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-                        .stroke(tintColor.opacity(0.25), lineWidth: 1)
-                )
-        )
+        .aetherCallout(tint: tintColor)
     }
 
     private func triggerDiagnostics() {

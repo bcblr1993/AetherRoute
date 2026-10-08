@@ -50,7 +50,7 @@ struct RuleDistributionBar: View {
         }
         .frame(height: 6)
         .frame(minWidth: 80)
-        .background(Color.secondary.opacity(0.12), in: Capsule())
+        .background(AetherVisual.neutralFill, in: Capsule())
         .clipShape(Capsule())
         // Outside Rule mode the list is not consulted, so the shares
         // describe nothing that happens to traffic right now.
@@ -271,7 +271,7 @@ struct RulesView: View {
                 }
                 .padding(.horizontal, AetherVisual.s3 + AetherVisual.sMicro)
                 .frame(minHeight: 36)
-                .background(Color.primary.opacity(0.06), in: Capsule())
+                .background(AetherVisual.neutralFill, in: Capsule())
 
                 Button(AppLocalization.string("Test")) {
                     performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
@@ -337,7 +337,7 @@ struct RulesView: View {
                         .font(.caption)
                         .padding(.horizontal, AetherVisual.s2)
                         .padding(.vertical, AetherVisual.sMicro)
-                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                        .background(AetherVisual.neutralFill, in: Capsule())
                         // A bare domain read as an unclear label; say the action.
                         .accessibilityLabel(String.localizedStringWithFormat(AppLocalization.string("Test %@"), domain))
                         .accessibilityIdentifier("rule-quick-test-\(domain)")
@@ -606,7 +606,7 @@ struct RuleKindTag: View {
             .foregroundStyle(AetherVisual.strongSecondaryText)
             .padding(.horizontal, AetherVisual.sCompact)
             .padding(.vertical, AetherVisual.sMicro)
-            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+            .background(AetherVisual.neutralFill, in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
             .fixedSize()
     }
 }
@@ -621,7 +621,7 @@ private struct CustomRuleBadge: View {
             .foregroundStyle(AetherReadableTint(color: .teal))
             .padding(.horizontal, AetherVisual.s1)
             .padding(.vertical, AetherVisual.sMicro)
-            .background(Color.teal.opacity(0.16), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+            .background(AetherVisual.tintFill(.teal), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
             .fixedSize()
     }
 }
@@ -730,8 +730,8 @@ private struct RuleRow: View {
         .frame(minHeight: 40)
         .background(
             isHighlighted
-                ? Color.accentColor.opacity(0.16)
-                : (isHovered ? Color.primary.opacity(0.04) : Color.clear)
+                ? AetherVisual.selectionFill
+                : (isHovered ? AetherVisual.hoverFill : Color.clear)
         )
         .onHover { hovering in
             withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
@@ -830,7 +830,7 @@ struct CustomRuleRow: View {
                             .font(.system(.caption2, design: .monospaced, weight: .medium))
                             .foregroundStyle(.primary)
                             .padding(.horizontal, AetherVisual.sMicro)
-                            .background(Color.secondary.opacity(0.12), in: Capsule())
+                            .background(AetherVisual.neutralFill, in: Capsule())
                     }
                 }
 
@@ -859,7 +859,7 @@ struct CustomRuleRow: View {
                         .font(.subheadline)
                         .foregroundStyle(Color.accentColor)
                         .frame(width: 24, height: 24)
-                        .background(Color.accentColor.opacity(0.1), in: Circle())
+                        .background(AetherVisual.tintFill(.accentColor), in: Circle())
                 }
                 .buttonStyle(.aetherPressable)
                 .help(AppLocalization.string("Verify rule"))
@@ -871,7 +871,7 @@ struct CustomRuleRow: View {
                         .font(.subheadline)
                         .foregroundStyle(.primary)
                         .frame(width: 24, height: 24)
-                        .background(Color.secondary.opacity(0.1), in: Circle())
+                        .background(AetherVisual.neutralFill, in: Circle())
                 }
                 .buttonStyle(.aetherPressable)
                 .help(AppLocalization.string("Edit rule"))
@@ -883,7 +883,7 @@ struct CustomRuleRow: View {
                         .font(.subheadline)
                         .foregroundStyle(Color.red.opacity(0.85))
                         .frame(width: 24, height: 24)
-                        .background(Color.red.opacity(0.1), in: Circle())
+                        .background(AetherVisual.tintFill(.red), in: Circle())
                 }
                 .buttonStyle(.aetherPressable)
                 .help(AppLocalization.string("Delete rule"))
@@ -892,7 +892,7 @@ struct CustomRuleRow: View {
         .padding(.horizontal, AetherVisual.sRow)
         .padding(.vertical, AetherVisual.sCompact)
         .background(
-            isHovered ? Color.primary.opacity(0.05) : Color.clear,
+            isHovered ? AetherVisual.hoverFill : Color.clear,
             in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
         )
         .opacity(rule.isEnabled ? 1.0 : 0.6)
@@ -1027,7 +1027,8 @@ struct CustomRuleEditorSheet: View {
                 title: initialRule == nil
                     ? AppLocalization.string("Add Custom Routing Rule")
                     : AppLocalization.string("Edit Custom Routing Rule"),
-                subtitle: AppLocalization.string("Custom rules take top priority in traffic matching.")
+                subtitle: AppLocalization.string("Custom rules take top priority in traffic matching."),
+                tint: AppSection.rules.tileColor
             )
 
             AetherSegmentedPicker(
@@ -1130,10 +1131,7 @@ struct CustomRuleEditorSheet: View {
             }
             .padding(.horizontal, AetherVisual.s3)
             .padding(.vertical, AetherVisual.s2)
-            .background(
-                validationResult.isValid ? Color.green.opacity(0.08) : Color.orange.opacity(0.08),
-                in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
-            )
+            .aetherCallout(tint: validationResult.isValid ? .green : .orange)
 
             // 规则验证结果 (Dry-run Result)
             if hasTested {
@@ -1159,7 +1157,7 @@ struct CustomRuleEditorSheet: View {
                 .padding(.horizontal, AetherVisual.s3)
                 .padding(.vertical, AetherVisual.s2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius))
+                .background(AetherVisual.subtleFill, in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius))
             }
 
             if saveFailed, let message = tunnel.customRuleMessage {
@@ -1192,7 +1190,7 @@ struct CustomRuleEditorSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(minWidth: AetherVisual.sheetMinWidth, idealWidth: AetherVisual.sheetIdealWidth, maxWidth: AetherVisual.sheetMaxWidth)
+        .aetherSheetFrame()
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: mode)
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: selectedTargetKind)
         .disabled(isSaving)

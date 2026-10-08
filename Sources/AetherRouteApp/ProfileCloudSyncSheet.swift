@@ -11,7 +11,8 @@ struct ProfileCloudSyncSheet: View {
             AetherSheetHeader(
                 symbol: "icloud.fill",
                 title: AppLocalization.string("iCloud Profile Sync"),
-                subtitle: AppLocalization.string("End-to-end encrypted synchronization across your Mac and iPhone devices.")
+                subtitle: AppLocalization.string("End-to-end encrypted synchronization across your Mac and iPhone devices."),
+                tint: AetherVisual.iCloudTint
             )
 
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
@@ -25,15 +26,15 @@ struct ProfileCloudSyncSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(AetherVisual.s4)
-            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
+            .background(AetherVisual.subtleFill, in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
 
             if cloudSync.isCloudSyncEnabled {
                 if cloudSync.isSyncing {
-                    Label("Syncing profiles…", systemImage: "arrow.triangle.2.circlepath.icloud")
+                    Label(AppLocalization.string("Syncing profiles…"), systemImage: "arrow.triangle.2.circlepath.icloud")
                 } else if cloudSync.lastSyncedAt == nil {
-                    Label("Enabled · no completed sync yet", systemImage: "clock")
+                    Label(AppLocalization.string("Enabled · no completed sync yet"), systemImage: "clock")
                 }
-                Text("Enabling sync does not confirm completion. Automatic sync merges profiles; review the result before using Force Pull or Force Push.")
+                Text(AppLocalization.string("Enabling sync does not confirm completion. Automatic sync merges profiles; review the result before using Force Pull or Force Push."))
                     .font(.caption).foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 VStack(alignment: .leading, spacing: AetherVisual.s3) {
@@ -122,7 +123,7 @@ struct ProfileCloudSyncSheet: View {
                     }
                 }
                 .padding(AetherVisual.s4)
-                .background(Color.secondary.opacity(0.04), in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
+                .background(AetherVisual.subtleFill, in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
             }
 
             HStack {
@@ -137,7 +138,7 @@ struct ProfileCloudSyncSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(minWidth: AetherVisual.sheetMinWidth, idealWidth: AetherVisual.sheetIdealWidth, maxWidth: AetherVisual.sheetMaxWidth)
+        .aetherSheetFrame()
         .interactiveDismissDisabled(cloudSync.isSyncing)
     }
 }

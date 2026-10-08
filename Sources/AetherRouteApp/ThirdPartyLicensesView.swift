@@ -204,7 +204,7 @@ struct ThirdPartyLicensesView: View {
             .accessibilityIdentifier("license-detail")
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Open-Source Software")
+        .accessibilityLabel(AppLocalization.string("Open-Source Software"))
         .accessibilityIdentifier("license-browser-root")
     }
 

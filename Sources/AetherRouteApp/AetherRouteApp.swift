@@ -577,7 +577,7 @@ struct AetherRouteApp: App {
                     )
                 }
                 Divider()
-                Button("Previous proxy node") {
+                Button(AppLocalization.string("Previous proxy node")) {
                     Task {
                         await tunnel.cycleManualProxySelection(.previous)
                     }
@@ -588,7 +588,7 @@ struct AetherRouteApp: App {
                 )
                 .disabled(!tunnel.canCycleManualProxySelection)
 
-                Button("Next proxy node") {
+                Button(AppLocalization.string("Next proxy node")) {
                     Task {
                         await tunnel.cycleManualProxySelection(.next)
                     }
@@ -601,7 +601,7 @@ struct AetherRouteApp: App {
             }
 
             CommandMenu("Proxy") {
-                Button("Copy Terminal Export Command") {
+                Button(AppLocalization.string("Copy Terminal Export Command")) {
                     guard let command = try? tunnel.localProxySettings
                         .shellEnvironmentCommand() else { return }
                     NSPasteboard.general.clearContents()
@@ -610,7 +610,7 @@ struct AetherRouteApp: App {
                 .keyboardShortcut("c", modifiers: [.command, .control])
                 .disabled(!tunnel.canCopyTerminalProxyCommand)
 
-                Button("Copy Terminal Unset Command") {
+                Button(AppLocalization.string("Copy Terminal Unset Command")) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(
                         LocalProxySettings.clearShellEnvironmentCommand,
@@ -854,7 +854,7 @@ private struct MenuBarContent: View {
     }
 
     private static let groupRadius = AetherVisual.compactPanelRadius
-    private static let rowTileSize: CGFloat = 24
+    private static let rowTileSize = AetherVisual.rowTileSize
 
     /// One line of guidance in the panel's own style: symbol, what is wrong,
     /// and a link to the page that fixes it.
@@ -1207,7 +1207,7 @@ private struct MenuBarContent: View {
                         ? AppLocalization.string("Network setup required")
                         : AppLocalization.string("Privacy review required"))
                         .font(.headline)
-                    Text("Connection controls are locked")
+                    Text(AppLocalization.string("Connection controls are locked"))
                         .font(.caption)
                         .foregroundStyle(AetherVisual.secondaryText)
                 }
@@ -1246,7 +1246,7 @@ private struct MenuBarContent: View {
 
             HStack {
                 Spacer()
-                Button("Quit") {
+                Button(AppLocalization.string("Quit")) {
                     AppTermination.request()
                 }
             }
@@ -1341,7 +1341,7 @@ private struct MenuNodeListInline: View {
                 .padding(.horizontal, AetherVisual.s2)
                 .padding(.vertical, AetherVisual.sCompact)
                 .background(
-                    Color.secondary.opacity(0.08),
+                    AetherVisual.subtleFill,
                     in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
                 )
             }
@@ -1578,7 +1578,7 @@ private struct MenuNodeRow: View {
             .padding(.horizontal, AetherVisual.s2)
             .frame(height: Self.height)
             .background(
-                isHovered && isEnabled ? Color.primary.opacity(0.08) : Color.clear,
+                isHovered && isEnabled ? AetherVisual.hoverFill : Color.clear,
                 in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
             )
             .contentShape(Rectangle())
@@ -1829,7 +1829,7 @@ private struct SettingsView: View {
             .accessibilityIdentifier("settings-sidebar-list")
             // Wide enough for "Privacy & Diagnostics" in English.
             .navigationSplitViewColumnWidth(min: 204, ideal: 214, max: 240)
-            .accessibilityLabel("Settings navigation")
+            .accessibilityLabel(AppLocalization.string("Settings navigation"))
             .accessibilityIdentifier("aetherroute-settings-navigation")
         } detail: {
             // No label or identifier of its own: each pane is one scroll view,
@@ -1847,7 +1847,7 @@ private struct SettingsView: View {
         .navigationSplitViewStyle(.balanced)
         .toolbar(removing: .sidebarToggle)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("AetherRoute settings")
+        .accessibilityLabel(AppLocalization.string("AetherRoute settings"))
         .accessibilityIdentifier("aetherroute-settings-root")
         .frame(minWidth: AetherVisual.windowMinWidth, idealWidth: AetherVisual.windowWidth, minHeight: AetherVisual.windowMinHeight, idealHeight: 640)
         .onReceive(NotificationCenter.default.publisher(for: .aetherRouteNavigateToSettings)) { notification in
@@ -1925,7 +1925,7 @@ private struct SettingsView: View {
             if !tunnel.hasAcceptedPrivacyDisclosure {
                 Section {
                     Label(
-                        "Network settings remain locked until the privacy disclosure is accepted.",
+                        AppLocalization.string("Network settings remain locked until the privacy disclosure is accepted."),
                         systemImage: "lock.fill"
                     )
                     .foregroundStyle(AetherVisual.secondaryText)
@@ -1940,7 +1940,7 @@ private struct SettingsView: View {
 #if AETHERROUTE_INDEPENDENT
             Section {
                 HStack(spacing: AetherVisual.s3) {
-                    Text("Traffic capture")
+                    Text(AppLocalization.string("Traffic capture"))
                         .foregroundStyle(.primary)
                     AetherHelpButton(topic: .networkEngine)
 
@@ -1957,7 +1957,7 @@ private struct SettingsView: View {
                     .disabled(!tunnel.canChangeNetworkEngine)
                 }
             } header: {
-                Text("Network engine")
+                Text(AppLocalization.string("Network engine"))
             } footer: {
                 Text(tunnel.networkEngineMode.localizedDetail)
             }
@@ -1965,7 +1965,7 @@ private struct SettingsView: View {
 
             Section {
                 HStack(spacing: AetherVisual.s3) {
-                    Text("Routing mode")
+                    Text(AppLocalization.string("Routing mode"))
                         .foregroundStyle(.primary)
                     AetherHelpButton(topic: .routingMode)
 
@@ -1996,14 +1996,14 @@ private struct SettingsView: View {
                 )
                 .accessibilityIdentifier("domestic-optimization-toggle")
             } header: {
-                Text("Routing")
+                Text(AppLocalization.string("Routing"))
             } footer: {
                 Text(
                     AppLocalization.string(
                         "Injects high-speed direct routing and domestic DNS policy for Apple CDN, updates, and domestic websites."
                     )
                 )
-                Text("Routing mode changes apply immediately when connected. Switching engines reconnects automatically. Network optimization applies on the next connection or profile reload.")
+                Text(AppLocalization.string("Routing mode changes apply immediately when connected. Switching engines reconnects automatically. Network optimization applies on the next connection or profile reload."))
             }
 
 #if AETHERROUTE_INDEPENDENT
@@ -2018,7 +2018,7 @@ private struct SettingsView: View {
 
     private var appearanceSettings: some View {
         Section {
-            LabeledContent("Application theme") {
+            LabeledContent(AppLocalization.string("Application theme")) {
                 AetherSegmentedPicker(
                     selection: Binding(
                         get: { appearance.preference },
@@ -2035,9 +2035,9 @@ private struct SettingsView: View {
             }
 
         } header: {
-            Text("Appearance")
+            Text(AppLocalization.string("Appearance"))
         } footer: {
-            Text("Theme changes apply immediately and are remembered next time.")
+            Text(AppLocalization.string("Theme changes apply immediately and are remembered next time."))
         }
     }
 
@@ -2100,7 +2100,7 @@ private struct SettingsView: View {
 
     private var languageSettings: some View {
         Section {
-            LabeledContent("Application language") {
+            LabeledContent(AppLocalization.string("Application language")) {
                 AetherSegmentedPicker(
                     selection: languageBinding,
                     options: [
@@ -2116,9 +2116,9 @@ private struct SettingsView: View {
             }
 
         } header: {
-            Text("Language")
+            Text(AppLocalization.string("Language"))
         } footer: {
-            Text("Language changes apply immediately throughout AetherRoute.")
+            Text(AppLocalization.string("Language changes apply immediately throughout AetherRoute."))
         }
     }
 
@@ -2145,7 +2145,7 @@ private struct SettingsView: View {
     private var localProxySection: some View {
         Section {
             Toggle(
-                "Loopback HTTP and SOCKS5 proxy",
+                AppLocalization.string("Loopback HTTP and SOCKS5 proxy"),
                 isOn: Binding(
                     get: { tunnel.localProxySettings.isEnabled },
                     set: { tunnel.setLocalProxyEnabled($0) }
@@ -2157,7 +2157,7 @@ private struct SettingsView: View {
             )
             .accessibilityIdentifier("local-proxy-toggle")
 
-            LabeledContent("Mixed proxy (HTTP and SOCKS5)") {
+            LabeledContent(AppLocalization.string("Mixed proxy (HTTP and SOCKS5)")) {
                 LocalProxyPortField(
                     title: "HTTP proxy port",
                     port: tunnel.localProxySettings.httpPort,
@@ -2167,7 +2167,7 @@ private struct SettingsView: View {
             }
             .disabled(!canEditLocalProxyPorts)
 
-            LabeledContent("Additional SOCKS5-only port") {
+            LabeledContent(AppLocalization.string("Additional SOCKS5-only port")) {
                 LocalProxyPortField(
                     title: "SOCKS5 proxy port",
                     port: tunnel.localProxySettings.socksPort,
@@ -2179,7 +2179,7 @@ private struct SettingsView: View {
 
             HStack {
                 AetherCopyButton(
-                    title: Text("Copy Shell Environment"),
+                    title: Text(AppLocalization.string("Copy Shell Environment")),
                     systemImage: "terminal",
                     action: copyLocalProxyShellEnvironment
                 )
@@ -2187,7 +2187,7 @@ private struct SettingsView: View {
                 .accessibilityIdentifier("copy-shell-proxy-button")
 
                 AetherCopyButton(
-                    title: Text("Copy Clear Command"),
+                    title: Text(AppLocalization.string("Copy Clear Command")),
                     systemImage: "xmark.circle"
                 ) {
                     copyToPasteboard(
@@ -2214,7 +2214,7 @@ private struct SettingsView: View {
             }
 
         } header: {
-            Text("Local proxy")
+            Text(AppLocalization.string("Local proxy"))
         } footer: {
             Text(localProxyDetail)
         }
@@ -2270,7 +2270,7 @@ private struct SettingsView: View {
     private var automationSettings: some View {
         Section {
             Toggle(
-                "Global shortcuts",
+                AppLocalization.string("Global shortcuts"),
                 isOn: Binding(
                     get: { automation.shortcutPreferences.isEnabled },
                     set: { enabled in
@@ -2285,7 +2285,7 @@ private struct SettingsView: View {
                     : AppLocalization.string("Off")
             )
             .accessibilityHint(
-                Text("Shortcuts work while AetherRoute is running and do not require Accessibility access. Notifications are optional and never include profile names, addresses, or traffic details.")
+                Text(AppLocalization.string("Shortcuts work while AetherRoute is running and do not require Accessibility access. Notifications are optional and never include profile names, addresses, or traffic details."))
             )
 
             if automation.shortcutPreferences.isEnabled {
@@ -2306,7 +2306,7 @@ private struct SettingsView: View {
             }
 
             Toggle(
-                "Connection notifications",
+                AppLocalization.string("Connection notifications"),
                 isOn: Binding(
                     get: { automation.notificationsEnabled },
                     set: { enabled in
@@ -2321,11 +2321,11 @@ private struct SettingsView: View {
                     : AppLocalization.string("Off")
             )
             .accessibilityHint(
-                Text("Shortcuts work while AetherRoute is running and do not require Accessibility access. Notifications are optional and never include profile names, addresses, or traffic details.")
+                Text(AppLocalization.string("Shortcuts work while AetherRoute is running and do not require Accessibility access. Notifications are optional and never include profile names, addresses, or traffic details."))
             )
 
             Toggle(
-                "Subscription alerts",
+                AppLocalization.string("Subscription alerts"),
                 isOn: Binding(
                     get: { automation.subscriptionNotificationsEnabled },
                     set: { enabled in
@@ -2341,9 +2341,9 @@ private struct SettingsView: View {
                 .foregroundStyle(AetherVisual.secondaryText)
 
         } header: {
-            Text("Automation")
+            Text(AppLocalization.string("Automation"))
         } footer: {
-            Text("Shortcuts work while AetherRoute is running and do not require Accessibility access. Notifications are optional and never include profile names, addresses, or traffic details.")
+            Text(AppLocalization.string("Shortcuts work while AetherRoute is running and do not require Accessibility access. Notifications are optional and never include profile names, addresses, or traffic details."))
                 .accessibilityHidden(true)
         }
     }

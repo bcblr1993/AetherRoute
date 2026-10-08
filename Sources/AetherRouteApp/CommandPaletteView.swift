@@ -160,7 +160,7 @@ struct CommandPaletteView: View {
             Text(verbatim: key)
                 .font(.caption.monospaced())
                 .padding(.horizontal, AetherVisual.s1)
-                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
+                .background(AetherVisual.neutralFill, in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
             Text(title)
         }
     }

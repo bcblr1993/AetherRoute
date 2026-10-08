@@ -10,20 +10,7 @@ struct EmptyProfileOnboardingCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
             HStack(spacing: AetherVisual.s4) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.accentColor.opacity(0.18), Color.accentColor.opacity(0.08)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    Image(systemName: "sparkles")
-                        .font(.title.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                }
-                .frame(width: 48, height: 48)
+                AetherIconTile(symbol: "sparkles", color: AppSection.profiles.tileColor, size: AetherVisual.sheetIconSize)
 
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     Text(AppLocalization.string("Welcome to AetherRoute"))
@@ -118,11 +105,12 @@ struct ExternalSubscriptionConfirmationSheet: View {
             AetherSheetHeader(
                 symbol: "link.badge.plus",
                 title: AppLocalization.string("Review Subscription Link"),
-                subtitle: AppLocalization.string("AetherRoute has not downloaded or changed anything yet.")
+                subtitle: AppLocalization.string("AetherRoute has not downloaded or changed anything yet."),
+                tint: AetherVisual.subscriptionTint
             )
 
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                Text("Address")
+                Text(AppLocalization.string("Address"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AetherVisual.secondaryText)
                 Label(request.providerHost, systemImage: "lock.fill")
@@ -130,19 +118,19 @@ struct ExternalSubscriptionConfirmationSheet: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("external-subscription-host")
-                Text("AetherRoute will not access this address until you confirm.")
+                Text(AppLocalization.string("AetherRoute will not access this address until you confirm."))
                     .font(.caption)
                     .foregroundStyle(AetherVisual.secondaryText)
             }
             .padding(AetherVisual.s4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                Color.secondary.opacity(0.06),
+                AetherVisual.subtleFill,
                 in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
             )
 
             Label(
-                "If you continue, AetherRoute will make one HTTPS request, validate the size and contents, store the subscription in encrypted profile storage, and activate it.",
+                AppLocalization.string("If you continue, AetherRoute will make one HTTPS request, validate the size and contents, store the subscription in encrypted profile storage, and activate it."),
                 systemImage: "checkmark.shield"
             )
             .font(.callout)
@@ -181,7 +169,7 @@ struct ExternalSubscriptionConfirmationSheet: View {
             }
 
             HStack {
-                Button("Cancel", role: .cancel) {
+                Button(AppLocalization.string("Cancel"), role: .cancel) {
                     tunnel.cancelExternalSubscriptionImport()
                     dismiss()
                 }
@@ -218,7 +206,7 @@ struct ExternalSubscriptionConfirmationSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(width: AetherVisual.sheetIdealWidth)
+        .aetherSheetFrame()
         .interactiveDismissDisabled(isConfirming)
     }
 }
@@ -426,7 +414,7 @@ struct ProfilesView: View {
     private var pageHeader: some View {
         AetherPageHeader(.profiles) {
             Menu {
-                Button("Add Subscription…", systemImage: "link.badge.plus") {
+                Button(AppLocalization.string("Add Subscription…"), systemImage: "link.badge.plus") {
                     tunnel.clearProfileMessage()
                     subscriptionURL = ""
                     isSubscriptionEditorPresented = true
@@ -434,14 +422,14 @@ struct ProfilesView: View {
                 .disabled(!tunnel.canImportOrAddProfile)
                 .accessibilityIdentifier("add-subscription")
 
-                Button("Import Profile…", systemImage: "square.and.arrow.down") {
+                Button(AppLocalization.string("Import Profile…"), systemImage: "square.and.arrow.down") {
                     tunnel.clearProfileMessage()
                     presentFileImporter(.profile)
                 }
                 .disabled(!tunnel.canImportOrAddProfile)
                 .accessibilityIdentifier("import-profile")
 
-                Button("Add Node…", systemImage: "plus.circle") {
+                Button(AppLocalization.string("Add Node…"), systemImage: "plus.circle") {
                     tunnel.clearProfileMessage()
                     isManualNodeEditorPresented = true
                 }
@@ -464,13 +452,13 @@ struct ProfilesView: View {
 
                 Divider()
 
-                Button("Export Portable Archive…", systemImage: "square.and.arrow.up") {
+                Button(AppLocalization.string("Export Portable Archive…"), systemImage: "square.and.arrow.up") {
                     tunnel.clearProfileMessage()
                     isExportPasswordPresented = true
                 }
                 .disabled(tunnel.profiles.isEmpty || tunnel.isTransferringProfiles)
 
-                Button("Import Portable Archive…", systemImage: "square.and.arrow.down") {
+                Button(AppLocalization.string("Import Portable Archive…"), systemImage: "square.and.arrow.down") {
                     tunnel.clearProfileMessage()
                     presentFileImporter(.portableArchive)
                 }
@@ -509,25 +497,18 @@ struct ProfilesView: View {
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s3)
-        .background(
-            (isError ? Color.orange : Color.green).opacity(0.08),
-            in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
-                .stroke((isError ? Color.orange : Color.green).opacity(0.2), lineWidth: 0.5)
-        }
+        .aetherCallout(tint: isError ? .orange : .green)
     }
 
     private var importProgressCard: some View {
         HStack(spacing: AetherVisual.s3) {
             ProgressView()
                 .controlSize(.small)
-            Text("Importing profile…")
+            Text(AppLocalization.string("Importing profile…"))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
             Spacer(minLength: AetherVisual.s2)
-            Button("Cancel", role: .cancel) {
+            Button(AppLocalization.string("Cancel"), role: .cancel) {
                 tunnel.cancelProfileImport()
             }
         }
@@ -540,20 +521,7 @@ struct ProfilesView: View {
     private var emptyOnboardingSection: some View {
         VStack(spacing: AetherVisual.s5) {
             VStack(spacing: AetherVisual.s3) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.accentColor.opacity(0.18), Color.accentColor.opacity(0.06)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    Image(systemName: "doc.badge.plus")
-                        .font(.largeTitle.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                }
-                .frame(width: 60, height: 60)
+                AetherIconTile(symbol: "doc.badge.plus", color: AppSection.profiles.tileColor, size: AetherVisual.heroTileSize)
                 .padding(.top, AetherVisual.s3)
 
                 Text(AppLocalization.string("No Profiles Added"))
@@ -575,14 +543,7 @@ struct ProfilesView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: AetherVisual.s2) {
                         HStack {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                                    .fill(Color.accentColor.opacity(0.12))
-                                Image(systemName: "link.badge.plus")
-                                    .font(.title2.weight(.semibold))
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                            .frame(width: 34, height: 34)
+                            AetherIconTile(symbol: "link.badge.plus", color: AetherVisual.subscriptionTint, size: AetherVisual.cardTileSize)
 
                             Spacer(minLength: 0)
 
@@ -615,14 +576,7 @@ struct ProfilesView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: AetherVisual.s2) {
                         HStack {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                                    .fill(Color.accentColor.opacity(0.12))
-                                Image(systemName: "square.and.arrow.down")
-                                    .font(.title2.weight(.semibold))
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                            .frame(width: 34, height: 34)
+                            AetherIconTile(symbol: "square.and.arrow.down", color: AetherVisual.localProfileTint, size: AetherVisual.cardTileSize)
 
                             Spacer(minLength: 0)
 
@@ -655,14 +609,7 @@ struct ProfilesView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: AetherVisual.s2) {
                         HStack {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                                    .fill(Color.accentColor.opacity(0.12))
-                                Image(systemName: "icloud.fill")
-                                    .font(.title2.weight(.semibold))
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                            .frame(width: 34, height: 34)
+                            AetherIconTile(symbol: "icloud.fill", color: AetherVisual.iCloudTint, size: AetherVisual.cardTileSize)
 
                             Spacer(minLength: 0)
 
@@ -721,7 +668,7 @@ struct ProfilesView: View {
             Text(AppLocalization.string("My profiles"))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(AetherVisual.secondaryText)
-                .padding(.horizontal, AetherVisual.s2)
+                .padding(.horizontal, AetherVisual.sectionHeaderInset)
                 .accessibilityAddTraits(.isHeader)
 
             VStack(spacing: 0) {
@@ -771,15 +718,7 @@ struct ProfilesView: View {
 
     private var supportedFormatsCard: some View {
         HStack(spacing: AetherVisual.s3) {
-            ZStack {
-                RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.12))
-                Image(systemName: "doc.text.fill")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-            }
-            .frame(width: 32, height: 32)
-            .accessibilityHidden(true)
+            AetherIconTile(symbol: "doc.text.fill", color: AetherVisual.localProfileTint, size: AetherVisual.cardTileSize)
 
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 Text(AppLocalization.string("Supported formats"))
@@ -871,9 +810,9 @@ struct RoutingResourcesCard: View {
                 if isWorking {
                     ProgressView()
                         .controlSize(.small)
-                        .accessibilityLabel("Preparing routing rules…")
+                        .accessibilityLabel(AppLocalization.string("Preparing routing rules…"))
                 } else if tunnel.routingResourceMessageIsError {
-                    Button("Retry") {
+                    Button(AppLocalization.string("Retry")) {
                         Task { await tunnel.prepareRequiredRoutingResources() }
                     }
                     .aetherGlassButton()
@@ -891,7 +830,7 @@ struct RoutingResourcesCard: View {
                 HStack(spacing: AetherVisual.s1) {
                     AetherDisclosureChevron(isExpanded: showsAdvanced)
                         .foregroundStyle(.primary)
-                    Text("Advanced")
+                    Text(AppLocalization.string("Advanced"))
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
@@ -959,7 +898,7 @@ struct RoutingResourcesCard: View {
                             .accessibilityIdentifier("routing-resources-lock-reason")
                     }
 
-                    Text("Bundled rules use DB-IP Lite and V2Fly data. Country rule updates may use MaxMind data through Loyalsoldier. See Open-Source Software for sources and licenses.")
+                    Text(AppLocalization.string("Bundled rules use DB-IP Lite and V2Fly data. Country rule updates may use MaxMind data through Loyalsoldier. See Open-Source Software for sources and licenses."))
                         .font(.caption)
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1061,14 +1000,7 @@ struct RoutingResourcesCard: View {
 
     private func resourceRow(_ kind: RoutingResourceKind) -> some View {
         HStack(spacing: AetherVisual.s4) {
-            Image(systemName: resourceSymbol(kind))
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(resourceColor(kind))
-                .frame(width: 42, height: 42)
-                .background(
-                    resourceColor(kind).opacity(0.10),
-                    in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius)
-                )
+            AetherStatusSymbol(symbol: resourceSymbol(kind), color: resourceColor(kind))
 
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(kind.fileName)
@@ -1080,7 +1012,7 @@ struct RoutingResourcesCard: View {
 
             Spacer(minLength: AetherVisual.s3)
 
-            Button("Import…", systemImage: "square.and.arrow.down") {
+            Button(AppLocalization.string("Import…"), systemImage: "square.and.arrow.down") {
                 importResource(kind)
             }
             .aetherGlassButton()
@@ -1147,7 +1079,7 @@ struct RoutingResourcesCard: View {
 /// A profile as a System Settings row: kind tile, name, details, and on the
 /// trailing edge either "Current" or a Use button.
 private struct ManagedProfileRow: View {
-    static let tileSize: CGFloat = 34
+    static let tileSize = AetherVisual.cardTileSize
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var isHovered = false
     @State private var inspectedNodeCount: Int?
@@ -1275,14 +1207,14 @@ private struct ManagedProfileRow: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .frame(width: 26, height: 26)
-            .accessibilityLabel("Profile actions")
+            .accessibilityLabel(AppLocalization.string("Profile actions"))
             .accessibilityIdentifier("profile-actions-\(managed.id.uuidString)")
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.sRow)
         .frame(minHeight: 60)
         .contentShape(Rectangle())
-        .background(isHovered ? Color.primary.opacity(0.04) : Color.clear)
+        .background(isHovered ? AetherVisual.hoverFill : Color.clear)
         .onHover { isHovered = $0 }
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: isActive)
         .onTapGesture(count: 2) {
@@ -1352,9 +1284,9 @@ private struct ManagedProfileRow: View {
 
     /// One tile colour per kind of profile, like System Settings' rows.
     private var iconTint: Color {
-        if isSubscription { return .teal }
-        if managed.profile.nativeNodes != nil { return .indigo }
-        return .orange
+        if isSubscription { return AetherVisual.subscriptionTint }
+        if managed.profile.nativeNodes != nil { return AetherVisual.manualNodesTint }
+        return AetherVisual.localProfileTint
     }
 
     private var detail: String {
@@ -1406,7 +1338,8 @@ private struct ProfileRenameSheet: View {
             AetherSheetHeader(
                 symbol: "pencil",
                 title: AppLocalization.string("Rename Profile"),
-                subtitle: AppLocalization.string("Choose a short name that is easy to recognize in the menu bar.")
+                subtitle: AppLocalization.string("Choose a short name that is easy to recognize in the menu bar."),
+                tint: AppSection.profiles.tileColor
             )
 
             TextField(AppLocalization.string("Profile name"), text: $name)
@@ -1418,7 +1351,7 @@ private struct ProfileRenameSheet: View {
                     .foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
             HStack {
-                Button("Cancel", role: .cancel) { requestsCancel = true }
+                Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
                     .keyboardShortcut(.cancelAction)
                     .disabled(isSaving)
                 Spacer()
@@ -1445,7 +1378,7 @@ private struct ProfileRenameSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(minWidth: AetherVisual.sheetMinWidth, idealWidth: AetherVisual.sheetIdealWidth, maxWidth: AetherVisual.sheetMaxWidth)
+        .aetherSheetFrame()
         .disabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: name != profile.profile.name, isSaving: isSaving, requested: $requestsCancel))
     }
@@ -1462,7 +1395,8 @@ struct SubscriptionEditorSheet: View {
             AetherSheetHeader(
                 symbol: "link.badge.plus",
                 title: AppLocalization.string("Add Profile Subscription"),
-                subtitle: AppLocalization.string("Paste the HTTPS address supplied by your trusted provider.")
+                subtitle: AppLocalization.string("Paste the HTTPS address supplied by your trusted provider."),
+                tint: AetherVisual.subscriptionTint
             )
 
             HStack(spacing: AetherVisual.s2) {
@@ -1510,12 +1444,12 @@ struct SubscriptionEditorSheet: View {
             Group {
 #if AETHERROUTE_DEVELOPMENT_PREVIEW
                 Label(
-                    "The download is size-limited and validated, then kept only for this preview session. It cannot enable system routing.",
+                    AppLocalization.string("The download is size-limited and validated, then kept only for this preview session. It cannot enable system routing."),
                     systemImage: "checkmark.shield"
                 )
 #else
                 Label(
-                    "The address is stored inside the encrypted profile. Downloads are size-limited and validated before activation.",
+                    AppLocalization.string("The address is stored inside the encrypted profile. Downloads are size-limited and validated before activation."),
                     systemImage: "lock.shield"
                 )
 #endif
@@ -1525,7 +1459,7 @@ struct SubscriptionEditorSheet: View {
             .fixedSize(horizontal: false, vertical: true)
 
             HStack {
-                Button("Cancel", role: .cancel) { requestsCancel = true }
+                Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button {
@@ -1551,7 +1485,7 @@ struct SubscriptionEditorSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .frame(minWidth: AetherVisual.sheetMinWidth, idealWidth: AetherVisual.sheetIdealWidth, maxWidth: AetherVisual.sheetMaxWidth)
+        .aetherSheetFrame()
         .disabled(tunnel.isRefreshingSubscription)
         .modifier(DiscardChangesModifier(isDirty: !urlText.isEmpty, isSaving: tunnel.isRefreshingSubscription, requested: $requestsCancel))
         .onAppear {
@@ -1594,7 +1528,7 @@ struct SubscriptionUsageLine: View {
                     // Drawn rather than ProgressView, which turns grey in an
                     // inactive window and would hide the warning colour.
                     Capsule()
-                        .fill(Color.primary.opacity(0.12))
+                        .fill(AetherVisual.neutralFill)
                         .overlay(alignment: .leading) {
                             GeometryReader { proxy in
                                 Capsule()

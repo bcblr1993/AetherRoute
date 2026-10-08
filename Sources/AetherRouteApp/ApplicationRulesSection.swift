@@ -211,7 +211,7 @@ private struct ApplicationRuleRow: View {
                     .font(.subheadline)
                     .foregroundStyle(Color.red.opacity(0.85))
                     .frame(width: 24, height: 24)
-                    .background(Color.red.opacity(0.1), in: Circle())
+                    .background(AetherVisual.tintFill(.red), in: Circle())
             }
             .buttonStyle(.aetherPressable)
             .help(AppLocalization.string("Delete rule"))
