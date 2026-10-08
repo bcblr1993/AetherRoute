@@ -63,7 +63,7 @@ fail_if_found \
 
 fail_if_found \
   "icon tiles take one of the five AetherVisual tile sizes" \
-  '(AetherIconTile|AetherMonogramTile|AetherStatusSymbol)\([^)]*size:[[:space:]]*[0-9]'
+  '(AetherIconTile|AetherMonogramTile|AetherStatusSymbol|AetherRouteBrandTile)\([^)]*size:[[:space:]]*[0-9]'
 
 fail_if_found \
   "drawn grey backgrounds use AetherVisual.subtleFill, hoverFill or neutralFill" \
@@ -87,6 +87,11 @@ fail_if_found \
 fail_if_found \
   "row heights use AetherVisual.rowHeight, compactRowHeight, listRowHeight, tableRowHeight or twoLineRowHeight" \
   '\.frame\([^)]*minHeight:[[:space:]]*[1-9][0-9]*[,)]' \
+  -g '!AetherRouteVisualSystem.swift'
+
+fail_if_found \
+  "state colours on text and symbols use AetherReadableTint or AetherInlineMessage, not the raw system colour" \
+  '\.foregroundStyle\([[:space:]]*\.(red|orange|yellow|green)[[:space:]]*\)' \
   -g '!AetherRouteVisualSystem.swift'
 
 fail_if_found \

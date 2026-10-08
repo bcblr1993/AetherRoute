@@ -14,7 +14,7 @@ struct EmptyProfileOnboardingCard: View {
 
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     Text(AppLocalization.string("Welcome to AetherRoute"))
-                        .font(.headline.weight(.bold))
+                        .font(.headline)
                         .foregroundStyle(.primary)
 
                     Text(AppLocalization.string("Import a subscription URL or configuration file to get started with high-speed, secure routing."))
@@ -88,7 +88,7 @@ struct EmptyProfileOnboardingCard: View {
                 Spacer()
             }
         }
-        .padding(AetherVisual.s5)
+        .padding(AetherVisual.heroCardPadding)
         .aetherPanel()
         .accessibilityIdentifier("empty-profile-onboarding-card")
     }
@@ -138,12 +138,11 @@ struct ExternalSubscriptionConfirmationSheet: View {
             .fixedSize(horizontal: false, vertical: true)
 
             if !tunnel.canImportOrAddProfileRegardlessOfPrivacy {
-                Label(
-                    AppLocalization.string("Wait for current profile operations to finish before importing."),
+                AetherInlineMessage(
+                    text: AppLocalization.string("Wait for current profile operations to finish before importing."),
+                    kind: .warning,
                     systemImage: "hourglass"
                 )
-                .font(.callout)
-                .foregroundStyle(.orange)
             } else if tunnel.isEnabled {
                 Label(
                     AppLocalization.string("The subscription will be downloaded and safely added to your profile library without interrupting your connection."),
@@ -162,21 +161,18 @@ struct ExternalSubscriptionConfirmationSheet: View {
 
             if tunnel.profileMessageIsError,
                let message = tunnel.profileMessage {
-                Label(message, systemImage: "exclamationmark.triangle")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                AetherInlineMessage(text: message)
             }
 
             HStack {
+                // Cancel and the primary action share the trailing edge, as in
+                // every macOS sheet.
+                Spacer()
                 Button(AppLocalization.string("Cancel"), role: .cancel) {
                     tunnel.cancelExternalSubscriptionImport()
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
-
-                Spacer()
-
                 Button {
                     isConfirming = true
                     Task {
@@ -494,6 +490,8 @@ struct ProfilesView: View {
                     .foregroundStyle(AetherVisual.secondaryText)
             }
             .buttonStyle(.plain)
+            .help(AppLocalization.string("Close"))
+            .accessibilityLabel(AppLocalization.string("Close"))
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s3)
@@ -648,7 +646,7 @@ struct ProfilesView: View {
             .foregroundStyle(.primary)
             .padding(.bottom, AetherVisual.s2)
         }
-        .padding(AetherVisual.s6)
+        .padding(AetherVisual.heroCardPadding)
         .aetherPanel()
     }
 
@@ -718,7 +716,7 @@ struct ProfilesView: View {
 
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 Text(AppLocalization.string("Supported formats"))
-                    .font(.subheadline.weight(.semibold))
+                    .font(.headline)
                     .foregroundStyle(.primary)
 
                 Text(AppLocalization.string("Supports Clash-compatible YAML/JSON profiles, HTTPS subscriptions, and common node links."))
@@ -729,7 +727,7 @@ struct ProfilesView: View {
 
             Spacer(minLength: AetherVisual.s2)
         }
-        .padding(AetherVisual.s4)
+        .padding(AetherVisual.cardPadding)
         .aetherPanel()
     }
 
@@ -902,7 +900,7 @@ struct RoutingResourcesCard: View {
                 .transition(AetherVisual.insertion)
             }
         }
-        .padding(AetherVisual.s4)
+        .padding(AetherVisual.cardPadding)
         .aetherPanel()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("routing-resources-card")
@@ -1341,14 +1339,17 @@ private struct ProfileRenameSheet: View {
                 .accessibilityIdentifier("profile-name-field")
 
             if saveFailed {
-                Text(tunnel.profileMessage ?? AppLocalization.string("Could not save the profile. Try again."))
-                    .foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                AetherInlineMessage(
+                    text: tunnel.profileMessage ?? AppLocalization.string("Could not save the profile. Try again.")
+                )
             }
             HStack {
+                // Cancel and the primary action share the trailing edge, as in
+                // every macOS sheet.
+                Spacer()
                 Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
                     .keyboardShortcut(.cancelAction)
                     .disabled(isSaving)
-                Spacer()
                 Button {
                     guard !isSaving else { return }
                     isSaving = true
@@ -1453,9 +1454,11 @@ struct SubscriptionEditorSheet: View {
             .fixedSize(horizontal: false, vertical: true)
 
             HStack {
+                // Cancel and the primary action share the trailing edge, as in
+                // every macOS sheet.
+                Spacer()
                 Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
                     .keyboardShortcut(.cancelAction)
-                Spacer()
                 Button {
                     Task {
                         if await tunnel.addSubscription(urlText: urlText) {

@@ -374,7 +374,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 0) {
             // 1. 顶部品牌与状态指示栏
             HStack(spacing: AetherVisual.sRow) {
-                AetherRouteBrandTile(size: 28, isActive: tunnel.isConnected)
+                AetherRouteBrandTile(size: AetherVisual.brandMarkSize, isActive: tunnel.isConnected)
 
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     Text(verbatim: "AetherRoute")
@@ -910,7 +910,7 @@ private struct RecoverySection: View {
         HStack(alignment: .center, spacing: AetherVisual.s3) {
             Image(systemName: "wrench.and.screwdriver")
                 .font(.body.weight(.semibold))
-                .foregroundStyle(.orange)
+                .foregroundStyle(AetherReadableTint(color: .orange))
                 .accessibilityHidden(true)
             Text(recoveryDetail)
                 .font(.callout)
@@ -1784,7 +1784,7 @@ private struct TrafficCard: View {
                     .transition(.opacity)
             }
         }
-        .padding(AetherVisual.s5)
+        .padding(AetherVisual.cardPadding)
         .aetherPanel()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("overview-traffic")

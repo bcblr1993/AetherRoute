@@ -444,7 +444,7 @@ struct DNSView: View {
             AetherStatusSymbol(symbol: "info.circle.fill", color: .blue)
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 Text(AppLocalization.string("Transparent Proxy is on"))
-                    .font(.body.weight(.semibold))
+                    .font(.headline)
                 Text(AppLocalization.string("With Transparent Proxy, apps use the system DNS. Switch to TUN to adjust the resolution mode, IPv6 and more here."))
                     .font(.caption)
                     .foregroundStyle(AetherVisual.secondaryText)
@@ -465,7 +465,7 @@ struct DNSView: View {
             .help(AppLocalization.string("While connected, AetherRoute reconnects with TUN."))
             .accessibilityIdentifier("dns-switch-to-tun")
         }
-        .padding(AetherVisual.s4)
+        .padding(AetherVisual.cardPadding)
         .aetherPanel()
     }
 
@@ -701,7 +701,7 @@ struct DNSView: View {
             .font(.subheadline)
             .foregroundStyle(Color.accentColor)
         }
-        .padding(AetherVisual.s5)
+        .padding(AetherVisual.cardPadding)
         .aetherPanel()
     }
 

@@ -1059,7 +1059,7 @@ private struct MenuBarContent: View {
 #endif
             if let copiedMessage {
                 Label(copiedMessage, systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(AetherReadableTint(color: .green))
                     .transition(.opacity)
             }
             footerActions
@@ -1200,7 +1200,7 @@ private struct MenuBarContent: View {
     private var privacyRequiredContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: AetherVisual.s3) {
-                AetherRouteBrandTile(size: 38)
+                AetherRouteBrandTile(size: AetherVisual.sheetIconSize)
 
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text(tunnel.hasAcceptedPrivacyDisclosure
@@ -2065,18 +2065,15 @@ private struct SettingsView: View {
             .accessibilityIdentifier("launch-at-login-toggle")
 
             if startup.serviceStatus == .requiresApproval {
-                Label(
-                    AppLocalization.string(
+                AetherInlineMessage(
+                    text: AppLocalization.string(
                         "AetherRoute requires approval in System Settings > General > Login Items & Extensions."
                     ),
-                    systemImage: "exclamationmark.triangle.fill"
+                    kind: .warning,
+                    isCompact: true
                 )
-                .font(.caption)
-                .foregroundStyle(.orange)
             } else if let error = startup.errorMessage {
-                Label(error, systemImage: "exclamationmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                AetherInlineMessage(text: error, isCompact: true)
             }
         } header: {
             Text(AppLocalization.string("Startup"))

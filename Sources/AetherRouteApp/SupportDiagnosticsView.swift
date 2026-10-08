@@ -528,7 +528,7 @@ struct SupportDiagnosticsView: View {
                     .disabled(isCreatingReport)
                     .accessibilityIdentifier("export-diagnostics")
                 }
-                .padding(AetherVisual.s4)
+                .padding(AetherVisual.cardPadding)
                 .aetherPanel()
 
                 if let statusMessage {
@@ -887,7 +887,7 @@ struct SupportDiagnosticsView: View {
                 }
             }
         }
-        .padding(AetherVisual.s4)
+        .padding(AetherVisual.cardPadding)
         .aetherPanel()
     }
 
@@ -945,15 +945,15 @@ struct SupportDiagnosticsView: View {
         case .passed:
             Image(systemName: "checkmark.circle.fill")
                 .font(.body)
-                .foregroundStyle(.green)
+                .foregroundStyle(AetherReadableTint(color: .green))
         case .warning:
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.body)
-                .foregroundStyle(.orange)
+                .foregroundStyle(AetherReadableTint(color: .orange))
         case .failed:
             Image(systemName: "xmark.circle.fill")
                 .font(.body)
-                .foregroundStyle(.red)
+                .foregroundStyle(AetherReadableTint(color: .red))
         }
     }
 
@@ -1058,7 +1058,7 @@ struct SupportDiagnosticsView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(AetherVisual.s4)
+            .padding(AetherVisual.cardPadding)
             .aetherPanel()
         }
     }

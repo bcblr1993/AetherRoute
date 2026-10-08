@@ -72,7 +72,7 @@ struct NetworkSetupView: View {
     private var header: some View {
         VStack(spacing: AetherVisual.s3) {
             ZStack(alignment: .bottomTrailing) {
-                AetherRouteBrandTile(size: 72)
+                AetherRouteBrandTile(size: AetherVisual.brandHeroSize)
                 Image(systemName: "lock.shield.fill")
                     .font(.title2)
                     .symbolRenderingMode(.palette)
@@ -107,6 +107,7 @@ struct NetworkSetupView: View {
             HStack(spacing: AetherVisual.s3) {
                 if !isOnboarding, let onClose {
                     Button(AppLocalization.string("Later"), action: onClose)
+                        .aetherGlassButton()
                         .controlSize(.large)
                         .keyboardShortcut(.cancelAction)
                 }
@@ -114,6 +115,7 @@ struct NetworkSetupView: View {
                     Button(AppLocalization.string("Open System Settings"), systemImage: "gearshape") {
                         tunnel.openNetworkExtensionSettings()
                     }
+                    .aetherGlassButton()
                     .controlSize(.large)
                     .accessibilityIdentifier("network-setup-open-settings")
                 }
@@ -239,7 +241,7 @@ private struct NetworkSetupEngineCard: View {
                 }
             }
         }
-        .padding(AetherVisual.s4)
+        .padding(AetherVisual.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .aetherPanel()
         .overlay {
@@ -374,7 +376,7 @@ struct NetworkSetupGuide: View {
                 .opacity(activeStep == nil || step == activeStep ? 1 : 0.55)
             }
         }
-        .padding(AetherVisual.s4)
+        .padding(AetherVisual.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .aetherPanel()
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: activeStep)

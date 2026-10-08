@@ -117,7 +117,7 @@ struct ProxiesView: View {
                     groupButton(group, in: groups, fillsWidth: true)
                 }
             }
-            .padding(AetherVisual.sCompact)
+            .padding(AetherVisual.listCardInset)
             .aetherPanel()
         }
     }
@@ -293,9 +293,7 @@ private struct ActiveProxyGroupView: View {
             Divider().padding(.horizontal, AetherVisual.s4)
 
             if let message = tunnel.proxySelectionMessages[group.name] {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                AetherInlineMessage(text: message, isCompact: true)
                     .padding(.horizontal, AetherVisual.s4)
                     .padding(.top, AetherVisual.s3)
                     .transition(AetherVisual.insertion)
@@ -308,7 +306,7 @@ private struct ActiveProxyGroupView: View {
                     .padding(AetherVisual.s4)
             } else {
                 nodeList
-                    .padding(AetherVisual.s2)
+                    .padding(AetherVisual.listCardInset)
             }
         }
         .aetherPanel()
@@ -765,14 +763,13 @@ struct ProxyInventorySheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                Text(AppLocalization.string("Node inventory & providers"))
-                    .font(.title3.weight(.semibold))
-                Text(AppLocalization.string("For troubleshooting subscription parsing or protocol support."))
-                    .font(.subheadline)
-                    .foregroundStyle(AetherVisual.secondaryText)
-            }
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            AetherSheetHeader(
+                symbol: "server.rack",
+                title: AppLocalization.string("Node inventory & providers"),
+                subtitle: AppLocalization.string("For troubleshooting subscription parsing or protocol support."),
+                tint: AppSection.proxies.tileColor
+            )
             ScrollView {
                 VStack(alignment: .leading, spacing: AetherVisual.s4) {
                     if let summary = tunnel.activeProfileSummary {
@@ -785,7 +782,7 @@ struct ProxyInventorySheet: View {
                                     ForEach(summary.proxyProviders) { provider in
                                         ProviderRow(provider: provider)
                                         if provider.id != summary.proxyProviders.last?.id {
-                                            Divider().padding(.leading, AetherVisual.onboardingTopPadding)
+                                            Divider().padding(.leading, AetherVisual.rowDividerInset)
                                         }
                                     }
                                 }
@@ -798,10 +795,11 @@ struct ProxyInventorySheet: View {
             HStack {
                 Spacer()
                 Button(AppLocalization.string("Done")) { dismiss() }
+                    .aetherGlassButton(prominent: true)
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(AetherVisual.s5)
+        .padding(AetherVisual.dialogPadding)
         .aetherLargeSheetFrame()
         .accessibilityIdentifier("proxy-inventory-sheet")
     }

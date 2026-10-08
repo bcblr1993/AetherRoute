@@ -49,7 +49,7 @@ struct ApplicationRulesSection: View {
                                 .transition(AetherVisual.insertion)
                         }
                     }
-                    .padding(AetherVisual.s3)
+                    .padding(AetherVisual.listCardInset)
                 }
             }
             .aetherPanel()
@@ -153,7 +153,7 @@ private struct ApplicationRuleRow: View {
                 set: { _ in Task { await tunnel.toggleCustomRule(id: rule.id) } }
             ))
             .toggleStyle(.switch)
-            .controlSize(.mini)
+            .controlSize(.small)
             .labelsHidden()
             .accessibilityLabel(Text(name))
 

@@ -64,7 +64,7 @@ struct PrivacyDisclosureView: View {
                     .foregroundStyle(.primary)
             } icon: {
                 Image(systemName: "checkmark.seal.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(AetherReadableTint(color: .green))
             }
             .font(.callout)
             .accessibilityIdentifier("privacy-consent-accepted")

@@ -113,7 +113,7 @@ struct ConnectionsView: View {
     private func footerContents(visibleCount: Int) -> some View {
         if pausedConnections != nil {
             Label(AppLocalization.string("List paused · session counters are live"), systemImage: "pause.circle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(AetherReadableTint(color: .orange))
                 .lineLimit(1)
                 .fixedSize()
                 .transition(AetherVisual.insertion)

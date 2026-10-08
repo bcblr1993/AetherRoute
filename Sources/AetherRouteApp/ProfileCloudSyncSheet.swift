@@ -17,7 +17,7 @@ struct ProfileCloudSyncSheet: View {
 
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
                 Toggle(AppLocalization.string("Enable iCloud Sync"), isOn: $cloudSync.isCloudSyncEnabled)
-                    .toggleStyle(.switch)
+                    .toggleStyle(AetherRowToggleStyle())
                     .accessibilityIdentifier("icloud-sync-toggle")
 
                 Text(AppLocalization.string("Profiles are encrypted with AES-256-GCM before being stored in iCloud. The encryption key is protected by iCloud Keychain and synchronizes across devices with the same Apple ID."))

@@ -89,6 +89,21 @@ around them.
   220; on a row of its own it fills the column.
 - **Separators.** `Divider()` as the system draws it, never faded; a vertical
   one between values on a line is `inlineSeparatorHeight` tall.
+- **Cards.** Content cards are inset `cardPadding` (16), a welcome or
+  onboarding card `heroCardPadding` (20), and a card holding a list whose
+  rows carry their own padding `listCardInset` (8). A card's title is
+  `.headline`.
+- **Sheet footers.** Cancel and the primary action both sit on the
+  trailing edge, Cancel first, as in every macOS sheet; the primary action
+  is the prominent glass button with the default-action shortcut, and a
+  sheet with a single "Done" uses the same. Sheet headers are
+  `AetherSheetHeader`.
+- **Messages.** `AetherInlineMessage`: red with a circle when an action
+  failed, orange with a triangle when something needs attention, compact
+  inside forms. Any other state colour on text or a symbol goes through
+  `AetherReadableTint`.
+- **Switches.** A labelled switch is a row (`AetherRowToggleStyle`, regular
+  size); a switch inside a list row is small.
 - **Copy.** Interface strings go through `AppLocalization.string`, so the
   language chosen in Settings applies everywhere; names that are never
   translated use `Text(verbatim:)`.

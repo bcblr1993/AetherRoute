@@ -135,12 +135,7 @@ struct NativeProfileEditorSheet: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
             if let validationMessage {
-                Label(
-                    validationMessage,
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-                .font(.callout)
-                .foregroundStyle(.orange)
+                AetherInlineMessage(text: validationMessage, kind: .warning)
             } else {
                 Label(
                     AppLocalization.format(
@@ -160,14 +155,15 @@ struct NativeProfileEditorSheet: View {
                 }
             }
             if let message = tunnel.profileMessage, tunnel.profileMessageIsError {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                AetherInlineMessage(text: message)
             }
             HStack {
+                // Cancel and the primary action share the trailing edge, as in
+                // every macOS sheet.
+                Spacer()
                 Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
                     .keyboardShortcut(.cancelAction)
                     .disabled(isSaving)
-                Spacer()
                 Button {
                     isSaving = true
                     Task {

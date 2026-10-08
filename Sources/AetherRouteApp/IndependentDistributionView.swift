@@ -75,7 +75,7 @@ struct IndependentDistributionView: View {
                 get: { sparkle.automaticallyChecksForUpdates },
                 set: { sparkle.setAutomaticallyChecksForUpdates($0) }
             ))
-            .toggleStyle(.switch)
+            .toggleStyle(AetherRowToggleStyle())
         } header: {
             Text(AppLocalization.string("Software Updates"))
         }
@@ -100,7 +100,7 @@ struct IndependentDistributionView: View {
                 Text(AppLocalization.string("No activation required"))
             } icon: {
                 Image(systemName: "checkmark.seal.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(AetherReadableTint(color: .green))
             }
             .font(.headline)
             .foregroundStyle(.primary)
@@ -147,10 +147,7 @@ struct IndependentDistributionView: View {
             }
 
             if let message = distribution.licenseMessage {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                AetherInlineMessage(text: message, kind: .warning, isCompact: true)
                     .accessibilityIdentifier("license-service-message")
             }
 
@@ -216,10 +213,10 @@ struct IndependentDistributionView: View {
                 set: { sparkle.setAutomaticallyChecksForUpdates($0) }
             )) {
                 Text(AppLocalization.string("Automatically check for updates"))
-                    .font(.subheadline)
             }
-            .toggleStyle(.switch)
-            .controlSize(.small)
+            // A labelled switch is a row: label leading, regular switch
+            // trailing, as in the Settings forms.
+            .toggleStyle(AetherRowToggleStyle())
         }
     }
 
@@ -267,7 +264,7 @@ struct IndependentDistributionView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4, content: content)
-            .padding(AetherVisual.s5)
+            .padding(AetherVisual.cardPadding)
             .aetherPanel()
     }
 

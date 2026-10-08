@@ -103,10 +103,12 @@ struct ProfileArchivePasswordSheet: View {
             }
 
             HStack {
+                // Cancel and the primary action share the trailing edge, as in
+                // every macOS sheet.
+                Spacer()
                 Button(AppLocalization.string("Cancel"), role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .disabled(isWorking)
-                Spacer()
                 Button {
                     isWorking = true
                     Task {

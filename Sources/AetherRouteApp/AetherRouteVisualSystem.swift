@@ -103,6 +103,13 @@ enum AetherVisual {
     static let pageBottomPadding = s6
     /// Space between top-level blocks of a page, including after its header.
     static let sectionSpacing = s4
+    // Card insets, one per kind of card:
+    /// A card of content: text, controls, a graph.
+    static let cardPadding = s4
+    /// A welcome or onboarding card that stands alone on a page.
+    static let heroCardPadding = s5
+    /// A card that holds a list whose rows carry their own padding.
+    static let listCardInset = s2
     /// How far a group's heading and footnote sit in from its card's edge,
     /// on pages and in Settings alike.
     static let sectionHeaderInset = s2
@@ -151,6 +158,10 @@ enum AetherVisual {
     static let searchFieldWidth: CGFloat = 220
     /// A vertical separator between groups of values on one line.
     static let inlineSeparatorHeight: CGFloat = 18
+    /// The brand mark: beside the app name in the sidebar, and large on
+    /// About and network setup.
+    static let brandMarkSize: CGFloat = 28
+    static let brandHeroSize: CGFloat = 72
     /// An icon-only button inside a row (edit, delete, copy, more).
     static let iconButtonSize: CGFloat = 24
     /// An app's own icon beside its name in a list or table.
@@ -380,6 +391,39 @@ struct AetherRowIconLabel: View {
     private var background: Color {
         if let tint { return AetherVisual.tintFill(tint) }
         return AetherVisual.neutralFill
+    }
+}
+
+/// A one-line message about an action or a field: red with a circle when
+/// something failed (saving, importing), orange with a triangle when
+/// something needs attention (a weakened setting, an invalid value). The
+/// colour is the readable variant so it passes the contrast audit.
+struct AetherInlineMessage: View {
+    enum Kind {
+        case failure
+        case warning
+    }
+
+    let text: String
+    var kind: Kind = .failure
+    /// Overrides the kind's symbol when it says more (an hourglass).
+    var systemImage: String?
+    /// Field notes inside a form use caption; sheet and page messages callout.
+    var isCompact = false
+
+    var body: some View {
+        Label(text, systemImage: systemImage ?? defaultSymbol)
+            .font(isCompact ? .caption : .callout)
+            .foregroundStyle(AetherReadableTint(color: kind == .failure ? .red : .orange))
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+    }
+
+    private var defaultSymbol: String {
+        switch kind {
+        case .failure: "exclamationmark.circle.fill"
+        case .warning: "exclamationmark.triangle.fill"
+        }
     }
 }
 

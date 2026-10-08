@@ -150,6 +150,11 @@ printf '\n.frame(minHeight: 44)\n' >>"$FIXTURE/Sources/AetherRouteApp/Connection
 expect_failure 1 'row heights use AetherVisual' \
   "$FIXTURE/scripts/verify_ui_design_tokens.sh"
 
+write_valid_source
+printf '\nText("x").foregroundStyle(.red)\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'state colours on text and symbols use AetherReadableTint' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
 # Two violations of different rules must both be reported, not just the
 # first one found.
 write_valid_source
@@ -167,4 +172,4 @@ grep -Fq '3 rule(s) violated' "$TEMP/output.log" || {
   exit 1
 }
 
-echo 'UI design-token guards passed: valid source, missing rg, scan failure, PCRE2 failure, forbidden token, literal font size, custom RGB colour, shadow, relative icon size, unlocalized header, missing column budget, spacer minimum, spacing token as radius, tile size, grey fill, literal copy, colour opacity, faded divider, row height and multiple violations reported together.'
+echo 'UI design-token guards passed: valid source, missing rg, scan failure, PCRE2 failure, forbidden token, literal font size, custom RGB colour, shadow, relative icon size, unlocalized header, missing column budget, spacer minimum, spacing token as radius, tile size, grey fill, literal copy, colour opacity, faded divider, row height, raw state colour and multiple violations reported together.'

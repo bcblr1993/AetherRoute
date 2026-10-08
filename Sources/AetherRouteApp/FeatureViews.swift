@@ -35,12 +35,12 @@ extension FeatureSection where Accessory == EmptyView {
 
 struct ProviderRow: View {
     let provider: ProviderConfigurationSummary
+    /// The tile colour of the page the provider feeds (Proxies or Rules).
+    var tint: Color = AppSection.proxies.tileColor
 
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
-            Image(systemName: "shippingbox.fill")
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 32)
+            AetherIconTile(symbol: "shippingbox.fill", color: tint, size: AetherVisual.rowTileSize)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(provider.name).fontWeight(.medium)
                 Text(provider.sourceType.uppercased())

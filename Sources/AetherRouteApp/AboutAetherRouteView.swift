@@ -74,7 +74,7 @@ struct AboutAetherRouteView: View {
     /// Centered, like the system's own About windows: each fact once.
     private var productHeader: some View {
         VStack(spacing: AetherVisual.s2) {
-            AetherRouteBrandTile(size: 72, isActive: true)
+            AetherRouteBrandTile(size: AetherVisual.brandHeroSize, isActive: true)
                 .accessibilityHidden(true)
                 .padding(.bottom, AetherVisual.s1)
             Text(productDisplayName)
@@ -129,6 +129,7 @@ struct AboutAetherRouteView: View {
                 HStack {
                     Spacer()
                     Button(AppLocalization.string("Done")) { isLicensesPresented = false }
+                        .aetherGlassButton(prominent: true)
                         .keyboardShortcut(.defaultAction)
                         .accessibilityIdentifier("licenses-done")
                 }

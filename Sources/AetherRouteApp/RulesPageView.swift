@@ -123,9 +123,9 @@ struct RulesView: View {
                                 section(title: AppLocalization.string("Rule providers"), note: nil) {
                                     VStack(spacing: 0) {
                                         ForEach(summary.ruleProviders) { provider in
-                                            ProviderRow(provider: provider)
+                                            ProviderRow(provider: provider, tint: AppSection.rules.tileColor)
                                             if provider.id != summary.ruleProviders.last?.id {
-                                                Divider().padding(.leading, AetherVisual.onboardingTopPadding)
+                                                Divider().padding(.leading, AetherVisual.rowDividerInset)
                                             }
                                         }
                                     }
@@ -274,7 +274,7 @@ struct RulesView: View {
             if let result = testResult {
                 HStack(spacing: AetherVisual.s2) {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(AetherReadableTint(color: .green))
                         .accessibilityHidden(true)
                     Text(String.localizedStringWithFormat(AppLocalization.string("Matched Rule #%lld"), Int64(result.order)))
                         .font(.callout.weight(.semibold))
@@ -335,7 +335,7 @@ struct RulesView: View {
                 .transition(.opacity)
             }
         }
-        .padding(AetherVisual.s4)
+        .padding(AetherVisual.cardPadding)
         .aetherPanel()
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: testResult?.matchedRule.id)
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: hasAttemptedMatch)
@@ -395,7 +395,7 @@ struct RulesView: View {
                             .transition(AetherVisual.insertion)
                         }
                     }
-                    .padding(AetherVisual.s3)
+                    .padding(AetherVisual.listCardInset)
                 }
             }
             .aetherPanel()
@@ -781,8 +781,10 @@ struct CustomRuleRow: View {
                 get: { rule.isEnabled },
                 set: { _ in onToggle() }
             ))
+            // Switches inside a list row are small; labelled rows use
+            // AetherRowToggleStyle at the regular size.
             .toggleStyle(.switch)
-            .controlSize(.mini)
+            .controlSize(.small)
             .labelsHidden()
 
             CustomRuleBadge()
@@ -1125,16 +1127,16 @@ struct CustomRuleEditorSheet: View {
             }
 
             if saveFailed, let message = tunnel.customRuleMessage {
-                Text(message).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+                AetherInlineMessage(text: message)
             }
             // Action Buttons
             HStack {
-                Button(AppLocalization.string("Cancel")) { requestsCancel = true }
+                // Cancel and the primary action share the trailing edge, as in
+                // every macOS sheet.
+                Spacer()
+                Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
                     .disabled(isSaving)
                     .keyboardShortcut(.cancelAction)
-
-                Spacer()
-
                 Button {
                     if let rule = candidateRule {
                         isSaving = true

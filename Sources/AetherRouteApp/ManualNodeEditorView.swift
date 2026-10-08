@@ -143,7 +143,11 @@ struct ManualNodeEditorSheet: View {
                 .accessibilityIdentifier("manual-node-port")
                 .fieldRow("Port")
             if UInt16(portText) == nil || UInt16(portText) == 0 {
-                Text(AppLocalization.string("Port must be between 1 and 65535.")).font(.caption).foregroundStyle(.orange)
+                AetherInlineMessage(
+                    text: AppLocalization.string("Port must be between 1 and 65535."),
+                    kind: .warning,
+                    isCompact: true
+                )
             }
         }
     }
@@ -305,12 +309,11 @@ struct ManualNodeEditorSheet: View {
                     isOn: $node.tls.skipCertificateVerification
                 )
                 if node.tls.skipCertificateVerification {
-                    Label(
-                        AppLocalization.string("This weakens server identity verification."),
-                        systemImage: "exclamationmark.triangle.fill"
+                    AetherInlineMessage(
+                        text: AppLocalization.string("This weakens server identity verification."),
+                        kind: .warning,
+                        isCompact: true
                     )
-                    .font(.caption)
-                    .foregroundStyle(.orange)
                 }
                 if node.supportsCertificateFingerprint {
                     TextField(
@@ -354,13 +357,11 @@ struct ManualNodeEditorSheet: View {
                     .accessibilityIdentifier("manual-node-client-fingerprint")
                     .fieldRow("Client fingerprint")
                     if let realityValidationMessage {
-                        Label(
-                            realityValidationMessage,
-                            systemImage: "exclamationmark.triangle.fill"
+                        AetherInlineMessage(
+                            text: realityValidationMessage,
+                            kind: .warning,
+                            isCompact: true
                         )
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier(
                             "manual-node-reality-validation"
                         )
@@ -444,10 +445,7 @@ struct ManualNodeEditorSheet: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
             if let errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                AetherInlineMessage(text: errorMessage)
             }
             HStack {
                 storageStatusLabel
@@ -475,7 +473,7 @@ struct ManualNodeEditorSheet: View {
                 .accessibilityIdentifier("create-manual-node")
             }
         }
-        .padding(AetherVisual.s5)
+        .padding(AetherVisual.dialogPadding)
     }
 
     private var storageStatusLabel: some View {
