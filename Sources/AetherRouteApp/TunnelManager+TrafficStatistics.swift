@@ -21,8 +21,7 @@ extension TunnelManager {
         userDefaults.set(enabled, forKey: Self.trafficStatisticsPreferenceKey)
         trafficAccumulator.reset()
         // The polling cadence depends on this setting.
-        stopTelemetryPolling()
-        startTelemetryPollingIfNeeded()
+        restartTelemetryPolling()
     }
 
     func clearTrafficStatistics() {
@@ -30,6 +29,7 @@ extension TunnelManager {
         trafficLedger = TrafficStatisticsLedger()
         trafficAccumulator.reset()
         trafficLedgerSavedAt = nil
+        hasUnsavedTrafficSamples = false
         Task.detached(priority: .utility) {
             try? TrafficStatisticsStore.applicationSupport().clear()
         }
@@ -45,16 +45,22 @@ extension TunnelManager {
         }
         guard !sample.isEmpty else { return }
         trafficLedger.add(sample, day: TrafficStatisticsLedger.dayKey(for: now))
+        hasUnsavedTrafficSamples = true
         saveTrafficLedgerIfNeeded(now: now)
     }
 
     func saveTrafficLedgerIfNeeded(now: Date = .now, force: Bool = false) {
-        guard isTrafficStatisticsEnabled, !isUIReviewMode else { return }
+        // Never write a ledger that was not read first (it would replace the
+        // saved history with an empty one) or one with nothing new.
+        guard isTrafficStatisticsEnabled, !isUIReviewMode,
+              isTrafficLedgerLoaded, hasUnsavedTrafficSamples
+        else { return }
         if !force, let saved = trafficLedgerSavedAt,
            now.timeIntervalSince(saved) < Self.trafficLedgerSaveInterval {
             return
         }
         trafficLedgerSavedAt = now
+        hasUnsavedTrafficSamples = false
         let ledger = trafficLedger
         Task.detached(priority: .utility) {
             try? TrafficStatisticsStore.applicationSupport().save(ledger)

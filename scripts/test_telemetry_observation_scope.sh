@@ -36,8 +36,12 @@ grep -F 'ConnectionsView(telemetry: tunnel.telemetryViewModel)' "$CONTENT" \
   >/dev/null || fail "connections telemetry must be page-scoped"
 grep -F 'LiveTelemetryMetricValue(' "$CONTENT" \
   >/dev/null || fail "overview values must own telemetry observation"
+# The overview's metric values and the sidebar's connection-count badge are
+# the only two observers; both are leaf views, never the window or a page.
 test "$(grep -Fc '@ObservedObject var telemetry: NetworkTelemetryViewModel' \
-  "$CONTENT")" -eq 1 || fail "overview must have exactly one telemetry observer"
+  "$CONTENT")" -eq 2 || fail "overview and sidebar badge must be the only telemetry observers"
+grep -F 'ConnectionCountBadge(telemetry: tunnel.telemetryViewModel)' "$CONTENT" \
+  >/dev/null || fail "sidebar connection count must observe telemetry in its own badge"
 
 control_bar=$(
   awk '

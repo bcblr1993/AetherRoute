@@ -511,10 +511,7 @@ struct ContentView: View {
                 AetherCountBadge(count: summary.proxyCount)
             }
         case .connections:
-            let count = tunnel.telemetryViewModel.snapshot.connections.count
-            if count > 0 {
-                AetherCountBadge(count: count)
-            }
+            ConnectionCountBadge(telemetry: tunnel.telemetryViewModel)
         case .rules:
             if let summary = tunnel.activeProfileSummary, summary.ruleCount > 0 {
                 AetherCountBadge(count: summary.ruleCount)
@@ -1686,6 +1683,19 @@ private struct LiveTelemetryMetric: View {
     }
 }
 
+/// The sidebar's live connection count. It observes telemetry on its own so
+/// each sample redraws only this badge, not the sidebar or the page.
+private struct ConnectionCountBadge: View {
+    @ObservedObject var telemetry: NetworkTelemetryViewModel
+
+    var body: some View {
+        let count = telemetry.snapshot.connections.count
+        if count > 0 {
+            AetherCountBadge(count: count)
+        }
+    }
+}
+
 /// Opens the traffic statistics from the overview's traffic card.
 private struct TrafficStatisticsButton: View {
     @EnvironmentObject private var tunnel: TunnelManager
@@ -1699,7 +1709,7 @@ private struct TrafficStatisticsButton: View {
         .font(.caption)
         .accessibilityIdentifier("overview-traffic-statistics")
         .sheet(isPresented: $isPresented) {
-            TrafficStatisticsSheet()
+            TrafficStatisticsSheet(statistics: tunnel.trafficStatistics)
                 .environmentObject(tunnel)
         }
     }

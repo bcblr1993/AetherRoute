@@ -5,12 +5,27 @@ import NetworkExtension
 import OSLog
 
 extension TunnelManager {
-    func refreshProxySelection(group groupName: String) async {
+    /// Rereads a group's selection from the provider. The Proxies page asks
+    /// on every visit; a group read moments ago on the same connection is
+    /// skipped, because each read updates several published values and so
+    /// redraws the whole window while the page is still appearing.
+    func refreshProxySelection(group groupName: String, now: Date = .now) async {
+        if state == .connected,
+           let last = proxySelectionRefreshedAt[groupName],
+           last.connectionID == providerConnectionID,
+           now.timeIntervalSince(last.at) < Self.proxySelectionRefreshInterval {
+            return
+        }
         await performProxySelectionRequest(
             group: groupName,
             requestedMember: nil
         )
+        if state == .connected {
+            proxySelectionRefreshedAt[groupName] = (providerConnectionID, now)
+        }
     }
+
+    static let proxySelectionRefreshInterval: TimeInterval = 10
 
     func selectProxy(group groupName: String, member: String) async {
         await performProxySelectionRequest(
@@ -273,7 +288,9 @@ extension TunnelManager {
         Self.runtimeLogger.debug(
             "stage=proxySelection request operation=\(requestedMember == nil ? "snapshot" : "select", privacy: .public)"
         )
-        proxySelectionMessages[groupName] = nil
+        if proxySelectionMessages[groupName] != nil {
+            proxySelectionMessages[groupName] = nil
+        }
         defer {
             if providerConnectionID == connectionID {
                 proxySelectionRequests.remove(groupName)
@@ -355,7 +372,9 @@ extension TunnelManager {
 
             guard state == .connected, providerConnectionID == connectionID
             else { return }
-            proxySelections[groupName] = snapshot
+            if proxySelections[groupName] != snapshot {
+                proxySelections[groupName] = snapshot
+            }
             if let selectedMember = snapshot.selectedMember,
                let summary = activeProfileSummary {
                 let intent = ProxyConnectionReadinessPolicy

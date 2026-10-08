@@ -167,6 +167,14 @@ enum ProductionStartupLoader {
     }
 }
 
+/// Publishes the traffic statistics ledger on its own, like the telemetry
+/// below: it changes with every sample, and publishing it from the tunnel
+/// manager redrew the whole window (sidebar, page and menu bar) each time.
+@MainActor
+final class TrafficStatisticsModel: ObservableObject {
+    @Published var ledger = TrafficStatisticsLedger()
+}
+
 /// Publishes high-frequency traffic counters independently from the host
 /// lifecycle model. Keeping this object separate prevents every telemetry
 /// sample from invalidating the complete navigation, icon and panel tree.
@@ -293,13 +301,20 @@ final class TunnelManager: ObservableObject {
     @Published var testsLatencyWhenProxiesOpen: Bool
     /// When each group was last tested because the Proxies page opened.
     var latencyOnOpenTestedAt: [String: Date] = [:]
-    /// Local traffic statistics (Settings › Network). On by default; the
+    /// Local traffic statistics (Settings › Network). Off by default; the
     /// ledger never leaves this Mac.
     @Published var isTrafficStatisticsEnabled: Bool
-    @Published var trafficLedger = TrafficStatisticsLedger()
+    /// Observed only by the statistics sheet.
+    let trafficStatistics = TrafficStatisticsModel()
+    var trafficLedger: TrafficStatisticsLedger {
+        get { trafficStatistics.ledger }
+        set { trafficStatistics.ledger = newValue }
+    }
     var trafficAccumulator = TrafficStatisticsAccumulator()
     var trafficLedgerSavedAt: Date?
     var isTrafficLedgerLoaded = false
+    /// Samples were added since the ledger was last written.
+    var hasUnsavedTrafficSamples = false
     @Published var routingResourceMessage: String?
     @Published var routingResourceMessageIsError = false
     @Published var hasAcceptedPrivacyDisclosure: Bool
@@ -325,6 +340,8 @@ final class TunnelManager: ObservableObject {
     @Published var automaticGroupLeaves: [String: String] = [:]
     @Published var proxySelectionMessages: [String: String] = [:]
     @Published var proxySelectionRequests: Set<String> = []
+    /// When each group's selection was last read, and on which connection.
+    var proxySelectionRefreshedAt: [String: (connectionID: UUID?, at: Date)] = [:]
     @Published var automaticProxySelectionGroups: Set<String> = []
     @Published var proxyLatencies: [String: ProxyLatencyState] = [:]
     @Published var proxyLatencyRequests: Set<String> = []

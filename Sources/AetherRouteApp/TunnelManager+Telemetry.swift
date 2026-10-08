@@ -55,9 +55,17 @@ extension TunnelManager {
         setTelemetryDemand(preferred ? .realtime : .none, for: source)
     }
 
+    /// A cadence change (a page with live traffic opened or closed). Unlike
+    /// a real stop it keeps the statistics baseline and does not write the
+    /// ledger, so switching pages costs nothing beyond the new schedule.
     func restartTelemetryPolling() {
-        stopTelemetryPolling()
+        cancelTelemetryPollingTask()
         startTelemetryPollingIfNeeded()
+    }
+
+    private func cancelTelemetryPollingTask() {
+        telemetryPollingTask?.cancel()
+        telemetryPollingTask = nil
     }
 
     func startTelemetryPollingIfNeeded() {
@@ -99,10 +107,10 @@ extension TunnelManager {
     }
 
     func stopTelemetryPolling() {
-        telemetryPollingTask?.cancel()
-        telemetryPollingTask = nil
-        // The next sample sets a new baseline instead of counting a gap.
-        trafficAccumulator.reset()
+        cancelTelemetryPollingTask()
+        // The engine's counters are lifetime totals, so a gap between samples
+        // loses nothing and an engine restart is detected from them; the
+        // baseline is kept. Write what was counted so far.
         saveTrafficLedgerIfNeeded(force: true)
     }
 
