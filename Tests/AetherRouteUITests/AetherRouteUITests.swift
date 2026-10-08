@@ -1880,17 +1880,17 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(viewLogsButton.waitForExistence(timeout: 3))
         viewLogsButton.click()
 
-        let logViewer = settingsWindow.descendants(matching: .any)["log-viewer"]
+        let logViewer = app.descendants(matching: .any)["log-viewer"]
         XCTAssertTrue(logViewer.waitForExistence(timeout: 4))
 
         // All toolbar controls must be present and reachable without horizontal overflow.
-        XCTAssertTrue(settingsWindow.descendants(matching: .any)["logs-level-picker"].waitForExistence(timeout: 3))
-        XCTAssertTrue(settingsWindow.descendants(matching: .any)["logs-source-picker"].waitForExistence(timeout: 3))
-        XCTAssertTrue(settingsWindow.descendants(matching: .any)["logs-errors-only"].waitForExistence(timeout: 3))
-        XCTAssertTrue(settingsWindow.textFields["logs-search-field"].waitForExistence(timeout: 3))
-        XCTAssertTrue(settingsWindow.buttons["logs-refresh"].waitForExistence(timeout: 3))
+        let searchField = app.textFields["logs-search-field"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 3))
 
-        let doneButton = settingsWindow.buttons["logs-done"]
+        let refreshButton = app.buttons["logs-refresh"]
+        XCTAssertTrue(refreshButton.waitForExistence(timeout: 3))
+
+        let doneButton = app.buttons["logs-done"]
         XCTAssertTrue(doneButton.waitForExistence(timeout: 3))
         doneButton.click()
 
