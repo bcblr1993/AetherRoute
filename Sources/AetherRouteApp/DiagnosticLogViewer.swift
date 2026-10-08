@@ -52,7 +52,7 @@ struct DiagnosticLogViewer: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .aetherLargeSheetFrame()
+        .aetherLargeSheetFrame(minWidth: AetherVisual.splitSheetMinWidth)
         .task {
             level = tunnel.diagnosticLogLevel
             await reload()
@@ -61,6 +61,24 @@ struct DiagnosticLogViewer: View {
     }
 
     private var controls: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: AetherVisual.s3) {
+                filterControls
+                Spacer(minLength: AetherVisual.s2)
+                searchAndRefreshControls
+            }
+
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                filterControls
+                HStack(spacing: AetherVisual.s3) {
+                    searchField
+                    refreshButton
+                }
+            }
+        }
+    }
+
+    private var filterControls: some View {
         HStack(spacing: AetherVisual.s3) {
             Picker(AppLocalization.string("Recording"), selection: Binding(
                 get: { level },
@@ -89,30 +107,41 @@ struct DiagnosticLogViewer: View {
 
             Toggle(AppLocalization.string("Errors only"), isOn: $showsErrorsOnly)
                 .toggleStyle(.checkbox)
+                .fixedSize()
                 .accessibilityIdentifier("logs-errors-only")
-
-            Spacer(minLength: AetherVisual.s2)
-
-            AetherSearchField(
-                text: $searchText,
-                prompt: AppLocalization.string("Search logs"),
-                accessibilityIdentifier: "logs-search-field"
-            )
-            .frame(width: AetherVisual.searchFieldWidth)
-
-            Button {
-                Task { await reload() }
-            } label: {
-                AetherProgressButtonLabel(
-                    AppLocalization.string("Refresh"),
-                    systemImage: "arrow.clockwise",
-                    isWorking: isLoading
-                )
-            }
-            .aetherGlassButton()
-            .disabled(isLoading)
-            .accessibilityIdentifier("logs-refresh")
         }
+    }
+
+    private var searchAndRefreshControls: some View {
+        HStack(spacing: AetherVisual.s3) {
+            searchField
+            refreshButton
+        }
+    }
+
+    private var searchField: some View {
+        AetherSearchField(
+            text: $searchText,
+            prompt: AppLocalization.string("Search logs"),
+            accessibilityIdentifier: "logs-search-field"
+        )
+        .frame(minWidth: 140, idealWidth: 180, maxWidth: AetherVisual.searchFieldWidth)
+    }
+
+    private var refreshButton: some View {
+        Button {
+            Task { await reload() }
+        } label: {
+            AetherProgressButtonLabel(
+                AppLocalization.string("Refresh"),
+                systemImage: "arrow.clockwise",
+                isWorking: isLoading
+            )
+        }
+        .aetherGlassButton()
+        .fixedSize()
+        .disabled(isLoading)
+        .accessibilityIdentifier("logs-refresh")
     }
 
     @ViewBuilder
