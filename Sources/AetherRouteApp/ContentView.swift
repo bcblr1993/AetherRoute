@@ -134,6 +134,12 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedSection: AppSection? = .overview
+    /// When the page last changed, and whether the current change animates:
+    /// a click within `rapidPageSwitchInterval` of the previous one switches
+    /// at once, so quick browsing never stacks entrance animations on top of
+    /// page rebuilds.
+    @State private var lastSectionChangeAt: Date = .distantPast
+    @State private var animatesSectionChange = true
     @State private var isCommandPalettePresented = false
 
     var body: some View {
@@ -322,6 +328,10 @@ struct ContentView: View {
     private var effectiveReduceMotion: Bool {
         reduceMotion || uiReviewRequestsReducedMotion
     }
+
+    /// Longer than the 0.22 s entrance itself: a click while the previous
+    /// page is still fading in counts as browsing.
+    static let rapidPageSwitchInterval: TimeInterval = 0.35
 
     private var effectiveDynamicTypeSize: DynamicTypeSize {
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
@@ -540,6 +550,10 @@ struct ContentView: View {
         if let section {
             UIResponsivenessProbe.begin("main.\(section.rawValue)")
         }
+        let now = Date()
+        animatesSectionChange =
+            now.timeIntervalSince(lastSectionChangeAt) >= Self.rapidPageSwitchInterval
+        lastSectionChangeAt = now
         selectedSection = section
     }
 
@@ -577,7 +591,10 @@ struct ContentView: View {
                     removal: .identity
                 )
             )
-            .animation(effectiveReduceMotion ? nil : AetherVisual.pageEntrance, value: section)
+            .animation(
+                effectiveReduceMotion || !animatesSectionChange ? nil : AetherVisual.pageEntrance,
+                value: section
+            )
         }
         .navigationTitle(section.title)
         .accessibilityElement(children: .contain)

@@ -99,8 +99,10 @@ struct ProxiesView: View {
         if let activeGroup = currentGroup(from: summary.proxyGroups) {
             ActiveProxyGroupView(
                 group: activeGroup,
+                // A repeated node name must not trap while the page renders.
                 protocols: Dictionary(
-                    uniqueKeysWithValues: summary.proxies.map { ($0.name, $0.protocolName) }
+                    summary.proxies.map { ($0.name, $0.protocolName) },
+                    uniquingKeysWith: { first, _ in first }
                 )
             )
             .id(activeGroup.name)
