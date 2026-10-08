@@ -331,6 +331,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     try applyRoutingMode(mode)
                 case .resetNetwork:
                     try handleResetNetwork()
+                case let .closeConnections(request):
+                    .connectionsClosed(
+                        UInt32(clamping: try activeCore.closeConnections(request: request))
+                    )
+                case let .recentLog(maximumKilobytes):
+                    .recentLog(
+                        DiagnosticLogCenter.current.recentLogData(
+                            maximumBytes: Int(maximumKilobytes) * 1_024
+                        )
+                    )
                 case .reloadProfile:
                     // Answered by the early branch above; never crash the
                     // extension (and the user's network) if that changes.

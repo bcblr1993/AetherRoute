@@ -49,6 +49,9 @@ public protocol TransparentProxyFlowEngine: AnyObject, Sendable {
         maximumConnections: UInt16
     ) throws -> NetworkTelemetrySnapshot
 
+    /// Closes the active connections an `ARC1` request selects.
+    func closeConnections(request: Data) throws -> UInt64
+
     func shutdown(completion: @escaping @Sendable () -> Void)
 }
 
@@ -87,6 +90,10 @@ public extension TransparentProxyFlowEngine {
     func telemetrySnapshot(
         maximumConnections _: UInt16
     ) throws -> NetworkTelemetrySnapshot {
+        throw TransparentProxySelectionError.unsupported
+    }
+
+    func closeConnections(request _: Data) throws -> UInt64 {
         throw TransparentProxySelectionError.unsupported
     }
 }
@@ -377,6 +384,15 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
             return try engine.telemetrySnapshot(
                 maximumConnections: maximumConnections
             )
+        }
+    }
+
+    public func closeConnections(request: Data) throws -> UInt64 {
+        try admissionLock.withLock {
+            guard acceptingFlows else {
+                throw TransparentProxySelectionError.runtimeStopping
+            }
+            return try engine.closeConnections(request: request)
         }
     }
 
@@ -720,6 +736,13 @@ public final class TransparentProxyProviderLifecycleController:
         return try runtime.telemetrySnapshot(
             maximumConnections: maximumConnections
         )
+    }
+
+    public func closeConnections(request: Data) throws -> UInt64 {
+        guard let runtime = runningRuntime() else {
+            throw TransparentProxySelectionError.providerUnavailable
+        }
+        return try runtime.closeConnections(request: request)
     }
 
     public func resetNetworkState() {

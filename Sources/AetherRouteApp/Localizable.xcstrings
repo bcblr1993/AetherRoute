@@ -9328,6 +9328,622 @@
         }
       }
     },
+    "%lld entries": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 条"
+          }
+        }
+      }
+    },
+    "30 Days": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30 天"
+          }
+        }
+      }
+    },
+    "7 Days": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7 天"
+          }
+        }
+      }
+    },
+    "A running network extension uses the new level from its next connection.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在运行的网络扩展会在下次连接时使用新的级别。"
+          }
+        }
+      }
+    },
+    "By app": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按应用"
+          }
+        }
+      }
+    },
+    "By node": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按节点"
+          }
+        }
+      }
+    },
+    "Choose QR Code Image…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择二维码图片…"
+          }
+        }
+      }
+    },
+    "Clear Statistics…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除统计…"
+          }
+        }
+      }
+    },
+    "Clear all traffic statistics?": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要清除全部流量统计吗？"
+          }
+        }
+      }
+    },
+    "Close All": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部断开"
+          }
+        }
+      }
+    },
+    "Close Connection": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "断开连接"
+          }
+        }
+      }
+    },
+    "Close Connections of %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "断开 %@ 的全部连接"
+          }
+        }
+      }
+    },
+    "Close all connections without disconnecting": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "断开全部连接，但不断开代理"
+          }
+        }
+      }
+    },
+    "Close connections when switching nodes": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换节点时断开旧连接"
+          }
+        }
+      }
+    },
+    "Closing connections makes a new node take effect at once; apps reconnect on their own. The latency test runs at most once a minute, only while connected.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "断开旧连接可让新节点立即生效，应用会自动重新连接。延迟测试每分钟最多运行一次，且只在已连接时运行。"
+          }
+        }
+      }
+    },
+    "Copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拷贝"
+          }
+        }
+      }
+    },
+    "Counted on this Mac only. Nothing is uploaded.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅在本机统计，不会上传任何数据。"
+          }
+        }
+      }
+    },
+    "Daily totals by app and by node for the last 30 days, kept on this Mac only. Open them from Overview › Statistics.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按应用和节点记录最近 30 天每天的流量，只保存在本机。可在“概览 › 统计”中查看。"
+          }
+        }
+      }
+    },
+    "Errors only": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅错误"
+          }
+        }
+      }
+    },
+    "Import": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入"
+          }
+        }
+      }
+    },
+    "Import Node Links": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入节点链接"
+          }
+        }
+      }
+    },
+    "Import Node Links…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入节点链接…"
+          }
+        }
+      }
+    },
+    "Imported %lld nodes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入 %lld 个节点。"
+          }
+        }
+      }
+    },
+    "Imported %lld nodes; %lld lines were not valid links and were skipped.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入 %lld 个节点；%lld 行不是有效链接，已跳过。"
+          }
+        }
+      }
+    },
+    "Imported links · %lld nodes": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入的链接 · %lld 个节点"
+          }
+        }
+      }
+    },
+    "Links are parsed on this Mac; AetherRoute does not contact any of the servers until you connect.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "链接在本机解析；连接之前，AetherRoute 不会访问其中任何服务器。"
+          }
+        }
+      }
+    },
+    "Logs": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日志"
+          }
+        }
+      }
+    },
+    "Network extension": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络扩展"
+          }
+        }
+      }
+    },
+    "No QR code was found in the image.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片中没有找到二维码。"
+          }
+        }
+      }
+    },
+    "No log entries": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有日志"
+          }
+        }
+      }
+    },
+    "No traffic recorded for this period.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这段时间没有流量记录。"
+          }
+        }
+      }
+    },
+    "No valid node link was found. Paste links such as vless://, ss:// or hy2://, one per line.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有找到有效的节点链接。请粘贴 vless://、ss:// 或 hy2:// 等链接，每行一个。"
+          }
+        }
+      }
+    },
+    "Node links": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点链接"
+          }
+        }
+      }
+    },
+    "Nothing has been recorded yet. Use AetherRoute for a while, then refresh.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有任何记录。使用 AetherRoute 一段时间后再刷新。"
+          }
+        }
+      }
+    },
+    "Paste links such as vless://, ss:// or hy2://, one per line, or read them from a QR code image.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴 vless://、ss:// 或 hy2:// 等链接（每行一个），或从二维码图片中读取。"
+          }
+        }
+      }
+    },
+    "Period": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "时间范围"
+          }
+        }
+      }
+    },
+    "Read %lld QR codes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已读取 %lld 个二维码。"
+          }
+        }
+      }
+    },
+    "Record traffic statistics": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记录流量统计"
+          }
+        }
+      }
+    },
+    "Recording": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记录级别"
+          }
+        }
+      }
+    },
+    "Recording is off. Choose Standard, use AetherRoute for a while, then refresh.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记录已关闭。请选择“标准”，使用一段时间后再刷新。"
+          }
+        }
+      }
+    },
+    "Refresh": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新"
+          }
+        }
+      }
+    },
+    "Search logs": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索日志"
+          }
+        }
+      }
+    },
+    "Showing the newest %lld of %lld entries": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示最新的 %lld 条（共 %lld 条）"
+          }
+        }
+      }
+    },
+    "Source": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来源"
+          }
+        }
+      }
+    },
+    "Standard": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标准"
+          }
+        }
+      }
+    },
+    "Statistics": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "统计"
+          }
+        }
+      }
+    },
+    "Statistics are off. Turn them on in Settings › Network.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "统计已关闭，可在“设置 › 网络”中开启。"
+          }
+        }
+      }
+    },
+    "Statistics…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "统计…"
+          }
+        }
+      }
+    },
+    "Stays on this Mac. Copy only what you want to share.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只保存在本机。只拷贝你想分享的部分。"
+          }
+        }
+      }
+    },
+    "Test latency when opening Proxies": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开代理页时测试延迟"
+          }
+        }
+      }
+    },
+    "Today": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天"
+          }
+        }
+      }
+    },
+    "Totals come from the network engine. The split by app and node is estimated from the connection list, so the parts can add up to less than the total.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总量来自网络引擎。按应用和节点的拆分根据连接列表估算，因此各项之和可能小于总量。"
+          }
+        }
+      }
+    },
+    "Traffic Statistics": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "流量统计"
+          }
+        }
+      }
+    },
+    "Verbose": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "详细"
+          }
+        }
+      }
+    },
+    "View Logs…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看日志…"
+          }
+        }
+      }
+    },
+    "What AetherRoute and its network extension recorded on this Mac.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute 及其网络扩展在本机记录的内容。"
+          }
+        }
+      }
+    },
     "Custom": {
       "extractionState": "manual",
       "localizations": {

@@ -4,6 +4,29 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] - 1.4.0
+
+AetherRoute can now close connections without disconnecting, shows its own logs, imports nodes from pasted links or QR codes, and keeps local traffic statistics by app and node.
+
+### Added
+
+- Close connections: Connections › Close All, plus Close Connection and Close Connections of … in the context menus. The tunnel stays up and apps reconnect on their own.
+- Switching a group's node closes the connections that still run through that group, so the new node takes effect at once (Settings › Network › Proxies, on by default).
+- Logs: Settings › Privacy & Diagnostics › View Logs… shows what the app and the running network extension recorded, with a recording level (Off / Standard / Verbose), source and error filters, search and copy. Nothing leaves the Mac.
+- Optional latency test when the Proxies page opens (Settings › Network, off by default), at most once a minute per group and only while connected.
+- Import Node Links…: paste `vless://`, `ss://`, `hy2://` … links (one per line or a Base64 list), or read them from a QR code image (choose, drop or paste a screenshot). The nodes become one editable native profile; invalid lines are skipped and counted.
+- Traffic statistics: Overview › Statistics… shows today, 7 or 30 days by app and by exit node. Totals come from the engine's counters; the split is estimated from the connection list. Kept in the app's Application Support folder only, and can be cleared (Settings › Network › Statistics, on by default).
+
+### Changed
+
+- Engine (aetherroute-core `307417e`): new `clash_flow_close_connections_v1` / `clash_packet_close_connections_v1` taking an `ARC1` request; Flow ABI table v6. Flow ABI symbol count 23 → 24.
+- Provider messages gain close-connections (op 10) and recent-log (op 11) requests.
+
+### Notes
+
+- uTLS browser fingerprints are not part of 1.4: the engine's TLS stack (rustls) cannot shape a browser ClientHello, so this needs a separate TLS implementation and its own evaluation.
+- `Config/ProtocolCoreEvidence.json` carries the new core commit and source hashes; its artifact hashes (`flowCoreSHA256`, `packetFlowCoreSHA256`, `interopTestBinarySHA256`) must be refreshed from the rebuilt cores before release.
+
 ## [1.3.2] - 2026-10-08
 
 AetherRoute now reliably restores proxy connections across Mac reboots and login item startups according to the user's explicit intent before shutdown.

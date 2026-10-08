@@ -570,6 +570,16 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     try self.applyRoutingMode(mode)
                 case .resetNetwork:
                     self.handleResetNetwork()
+                case let .closeConnections(request):
+                    .connectionsClosed(
+                        UInt32(clamping: try runtimeController.closeConnections(request: request))
+                    )
+                case let .recentLog(maximumKilobytes):
+                    .recentLog(
+                        DiagnosticLogCenter.current.recentLogData(
+                            maximumBytes: Int(maximumKilobytes) * 1_024
+                        )
+                    )
                 case .reloadProfile:
                     // Answered by the early branch above; never crash the
                     // extension (and the user's network) if that changes.
@@ -1056,6 +1066,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         case .setRoutingMode: "setRoutingMode"
         case .resetNetwork: "resetNetwork"
         case .reloadProfile: "reloadProfile"
+        case .closeConnections: "closeConnections"
+        case .recentLog: "recentLog"
         }
     }
 }

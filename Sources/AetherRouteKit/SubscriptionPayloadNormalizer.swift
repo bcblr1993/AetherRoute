@@ -126,9 +126,31 @@ public enum SubscriptionPayloadNormalizer {
         return lines
     }
 
-    private static func compile(
+    /// Typed nodes parsed from pasted share links (one per line, or the
+    /// Base64 list a subscription serves), plus how many lines were skipped.
+    /// Unlike `normalize`, the result stays editable as a native profile.
+    public static func nodes(
+        fromShareText text: String
+    ) throws -> (nodes: [AetherNode], skippedCount: Int) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ProfileImportError.empty }
+        guard trimmed.utf8.count <= ProfileImportValidator.maximumProfileBytes else {
+            throw ProfileImportError.tooLarge(trimmed.utf8.count)
+        }
+        if let lines = shareLines(in: trimmed) {
+            return try parseNodes(lines: lines)
+        }
+        if let decoded = decodeBase64(trimmed),
+           let decodedText = String(data: decoded, encoding: .utf8),
+           let lines = shareLines(in: decodedText) {
+            return try parseNodes(lines: lines)
+        }
+        throw SubscriptionPayloadError.unsupportedFormat
+    }
+
+    private static func parseNodes(
         lines: [String]
-    ) throws -> SubscriptionPayloadNormalization {
+    ) throws -> (nodes: [AetherNode], skippedCount: Int) {
         guard lines.count <= AetherNodeProfileCompiler.maximumNodes else {
             throw SubscriptionPayloadError.tooManyNodes(
                 AetherNodeProfileCompiler.maximumNodes
@@ -161,6 +183,13 @@ public enum SubscriptionPayloadNormalizer {
         guard !nodes.isEmpty else {
             throw firstFailure ?? SubscriptionPayloadError.unsupportedFormat
         }
+        return (nodes, skippedNodeCount)
+    }
+
+    private static func compile(
+        lines: [String]
+    ) throws -> SubscriptionPayloadNormalization {
+        let (nodes, skippedNodeCount) = try parseNodes(lines: lines)
         let yaml = try AetherNodeProfileCompiler.compile(
             nodes: nodes,
             groupName: subscriptionGroupName

@@ -1686,6 +1686,25 @@ private struct LiveTelemetryMetric: View {
     }
 }
 
+/// Opens the traffic statistics from the overview's traffic card.
+private struct TrafficStatisticsButton: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+    @State private var isPresented = false
+
+    var body: some View {
+        Button(AppLocalization.string("Statistics…")) {
+            isPresented = true
+        }
+        .buttonStyle(.link)
+        .font(.caption)
+        .accessibilityIdentifier("overview-traffic-statistics")
+        .sheet(isPresented: $isPresented) {
+            TrafficStatisticsSheet()
+                .environmentObject(tunnel)
+        }
+    }
+}
+
 /// The number large and the unit small, as in Apple's Activity app.
 private struct LiveTelemetryMetricValue: View {
     let metric: LiveTelemetryMetricKind
@@ -1744,6 +1763,9 @@ private struct TrafficCard: View {
                 Text(AppLocalization.string("Last 30 seconds"))
                     .font(.caption)
                     .foregroundStyle(AetherVisual.secondaryText)
+                // A leaf of its own: this card redraws with every traffic
+                // sample and must not observe TunnelManager itself.
+                TrafficStatisticsButton()
             }
             HStack(alignment: .bottom, spacing: AetherVisual.s6 * 2) {
                 LiveTelemetryMetric(

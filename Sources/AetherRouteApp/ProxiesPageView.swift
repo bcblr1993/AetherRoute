@@ -105,6 +105,11 @@ struct ProxiesView: View {
             )
             .id(activeGroup.name)
             .transition(.opacity)
+            // Opt-in (Settings › Network): one test when a group comes into
+            // view, throttled per group so switching back and forth is free.
+            .task(id: activeGroup.name) {
+                await tunnel.testLatencyOnOpenIfDue(group: activeGroup.name)
+            }
         }
     }
 

@@ -285,6 +285,21 @@ final class TunnelManager: ObservableObject {
     /// `isUpdatingRoutingResources` it never holds back connection controls.
     @Published var isRefreshingRoutingResources = false
     @Published var isAutomaticRoutingResourceUpdateEnabled: Bool
+    /// Close what still runs through a group when its node changes, so the
+    /// new node takes effect at once. On by default, as in other clients.
+    @Published var closesConnectionsOnProxySwitch: Bool
+    /// Test the shown group's latency once when the Proxies page opens.
+    /// Off by default: no probe runs unless the person asks for it.
+    @Published var testsLatencyWhenProxiesOpen: Bool
+    /// When each group was last tested because the Proxies page opened.
+    var latencyOnOpenTestedAt: [String: Date] = [:]
+    /// Local traffic statistics (Settings › Network). On by default; the
+    /// ledger never leaves this Mac.
+    @Published var isTrafficStatisticsEnabled: Bool
+    @Published var trafficLedger = TrafficStatisticsLedger()
+    var trafficAccumulator = TrafficStatisticsAccumulator()
+    var trafficLedgerSavedAt: Date?
+    var isTrafficLedgerLoaded = false
     @Published var routingResourceMessage: String?
     @Published var routingResourceMessageIsError = false
     @Published var hasAcceptedPrivacyDisclosure: Bool
@@ -478,6 +493,15 @@ final class TunnelManager: ObservableObject {
         self.isDomesticOptimizationEnabled = DomesticRoutingOptimizer.isEnabled
         self.isAutomaticRoutingResourceUpdateEnabled = userDefaults.object(
             forKey: Self.automaticRoutingResourceUpdatePreferenceKey
+        ) as? Bool ?? true
+        self.closesConnectionsOnProxySwitch = userDefaults.object(
+            forKey: Self.closesConnectionsOnProxySwitchPreferenceKey
+        ) as? Bool ?? true
+        self.testsLatencyWhenProxiesOpen = userDefaults.object(
+            forKey: Self.testsLatencyWhenProxiesOpenPreferenceKey
+        ) as? Bool ?? false
+        self.isTrafficStatisticsEnabled = userDefaults.object(
+            forKey: Self.trafficStatisticsPreferenceKey
         ) as? Bool ?? true
         do {
             self.customRules = try CustomRuleStore.applicationGroup().load()
