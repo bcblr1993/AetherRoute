@@ -27,6 +27,8 @@ AetherRoute can now close connections without disconnecting, shows its own logs,
 
 ### Fixed
 
+- Switching pages quickly no longer stutters from background work: the statistics ledger publishes on its own instead of redrawing the whole window with each sample; changing the polling cadence (opening or leaving Connections) no longer writes the ledger or resets its baseline; the Proxies page rereads a group's selection at most every 10 s per connection and publishes it only when it changed. The sidebar connection count now updates live in its own badge. Clicking through pages in quick succession switches at once instead of stacking entrance animations.
+- The statistics ledger is written only after it was read and only with new samples, so an early save can no longer replace the saved history with an empty one.
 - Proxy chains in telemetry now read from the rule's target group to the node that carried the flow ("Proxy → Auto → Tokyo"). The engine recorded them node-first, so the Connections outlet column and the automatic group's current node showed the outermost group instead of the node.
 
 ### Notes

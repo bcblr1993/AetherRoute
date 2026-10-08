@@ -7,6 +7,7 @@ import SwiftUI
 /// total but toward no app.
 struct TrafficStatisticsSheet: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    @ObservedObject var statistics: TrafficStatisticsModel
     @Environment(\.dismiss) private var dismiss
     @State private var range: StatisticsRange = .today
     @State private var isClearConfirmationPresented = false
@@ -111,7 +112,7 @@ struct TrafficStatisticsSheet: View {
                 Button(AppLocalization.string("Clear Statistics…"), role: .destructive) {
                     isClearConfirmationPresented = true
                 }
-                .disabled(tunnel.trafficLedger.days.isEmpty)
+                .disabled(statistics.ledger.days.isEmpty)
                 .confirmationDialog(
                     AppLocalization.string("Clear all traffic statistics?"),
                     isPresented: $isClearConfirmationPresented,
@@ -134,7 +135,7 @@ struct TrafficStatisticsSheet: View {
     }
 
     private var summary: TrafficDay {
-        tunnel.trafficLedger.summary(lastDays: range.days)
+        statistics.ledger.summary(lastDays: range.days)
     }
 
     private struct Entry: Identifiable {

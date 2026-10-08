@@ -134,6 +134,12 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedSection: AppSection? = .overview
+    /// When the page last changed, and whether the current change animates:
+    /// a click within `rapidPageSwitchInterval` of the previous one switches
+    /// at once, so quick browsing never stacks entrance animations on top of
+    /// page rebuilds.
+    @State private var lastSectionChangeAt: Date = .distantPast
+    @State private var animatesSectionChange = true
     @State private var isCommandPalettePresented = false
 
     var body: some View {
@@ -323,6 +329,10 @@ struct ContentView: View {
         reduceMotion || uiReviewRequestsReducedMotion
     }
 
+    /// Longer than the 0.22 s entrance itself: a click while the previous
+    /// page is still fading in counts as browsing.
+    static let rapidPageSwitchInterval: TimeInterval = 0.35
+
     private var effectiveDynamicTypeSize: DynamicTypeSize {
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
         ProcessInfo.processInfo.environment[
@@ -511,10 +521,7 @@ struct ContentView: View {
                 AetherCountBadge(count: summary.proxyCount)
             }
         case .connections:
-            let count = tunnel.telemetryViewModel.snapshot.connections.count
-            if count > 0 {
-                AetherCountBadge(count: count)
-            }
+            ConnectionCountBadge(telemetry: tunnel.telemetryViewModel)
         case .rules:
             if let summary = tunnel.activeProfileSummary, summary.ruleCount > 0 {
                 AetherCountBadge(count: summary.ruleCount)
@@ -543,6 +550,10 @@ struct ContentView: View {
         if let section {
             UIResponsivenessProbe.begin("main.\(section.rawValue)")
         }
+        let now = Date()
+        animatesSectionChange =
+            now.timeIntervalSince(lastSectionChangeAt) >= Self.rapidPageSwitchInterval
+        lastSectionChangeAt = now
         selectedSection = section
     }
 
@@ -580,7 +591,10 @@ struct ContentView: View {
                     removal: .identity
                 )
             )
-            .animation(effectiveReduceMotion ? nil : AetherVisual.pageEntrance, value: section)
+            .animation(
+                effectiveReduceMotion || !animatesSectionChange ? nil : AetherVisual.pageEntrance,
+                value: section
+            )
         }
         .navigationTitle(section.title)
         .accessibilityElement(children: .contain)
@@ -1686,6 +1700,19 @@ private struct LiveTelemetryMetric: View {
     }
 }
 
+/// The sidebar's live connection count. It observes telemetry on its own so
+/// each sample redraws only this badge, not the sidebar or the page.
+private struct ConnectionCountBadge: View {
+    @ObservedObject var telemetry: NetworkTelemetryViewModel
+
+    var body: some View {
+        let count = telemetry.snapshot.connections.count
+        if count > 0 {
+            AetherCountBadge(count: count)
+        }
+    }
+}
+
 /// Opens the traffic statistics from the overview's traffic card.
 private struct TrafficStatisticsButton: View {
     @EnvironmentObject private var tunnel: TunnelManager
@@ -1699,7 +1726,7 @@ private struct TrafficStatisticsButton: View {
         .font(.caption)
         .accessibilityIdentifier("overview-traffic-statistics")
         .sheet(isPresented: $isPresented) {
-            TrafficStatisticsSheet()
+            TrafficStatisticsSheet(statistics: tunnel.trafficStatistics)
                 .environmentObject(tunnel)
         }
     }
