@@ -421,6 +421,7 @@ final class TunnelManager: ObservableObject {
     /// the tunnel connects or the user takes over.
     var automaticReconnectAttempt = 0
     var automaticReconnectTask: Task<Void, Never>?
+    var startupRestoreTask: Task<Void, Never>?
     /// The user's standing intent to be connected.
     ///
     /// Distinct from `isEnabled`, which is derived from the current provider
@@ -813,6 +814,15 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    func cancelStartupRestore(reason: String) {
+        guard startupRestoreTask != nil else { return }
+        Self.runtimeLogger.info(
+            "stage=startupRestore cancel reason=\(reason, privacy: .public)"
+        )
+        startupRestoreTask?.cancel()
+        startupRestoreTask = nil
+    }
+
     private func restorePreviousConnectionIfRequested() async {
         guard !isUIReviewMode else { return }
 #if AETHERROUTE_QA_AUTOMATION
@@ -823,18 +833,69 @@ final class TunnelManager: ObservableObject {
             return
         }
 #endif
-        guard wasConnectedBeforeTermination else { return }
-        guard state == .disconnected else { return }
-        guard canRestorePreviousConnection else {
+        guard wasConnectedBeforeTermination else {
             Self.runtimeLogger.info(
-                "stage=startup autoReconnect skipped reason=cannotConnect isPreparing=\(self.isPreparing, privacy: .public) profile=\(self.activeProfile != nil, privacy: .public) approvalRequired=\(self.systemExtensionApprovalRequired, privacy: .public) permitsStart=\(self.managerConnectionPermitsStart, privacy: .public)"
+                "stage=startup autoReconnect skipped reason=wasNotConnectedBeforeTermination"
             )
             return
         }
+
+        cancelStartupRestore(reason: "newStartupCycle")
+        startupRestoreTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.executeStartupConnectionRestoration()
+        }
+    }
+
+    private func executeStartupConnectionRestoration() async {
         Self.runtimeLogger.info(
-            "stage=startup autoReconnect restoring previous connection"
+            "stage=startupRestore begin wasConnectedBeforeTermination=true maxAttempts=\(StartupConnectionRestorePolicy.maximumAttempts, privacy: .public)"
         )
-        await setEnabled(true)
+        for attempt in 0..<StartupConnectionRestorePolicy.maximumAttempts {
+            if Task.isCancelled || isApplicationTerminating {
+                Self.runtimeLogger.info("stage=startupRestore aborted reason=cancelledOrTerminating")
+                return
+            }
+            if state == .connected {
+                Self.runtimeLogger.info("stage=startupRestore complete reason=alreadyConnected")
+                return
+            }
+            if !wasConnectedBeforeTermination {
+                Self.runtimeLogger.info("stage=startupRestore aborted reason=intentRevoked")
+                return
+            }
+
+            if canRestorePreviousConnection {
+                Self.runtimeLogger.info(
+                    "stage=startupRestore attempt=\(attempt, privacy: .public) triggering restore"
+                )
+                await setEnabled(true)
+                try? await Task.sleep(for: .milliseconds(1500))
+                if Task.isCancelled || isApplicationTerminating { return }
+                if state == .connected {
+                    Self.runtimeLogger.info(
+                        "stage=startupRestore success attempt=\(attempt, privacy: .public)"
+                    )
+                    return
+                }
+            } else {
+                Self.runtimeLogger.info(
+                    "stage=startupRestore waiting attempt=\(attempt, privacy: .public) isPreparing=\(self.isPreparing, privacy: .public) profile=\(self.activeProfile != nil, privacy: .public) approvalRequired=\(self.systemExtensionApprovalRequired, privacy: .public) permitsStart=\(self.managerConnectionPermitsStart, privacy: .public) state=\(Self.diagnosticEventCode(for: self.state).rawValue, privacy: .public)"
+                )
+            }
+
+            guard let delay = StartupConnectionRestorePolicy.delay(forAttempt: attempt) else {
+                break
+            }
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return
+            }
+        }
+        Self.runtimeLogger.info(
+            "stage=startupRestore finished attemptBudgetExhausted state=\(Self.diagnosticEventCode(for: self.state).rawValue, privacy: .public)"
+        )
     }
 
     private var canRestorePreviousConnection: Bool {
@@ -938,6 +999,7 @@ final class TunnelManager: ObservableObject {
             "stage=setEnabled request=\(enabled ? "connect" : "disconnect", privacy: .public) state=\(Self.diagnosticEventCode(for: self.state).rawValue, privacy: .public) engine=\(self.networkEngineMode.rawValue, privacy: .public) routing=\(self.routingMode.rawValue, privacy: .public)"
         )
         if !enabled {
+            cancelStartupRestore(reason: "userDisconnected")
             engineReconnect.cancel()
             // Invalidate before any guard or await. A connect request may still
             // be preparing resources even though NetworkExtension has not
@@ -1275,9 +1337,10 @@ final class TunnelManager: ObservableObject {
 
     func prepareForApplicationTermination() {
         isApplicationTerminating = true
+        cancelStartupRestore(reason: "applicationTermination")
         let wasActive = managerConnectionIsActive || userIntendsToConnect
-        if wasActive && !isUIReviewMode {
-            connectionIntentStore.save(intendedConnected: true)
+        if !isUIReviewMode {
+            connectionIntentStore.save(intendedConnected: wasActive)
         }
         engineReconnect.cancel()
         userIntendsToConnect = false

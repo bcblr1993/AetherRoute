@@ -8,7 +8,7 @@ import SwiftUI
 final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSUserInterfaceValidations {
     private static let lifecycleLogger = AppLog.logger(category: AppLog.Category.appLifecycle)
 
-    weak var tunnel: TunnelManager?
+    var tunnel: TunnelManager?
     private var terminationReplyPending = false
     private var signalTerminationPending = false
     private var terminationSignalSource: (any DispatchSourceSignal)?
@@ -89,6 +89,7 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSM
         terminationSignalSource?.cancel()
         terminationSignalSource = nil
         tunnel?.prepareForApplicationTermination()
+        tunnel = nil
     }
 
     @objc func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {

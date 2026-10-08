@@ -4,6 +4,20 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.2] - 2026-10-08
+
+AetherRoute now reliably restores proxy connections across Mac reboots and login item startups according to the user's explicit intent before shutdown.
+
+### Fixed
+
+- Boot Connection State Restoration: Resolved an issue where AetherRoute failed to restore connection upon login item cold start when previously connected before shutdown.
+- Startup Race Mitigation: Introduced `StartupConnectionRestorePolicy` with progressive backoff delays (1s, 2s, 3s, 5s, 8s) to accommodate underlying Wi-Fi/DHCP network readiness and `sysextd` system extension registration times.
+- Lifecycle & Intent Hardening: Enforced strong delegate hosting for `TunnelManager` in accessory tray mode, ensuring lifecycle stability when launching without visible windows. Persisted atomic connection intent upon shutdown, strictly upholding user state ("connected before shutdown reconnects; disconnected before shutdown stays disconnected").
+
+### Verified
+
+- App unit tests, policy verification, and regression gates passed: `StartupConnectionRestorePolicyTests`, `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, and `./scripts/test.sh` 100% passed.
+
 ## [1.3.1] - 2026-10-06
 
 AetherRoute now supports Rule Providers for subscribing to and managing external rule sets, dynamically compiling active rules into routing chains with safety budgets, and syncing providers across devices via iCloud.

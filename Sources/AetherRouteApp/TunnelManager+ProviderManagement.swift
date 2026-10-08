@@ -622,6 +622,7 @@ extension TunnelManager {
                 automaticReconnectAttempt = 0
             }
             cancelAutomaticReconnect(reason: "connected")
+            cancelStartupRestore(reason: "connected")
         }
         switch state {
         case .connected, .recovering, .disconnected, .failed:
