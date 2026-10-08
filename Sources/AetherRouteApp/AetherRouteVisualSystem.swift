@@ -27,7 +27,13 @@ enum AetherVisual {
     static let insetRadius: CGFloat = 8
     static let cardRadius: CGFloat = 10
     static let panelRadius: CGFloat = 18
+    /// Glass groups on compact surfaces: the menu bar panel and the
+    /// Connections session bar, where 18 pt reads as a capsule.
+    static let compactPanelRadius: CGFloat = 14
     static let sidebarRadius: CGFloat = 16
+
+    /// Background of a hovered row or button that draws its own fill.
+    static let hoverFill = Color.secondary.opacity(0.12)
 
     // MARK: - Motion
     //
@@ -77,6 +83,9 @@ enum AetherVisual {
     static let sidebarWidth: CGFloat = 200
     static let windowWidth: CGFloat = 960
     static let windowHeight: CGFloat = 680
+    /// The smallest main and Settings window; every page is reviewed at it.
+    static let windowMinWidth: CGFloat = 780
+    static let windowMinHeight: CGFloat = 560
     static let popoverWidth: CGFloat = 380
     /// Sheet content follows the final dialog handoff rather than the page
     /// spacing grid.
@@ -87,6 +96,13 @@ enum AetherVisual {
     static let pillVerticalPadding = s1
     /// Symbol tile at the top of every sheet.
     static let sheetIconSize: CGFloat = 44
+    /// Colour tile leading a System Settings-style row (Overview route
+    /// group). Row dividers start after it, so both read this one value.
+    static let rowTileSize: CGFloat = 26
+    /// Gap between the drawn connection switch's track and its knob.
+    static let switchKnobInset: CGFloat = 3
+    /// Status dots beside a row title or in a pill.
+    static let statusDotSize: CGFloat = 6
     /// Width shared by the small single-purpose sheets (rename, subscription,
     /// archive password, iCloud, custom rule, connection details).
     static let sheetMinWidth: CGFloat = 460
@@ -543,7 +559,7 @@ extension View {
     func aetherHoverHighlight(
         _ isHovered: Bool,
         cornerRadius: CGFloat = AetherVisual.controlRadius,
-        hoverColor: Color = Color.secondary.opacity(0.12)
+        hoverColor: Color = AetherVisual.hoverFill
     ) -> some View {
         aetherHoverHighlight(isHovered: isHovered, cornerRadius: cornerRadius, hoverColor: hoverColor)
     }
@@ -551,7 +567,7 @@ extension View {
     func aetherHoverHighlight(
         isHovered: Bool,
         cornerRadius: CGFloat = AetherVisual.controlRadius,
-        hoverColor: Color = Color.secondary.opacity(0.12)
+        hoverColor: Color = AetherVisual.hoverFill
     ) -> some View {
         background(
             isHovered ? hoverColor : Color.clear,
@@ -675,10 +691,10 @@ struct AetherRegionCode: View {
         Group {
             if let region = AetherRegionFlag.region(for: name) {
                 Text(verbatim: region.code)
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .font(.system(.caption2, design: .rounded, weight: .bold))
                     .foregroundStyle(AetherVisual.secondaryText)
                     .frame(width: 26, height: 18)
-                    .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
             } else if reservesSlot {
                 Color.clear.frame(width: 26, height: 18)
             }

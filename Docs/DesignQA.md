@@ -28,7 +28,9 @@ connection states, privacy onboarding and the menu bar panel.
 - [ ] Content edges line up: a card's text starts where the card above starts
       its text; icons share one column; trailing controls share one edge.
 - [ ] Spacing comes from the 4-point scale (`AetherVisual.s1`...`s6`); no
-      one-off numbers.
+      one-off numbers. Radii use the radius tokens, never a spacing token.
+      `scripts/verify_ui_design_tokens.sh` (run by `scripts/test.sh`) lists
+      every violation at once.
 - [ ] One card style per surface; a disclosure, list or table sits on the same
       inset as the cards around it.
 - [ ] Nothing clips or truncates at 800 points or at the minimum window with

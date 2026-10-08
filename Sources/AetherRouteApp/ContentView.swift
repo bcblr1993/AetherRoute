@@ -177,7 +177,7 @@ struct ContentView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("AetherRoute application content")
         .accessibilityIdentifier("aetherroute-semantic-root")
-        .frame(minWidth: 780, minHeight: 560)
+        .frame(minWidth: AetherVisual.windowMinWidth, minHeight: AetherVisual.windowMinHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // The content layer stays opaque, as Apple's guidelines ask: glass
         // belongs to the sidebar, cards and controls floating above it, and
@@ -361,8 +361,8 @@ struct ContentView: View {
         guard dimensions.count == 2,
               let width = Double(dimensions[0]),
               let height = Double(dimensions[1]),
-              width >= 780,
-              height >= 560 else { return }
+              width >= Double(AetherVisual.windowMinWidth),
+              height >= Double(AetherVisual.windowMinHeight) else { return }
 
         await Task.yield()
         guard let window = NSApplication.shared.windows.first(where: { $0.isVisible })
@@ -722,10 +722,14 @@ struct ConnectionSwitch: View {
             ZStack(alignment: tunnel.isEnabled ? .trailing : .leading) {
                 Capsule()
                     .fill(tunnel.isEnabled ? Color.green : Color.secondary.opacity(0.32))
+                // A hairline edge rather than a drop shadow keeps the knob
+                // distinct from the grey track without a glow.
                 Circle()
                     .fill(.white)
-                    .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
-                    .padding(3)
+                    .overlay {
+                        Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5)
+                    }
+                    .padding(AetherVisual.switchKnobInset)
                     .overlay {
                         if isWorking {
                             // Hidden: as an element of its own it turned the
@@ -999,7 +1003,7 @@ private struct ConnectionHero: View {
                 ConnectionMedallion(phase: phase)
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     Text(tunnel.compactStatusTitle)
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.largeTitle.weight(.bold))
                         .foregroundStyle(.primary)
                         .contentTransition(.opacity)
                         .accessibilityIdentifier("overview-status-title")
@@ -1220,11 +1224,15 @@ struct ConnectionMedallion: View {
     let phase: Phase
     var size: CGFloat = ConnectionMedallion.heroSize
 
+    /// How far the halo and the connecting arc reach past the medallion,
+    /// relative to its size so the compact medallion keeps the proportion.
+    private var haloOutset: CGFloat { size * 0.11 }
+
     var body: some View {
         ZStack {
             Circle()
                 .fill(phase.color.opacity(0.18))
-                .padding(-size * 0.11)
+                .padding(-haloOutset)
             Circle()
                 .fill(phase.color.gradient)
             Image(systemName: phase.symbol)
@@ -1236,7 +1244,7 @@ struct ConnectionMedallion: View {
                     Circle()
                         .trim(from: 0, to: 0.28)
                         .stroke(phase.color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                        .padding(-size * 0.11)
+                        .padding(-haloOutset)
                         .rotationEffect(.degrees(angle(at: context.date)))
                 }
                 .transition(.opacity)
@@ -1282,7 +1290,7 @@ private struct OverviewRow<Trailing: View>: View {
 
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
-            AetherIconTile(symbol: symbol, color: tint, size: 26)
+            AetherIconTile(symbol: symbol, color: tint, size: AetherVisual.rowTileSize)
             HStack(spacing: AetherVisual.s1) {
                 // Wraps rather than widening the row: long translations
                 // pushed the page past a narrow window.
@@ -1307,7 +1315,7 @@ private struct OverviewRow<Trailing: View>: View {
 private struct OverviewRowDivider: View {
     var body: some View {
         Divider()
-            .padding(.leading, AetherVisual.s4 + 26 + AetherVisual.s3)
+            .padding(.leading, AetherVisual.s4 + AetherVisual.rowTileSize + AetherVisual.s3)
     }
 }
 
@@ -1686,7 +1694,7 @@ private struct LiveTelemetryMetric: View {
         VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
             HStack(spacing: AetherVisual.sCompact) {
                 if let dot {
-                    Circle().fill(dot).frame(width: 7, height: 7)
+                    Circle().fill(dot).frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
                 }
                 Text(label)
             }
@@ -1712,7 +1720,7 @@ private struct LiveTelemetryMetricValue: View {
         let parts = split(value)
         HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s1) {
             Text(parts.number)
-                .font(.system(size: 30, weight: .semibold))
+                .font(.largeTitle.weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(isConnected ? AnyShapeStyle(Color.primary) : AnyShapeStyle(AetherVisual.secondaryText))
                 .aetherNumericValue(parts.number)

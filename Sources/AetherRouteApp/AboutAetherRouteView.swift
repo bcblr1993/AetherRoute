@@ -94,16 +94,16 @@ struct AboutAetherRouteView: View {
         HStack(spacing: AetherVisual.s1) {
             Circle()
                 .fill(releaseChannelColor)
-                .frame(width: 6, height: 6)
+                .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
                 .accessibilityHidden(true)
             Text(releaseChannelDescription)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(AetherVisual.secondaryText)
                 .accessibilityIdentifier("about-release-channel")
         }
-        .padding(.horizontal, AetherVisual.s2)
-        .padding(.vertical, AetherVisual.sMicro)
-        .background(Color.secondary.opacity(0.1), in: Capsule())
+        .padding(.horizontal, AetherVisual.pillHorizontalPadding)
+        .padding(.vertical, AetherVisual.pillVerticalPadding)
+        .background(Color.secondary.opacity(0.12), in: Capsule())
     }
 
     private var licensesRow: some View {

@@ -16,7 +16,7 @@ write_valid_source() {
 TableColumn(AppLocalization.string("Duration")) { connection in
     Text(connection.duration)
 }
-.width(min: 64, ideal: 68, max: 76)
+.width(min: 56, ideal: 60, max: 100)
 SWIFT
 }
 
@@ -28,7 +28,7 @@ write_unlocalized_source() {
 TableColumn("Duration") { connection in
     Text(connection.duration)
 }
-.width(min: 64, ideal: 68, max: 76)
+.width(min: 56, ideal: 60, max: 100)
 SWIFT
 }
 
@@ -103,11 +103,38 @@ printf '\n.font(.system(size: size * 0.44, weight: .semibold))\n' >>"$FIXTURE/So
 grep -Fq 'UI design tokens verified.' "$TEMP/output.log"
 
 write_unlocalized_source
-expect_failure 1 'localized Duration header needs its 64...76pt column budget' \
+expect_failure 1 'localized Duration header needs its 56...100pt column budget' \
   "$FIXTURE/scripts/verify_ui_design_tokens.sh"
 
 printf 'Text("Duration")\n' >"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
-expect_failure 1 'localized Duration header needs its 64...76pt column budget' \
+expect_failure 1 'localized Duration header needs its 56...100pt column budget' \
   "$FIXTURE/scripts/verify_ui_design_tokens.sh"
 
-echo 'UI design-token guards passed: valid source, missing rg, scan failure, PCRE2 failure, forbidden token, literal font size, custom RGB colour, shadow, relative icon size, unlocalized header and missing column budget.'
+write_valid_source
+printf '\nSpacer(minLength: 12)\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'spacer minimums must use AetherVisual spacing tokens' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
+write_valid_source
+printf '\n.background(.red, in: RoundedRectangle(cornerRadius: AetherVisual.s3))\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'corner radii must use a radius token' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
+# Two violations of different rules must both be reported, not just the
+# first one found.
+write_valid_source
+printf '\n.padding(15)\n.shadow(color: .black, radius: 4)\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'shadows and glows are forbidden' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+grep -Fq 'off-grid 15/18/22/26/28pt padding is forbidden' "$TEMP/output.log" || {
+  cat "$TEMP/output.log" >&2
+  echo 'Design-token guard regression: only the first violated rule was reported' >&2
+  exit 1
+}
+grep -Fq '3 rule(s) violated' "$TEMP/output.log" || {
+  cat "$TEMP/output.log" >&2
+  echo 'Design-token guard regression: violation count missing' >&2
+  exit 1
+}
+
+echo 'UI design-token guards passed: valid source, missing rg, scan failure, PCRE2 failure, forbidden token, literal font size, custom RGB colour, shadow, relative icon size, unlocalized header, missing column budget, spacer minimum, spacing token as radius and multiple violations reported together.'

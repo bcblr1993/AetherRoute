@@ -10,6 +10,10 @@ command -v rg >/dev/null 2>&1 || {
   exit 1
 }
 
+# Every rule runs and every violation is listed before the script fails.
+# Stopping at the first one hid the rest: fixing it only revealed the next.
+violations=0
+
 fail_if_found() {
   description=$1
   pattern=$2
@@ -17,7 +21,7 @@ fail_if_found() {
   if matches=$(rg -n -U "$pattern" "$APP" -g '*.swift' "$@"); then
     echo "UI design-token violation: $description" >&2
     printf '%s\n' "$matches" >&2
-    exit 1
+    violations=$((violations + 1))
   else
     search_status=$?
     if [ "$search_status" -ne 1 ]; then
@@ -37,7 +41,8 @@ fail_if_found \
 
 fail_if_found \
   "off-grid 15/18/22/26/28pt padding is forbidden" \
-  '\.padding\([^\n)]*(15|18|22|26|28)([^0-9]|$)[^\n)]*\)'
+  '\.padding\([^\n)]*(?<![0-9.])(15|18|22|26|28)(?![0-9.])[^\n)]*\)' \
+  --pcre2
 
 fail_if_found \
   "hard-coded light/dark text colors are forbidden; use primary/secondary/tertiary" \
@@ -47,6 +52,14 @@ fail_if_found \
   "padding, spacing and radius must use AetherVisual tokens" \
   '\.(padding|cornerRadius)\([^\n)]*(?<![A-Za-z0-9_.])\d|cornerRadius:[[:space:]]*\d|spacing:[[:space:]]*[1-9][0-9]*' \
   --pcre2 -g '!AetherRouteVisualSystem.swift'
+
+fail_if_found \
+  "spacer minimums must use AetherVisual spacing tokens" \
+  'minLength:[[:space:]]*[1-9][0-9]*'
+
+fail_if_found \
+  "corner radii must use a radius token (badge/control/inset/card/compactPanel/panel/sidebar), not a spacing token" \
+  'cornerRadius:[[:space:]]*AetherVisual\.s(Micro|Compact|Row|[0-9])'
 
 fail_if_found \
   "literal font sizes are forbidden; use a system text style such as .caption or .body (sizes relative to a container are allowed)" \
@@ -65,10 +78,11 @@ fail_if_found \
 # "Duration" literal here meant the guard demanded the untranslated string, so
 # localizing the header turned this into a false failure that blocked main even
 # though the budget it exists to protect was untouched. The budget is
-# 72/84/100 since durations use the app-wide abbreviated format
-# ("2小时11分钟", "49m 2s") instead of the table's own "2h11m".
+# 56/60/100: durations use the app-wide abbreviated format ("2小时11分钟",
+# "49m 2s") and wrap onto a second line rather than widen the column, which
+# 1.3.0 narrowed to make room for the source-app column.
 if rg -Uq \
-  'TableColumn\(AppLocalization\.string\("Duration"\)\)[^{]*\{[^}]*\}[[:space:]]*\.width\(min:[[:space:]]*72,[[:space:]]*ideal:[[:space:]]*84,[[:space:]]*max:[[:space:]]*100\)' \
+  'TableColumn\(AppLocalization\.string\("Duration"\)\)[^{]*\{[^}]*\}[[:space:]]*\.width\(min:[[:space:]]*56,[[:space:]]*ideal:[[:space:]]*60,[[:space:]]*max:[[:space:]]*100\)' \
   "$CONNECTIONS"; then
   :
 else
@@ -77,7 +91,12 @@ else
     echo "UI design-token verification failed: rg exited with status $search_status" >&2
     exit "$search_status"
   fi
-  echo "UI design-token violation: the localized Duration header needs its 72...100pt column budget" >&2
+  echo "UI design-token violation: the localized Duration header needs its 56...100pt column budget" >&2
+  violations=$((violations + 1))
+fi
+
+if [ "$violations" -ne 0 ]; then
+  echo "UI design-token verification failed: $violations rule(s) violated." >&2
   exit 1
 fi
 

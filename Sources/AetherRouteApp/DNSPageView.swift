@@ -181,7 +181,7 @@ struct DNSView: View {
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: AetherVisual.s2)
                 Text(
                     String.localizedStringWithFormat(
                         AppLocalization.string("%lld total"),
@@ -205,10 +205,10 @@ struct DNSView: View {
                         )
                         .font(.caption.weight(.medium))
                         .foregroundStyle(transportColor(transport))
-                        .padding(.horizontal, AetherVisual.s3)
-                        .padding(.vertical, AetherVisual.s2)
+                        .padding(.horizontal, AetherVisual.pillHorizontalPadding)
+                        .padding(.vertical, AetherVisual.pillVerticalPadding)
                         .background(
-                            transportColor(transport).opacity(0.09),
+                            transportColor(transport).opacity(0.12),
                             in: Capsule()
                         )
                     }
@@ -220,19 +220,19 @@ struct DNSView: View {
             Grid(alignment: .leading, horizontalSpacing: AetherVisual.s3, verticalSpacing: AetherVisual.s2) {
                 GridRow {
                     DNSCountLabel(AppLocalization.string("Bootstrap"))
-                    Spacer(minLength: 8)
+                    Spacer(minLength: AetherVisual.s2)
                     Text(verbatim: String(dns.defaultNameserverCount))
                         .monospacedDigit()
                 }
                 GridRow {
                     DNSCountLabel(AppLocalization.string("Proxy hostnames"))
-                    Spacer(minLength: 8)
+                    Spacer(minLength: AetherVisual.s2)
                     Text(verbatim: String(dns.proxyNameserverCount))
                         .monospacedDigit()
                 }
                 GridRow {
                     DNSCountLabel(AppLocalization.string("Local listener"))
-                    Spacer(minLength: 8)
+                    Spacer(minLength: AetherVisual.s2)
                     Text(
                         dns.hasListener
                             ? AppLocalization.string("Configured")
@@ -241,7 +241,7 @@ struct DNSView: View {
                 }
                 GridRow {
                     DNSCountLabel(AppLocalization.string("EDNS subnet"))
-                    Spacer(minLength: 8)
+                    Spacer(minLength: AetherVisual.s2)
                     Text(
                         dns.hasEDNSClientSubnet
                             ? AppLocalization.string("Configured")
@@ -270,7 +270,7 @@ struct DNSView: View {
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: AetherVisual.s2)
                 StatePill(
                     title: modeTitle(dns.mode),
                     color: modeColor(dns.mode),
@@ -287,10 +287,10 @@ struct DNSView: View {
                 )
                 .font(.caption.weight(.medium))
                 .foregroundStyle(Color.accentColor)
-                .padding(.horizontal, AetherVisual.s3)
-                .padding(.vertical, AetherVisual.s2)
+                .padding(.horizontal, AetherVisual.pillHorizontalPadding)
+                .padding(.vertical, AetherVisual.pillVerticalPadding)
                 .background(
-                    Color.accentColor.opacity(0.09),
+                    Color.accentColor.opacity(0.12),
                     in: Capsule()
                 )
             }
@@ -300,13 +300,13 @@ struct DNSView: View {
             Grid(alignment: .leading, horizontalSpacing: AetherVisual.s3, verticalSpacing: AetherVisual.s2) {
                 GridRow {
                     DNSCountLabel(AppLocalization.string("Bypass filters"))
-                    Spacer(minLength: 8)
+                    Spacer(minLength: AetherVisual.s2)
                     Text(verbatim: String(dns.fakeIPFilterCount))
                         .monospacedDigit()
                 }
                 GridRow {
                     DNSCountLabel(AppLocalization.string("Fallback filter"))
-                    Spacer(minLength: 8)
+                    Spacer(minLength: AetherVisual.s2)
                     Text(
                         dns.hasFallbackFilter
                             ? AppLocalization.string("Configured")
@@ -788,7 +788,7 @@ private struct ChangedSettingDot: View {
     var body: some View {
         Circle()
             .fill(Color.accentColor)
-            .frame(width: 6, height: 6)
+            .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
             .accessibilityElement()
             .accessibilityLabel(AppLocalization.string("Changed"))
             // A labelled shape has no role of its own; announce it as an image.
@@ -820,7 +820,7 @@ private struct DNSSettingRow: View {
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 14)
+            Spacer(minLength: AetherVisual.s3)
             Text(value)
                 .font(.body.weight(.medium))
                 .foregroundStyle(.primary)

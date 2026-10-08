@@ -57,6 +57,8 @@ state still changes, only the travel is dropped.
 | `disclosure` (spring 0.3 s) | Disclosure chevrons and the content they reveal |
 | `gentleSpring` (spring 0.32 s) | Layout and list changes, inline messages |
 | `panelSpring` (spring 0.42 s) | Larger surfaces and the connection lens |
+| `switchToggle` (spring 0.3 s) | The connection switch's knob |
+| `attentionPulse` (1.2 s, repeating) | The menu bar's "new version" badge |
 
 Shared pieces apply them the same way everywhere:
 
@@ -78,6 +80,9 @@ Shared pieces apply them the same way everywhere:
 - Every animation goes through `AetherVisual.animation(_:)` (or reads
   `accessibilityReduceMotion`); a bare token such as
   `.animation(AetherVisual.quickFade, …)` ignores Reduce Motion.
+- No curve is written outside `AetherMotion.swift` and
+  `AetherRouteVisualSystem.swift`; `scripts/test_motion_guards.sh` rejects a
+  hand-tuned `withAnimation(.easeInOut(…))` anywhere else.
 - Navigation is a native sidebar list with real buttons, keyboard shortcuts,
   focus behavior, and selected-state accessibility traits.
 

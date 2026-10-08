@@ -113,10 +113,12 @@ struct ThirdPartyLicensesView: View {
     ) -> some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                TextField(AppLocalization.string("Search components"), text: $searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("license-search-field")
-                    .padding(AetherVisual.s3)
+                AetherSearchField(
+                    text: $searchText,
+                    prompt: AppLocalization.string("Search components"),
+                    accessibilityIdentifier: "license-search-field"
+                )
+                .padding(AetherVisual.s3)
 
                 Divider()
 

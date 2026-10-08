@@ -660,7 +660,7 @@ private struct SessionBar: View {
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s1)
         .frame(minHeight: 44)
-        .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.s3 + AetherVisual.sMicro, style: .continuous))
+        .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.compactPanelRadius, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("connections-session-bar")
     }
@@ -785,7 +785,7 @@ private struct ConnectionDestinationCell: View {
             HStack(spacing: AetherVisual.s1) {
                 Circle()
                     .fill(outlet == .rejected ? Color.red : Color.green)
-                    .frame(width: 6, height: 6)
+                    .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
                     .accessibilityHidden(true)
                 Text(connection.transport == .tcp ? "TCP" : "UDP")
                     .font(.caption.monospaced())
@@ -818,7 +818,7 @@ private struct ConnectionRuleCell: View {
                 .font(.caption2.monospaced().weight(.semibold))
                 .foregroundStyle(AetherVisual.strongSecondaryText)
                 .padding(.horizontal, AetherVisual.s1)
-                .padding(.vertical, 1)
+                .padding(.vertical, AetherVisual.sMicro)
                 .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
                 .fixedSize()
             if !connection.rulePayload.isEmpty {

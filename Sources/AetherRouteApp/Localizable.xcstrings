@@ -9338,6 +9338,17 @@
         }
       }
     },
+    "Custom": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义"
+          }
+        }
+      }
+    },
     "Command Palette…": {
       "extractionState": "manual",
       "localizations": {

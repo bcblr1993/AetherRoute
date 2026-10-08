@@ -128,7 +128,7 @@ struct IndependentDistributionView: View {
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 12)
+                Spacer(minLength: AetherVisual.s3)
                 if hasStoredLicense {
                     Menu {
                         Button(AppLocalization.string("Refresh License")) {
@@ -198,7 +198,7 @@ struct IndependentDistributionView: View {
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 12)
+                Spacer(minLength: AetherVisual.s3)
                 Button {
                     sparkle.checkForUpdates()
                 } label: {

@@ -853,7 +853,7 @@ private struct MenuBarContent: View {
         return (alert, title, SubscriptionUsageLine.summary(usage, alert: alert, now: .now))
     }
 
-    private static let groupRadius: CGFloat = 14
+    private static let groupRadius = AetherVisual.compactPanelRadius
     private static let rowTileSize: CGFloat = 24
 
     /// One line of guidance in the panel's own style: symbol, what is wrong,
@@ -1318,9 +1318,13 @@ private struct MenuNodeListInline: View {
                     Image(systemName: "magnifyingglass")
                         .font(.subheadline)
                         .foregroundStyle(AetherVisual.secondaryText)
+                    // Kept compact for the panel rather than AetherSearchField,
+                    // but with the same Escape-to-clear and labelled clear button.
                     TextField(AppLocalization.string("Search nodes"), text: $searchText)
                         .textFieldStyle(.plain)
                         .font(.subheadline)
+                        .onExitCommand { searchText = "" }
+                        .accessibilityLabel(AppLocalization.string("Search nodes"))
                         .accessibilityIdentifier("menu-node-search-field")
                     if !searchText.isEmpty {
                         Button {
@@ -1331,6 +1335,7 @@ private struct MenuNodeListInline: View {
                                 .foregroundStyle(AetherVisual.secondaryText)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(AppLocalization.string("Clear"))
                     }
                 }
                 .padding(.horizontal, AetherVisual.s2)
@@ -1477,7 +1482,7 @@ private struct MenuUpdateStatus: View {
                     HStack(spacing: AetherVisual.sCompact) {
                         Circle()
                             .fill(Color.white)
-                            .frame(width: AetherVisual.sCompact, height: AetherVisual.sCompact)
+                            .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
                             .opacity(isPulsing ? 0.6 : 1)
                             .accessibilityHidden(true)
                         Text(String.localizedStringWithFormat(AppLocalization.string("New version %@"), version))
@@ -1497,7 +1502,7 @@ private struct MenuUpdateStatus: View {
                 .accessibilityIdentifier("menu-update-available")
                 .onAppear {
                     guard !reduceMotion else { return }
-                    withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    withAnimation(AetherVisual.animation(AetherVisual.attentionPulse)) {
                         isPulsing = true
                     }
                 }
@@ -1605,7 +1610,7 @@ private struct MenuLiveTrafficMetric: View {
         VStack(alignment: .leading, spacing: AetherVisual.s1) {
             HStack(spacing: AetherVisual.sCompact) {
                 if let dot {
-                    Circle().fill(dot).frame(width: 6, height: 6)
+                    Circle().fill(dot).frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
                 }
                 Text(title)
             }
@@ -1844,7 +1849,7 @@ private struct SettingsView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("AetherRoute settings")
         .accessibilityIdentifier("aetherroute-settings-root")
-        .frame(minWidth: 780, idealWidth: 960, minHeight: 560, idealHeight: 640)
+        .frame(minWidth: AetherVisual.windowMinWidth, idealWidth: AetherVisual.windowWidth, minHeight: AetherVisual.windowMinHeight, idealHeight: 640)
         .onReceive(NotificationCenter.default.publisher(for: .aetherRouteNavigateToSettings)) { notification in
             if let raw = notification.object as? String, let tab = SettingsTab.resolve(raw) { selectedTab = tab }
         }
@@ -1939,7 +1944,7 @@ private struct SettingsView: View {
                         .foregroundStyle(.primary)
                     AetherHelpButton(topic: .networkEngine)
 
-                    Spacer(minLength: 12)
+                    Spacer(minLength: AetherVisual.s3)
 
                     AetherSegmentedPicker(
                         selection: networkEngineBinding,
@@ -1964,7 +1969,7 @@ private struct SettingsView: View {
                         .foregroundStyle(.primary)
                     AetherHelpButton(topic: .routingMode)
 
-                    Spacer(minLength: 12)
+                    Spacer(minLength: AetherVisual.s3)
 
                     AetherSegmentedPicker(
                         selection: Binding(
@@ -2076,7 +2081,7 @@ private struct SettingsView: View {
                     systemImage: "exclamationmark.triangle.fill"
                 )
                 .font(.caption)
-                .foregroundStyle(.yellow)
+                .foregroundStyle(.orange)
             } else if let error = startup.errorMessage {
                 Label(error, systemImage: "exclamationmark.circle.fill")
                     .font(.caption)
@@ -2195,7 +2200,7 @@ private struct SettingsView: View {
                 }
                 .accessibilityIdentifier("copy-clear-proxy-button")
 
-                Spacer(minLength: 12)
+                Spacer(minLength: AetherVisual.s3)
 
                 if let message = localProxyCopyMessage
                     ?? tunnel.localProxySettingsMessage {

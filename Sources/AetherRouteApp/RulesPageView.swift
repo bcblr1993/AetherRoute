@@ -611,6 +611,21 @@ struct RuleKindTag: View {
     }
 }
 
+/// Marks a rule the person wrote, in the rule list and in the custom rule
+/// editor alike. Teal names the source; it does not carry state.
+private struct CustomRuleBadge: View {
+    var body: some View {
+        Text(AppLocalization.string("Custom"))
+            .textCase(.uppercase)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(AetherReadableTint(color: .teal))
+            .padding(.horizontal, AetherVisual.s1)
+            .padding(.vertical, AetherVisual.sMicro)
+            .background(Color.teal.opacity(0.16), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+            .fixedSize()
+    }
+}
+
 /// Where a rule sends traffic, coloured by kind of target: direct green,
 /// reject red, a proxy or group indigo.
 struct RuleTargetLabel: View {
@@ -672,12 +687,7 @@ private struct RuleRow: View {
                 .frame(width: 28, alignment: .trailing)
 
             if rule.isCustom {
-                Text(verbatim: "CUSTOM")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Color.teal)
-                    .padding(.horizontal, AetherVisual.s1)
-                    .padding(.vertical, AetherVisual.sMicro)
-                    .background(Color.teal.opacity(0.16), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
+                CustomRuleBadge()
             }
 
             RuleKindTag(kind: rule.kind)
@@ -802,23 +812,11 @@ struct CustomRuleRow: View {
             .controlSize(.mini)
             .labelsHidden()
 
-            Text(verbatim: "CUSTOM")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(Color.teal)
-                .padding(.horizontal, AetherVisual.s1)
-                .padding(.vertical, AetherVisual.sMicro)
-                .background(Color.teal.opacity(0.15), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
-                .overlay {
-                    RoundedRectangle(cornerRadius: AetherVisual.badgeRadius)
-                        .stroke(Color.teal.opacity(0.3), lineWidth: 0.5)
-                }
+            CustomRuleBadge()
 
-            Text(rule.kind.rawValue)
-                .font(.system(.caption2, design: .monospaced, weight: .bold))
-                .foregroundStyle(Color.blue)
-                .padding(.horizontal, AetherVisual.sCompact)
-                .padding(.vertical, AetherVisual.sMicro)
-                .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
+            // The same neutral tag as the rule list: a rule kind names
+            // what is matched, it is not a state, so it carries no colour.
+            RuleKindTag(kind: rule.kind.rawValue)
 
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 HStack(spacing: AetherVisual.s1) {

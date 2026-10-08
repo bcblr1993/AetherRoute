@@ -237,12 +237,12 @@ private struct ProxyGroupTabButton: View {
             }
             .padding(.horizontal, AetherVisual.sRow)
             .padding(.vertical, AetherVisual.s2)
-            .contentShape(RoundedRectangle(cornerRadius: AetherVisual.s3, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
             .background(
                 isSelected
                     ? Color.accentColor.opacity(0.22)
-                    : (isHovered ? Color.secondary.opacity(0.1) : Color.clear),
-                in: RoundedRectangle(cornerRadius: AetherVisual.s3, style: .continuous)
+                    : (isHovered ? AetherVisual.hoverFill : Color.clear),
+                in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
             )
         }
         .buttonStyle(.aetherPressable)
@@ -691,8 +691,8 @@ private struct ProxyNodeRow: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AetherReadableTint(color: .green))
                     .padding(.horizontal, AetherVisual.s1)
-                    .padding(.vertical, 1)
-                    .background(Color.green.opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .padding(.vertical, AetherVisual.sMicro)
+                    .background(Color.green.opacity(0.14), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
                     .transition(.opacity)
             }
             Spacer(minLength: AetherVisual.s2)
@@ -706,7 +706,7 @@ private struct ProxyNodeRow: View {
         if row.isSelected {
             return showsSelectionControl ? Color.accentColor.opacity(0.08) : Color.green.opacity(0.07)
         }
-        return isHovered ? Color.secondary.opacity(0.08) : Color.clear
+        return isHovered ? AetherVisual.hoverFill : Color.clear
     }
 
     private var latencyHelp: String {

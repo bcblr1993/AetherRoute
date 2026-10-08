@@ -15,6 +15,8 @@ extension AetherVisual {
     static let disclosure = Animation.spring(response: 0.3, dampingFraction: 0.88)
     /// A switch knob travelling to its other side.
     static let switchToggle = Animation.spring(response: 0.3, dampingFraction: 0.72)
+    /// The one repeating attention cue: the menu bar's "new version" badge.
+    static let attentionPulse = Animation.easeInOut(duration: 1.2).repeatForever(autoreverses: true)
 
     /// A row or inline message arriving in, or leaving, a list.
     @MainActor static var insertion: AnyTransition {

@@ -218,7 +218,7 @@ struct ManualNodeEditorSheet: View {
                     .foregroundStyle(
                         node.privateKey.isEmpty
                             ? Color.secondary
-                            : Color.teal
+                            : Color.green
                     )
                     Spacer()
                     Button(
