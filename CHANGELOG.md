@@ -4,6 +4,25 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.3] - 2026-10-08
+
+AetherRoute now features a unified, refined macOS design system (AetherRouteVisualSystem) with standardized row height tiers, card padding, inline controls, native sheet footers, inline status messaging, and reinforced design token guards.
+
+### Changed & Improved
+
+- Visual Design Token Hierarchy: Established explicit row height tokens (`rowHeight: 52`, `compactRowHeight: 44`, `listRowHeight: 40`, `tableRowHeight: 36`, `twoLineRowHeight: 60`) and card padding tokens (`cardPadding: 16`, `heroCardPadding: 20`, `listCardInset: 8`), removing scattered literal dimensions across all pages.
+- Native HIG Dialogs & Sheet Footers: Aligned all modal sheets (manual node editor, profile editor, subscription import, password input) with macOS HIG conventions—Cancel and Primary actions share trailing-edge alignment with prominent glass styling.
+- Standardized Controls & Feedback:
+  - Introduced `AetherRowIconLabel` (24pt circular icon action button with accessible labels) and `AetherInlineMessage` (compact failure and warning feedback with WCAG-compliant accessible tints).
+  - Standardized switches with `AetherRowToggleStyle` for labeled rows and compact switches for table rows.
+  - Converted rule criteria copying to `AetherCopyButton` with proper Reduce Motion handling.
+- Localization & Dynamic Switching: Replaced legacy `LocalizedStringKey` patterns with `String.LocalizationValue` and `AppLocalization.string(...)` to guarantee instant in-app language switching without UI desynchronization.
+- Automated Design Token & Motion Guards: Enhanced `verify_ui_design_tokens.sh` and `test_motion_guards.sh` with rules guarding against raw state colors, arbitrary opacity declarations, unmanaged animations, and literal height definitions.
+
+### Verified
+
+- UI design token guards, motion guards, App compilation, and regression suites passed 100%.
+
 ## [1.3.2] - 2026-10-08
 
 AetherRoute now reliably restores proxy connections across Mac reboots and login item startups according to the user's explicit intent before shutdown.
