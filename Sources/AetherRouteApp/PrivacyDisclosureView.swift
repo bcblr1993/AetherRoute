@@ -154,11 +154,7 @@ struct PrivacyDisclosureView: View {
     /// Where data goes once connected: shown, not tucked behind a link.
     private var dataFlow: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            Text(AppLocalization.string("Once connected, data goes only here"))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AetherVisual.secondaryText)
-                .padding(.horizontal, AetherVisual.sectionHeaderInset)
-                .accessibilityAddTraits(.isHeader)
+            AetherSectionHeader(title: AppLocalization.string("Once connected, data goes only here"))
             VStack(alignment: .leading, spacing: 0) {
                 flowNode(
                     symbol: "laptopcomputer", color: .gray,

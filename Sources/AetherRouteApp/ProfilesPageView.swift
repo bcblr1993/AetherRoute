@@ -75,7 +75,7 @@ struct EmptyProfileOnboardingCard: View {
                 Spacer()
             }
 
-            Divider().opacity(0.35)
+            Divider()
 
             HStack(spacing: AetherVisual.s2) {
                 Image(systemName: "checkmark.seal.fill")
@@ -293,7 +293,7 @@ struct ProfilesView: View {
                 RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
                     .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
                     .background(
-                        Color.accentColor.opacity(0.06),
+                        AetherVisual.tintWash(.accentColor),
                         in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
                     )
                     .overlay {
@@ -665,11 +665,7 @@ struct ProfilesView: View {
 
     private var profileLibraryCard: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            Text(AppLocalization.string("My profiles"))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AetherVisual.secondaryText)
-                .padding(.horizontal, AetherVisual.sectionHeaderInset)
-                .accessibilityAddTraits(.isHeader)
+            AetherSectionHeader(title: AppLocalization.string("My profiles"))
 
             VStack(spacing: 0) {
                 if filteredProfiles.isEmpty {
@@ -1199,20 +1195,18 @@ private struct ManagedProfileRow: View {
                     .disabled(!canModify)
                 }
             } label: {
-                Image(systemName: "ellipsis")
-                    .font(.body.weight(.semibold))
-                    .frame(width: 26, height: 26)
+                AetherRowIconLabel(symbol: "ellipsis")
                     .contentShape(Circle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .frame(width: 26, height: 26)
+            .frame(width: AetherVisual.iconButtonSize, height: AetherVisual.iconButtonSize)
             .accessibilityLabel(AppLocalization.string("Profile actions"))
             .accessibilityIdentifier("profile-actions-\(managed.id.uuidString)")
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.sRow)
-        .frame(minHeight: 60)
+        .frame(minHeight: AetherVisual.twoLineRowHeight)
         .contentShape(Rectangle())
         .background(isHovered ? AetherVisual.hoverFill : Color.clear)
         .onHover { isHovered = $0 }

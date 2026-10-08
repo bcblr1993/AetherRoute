@@ -60,6 +60,17 @@ enum AetherVisual {
     static let selectionFill = Color.accentColor.opacity(0.16)
     /// A badge, pill or round icon button tinted by what it marks.
     static func tintFill(_ color: Color) -> Color { color.opacity(0.12) }
+    /// A faint wash of colour behind a whole message, row or drop target.
+    static func tintWash(_ color: Color) -> Color { color.opacity(0.08) }
+    /// The edge of a card or callout that a state colours.
+    static func tintBorder(_ color: Color) -> Color { color.opacity(0.4) }
+    /// Behind a floating overlay (command palette).
+    static let scrimFill = Color.black.opacity(0.12)
+    /// Secondary text on a row drawn with the accent selection.
+    static let selectedSecondaryText = Color.white.opacity(0.82)
+    /// The drawn connection switch: its track when off, its knob's edge.
+    static let switchOffTrack = Color.secondary.opacity(0.32)
+    static let switchKnobEdge = Color.black.opacity(0.12)
 
     // MARK: - Motion
     //
@@ -135,6 +146,31 @@ enum AetherVisual {
     static let sheetIconSize: CGFloat = 44
     /// The single tile above a centred empty or welcome state.
     static let heroTileSize: CGFloat = 56
+    /// A search field in a page header or toolbar. On a row of its own it
+    /// fills the column instead.
+    static let searchFieldWidth: CGFloat = 220
+    /// A vertical separator between groups of values on one line.
+    static let inlineSeparatorHeight: CGFloat = 18
+    /// An icon-only button inside a row (edit, delete, copy, more).
+    static let iconButtonSize: CGFloat = 24
+    /// An app's own icon beside its name in a list or table.
+    static let appIconSize: CGFloat = 20
+    // Row heights, one per kind of row:
+    /// A System Settings row in a card: Overview route rows, DNS policy
+    /// rows and every Settings form row.
+    static let rowHeight: CGFloat = 52
+    /// A row on a compact surface: the menu bar panel, the session bar.
+    static let compactRowHeight: CGFloat = 44
+    /// A row in a dense list: rules, proxy nodes.
+    static let listRowHeight: CGFloat = 40
+    /// A table cell or an inline input bar.
+    static let tableRowHeight: CGFloat = 36
+    /// A two-line row led by a `cardTileSize` tile: profiles.
+    static let twoLineRowHeight: CGFloat = 60
+    /// An inline placeholder where content appears later (traffic graph).
+    static let placeholderMinHeight: CGFloat = 96
+    /// The empty-state card that stands in for a whole page or section.
+    static let emptyStateMinHeight: CGFloat = 210
     /// Where a divider between rows that lead with a `rowTileSize` tile
     /// starts: past the row inset, the tile and the gap after it.
     static let rowDividerInset = s4 + rowTileSize + s3
@@ -319,6 +355,31 @@ struct AetherIconTile: View {
             .frame(width: size, height: size)
             .background(color.gradient, in: RoundedRectangle(cornerRadius: size * 0.27, style: .continuous))
             .accessibilityHidden(true)
+    }
+}
+
+/// The label of an icon-only button in a row: the symbol in a small circle,
+/// tinted by what the button does (accent to run, red to delete) or neutral.
+struct AetherRowIconLabel: View {
+    let symbol: String
+    var tint: Color?
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.subheadline)
+            .foregroundStyle(foreground)
+            .frame(width: AetherVisual.iconButtonSize, height: AetherVisual.iconButtonSize)
+            .background(background, in: Circle())
+    }
+
+    private var foreground: AnyShapeStyle {
+        if let tint { return AnyShapeStyle(AetherReadableTint(color: tint)) }
+        return AnyShapeStyle(Color.primary)
+    }
+
+    private var background: Color {
+        if let tint { return AetherVisual.tintFill(tint) }
+        return AetherVisual.neutralFill
     }
 }
 
@@ -567,6 +628,9 @@ struct AetherCountBadge: View {
 struct AetherSectionHeader<Accessory: View>: View {
     let title: String
     var count: Int?
+    /// A quieter clause beside the title ("Checked before every other rule").
+    var note: String?
+    var help: HelpTopic?
     @ViewBuilder var accessory: () -> Accessory
 
     var body: some View {
@@ -576,6 +640,14 @@ struct AetherSectionHeader<Accessory: View>: View {
                 .foregroundStyle(AetherVisual.secondaryText)
             if let count {
                 AetherCountBadge(count: count)
+            }
+            if let note {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+            }
+            if let help {
+                AetherHelpButton(topic: help)
             }
             Spacer(minLength: AetherVisual.s2)
             accessory()
@@ -587,8 +659,8 @@ struct AetherSectionHeader<Accessory: View>: View {
 }
 
 extension AetherSectionHeader where Accessory == EmptyView {
-    init(title: String, count: Int? = nil) {
-        self.init(title: title, count: count) { EmptyView() }
+    init(title: String, count: Int? = nil, note: String? = nil, help: HelpTopic? = nil) {
+        self.init(title: title, count: count, note: note, help: help) { EmptyView() }
     }
 }
 
@@ -647,7 +719,7 @@ extension View {
     /// red failed), drawn the same way wherever one appears.
     func aetherCallout(tint: Color) -> some View {
         background(
-            tint.opacity(0.08),
+            AetherVisual.tintWash(tint),
             in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
         )
         .overlay {
@@ -1123,7 +1195,7 @@ private struct AetherGlassFormSection: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(section.content) { row in
                         row
-                            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                            .frame(maxWidth: .infinity, minHeight: AetherVisual.rowHeight - AetherVisual.s3 * 2, alignment: .leading)
                             .padding(.horizontal, AetherVisual.s4)
                             .padding(.vertical, AetherVisual.s3)
                         if row.id != section.content.last?.id {

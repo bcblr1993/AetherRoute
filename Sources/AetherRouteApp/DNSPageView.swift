@@ -599,7 +599,7 @@ struct DNSView: View {
                 .fixedSize()
                 .disabled(!tunnel.canModifyDNSRuntimePolicy)
         }
-        .frame(minHeight: 44)
+        .frame(minHeight: AetherVisual.rowHeight)
         .padding(.horizontal, AetherVisual.s4)
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: isChanged)
     }

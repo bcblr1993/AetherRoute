@@ -41,7 +41,7 @@ struct ConnectionsView: View {
                     prompt: AppLocalization.string("Search connections"),
                     accessibilityIdentifier: "connections-search-field"
                 )
-                .frame(width: 220)
+                .frame(width: AetherVisual.searchFieldWidth)
             }
             .padding(.horizontal, AetherVisual.pageHorizontalPadding)
             .padding(.top, AetherVisual.pageTopPadding)
@@ -620,7 +620,7 @@ private struct SessionBar: View {
                         .foregroundStyle(AetherVisual.secondaryText)
                 }
                 .accessibilityLabel(AppLocalization.string("Elapsed"))
-                Divider().frame(height: 18).opacity(0.4)
+                Divider().frame(height: AetherVisual.inlineSeparatorHeight)
             }
 
             rate(symbol: "arrow.down", value: downloadText, tint: .cyan)
@@ -631,7 +631,7 @@ private struct SessionBar: View {
             Spacer(minLength: AetherVisual.s3)
 
             if let outlet {
-                Divider().frame(height: 18).opacity(0.4)
+                Divider().frame(height: AetherVisual.inlineSeparatorHeight)
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     Text(AppLocalization.string("Outlet"))
                         .font(.caption2.weight(.bold))
@@ -656,7 +656,7 @@ private struct SessionBar: View {
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s1)
-        .frame(minHeight: 44)
+        .frame(minHeight: AetherVisual.compactRowHeight)
         .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.compactPanelRadius, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("connections-session-bar")
@@ -713,7 +713,7 @@ private struct ConnectionAppCell: View {
             Image(nsImage: SourceAppDirectory.shared.icon(for: app))
                 .resizable()
                 .interpolation(.high)
-                .frame(width: 18, height: 18)
+                .frame(width: AetherVisual.appIconSize, height: AetherVisual.appIconSize)
                 .opacity(app.isUnknown ? 0.45 : 1)
                 .accessibilityHidden(true)
             Text(app.displayName)
@@ -790,11 +790,11 @@ private struct ConnectionDestinationCell: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 36)
+        .frame(height: AetherVisual.tableRowHeight)
         .foregroundStyle(.primary)
         // Only a rejected flow is tinted; a filled background on every
         // destination cell made one column look unlike the rest of the row.
-        .background(outlet == .rejected ? Color.red.opacity(0.08) : Color.clear)
+        .background(outlet == .rejected ? AetherVisual.tintWash(.red) : Color.clear)
         .accessibilityElement(children: .contain)
     }
 

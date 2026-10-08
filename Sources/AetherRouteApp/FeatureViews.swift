@@ -120,7 +120,7 @@ struct FeatureEmptyState: View {
         } description: {
             Text(detail)
         }
-        .frame(maxWidth: .infinity, minHeight: 210)
+        .frame(maxWidth: .infinity, minHeight: AetherVisual.emptyStateMinHeight)
         .aetherPanel()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(title))

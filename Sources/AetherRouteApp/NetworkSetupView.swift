@@ -272,9 +272,9 @@ private struct NetworkSetupEngineCard: View {
 
     private var borderColor: Color {
         switch state {
-        case .ready: Color.green.opacity(0.35)
-        case .awaitingApproval, .awaitingConfigurationConsent: Color.accentColor.opacity(0.45)
-        case .failed: Color.red.opacity(0.35)
+        case .ready: AetherVisual.tintBorder(.green)
+        case .awaitingApproval, .awaitingConfigurationConsent: AetherVisual.tintBorder(.accentColor)
+        case .failed: AetherVisual.tintBorder(.red)
         default: Color.clear
         }
     }
@@ -361,7 +361,7 @@ struct NetworkSetupGuide: View {
                         .font(.callout.weight(.bold).monospacedDigit())
                         .foregroundStyle(step == activeStep ? AnyShapeStyle(Color.white) : AnyShapeStyle(AetherVisual.secondaryText))
                         .frame(width: AetherVisual.s5, height: AetherVisual.s5)
-                        .background(step == activeStep ? Color.accentColor : Color.secondary.opacity(0.15), in: Circle())
+                        .background(step == activeStep ? Color.accentColor : AetherVisual.neutralFill, in: Circle())
                     VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                         Text(title(step))
                             .font(.callout.weight(.semibold))

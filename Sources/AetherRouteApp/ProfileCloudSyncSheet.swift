@@ -59,7 +59,7 @@ struct ProfileCloudSyncSheet: View {
                         }
                     }
 
-                    Divider().opacity(0.4)
+                    Divider()
 
                     HStack(spacing: AetherVisual.s3) {
                         Button {

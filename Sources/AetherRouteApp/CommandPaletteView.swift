@@ -320,7 +320,7 @@ private struct CommandPaletteRow: View {
             Spacer(minLength: AetherVisual.s2)
             Text(item.subtitle)
                 .font(.caption)
-                .foregroundStyle(isSelected ? AnyShapeStyle(Color.white.opacity(0.8)) : AnyShapeStyle(AetherVisual.secondaryText))
+                .foregroundStyle(isSelected ? AnyShapeStyle(AetherVisual.selectedSecondaryText) : AnyShapeStyle(AetherVisual.secondaryText))
                 .lineLimit(1)
         }
         .padding(.horizontal, AetherVisual.s2)

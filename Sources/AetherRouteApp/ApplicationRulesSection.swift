@@ -15,19 +15,13 @@ struct ApplicationRulesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
-                Text(AppLocalization.string("Application rules"))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AetherVisual.secondaryText)
-                    .accessibilityAddTraits(.isHeader)
-                Text(AppLocalization.string("Checked before every other rule"))
-                    .font(.caption)
-                    .foregroundStyle(AetherVisual.secondaryText)
-                AetherHelpButton(topic: .applicationRules)
-                Spacer(minLength: AetherVisual.s2)
+            AetherSectionHeader(
+                title: AppLocalization.string("Application rules"),
+                note: AppLocalization.string("Checked before every other rule"),
+                help: .applicationRules
+            ) {
                 addMenu
             }
-            .padding(.horizontal, AetherVisual.s2)
 
             VStack(alignment: .leading, spacing: 0) {
 #if AETHERROUTE_INDEPENDENT
@@ -166,7 +160,7 @@ private struct ApplicationRuleRow: View {
             Image(nsImage: icon)
                 .resizable()
                 .interpolation(.high)
-                .frame(width: 22, height: 22)
+                .frame(width: AetherVisual.appIconSize, height: AetherVisual.appIconSize)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
@@ -207,11 +201,7 @@ private struct ApplicationRuleRow: View {
             Button {
                 Task { await tunnel.deleteCustomRule(id: rule.id) }
             } label: {
-                Image(systemName: "trash")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.red.opacity(0.85))
-                    .frame(width: 24, height: 24)
-                    .background(AetherVisual.tintFill(.red), in: Circle())
+                AetherRowIconLabel(symbol: "trash", tint: .red)
             }
             .buttonStyle(.aetherPressable)
             .help(AppLocalization.string("Delete rule"))

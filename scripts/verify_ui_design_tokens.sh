@@ -75,6 +75,21 @@ fail_if_found \
   '\b(Text|Label|Button|Toggle|Section|Picker|TextField|SecureField|LabeledContent|help|accessibilityLabel|accessibilityHint|confirmationDialog)\([[:space:]]*"[^"]'
 
 fail_if_found \
+  "colour opacities come from AetherVisual fills (subtleFill, neutralFill, tintFill, tintWash, tintBorder ...)" \
+  'Color\.[A-Za-z]+\.opacity\(' \
+  -g '!AetherRouteVisualSystem.swift'
+
+fail_if_found \
+  "dividers use the system separator as is; do not fade them" \
+  'Divider\(\)[^\n]*\.opacity\(|Divider\(\)\n[[:space:]]*\.opacity\(' \
+  -g '!AetherRouteVisualSystem.swift'
+
+fail_if_found \
+  "row heights use AetherVisual.rowHeight, compactRowHeight, listRowHeight, tableRowHeight or twoLineRowHeight" \
+  '\.frame\([^)]*minHeight:[[:space:]]*[1-9][0-9]*[,)]' \
+  -g '!AetherRouteVisualSystem.swift'
+
+fail_if_found \
   "literal font sizes are forbidden; use a system text style such as .caption or .body (sizes relative to a container are allowed)" \
   '\.system\([[:space:]]*size:[[:space:]]*[0-9]'
 

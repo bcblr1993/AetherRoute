@@ -111,11 +111,7 @@ struct ProxiesView: View {
     /// The groups as a vertical list beside the members of the chosen one.
     private func proxyGroupColumn(groups: [ProxyGroupConfigurationSummary]) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            Text(AppLocalization.string("Proxy groups"))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AetherVisual.secondaryText)
-                .padding(.horizontal, AetherVisual.sectionHeaderInset)
-                .accessibilityAddTraits(.isHeader)
+            AetherSectionHeader(title: AppLocalization.string("Proxy groups"))
             VStack(spacing: AetherVisual.sMicro) {
                 ForEach(groups) { group in
                     groupButton(group, in: groups, fillsWidth: true)
@@ -648,7 +644,7 @@ private struct ProxyNodeRow: View {
             .frame(width: 84, alignment: .trailing)
         }
         .padding(.horizontal, AetherVisual.s3)
-        .frame(minHeight: 40)
+        .frame(minHeight: AetherVisual.listRowHeight)
         .background(rowFill, in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous))
         .onHover { isHovered = $0 }
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
@@ -674,7 +670,7 @@ private struct ProxyNodeRow: View {
             if showsSelectionControl {
                 Image(systemName: row.isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.body)
-                    .foregroundStyle(row.isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(AetherVisual.secondaryText.opacity(0.5)))
+                    .foregroundStyle(row.isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(AetherVisual.tertiaryText))
                     .contentTransition(.symbolEffect(.replace))
                     .frame(width: AetherVisual.s5)
                     .accessibilityHidden(true)

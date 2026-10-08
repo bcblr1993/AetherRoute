@@ -209,7 +209,7 @@ struct IndependentDistributionView: View {
                 .accessibilityIdentifier("check-for-updates-button")
             }
 
-            Divider().opacity(0.3)
+            Divider()
 
             Toggle(isOn: Binding(
                 get: { sparkle.automaticallyChecksForUpdates },

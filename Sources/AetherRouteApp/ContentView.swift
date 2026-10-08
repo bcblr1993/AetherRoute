@@ -88,14 +88,6 @@ extension Notification.Name {
 }
 
 extension RoutingMode {
-    var localizedTitleKey: LocalizedStringKey {
-        switch self {
-        case .rule: "Rule"
-        case .global: "Global"
-        case .direct: "Direct"
-        }
-    }
-
     var localizedTitle: String {
         switch self {
         case .rule: AppLocalization.string("Rule")
@@ -134,16 +126,6 @@ extension NetworkEngineMode {
     }
 }
 
-extension NetworkEngineMode {
-    var localizedTitleKey: LocalizedStringKey {
-        switch self {
-        case .transparent: "Transparent Proxy"
-#if AETHERROUTE_INDEPENDENT
-        case .tun: "TUN"
-#endif
-        }
-    }
-}
 
 struct ContentView: View {
     @EnvironmentObject private var tunnel: TunnelManager
@@ -212,7 +194,7 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             if isCommandPalettePresented && tunnel.hasAcceptedPrivacyDisclosure {
                 ZStack(alignment: .top) {
-                    Color.black.opacity(0.12)
+                    AetherVisual.scrimFill
                         .ignoresSafeArea()
                         .onTapGesture { isCommandPalettePresented = false }
                         .transition(.opacity)
@@ -426,7 +408,6 @@ struct ContentView: View {
             .padding(.bottom, AetherVisual.sRow)
 
             Divider()
-                .opacity(0.4)
                 .padding(.horizontal, AetherVisual.s3)
                 .padding(.bottom, AetherVisual.s1)
 
@@ -462,7 +443,6 @@ struct ContentView: View {
             // 3. 底部设置入口
             VStack(spacing: 0) {
                 Divider()
-                    .opacity(0.3)
                     .padding(.horizontal, AetherVisual.s3)
 
                 ViewThatFits(in: .horizontal) {
@@ -721,13 +701,13 @@ struct ConnectionSwitch: View {
         } label: {
             ZStack(alignment: tunnel.isEnabled ? .trailing : .leading) {
                 Capsule()
-                    .fill(tunnel.isEnabled ? Color.green : Color.secondary.opacity(0.32))
+                    .fill(tunnel.isEnabled ? Color.green : AetherVisual.switchOffTrack)
                 // A hairline edge rather than a drop shadow keeps the knob
                 // distinct from the grey track without a glow.
                 Circle()
                     .fill(.white)
                     .overlay {
-                        Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5)
+                        Circle().strokeBorder(AetherVisual.switchKnobEdge, lineWidth: 0.5)
                     }
                     .padding(AetherVisual.switchKnobInset)
                     .overlay {
@@ -868,11 +848,7 @@ private struct OverviewView: View {
     /// Where traffic goes and how: one grouped list, as in System Settings.
     private var routeSection: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            Text(AppLocalization.string("Overview route section"))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AetherVisual.secondaryText)
-                .padding(.horizontal, AetherVisual.sectionHeaderInset)
-                .accessibilityAddTraits(.isHeader)
+            AetherSectionHeader(title: AppLocalization.string("Overview route section"))
             VStack(spacing: 0) {
                 OverviewExitRow()
                 OverviewRowDivider()
@@ -1307,7 +1283,7 @@ private struct OverviewRow<Trailing: View>: View {
             Spacer(minLength: AetherVisual.s3)
             trailing
         }
-        .frame(minHeight: 52)
+        .frame(minHeight: AetherVisual.rowHeight)
         .padding(.horizontal, AetherVisual.s4)
     }
 }
@@ -1800,10 +1776,10 @@ private struct TrafficCard: View {
                 Text(AppLocalization.string("Once connected, live download and upload curves appear here."))
                     .font(.subheadline)
                     .foregroundStyle(AetherVisual.secondaryText)
-                    .frame(maxWidth: .infinity, minHeight: 96)
+                    .frame(maxWidth: .infinity, minHeight: AetherVisual.placeholderMinHeight)
                     .overlay {
                         RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-                            .strokeBorder(Color.secondary.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                            .strokeBorder(Color(nsColor: .separatorColor), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     }
                     .transition(.opacity)
             }

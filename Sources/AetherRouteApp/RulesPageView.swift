@@ -221,18 +221,7 @@ struct RulesView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AetherVisual.secondaryText)
-                    .accessibilityAddTraits(.isHeader)
-                if let note {
-                    Text(note)
-                        .font(.caption)
-                        .foregroundStyle(AetherVisual.secondaryText)
-                }
-            }
-            .padding(.horizontal, AetherVisual.s2)
+            AetherSectionHeader(title: title, note: note)
             content()
         }
     }
@@ -270,7 +259,7 @@ struct RulesView: View {
                     }
                 }
                 .padding(.horizontal, AetherVisual.s3 + AetherVisual.sMicro)
-                .frame(minHeight: 36)
+                .frame(minHeight: AetherVisual.tableRowHeight)
                 .background(AetherVisual.neutralFill, in: Capsule())
 
                 Button(AppLocalization.string("Test")) {
@@ -453,7 +442,7 @@ struct RulesView: View {
                             // Decorative: the filter's segments carry the counts.
                             .accessibilityHidden(true)
                             rulesSearchField
-                                .frame(width: 180)
+                                .frame(width: AetherVisual.searchFieldWidth)
                         }
                         VStack(alignment: .leading, spacing: AetherVisual.s2) {
                             HStack(spacing: AetherVisual.s3) {
@@ -677,7 +666,6 @@ private struct RuleRow: View {
     let onTest: (String) -> Void
 
     @State private var isHovered = false
-    @State private var showCopied = false
 
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
@@ -709,17 +697,18 @@ private struct RuleRow: View {
 
             Spacer(minLength: AetherVisual.s3)
 
-            if isHovered || showCopied {
-                Button {
-                    copyCriteria()
-                } label: {
-                    Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
-                        .font(.caption)
-                        .foregroundStyle(showCopied ? AnyShapeStyle(Color.green) : AnyShapeStyle(AetherVisual.secondaryText))
-                        .frame(width: 22, height: 22)
+            if isHovered {
+                // The shared copy button: it confirms with a check mark and
+                // respects Reduce Motion, unlike the hand-made one it replaced.
+                AetherCopyButton(title: Text(AppLocalization.string("Copy Criteria"))) {
+                    copyText(rule.criteria ?? rule.kind)
                 }
+                .labelStyle(.iconOnly)
+                .font(.caption)
+                .foregroundStyle(AetherVisual.secondaryText)
+                .frame(width: AetherVisual.iconButtonSize, height: AetherVisual.iconButtonSize)
                 .buttonStyle(.aetherPressable)
-                .help(AppLocalization.string("Copy criteria"))
+                .help(AppLocalization.string("Copy Criteria"))
                 .transition(.opacity)
             }
 
@@ -727,7 +716,7 @@ private struct RuleRow: View {
                 .frame(maxWidth: 190, alignment: .trailing)
         }
         .padding(.horizontal, AetherVisual.s4)
-        .frame(minHeight: 40)
+        .frame(minHeight: AetherVisual.listRowHeight)
         .background(
             isHighlighted
                 ? AetherVisual.selectionFill
@@ -769,27 +758,11 @@ private struct RuleRow: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func copyCriteria() {
-        if let criteria = rule.criteria {
-            copyText(criteria)
-        } else {
-            copyText(rule.kind)
-        }
-        withAnimation {
-            showCopied = true
-        }
-        Task {
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            withAnimation {
-                showCopied = false
-            }
-        }
-    }
-
-    private func copyText(_ text: String) {
+    @discardableResult
+    private func copyText(_ text: String) -> Bool {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        return pasteboard.setString(text, forType: .string)
     }
 }
 
@@ -855,38 +828,29 @@ struct CustomRuleRow: View {
                 Button {
                     onTest()
                 } label: {
-                    Image(systemName: "bolt.badge.clock")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 24, height: 24)
-                        .background(AetherVisual.tintFill(.accentColor), in: Circle())
+                    AetherRowIconLabel(symbol: "bolt.badge.clock", tint: .accentColor)
                 }
                 .buttonStyle(.aetherPressable)
                 .help(AppLocalization.string("Verify rule"))
+                .accessibilityLabel(AppLocalization.string("Verify rule"))
 
                 Button {
                     onEdit()
                 } label: {
-                    Image(systemName: "pencil")
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                        .frame(width: 24, height: 24)
-                        .background(AetherVisual.neutralFill, in: Circle())
+                    AetherRowIconLabel(symbol: "pencil")
                 }
                 .buttonStyle(.aetherPressable)
                 .help(AppLocalization.string("Edit rule"))
+                .accessibilityLabel(AppLocalization.string("Edit rule"))
 
                 Button {
                     onDelete()
                 } label: {
-                    Image(systemName: "trash")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.red.opacity(0.85))
-                        .frame(width: 24, height: 24)
-                        .background(AetherVisual.tintFill(.red), in: Circle())
+                    AetherRowIconLabel(symbol: "trash", tint: .red)
                 }
                 .buttonStyle(.aetherPressable)
                 .help(AppLocalization.string("Delete rule"))
+                .accessibilityLabel(AppLocalization.string("Delete rule"))
             }
         }
         .padding(.horizontal, AetherVisual.sRow)

@@ -260,7 +260,7 @@ private struct ComponentRow: View {
             Text(verbatim: component.version + "  " + component.license)
                 .font(.caption)
                 .foregroundStyle(
-                    isSelected ? Color.white.opacity(0.82) : Color.secondary
+                    isSelected ? AetherVisual.selectedSecondaryText : Color.secondary
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
@@ -340,7 +340,7 @@ private struct ComponentLicenseDetail: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(AetherVisual.s4)
-                .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius))
+                .background(AetherVisual.subtleFill, in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
         }
     }
 }

@@ -937,7 +937,7 @@ struct SupportDiagnosticsView: View {
         switch status {
         case .pending:
             Circle()
-                .fill(Color.secondary.opacity(0.3))
+                .fill(AetherVisual.tertiaryText)
                 .frame(width: 10, height: 10)
         case .running:
             ProgressView()

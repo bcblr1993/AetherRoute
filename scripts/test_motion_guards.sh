@@ -29,7 +29,7 @@ fi
 if find "$ROOT/Sources/AetherRouteApp" -name '*.swift' \
   ! -name 'AetherMotion.swift' ! -name 'AetherRouteVisualSystem.swift' -print0 | xargs -0 perl -ne '
   BEGIN { $curves = "easeIn|easeOut|easeInOut|spring|interpolatingSpring|linear|smooth|snappy|bouncy|default" }
-  if (/withAnimation\(\.(?:$curves)\b/ || /\.animation\(\.(?:$curves)\b/ || /\bAnimation\.(?:$curves)\b/) {
+  if (/withAnimation\s*(?:\(\s*\))?\s*\{/ || /withAnimation\(\.(?:$curves)\b/ || /\.animation\(\.(?:$curves)\b/ || /\bAnimation\.(?:$curves)\b/) {
     print "$ARGV:$.: $_"; $found = 1
   }
   close ARGV if eof;

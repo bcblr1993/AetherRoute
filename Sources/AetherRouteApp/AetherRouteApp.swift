@@ -1009,7 +1009,7 @@ private struct MenuBarContent: View {
             Spacer(minLength: AetherVisual.s2)
             trailing()
         }
-        .frame(minHeight: 44)
+        .frame(minHeight: AetherVisual.compactRowHeight)
         .padding(.horizontal, AetherVisual.s3)
     }
 
@@ -1038,7 +1038,7 @@ private struct MenuBarContent: View {
                 }
                 AetherDisclosureChevron(isExpanded: showingNodes)
             }
-            .frame(minHeight: 44)
+            .frame(minHeight: AetherVisual.compactRowHeight)
             .padding(.horizontal, AetherVisual.s3)
             .contentShape(Rectangle())
         }
@@ -1599,7 +1599,7 @@ private enum MenuLiveTrafficMetricKind {
 }
 
 private struct MenuLiveTrafficMetric: View {
-    let title: LocalizedStringKey
+    let title: String.LocalizationValue
     /// The graph's colour for this series, as in Overview's legend.
     let dot: Color?
     let metric: MenuLiveTrafficMetricKind
@@ -1612,7 +1612,7 @@ private struct MenuLiveTrafficMetric: View {
                 if let dot {
                     Circle().fill(dot).frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
                 }
-                Text(title)
+                Text(AppLocalization.string(title))
             }
             .font(.caption2)
             .foregroundStyle(AetherVisual.secondaryText)
@@ -1731,15 +1731,6 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         }
     }
 
-    var title: LocalizedStringKey {
-        switch self {
-        case .general: "General"
-        case .network: "Network"
-        case .privacy: "Privacy & Diagnostics"
-        case .about: "About"
-        }
-    }
-
     var titleString: String {
         switch self {
         case .general: AppLocalization.string("General")
@@ -1803,7 +1794,7 @@ private struct SettingsView: View {
                     } label: {
                     HStack(spacing: AetherVisual.sRow) {
                         AetherIconTile(symbol: tab.symbol, color: tab.tileColor)
-                        Text(tab.title)
+                        Text(tab.titleString)
                             .font(.body.weight(.medium))
                             .accessibilityIdentifier("settings-tab-\(tab.rawValue)")
                         Spacer(minLength: 0)
@@ -2349,7 +2340,7 @@ private struct SettingsView: View {
     }
 
     private func shortcutPicker(
-        _ title: LocalizedStringKey,
+        _ title: String.LocalizationValue,
         action: GlobalShortcutAction
     ) -> some View {
         ShortcutAssignmentRow(title: title, action: action)
@@ -2425,8 +2416,10 @@ private struct ShortcutAssignmentRow: View {
     @EnvironmentObject private var automation: AppAutomationController
     @State private var isPresentingChoices = false
 
-    let title: LocalizedStringKey
+    let title: String.LocalizationValue
     let action: GlobalShortcutAction
+
+    private var localizedTitle: String { AppLocalization.string(title) }
 
     var body: some View {
         LabeledContent {
@@ -2441,13 +2434,13 @@ private struct ShortcutAssignmentRow: View {
                 }
             }
             .aetherGlassButton()
-            .accessibilityLabel(title)
+            .accessibilityLabel(localizedTitle)
             .accessibilityValue(selection.displayTitle)
             .popover(isPresented: $isPresentingChoices, arrowEdge: .trailing) {
                 shortcutChoices
             }
         } label: {
-            Text(title)
+            Text(localizedTitle)
         }
     }
 
@@ -2457,7 +2450,7 @@ private struct ShortcutAssignmentRow: View {
 
     private var shortcutChoices: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            Text(title)
+            Text(localizedTitle)
                 .font(.headline)
                 .padding(.horizontal, AetherVisual.s3)
                 .padding(.top, AetherVisual.s2)
@@ -2495,7 +2488,7 @@ private struct ShortcutAssignmentRow: View {
 /// Return or when focus leaves; TunnelManager validates it and reports a bad
 /// port, and the field then shows the port actually in effect.
 private struct LocalProxyPortField: View {
-    let title: LocalizedStringKey
+    let title: String.LocalizationValue
     let port: Int
     let identifier: String
     let commit: (Int) -> Void
@@ -2508,7 +2501,7 @@ private struct LocalProxyPortField: View {
             Text(verbatim: "127.0.0.1:")
                 .monospacedDigit()
                 .foregroundStyle(AetherVisual.secondaryText)
-            TextField(title, text: $text)
+            TextField(AppLocalization.string(title), text: $text)
                 .labelsHidden()
                 .textFieldStyle(.roundedBorder)
                 .monospacedDigit()

@@ -135,6 +135,21 @@ printf '\nButton("Cancel") {}\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsP
 expect_failure 1 'interface copy goes through AppLocalization.string' \
   "$FIXTURE/scripts/verify_ui_design_tokens.sh"
 
+write_valid_source
+printf '\n.fill(Color.red.opacity(0.3))\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'colour opacities come from AetherVisual fills' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
+write_valid_source
+printf '\nDivider().opacity(0.4)\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'dividers use the system separator' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
+write_valid_source
+printf '\n.frame(minHeight: 44)\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'row heights use AetherVisual' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
 # Two violations of different rules must both be reported, not just the
 # first one found.
 write_valid_source
@@ -152,4 +167,4 @@ grep -Fq '3 rule(s) violated' "$TEMP/output.log" || {
   exit 1
 }
 
-echo 'UI design-token guards passed: valid source, missing rg, scan failure, PCRE2 failure, forbidden token, literal font size, custom RGB colour, shadow, relative icon size, unlocalized header, missing column budget, spacer minimum, spacing token as radius, tile size, grey fill, literal copy and multiple violations reported together.'
+echo 'UI design-token guards passed: valid source, missing rg, scan failure, PCRE2 failure, forbidden token, literal font size, custom RGB colour, shadow, relative icon size, unlocalized header, missing column budget, spacer minimum, spacing token as radius, tile size, grey fill, literal copy, colour opacity, faded divider, row height and multiple violations reported together.'

@@ -77,6 +77,18 @@ around them.
   holding a list, long form or document use `aetherLargeSheetFrame()`
   (a split sheet passes `splitSheetMinWidth`). Sheet content is inset
   `dialogPadding`.
+- **Rows.** One height per kind of row: `rowHeight` 52 (System Settings rows
+  in a card and Settings forms), `compactRowHeight` 44 (menu bar panel,
+  session bar), `listRowHeight` 40 (rules, proxy nodes), `tableRowHeight`
+  36 (table cells, inline input bars) and `twoLineRowHeight` 60 (profiles).
+- **Row buttons.** An icon-only button in a row is `AetherRowIconLabel`
+  (`iconButtonSize` 24, a neutral or tinted circle) and carries an
+  accessibility label; copying always uses `AetherCopyButton`. An app's
+  own icon is `appIconSize` 20.
+- **Search.** In a header or toolbar a search field is `searchFieldWidth`
+  220; on a row of its own it fills the column.
+- **Separators.** `Divider()` as the system draws it, never faded; a vertical
+  one between values on a line is `inlineSeparatorHeight` tall.
 - **Copy.** Interface strings go through `AppLocalization.string`, so the
   language chosen in Settings applies everywhere; names that are never
   translated use `Text(verbatim:)`.
