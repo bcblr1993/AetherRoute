@@ -9331,6 +9331,24 @@
     "%lld entries": {
       "extractionState": "manual",
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld entry"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld entries"
+                }
+              }
+            }
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -9357,17 +9375,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "7 天"
-          }
-        }
-      }
-    },
-    "A running network extension uses the new level from its next connection.": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在运行的网络扩展会在下次连接时使用新的级别。"
           }
         }
       }
@@ -9515,17 +9522,6 @@
         }
       }
     },
-    "Daily totals by app and by node for the last 30 days, kept on this Mac only. Open them from Overview › Statistics.": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按应用和节点记录最近 30 天每天的流量，只保存在本机。可在“概览 › 统计”中查看。"
-          }
-        }
-      }
-    },
     "Errors only": {
       "extractionState": "manual",
       "localizations": {
@@ -9573,6 +9569,24 @@
     "Imported %lld nodes.": {
       "extractionState": "manual",
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Imported %lld node."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Imported %lld nodes."
+                }
+              }
+            }
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -9595,6 +9609,24 @@
     "Imported links · %lld nodes": {
       "extractionState": "manual",
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Imported links · %lld node"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Imported links · %lld nodes"
+                }
+              }
+            }
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -9727,6 +9759,24 @@
     "Read %lld QR codes.": {
       "extractionState": "manual",
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Read %lld QR code."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Read %lld QR codes."
+                }
+              }
+            }
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -9830,17 +9880,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "统计"
-          }
-        }
-      }
-    },
-    "Statistics are off. Turn them on in Settings › Network.": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "统计已关闭，可在“设置 › 网络”中开启。"
           }
         }
       }
@@ -13626,6 +13665,83 @@
           "stringUnit": {
             "state": "translated",
             "value": "配置中的 PROCESS-NAME、PROCESS-PATH 和 PROCESS-PATH-REGEX 规则同样按此方式生效。"
+          }
+        }
+      }
+    },
+    "Statistics are off, so nothing is being counted.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "统计已关闭，当前不会记录任何流量。"
+          }
+        }
+      }
+    },
+    "Turn On": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启"
+          }
+        }
+      }
+    },
+    "Daily totals by app and by node for the last 30 days, encrypted on this Mac and never uploaded. Off until you turn it on. Open them from Overview › Statistics.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按应用和节点汇总最近 30 天的每日流量，加密保存在本机，不会上传。默认关闭，开启后才会记录。可在“概览 › 统计”中查看。"
+          }
+        }
+      }
+    },
+    "Applies at once, also to the running network extension.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即生效，正在运行的网络扩展也会同步使用新级别。"
+          }
+        }
+      }
+    },
+    "Scan Screen": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描屏幕"
+          }
+        }
+      }
+    },
+    "Reads a QR code shown in another app's window, such as a browser or chat.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取其他应用窗口中显示的二维码，例如浏览器或聊天窗口。"
+          }
+        }
+      }
+    },
+    "Allow AetherRoute under System Settings › Privacy & Security › Screen & System Audio Recording to scan the screen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在“系统设置 › 隐私与安全性 › 录屏与系统录音”中允许 AetherRoute，然后再扫描屏幕。"
           }
         }
       }

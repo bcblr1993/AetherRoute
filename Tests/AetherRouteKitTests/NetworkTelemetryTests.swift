@@ -55,7 +55,7 @@ final class NetworkTelemetryTests: XCTestCase {
         XCTAssertThrowsError(try NetworkTelemetryCodec.decode(truncated))
 
         var unknownMagic = try NetworkTelemetryCodec.encode(sampleTelemetry())
-        unknownMagic[3] = 0x33
+        unknownMagic[3] = 0x39
         XCTAssertThrowsError(try NetworkTelemetryCodec.decode(unknownMagic))
     }
 
@@ -72,6 +72,67 @@ final class NetworkTelemetryTests: XCTestCase {
         // First record starts at 48, has a 44-byte header, then destination.
         nulDestination[92] = 0
         XCTAssertThrowsError(try NetworkTelemetryCodec.decode(nulDestination))
+    }
+
+    func testART3CarriesTrafficTotalsInTheEngineLayout() throws {
+        // Mirrors clash-ffi's telemetry_v3_appends_bounded_traffic_totals.
+        let totals = [
+            TrafficTotalTelemetry(
+                sourceAppIdentifier: "com.a",
+                sourceAppPath: "/p",
+                proxyChain: "Auto → HK",
+                uploadTotal: 5,
+                downloadTotal: 7
+            ),
+            TrafficTotalTelemetry(
+                sourceAppIdentifier: "",
+                sourceAppPath: "/p",
+                proxyChain: "Auto → HK",
+                uploadTotal: 0,
+                downloadTotal: 7
+            ),
+        ]
+        let snapshot = NetworkTelemetrySnapshot(
+            uploadBytesPerSecond: 0,
+            downloadBytesPerSecond: 0,
+            uploadTotal: 0,
+            downloadTotal: 0,
+            memoryBytes: 0,
+            connections: [],
+            trafficTotals: totals
+        )
+        let data = [UInt8](try NetworkTelemetryCodec.encode(snapshot))
+        XCTAssertEqual(Array(data.prefix(4)), [0x41, 0x52, 0x54, 0x33])
+        XCTAssertEqual(Array(data[48..<52]), [0, 0, 0, 2])
+        XCTAssertEqual(Array(data[52..<60]), [0, 0, 0, 0, 0, 0, 0, 5])
+        XCTAssertEqual(Array(data[68..<72]), [0, 0, 0, 5])
+        XCTAssertEqual(Array(data[80..<(80 + 7)]), Array("com.a/p".utf8))
+        let decoded = try NetworkTelemetryCodec.decode(Data(data))
+        XCTAssertEqual(decoded, snapshot)
+        XCTAssertTrue(decoded.reportsTrafficTotals)
+
+        // An ART3 engine with no traffic yet still reports totals.
+        let empty = NetworkTelemetrySnapshot(
+            uploadBytesPerSecond: 0,
+            downloadBytesPerSecond: 0,
+            uploadTotal: 0,
+            downloadTotal: 0,
+            memoryBytes: 0,
+            connections: [],
+            reportsTrafficTotals: true
+        )
+        let emptyData = try NetworkTelemetryCodec.encode(empty)
+        XCTAssertEqual(emptyData.count, 52)
+        XCTAssertTrue(try NetworkTelemetryCodec.decode(emptyData).reportsTrafficTotals)
+        XCTAssertFalse(
+            try NetworkTelemetryCodec.decode(
+                NetworkTelemetryCodec.encode(empty, version: .v2)
+            ).reportsTrafficTotals
+        )
+
+        var truncated = Data(data)
+        truncated.removeLast()
+        XCTAssertThrowsError(try NetworkTelemetryCodec.decode(truncated))
     }
 
     func testEncoderRejectsOversizedConnectionList() {

@@ -1,5 +1,6 @@
 import AetherRouteKit
 import Foundation
+import OSLog
 
 extension TunnelManager {
     /// How much each process returns to the log viewer.
@@ -10,20 +11,43 @@ extension TunnelManager {
     }
 
     /// Saves the level. The app picks it up within a few seconds; a running
-    /// network extension receives it with its next connection.
+    /// network extension is told at once, and every later connection carries
+    /// it in the launch snapshot.
     func setDiagnosticLogLevel(_ level: DiagnosticLogLevel) {
         try? DiagnosticLogLevelStore.applicationGroup().save(level)
         objectWillChange.send()
+        guard state == .connected, !isUIReviewMode else { return }
+        let connectionID = providerConnectionID
+        Task { [weak self] in
+            guard let self else { return }
+            let client = ProxySelectionProviderClient { [weak self] data in
+                guard let self else {
+                    throw TunnelManagerError.providerSessionUnavailable
+                }
+                return try await self.sendProviderMessage(data, for: connectionID)
+            }
+            do {
+                try await client.setDiagnosticLogLevel(level)
+            } catch {
+                // An older extension does not know the message; it uses the
+                // level from its next connection.
+                Self.runtimeLogger.warning(
+                    "stage=setDiagnosticLogLevel failed error=\(String(describing: error), privacy: .public)"
+                )
+            }
+        }
     }
 
     /// This app's log and, while connected, the network extension's, merged
     /// in time order. Nothing leaves this Mac.
     func loadDiagnosticLogLines() async -> [DiagnosticLogLine] {
         let maximumBytes = Int(Self.logViewerKilobytesPerProcess) * 1_024
-        let appText = await Task.detached(priority: .userInitiated) {
-            DiagnosticLogCenter.current.recentLog(maximumBytes: maximumBytes)
+        let appLines = await Task.detached(priority: .userInitiated) {
+            DiagnosticLogLine.parse(
+                DiagnosticLogCenter.current.recentLog(maximumBytes: maximumBytes),
+                process: "app"
+            )
         }.value
-        let appLines = DiagnosticLogLine.parse(appText, process: "app")
 
         var extensionLines: [DiagnosticLogLine] = []
         if state == .connected, !isUIReviewMode {
@@ -37,13 +61,16 @@ extension TunnelManager {
             if let text = try? await client.recentLog(
                 maximumKilobytes: Self.logViewerKilobytesPerProcess
             ) {
-                extensionLines = DiagnosticLogLine.parse(
-                    text,
-                    process: networkEngineMode == .transparent ? "transparent-proxy" : "tunnel",
-                    firstID: appLines.count
-                )
+                let process = networkEngineMode == .transparent ? "transparent-proxy" : "tunnel"
+                let firstID = appLines.count
+                extensionLines = await Task.detached(priority: .userInitiated) {
+                    DiagnosticLogLine.parse(text, process: process, firstID: firstID)
+                }.value
             }
         }
-        return DiagnosticLogLine.merged([appLines, extensionLines])
+        let parts = [appLines, extensionLines]
+        return await Task.detached(priority: .userInitiated) {
+            DiagnosticLogLine.merged(parts)
+        }.value
     }
 }

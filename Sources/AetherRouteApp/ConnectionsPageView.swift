@@ -406,14 +406,10 @@ struct ConnectionsView: View {
     /// list currently shows for it is closed.
     private func closeConnections(of app: SourceAppPresentation) {
         let directory = SourceAppDirectory.shared
-        var seen = Set<String>()
-        let requests = displayedConnections.compactMap { connection -> ConnectionCloseRequest? in
-            guard directory.presentation(for: connection).groupingKey == app.groupingKey
-            else { return nil }
-            let key = connection.sourceAppIdentifier + "\u{0}" + connection.sourceAppPath
-            guard seen.insert(key).inserted else { return nil }
-            return ConnectionCloseRequest(appOf: connection)
-        }
+        let apps = displayedConnections
+            .filter { directory.presentation(for: $0).groupingKey == app.groupingKey }
+            .map(ConnectionCloseApp.init(of:))
+        let requests = ConnectionCloseRequest.closing(apps: apps)
         guard !requests.isEmpty else { return }
         Task {
             for request in requests {

@@ -6,6 +6,8 @@ public enum TelemetryCadence: Equatable, Sendable {
     case realtime
     /// A surface showing live traffic is visible behind another app.
     case background
+    /// Nothing showing traffic is visible, but traffic statistics are on.
+    case statistics
     /// Nothing showing traffic is visible; only route health is checked.
     case healthOnly
 
@@ -13,6 +15,7 @@ public enum TelemetryCadence: Equatable, Sendable {
         switch self {
         case .realtime: TunnelStartupTimingPolicy.activeTelemetryPollingIntervalSeconds
         case .background: TunnelStartupTimingPolicy.backgroundTelemetryPollingIntervalSeconds
+        case .statistics: TunnelStartupTimingPolicy.statisticsTelemetryPollingIntervalSeconds
         case .healthOnly: nil
         }
     }

@@ -67,11 +67,14 @@ extension TunnelManager {
             telemetryPollingTask == nil
         else { return }
         // Statistics need a sample now and then even with no traffic view
-        // open; the background cadence is the cheapest one that samples.
+        // open; once a minute is enough because the engine keeps exact
+        // lifetime totals between samples.
         let cadence: TelemetryCadence = if isRealtimeTelemetryPreferred {
             .realtime
-        } else if isBackgroundTelemetryPreferred || isTrafficStatisticsEnabled {
+        } else if isBackgroundTelemetryPreferred {
             .background
+        } else if isTrafficStatisticsEnabled {
+            .statistics
         } else {
             .healthOnly
         }

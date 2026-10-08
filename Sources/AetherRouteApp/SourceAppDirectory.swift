@@ -31,10 +31,14 @@ final class SourceAppDirectory {
     private let limit = 1_024
 
     func presentation(for connection: ConnectionTelemetry) -> SourceAppPresentation {
-        let key = RawKey(
+        presentation(
             identifier: connection.sourceAppIdentifier,
             path: connection.sourceAppPath
         )
+    }
+
+    func presentation(identifier: String, path: String) -> SourceAppPresentation {
+        let key = RawKey(identifier: identifier, path: path)
         if let cached = presentations[key] { return cached }
         let resolved = resolve(key)
         if presentations.count >= limit { presentations.removeAll() }

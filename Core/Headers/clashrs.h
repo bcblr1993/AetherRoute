@@ -239,6 +239,17 @@ int32_t clash_packet_telemetry_snapshot_v2(
     size_t output_capacity,
     size_t *required_length
 );
+/* "ART3": ART2 followed by lifetime traffic totals per (source app, proxy
+ * chain), covering every connection, not only the listed ones: a uint32
+ * count (at most 256, largest first), then per total uint64 upload, uint64
+ * download, three uint32 lengths and the identifier, path and chain strings.
+ * Totals that would exceed the 1 MiB bound are left out. */
+int32_t clash_packet_telemetry_snapshot_v3(
+    uint32_t maximum_connections,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+);
 /* Data-plane counters as an "ARD1" blob: magic, count, then that many
  * big-endian uint64 values. Pass a NULL output with zero capacity to learn the
  * required length. Ordinals and numbers only, never endpoints or names, so
@@ -320,6 +331,8 @@ int32_t clash_flow_selector_active_latency_v1(
  * download rate, upload total, download total, memory), connection count, and
  * bounded active-connection records. It excludes source addresses, users,
  * resolved IPs, and internal UUIDs. Maximum connection count is 128.
+ * A proxy chain lists its hops joined by " → " from the rule's target group
+ * to the node that carried the flow, e.g. "Proxy → Auto → Tokyo".
  */
 int32_t clash_flow_telemetry_snapshot_v1(
     clash_flow_engine_t *engine,
@@ -336,6 +349,15 @@ int32_t clash_flow_telemetry_snapshot_v2(
     size_t output_capacity,
     size_t *required_length
 );
+/* "ART3" variant: ART2 plus lifetime traffic totals per (source app, proxy
+ * chain); see clash_packet_telemetry_snapshot_v3 for the layout. */
+int32_t clash_flow_telemetry_snapshot_v3(
+    clash_flow_engine_t *engine,
+    uint32_t maximum_connections,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+);
 /*
  * Closes the active connections an "ARC1" request selects and writes how many
  * were signalled. Integers are big-endian; strings are a uint16 length then
@@ -345,6 +367,8 @@ int32_t clash_flow_telemetry_snapshot_v2(
  *   2  one telemetry row: network (1 TCP, 2 UDP), destination, uint16 port,
  *      int64 start time in Unix milliseconds
  *   3  connections whose proxy chain contains the named group or proxy
+ *   4  several source apps: uint16 count (1-64), then that many
+ *      identifier, path pairs, each matched like kind 1
  * The request is at most 4096 bytes and must be consumed exactly.
  */
 int32_t clash_flow_close_connections_v1(

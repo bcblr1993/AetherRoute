@@ -75,7 +75,7 @@ struct DiagnosticLogViewer: View {
             }
             .pickerStyle(.menu)
             .fixedSize()
-            .help(AppLocalization.string("A running network extension uses the new level from its next connection."))
+            .help(AppLocalization.string("Applies at once, also to the running network extension."))
             .accessibilityIdentifier("logs-level-picker")
 
             Picker(AppLocalization.string("Source"), selection: $process) {

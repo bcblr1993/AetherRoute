@@ -33,6 +33,10 @@ public enum TunnelStartupTimingPolicy {
     /// When the dashboard is idle, in background, or running in tray, telemetry
     /// steps down to 10 seconds to conserve battery and CPU.
     public static let backgroundTelemetryPollingIntervalSeconds = 10
+    /// Traffic statistics alone. The engine's lifetime totals make the split
+    /// exact however rarely it is sampled, so this only bounds how much a
+    /// crash or an extension restart can lose.
+    public static let statisticsTelemetryPollingIntervalSeconds = 60
     /// Legacy alias for backward compatibility with existing tests and call sites.
     public static let telemetryPollingIntervalSeconds = backgroundTelemetryPollingIntervalSeconds
     public static let automaticRouteHealthIntervalSeconds = 15

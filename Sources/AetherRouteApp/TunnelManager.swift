@@ -502,7 +502,7 @@ final class TunnelManager: ObservableObject {
         ) as? Bool ?? false
         self.isTrafficStatisticsEnabled = userDefaults.object(
             forKey: Self.trafficStatisticsPreferenceKey
-        ) as? Bool ?? true
+        ) as? Bool ?? false
         do {
             self.customRules = try CustomRuleStore.applicationGroup().load()
         } catch {

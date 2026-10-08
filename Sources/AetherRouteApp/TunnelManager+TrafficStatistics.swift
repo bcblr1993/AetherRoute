@@ -39,8 +39,8 @@ extension TunnelManager {
         guard isTrafficStatisticsEnabled, !isUIReviewMode else { return }
         loadTrafficLedgerIfNeeded()
         let directory = SourceAppDirectory.shared
-        let sample = trafficAccumulator.ingest(snapshot) { connection in
-            let app = directory.presentation(for: connection)
+        let sample = trafficAccumulator.ingest(snapshot) { identifier, path in
+            let app = directory.presentation(identifier: identifier, path: path)
             return .init(key: app.groupingKey, name: app.displayName)
         }
         guard !sample.isEmpty else { return }

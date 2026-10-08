@@ -20,6 +20,9 @@ public enum ConnectionCloseRequest: Sendable, Equatable {
     /// proxy, so that switching a group's member drops what still uses the
     /// old one.
     case proxyChainMember(String)
+    /// The connections of any of several apps, each matched like
+    /// `sourceApp`, in one request.
+    case sourceApps([ConnectionCloseApp])
 
     /// The request that closes exactly the connections behind one telemetry
     /// row.
@@ -32,10 +35,61 @@ public enum ConnectionCloseRequest: Sendable, Equatable {
         )
     }
 
+    /// As few requests as close every listed app: one `sourceApp` for a
+    /// single app, otherwise `sourceApps` batches that each fit the engine's
+    /// request bound. Duplicates are sent once.
+    public static func closing(apps: [ConnectionCloseApp]) -> [ConnectionCloseRequest] {
+        var seen = Set<ConnectionCloseApp>()
+        let unique = apps.filter { seen.insert($0).inserted }
+        if unique.count == 1, let app = unique.first {
+            return [.sourceApp(
+                signingIdentifier: app.signingIdentifier,
+                executablePath: app.executablePath
+            )]
+        }
+        var requests: [ConnectionCloseRequest] = []
+        var batch: [ConnectionCloseApp] = []
+        // Magic, kind and count.
+        var batchBytes = 7
+        for app in unique {
+            let bytes = 4 + app.signingIdentifier.utf8.count + app.executablePath.utf8.count
+            guard 7 + bytes <= ConnectionCloseRequestCodec.maximumBytes else { continue }
+            if !batch.isEmpty,
+               batchBytes + bytes > ConnectionCloseRequestCodec.maximumBytes
+                || batch.count == ConnectionCloseRequestCodec.maximumApps {
+                requests.append(.sourceApps(batch))
+                batch = []
+                batchBytes = 7
+            }
+            batch.append(app)
+            batchBytes += bytes
+        }
+        if !batch.isEmpty { requests.append(.sourceApps(batch)) }
+        return requests
+    }
+
     /// The request that closes every connection of one app, as telemetry
     /// reports it.
     public init(appOf connection: ConnectionTelemetry) {
         self = .sourceApp(
+            signingIdentifier: connection.sourceAppIdentifier,
+            executablePath: connection.sourceAppPath
+        )
+    }
+}
+
+/// One app in a `sourceApps` close request.
+public struct ConnectionCloseApp: Sendable, Hashable {
+    public let signingIdentifier: String
+    public let executablePath: String
+
+    public init(signingIdentifier: String, executablePath: String) {
+        self.signingIdentifier = signingIdentifier
+        self.executablePath = executablePath
+    }
+
+    public init(of connection: ConnectionTelemetry) {
+        self.init(
             signingIdentifier: connection.sourceAppIdentifier,
             executablePath: connection.sourceAppPath
         )
@@ -53,6 +107,8 @@ public enum ConnectionCloseRequestError: Error, Sendable, Equatable {
 /// rejects anything above `maximumBytes`.
 public enum ConnectionCloseRequestCodec {
     public static let maximumBytes = 4_096
+    /// The most apps one `sourceApps` request may name.
+    public static let maximumApps = 64
     private static let magic: [UInt8] = [0x41, 0x52, 0x43, 0x31]
 
     public static func encode(_ request: ConnectionCloseRequest) throws -> Data {
@@ -79,6 +135,17 @@ public enum ConnectionCloseRequestCodec {
         case let .proxyChainMember(name):
             output.append(3)
             try appendString(name, to: &output, allowsEmpty: false)
+        case let .sourceApps(apps):
+            guard (1...maximumApps).contains(apps.count) else {
+                throw ConnectionCloseRequestError.malformed
+            }
+            output.append(4)
+            output.append(UInt8(apps.count >> 8))
+            output.append(UInt8(apps.count & 0xff))
+            for app in apps {
+                try appendString(app.signingIdentifier, to: &output, allowsEmpty: true)
+                try appendString(app.executablePath, to: &output, allowsEmpty: true)
+            }
         }
         guard output.count <= maximumBytes else {
             throw ConnectionCloseRequestError.tooLarge
@@ -123,6 +190,16 @@ public enum ConnectionCloseRequestCodec {
             offset += 10
         case 3:
             guard string(allowsEmpty: false) else { return false }
+        case 4:
+            guard offset + 2 <= bytes.count else { return false }
+            let count = Int(bytes[offset]) << 8 | Int(bytes[offset + 1])
+            offset += 2
+            guard (1...maximumApps).contains(count) else { return false }
+            for _ in 0..<count {
+                guard string(allowsEmpty: true), string(allowsEmpty: true) else {
+                    return false
+                }
+            }
         default:
             return false
         }

@@ -341,6 +341,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                             maximumBytes: Int(maximumKilobytes) * 1_024
                         )
                     )
+                case let .setDiagnosticLogLevel(level):
+                    applyDiagnosticLogLevel(level)
                 case .reloadProfile:
                     // Answered by the early branch above; never crash the
                     // extension (and the user's network) if that changes.
@@ -581,6 +583,19 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         try currentCore().setRoutingMode(mode)
         uplinkLock.withLock { recoveryRoutingMode = mode }
         return .routingMode(mode)
+    }
+
+    /// Applies the level now and keeps it for later profile reloads, which
+    /// rebuild the launch snapshot.
+    private func applyDiagnosticLogLevel(
+        _ level: DiagnosticLogLevel
+    ) -> ProxySelectionProviderResponse {
+        DiagnosticLogCenter.current.applyLevelOverride(level)
+        uplinkLock.withLock { launchDiagnosticLogLevel = level }
+        Self.runtimeLogger.info(
+            "stage=appMessage setDiagnosticLogLevel level=\(level.rawValue, privacy: .public)"
+        )
+        return .diagnosticLogLevelApplied
     }
 
     private func handleResetNetwork() throws -> ProxySelectionProviderResponse {

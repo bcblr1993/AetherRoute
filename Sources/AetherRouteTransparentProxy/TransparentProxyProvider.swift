@@ -580,6 +580,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                             maximumBytes: Int(maximumKilobytes) * 1_024
                         )
                     )
+                case let .setDiagnosticLogLevel(level):
+                    self.applyDiagnosticLogLevel(level)
                 case .reloadProfile:
                     // Answered by the early branch above; never crash the
                     // extension (and the user's network) if that changes.
@@ -628,6 +630,16 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     ) throws -> ProxySelectionProviderResponse {
         try runtimeController.setRoutingMode(mode)
         return .routingMode(mode)
+    }
+
+    /// The host's level reaches this root-owned extension only through a
+    /// message: it cannot see the level file the app writes.
+    private func applyDiagnosticLogLevel(
+        _ level: DiagnosticLogLevel
+    ) -> ProxySelectionProviderResponse {
+        DiagnosticLogCenter.current.applyLevelOverride(level)
+        Self.runtimeLog.lifecycle("stage=appMessage setDiagnosticLogLevel applied")
+        return .diagnosticLogLevelApplied
     }
 
     private func handleResetNetwork() -> ProxySelectionProviderResponse {
@@ -1068,6 +1080,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         case .reloadProfile: "reloadProfile"
         case .closeConnections: "closeConnections"
         case .recentLog: "recentLog"
+        case .setDiagnosticLogLevel: "setDiagnosticLogLevel"
         }
     }
 }

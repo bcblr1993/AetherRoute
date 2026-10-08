@@ -63,7 +63,11 @@ final class ConnectionCloseRequestCodecTests: XCTestCase {
         for request: ProxySelectionProviderRequest in [
             .closeConnections(close),
             .recentLog(maximumKilobytes: 256),
-        ] {
+            .closeConnections(try ConnectionCloseRequestCodec.encode(.sourceApps([
+                ConnectionCloseApp(signingIdentifier: "com.a", executablePath: ""),
+                ConnectionCloseApp(signingIdentifier: "", executablePath: "/b"),
+            ]))),
+        ] + DiagnosticLogLevel.allCases.map(ProxySelectionProviderRequest.setDiagnosticLogLevel) {
             XCTAssertEqual(
                 try ProxySelectionProviderMessageCodec.decodeRequest(
                     ProxySelectionProviderMessageCodec.encode(request: request)
@@ -75,6 +79,7 @@ final class ConnectionCloseRequestCodecTests: XCTestCase {
             .connectionsClosed(3),
             .recentLog(Data("line\n".utf8)),
             .recentLog(Data()),
+            .diagnosticLogLevelApplied,
         ] {
             XCTAssertEqual(
                 try ProxySelectionProviderMessageCodec.decodeResponse(
@@ -93,6 +98,49 @@ final class ConnectionCloseRequestCodecTests: XCTestCase {
             ProviderMessageClass(.closeConnections(close)),
             .control
         )
+        XCTAssertEqual(ProviderMessageClass(.setDiagnosticLogLevel(.verbose)), .control)
+        // Operation 12 with an unknown level is rejected.
+        var unknownLevel = [UInt8](try ProxySelectionProviderMessageCodec.encode(
+            request: .setDiagnosticLogLevel(.verbose)
+        ))
+        unknownLevel[5] = 9
+        XCTAssertThrowsError(
+            try ProxySelectionProviderMessageCodec.decodeRequest(Data(unknownLevel))
+        )
+    }
+
+    func testSourceAppsEncodesInTheEngineLayoutAndBatchesToTheBound() throws {
+        XCTAssertEqual(
+            [UInt8](try ConnectionCloseRequestCodec.encode(.sourceApps([
+                ConnectionCloseApp(signingIdentifier: "a", executablePath: ""),
+                ConnectionCloseApp(signingIdentifier: "", executablePath: "/b"),
+            ]))),
+            [0x41, 0x52, 0x43, 0x31, 4, 0, 2, 0, 1, 0x61, 0, 0, 0, 0, 0, 2, 0x2f, 0x62]
+        )
+        XCTAssertThrowsError(try ConnectionCloseRequestCodec.encode(.sourceApps([])))
+        XCTAssertFalse(ConnectionCloseRequestCodec.isValid(Data([0x41, 0x52, 0x43, 0x31, 4, 0, 0])))
+
+        let one = ConnectionCloseApp(signingIdentifier: "com.a", executablePath: "/a")
+        XCTAssertEqual(
+            ConnectionCloseRequest.closing(apps: [one, one]),
+            [.sourceApp(signingIdentifier: "com.a", executablePath: "/a")]
+        )
+        let long = (0..<10).map {
+            ConnectionCloseApp(
+                signingIdentifier: "com.example.\($0)",
+                executablePath: String(repeating: "p", count: 500)
+            )
+        }
+        let batches = ConnectionCloseRequest.closing(apps: long)
+        XCTAssertGreaterThan(batches.count, 1)
+        var named = 0
+        for batch in batches {
+            let data = try ConnectionCloseRequestCodec.encode(batch)
+            XCTAssertLessThanOrEqual(data.count, ConnectionCloseRequestCodec.maximumBytes)
+            XCTAssertTrue(ConnectionCloseRequestCodec.isValid(data))
+            if case let .sourceApps(apps) = batch { named += apps.count }
+        }
+        XCTAssertEqual(named, long.count)
     }
 }
 
@@ -179,8 +227,97 @@ final class TrafficStatisticsTests: XCTestCase {
         )
     }
 
-    private func key(_ connection: ConnectionTelemetry) -> TrafficStatisticsAccumulator.AppKey {
-        .init(key: connection.sourceAppIdentifier, name: "Example")
+    private func key(_ identifier: String, _ path: String) -> TrafficStatisticsAccumulator.AppKey {
+        .init(key: identifier, name: "Example")
+    }
+
+    private func total(
+        _ app: String,
+        chain: String,
+        upload: UInt64,
+        download: UInt64
+    ) -> TrafficTotalTelemetry {
+        TrafficTotalTelemetry(
+            sourceAppIdentifier: app,
+            sourceAppPath: "",
+            proxyChain: chain,
+            uploadTotal: upload,
+            downloadTotal: download
+        )
+    }
+
+    private func totalsSnapshot(
+        upload: UInt64,
+        download: UInt64,
+        _ totals: [TrafficTotalTelemetry]
+    ) -> NetworkTelemetrySnapshot {
+        NetworkTelemetrySnapshot(
+            uploadBytesPerSecond: 0,
+            downloadBytesPerSecond: 0,
+            uploadTotal: upload,
+            downloadTotal: download,
+            memoryBytes: 0,
+            connections: [],
+            trafficTotals: totals,
+            reportsTrafficTotals: true
+        )
+    }
+
+    func testEngineTotalsSplitEveryConnectionExactly() {
+        var accumulator = TrafficStatisticsAccumulator()
+        _ = accumulator.ingest(
+            totalsSnapshot(upload: 10, download: 20, [
+                total("com.a", chain: "Auto → HK", upload: 10, download: 20),
+            ]),
+            appKey: key
+        )
+        // com.a grew by 5/10; com.b appeared (all of it is new); a total
+        // missing from this sample keeps its last value.
+        let second = accumulator.ingest(
+            totalsSnapshot(upload: 20, download: 40, [
+                total("com.a", chain: "Auto → HK", upload: 15, download: 30),
+                total("com.b", chain: "", upload: 5, download: 10),
+            ]),
+            appKey: key
+        )
+        XCTAssertEqual(second.total, TrafficVolume(upload: 10, download: 20))
+        XCTAssertEqual(second.apps["com.a"], TrafficVolume(upload: 5, download: 10))
+        XCTAssertEqual(second.apps["com.b"], TrafficVolume(upload: 5, download: 10))
+        XCTAssertEqual(second.nodes["HK"], TrafficVolume(upload: 5, download: 10))
+        XCTAssertEqual(second.nodes["DIRECT"], TrafficVolume(upload: 5, download: 10))
+
+        let third = accumulator.ingest(
+            totalsSnapshot(upload: 21, download: 40, [
+                total("com.b", chain: "", upload: 6, download: 10),
+            ]),
+            appKey: key
+        )
+        XCTAssertEqual(third.apps, ["com.b": TrafficVolume(upload: 1, download: 0)])
+        let fourth = accumulator.ingest(
+            totalsSnapshot(upload: 22, download: 40, [
+                total("com.a", chain: "Auto → HK", upload: 16, download: 30),
+            ]),
+            appKey: key
+        )
+        XCTAssertEqual(fourth.apps, ["com.a": TrafficVolume(upload: 1, download: 0)])
+    }
+
+    func testEngineRestartStartsTotalsOver() {
+        var accumulator = TrafficStatisticsAccumulator()
+        _ = accumulator.ingest(
+            totalsSnapshot(upload: 100, download: 100, [
+                total("com.a", chain: "", upload: 100, download: 100),
+            ]),
+            appKey: key
+        )
+        let sample = accumulator.ingest(
+            totalsSnapshot(upload: 3, download: 4, [
+                total("com.a", chain: "", upload: 3, download: 4),
+            ]),
+            appKey: key
+        )
+        XCTAssertEqual(sample.total, TrafficVolume(upload: 3, download: 4))
+        XCTAssertEqual(sample.apps["com.a"], TrafficVolume(upload: 3, download: 4))
     }
 
     func testFirstSampleOnlySetsTheBaseline() {
@@ -219,25 +356,81 @@ final class TrafficStatisticsTests: XCTestCase {
         XCTAssertEqual(sample.total, TrafficVolume(upload: 40, download: 60))
     }
 
+    private var utc: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }
+
+    private func date(_ day: Int, month: Int = 9) -> Date {
+        utc.date(from: DateComponents(year: 2026, month: month, day: day, hour: 12))!
+    }
+
+    private func sample() -> TrafficSampleAttribution {
+        TrafficSampleAttribution(
+            total: TrafficVolume(upload: 1, download: 2),
+            apps: ["app": TrafficVolume(upload: 1, download: 0)],
+            appNames: ["app": "App"],
+            nodes: ["HK": TrafficVolume(upload: 0, download: 2)]
+        )
+    }
+
     func testLedgerKeepsBoundedDaysAndSums() {
         var ledger = TrafficStatisticsLedger()
-        for day in 1...40 {
-            ledger.add(
-                TrafficSampleAttribution(
-                    total: TrafficVolume(upload: 1, download: 2),
-                    apps: ["app": TrafficVolume(upload: 1, download: 0)],
-                    appNames: ["app": "App"],
-                    nodes: ["HK": TrafficVolume(upload: 0, download: 2)]
-                ),
-                day: String(format: "2026-09-%02d", day)
-            )
+        for offset in 0..<40 {
+            let day = utc.date(byAdding: .day, value: offset, to: date(1))!
+            ledger.add(sample(), day: TrafficStatisticsLedger.dayKey(for: day, calendar: utc))
         }
         XCTAssertEqual(ledger.days.count, TrafficStatisticsLedger.retainedDays)
-        let week = ledger.summary(lastDays: 7)
+        let lastDay = utc.date(byAdding: .day, value: 39, to: date(1))!
+        let week = ledger.summary(lastDays: 7, endingAt: lastDay, calendar: utc)
         XCTAssertEqual(week.total, TrafficVolume(upload: 7, download: 14))
         XCTAssertEqual(week.apps["app"], TrafficVolume(upload: 7, download: 0))
         XCTAssertEqual(week.appNames["app"], "App")
         XCTAssertEqual(week.nodes["HK"], TrafficVolume(upload: 0, download: 14))
+    }
+
+    func testSummaryCountsCalendarDaysNotRecordedDays() {
+        var ledger = TrafficStatisticsLedger()
+        ledger.add(sample(), day: "2026-09-01")
+        ledger.add(sample(), day: "2026-09-05")
+        // Nothing moved on the 10th yet: today is empty, the week only has
+        // the 5th, and the month has both.
+        XCTAssertEqual(ledger.summary(lastDays: 1, endingAt: date(10), calendar: utc).total, TrafficVolume())
+        XCTAssertEqual(
+            ledger.summary(lastDays: 7, endingAt: date(10), calendar: utc).total,
+            TrafficVolume(upload: 1, download: 2)
+        )
+        XCTAssertEqual(
+            ledger.summary(lastDays: 30, endingAt: date(10), calendar: utc).total,
+            TrafficVolume(upload: 2, download: 4)
+        )
+        XCTAssertEqual(ledger.summary(lastDays: 0, endingAt: date(10), calendar: utc).total, TrafficVolume())
+    }
+
+    func testStoreSealsTheLedgerAndOpensItOnlyWithItsKey() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("TrafficStatistics.v1.sealed")
+        let keys = InMemoryProfileKeyStore()
+        let store = TrafficStatisticsStore(fileURL: url, keyStore: keys)
+        var ledger = TrafficStatisticsLedger()
+        ledger.add(sample(), day: "2026-09-01")
+
+        try store.save(ledger)
+        XCTAssertEqual(store.load(), ledger)
+        let onDisk = try Data(contentsOf: url)
+        XCTAssertNil(onDisk.range(of: Data("2026-09-01".utf8)))
+        XCTAssertNil(onDisk.range(of: Data("HK".utf8)))
+
+        // Without the key the ledger reads as empty instead of failing.
+        let stranger = TrafficStatisticsStore(fileURL: url, keyStore: InMemoryProfileKeyStore())
+        XCTAssertEqual(stranger.load(), TrafficStatisticsLedger())
+
+        try store.clear()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertEqual(store.load(), TrafficStatisticsLedger())
     }
 
     func testExitIsTheLastHop() {

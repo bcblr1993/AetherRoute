@@ -6,21 +6,28 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased] - 1.4.0
 
-AetherRoute can now close connections without disconnecting, shows its own logs, imports nodes from pasted links or QR codes, and keeps local traffic statistics by app and node.
+AetherRoute can now close connections without disconnecting, shows its own logs, imports nodes from pasted links, QR images or the screen, and keeps encrypted local traffic statistics by app and node.
 
 ### Added
 
-- Close connections: Connections › Close All, plus Close Connection and Close Connections of … in the context menus. The tunnel stays up and apps reconnect on their own.
-- Switching a group's node closes the connections that still run through that group, so the new node takes effect at once (Settings › Network › Proxies, on by default).
-- Logs: Settings › Privacy & Diagnostics › View Logs… shows what the app and the running network extension recorded, with a recording level (Off / Standard / Verbose), source and error filters, search and copy. Nothing leaves the Mac.
+- Close connections: Connections › Close All, plus Close Connection and Close Connections of … in the context menus. The tunnel stays up and apps reconnect on their own. Closing an app that runs as several processes (a browser and its helpers) is one batched request.
+- Switching a group's node closes the connections that still run through that group, nested groups included, so the new node takes effect at once (Settings › Network › Proxies, on by default).
+- Logs: Settings › Privacy & Diagnostics › View Logs… shows what the app and the running network extension recorded, with a recording level (Off / Standard / Verbose), source and error filters, search and copy. A new level applies at once, also to the running extension. Nothing leaves the Mac.
 - Optional latency test when the Proxies page opens (Settings › Network, off by default), at most once a minute per group and only while connected.
-- Import Node Links…: paste `vless://`, `ss://`, `hy2://` … links (one per line or a Base64 list), or read them from a QR code image (choose, drop or paste a screenshot). The nodes become one editable native profile; invalid lines are skipped and counted.
-- Traffic statistics: Overview › Statistics… shows today, 7 or 30 days by app and by exit node. Totals come from the engine's counters; the split is estimated from the connection list. Kept in the app's Application Support folder only, and can be cleared (Settings › Network › Statistics, on by default).
+- Import Node Links…: paste `vless://`, `ss://`, `hy2://` … links (one per line or a Base64 list), or read them from a QR code: choose an image, drop one (also straight from Finder), paste a screenshot, or Scan Screen to read a code shown in another app (asks for Screen Recording permission the first time; nothing is saved). The nodes become one editable native profile; invalid lines are skipped and counted.
+- Traffic statistics: Overview › Statistics… shows today, the last 7 or 30 calendar days by app and by exit node. Off until turned on (Settings › Network › Statistics, or Turn On in the sheet). Stored sealed with AES-256-GCM under the profile key, excluded from backups, and can be cleared.
 
 ### Changed
 
-- Engine (aetherroute-core `307417e`): new `clash_flow_close_connections_v1` / `clash_packet_close_connections_v1` taking an `ARC1` request; Flow ABI table v6. Flow ABI symbol count 23 → 24.
-- Provider messages gain close-connections (op 10) and recent-log (op 11) requests.
+- Engine (aetherroute-core `73f29c5`):
+  - `clash_flow_close_connections_v1` / `clash_packet_close_connections_v1` take an `ARC1` request; kind 4 closes several apps at once.
+  - `clash_flow_telemetry_snapshot_v3` / `clash_packet_telemetry_snapshot_v3` return `ART3`: `ART2` plus lifetime traffic totals per (source app, proxy chain), covering every connection rather than the listed ones. Statistics split traffic exactly from them and sample once a minute when no traffic view is open (instead of every 10 s).
+  - Flow ABI table v6 carries both new entry points. Flow ABI symbol count 23 → 25.
+- Provider messages gain close-connections (op 10), recent-log (op 11) and set-log-level (op 12) requests.
+
+### Fixed
+
+- Proxy chains in telemetry now read from the rule's target group to the node that carried the flow ("Proxy → Auto → Tokyo"). The engine recorded them node-first, so the Connections outlet column and the automatic group's current node showed the outermost group instead of the node.
 
 ### Notes
 

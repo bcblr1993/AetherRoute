@@ -1,6 +1,7 @@
 import AetherRouteKit
 import AppKit
 import CoreImage
+import ScreenCaptureKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -32,6 +33,40 @@ enum ShareLinkQRCodeReader {
     }
 }
 
+/// Reads the QR codes shown anywhere on screen, outside AetherRoute's own
+/// windows. Each display is captured once, in memory, and never saved. macOS
+/// asks for Screen Recording permission the first time.
+enum ShareLinkScreenScanner {
+    static func payloads() async throws -> [String] {
+        let content = try await SCShareableContent.excludingDesktopWindows(
+            false,
+            onScreenWindowsOnly: true
+        )
+        let ownApplications = content.applications.filter {
+            $0.bundleIdentifier == Bundle.main.bundleIdentifier
+        }
+        var payloads: [String] = []
+        for display in content.displays {
+            let filter = SCContentFilter(
+                display: display,
+                excludingApplications: ownApplications,
+                exceptingWindows: []
+            )
+            let configuration = SCStreamConfiguration()
+            let scale = CGFloat(filter.pointPixelScale)
+            configuration.width = Int(CGFloat(display.width) * scale)
+            configuration.height = Int(CGFloat(display.height) * scale)
+            configuration.showsCursor = false
+            let image = try await SCScreenshotManager.captureImage(
+                contentFilter: filter,
+                configuration: configuration
+            )
+            payloads += ShareLinkQRCodeReader.payloads(in: CIImage(cgImage: image))
+        }
+        return payloads
+    }
+}
+
 /// Paste node share links, or read them from a QR code image, and add them
 /// as one editable profile. Nothing is opened or downloaded: links are
 /// parsed into typed nodes and validated before anything is saved.
@@ -43,6 +78,7 @@ struct ShareLinkImportSheet: View {
     @State private var isImporting = false
     @State private var isImagePickerPresented = false
     @State private var qrMessage: String?
+    @State private var isScanningScreen = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
@@ -86,6 +122,19 @@ struct ShareLinkImportSheet: View {
                 }
                 .aetherGlassButton()
                 .accessibilityIdentifier("share-link-choose-image")
+                Button {
+                    scanScreen()
+                } label: {
+                    AetherProgressButtonLabel(
+                        AppLocalization.string("Scan Screen"),
+                        systemImage: "viewfinder",
+                        isWorking: isScanningScreen
+                    )
+                }
+                .aetherGlassButton()
+                .disabled(isScanningScreen)
+                .help(AppLocalization.string("Reads a QR code shown in another app's window, such as a browser or chat."))
+                .accessibilityIdentifier("share-link-scan-screen")
                 Spacer(minLength: AetherVisual.s2)
                 if let qrMessage {
                     Text(qrMessage)
@@ -158,8 +207,29 @@ struct ShareLinkImportSheet: View {
         }
     }
 
+    private func scanScreen() {
+        isScanningScreen = true
+        Task {
+            defer { isScanningScreen = false }
+            do {
+                append(try await ShareLinkScreenScanner.payloads())
+            } catch {
+                qrMessage = AppLocalization.string("Allow AetherRoute under System Settings › Privacy & Security › Screen & System Audio Recording to scan the screen.")
+            }
+        }
+    }
+
     private func readDroppedImage(_ providers: [NSItemProvider]) -> Bool {
         guard let provider = providers.first else { return false }
+        // An image file dragged from Finder arrives as a file URL.
+        if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                guard let url else { return }
+                let payloads = ShareLinkQRCodeReader.payloads(inImageAt: url)
+                Task { @MainActor in append(payloads) }
+            }
+            return true
+        }
         if provider.canLoadObject(ofClass: NSImage.self) {
             _ = provider.loadObject(ofClass: NSImage.self) { object, _ in
                 guard let image = object as? NSImage else { return }

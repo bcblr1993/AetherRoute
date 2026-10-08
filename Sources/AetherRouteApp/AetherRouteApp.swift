@@ -2032,7 +2032,7 @@ private struct SettingsView: View {
             } header: {
                 Text(AppLocalization.string("Statistics"))
             } footer: {
-                Text(AppLocalization.string("Daily totals by app and by node for the last 30 days, kept on this Mac only. Open them from Overview › Statistics."))
+                Text(AppLocalization.string("Daily totals by app and by node for the last 30 days, encrypted on this Mac and never uploaded. Off until you turn it on. Open them from Overview › Statistics."))
             }
 
 #if AETHERROUTE_INDEPENDENT

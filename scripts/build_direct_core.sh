@@ -134,6 +134,7 @@ for SYMBOL in \
   clash_packet_selector_active_latency_v1 \
   clash_packet_telemetry_snapshot_v1 \
   clash_packet_telemetry_snapshot_v2 \
+  clash_packet_telemetry_snapshot_v3 \
   clash_packet_reset_network_state_v1 \
   clash_packet_close_connections_v1 \
   clash_uninstall_packet_flow

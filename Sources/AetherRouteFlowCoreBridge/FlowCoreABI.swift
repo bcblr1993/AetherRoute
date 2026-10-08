@@ -425,9 +425,10 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         engine: FlowCoreABIHandle,
         maximumConnections: UInt32
     ) -> (status: Int32, snapshot: Data?) {
-        // ART2 adds each connection's originating app. The decoder also
-        // accepts ART1, which the same engine still serves to older hosts.
-        guard let function = table.v5.telemetry_snapshot_v2 else {
+        // ART3 adds per-(app, chain) lifetime totals to ART2's connections
+        // and their originating apps. The decoder also accepts ART1 and
+        // ART2, which the same engine still serves to older hosts.
+        guard let function = table.telemetry_snapshot_v3 else {
             return (FlowCoreABIStatus.internalError, nil)
         }
         var required = 0

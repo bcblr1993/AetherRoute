@@ -79,6 +79,10 @@ clear commands, but does not read or change the macOS system proxy.
 - Telemetry and diagnostic messages are versioned and bounded; they exclude
   credentials, endpoints, source/destination addresses, profile text, and
   free-form provider errors.
+- Local traffic statistics (1.4) are opt-in, derived from `ART3` lifetime
+  totals per (source app, proxy chain), and sealed with AES-256-GCM under the
+  profile key in the app's own Application Support folder, excluded from
+  backups and never part of a diagnostic report.
 
 ## Verification topology
 

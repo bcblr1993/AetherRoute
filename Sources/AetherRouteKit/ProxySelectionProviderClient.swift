@@ -15,7 +15,7 @@ public struct ProxySelectionProviderClient: Sendable {
     public func snapshot(group: String) async throws -> ProxySelectionState {
         switch try await send(.snapshot(group: group)) {
         case let .snapshot(snapshot): snapshot
-        case .latency, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog:
+        case .latency, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -52,7 +52,7 @@ public struct ProxySelectionProviderClient: Sendable {
             )
         ) {
         case let .latency(state): state
-        case .snapshot, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog:
+        case .snapshot, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -72,7 +72,7 @@ public struct ProxySelectionProviderClient: Sendable {
             )
         ) {
         case let .latency(state): state
-        case .snapshot, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog:
+        case .snapshot, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -86,7 +86,7 @@ public struct ProxySelectionProviderClient: Sendable {
             .telemetry(maximumConnections: maximumConnections)
         ) {
         case let .telemetry(snapshot): snapshot
-        case .snapshot, .latency, .diagnostics, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog:
+        case .snapshot, .latency, .diagnostics, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -96,7 +96,7 @@ public struct ProxySelectionProviderClient: Sendable {
     public func diagnostics() async throws -> ProviderDiagnosticSnapshot {
         switch try await send(.diagnostics) {
         case let .diagnostics(snapshot): snapshot
-        case .snapshot, .latency, .telemetry, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog:
+        case .snapshot, .latency, .telemetry, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -112,7 +112,7 @@ public struct ProxySelectionProviderClient: Sendable {
             return applied
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
-        case .snapshot, .latency, .telemetry, .diagnostics, .networkReset, .profileReloaded, .connectionsClosed, .recentLog:
+        case .snapshot, .latency, .telemetry, .diagnostics, .networkReset, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied:
             throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
@@ -121,7 +121,7 @@ public struct ProxySelectionProviderClient: Sendable {
         switch try await send(.resetNetwork) {
         case .networkReset:
             return
-        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .profileReloaded, .connectionsClosed, .recentLog:
+        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -132,7 +132,7 @@ public struct ProxySelectionProviderClient: Sendable {
         switch try await send(.reloadProfile(payload)) {
         case .profileReloaded:
             return
-        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .networkReset, .connectionsClosed, .recentLog:
+        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .networkReset, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -147,7 +147,7 @@ public struct ProxySelectionProviderClient: Sendable {
         switch try await send(.closeConnections(payload)) {
         case let .connectionsClosed(count):
             return count
-        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded, .recentLog:
+        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded, .recentLog, .diagnosticLogLevelApplied:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
@@ -160,7 +160,20 @@ public struct ProxySelectionProviderClient: Sendable {
         case let .recentLog(data):
             return String(decoding: data, as: UTF8.self)
         case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .networkReset,
-             .profileReloaded, .connectionsClosed:
+             .profileReloaded, .connectionsClosed, .diagnosticLogLevelApplied:
+            throw ProxySelectionProviderClientError.unexpectedResponse
+        case let .failure(failure):
+            throw ProxySelectionProviderClientError.providerFailure(failure)
+        }
+    }
+
+    /// Applies a diagnostic log level in the running provider at once.
+    public func setDiagnosticLogLevel(_ level: DiagnosticLogLevel) async throws {
+        switch try await send(.setDiagnosticLogLevel(level)) {
+        case .diagnosticLogLevelApplied:
+            return
+        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .networkReset,
+             .profileReloaded, .connectionsClosed, .recentLog:
             throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)

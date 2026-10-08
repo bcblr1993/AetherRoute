@@ -48,6 +48,33 @@ public struct ConnectionTelemetry: Sendable, Equatable {
     }
 }
 
+/// Lifetime traffic of one source app through one proxy chain, as the engine
+/// reports it in `ART3`: closed connections plus the current bytes of active
+/// ones. It covers every connection, not just the listed ones, and only
+/// grows while the engine runs.
+public struct TrafficTotalTelemetry: Sendable, Equatable {
+    public let sourceAppIdentifier: String
+    public let sourceAppPath: String
+    /// Hops joined with " → ", like `ConnectionTelemetry.proxyChain`.
+    public let proxyChain: String
+    public let uploadTotal: UInt64
+    public let downloadTotal: UInt64
+
+    public init(
+        sourceAppIdentifier: String,
+        sourceAppPath: String,
+        proxyChain: String,
+        uploadTotal: UInt64,
+        downloadTotal: UInt64
+    ) {
+        self.sourceAppIdentifier = sourceAppIdentifier
+        self.sourceAppPath = sourceAppPath
+        self.proxyChain = proxyChain
+        self.uploadTotal = uploadTotal
+        self.downloadTotal = downloadTotal
+    }
+}
+
 public struct NetworkTelemetrySnapshot: Sendable, Equatable {
     public let uploadBytesPerSecond: UInt64
     public let downloadBytesPerSecond: UInt64
@@ -55,6 +82,10 @@ public struct NetworkTelemetrySnapshot: Sendable, Equatable {
     public let downloadTotal: UInt64
     public let memoryBytes: UInt64
     public let connections: [ConnectionTelemetry]
+    /// Per-(app, chain) lifetime totals, largest first. Empty from an engine
+    /// that predates `ART3`; `reportsTrafficTotals` tells the two apart.
+    public let trafficTotals: [TrafficTotalTelemetry]
+    public let reportsTrafficTotals: Bool
 
     public init(
         uploadBytesPerSecond: UInt64,
@@ -62,7 +93,9 @@ public struct NetworkTelemetrySnapshot: Sendable, Equatable {
         uploadTotal: UInt64,
         downloadTotal: UInt64,
         memoryBytes: UInt64,
-        connections: [ConnectionTelemetry]
+        connections: [ConnectionTelemetry],
+        trafficTotals: [TrafficTotalTelemetry] = [],
+        reportsTrafficTotals: Bool? = nil
     ) {
         self.uploadBytesPerSecond = uploadBytesPerSecond
         self.downloadBytesPerSecond = downloadBytesPerSecond
@@ -70,6 +103,8 @@ public struct NetworkTelemetrySnapshot: Sendable, Equatable {
         self.downloadTotal = downloadTotal
         self.memoryBytes = memoryBytes
         self.connections = connections
+        self.trafficTotals = trafficTotals
+        self.reportsTrafficTotals = reportsTrafficTotals ?? !trafficTotals.isEmpty
     }
 
     public static let empty = NetworkTelemetrySnapshot(
@@ -93,34 +128,50 @@ public enum NetworkTelemetryCodecError: Error, Sendable, Equatable {
 ///
 /// `ART1` carries four strings per connection. `ART2` (1.3.0) appends the
 /// originating app's signing identifier and executable path, each at most
-/// `maximumSourceAppBytes`. The decoder accepts both, so a host and an engine
-/// from different builds still agree.
+/// `maximumSourceAppBytes`. `ART3` (1.4.0) is `ART2` followed by the
+/// per-(app, chain) lifetime totals: a `UInt32` count, then per total two
+/// `UInt64` counters, three `UInt32` lengths and the identifier, path and
+/// chain strings. The decoder accepts all three, so a host and an engine from
+/// different builds still agree.
 public enum NetworkTelemetryCodec {
     public enum Version: Sendable {
         case v1
         case v2
+        case v3
     }
 
     public static let maximumConnections = 128
     public static let maximumStringBytes = 1_024
     public static let maximumSourceAppBytes = 512
     public static let maximumMessageBytes = 1_048_576
+    public static let maximumTrafficTotals = 256
+    /// The encoder keeps room for the provider-message header around it.
+    static let encodedBudgetBytes = maximumMessageBytes - 64
 
     private static let magic: [UInt8] = [0x41, 0x52, 0x54, 0x31]
     private static let magicV2: [UInt8] = [0x41, 0x52, 0x54, 0x32]
+    private static let magicV3: [UInt8] = [0x41, 0x52, 0x54, 0x33]
+    private static let trafficTotalHeaderBytes = 28
     private static let headerBytes = 48
     private static let recordHeaderBytes = 44
     private static let sourceAppHeaderBytes = 8
 
     public static func encode(
         _ snapshot: NetworkTelemetrySnapshot,
-        version: Version = .v2
+        version: Version? = nil
     ) throws -> Data {
+        // By default a snapshot is written in the newest form that keeps
+        // everything it holds.
+        let version = version ?? (snapshot.reportsTrafficTotals ? .v3 : .v2)
         guard snapshot.connections.count <= maximumConnections else {
             throw NetworkTelemetryCodecError.tooLarge
         }
-        let includesSourceApp = version == .v2
-        var output = Data(includesSourceApp ? magicV2 : magic)
+        let includesSourceApp = version != .v1
+        var output = Data(switch version {
+        case .v1: magic
+        case .v2: magicV2
+        case .v3: magicV3
+        })
         for value in [
             snapshot.uploadBytesPerSecond,
             snapshot.downloadBytesPerSecond,
@@ -161,11 +212,61 @@ public enum NetworkTelemetryCodec {
             for value in strings {
                 output.append(value)
             }
-            guard output.count <= maximumMessageBytes else {
+            guard output.count <= encodedBudgetBytes else {
                 throw NetworkTelemetryCodecError.tooLarge
             }
         }
+        if version == .v3 {
+            try appendTrafficTotals(snapshot.trafficTotals, to: &output)
+        }
         return output
+    }
+
+    /// Largest first, as the engine sends them; totals that would not fit the
+    /// budget are left out instead of failing the whole sample.
+    private static func appendTrafficTotals(
+        _ totals: [TrafficTotalTelemetry],
+        to output: inout Data
+    ) throws {
+        let countOffset = output.count
+        appendUInt32(0, to: &output)
+        var count: UInt32 = 0
+        for total in totals.prefix(maximumTrafficTotals) {
+            let strings = [
+                try stringData(
+                    total.sourceAppIdentifier,
+                    allowsEmpty: true,
+                    maximumBytes: maximumSourceAppBytes
+                ),
+                try stringData(
+                    total.sourceAppPath,
+                    allowsEmpty: true,
+                    maximumBytes: maximumSourceAppBytes
+                ),
+                try stringData(total.proxyChain, allowsEmpty: true),
+            ]
+            let recordBytes = trafficTotalHeaderBytes + strings.reduce(0) { $0 + $1.count }
+            guard output.count + recordBytes <= encodedBudgetBytes else { break }
+            appendUInt64(total.uploadTotal, to: &output)
+            appendUInt64(total.downloadTotal, to: &output)
+            for value in strings {
+                appendUInt32(UInt32(value.count), to: &output)
+            }
+            for value in strings {
+                output.append(value)
+            }
+            count += 1
+        }
+        let countBytes: [UInt8] = [
+            UInt8((count >> 24) & 0xff),
+            UInt8((count >> 16) & 0xff),
+            UInt8((count >> 8) & 0xff),
+            UInt8(count & 0xff),
+        ]
+        output.replaceSubrange(
+            (output.startIndex + countOffset)..<(output.startIndex + countOffset + 4),
+            with: countBytes
+        )
     }
 
     public static func decode(_ data: Data) throws -> NetworkTelemetrySnapshot {
@@ -174,10 +275,11 @@ public enum NetworkTelemetryCodec {
         else { throw NetworkTelemetryCodecError.tooLarge }
         let bytes = [UInt8](data)
         let header = Array(bytes[0..<4])
-        guard header == magic || header == magicV2 else {
+        guard header == magic || header == magicV2 || header == magicV3 else {
             throw NetworkTelemetryCodecError.malformed
         }
-        let includesSourceApp = header == magicV2
+        let includesTrafficTotals = header == magicV3
+        let includesSourceApp = header != magic
         let recordBytes = recordHeaderBytes
             + (includesSourceApp ? sourceAppHeaderBytes : 0)
         guard
@@ -272,6 +374,53 @@ public enum NetworkTelemetryCodec {
                 )
             )
         }
+        var trafficTotals: [TrafficTotalTelemetry] = []
+        if includesTrafficTotals {
+            guard
+                let totalCount = readUInt32(bytes, at: offset),
+                totalCount <= maximumTrafficTotals
+            else { throw NetworkTelemetryCodecError.malformed }
+            offset += 4
+            trafficTotals.reserveCapacity(Int(totalCount))
+            for _ in 0..<totalCount {
+                guard
+                    offset + trafficTotalHeaderBytes <= bytes.count,
+                    let upload = readUInt64(bytes, at: offset),
+                    let download = readUInt64(bytes, at: offset + 8),
+                    let identifierLength = readUInt32(bytes, at: offset + 16),
+                    let pathLength = readUInt32(bytes, at: offset + 20),
+                    let chainLength = readUInt32(bytes, at: offset + 24)
+                else { throw NetworkTelemetryCodecError.malformed }
+                offset += trafficTotalHeaderBytes
+                let identifier = try readString(
+                    bytes,
+                    offset: &offset,
+                    length: identifierLength,
+                    allowsEmpty: true,
+                    maximumBytes: maximumSourceAppBytes
+                )
+                let path = try readString(
+                    bytes,
+                    offset: &offset,
+                    length: pathLength,
+                    allowsEmpty: true,
+                    maximumBytes: maximumSourceAppBytes
+                )
+                let chain = try readString(
+                    bytes,
+                    offset: &offset,
+                    length: chainLength,
+                    allowsEmpty: true
+                )
+                trafficTotals.append(TrafficTotalTelemetry(
+                    sourceAppIdentifier: identifier,
+                    sourceAppPath: path,
+                    proxyChain: chain,
+                    uploadTotal: upload,
+                    downloadTotal: download
+                ))
+            }
+        }
         guard offset == bytes.count else {
             throw NetworkTelemetryCodecError.malformed
         }
@@ -281,7 +430,9 @@ public enum NetworkTelemetryCodec {
             uploadTotal: uploadTotal,
             downloadTotal: downloadTotal,
             memoryBytes: memoryBytes,
-            connections: connections
+            connections: connections,
+            trafficTotals: trafficTotals,
+            reportsTrafficTotals: includesTrafficTotals
         )
     }
 

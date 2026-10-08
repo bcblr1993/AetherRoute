@@ -33,8 +33,23 @@ int main(void) {
         || v5.telemetry_snapshot_v2 == NULL) {
         return 7;
     }
+    aetherroute_flow_abi_v6_t v6 = {0};
+    v6.struct_size = (uint32_t)sizeof(v6);
+    if (aetherroute_flow_abi_load_v6(&v6) != 1) {
+        return 9;
+    }
+    if (v6.v5.telemetry_snapshot_v2 == NULL
+        || v6.close_connections_v1 == NULL
+        || v6.telemetry_snapshot_v3 == NULL) {
+        return 10;
+    }
     /* A caller built against a different table size is refused. */
     aetherroute_flow_abi_v5_t mismatched = {0};
     mismatched.struct_size = (uint32_t)sizeof(v4);
-    return aetherroute_flow_abi_load_v5(&mismatched) == 0 ? 0 : 8;
+    if (aetherroute_flow_abi_load_v5(&mismatched) != 0) {
+        return 8;
+    }
+    aetherroute_flow_abi_v6_t mismatched_v6 = {0};
+    mismatched_v6.struct_size = (uint32_t)sizeof(v5);
+    return aetherroute_flow_abi_load_v6(&mismatched_v6) == 0 ? 0 : 11;
 }

@@ -29,6 +29,9 @@ public enum ProxySelectionProviderRequest: Sendable, Equatable {
     /// The host cannot read the file itself: a Developer ID system
     /// extension writes it into root's App Group container.
     case recentLog(maximumKilobytes: UInt16)
+    /// Applies a diagnostic log level at once. The level otherwise reaches a
+    /// running extension only with its next launch snapshot.
+    case setDiagnosticLogLevel(DiagnosticLogLevel)
 }
 
 public enum ProxySelectionProviderFailure: UInt8, Sendable, Equatable {
@@ -51,6 +54,7 @@ public enum ProxySelectionProviderResponse: Sendable, Equatable {
     case connectionsClosed(UInt32)
     /// UTF-8 log text, possibly empty when debug logging is off.
     case recentLog(Data)
+    case diagnosticLogLevelApplied
     case failure(ProxySelectionProviderFailure)
 }
 
@@ -203,6 +207,11 @@ public enum ProxySelectionProviderMessageCodec {
                 UInt8(maximumKilobytes >> 8),
                 UInt8(maximumKilobytes & 0xff),
             ]
+        case let .setDiagnosticLogLevel(level):
+            operation = 12
+            group = Data()
+            member = Data()
+            reserved = [UInt8(level.rawValue), 0, 0]
         }
 
         var output = Data(requestMagic)
@@ -351,6 +360,15 @@ public enum ProxySelectionProviderMessageCodec {
                 (1...maximumRecentLogKilobytes).contains(maximumKilobytes)
             else { throw ProxySelectionProviderMessageError.malformed }
             return .recentLog(maximumKilobytes: maximumKilobytes)
+        case 12:
+            guard
+                bytes[6] == 0,
+                bytes[7] == 0,
+                groupLength == 0,
+                memberLength == 0,
+                let level = DiagnosticLogLevel(rawValue: Int(bytes[5]))
+            else { throw ProxySelectionProviderMessageError.malformed }
+            return .setDiagnosticLogLevel(level)
         default:
             throw ProxySelectionProviderMessageError.malformed
         }
@@ -492,6 +510,13 @@ public enum ProxySelectionProviderMessageCodec {
             appendUInt32(UInt32(text.count), to: &output)
             output.append(text)
             return output
+        case .diagnosticLogLevelApplied:
+            var output = Data(responseMagic)
+            output.append(11)
+            output.append(contentsOf: [0, 0, 0])
+            appendUInt32(noSelection, to: &output)
+            appendUInt32(0, to: &output)
+            return output
         }
     }
 
@@ -552,7 +577,7 @@ public enum ProxySelectionProviderMessageCodec {
                 data.count == responseHeaderBytes,
                 routingMode(code: bytes[5]) != nil
             else { throw ProxySelectionProviderMessageError.malformed }
-        case 7, 8:
+        case 7, 8, 11:
             guard
                 bytes[5] == 0,
                 selectedIndex == noSelection,
@@ -577,6 +602,9 @@ public enum ProxySelectionProviderMessageCodec {
         }
 
         var offset = responseHeaderBytes
+        if bytes[4] == 11 {
+            return .diagnosticLogLevelApplied
+        }
         if bytes[4] == 10 {
             return .recentLog(Data(bytes[responseHeaderBytes...]))
         }

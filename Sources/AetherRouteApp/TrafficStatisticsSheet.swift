@@ -20,7 +20,7 @@ struct TrafficStatisticsSheet: View {
             switch self {
             case .today: 1
             case .week: 7
-            case .month: TrafficStatisticsLedger.retainedDays
+            case .month: 30
             }
         }
 
@@ -54,10 +54,23 @@ struct TrafficStatisticsSheet: View {
             }
 
             if !tunnel.isTrafficStatisticsEnabled {
-                AetherInlineMessage(
-                    text: AppLocalization.string("Statistics are off. Turn them on in Settings › Network."),
-                    kind: .warning
-                )
+                HStack(spacing: AetherVisual.s3) {
+                    Label(
+                        AppLocalization.string("Statistics are off, so nothing is being counted."),
+                        systemImage: "pause.circle"
+                    )
+                    .font(.callout)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: AetherVisual.s2)
+                    Button(AppLocalization.string("Turn On")) {
+                        tunnel.setTrafficStatisticsEnabled(true)
+                    }
+                    .aetherGlassButton()
+                    .accessibilityIdentifier("traffic-statistics-enable")
+                }
+                .padding(AetherVisual.cardPadding)
+                .aetherPanel()
             }
 
             HStack(spacing: AetherVisual.s6) {
