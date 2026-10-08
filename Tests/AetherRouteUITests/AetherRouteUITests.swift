@@ -1863,6 +1863,40 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(app.menuButtons["profiles-add-menu"].waitForExistence(timeout: 2))
     }
 
+    func testDiagnosticLogViewerSheetLayoutAndControls() throws {
+        let app = launchReviewApp(
+            appearance: "light",
+            state: "ready",
+            language: "zh-Hans",
+            windowSize: "940x720"
+        )
+        defer { app.terminate() }
+
+        openSettings(in: app, tabLabel: "隐私与诊断")
+        let settingsWindow = app.windows["com_apple_SwiftUI_Settings_window"]
+        XCTAssertTrue(settingsWindow.waitForExistence(timeout: 5))
+
+        let viewLogsButton = settingsWindow.buttons["view-logs"]
+        XCTAssertTrue(viewLogsButton.waitForExistence(timeout: 3))
+        viewLogsButton.click()
+
+        let logViewer = settingsWindow.descendants(matching: .any)["log-viewer"]
+        XCTAssertTrue(logViewer.waitForExistence(timeout: 4))
+
+        // All toolbar controls must be present and reachable without horizontal overflow.
+        XCTAssertTrue(settingsWindow.descendants(matching: .any)["logs-level-picker"].waitForExistence(timeout: 3))
+        XCTAssertTrue(settingsWindow.descendants(matching: .any)["logs-source-picker"].waitForExistence(timeout: 3))
+        XCTAssertTrue(settingsWindow.descendants(matching: .any)["logs-errors-only"].waitForExistence(timeout: 3))
+        XCTAssertTrue(settingsWindow.textFields["logs-search-field"].waitForExistence(timeout: 3))
+        XCTAssertTrue(settingsWindow.buttons["logs-refresh"].waitForExistence(timeout: 3))
+
+        let doneButton = settingsWindow.buttons["logs-done"]
+        XCTAssertTrue(doneButton.waitForExistence(timeout: 3))
+        doneButton.click()
+
+        XCTAssertFalse(logViewer.waitForExistence(timeout: 2))
+    }
+
     func testSignedNetworkExtensionConnectDisconnectLifecycle() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["AETHERROUTE_RUN_SIGNED_NE_TEST"] == "YES" else {
