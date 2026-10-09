@@ -629,8 +629,12 @@ extension TunnelManager {
             } catch {
                 return
             }
-            guard !Task.isCancelled else { return }
-            await self?.performAutomaticReconnect(attempt: attempt)
+            guard !Task.isCancelled, let self else { return }
+            // No longer pending once the delay is over. The startup restore
+            // reads this field to stay out of a reconnect's way, and a stale
+            // task would hold it off until its budget ran out.
+            self.automaticReconnectTask = nil
+            await self.performAutomaticReconnect(attempt: attempt)
         }
     }
 

@@ -215,6 +215,33 @@ final class NetworkTelemetryViewModel: ObservableObject {
 
 }
 
+/// Tracks whether any network path is usable while a startup restore runs.
+/// Reads happen on the main actor; updates hop there from the monitor queue.
+@MainActor
+private final class StartupNetworkPathWatcher {
+    private(set) var isSatisfied: Bool
+    private let monitor = NWPathMonitor()
+
+    init() {
+        isSatisfied = monitor.currentPath.status == .satisfied
+        monitor.pathUpdateHandler = { [weak self] path in
+            let satisfied = path.status == .satisfied
+            Task { @MainActor [weak self] in
+                self?.isSatisfied = satisfied
+            }
+        }
+        monitor.start(queue: DispatchQueue(
+            label: "com.example.aetherroute.startup-restore-path",
+            qos: .utility
+        ))
+    }
+
+    func cancel() {
+        monitor.pathUpdateHandler = nil
+        monitor.cancel()
+    }
+}
+
 @MainActor
 final class TunnelManager: ObservableObject {
     static let runtimeLogger = AppLog.logger(category: AppLog.Category.appRuntime)
@@ -891,54 +918,113 @@ final class TunnelManager: ObservableObject {
     }
 
     private func executeStartupConnectionRestoration() async {
+        typealias Policy = StartupConnectionRestorePolicy
         Self.runtimeLogger.info(
-            "stage=startupRestore begin wasConnectedBeforeTermination=true maxAttempts=\(StartupConnectionRestorePolicy.maximumAttempts, privacy: .public)"
+            "stage=startupRestore begin wasConnectedBeforeTermination=true maxAttempts=\(Policy.maximumAttempts, privacy: .public) budgetSeconds=\(Policy.overallBudget, privacy: .public)"
         )
-        for attempt in 0..<StartupConnectionRestorePolicy.maximumAttempts {
-            if Task.isCancelled || isApplicationTerminating {
-                Self.runtimeLogger.info("stage=startupRestore aborted reason=cancelledOrTerminating")
-                return
-            }
-            if state == .connected {
-                Self.runtimeLogger.info("stage=startupRestore complete reason=alreadyConnected")
-                return
-            }
-            if !wasConnectedBeforeTermination {
-                Self.runtimeLogger.info("stage=startupRestore aborted reason=intentRevoked")
-                return
-            }
+        // At login after a reboot Wi-Fi or DHCP may still be coming up. Watch
+        // the path only for the lifetime of this restore.
+        let pathWatcher = StartupNetworkPathWatcher()
+        defer { pathWatcher.cancel() }
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+        func elapsed() -> TimeInterval {
+            let duration = clock.now - startedAt
+            return TimeInterval(duration.components.seconds)
+                + TimeInterval(duration.components.attoseconds) / 1e18
+        }
+        var attemptsMade = 0
+        var lastWaitLogged: Policy.Step?
 
-            if canRestorePreviousConnection {
+        while true {
+            if Task.isCancelled {
+                Self.runtimeLogger.info("stage=startupRestore aborted reason=cancelled")
+                return
+            }
+            let step = Policy.nextStep(Policy.Snapshot(
+                elapsed: elapsed(),
+                attemptsMade: attemptsMade,
+                wasConnectedBeforeTermination: wasConnectedBeforeTermination,
+                isTerminating: isApplicationTerminating,
+                isConnected: state == .connected,
+                networkPathSatisfied: pathWatcher.isSatisfied,
+                canStartConnection: canRestorePreviousConnection,
+                automaticReconnectPending: automaticReconnectTask != nil
+            ))
+            switch step {
+            case .finish(let reason):
                 Self.runtimeLogger.info(
-                    "stage=startupRestore attempt=\(attempt, privacy: .public) triggering restore"
+                    "stage=startupRestore finished reason=\(reason.rawValue, privacy: .public) attempts=\(attemptsMade, privacy: .public) elapsed=\(elapsed(), format: .fixed(precision: 1), privacy: .public) state=\(Self.diagnosticEventCode(for: self.state).rawValue, privacy: .public)"
                 )
-                await setEnabled(true)
-                try? await Task.sleep(for: .milliseconds(1500))
-                if Task.isCancelled || isApplicationTerminating { return }
-                if state == .connected {
+                return
+            case .waitForNetwork, .waitForReadiness:
+                if lastWaitLogged != step {
+                    lastWaitLogged = step
                     Self.runtimeLogger.info(
-                        "stage=startupRestore success attempt=\(attempt, privacy: .public)"
+                        "stage=startupRestore waiting for=\(step == .waitForNetwork ? "network" : "readiness", privacy: .public) attempts=\(attemptsMade, privacy: .public) elapsed=\(elapsed(), format: .fixed(precision: 1), privacy: .public) isPreparing=\(self.isPreparing, privacy: .public) profile=\(self.activeProfile != nil, privacy: .public) approvalRequired=\(self.systemExtensionApprovalRequired, privacy: .public) permitsStart=\(self.managerConnectionPermitsStart, privacy: .public) reconnectPending=\(self.automaticReconnectTask != nil, privacy: .public) state=\(Self.diagnosticEventCode(for: self.state).rawValue, privacy: .public)"
                     )
+                }
+                do {
+                    try await Task.sleep(for: .milliseconds(500))
+                } catch {
                     return
                 }
-            } else {
+            case .attempt:
+                lastWaitLogged = nil
+                let attempt = attemptsMade
+                attemptsMade += 1
                 Self.runtimeLogger.info(
-                    "stage=startupRestore waiting attempt=\(attempt, privacy: .public) isPreparing=\(self.isPreparing, privacy: .public) profile=\(self.activeProfile != nil, privacy: .public) approvalRequired=\(self.systemExtensionApprovalRequired, privacy: .public) permitsStart=\(self.managerConnectionPermitsStart, privacy: .public) state=\(Self.diagnosticEventCode(for: self.state).rawValue, privacy: .public)"
+                    "stage=startupRestore attempt=\(attempt, privacy: .public) triggering restore elapsed=\(elapsed(), format: .fixed(precision: 1), privacy: .public)"
                 )
-            }
-
-            guard let delay = StartupConnectionRestorePolicy.delay(forAttempt: attempt) else {
-                break
-            }
-            do {
-                try await Task.sleep(for: .seconds(delay))
-            } catch {
-                return
+                await setEnabled(true)
+                let outcome = await awaitStartupRestoreAttemptOutcome(clock: clock)
+                Self.runtimeLogger.info(
+                    "stage=startupRestore attempt=\(attempt, privacy: .public) outcome=\(String(describing: outcome), privacy: .public) state=\(Self.diagnosticEventCode(for: self.state).rawValue, privacy: .public)"
+                )
+                if Task.isCancelled { return }
+                if outcome == .succeeded { continue }
+                // Re-checked by nextStep: the user may have connected or
+                // disconnected while the attempt ran.
+                guard let delay = Policy.backoffDelay(
+                    afterAttempts: attemptsMade,
+                    elapsed: elapsed()
+                ) else { continue }
+                do {
+                    try await Task.sleep(for: .seconds(delay))
+                } catch {
+                    return
+                }
             }
         }
-        Self.runtimeLogger.info(
-            "stage=startupRestore finished attemptBudgetExhausted state=\(Self.diagnosticEventCode(for: self.state).rawValue, privacy: .public)"
-        )
+    }
+
+    /// Waits until the attempt just submitted connects, stops, or exceeds the
+    /// outcome timeout. Connecting and recovering are still in progress.
+    private func awaitStartupRestoreAttemptOutcome(
+        clock: ContinuousClock
+    ) async -> StartupConnectionRestorePolicy.AttemptOutcome {
+        let submittedAt = clock.now
+        while true {
+            let progress: StartupConnectionRestorePolicy.AttemptProgress = switch state {
+            case .connected: .connected
+            case .loading, .connecting, .recovering: .inProgress
+            case .disconnected, .disconnecting, .failed, .privacyConsentRequired: .stopped
+            }
+            let waited = clock.now - submittedAt
+            let outcome = StartupConnectionRestorePolicy.attemptOutcome(
+                progress: progress,
+                waited: TimeInterval(waited.components.seconds)
+                    + TimeInterval(waited.components.attoseconds) / 1e18
+            )
+            if outcome != .pending || Task.isCancelled || isApplicationTerminating {
+                return outcome
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+            } catch {
+                return .pending
+            }
+        }
     }
 
     private var canRestorePreviousConnection: Bool {
