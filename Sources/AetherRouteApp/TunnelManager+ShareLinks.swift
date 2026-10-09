@@ -22,9 +22,16 @@ extension TunnelManager {
                 try SubscriptionPayloadNormalizer.nodes(fromShareText: text)
             }.value
         } catch {
-            profileMessage = AppLocalization.string(
-                "No valid node link was found. Paste links such as vless://, ss:// or hy2://, one per line."
-            )
+            // Too much text or too many nodes is a size limit, not a missing
+            // link; say which limit was hit.
+            switch ProfileOperationIssue(error) {
+            case .profileTooLarge, .tooManySubscriptionNodes:
+                profileMessage = localizedProfileOperationError(error)
+            default:
+                profileMessage = AppLocalization.string(
+                    "No valid node link was found. Paste links such as vless://, ss:// or hy2://, one per line."
+                )
+            }
             profileMessageIsError = true
             return false
         }
