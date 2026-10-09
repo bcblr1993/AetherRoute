@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.4.0 (Build 2026100901)</title>
-            <pubDate>Fri, 09 Oct 2026 13:34:32 +0800</pubDate>
-            <sparkle:version>2026100901</sparkle:version>
-            <sparkle:shortVersionString>1.4.0</sparkle:shortVersionString>
+            <title>Version 1.4.1 (Build 2026100902)</title>
+            <pubDate>Fri, 09 Oct 2026 17:32:27 +0800</pubDate>
+            <sparkle:version>2026100902</sparkle:version>
+            <sparkle:shortVersionString>1.4.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,25 +119,16 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.4.0 更新要点</span>
-  <span class="release-badge">Build 2026100901 · 正式发布</span>
-</div>
-<div class="section">
-  <span class="section-tag tag-feature">🚀 新功能</span>
-  <ul>
-    <li><strong>断开连接不断开代理</strong>：连接页可关闭单条连接、某个应用的全部连接或全部连接，代理保持运行，应用会自动重连；切换节点时自动关闭仍经过旧节点的连接。</li>
-    <li><strong>日志查看器</strong>：设置 › 隐私与诊断 › 查看日志，可查看应用与网络扩展的日志，支持记录级别、来源与错误筛选、搜索和复制，数据不离开本机。</li>
-    <li><strong>导入节点链接</strong>：粘贴 vless://、ss://、hy2:// 等链接，或从二维码图片、剪贴板截图、屏幕扫码导入。</li>
-    <li><strong>流量统计</strong>：按应用和出口节点统计今日、近 7 天、近 30 天流量，默认关闭，使用 AES-256-GCM 加密存储，可随时清空。</li>
-    <li>进入代理页时可选自动测速（默认关闭）。</li>
-  </ul>
+  <span class="release-title">AetherRoute 1.4.1 更新要点</span>
+  <span class="release-badge">Build 2026100902 · 正式发布</span>
 </div>
 <div class="section">
   <span class="section-tag tag-fix">🛠 修复</span>
   <ul>
-    <li><strong>重启后自动连接</strong>：重启、关机或注销后重新登录，会恢复之前的连接状态（1.3 会把连接意图错误记录为"未连接"）。</li>
-    <li>快速切换页面不再卡顿；连接链路按"规则目标组 → 节点"顺序显示。</li>
-    <li>统计写入串行执行并在退出前完成；多行日志按时间完整排序。</li>
+    <li><strong>透明代理测速不再卡住新连接</strong>：此前测速期间（代理页测速、打开代理页自动测速、连接就绪检查、自动选择组）整台 Mac 的新连接都要等测速结束，节点不通时最长卡 10 秒；升级到 1.4.0 后的首次连接因此出现过约 20 秒停顿。</li>
+    <li><strong>重启后自动连接更可靠</strong>：等待网络就绪和每次连接的实际结果，最多坚持两分钟，不再约 20 秒就放弃。</li>
+    <li><strong>流量统计更安全</strong>：登录后钥匙串暂时不可用时不再用空数据覆盖历史；断开或退出前补记最后一分钟的流量。</li>
+    <li>导入超大内容时提示具体超出的限制；日志查看器筛选更流畅。</li>
   </ul>
 </div>
 <div class="section">
@@ -149,13 +140,13 @@
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.4.0/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.4.1/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.4.0/AetherRoute-1.4.0-build-2026100901-arm64.dmg"
-                sparkle:edSignature="U2aXqUpry3WIYe8wnm+Z1hq10Fpx59czvnQUnP1WHd6Xk4RupuhnCPlJ06OcixbWW1B3EUbPBGjFemt3+ymkAw=="
-                length="26843169"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.4.1/AetherRoute-1.4.1-build-2026100902-arm64.dmg"
+                sparkle:edSignature="YV3JJahledNoLIeUrZuoJuymUefNJWPmvGJ5mhasvNcU+K1Ub9ZT3j9Zzv5EYXkVKkMAFMQzLwgThNdJa/f2AQ=="
+                length="26963698"
                 type="application/octet-stream" />
         </item>
     </channel>

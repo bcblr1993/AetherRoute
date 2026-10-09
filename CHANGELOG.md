@@ -4,6 +4,28 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.1] - 2026-10-09
+
+Fixes a stall of new connections in transparent proxy mode, makes reconnecting after a restart more patient, and keeps traffic statistics safe.
+
+### Fixed
+
+- Transparent proxy: while a latency test ran (Proxies page, automatic test on opening it, connection readiness, automatic groups), every new connection on the Mac waited until it finished, up to the test's timeout. The first connection after updating to 1.4.0 stalled about 21 seconds this way. Latency tests and other control requests no longer hold up new connections; stopping still waits for a running test before the engine shuts down.
+- Reconnecting after a restart waits for a usable network and for each attempt's actual result, within two minutes, instead of giving up after about 20 seconds.
+- Traffic statistics: a ledger that cannot be read for the moment (for example while the Keychain is still locked after login) is no longer replaced by an empty one; it is read again later and the traffic counted meanwhile is added. A ledger that can never be opened is set aside instead of overwritten, and Clear removes it too.
+- Traffic statistics: disconnecting or quitting samples once more first, so the last minute before a disconnect is counted. The window shows Disconnecting at once while it does (at most two seconds), and a connect cannot slip in meanwhile.
+- Importing node links that exceed the size or node limit says which limit was hit instead of "No valid node link was found."
+- The log viewer filters the log once per update instead of four times.
+- Sheets keep their controls' accessibility identifiers, so UI automation can find them.
+
+### Verified
+
+- Local regression suites, `./scripts/test.sh` and all five protocol interop gates (48 cases, 26 certificate rejections) passed; new unit tests cover flow admission during a held latency test, stop ordering, and ledger loading.
+- Tart VM matrix (tun / transparent × rule / global / direct) and the Mac mini remote gate passed.
+- On the Mac mini with the notarized build 2026100902, in both TUN and transparent mode: automatic restore on launch, idle reuse, 2 MiB upload, the connection intent kept after a quit while connected, and restore again on the next launch.
+- UI suite on macOS 27: 41 passed, 5 failed; the same 5 fail on v1.3.3 and v1.4.0 and are listed in `Docs/ReleaseExceptions/1.4.1.md`. No test that passed on 1.4.0 fails.
+- 5,000-node import: 0.352 s and 4.67 MB peak RSS growth (1.4.0: 0.347 s, 4.67 MB).
+
 ## [1.4.0] - 2026-10-09
 
 AetherRoute can now close connections without disconnecting, shows its own logs, imports nodes from pasted links, QR images or the screen, and keeps encrypted local traffic statistics by app and node.
