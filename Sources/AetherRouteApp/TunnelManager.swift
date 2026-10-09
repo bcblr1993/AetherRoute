@@ -1161,10 +1161,6 @@ final class TunnelManager: ObservableObject {
             }
             return
         }
-        if !enabled {
-            await recordFinalTrafficSample()
-        }
-
         var requestID: UUID?
         if enabled {
             guard TunnelLifecycleTransitionPolicy.canBeginConnection(
@@ -1233,8 +1229,15 @@ final class TunnelManager: ObservableObject {
                 Self.runtimeLogger.info("stage=setEnabled ignored reason=notActive")
                 return
             }
+            let sampleBeforeStop = state == .connected
+            // Show Disconnecting before the final sample so the click answers
+            // at once; .disconnecting also keeps a connect from interleaving
+            // while the sample waits.
             state = .disconnecting
             beginDisconnectionWatchdog(selfInitiated: true)
+            if sampleBeforeStop {
+                await recordFinalTrafficSample()
+            }
         }
         let requestedMode = routingMode
         var launchSnapshot: ProviderLaunchSnapshot?

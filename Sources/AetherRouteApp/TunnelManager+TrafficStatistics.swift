@@ -45,13 +45,27 @@ extension TunnelManager {
     /// only once a minute when no traffic view is open. Before a disconnect,
     /// sample once more so the last minute is counted. Waits at most
     /// `timeout`: an unresponsive extension must not hold up the disconnect.
+    ///
+    /// Called while the host already shows `.disconnecting` (the provider is
+    /// still up), so it fetches directly rather than through
+    /// `refreshTelemetry`, which runs only when connected, and records the
+    /// sample without republishing connection rows to the UI.
     func recordFinalTrafficSample(timeout: Duration = .seconds(2)) async {
-        guard isTrafficStatisticsEnabled, state == .connected, !isUIReviewMode
-        else { return }
+        guard isTrafficStatisticsEnabled, !isUIReviewMode else { return }
         let finished = AsyncStream<Void> { continuation in
             Task { @MainActor [weak self] in
-                await self?.refreshTelemetry()
-                continuation.finish()
+                defer { continuation.finish() }
+                guard let self else { return }
+                let client = ProxySelectionProviderClient { [weak self] data in
+                    guard let self else {
+                        throw TunnelManagerError.providerSessionUnavailable
+                    }
+                    return try await self.sendProviderMessage(data)
+                }
+                guard let snapshot = try? await client.telemetry(
+                    maximumConnections: Self.telemetryConnectionLimit
+                ) else { return }
+                self.recordTrafficStatistics(snapshot)
             }
             Task {
                 try? await Task.sleep(for: timeout)
