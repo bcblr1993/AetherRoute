@@ -133,6 +133,9 @@ struct TrafficStatisticsSheet: View {
         .padding(AetherVisual.dialogPadding)
         .aetherLargeSheetFrame()
         .onAppear { tunnel.loadTrafficLedgerIfNeeded() }
+        // Without .contain, SwiftUI pushes the container identifier down onto
+        // every child and overwrites theirs (traffic-statistics-clear, …).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("traffic-statistics")
     }
 

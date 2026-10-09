@@ -1900,23 +1900,20 @@ final class AetherRouteUITests: XCTestCase {
                 let open = app.descendants(matching: .any)["overview-traffic-statistics"]
                 XCTAssertTrue(open.waitForExistence(timeout: 4))
                 open.click()
-                // The sheet's container identifier propagates to its children
-                // and replaces theirs, so find the buttons by title instead.
-                let english = language == "en"
-                let sheet = app.sheets.firstMatch
+                let sheet = app.descendants(matching: .any)["traffic-statistics"]
                 XCTAssertTrue(sheet.waitForExistence(timeout: 3))
                 let attachment = XCTAttachment(screenshot: mainProductWindow(in: app).screenshot())
                 attachment.name = "traffic-statistics-\(language)-\(appearance)-minimum"
                 attachment.lifetime = .keepAlways
                 add(attachment)
-                let clear = sheet.buttons[english ? "Clear Statistics…" : "清除统计…"]
+                let clear = app.buttons["traffic-statistics-clear"]
                 XCTAssertTrue(clear.exists)
                 XCTAssertFalse(clear.isEnabled)
-                let enable = sheet.buttons[english ? "Turn On" : "开启"]
+                let enable = app.buttons["traffic-statistics-enable"]
                 XCTAssertTrue(enable.exists)
                 enable.click()
                 XCTAssertTrue(enable.waitForNonExistence(timeout: 2))
-                let done = sheet.buttons[english ? "Done" : "完成"]
+                let done = app.buttons["traffic-statistics-done"]
                 XCTAssertTrue(done.isEnabled)
                 done.click()
                 XCTAssertTrue(sheet.waitForNonExistence(timeout: 3))

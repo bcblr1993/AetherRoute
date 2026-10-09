@@ -90,6 +90,7 @@ struct EmptyProfileOnboardingCard: View {
         }
         .padding(AetherVisual.heroCardPadding)
         .aetherPanel()
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("empty-profile-onboarding-card")
     }
 }

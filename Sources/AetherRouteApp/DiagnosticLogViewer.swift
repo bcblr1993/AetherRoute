@@ -57,6 +57,7 @@ struct DiagnosticLogViewer: View {
             level = tunnel.diagnosticLogLevel
             await reload()
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("log-viewer")
     }
 
