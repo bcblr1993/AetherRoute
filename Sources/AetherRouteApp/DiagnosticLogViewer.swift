@@ -25,6 +25,8 @@ struct DiagnosticLogViewer: View {
     private static let displayedLineLimit = 2_000
 
     var body: some View {
+        // Filtered once per render; the list, overlay, summary and Copy button share it.
+        let filtered = filteredLines
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
             AetherSheetHeader(
                 symbol: "doc.text.magnifyingglass",
@@ -35,15 +37,15 @@ struct DiagnosticLogViewer: View {
 
             controls
 
-            logList
+            logList(filtered)
 
             HStack {
-                Text(summary)
+                Text(summary(filtered))
                     .font(.caption)
                     .foregroundStyle(AetherVisual.secondaryText)
                 Spacer()
                 Button(AppLocalization.string("Copy")) { copyVisible() }
-                    .disabled(filteredLines.isEmpty)
+                    .disabled(filtered.isEmpty)
                     .accessibilityIdentifier("logs-copy")
                 Button(AppLocalization.string("Done")) { dismiss() }
                     .aetherGlassButton(prominent: true)
@@ -146,7 +148,7 @@ struct DiagnosticLogViewer: View {
     }
 
     @ViewBuilder
-    private var logList: some View {
+    private func logList(_ filtered: [DiagnosticLogLine]) -> some View {
         if lines.isEmpty, !isLoading {
             ContentUnavailableView {
                 Label(AppLocalization.string("No log entries"), systemImage: "doc.text")
@@ -159,7 +161,7 @@ struct DiagnosticLogViewer: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    ForEach(displayedLines) { line in
+                    ForEach(displayedLines(filtered)) { line in
                         LogLineRow(line: line)
                     }
                 }
@@ -171,7 +173,7 @@ struct DiagnosticLogViewer: View {
                 in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
             )
             .overlay {
-                if filteredLines.isEmpty, !lines.isEmpty {
+                if filtered.isEmpty, !lines.isEmpty {
                     ContentUnavailableView.search(text: searchText)
                 }
             }
@@ -195,12 +197,12 @@ struct DiagnosticLogViewer: View {
     }
 
     /// The newest lines, so a long session stays responsive.
-    private var displayedLines: [DiagnosticLogLine] {
-        Array(filteredLines.suffix(Self.displayedLineLimit))
+    private func displayedLines(_ filtered: [DiagnosticLogLine]) -> [DiagnosticLogLine] {
+        Array(filtered.suffix(Self.displayedLineLimit))
     }
 
-    private var summary: String {
-        let shown = filteredLines.count
+    private func summary(_ filtered: [DiagnosticLogLine]) -> String {
+        let shown = filtered.count
         if shown > Self.displayedLineLimit {
             return AppLocalization.format(
                 "Showing the newest %lld of %lld entries",
@@ -218,7 +220,7 @@ struct DiagnosticLogViewer: View {
     }
 
     private func copyVisible() {
-        let text = displayedLines.map { line in
+        let text = displayedLines(filteredLines).map { line in
             "\(line.process): \(line.rawText)"
         }.joined(separator: "\n")
         NSPasteboard.general.clearContents()
