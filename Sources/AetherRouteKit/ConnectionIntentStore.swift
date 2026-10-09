@@ -25,4 +25,20 @@ public struct ConnectionIntentStore: @unchecked Sendable {
     public func save(intendedConnected: Bool) {
         defaults.set(intendedConnected, forKey: key)
     }
+
+    /// Shutdown can stop the provider before the final AppKit callback. Keep
+    /// the standing intent, and never overwrite the first termination snapshot.
+    public func saveForApplicationTermination(
+        managerIsActive: Bool,
+        userIntendsToConnect: Bool,
+        alreadyTerminating: Bool
+    ) {
+        guard !alreadyTerminating else { return }
+        // An explicit disconnect is persisted before the provider finishes
+        // stopping. Its still-active status must not undo that decision.
+        let intent = defaults.object(forKey: key) == nil
+            ? managerIsActive || userIntendsToConnect
+            : wasConnected
+        save(intendedConnected: intent)
+    }
 }

@@ -20,6 +20,11 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 VM=${1:-macos27}
 EVIDENCE=${2:-}
 ONLY_TEST=${3:-}
+RUN_RESPONSIVENESS=${AETHERROUTE_RUN_UI_RESPONSIVENESS:-NO}
+case "$RUN_RESPONSIVENESS" in YES|NO) ;; *)
+  echo 'AETHERROUTE_RUN_UI_RESPONSIVENESS must be YES or NO' >&2
+  exit 64 ;;
+esac
 STAMP=$(date -u '+%Y%m%dT%H%M%SZ')
 [ -n "$EVIDENCE" ] || EVIDENCE="$ROOT/outputs/ui-vm-$STAMP"
 case "$EVIDENCE" in /*) ;; *) EVIDENCE="$ROOT/$EVIDENCE" ;; esac
@@ -80,7 +85,11 @@ only=
 status=0
 vm "cd '$REMOTE_DIR' && \
   TEST_RUNNER_AETHERROUTE_UI_TEST_ISOLATED_HOME='$REMOTE_DIR/Home' \
-  TEST_RUNNER_AETHERROUTE_RUN_UI_RESPONSIVENESS=NO \
+  TEST_RUNNER_AETHERROUTE_RUN_UI_RESPONSIVENESS='$RUN_RESPONSIVENESS' \
+  TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_SECONDS=1800 \
+  TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_MAX_P95_MS=120 \
+  TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_SMOKE=NO \
+  TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_EVIDENCE='$REMOTE_DIR/responsiveness' \
   HOME='$REMOTE_DIR/Home' CFFIXED_USER_HOME='$REMOTE_DIR/Home' TMPDIR='$REMOTE_DIR/Home/tmp' \
   AETHERROUTE_UI_TEST_ISOLATED_HOME='$REMOTE_DIR/Home' \
   /usr/bin/caffeinate -dimsu xcodebuild test-without-building \
@@ -91,6 +100,22 @@ vm "cd '$REMOTE_DIR' && \
 
 echo "==> Collecting results"
 rsync -a -e "ssh $SSH_OPTIONS" "$REMOTE:$REMOTE_DIR/result.xcresult/" "$EVIDENCE/result.xcresult/" 2>/dev/null || true
+if [ "$RUN_RESPONSIVENESS" = YES ]; then
+  if ! rsync -a -e "ssh $SSH_OPTIONS" "$REMOTE:$REMOTE_DIR/responsiveness/" \
+    "$EVIDENCE/responsiveness/" 2>/dev/null; then
+    echo 'Requested responsiveness evidence could not be collected.' >&2
+    [ "$status" -ne 0 ] || status=1
+  elif ! awk -F= '
+      $1 == "status" { passed = ($2 == "passed") }
+      $1 == "elapsed_seconds" { duration_ok = ($2 ~ /^[0-9]+([.][0-9]+)?$/ && $2 + 0 >= 1800) }
+      $1 == "p95_action_ms" { p95_ok = ($2 ~ /^[0-9]+([.][0-9]+)?$/ && $2 + 0 <= 120) }
+      $1 == "sample_count" { samples_ok = ($2 ~ /^[0-9]+$/ && $2 + 0 > 0) }
+      END { exit !(passed && duration_ok && p95_ok && samples_ok) }
+    ' "$EVIDENCE/responsiveness/result.txt"; then
+    echo 'Requested 30-minute responsiveness gate has no valid passing evidence.' >&2
+    [ "$status" -ne 0 ] || status=1
+  fi
+fi
 vm "rm -rf '$REMOTE_DIR'; pkill -f aetherroute-ui-tests.remote 2>/dev/null; true"
 find "$EXPORT" -depth -delete 2>/dev/null || true
 
@@ -107,6 +132,7 @@ failed=$(grep -c "Test Case .* failed" "$EVIDENCE/ui-test.log" || true)
   printf 'test_status=%s\n' "$status"
   printf 'passed=%s\n' "$passed"
   printf 'failed=%s\n' "$failed"
+  printf 'responsiveness_requested=%s\n' "$RUN_RESPONSIVENESS"
   printf 'host_network_before_sha256=%s\n' "$network_before"
   printf 'host_network_after_sha256=%s\n' "$network_after"
   printf 'host_tunnel_pids_before=%s\n' "$tunnel_before"

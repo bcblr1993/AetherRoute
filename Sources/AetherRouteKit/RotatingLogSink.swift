@@ -78,10 +78,20 @@ public final class RotatingLogSink: @unchecked Sendable {
     public func tail(maximumBytes: Int) -> String {
         guard maximumBytes > 0 else { return "" }
         var data = Data()
-        for url in [rotatedURL(index: 1), currentFileURL] {
-            if let contents = fileManager.contents(atPath: url.path) {
-                data.append(contents)
-            }
+        // Keep one extra byte to detect truncation and discard the partial
+        // first line. Never load entire multi-megabyte files for a small tail.
+        let limit = maximumBytes == Int.max ? Int.max : maximumBytes + 1
+        for url in [currentFileURL, rotatedURL(index: 1)] {
+            let remaining = limit - data.count
+            guard remaining > 0 else { break }
+            guard let handle = try? FileHandle(forReadingFrom: url) else { continue }
+            defer { try? handle.close() }
+            guard let size = try? handle.seekToEnd() else { continue }
+            let start = size > UInt64(remaining) ? size - UInt64(remaining) : 0
+            guard (try? handle.seek(toOffset: start)) != nil,
+                  let contents = try? handle.read(upToCount: remaining)
+            else { continue }
+            data.insert(contentsOf: contents, at: 0)
         }
         guard data.count > maximumBytes else {
             return String(decoding: data, as: UTF8.self)

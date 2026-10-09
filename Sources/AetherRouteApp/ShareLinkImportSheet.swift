@@ -22,7 +22,14 @@ enum ShareLinkQRCodeReader {
     }
 
     static func payloads(inImageAt url: URL) -> [String] {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let image = CIImage(contentsOf: url) else { return [] }
+        return payloads(in: image)
+    }
+
+    static func payloads(inData data: Data) -> [String] {
+        guard let image = CIImage(data: data) else { return [] }
         return payloads(in: image)
     }
 
@@ -155,6 +162,7 @@ struct ShareLinkImportSheet: View {
                 Button(AppLocalization.string("Cancel"), role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .disabled(isImporting)
+                    .accessibilityIdentifier("share-link-cancel")
                 Button {
                     isImporting = true
                     Task {
@@ -186,9 +194,12 @@ struct ShareLinkImportSheet: View {
             allowsMultipleSelection: false
         ) { result in
             guard case let .success(urls) = result, let url = urls.first else { return }
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            append(ShareLinkQRCodeReader.payloads(inImageAt: url))
+            Task {
+                let payloads = await Task.detached(priority: .userInitiated) {
+                    ShareLinkQRCodeReader.payloads(inImageAt: url)
+                }.value
+                append(payloads)
+            }
         }
         .onAppear { tunnel.clearProfileMessage() }
     }
@@ -202,8 +213,16 @@ struct ShareLinkImportSheet: View {
             return
         }
         // A copied screenshot of a QR code.
-        if let image = NSImage(pasteboard: pasteboard) {
-            append(ShareLinkQRCodeReader.payloads(in: image))
+        if let data = pasteboard.data(forType: .png)
+            ?? pasteboard.data(forType: .tiff)
+            ?? pasteboard.data(forType: NSPasteboard.PasteboardType("public.jpeg"))
+            ?? NSImage(pasteboard: pasteboard)?.tiffRepresentation {
+            Task {
+                let payloads = await Task.detached(priority: .userInitiated) {
+                    ShareLinkQRCodeReader.payloads(inData: data)
+                }.value
+                append(payloads)
+            }
         }
     }
 

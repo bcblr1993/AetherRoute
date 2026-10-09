@@ -166,7 +166,7 @@ bundle_executable_sha256() {
 
 codesign_with_timestamp_retry() {
   attempt=1
-  while test "$attempt" -le 3; do
+  while test "$attempt" -le 5; do
     output=
     if output=$(codesign --force --timestamp=http://timestamp.apple.com/ts01 \
       "$@" 2>&1); then

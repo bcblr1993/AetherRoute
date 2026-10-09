@@ -113,6 +113,7 @@ struct TrafficStatisticsSheet: View {
                     isClearConfirmationPresented = true
                 }
                 .disabled(statistics.ledger.days.isEmpty)
+                .accessibilityIdentifier("traffic-statistics-clear")
                 .confirmationDialog(
                     AppLocalization.string("Clear all traffic statistics?"),
                     isPresented: $isClearConfirmationPresented,
@@ -126,6 +127,7 @@ struct TrafficStatisticsSheet: View {
                 Button(AppLocalization.string("Done")) { dismiss() }
                     .aetherGlassButton(prominent: true)
                     .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("traffic-statistics-done")
             }
         }
         .padding(AetherVisual.dialogPadding)

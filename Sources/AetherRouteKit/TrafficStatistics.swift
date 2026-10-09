@@ -89,6 +89,7 @@ public struct TrafficStatisticsAccumulator: Sendable {
     public typealias AppResolver = (_ identifier: String, _ path: String) -> AppKey
 
     private var lastTotal: TrafficVolume?
+    private var lastSessionStartedAt: Date?
     private var lastConnections: [String: TrafficVolume] = [:]
     /// The last value seen for each lifetime total. A total missing from one
     /// sample (it fell out of the engine's bounded list) keeps its value, so
@@ -101,12 +102,14 @@ public struct TrafficStatisticsAccumulator: Sendable {
     /// the next sample only sets a new baseline.
     public mutating func reset() {
         lastTotal = nil
+        lastSessionStartedAt = nil
         lastConnections = [:]
         lastTrafficTotals = [:]
     }
 
     public mutating func ingest(
         _ snapshot: NetworkTelemetrySnapshot,
+        sessionStartedAt: Date? = nil,
         appKey: AppResolver
     ) -> TrafficSampleAttribution {
         let currentTotal = TrafficVolume(
@@ -114,12 +117,15 @@ public struct TrafficStatisticsAccumulator: Sendable {
             download: snapshot.downloadTotal
         )
         var attribution = TrafficSampleAttribution()
-        let engineRestarted = lastTotal.map {
+        let sessionChanged = lastSessionStartedAt != nil
+            && sessionStartedAt != nil && lastSessionStartedAt != sessionStartedAt
+        if let sessionStartedAt { lastSessionStartedAt = sessionStartedAt }
+        let engineRestarted = sessionChanged || (lastTotal.map {
             currentTotal.upload < $0.upload || currentTotal.download < $0.download
-        } ?? false
+        } ?? false)
         if let lastTotal {
-            // Counters only fall when the engine restarted; its new totals
-            // are then all new traffic.
+            // A new VPN session or a counter reset starts a fresh engine;
+            // all of its current bytes are new, even above the old counters.
             attribution.total = engineRestarted
                 ? currentTotal
                 : TrafficVolume(

@@ -3,6 +3,50 @@ import XCTest
 @testable import AetherRouteKit
 
 final class ConnectionIntentStoreTests: XCTestCase {
+    func testShutdownCallbacksDoNotOverwriteConnectedIntentAfterProviderStops() {
+        let (defaults, store) = makeStore()
+        defer { defaults.removePersistentDomain(forName: suiteName(for: defaults)) }
+        store.save(intendedConnected: true)
+        store.saveForApplicationTermination(
+            managerIsActive: true, userIntendsToConnect: true, alreadyTerminating: false
+        )
+        store.saveForApplicationTermination(
+            managerIsActive: false, userIntendsToConnect: false, alreadyTerminating: true
+        )
+        let relaunched = ConnectionIntentStore(defaults: defaults, key: testKey)
+        XCTAssertTrue(relaunched.wasConnected)
+    }
+
+    func testSystemStoppingProviderBeforeAppPreservesStandingIntent() {
+        let (defaults, store) = makeStore()
+        defer { defaults.removePersistentDomain(forName: suiteName(for: defaults)) }
+        store.save(intendedConnected: true)
+        store.saveForApplicationTermination(
+            managerIsActive: false, userIntendsToConnect: false, alreadyTerminating: false
+        )
+        XCTAssertTrue(store.wasConnected)
+    }
+
+    func testExplicitDisconnectStaysDisconnectedAcrossTermination() {
+        let (defaults, store) = makeStore()
+        defer { defaults.removePersistentDomain(forName: suiteName(for: defaults)) }
+        store.save(intendedConnected: true)
+        store.save(intendedConnected: false)
+        store.saveForApplicationTermination(
+            managerIsActive: true, userIntendsToConnect: false, alreadyTerminating: false
+        )
+        XCTAssertFalse(store.wasConnected)
+    }
+
+    func testExistingActiveConnectionWithoutSavedIntentIsRestored() {
+        let (defaults, store) = makeStore()
+        defer { defaults.removePersistentDomain(forName: suiteName(for: defaults)) }
+        store.saveForApplicationTermination(
+            managerIsActive: true, userIntendsToConnect: false, alreadyTerminating: false
+        )
+        XCTAssertTrue(store.wasConnected)
+    }
+
     func testDefaultConnectionIntentIsFalse() {
         let (defaults, store) = makeStore()
         defer { defaults.removePersistentDomain(forName: suiteName(for: defaults)) }

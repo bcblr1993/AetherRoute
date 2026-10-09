@@ -63,14 +63,19 @@ public struct DiagnosticLogLine: Sendable, Equatable, Identifiable {
     /// sort correctly as strings; a line without one keeps its position
     /// after the line before it.
     public static func merged(_ sources: [[DiagnosticLogLine]]) -> [DiagnosticLogLine] {
-        sources.joined().enumerated().sorted { lhs, rhs in
-            if lhs.element.timestamp != rhs.element.timestamp,
-               !lhs.element.timestamp.isEmpty,
-               !rhs.element.timestamp.isEmpty {
-                return lhs.element.timestamp < rhs.element.timestamp
+        var records: [(timestamp: String, order: Int, lines: [DiagnosticLogLine])] = []
+        for source in sources {
+            for (index, line) in source.enumerated() {
+                if !line.timestamp.isEmpty || index == 0 {
+                    records.append((line.timestamp, records.count, [line]))
+                } else {
+                    records[records.count - 1].lines.append(line)
+                }
             }
-            return lhs.offset < rhs.offset
-        }.map(\.element)
+        }
+        return records.sorted {
+            $0.timestamp == $1.timestamp ? $0.order < $1.order : $0.timestamp < $1.timestamp
+        }.flatMap(\.lines)
     }
 
     private static func parseLine(_ raw: String, process: String, id: Int) -> DiagnosticLogLine {

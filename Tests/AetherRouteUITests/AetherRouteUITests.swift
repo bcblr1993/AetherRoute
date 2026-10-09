@@ -1883,15 +1883,90 @@ final class AetherRouteUITests: XCTestCase {
         let logViewer = app.descendants(matching: .any)["log-viewer"]
         XCTAssertTrue(logViewer.waitForExistence(timeout: 4))
 
-        print("=== DEBUG ACCESSIBILITY HIERARCHY ===")
-        print(app.debugDescription)
-        print("=== END DEBUG ACCESSIBILITY HIERARCHY ===")
-
         let doneButton = app.buttons["logs-done"]
         XCTAssertTrue(doneButton.waitForExistence(timeout: 4))
         doneButton.click()
 
-        XCTAssertFalse(logViewer.waitForExistence(timeout: 2))
+        XCTAssertTrue(logViewer.waitForNonExistence(timeout: 3))
+    }
+
+    func testTrafficStatisticsOptInAndEmptyStateAcrossLanguagesAndAppearances() {
+        for language in ["en", "zh-Hans"] {
+            for appearance in ["light", "dark"] {
+                let app = launchReviewApp(appearance: appearance, state: "ready",
+                                          language: language, windowSize: "780x560")
+                defer { app.terminate() }
+                // A .link-style button is exposed as a Link, not a Button.
+                let open = app.descendants(matching: .any)["overview-traffic-statistics"]
+                XCTAssertTrue(open.waitForExistence(timeout: 4))
+                open.click()
+                // The sheet's container identifier propagates to its children
+                // and replaces theirs, so find the buttons by title instead.
+                let english = language == "en"
+                let sheet = app.sheets.firstMatch
+                XCTAssertTrue(sheet.waitForExistence(timeout: 3))
+                let attachment = XCTAttachment(screenshot: mainProductWindow(in: app).screenshot())
+                attachment.name = "traffic-statistics-\(language)-\(appearance)-minimum"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let clear = sheet.buttons[english ? "Clear Statistics…" : "清除统计…"]
+                XCTAssertTrue(clear.exists)
+                XCTAssertFalse(clear.isEnabled)
+                let enable = sheet.buttons[english ? "Turn On" : "开启"]
+                XCTAssertTrue(enable.exists)
+                enable.click()
+                XCTAssertTrue(enable.waitForNonExistence(timeout: 2))
+                let done = sheet.buttons[english ? "Done" : "完成"]
+                XCTAssertTrue(done.isEnabled)
+                done.click()
+                XCTAssertTrue(sheet.waitForNonExistence(timeout: 3))
+            }
+        }
+    }
+
+    func testShareLinkImportRejectsInvalidTextAndCreatesEditableProfile() {
+        for language in ["en", "zh-Hans"] {
+            for appearance in ["light", "dark"] {
+                let app = launchReviewApp(appearance: appearance, state: "ready",
+                                          language: language, windowSize: "780x560")
+                defer { app.terminate() }
+                app.buttons["primary-navigation-profiles"].click()
+                let menu = app.menuButtons["profiles-add-menu"]
+                XCTAssertTrue(menu.waitForExistence(timeout: 3))
+                menu.click()
+                let action = app.menuItems[language == "en" ? "Import Node Links…" : "导入节点链接…"]
+                XCTAssertTrue(action.waitForExistence(timeout: 2))
+                action.click()
+                let editor = app.textViews["share-link-text"]
+                XCTAssertTrue(editor.waitForExistence(timeout: 3))
+                let importButton = app.buttons["share-link-import"]
+                XCTAssertFalse(importButton.isEnabled)
+                let attachment = XCTAttachment(screenshot: mainProductWindow(in: app).screenshot())
+                attachment.name = "share-link-import-\(language)-\(appearance)-minimum"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                // Text goes in through the sheet's Paste button: an active
+                // input method (Pinyin) turns typed letters into candidates.
+                func paste(_ text: String) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    app.buttons["share-link-paste"].click()
+                }
+                paste("invalid node link")
+                importButton.click()
+                // macOS exposes StaticText content as its value, not its label.
+                let invalidMessage = language == "en" ? "No valid node link" : "没有找到有效的节点链接"
+                XCTAssertTrue(editor.exists)
+                XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", invalidMessage, invalidMessage)).firstMatch.waitForExistence(timeout: 2))
+                editor.click()
+                editor.typeKey("a", modifierFlags: .command)
+                editor.typeKey(.delete, modifierFlags: [])
+                paste("socks5://127.0.0.1:1080#UIReviewNode")
+                importButton.click()
+                XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
+                XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "UIReviewNode", "UIReviewNode")).firstMatch.waitForExistence(timeout: 3))
+            }
+        }
     }
 
     func testSignedNetworkExtensionConnectDisconnectLifecycle() async throws {
@@ -4077,6 +4152,7 @@ final class AetherRouteUITests: XCTestCase {
             "-AppleLocale", language == "zh-Hans" ? "zh_CN" : "en_US",
             "-ApplePersistenceIgnoreState", "YES",
             "-NSQuitAlwaysKeepsWindows", "NO",
+            "-trafficStatisticsEnabled", "NO",
         ]
         if app.state != .notRunning {
             app.terminate()

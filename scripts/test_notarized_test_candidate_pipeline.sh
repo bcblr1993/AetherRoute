@@ -168,4 +168,39 @@ if grep -Eq '(^|[[:space:]])(curl|scp|rsync|aws|rclone)[[:space:]]' "$SCRIPT"; t
   exit 1
 fi
 
+python3 - "$SCRIPT" <<'PY'
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+source = Path(sys.argv[1]).read_text()
+start = source.index('codesign_with_timestamp_retry() {')
+end = source.index('\nTEMPORARY=', start)
+function = source[start:end]
+with tempfile.TemporaryDirectory(prefix='aetherroute-timestamp-retry-') as root:
+    for succeeds in (True, False):
+        counter = Path(root) / str(succeeds)
+        counter.write_text('0')
+        prelude = f'''task_count_file='{counter}'
+sleep() {{ :; }}
+codesign() {{
+  n=$(cat "$task_count_file"); n=$((n+1))
+  printf '%s' "$n" > "$task_count_file"
+  if [ "$n" -eq 5 ] && [ '{succeeds}' = True ]; then return 0; fi
+  echo 'timestamp service is not available' >&2
+  return 1
+}}
+'''
+        result = subprocess.run(
+            ['sh', '-c', prelude + function + '\ncodesign_with_timestamp_retry --sign fixture fixture\n'],
+            capture_output=True, text=True, check=False,
+        )
+        assert counter.read_text() == '5', result.stderr
+        assert result.returncode == (0 if succeeds else 1), result.stderr
+        if not succeeds:
+            assert result.stderr.endswith('timestamp service is not available\n'), result.stderr
+print('Timestamp retry: fifth-attempt recovery and exhausted failure evidence passed.')
+PY
+
 echo "Notarized cross-machine test candidate pipeline static tests passed."

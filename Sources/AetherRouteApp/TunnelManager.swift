@@ -315,6 +315,8 @@ final class TunnelManager: ObservableObject {
     var isTrafficLedgerLoaded = false
     /// Samples were added since the ledger was last written.
     var hasUnsavedTrafficSamples = false
+    var trafficLedgerRevision: UInt64 = 0
+    let trafficStatisticsWriter = TrafficStatisticsWriter()
     @Published var routingResourceMessage: String?
     @Published var routingResourceMessageIsError = false
     @Published var hasAcceptedPrivacyDisclosure: Bool
@@ -1373,16 +1375,20 @@ final class TunnelManager: ObservableObject {
     }
 
     var requiresDisconnectBeforeApplicationTermination: Bool {
-        managerConnectionIsActive
+        managerConnectionIsActive || hasUnsavedTrafficSamples
+            || trafficStatisticsWriter.hasPendingOperations
     }
 
     func prepareForApplicationTermination() {
+        if !isUIReviewMode {
+            connectionIntentStore.saveForApplicationTermination(
+                managerIsActive: managerConnectionIsActive,
+                userIntendsToConnect: userIntendsToConnect,
+                alreadyTerminating: isApplicationTerminating
+            )
+        }
         isApplicationTerminating = true
         cancelStartupRestore(reason: "applicationTermination")
-        let wasActive = managerConnectionIsActive || userIntendsToConnect
-        if !isUIReviewMode {
-            connectionIntentStore.save(intendedConnected: wasActive)
-        }
         engineReconnect.cancel()
         userIntendsToConnect = false
         cancelAutomaticReconnect(reason: "applicationTermination")
@@ -1402,6 +1408,7 @@ final class TunnelManager: ObservableObject {
     /// unmanaged network extension active in the background.
     func disconnectForApplicationTermination() async -> Bool {
         prepareForApplicationTermination()
+        await trafficStatisticsWriter.flush()
         guard managerConnectionIsActive else { return true }
         let wasActive = managerConnectionIsActive || userIntendsToConnect
         Self.runtimeLogger.info(

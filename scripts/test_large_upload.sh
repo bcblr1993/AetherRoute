@@ -35,12 +35,14 @@ post() {
   curl --proxy '' -sS -o "$WORK/response" \
     -w '%{http_code} %{size_upload} %{time_total}' \
     -H 'content-type: application/octet-stream' \
-    -X POST --data-binary "@$1" --max-time 120 "$URL" 2>/dev/null \
-    || true
+    -X POST --data-binary "@$1" --max-time 120 "$URL" 2>/dev/null
 }
 
 printf 'probe' >"$WORK/small"
-small=$(post "$WORK/small")
+if ! small=$(post "$WORK/small"); then
+  echo "large upload: inconclusive, small request did not complete (${small:-no response})"
+  exit 2
+fi
 case "$small" in
   200\ *) ;;
   *) echo "large upload: inconclusive, small request not answered (${small:-no response})"; exit 2 ;;
@@ -48,11 +50,32 @@ esac
 
 # Random bytes do not compress, so every byte crosses the uplink.
 head -c "$BYTES" /dev/urandom >"$WORK/payload"
-set -- $(post "$WORK/payload")
+transfer_completed=0
+if result=$(post "$WORK/payload"); then
+  transfer_completed=1
+fi
+set -- $result
 code=${1:-000}
 sent=${2:-0}
 seconds=${3:-0}
-if [ "$code" = 200 ] && [ "$sent" = "$BYTES" ]; then
+if [ "$transfer_completed" -eq 1 ] && [ "$code" = 200 ] && [ "$sent" = "$BYTES" ]; then
+  # The upload counter measures client writes, not bytes received by the peer.
+  # httpbin echoes binary request bodies as a base64 data URL; compare that
+  # echo with the original payload before accepting delivery.
+  if ! echoed=$(/usr/bin/plutil -extract data raw -o - "$WORK/response" 2>/dev/null); then
+    echo "large upload: response did not contain a request-body echo"
+    exit 1
+  fi
+  case "$echoed" in
+    data:application/octet-stream\;base64,*)
+      encoded=${echoed#data:application/octet-stream;base64,} ;;
+    *) echo "large upload: unexpected request-body echo encoding"; exit 1 ;;
+  esac
+  if ! printf '%s' "$encoded" | /usr/bin/base64 -D >"$WORK/echoed" \
+    || ! cmp -s "$WORK/payload" "$WORK/echoed"; then
+    echo "large upload: echoed bytes differ from the uploaded payload"
+    exit 1
+  fi
   echo "large upload: $BYTES bytes delivered in ${seconds}s"
   exit 0
 fi

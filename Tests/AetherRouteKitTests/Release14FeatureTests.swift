@@ -145,6 +145,19 @@ final class ConnectionCloseRequestCodecTests: XCTestCase {
 }
 
 final class DiagnosticLogLineTests: XCTestCase {
+    func testMultilineRecordsRemainTogetherWhenMergedChronologically() {
+        let app = DiagnosticLogLine.parse(
+            "2026-10-08T03:00:00.000Z E [test] late\ncontinuation",
+            process: "app"
+        )
+        let tunnel = DiagnosticLogLine.parse(
+            "2026-10-08T01:00:00.000Z E [test] early",
+            process: "tunnel", firstID: 2
+        )
+        XCTAssertEqual(DiagnosticLogLine.merged([app, tunnel]).map(\.message),
+                       ["early", "late", "continuation"])
+    }
+
     func testParsesMarkersAndKeepsUnformattedLines() {
         let text = """
         2026-10-08T01:02:03.004Z E [tunnel] start failed
@@ -186,6 +199,18 @@ final class DiagnosticLogLineTests: XCTestCase {
         XCTAssertEqual(sink.tail(maximumBytes: 14), "third\n")
         XCTAssertEqual(sink.tail(maximumBytes: 1_000), "first line\nsecond line\nthird\n")
         XCTAssertEqual(sink.tail(maximumBytes: 0), "")
+    }
+
+    func testTailReadsAcrossRotationAndDiscardsOversizedPartialRecord() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sink = RotatingLogSink(configuration: .init(directoryURL: directory, baseName: "app"))
+        try Data((String(repeating: "x", count: 1_048_576) + "\nprevious\n").utf8)
+            .write(to: directory.appendingPathComponent("app.1.log"))
+        try Data("current\n".utf8).write(to: sink.currentFileURL)
+        XCTAssertEqual(sink.tail(maximumBytes: 20), "previous\ncurrent\n")
+        XCTAssertEqual(sink.tail(maximumBytes: 3), "")
     }
 }
 
@@ -318,6 +343,36 @@ final class TrafficStatisticsTests: XCTestCase {
         )
         XCTAssertEqual(sample.total, TrafficVolume(upload: 3, download: 4))
         XCTAssertEqual(sample.apps["com.a"], TrafficVolume(upload: 3, download: 4))
+    }
+
+    func testNewSessionCountsAllBytesEvenWhenItsCountersExceedPreviousSession() {
+        var accumulator = TrafficStatisticsAccumulator()
+        _ = accumulator.ingest(
+            totalsSnapshot(upload: 100, download: 100, [
+                total("com.a", chain: "", upload: 100, download: 100),
+            ]), sessionStartedAt: Date(timeIntervalSince1970: 1), appKey: key
+        )
+        let sample = accumulator.ingest(
+            totalsSnapshot(upload: 150, download: 180, [
+                total("com.a", chain: "", upload: 150, download: 180),
+            ]), sessionStartedAt: Date(timeIntervalSince1970: 2), appKey: key
+        )
+        XCTAssertEqual(sample.total, TrafficVolume(upload: 150, download: 180))
+        XCTAssertEqual(sample.apps["com.a"], sample.total)
+    }
+
+    func testSameSessionPreservesBaselineAcrossPollingGaps() {
+        var accumulator = TrafficStatisticsAccumulator()
+        let started = Date(timeIntervalSince1970: 1)
+        _ = accumulator.ingest(
+            totalsSnapshot(upload: 100, download: 100, []),
+            sessionStartedAt: started, appKey: key
+        )
+        let sample = accumulator.ingest(
+            totalsSnapshot(upload: 150, download: 180, []),
+            sessionStartedAt: started, appKey: key
+        )
+        XCTAssertEqual(sample.total, TrafficVolume(upload: 50, download: 80))
     }
 
     func testFirstSampleOnlySetsTheBaseline() {

@@ -14,9 +14,13 @@ extension TunnelManager {
             profileMessageIsError = true
             return false
         }
+        isUpdatingProfiles = true
+        defer { isUpdatingProfiles = false }
         let parsed: (nodes: [AetherNode], skippedCount: Int)
         do {
-            parsed = try SubscriptionPayloadNormalizer.nodes(fromShareText: text)
+            parsed = try await Task.detached(priority: .userInitiated) {
+                try SubscriptionPayloadNormalizer.nodes(fromShareText: text)
+            }.value
         } catch {
             profileMessage = AppLocalization.string(
                 "No valid node link was found. Paste links such as vless://, ss:// or hy2://, one per line."
@@ -31,8 +35,6 @@ extension TunnelManager {
                 parsed.nodes[0].name
             )
             : AppLocalization.format("Imported links · %lld nodes", Int64(parsed.nodes.count))
-        isUpdatingProfiles = true
-        defer { isUpdatingProfiles = false }
         do {
             let shouldActivate = !isEnabled || activeProfileID == nil
             if isUIReviewMode {

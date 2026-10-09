@@ -6,7 +6,7 @@ options:
 packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    from: "2.6.4"
+    exactVersion: "2.9.6"
 settings:
   base:
     ARCHS: arm64
@@ -49,7 +49,7 @@ settings:
     INFOPLIST_KEY_AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
     INFOPLIST_KEY_AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
     MARKETING_VERSION: "1.4.0"
-    CURRENT_PROJECT_VERSION: "2026100803"
+    CURRENT_PROJECT_VERSION: "2026100901"
   configs:
     Release:
       CODE_SIGN_STYLE: Manual

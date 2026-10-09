@@ -4,7 +4,7 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [1.4.0] - 2026-10-08
+## [1.4.0] - 2026-10-09
 
 AetherRoute can now close connections without disconnecting, shows its own logs, imports nodes from pasted links, QR images or the screen, and keeps encrypted local traffic statistics by app and node.
 
@@ -28,13 +28,24 @@ AetherRoute can now close connections without disconnecting, shows its own logs,
 ### Fixed
 
 - Switching pages quickly no longer stutters from background work: the statistics ledger publishes on its own instead of redrawing the whole window with each sample; changing the polling cadence (opening or leaving Connections) no longer writes the ledger or resets its baseline; the Proxies page rereads a group's selection at most every 10 s per connection and publishes it only when it changed. The sidebar connection count now updates live in its own badge. Clicking through pages in quick succession switches at once instead of stacking entrance animations.
+- After a restart, shutdown or logout, AetherRoute connects again on its own. macOS delivers several quit callbacks; 1.3 rewrote the saved connection intent on each one, and the last, arriving after the extension had stopped, recorded "not connected". The intent is now saved once, on the first callback, and an explicit disconnect is never undone.
+- Statistics saves and clears run in order, pending samples are written before statistics are turned off or the app quits, and a new VPN session is detected from its start time instead of from counters falling.
+- Multiline log records stay together in time order, and the log view reads only the requested tail instead of whole rotated files.
+- Reading a QR code from an image or a pasted screenshot, and parsing pasted links, no longer block the window; a second import cannot start while one runs.
 - The statistics ledger is written only after it was read and only with new samples, so an early save can no longer replace the saved history with an empty one.
 - Proxy chains in telemetry now read from the rule's target group to the node that carried the flow ("Proxy → Auto → Tokyo"). The engine recorded them node-first, so the Connections outlet column and the automatic group's current node showed the outermost group instead of the node.
+
+### Verified
+
+- Local regression suites, `./scripts/test.sh` and all five protocol interop gates (48 cases, 26 certificate rejections) passed.
+- Tart VM matrix (tun / transparent × rule / global / direct) passed in one run, including idle keep-alive reuse, 2 MiB upload and transparent SNI recovery; the Mac mini remote gate passed.
+- On the Mac mini with the notarized build 2026100901, in both TUN and transparent mode: automatic restore on launch, idle reuse, 2 MiB upload, the connection intent kept after a quit while connected, and restore again on the next launch.
+- UI suite on macOS 27 compared with v1.3.3 on the same VM: no regressions; the new statistics and node-link import tests pass. Environment-only failures are listed in `Docs/ReleaseExceptions/1.4.0.md`.
+- 5,000-node import: 0.347 s and 4.67 MB peak RSS growth (v1.3.3: 0.352 s, 4.67 MB).
 
 ### Notes
 
 - uTLS browser fingerprints are not part of 1.4: the engine's TLS stack (rustls) cannot shape a browser ClientHello, so this needs a separate TLS implementation and its own evaluation.
-- `Config/ProtocolCoreEvidence.json` carries the new core commit and source hashes; its artifact hashes (`flowCoreSHA256`, `packetFlowCoreSHA256`, `interopTestBinarySHA256`) must be refreshed from the rebuilt cores before release.
 
 ## [1.3.3] - 2026-10-08
 
