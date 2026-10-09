@@ -147,7 +147,17 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
     private let registry: TransparentProxySessionRegistry
     private let coordinator: TransparentProxyIngressCoordinator
     private let admissionLock = NSLock()
+    /// Serializes engine control calls among themselves, as the packet
+    /// tunnel's control lock does. A latency test can take its full timeout
+    /// (10 s for an unreachable member); holding `admissionLock` for it
+    /// stalled every new TCP and UDP flow on the Mac for that long.
+    private let controlLock = NSLock()
     private var acceptingFlows = true
+    /// Control calls admitted before stop. The engine hands its native handle
+    /// to a latency test outside its own lock, so it must not shut down while
+    /// one runs; stop defers the drain until this reaches zero.
+    private var activeControlCalls = 0
+    private var stopAwaitingControlCalls = false
     private var stopStarted = false
     private var stopFinished = false
     private var stopCompletions: [@Sendable () -> Void] = []
@@ -269,6 +279,10 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
             guard !stopStarted else { return .wait }
             acceptingFlows = false
             stopStarted = true
+            guard activeControlCalls == 0 else {
+                stopAwaitingControlCalls = true
+                return .awaitControlCalls
+            }
             return .start
         }
 
@@ -279,17 +293,56 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         case .wait:
             TransparentLifecycleLog.logger.info("stage=flowRuntimeStop coalesced")
             break
+        case .awaitControlCalls:
+            TransparentLifecycleLog.logger.info("stage=flowRuntimeStop awaitingControlCalls")
         case .start:
-            TransparentLifecycleLog.logger.info("stage=flowRuntimeDrain begin")
-            registry.stopAll { [self] in
-                TransparentLifecycleLog.logger.info("stage=flowRuntimeDrain success")
-                TransparentLifecycleLog.logger.info("stage=flowEngineShutdown begin")
-                engine.shutdown { [self] in
-                    TransparentLifecycleLog.logger.info("stage=flowEngineShutdown success")
-                    finishStop()
-                }
+            beginDrain()
+        }
+    }
+
+    private func beginDrain() {
+        TransparentLifecycleLog.logger.info("stage=flowRuntimeDrain begin")
+        registry.stopAll { [self] in
+            TransparentLifecycleLog.logger.info("stage=flowRuntimeDrain success")
+            TransparentLifecycleLog.logger.info("stage=flowEngineShutdown begin")
+            engine.shutdown { [self] in
+                TransparentLifecycleLog.logger.info("stage=flowEngineShutdown success")
+                finishStop()
             }
         }
+    }
+
+    /// Runs one engine control call without holding `admissionLock`, so flow
+    /// admission never waits behind it. Stop still waits for it to finish.
+    private func withControlCall<Result>(
+        _ operation: () throws -> Result
+    ) throws -> Result {
+        try admissionLock.withLock {
+            guard acceptingFlows else {
+                throw TransparentProxySelectionError.runtimeStopping
+            }
+            activeControlCalls += 1
+        }
+        defer { controlCallFinished() }
+        return try controlLock.withLock {
+            // A call queued behind a slow one must not start once stop began.
+            guard admissionLock.withLock({ acceptingFlows }) else {
+                throw TransparentProxySelectionError.runtimeStopping
+            }
+            return try operation()
+        }
+    }
+
+    private func controlCallFinished() {
+        let drain = admissionLock.withLock { () -> Bool in
+            activeControlCalls -= 1
+            guard activeControlCalls == 0, stopAwaitingControlCalls else {
+                return false
+            }
+            stopAwaitingControlCalls = false
+            return true
+        }
+        if drain { beginDrain() }
     }
 
     public func resetNetworkState() {
@@ -311,19 +364,13 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
     public func selectorSnapshot(
         group: String
     ) throws -> ProxySelectionState {
-        try admissionLock.withLock {
-            guard acceptingFlows else {
-                throw TransparentProxySelectionError.runtimeStopping
-            }
+        try withControlCall {
             return try engine.selectorSnapshot(group: group)
         }
     }
 
     public func setRoutingMode(_ mode: RoutingMode) throws {
-        try admissionLock.withLock {
-            guard acceptingFlows else {
-                throw TransparentProxySelectionError.runtimeStopping
-            }
+        try withControlCall {
             try engine.setRoutingMode(mode)
         }
     }
@@ -332,10 +379,7 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         group: String,
         member: String
     ) throws -> ProxySelectionState {
-        try admissionLock.withLock {
-            guard acceptingFlows else {
-                throw TransparentProxySelectionError.runtimeStopping
-            }
+        try withControlCall {
             return try engine.selectProxy(group: group, member: member)
         }
     }
@@ -345,10 +389,7 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         url: String,
         timeoutMilliseconds: UInt32
     ) throws -> ProxyLatencyState {
-        try admissionLock.withLock {
-            guard acceptingFlows else {
-                throw TransparentProxySelectionError.runtimeStopping
-            }
+        try withControlCall {
             return try engine.testProxyLatency(
                 group: group,
                 url: url,
@@ -362,10 +403,7 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         url: String,
         timeoutMilliseconds: UInt32
     ) throws -> ProxyLatencyState {
-        try admissionLock.withLock {
-            guard acceptingFlows else {
-                throw TransparentProxySelectionError.runtimeStopping
-            }
+        try withControlCall {
             return try engine.testActiveProxyLatency(
                 group: group,
                 url: url,
@@ -377,10 +415,7 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
     public func telemetrySnapshot(
         maximumConnections: UInt16
     ) throws -> NetworkTelemetrySnapshot {
-        try admissionLock.withLock {
-            guard acceptingFlows else {
-                throw TransparentProxySelectionError.runtimeStopping
-            }
+        try withControlCall {
             return try engine.telemetrySnapshot(
                 maximumConnections: maximumConnections
             )
@@ -388,10 +423,7 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
     }
 
     public func closeConnections(request: Data) throws -> UInt64 {
-        try admissionLock.withLock {
-            guard acceptingFlows else {
-                throw TransparentProxySelectionError.runtimeStopping
-            }
+        try withControlCall {
             return try engine.closeConnections(request: request)
         }
     }
@@ -412,6 +444,7 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
     private enum RuntimeStopAction {
         case completeNow
         case wait
+        case awaitControlCalls
         case start
     }
 }

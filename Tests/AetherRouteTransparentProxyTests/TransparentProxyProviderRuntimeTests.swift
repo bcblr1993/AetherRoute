@@ -670,6 +670,137 @@ final class TransparentProxyProviderRuntimeTests: XCTestCase,
         }
     }
 
+    /// A latency test can run to its full timeout. While it does, new flows
+    /// must still be admitted at once instead of waiting behind it.
+    func testSlowLatencyTestDoesNotBlockFlowAdmission() throws {
+        let engine = RuntimeFakeEngine()
+        engine.holdsLatencyTests = true
+        let runtime = try makeRuntime(engine: engine)
+        let latencyDone = expectation(description: "latency test finished")
+        DispatchQueue.global().async {
+            _ = try? runtime.testActiveProxyLatency(
+                group: "Route",
+                url: "https://www.gstatic.com/generate_204",
+                timeoutMilliseconds: 10_000
+            )
+            latencyDone.fulfill()
+        }
+        XCTAssertTrue(engine.waitForLatencyTest(timeout: 2))
+
+        let admitted = expectation(description: "flow admitted")
+        DispatchQueue.global().async {
+            _ = runtime.claimTCP(
+                components: self.makeTCPComponents().ingress,
+                source: nil,
+                destination: self.tcpDestination()
+            )
+            admitted.fulfill()
+        }
+        wait(for: [admitted], timeout: 1)
+        XCTAssertEqual(engine.makeTCPCallCount, 1)
+
+        engine.releaseLatencyTest()
+        wait(for: [latencyDone], timeout: 2)
+        runtime.stop {}
+    }
+
+    /// The engine uses its native handle for a latency test outside its own
+    /// lock, so shutdown must wait until the test returns.
+    func testStopWaitsForRunningLatencyTestBeforeEngineShutdown() throws {
+        let events = RuntimeEventRecorder()
+        let engine = RuntimeFakeEngine(events: events)
+        engine.holdsLatencyTests = true
+        let runtime = try makeRuntime(engine: engine)
+        let latencyDone = expectation(description: "latency test finished")
+        let latencyError = RuntimeLockedBox<Error?>(nil)
+        DispatchQueue.global().async {
+            do {
+                _ = try runtime.testActiveProxyLatency(
+                    group: "Route",
+                    url: "https://www.gstatic.com/generate_204",
+                    timeoutMilliseconds: 10_000
+                )
+            } catch {
+                latencyError.mutate { $0 = error }
+            }
+            latencyDone.fulfill()
+        }
+        XCTAssertTrue(engine.waitForLatencyTest(timeout: 2))
+
+        let stopped = expectation(description: "runtime stopped")
+        runtime.stop { stopped.fulfill() }
+        XCTAssertFalse(runtime.snapshot().isAcceptingFlows)
+        XCTAssertEqual(engine.shutdownCallCount, 0)
+        XCTAssertThrowsError(
+            try runtime.telemetrySnapshot(maximumConnections: 50)
+        ) {
+            XCTAssertEqual(
+                $0 as? TransparentProxySelectionError,
+                .runtimeStopping
+            )
+        }
+
+        engine.releaseLatencyTest()
+        wait(for: [latencyDone, stopped], timeout: 2)
+        // The test admitted before stop completes normally.
+        XCTAssertNil(latencyError.value)
+        XCTAssertEqual(
+            events.values,
+            [
+                "engine.latency.started",
+                "engine.latency.finished",
+                "engine.shutdown.started",
+                "engine.shutdown.finished",
+            ]
+        )
+    }
+
+    /// A control call queued behind a slow one must not reach the engine once
+    /// stop has begun.
+    func testQueuedControlCallIsRejectedAfterStopBegins() throws {
+        let engine = RuntimeFakeEngine()
+        engine.holdsLatencyTests = true
+        let runtime = try makeRuntime(engine: engine)
+        let first = expectation(description: "first latency test finished")
+        DispatchQueue.global().async {
+            _ = try? runtime.testActiveProxyLatency(
+                group: "Route",
+                url: "https://www.gstatic.com/generate_204",
+                timeoutMilliseconds: 10_000
+            )
+            first.fulfill()
+        }
+        XCTAssertTrue(engine.waitForLatencyTest(timeout: 2))
+
+        let queued = expectation(description: "queued call returned")
+        let queuedError = RuntimeLockedBox<Error?>(nil)
+        DispatchQueue.global().async {
+            do {
+                _ = try runtime.testActiveProxyLatency(
+                    group: "Route",
+                    url: "https://www.gstatic.com/generate_204",
+                    timeoutMilliseconds: 10_000
+                )
+            } catch {
+                queuedError.mutate { $0 = error }
+            }
+            queued.fulfill()
+        }
+        // Let the second call reach the control lock before stopping.
+        Thread.sleep(forTimeInterval: 0.2)
+        let stopped = expectation(description: "runtime stopped")
+        runtime.stop { stopped.fulfill() }
+
+        engine.releaseLatencyTest()
+        wait(for: [first, queued, stopped], timeout: 2)
+        XCTAssertEqual(
+            queuedError.value as? TransparentProxySelectionError,
+            .runtimeStopping
+        )
+        XCTAssertEqual(engine.latencyCallCount, 1)
+        XCTAssertEqual(engine.shutdownCallCount, 1)
+    }
+
     private func makeRuntime(
         engine: RuntimeFakeEngine
     ) throws -> TransparentProxyFlowRuntime {
@@ -786,6 +917,12 @@ private final class RuntimeFakeEngine:
         members: ["Tokyo", "DIRECT"]
     )
     var onShutdown: (@Sendable () -> Void)?
+    /// Holds latency tests open until released, like an unreachable member
+    /// that runs to its timeout.
+    var holdsLatencyTests = false
+    private let latencyStarted = DispatchSemaphore(value: 0)
+    private let latencyRelease = DispatchSemaphore(value: 0)
+    private var latencyCalls = 0
 
     init(
         events: RuntimeEventRecorder? = nil,
@@ -799,6 +936,30 @@ private final class RuntimeFakeEngine:
 
     var shutdownCallCount: Int { lock.withLock { shutdownCalls } }
     var makeTCPCallCount: Int { lock.withLock { tcpCalls } }
+    var latencyCallCount: Int { lock.withLock { latencyCalls } }
+
+    func waitForLatencyTest(timeout: TimeInterval) -> Bool {
+        latencyStarted.wait(timeout: .now() + timeout) == .success
+    }
+
+    func releaseLatencyTest() {
+        latencyRelease.signal()
+    }
+
+    func testActiveProxyLatency(
+        group: String,
+        url: String,
+        timeoutMilliseconds: UInt32
+    ) throws -> ProxyLatencyState {
+        events?.append("engine.latency.started")
+        lock.withLock { latencyCalls += 1 }
+        latencyStarted.signal()
+        if holdsLatencyTests {
+            latencyRelease.wait()
+        }
+        events?.append("engine.latency.finished")
+        return ProxyLatencyState(results: [])
+    }
 
     func makeTCPFlow(
         source: FlowEndpoint?,
