@@ -1161,6 +1161,9 @@ final class TunnelManager: ObservableObject {
             }
             return
         }
+        if !enabled {
+            await recordFinalTrafficSample()
+        }
 
         var requestID: UUID?
         if enabled {
@@ -1504,6 +1507,10 @@ final class TunnelManager: ObservableObject {
         let stopped = await waitForProviderToBecomeInactive(
             timeout: .seconds(30)
         )
+        // The disconnect took one last statistics sample; write it before
+        // the process exits.
+        saveTrafficLedgerIfNeeded(force: true)
+        await trafficStatisticsWriter.flush()
         Self.runtimeLogger.info(
             "stage=applicationTermination disconnect complete stopped=\(stopped, privacy: .public)"
         )

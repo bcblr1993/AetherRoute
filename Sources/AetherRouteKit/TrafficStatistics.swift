@@ -250,6 +250,33 @@ public struct TrafficStatisticsLedger: Codable, Sendable, Equatable {
         days[days.count - 1] = today
     }
 
+    /// This ledger with `other`'s traffic added day by day, oldest first and
+    /// bounded like `add`. Used to keep samples counted while the saved
+    /// ledger could not be read yet.
+    public func merging(_ other: TrafficStatisticsLedger) -> TrafficStatisticsLedger {
+        guard !other.days.isEmpty else { return self }
+        var byDay = Dictionary(days.map { ($0.day, $0) }, uniquingKeysWith: { first, _ in first })
+        for day in other.days {
+            var merged = byDay[day.day] ?? TrafficDay(day: day.day)
+            merged.total += day.total
+            for (key, volume) in day.apps {
+                guard merged.apps[key] != nil || merged.apps.count < Self.maximumEntriesPerDay
+                else { continue }
+                merged.apps[key, default: TrafficVolume()] += volume
+                if let name = day.appNames[key] { merged.appNames[key] = name }
+            }
+            for (key, volume) in day.nodes {
+                guard merged.nodes[key] != nil || merged.nodes.count < Self.maximumEntriesPerDay
+                else { continue }
+                merged.nodes[key, default: TrafficVolume()] += volume
+            }
+            byDay[day.day] = merged
+        }
+        // `yyyy-MM-dd` keys sort chronologically as strings.
+        let ordered = byDay.values.sorted { $0.day < $1.day }
+        return TrafficStatisticsLedger(days: Array(ordered.suffix(Self.retainedDays)))
+    }
+
     /// The traffic of the last `count` calendar days up to and including the
     /// day of `date`, summed. Days with no traffic count toward the range,
     /// so "today" is empty until something moves today.
@@ -343,6 +370,47 @@ public struct TrafficStatisticsStore: Sendable {
         (try? open()) ?? TrafficStatisticsLedger()
     }
 
+    public enum LoadResult: Sendable, Equatable {
+        case loaded(TrafficStatisticsLedger)
+        /// Nothing was saved yet.
+        case missing
+        /// Cannot be read right now (the Keychain is locked or unavailable,
+        /// or the file could not be read). Try again later, and never write
+        /// meanwhile: that would replace the saved history.
+        case temporarilyUnavailable
+        /// Can never be opened (its key is gone or it is damaged). The file
+        /// was set aside as `setAsideFileName` so a new ledger can start.
+        case unreadable
+    }
+
+    static let setAsideFileName = "TrafficStatistics.v1.unreadable.sealed"
+
+    /// Like `load`, but tells a missing ledger from one that is only
+    /// unavailable now and from one that is lost for good.
+    public func loadResult() -> LoadResult {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            return .missing
+        }
+        do {
+            return .loaded(try open())
+        } catch let error as ProfileKeyStoreError {
+            guard error == .keyNotFound else { return .temporarilyUnavailable }
+        } catch let error as CocoaError
+            where error.code != .fileReadCorruptFile && error.code != .fileReadTooLarge {
+            return .temporarilyUnavailable
+        } catch {}
+        setAside()
+        return .unreadable
+    }
+
+    private func setAside() {
+        let fileManager = FileManager.default
+        let destination = fileURL.deletingLastPathComponent()
+            .appendingPathComponent(Self.setAsideFileName, isDirectory: false)
+        try? fileManager.removeItem(at: destination)
+        try? fileManager.moveItem(at: fileURL, to: destination)
+    }
+
     func open() throws -> TrafficStatisticsLedger {
         let data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
         guard data.count <= Self.maximumSealedBytes else {
@@ -404,10 +472,12 @@ public struct TrafficStatisticsStore: Sendable {
         if fileManager.fileExists(atPath: fileURL.path) {
             try fileManager.removeItem(at: fileURL)
         }
-        try? fileManager.removeItem(
-            at: fileURL.deletingLastPathComponent()
-                .appendingPathComponent("TrafficStatistics.json", isDirectory: false)
-        )
+        let directory = fileURL.deletingLastPathComponent()
+        for name in ["TrafficStatistics.json", Self.setAsideFileName] {
+            try? fileManager.removeItem(
+                at: directory.appendingPathComponent(name, isDirectory: false)
+            )
+        }
     }
 
     private var authenticatedData: Data {

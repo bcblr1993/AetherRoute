@@ -4,6 +4,8 @@ import OSLog
 
 extension TunnelManager {
     static let trafficStatisticsPreferenceKey = "trafficStatisticsEnabled"
+    /// Logs a deferred load once instead of on every sample.
+    private static var trafficLedgerLoadDeferred = false
     /// How often the ledger is written while traffic flows.
     static let trafficLedgerSaveInterval: TimeInterval = 60
 
@@ -11,10 +13,52 @@ extension TunnelManager {
     /// statistics are shown. The file is small (31 days, bounded entries).
     func loadTrafficLedgerIfNeeded() {
         guard !isTrafficLedgerLoaded else { return }
+        guard !isUIReviewMode else {
+            isTrafficLedgerLoaded = true
+            return
+        }
+        // Samples counted before the saved ledger could be read stay in
+        // memory and are added to it once it opens.
+        let result = (try? TrafficStatisticsStore.applicationSupport())?.loadResult()
+            ?? .temporarilyUnavailable
+        switch result {
+        case let .loaded(saved):
+            trafficLedger = saved.merging(trafficLedger)
+        case .missing:
+            break
+        case .unreadable:
+            Self.runtimeLogger.error("stage=loadTrafficStatistics unreadable setAside=true")
+        case .temporarilyUnavailable:
+            // Leave the ledger unloaded: saving now would replace the saved
+            // history. The next sample tries again.
+            if !Self.trafficLedgerLoadDeferred {
+                Self.trafficLedgerLoadDeferred = true
+                Self.runtimeLogger.warning("stage=loadTrafficStatistics deferred")
+            }
+            return
+        }
+        Self.trafficLedgerLoadDeferred = false
         isTrafficLedgerLoaded = true
-        guard !isUIReviewMode else { return }
-        trafficLedger = (try? TrafficStatisticsStore.applicationSupport())?.load()
-            ?? TrafficStatisticsLedger()
+    }
+
+    /// The engine's counters end with the tunnel, and statistics are sampled
+    /// only once a minute when no traffic view is open. Before a disconnect,
+    /// sample once more so the last minute is counted. Waits at most
+    /// `timeout`: an unresponsive extension must not hold up the disconnect.
+    func recordFinalTrafficSample(timeout: Duration = .seconds(2)) async {
+        guard isTrafficStatisticsEnabled, state == .connected, !isUIReviewMode
+        else { return }
+        let finished = AsyncStream<Void> { continuation in
+            Task { @MainActor [weak self] in
+                await self?.refreshTelemetry()
+                continuation.finish()
+            }
+            Task {
+                try? await Task.sleep(for: timeout)
+                continuation.finish()
+            }
+        }
+        for await _ in finished {}
     }
 
     func setTrafficStatisticsEnabled(_ enabled: Bool) {
