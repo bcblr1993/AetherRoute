@@ -133,7 +133,8 @@ final class AetherRouteUITests: XCTestCase {
                 navigation.click()
                 let durations = app.staticTexts.matching(identifier: "connection-duration")
                 XCTAssertTrue(durations.firstMatch.waitForExistence(timeout: 2))
-                XCTAssertEqual(durations.count, 2)
+                // One per connection in the review fixture.
+                XCTAssertEqual(durations.count, 3)
                 for duration in durations.allElementsBoundByIndex {
                     XCTAssertEqual(duration.value as? String, item.unknown)
                     XCTAssertEqual(duration.label, item.label)
@@ -191,7 +192,10 @@ final class AetherRouteUITests: XCTestCase {
     }
 
     func testRulesPassAccessibilityAuditInLightAndDark() throws {
-        try auditPrimaryPage(button: "Rules", landmark: "Profile rules")
+        // Tall enough to show the whole page: the audit scrolls a page that
+        // overflows, and controls scrolled under the toolbar then read as
+        // having no action.
+        try auditPrimaryPage(button: "Rules", landmark: "Profile rules", windowSize: "1000x980")
     }
 
     func testDNSPassesAccessibilityAuditInLightAndDark() throws {
@@ -1719,12 +1723,13 @@ final class AetherRouteUITests: XCTestCase {
         let toggle = app.descendants(matching: .any)["local-proxy-toggle"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 3))
         XCTAssertTrue(toggle.isEnabled)
+        // The footer continues with a TUN note after this sentence.
         let localProxyDetail = app.staticTexts.matching(
             NSPredicate(
-                format: "value == %@",
+                format: "value BEGINSWITH %@",
                 "AetherRoute binds only 127.0.0.1 and never changes the macOS system proxy. Shell commands affect only the terminal where you paste them."
             )
-        ).element
+        ).firstMatch
         XCTAssertTrue(localProxyDetail.exists)
 
         let copyEnvironment = app.buttons["copy-shell-proxy-button"]
@@ -2696,12 +2701,13 @@ final class AetherRouteUITests: XCTestCase {
             if issue.auditType == .action,
                let element = issue.element,
                element.elementType == .menuButton,
-               (["profiles-more-menu", "profiles-add-menu", "rules-action-filter", "proxy-sort-picker"].contains(element.identifier)
+               (["profiles-more-menu", "profiles-add-menu", "rules-action-filter", "proxy-sort-picker", "add-application-rule"].contains(element.identifier)
                     || element.identifier.hasPrefix("profile-actions-")),
                element.isHittable {
                 // SwiftUI's native Menu is exercised by the profile-library
                 // UI test, but Xcode 26 omits the equivalent AppKit press
-                // action from its audit metadata.
+                // action from its audit metadata. Rules › Add App (1.3.0) is
+                // the same native Menu.
                 return true
             }
             if issue.auditType == .sufficientElementDescription,
@@ -3039,7 +3045,10 @@ final class AetherRouteUITests: XCTestCase {
             if isFrameworkIssue(issue) { return true }
             let description = "\(issue.compactDescription): \(issue.detailedDescription)"
             failures.append(description)
-            let detail = XCTAttachment(string: description)
+            // The element's type, identifier and frame make an audit failure
+            // actionable without rerunning.
+            let elementDescription = issue.element.map { "\n\($0.debugDescription)" } ?? ""
+            let detail = XCTAttachment(string: description + elementDescription)
             detail.name = "Accessibility issue \(failures.count)"
             detail.lifetime = .keepAlways
             self.add(detail)
@@ -3174,7 +3183,7 @@ final class AetherRouteUITests: XCTestCase {
                     assertConnectionsFit(in: app)
                     let durations = app.staticTexts.matching(identifier: "connection-duration")
                     XCTAssertTrue(durations.firstMatch.waitForExistence(timeout: 2))
-                    XCTAssertEqual(durations.count, 2)
+                    XCTAssertEqual(durations.count, 3)
                     for duration in durations.allElementsBoundByIndex {
                         let value = duration.value as? String ?? ""
                         XCTAssertNotNil(
@@ -3272,8 +3281,10 @@ final class AetherRouteUITests: XCTestCase {
                 "The scrolling table must leave room for \(identifier)."
             )
         }
+        // The review fixture lists three connections (developer.apple.com,
+        // api.github.com and dns.google since 1.3.0's per-app rules).
         let rows = table.children(matching: .outlineRow)
-        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows.count, 3)
         for row in rows.allElementsBoundByIndex {
             XCTAssertTrue(bounds.contains(row.frame), "Connection row \(row.frame) exceeds window \(bounds)")
             XCTAssertTrue(table.frame.contains(row.frame), "Connection row \(row.frame) exceeds table \(table.frame)")
