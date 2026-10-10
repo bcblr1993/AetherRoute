@@ -4,6 +4,23 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.2] - 2026-10-10
+
+Fixes layouts that overflowed the narrowest window and repairs five UI tests that had failed since 1.3.3.
+
+### Fixed
+
+- Connections: at the narrowest window the six columns no longer run 79 pt past the table (the App column added in 1.3.0 had pushed them out), so nothing needs horizontal scrolling. Duration keeps its column budget.
+- Overview: with long translations, Routing mode and Network engine no longer overlap their title with the control or widen the page; when the control does not fit beside the title it moves below it.
+
+### Verified
+
+- Local regression suites, `./scripts/test.sh` (including the UI design-token guards) and all five protocol interop gates (48 cases, 26 certificate rejections) passed.
+- Tart VM matrix (tun / transparent × rule / global / direct) and the Mac mini remote gate passed.
+- On the Mac mini with the notarized build 2026101001, in both TUN and transparent mode: automatic restore on launch, idle reuse, 2 MiB upload, the connection intent kept after a quit while connected, and restore again on the next launch.
+- UI suite on macOS 27: 46 passed, 0 failed (3 opt-in tests skipped); 1.4.1 had 41 passed and 5 failed.
+- 5,000-node import: 0.346 s and 4.49 MB peak RSS growth (1.4.1: 0.352 s, 4.67 MB).
+
 ## [1.4.1] - 2026-10-09
 
 Fixes a stall of new connections in transparent proxy mode, makes reconnecting after a restart more patient, and keeps traffic statistics safe.

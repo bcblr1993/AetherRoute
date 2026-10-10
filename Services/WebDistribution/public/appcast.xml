@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.4.1 (Build 2026100902)</title>
-            <pubDate>Fri, 09 Oct 2026 17:32:27 +0800</pubDate>
-            <sparkle:version>2026100902</sparkle:version>
-            <sparkle:shortVersionString>1.4.1</sparkle:shortVersionString>
+            <title>Version 1.4.2 (Build 2026101001)</title>
+            <pubDate>Sat, 10 Oct 2026 12:17:06 +0800</pubDate>
+            <sparkle:version>2026101001</sparkle:version>
+            <sparkle:shortVersionString>1.4.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,34 +119,32 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.4.1 更新要点</span>
-  <span class="release-badge">Build 2026100902 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.4.2 更新要点</span>
+  <span class="release-badge">Build 2026101001 · 正式发布</span>
 </div>
 <div class="section">
   <span class="section-tag tag-fix">🛠 修复</span>
   <ul>
-    <li><strong>透明代理测速不再卡住新连接</strong>：此前测速期间（代理页测速、打开代理页自动测速、连接就绪检查、自动选择组）整台 Mac 的新连接都要等测速结束，节点不通时最长卡 10 秒；升级到 1.4.0 后的首次连接因此出现过约 20 秒停顿。</li>
-    <li><strong>重启后自动连接更可靠</strong>：等待网络就绪和每次连接的实际结果，最多坚持两分钟，不再约 20 秒就放弃。</li>
-    <li><strong>流量统计更安全</strong>：登录后钥匙串暂时不可用时不再用空数据覆盖历史；断开或退出前补记最后一分钟的流量。</li>
-    <li>导入超大内容时提示具体超出的限制；日志查看器筛选更流畅。</li>
+    <li><strong>连接列表</strong>：窗口缩到最小时，六列不再超出表格（1.3.0 新增"应用"列后需要横向滚动）。</li>
+    <li><strong>概览</strong>："路由模式""网络引擎"在长文案下不再与标题重叠或撑宽页面，放不下时控件移到标题下方。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">✨ 验证</span>
   <ul>
-    <li>12 种协议互通门禁全部通过；虚拟机与 Apple Silicon 真机 TUN / 透明代理全部组合通过，重启后自动连接已在真机验证。</li>
+    <li>12 种协议互通门禁全部通过；虚拟机与 Apple Silicon 真机 TUN / 透明代理全部组合通过；界面测试 46 项全部通过。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.4.1/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.4.2/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.4.1/AetherRoute-1.4.1-build-2026100902-arm64.dmg"
-                sparkle:edSignature="YV3JJahledNoLIeUrZuoJuymUefNJWPmvGJ5mhasvNcU+K1Ub9ZT3j9Zzv5EYXkVKkMAFMQzLwgThNdJa/f2AQ=="
-                length="26963698"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.4.2/AetherRoute-1.4.2-build-2026101001-arm64.dmg"
+                sparkle:edSignature="n08adu26WAErPP5d+vkCan0FChsSROGdx1zxlxdAu6H96WZj2vTp8/AoTfy7cYh3p0JqKGlv/05gjon5brVwBg=="
+                length="25664720"
                 type="application/octet-stream" />
         </item>
     </channel>
