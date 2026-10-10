@@ -1276,9 +1276,33 @@ private struct OverviewRow<Trailing: View>: View {
     let tint: Color
     let title: String
     var help: HelpTopic?
+    /// Puts the trailing control below the title, for when a fixed-width
+    /// control does not fit beside it.
+    var isStacked = false
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
+        Group {
+            if isStacked {
+                VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                    label
+                    trailing
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .padding(.vertical, AetherVisual.s2)
+            } else {
+                HStack(spacing: AetherVisual.s3) {
+                    label
+                    Spacer(minLength: AetherVisual.s3)
+                    trailing
+                }
+            }
+        }
+        .frame(minHeight: AetherVisual.rowHeight)
+        .padding(.horizontal, AetherVisual.s4)
+    }
+
+    private var label: some View {
         HStack(spacing: AetherVisual.s3) {
             AetherIconTile(symbol: symbol, color: tint, size: AetherVisual.rowTileSize)
             HStack(spacing: AetherVisual.s1) {
@@ -1294,11 +1318,7 @@ private struct OverviewRow<Trailing: View>: View {
                         .controlSize(.small)
                 }
             }
-            Spacer(minLength: AetherVisual.s3)
-            trailing
         }
-        .frame(minHeight: AetherVisual.rowHeight)
-        .padding(.horizontal, AetherVisual.s4)
     }
 }
 
@@ -1377,39 +1397,65 @@ private struct OverviewModeRows: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            OverviewRow(
-                symbol: "arrow.triangle.branch",
-                tint: .orange,
-                title: AppLocalization.string("Routing mode"),
-                help: .routingMode
-            ) {
-                ViewThatFits(in: .horizontal) {
+            // Side by side with its hint, then without it; when even the
+            // control alone does not fit beside the title (long
+            // translations), the control moves below it rather than
+            // overlapping the title and widening the page.
+            ViewThatFits(in: .horizontal) {
+                routingRow(isStacked: false) {
                     HStack(spacing: AetherVisual.s3) {
                         ModeHint(text: routingMode.shortHint)
                         routingPicker
                     }
-                    routingPicker
                 }
+                routingRow(isStacked: false) { routingPicker }
+                routingRow(isStacked: true) { routingPicker }
             }
 #if AETHERROUTE_INDEPENDENT
             OverviewRowDivider()
-            OverviewRow(
-                symbol: networkEngineMode == .tun ? "bolt.shield.fill" : "shield.fill",
-                tint: .blue,
-                title: AppLocalization.string("Network engine"),
-                help: .networkEngine
-            ) {
-                ViewThatFits(in: .horizontal) {
+            ViewThatFits(in: .horizontal) {
+                engineRow(isStacked: false) {
                     HStack(spacing: AetherVisual.s3) {
                         ModeHint(text: networkEngineMode.shortHint)
                         enginePicker
                     }
-                    enginePicker
                 }
+                engineRow(isStacked: false) { enginePicker }
+                engineRow(isStacked: true) { enginePicker }
             }
 #endif
         }
     }
+
+    private func routingRow<Content: View>(
+        isStacked: Bool,
+        @ViewBuilder control: () -> Content
+    ) -> some View {
+        OverviewRow(
+            symbol: "arrow.triangle.branch",
+            tint: .orange,
+            title: AppLocalization.string("Routing mode"),
+            help: .routingMode,
+            isStacked: isStacked,
+            trailing: control
+        )
+    }
+
+#if AETHERROUTE_INDEPENDENT
+    private func engineRow<Content: View>(
+        isStacked: Bool,
+        @ViewBuilder control: () -> Content
+    ) -> some View {
+        OverviewRow(
+            symbol: networkEngineMode == .tun ? "bolt.shield.fill" : "shield.fill",
+            tint: .blue,
+            title: AppLocalization.string("Network engine"),
+            help: .networkEngine,
+            isStacked: isStacked,
+            trailing: control
+        )
+    }
+#endif
 
     private var routingPicker: some View {
         RoutingModeSegmentedControl(

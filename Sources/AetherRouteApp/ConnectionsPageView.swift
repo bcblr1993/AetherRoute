@@ -230,7 +230,9 @@ struct ConnectionsView: View {
     }
 
     // Ideal widths sum to what fits the narrowest window inside the glass
-    // panel; Destination takes any extra width.
+    // panel (424 pt plus cell spacing in a 542 pt table at 780 pt); wider
+    // windows spread the rest. The App column (1.3.0) had pushed six
+    // columns 79 pt past the table.
     private func connectionTable(_ rows: [ConnectionTableItem]) -> some View {
         Table(rows) {
             TableColumn(AppLocalization.string("App")) { row in
@@ -238,7 +240,7 @@ struct ConnectionsView: View {
                 ConnectionAppCell(app: app)
                     .contextMenu { appContextMenu(app) }
             }
-            .width(min: 56, ideal: 76, max: 260)
+            .width(min: 48, ideal: 64, max: 260)
             TableColumn(AppLocalization.string("Destination")) { row in
                 ConnectionDestinationCell(connection: row.connection)
                     .help(Text(verbatim: row.connection.destinationAddress))
@@ -257,25 +259,25 @@ struct ConnectionsView: View {
                     }
                     .onTapGesture(count: 2) { inspectedConnection = row }
             }
-            .width(min: 100, ideal: 118, max: 520)
+            .width(min: 80, ideal: 96, max: 520)
             TableColumn(AppLocalization.string("Matched rule")) { row in
                 ConnectionRuleCell(connection: row.connection)
             }
-            .width(min: 76, ideal: 84, max: 400)
+            .width(min: 60, ideal: 72, max: 400)
             TableColumn(AppLocalization.string("Outlet")) { row in
                 ConnectionOutletCell(connection: row.connection)
             }
-            .width(min: 84, ideal: 96, max: 320)
+            .width(min: 64, ideal: 80, max: 320)
             TableColumn(AppLocalization.string("Traffic")) { row in
                 ConnectionTrafficCell(connection: row.connection)
             }
-            .width(min: 64, ideal: 70, max: 120)
+            .width(min: 52, ideal: 60, max: 120)
             // Numbers sit on the right; the title follows them.
             .alignment(.numeric)
             TableColumn(AppLocalization.string("Duration")) { row in
                 ConnectionDurationCell(connection: row.connection)
             }
-            .width(min: 56, ideal: 60, max: 100)
+            .width(min: 44, ideal: 52, max: 100)
             .alignment(.numeric)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
