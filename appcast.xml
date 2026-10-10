@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.5.0 (Build 2026101002)</title>
-            <pubDate>Sat, 10 Oct 2026 18:23:08 +0800</pubDate>
-            <sparkle:version>2026101002</sparkle:version>
-            <sparkle:shortVersionString>1.5.0</sparkle:shortVersionString>
+            <title>Version 1.5.1 (Build 2026101003)</title>
+            <pubDate>Sun, 11 Oct 2026 01:54:54 +0800</pubDate>
+            <sparkle:version>2026101003</sparkle:version>
+            <sparkle:shortVersionString>1.5.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,34 +119,34 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.5.0 更新要点</span>
-  <span class="release-badge">Build 2026101002 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.5.1 更新要点</span>
+  <span class="release-badge">Build 2026101003 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🎉 新功能</span>
+  <span class="section-tag tag-fix">🛠 修复</span>
   <ul>
-    <li><strong>全新首次启动引导</strong>：隐私承诺、网络权限、准备就绪三页引导，顶部插图、底部页码与始终可见的主按钮。</li>
-    <li><strong>权限一目了然</strong>：TUN 与透明代理各占一行，未授权时直接点「允许」，授权后显示绿色对勾；需要到系统设置或重试时也在同一行给出按钮。</li>
-    <li><strong>准备就绪页</strong>：授权完成后汇总隐私承诺与两个网络引擎的状态，点「开始使用 AetherRoute」进入主界面。</li>
+    <li><strong>内存占用</strong>：开着主窗口时内存会持续上涨到 200 MB 以上，现稳定在约 70 MB。</li>
+    <li><strong>切换页面不再卡顿</strong>：最慢一次从 0.8 秒降到约 0.2 秒，连接页与规则页切换明显更顺。</li>
+    <li><strong>按应用流量统计</strong>：长时间使用时，后出现的应用也能正确统计流量，不会漏算或重复计算。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">✨ 优化</span>
   <ul>
-    <li>窗口很小时，同意与继续按钮固定在底部，不会被挤出窗口。</li>
-    <li>之后权限被撤销时弹出的重新授权窗口，也采用同样的新设计。</li>
+    <li>页面内容对齐 macOS 26 Liquid Glass 设计规范：卡片与按钮改用系统样式，侧边栏与菜单栏面板保留玻璃效果。</li>
+    <li>搜索框改为胶囊形，更新说明采用新版式。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.5.0/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.5.1/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.5.0/AetherRoute-1.5.0-build-2026101002-arm64.dmg"
-                sparkle:edSignature="/sygwD9AQDVSdK20t3pEii5sKVfPcL+/P/hc0gN43Pe67tTi03h3dI8YRrelvGCcH7f8I4mTxZOiSm8laJnQCg=="
-                length="25660601"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.5.1/AetherRoute-1.5.1-build-2026101003-arm64.dmg"
+                sparkle:edSignature="7yniGLXBFO/2hMvFqz7cEGxqN57EUWGYGuIftg5Q890VSnBmtuuELjfiZnBww0du/Y6SeyVK+RjWGUbHgWV9AA=="
+                length="26970415"
                 type="application/octet-stream" />
         </item>
     </channel>

@@ -4,6 +4,36 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] - 2026-10-11
+
+Switching pages no longer stalls, the app stays around 70 MB instead of growing past 200 MB, per-app traffic statistics stay complete in long sessions, and page content follows the macOS 26 Liquid Glass guidelines.
+
+### Fixed
+
+- Memory: the app grew from about 75 MB to over 200 MB within minutes while its window was open, and kept it after the window closed. Rolling-digit animations on values that change every second (live rates in the menu bar panel, the Connections session bar and Overview, the chart's peak) made Core Graphics cache every animation frame's glyphs. Those values now update in place; the footprint stays at 70–81 MB with live traffic on the heaviest test profile.
+- Page switching: switching between pages, Connections and Rules in particular, could block the main thread for up to 0.8 s. Connections rows now have one fixed height, so a ticking duration no longer re-measures every row; page switches no longer play an entrance animation; text in table rows and switches no longer re-reads the whole Chinese string table on each layout; segmented controls measure their labels once.
+- Per-app traffic statistics: in long sessions with many apps and outlets, traffic of (app, outlet) pairs beyond the first 256 was dropped or never reported, and a pair evicted and seen again could be under- or double-counted. The engine (core `183c120`) now remembers up to 2,048 pairs, evicts only idle pairs that were already reported, gives each pair an incarnation so one seen again starts from zero, and sends active and recently changed pairs first. The host counts by incarnation, ignores samples from an older one, and only records a baseline for pairs it first sees below the engine's watermark, so nothing is counted twice. Telemetry format ART4 / Flow ABI V7; older system extensions keep working.
+
+### Changed
+
+- Page content no longer sits on Liquid Glass, as Apple's guidelines ask: cards and Settings sections use the system grouped fill, and buttons in pages and sheets use the system bordered styles. The sidebar, the menu bar panel and the command palette keep their glass.
+- Search fields are capsules, as in macOS 26.
+- The Overview chart redraws only the waveform each frame; its labels update with the data.
+- In-app update notes have a new layout: a lead paragraph and a coloured icon per group (new, improved, fixed), matching the app's sidebar tiles.
+
+### Added
+
+- Release gate `scripts/test_ui_performance_gate.sh`: on a real Mac, the Release app switches pages with live, once-a-second traffic on an everyday and a heavy profile, and fails the release if a switch or the memory footprint exceeds its budget, or memory keeps growing.
+- Design-token guards now reject literal localized strings (including empty toggle labels and literal ternaries) and raw `.numericText` transitions.
+
+### Verified
+
+- Local regression suites and `./scripts/test.sh` (including the new design-token guards) passed on the merged tree; all five protocol interop gates passed on core `183c120` (48 cases, 26 certificate rejections).
+- UI suite on the `macos27` VM: 48 passed, 0 failed (3 opt-in tests skipped), the same as 1.5.0.
+- Mac mini remote gate passed. On the Mac mini with the notarized build 2026101003, in both transparent and TUN mode: idle reuse after 50 s and a 2 MiB upload passed; footprint 68 MB and 73 MB.
+- Tart VM matrix (tun / transparent × rule / global / direct) passed with the QA build 2026101004 (same sources as 2026101003 plus the QA fixture), including idle reuse, a 2 MiB upload in 3.4–7.5 s and transparent SNI recovery.
+- New UI performance and memory gate on the Mac mini (Release, live traffic, 5 minutes per profile): page switch p95 153 ms and slowest 201 ms on both the everyday and the heavy profile (1.5.0: p95 226–414 ms, slowest 805 ms); footprint median 69–70 MB, peak 74–75 MB, +2 MB over the run (1.5.0 grew from 75 MB to 212 MB in 5 minutes).
+
 ## [1.5.0] - 2026-10-10
 
 The first run is now a guided three-page setup: privacy commitments, network permissions with each engine's state on its own row, and a final page confirming that everything is ready.
