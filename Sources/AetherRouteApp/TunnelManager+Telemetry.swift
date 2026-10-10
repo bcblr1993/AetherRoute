@@ -446,11 +446,11 @@ extension TunnelManager {
                     destinationPort: 443,
                     uploadTotal: 24_000,
                     downloadTotal: 310_000,
-                    // Beyond Int64 milliseconds: the third kind of invalid
-                    // start time, so every row of this fixture is invalid.
-                    startedAtUnixMilliseconds: useInvalidTimestamps
-                        ? UInt64.max
-                        : UInt64(max(0, reviewNow - 32) * 1_000),
+                    // In the future when timestamps are invalid, like
+                    // dns.google, so every row of this fixture is invalid.
+                    startedAtUnixMilliseconds: UInt64(
+                        max(0, reviewNow + (useInvalidTimestamps ? 172_800 : -32)) * 1_000
+                    ),
                     rule: "GeoSite",
                     rulePayload: "github",
                     proxyChain: "Balanced → Singapore Edge",
