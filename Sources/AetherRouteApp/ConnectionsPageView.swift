@@ -232,7 +232,8 @@ struct ConnectionsView: View {
     // Ideal widths sum to what fits the narrowest window inside the glass
     // panel (424 pt plus cell spacing in a 542 pt table at 780 pt); wider
     // windows spread the rest. The App column (1.3.0) had pushed six
-    // columns 79 pt past the table.
+    // columns 79 pt past the table. Duration keeps its 56/60/100 budget
+    // (verify_ui_design_tokens.sh) for abbreviated Chinese durations.
     private func connectionTable(_ rows: [ConnectionTableItem]) -> some View {
         Table(rows) {
             TableColumn(AppLocalization.string("App")) { row in
@@ -259,7 +260,7 @@ struct ConnectionsView: View {
                     }
                     .onTapGesture(count: 2) { inspectedConnection = row }
             }
-            .width(min: 80, ideal: 96, max: 520)
+            .width(min: 80, ideal: 92, max: 520)
             TableColumn(AppLocalization.string("Matched rule")) { row in
                 ConnectionRuleCell(connection: row.connection)
             }
@@ -267,7 +268,7 @@ struct ConnectionsView: View {
             TableColumn(AppLocalization.string("Outlet")) { row in
                 ConnectionOutletCell(connection: row.connection)
             }
-            .width(min: 64, ideal: 80, max: 320)
+            .width(min: 64, ideal: 76, max: 320)
             TableColumn(AppLocalization.string("Traffic")) { row in
                 ConnectionTrafficCell(connection: row.connection)
             }
@@ -277,7 +278,7 @@ struct ConnectionsView: View {
             TableColumn(AppLocalization.string("Duration")) { row in
                 ConnectionDurationCell(connection: row.connection)
             }
-            .width(min: 44, ideal: 52, max: 100)
+            .width(min: 56, ideal: 60, max: 100)
             .alignment(.numeric)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
