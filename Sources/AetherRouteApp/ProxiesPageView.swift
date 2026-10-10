@@ -359,7 +359,7 @@ private struct ActiveProxyGroupView: View {
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(minWidth: 72)
             }
-            .aetherGlassButton()
+            .aetherButton()
             .controlSize(.small)
             .disabled(isTesting)
             .help(lastTestedHelp)
@@ -409,7 +409,7 @@ private struct ActiveProxyGroupView: View {
             Image(systemName: "arrow.up.arrow.down")
         }
         .menuIndicator(.hidden)
-        .aetherGlassButton()
+        .aetherButton()
         .controlSize(.small)
         .fixedSize()
         .help(String.localizedStringWithFormat(AppLocalization.string("Sort: %@"), sort.localizedTitle))
@@ -746,8 +746,7 @@ struct ProxyLatencyText: View {
             Text(status.localizedTitle)
                 .font(.subheadline.weight(isResult ? .semibold : .regular).monospacedDigit())
                 .foregroundStyle(color)
-                .contentTransition(.numericText())
-                .animation(AetherVisual.animation(AetherVisual.valueChange), value: status)
+                .aetherNumericValue(status)
         }
     }
 
@@ -802,7 +801,7 @@ struct ProxyInventorySheet: View {
             HStack {
                 Spacer()
                 Button(AppLocalization.string("Done")) { dismiss() }
-                    .aetherGlassButton(prominent: true)
+                    .aetherButton(prominent: true)
                     .keyboardShortcut(.defaultAction)
             }
         }

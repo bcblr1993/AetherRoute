@@ -557,7 +557,7 @@ struct AetherRouteApp: App {
                 .keyboardShortcut("u", modifiers: [.command, .shift])
 #endif
             }
-            CommandMenu("Navigate") {
+            CommandMenu(AppLocalization.string("Navigate")) {
                 Button(AppLocalization.string("Command Palette…")) {
                     AppWindowManager.shared.showMainWindow()
                     NotificationCenter.default.post(name: .aetherRouteToggleCommandPalette, object: nil)
@@ -600,7 +600,7 @@ struct AetherRouteApp: App {
                 .disabled(!tunnel.canCycleManualProxySelection)
             }
 
-            CommandMenu("Proxy") {
+            CommandMenu(AppLocalization.string("Proxy")) {
                 Button(AppLocalization.string("Copy Terminal Export Command")) {
                     guard let command = try? tunnel.localProxySettings
                         .shellEnvironmentCommand() else { return }
@@ -1236,7 +1236,7 @@ private struct MenuBarContent: View {
                     )
                         .frame(maxWidth: .infinity)
                 }
-                .aetherGlassButton(prominent: true)
+                .aetherButton(prominent: true)
                 .controlSize(.large)
                 .accessibilityIdentifier("menu-privacy-review-button")
             }
@@ -1635,7 +1635,7 @@ private struct MenuLiveTrafficValue: View {
         Text(value)
             .font(.caption.monospacedDigit().weight(.semibold))
             .lineLimit(1)
-            .aetherNumericValue(value)
+            .aetherLiveValue()
     }
 
     private var value: String {
@@ -2468,7 +2468,7 @@ private struct ShortcutAssignmentRow: View {
                         .font(.caption2.weight(.semibold))
                 }
             }
-            .aetherGlassButton()
+            .aetherButton()
             .accessibilityLabel(localizedTitle)
             .accessibilityValue(selection.displayTitle)
             .popover(isPresented: $isPresentingChoices, arrowEdge: .trailing) {

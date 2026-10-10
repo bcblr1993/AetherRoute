@@ -118,7 +118,9 @@ struct CommandPaletteView: View {
             .padding(.vertical, AetherVisual.s2)
         }
         .frame(width: 560)
-        .aetherPanel()
+        // A floating panel over the page, so it keeps Liquid Glass; page
+        // content uses the plain card surface (`aetherPanel`).
+        .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous))
         .onAppear { isSearchFocused = true }
         .onChange(of: query) { _, _ in selection = 0 }
         .onKeyPress(.downArrow) {

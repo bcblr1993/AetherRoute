@@ -148,10 +148,10 @@ private struct ApplicationRuleRow: View {
 
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
-            Toggle("", isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { rule.isEnabled },
                 set: { _ in Task { await tunnel.toggleCustomRule(id: rule.id) } }
-            ))
+            )) { EmptyView() }
             .toggleStyle(.switch)
             .controlSize(.small)
             .labelsHidden()

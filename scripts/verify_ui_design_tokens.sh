@@ -70,9 +70,27 @@ fail_if_found \
   '\.background\([[:space:]]*Color\.(secondary|primary)\.opacity\(' \
   -g '!AetherRouteVisualSystem.swift'
 
+# Rolling digits go through aetherNumericValue, whose documentation says they
+# are only for numbers that change because something happened. On a value
+# that ticks every second each animation frame became a new CoreGraphics
+# glyph-cache entry, which grew the app by about 90 MB and never shrank (1.5.1).
+fail_if_found \
+  "rolling digits use aetherNumericValue (event-driven numbers) or aetherLiveValue (values that tick); never .numericText directly" \
+  'contentTransition\([[:space:]]*\.numericText' \
+  -g '!AetherMotion.swift'
+
+# A literal here is a LocalizedStringKey. With the in-app language set, SwiftUI
+# resolves it through the attributed-string lookup, which re-parses the whole
+# zh-Hans string table on every call (1.5 ms, about 500x AppLocalization), so a
+# literal in a table row or switch stalled every page switch (1.5.1). Empty
+# labels count too: Toggle("") resolves "" the same way.
 fail_if_found \
   "interface copy goes through AppLocalization.string so the in-app language applies (use Text(verbatim:) for names)" \
-  '\b(Text|Label|Button|Toggle|Section|Picker|TextField|SecureField|LabeledContent|help|accessibilityLabel|accessibilityHint|confirmationDialog)\([[:space:]]*"[^"]'
+  '\b(Text|Label|Button|Toggle|Section|Picker|TextField|SecureField|LabeledContent|TableColumn|Menu|CommandMenu|GroupBox|DisclosureGroup|help|accessibilityLabel|accessibilityHint|navigationTitle|confirmationDialog)\([[:space:]]*"'
+
+fail_if_found \
+  "a ternary of literals is a LocalizedStringKey too; use AppLocalization.string or Text(verbatim:)" \
+  '\b(Text|Label|Button)\([^()":]*\?[[:space:]]*"[^"]*"[[:space:]]*:[[:space:]]*"'
 
 fail_if_found \
   "colour opacities come from AetherVisual fills (subtleFill, neutralFill, tintFill, tintWash, tintBorder ...)" \

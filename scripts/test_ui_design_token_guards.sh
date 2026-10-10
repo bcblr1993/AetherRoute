@@ -136,6 +136,32 @@ expect_failure 1 'interface copy goes through AppLocalization.string' \
   "$FIXTURE/scripts/verify_ui_design_tokens.sh"
 
 write_valid_source
+printf '\nText(rate).contentTransition(.numericText())\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'rolling digits use aetherNumericValue' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
+write_valid_source
+printf '\nToggle("", isOn: $isOn)\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'interface copy goes through AppLocalization.string' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
+write_valid_source
+printf '\nCommandMenu("Navigate") {}\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'interface copy goes through AppLocalization.string' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
+write_valid_source
+printf '\nText(isTCP ? "TCP" : "UDP")\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'a ternary of literals is a LocalizedStringKey too' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
+# Verbatim text is how names and protocol labels are drawn and must pass.
+write_valid_source
+printf '\nText(verbatim: isTCP ? "TCP" : "UDP")\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+"$FIXTURE/scripts/verify_ui_design_tokens.sh" >"$TEMP/output.log"
+grep -Fq 'UI design tokens verified.' "$TEMP/output.log"
+
+write_valid_source
 printf '\n.fill(Color.red.opacity(0.3))\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
 expect_failure 1 'colour opacities come from AetherVisual fills' \
   "$FIXTURE/scripts/verify_ui_design_tokens.sh"
@@ -172,4 +198,4 @@ grep -Fq '3 rule(s) violated' "$TEMP/output.log" || {
   exit 1
 }
 
-echo 'UI design-token guards passed: valid source, missing rg, scan failure, PCRE2 failure, forbidden token, literal font size, custom RGB colour, shadow, relative icon size, unlocalized header, missing column budget, spacer minimum, spacing token as radius, tile size, grey fill, literal copy, colour opacity, faded divider, row height, raw state colour and multiple violations reported together.'
+echo 'UI design-token guards passed: valid source, missing rg, scan failure, PCRE2 failure, forbidden token, literal font size, custom RGB colour, shadow, relative icon size, unlocalized header, missing column budget, spacer minimum, spacing token as radius, tile size, grey fill, literal copy, raw rolling digits, empty toggle label, literal command menu, literal ternary, verbatim ternary, colour opacity, faded divider, row height, raw state colour and multiple violations reported together.'

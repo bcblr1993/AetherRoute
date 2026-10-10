@@ -67,12 +67,20 @@
   ```
   两种模式都必须输出 `both requests answered` 并以 0 退出。该检查防止引擎再次在 60 秒空闲后关闭本机客户端连接（曾导致 Claude Desktop / Claude Code 会话 `ECONNRESET` 中断）。
 - **大请求上传（Mandatory，TUN 与透明代理各一次）**：同样在两种模式下执行 `sh scripts/test_large_upload.sh`，必须输出 `bytes delivered` 并以 0 退出。
+- **UI 卡顿与内存预算门禁（Mandatory，1.5.1 起每次发布）**：在本机执行，脚本自行构建带探针的 Release 审查版，并在物理机的图形会话里运行（不触碰本机隧道）：
+  ```bash
+  ./scripts/test_ui_performance_gate.sh "$PWD/outputs/perf-gate-<VERSION>-<BUILD>"
+  ```
+  App 以中文界面、每秒跳动的实时遥测，在"展示"（日常，十几条连接）和 `large`（500 节点 / 1 万条规则 / 2000 条连接）两档夹具下各自动切页 5 分钟；每次切页从选中计到主线程完成布局与提交，同时全程采样实际占用（活动监视器"内存"列口径）。预算见脚本顶部（切页 p95 与最大值、内存中位数与峰值、后半程增长），任一超标即以非零退出并**阻断发布**，`result.txt` 写明超标项。放宽预算必须在 CHANGELOG 说明原因。该门禁源于 1.5.0 的两个回归：切页主线程卡顿最高 0.8 秒（旧探针在 SwiftUI 首次渲染时就停表，看不到布局）；每秒刷新的数字做滚动动画，把 CoreGraphics 字形缓存撑到约 90 MB（App 涨到 150–210 MB）。
+  - 不能用 XCUITest 的 `test_ui_responsiveness.sh` 代替：测试运行器的沙盒在物理机上写不了证据，且它的夹具数字静止。
+  - 排查时可用 `AETHERROUTE_PERF_PROFILES=large`、`AETHERROUTE_PERF_SECONDS=120` 缩短；发布必须用默认值。
 
 ### 4. 版本迭代与 CHANGELOG 维护
 - 依据语义化版本推进（如当前版本至下一版本）。
 - 完整编写 `CHANGELOG.md`，包含：
   - 本次修复与优化内容说明；
   - 虚拟机 6 维矩阵与物理硬件测试验证结论；
+  - UI 卡顿与内存预算门禁的结论（`result.txt` 里两档的切页 p95 / 最大值与内存中位数 / 峰值）；
   - 性能与内存指标前后对比。
 - 编写 `Docs/ReleaseExceptions/<VERSION>.md`（如适用）。
 

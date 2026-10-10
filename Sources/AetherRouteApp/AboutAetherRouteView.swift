@@ -129,7 +129,7 @@ struct AboutAetherRouteView: View {
                 HStack {
                     Spacer()
                     Button(AppLocalization.string("Done")) { isLicensesPresented = false }
-                        .aetherGlassButton(prominent: true)
+                        .aetherButton(prominent: true)
                         .keyboardShortcut(.defaultAction)
                         .accessibilityIdentifier("licenses-done")
                 }

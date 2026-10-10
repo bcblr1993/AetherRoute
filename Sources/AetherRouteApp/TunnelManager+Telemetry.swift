@@ -380,6 +380,9 @@ extension TunnelManager {
     }
 
     func installReviewTelemetry() {
+#if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
+        defer { startLiveReviewTelemetryIfRequested() }
+#endif
         let reviewNow = Date.now.timeIntervalSince1970
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS || AETHERROUTE_DEVELOPMENT_PREVIEW
         let useInvalidTimestamps = ProcessInfo.processInfo.environment[
@@ -475,6 +478,67 @@ extension TunnelManager {
     }
 
 }
+
+#if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
+extension TunnelManager {
+    /// `AETHERROUTE_UI_REVIEW_LIVE=1` makes the review fixture tick once a
+    /// second like a real tunnel: rates move and every flow's totals grow.
+    /// A static fixture never changes a number, so it cannot show what live
+    /// counters cost (glyph caching, re-measuring rows) - the memory and
+    /// responsiveness gates need it (1.5.1).
+    func startLiveReviewTelemetryIfRequested() {
+        guard ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_LIVE"] == "1"
+        else { return }
+        Task { @MainActor [weak self] in
+            var tick: UInt64 = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self else { return }
+                tick &+= 1
+                self.publishTelemetry(
+                    Self.advancedReviewSnapshot(self.telemetryViewModel.snapshot, tick: tick)
+                )
+            }
+        }
+    }
+
+    private static func advancedReviewSnapshot(
+        _ snapshot: NetworkTelemetrySnapshot,
+        tick: UInt64
+    ) -> NetworkTelemetrySnapshot {
+        // Deterministic but uneven, so digits change in every position.
+        let wave = UInt64((tick &* 7_919) % 1_000)
+        let down = 180_000 + wave * 4_311
+        let up = 24_000 + wave * 613
+        let connections = snapshot.connections.enumerated().map { index, flow in
+            let step = UInt64(index % 7 + 1)
+            return ConnectionTelemetry(
+                transport: flow.transport,
+                destination: flow.destination,
+                destinationPort: flow.destinationPort,
+                uploadTotal: flow.uploadTotal &+ step &* 911 &+ wave,
+                downloadTotal: flow.downloadTotal &+ step &* 7_877 &+ wave &* 3,
+                startedAtUnixMilliseconds: flow.startedAtUnixMilliseconds,
+                rule: flow.rule,
+                rulePayload: flow.rulePayload,
+                proxyChain: flow.proxyChain,
+                sourceAppIdentifier: flow.sourceAppIdentifier,
+                sourceAppPath: flow.sourceAppPath
+            )
+        }
+        return NetworkTelemetrySnapshot(
+            uploadBytesPerSecond: up,
+            downloadBytesPerSecond: down,
+            uploadTotal: snapshot.uploadTotal &+ up,
+            downloadTotal: snapshot.downloadTotal &+ down,
+            memoryBytes: snapshot.memoryBytes,
+            connections: connections,
+            trafficTotals: snapshot.trafficTotals,
+            reportsTrafficTotals: snapshot.reportsTrafficTotals
+        )
+    }
+}
+#endif
 
 extension TunnelManager {
     /// Hands a sample to the telemetry view model and refreshes the

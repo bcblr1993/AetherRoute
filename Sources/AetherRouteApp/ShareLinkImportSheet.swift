@@ -122,12 +122,12 @@ struct ShareLinkImportSheet: View {
                 Button(AppLocalization.string("Paste"), systemImage: "doc.on.clipboard") {
                     pasteFromClipboard()
                 }
-                .aetherGlassButton()
+                .aetherButton()
                 .accessibilityIdentifier("share-link-paste")
                 Button(AppLocalization.string("Choose QR Code Image…"), systemImage: "qrcode") {
                     isImagePickerPresented = true
                 }
-                .aetherGlassButton()
+                .aetherButton()
                 .accessibilityIdentifier("share-link-choose-image")
                 Button {
                     scanScreen()
@@ -138,7 +138,7 @@ struct ShareLinkImportSheet: View {
                         isWorking: isScanningScreen
                     )
                 }
-                .aetherGlassButton()
+                .aetherButton()
                 .disabled(isScanningScreen)
                 .help(AppLocalization.string("Reads a QR code shown in another app's window, such as a browser or chat."))
                 .accessibilityIdentifier("share-link-scan-screen")
@@ -176,7 +176,7 @@ struct ShareLinkImportSheet: View {
                         isWorking: isImporting
                     )
                 }
-                .aetherGlassButton(prominent: true)
+                .aetherButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(isImporting || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityIdentifier("share-link-import")

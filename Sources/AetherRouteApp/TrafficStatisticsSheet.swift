@@ -67,7 +67,7 @@ struct TrafficStatisticsSheet: View {
                     Button(AppLocalization.string("Turn On")) {
                         tunnel.setTrafficStatisticsEnabled(true)
                     }
-                    .aetherGlassButton()
+                    .aetherButton()
                     .accessibilityIdentifier("traffic-statistics-enable")
                 }
                 .padding(AetherVisual.cardPadding)
@@ -125,7 +125,7 @@ struct TrafficStatisticsSheet: View {
                 }
                 Spacer()
                 Button(AppLocalization.string("Done")) { dismiss() }
-                    .aetherGlassButton(prominent: true)
+                    .aetherButton(prominent: true)
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("traffic-statistics-done")
             }

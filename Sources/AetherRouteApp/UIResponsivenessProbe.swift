@@ -40,9 +40,39 @@ enum UIResponsivenessProbe {
         )
     }
 
+    /// Stops the clock once the main thread has laid out and committed the
+    /// new page, not when SwiftUI first renders it. `.task` runs before
+    /// AppKit lays the page out, so a Table re-measuring every row after
+    /// that took 0.8 s per switch and still passed this gate (1.5.1).
     static func rendered(_ action: String) {
-        guard let writer, let pendingAction = pending.removeValue(forKey: action)
+        guard writer != nil, let pendingAction = pending.removeValue(forKey: action)
         else { return }
+        whenMainThreadSettles {
+            record(action, pendingAction)
+        }
+    }
+
+    /// Runs `body` the next time the main run loop is about to sleep, after
+    /// every other before-waiting observer (layout, display, Core Animation
+    /// commit) has run. Waking the run loop makes sure that point comes now
+    /// rather than after the next unrelated event.
+    private static func whenMainThreadSettles(
+        _ body: @escaping @MainActor () -> Void
+    ) {
+        let observer = CFRunLoopObserverCreateWithHandler(
+            kCFAllocatorDefault,
+            CFRunLoopActivity.beforeWaiting.rawValue,
+            false,
+            CFIndex.max
+        ) { _, _ in
+            MainActor.assumeIsolated { body() }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        CFRunLoopWakeUp(CFRunLoopGetMain())
+    }
+
+    private static func record(_ action: String, _ pendingAction: PendingAction) {
+        guard let writer else { return }
         let endedNanoseconds = DispatchTime.now().uptimeNanoseconds
         guard endedNanoseconds >= pendingAction.startedNanoseconds else { return }
         sequence &+= 1

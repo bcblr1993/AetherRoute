@@ -121,7 +121,7 @@ struct PrivacyDisclosureView: View {
                     Text(AppLocalization.string("Done"))
                         .frame(minWidth: AetherVisual.onboardingButtonWidth / 3)
                 }
-                .aetherGlassButton(prominent: true)
+                .aetherButton(prominent: true)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("privacy-sheet-done")

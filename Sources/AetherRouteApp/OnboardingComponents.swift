@@ -143,7 +143,7 @@ struct OnboardingPrimaryButton: View {
             .padding(.vertical, AetherVisual.s1)
             .contentTransition(.opacity)
         }
-        .aetherGlassButton(prominent: true)
+        .aetherButton(prominent: true)
         .controlSize(.extraLarge)
         .keyboardShortcut(.defaultAction)
         .disabled(!isEnabled)
@@ -245,12 +245,12 @@ private struct OnboardingCardRowView: View {
                 .accessibilityLabel(AppLocalization.string("Waiting for you"))
         case let .action(title, identifier, perform):
             Button(title, action: perform)
-                .aetherGlassButton(prominent: true)
+                .aetherButton(prominent: true)
                 .controlSize(.regular)
                 .accessibilityIdentifier(identifier)
         case let .retry(title, identifier, perform):
             Button(title, systemImage: "arrow.clockwise", action: perform)
-                .aetherGlassButton()
+                .aetherButton()
                 .controlSize(.regular)
                 .accessibilityIdentifier(identifier)
         case .unavailable:

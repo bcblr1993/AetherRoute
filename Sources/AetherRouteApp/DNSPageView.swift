@@ -460,7 +460,7 @@ struct DNSView: View {
                     isWorking: tunnel.isSwitchingNetworkEngine
                 )
             }
-            .aetherGlassButton()
+            .aetherButton()
             .disabled(!tunnel.canChangeNetworkEngine)
             .help(AppLocalization.string("While connected, AetherRoute reconnects with TUN."))
             .accessibilityIdentifier("dns-switch-to-tun")

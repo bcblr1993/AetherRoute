@@ -62,8 +62,22 @@ private struct AetherNumericValueModifier<Value: Equatable>: ViewModifier {
 extension View {
     /// Rolls the digits of a changing number instead of swapping the text.
     /// Pair it with `.monospacedDigit()` so the width does not jitter.
+    ///
+    /// Only for numbers that change because something happened (a count, a
+    /// result). Never for a value that ticks on its own: every frame of the
+    /// roll draws the digits blurred, scaled and offset, Core Graphics caches
+    /// each of those renderings, and a once-a-second rate filled its glyph
+    /// cache to about 90 MB that is never returned (1.5.1). Use
+    /// `aetherLiveValue()` for those.
     func aetherNumericValue<Value: Equatable>(_ value: Value, countsDown: Bool = false) -> some View {
         modifier(AetherNumericValueModifier(value: value, countsDown: countsDown))
+    }
+
+    /// A value that updates on its own (rates, live totals): the text is
+    /// swapped in place with no transition, so each update draws the digits
+    /// once at rest. `.monospacedDigit()` keeps the width steady.
+    func aetherLiveValue() -> some View {
+        contentTransition(.identity)
     }
 }
 

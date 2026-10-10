@@ -38,7 +38,7 @@ struct EmptyProfileOnboardingCard: View {
                     }
                     .padding(.horizontal, AetherVisual.s1)
                 }
-                .aetherGlassButton(prominent: true)
+                .aetherButton(prominent: true)
                 .controlSize(.large)
                 .accessibilityIdentifier("onboarding-add-subscription-button")
 
@@ -52,7 +52,7 @@ struct EmptyProfileOnboardingCard: View {
                             .font(.body.weight(.medium))
                     }
                 }
-                .aetherGlassButton()
+                .aetherButton()
                 .controlSize(.large)
                 .accessibilityIdentifier("onboarding-import-profile-button")
 
@@ -67,7 +67,7 @@ struct EmptyProfileOnboardingCard: View {
                                 .font(.body.weight(.medium))
                         }
                     }
-                    .aetherGlassButton()
+                    .aetherButton()
                     .controlSize(.large)
                     .accessibilityIdentifier("onboarding-icloud-sync-button")
                 }
@@ -192,7 +192,7 @@ struct ExternalSubscriptionConfirmationSheet: View {
                             || tunnel.isRefreshingSubscription
                     )
                 }
-                .aetherGlassButton(prominent: true)
+                .aetherButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     !tunnel.canImportOrAddProfileRegardlessOfPrivacy
@@ -448,7 +448,7 @@ struct ProfilesView: View {
                 Label(AppLocalization.string("Add"), systemImage: "plus")
             }
             .menuIndicator(.visible)
-            .aetherGlassButton(prominent: true)
+            .aetherButton(prominent: true)
             .fixedSize()
             .accessibilityIdentifier("profiles-add-menu")
 
@@ -476,7 +476,7 @@ struct ProfilesView: View {
                 Image(systemName: "ellipsis")
             }
             .menuIndicator(.hidden)
-            .aetherGlassButton()
+            .aetherButton()
             .fixedSize()
             .accessibilityLabel(AppLocalization.string("More"))
             .accessibilityIdentifier("profiles-more-menu")
@@ -574,10 +574,7 @@ struct ProfilesView: View {
                     }
                     .padding(AetherVisual.s4)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .aetherGlass(
-                        in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous),
-                        interactive: true
-                    )
+                    .aetherPanel()
                 }
                 .buttonStyle(.aetherPressable)
 
@@ -607,10 +604,7 @@ struct ProfilesView: View {
                     }
                     .padding(AetherVisual.s4)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .aetherGlass(
-                        in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous),
-                        interactive: true
-                    )
+                    .aetherPanel()
                 }
                 .buttonStyle(.aetherPressable)
 
@@ -640,10 +634,7 @@ struct ProfilesView: View {
                     }
                     .padding(AetherVisual.s4)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .aetherGlass(
-                        in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous),
-                        interactive: true
-                    )
+                    .aetherPanel()
                 }
                 .buttonStyle(.aetherPressable)
                 .accessibilityIdentifier("onboarding-icloud-sync-card-button")
@@ -822,7 +813,7 @@ struct RoutingResourcesCard: View {
                     Button(AppLocalization.string("Retry")) {
                         Task { await tunnel.prepareRequiredRoutingResources() }
                     }
-                    .aetherGlassButton()
+                    .aetherButton()
                     .disabled(!tunnel.canModifyProfiles)
                     .help(editLockReason ?? "")
                     .accessibilityIdentifier("retry-routing-rules")
@@ -892,7 +883,7 @@ struct RoutingResourcesCard: View {
                             isWorking: isWorking
                         )
                     }
-                    .aetherGlassButton()
+                    .aetherButton()
                     .disabled(!tunnel.canDownloadRoutingResources)
                     .help(tunnel.canDownloadRoutingResources ? "" : editLockReason ?? "")
                     .accessibilityIdentifier("routing-resources-download")
@@ -1022,7 +1013,7 @@ struct RoutingResourcesCard: View {
             Button(AppLocalization.string("Import…"), systemImage: "square.and.arrow.down") {
                 importResource(kind)
             }
-            .aetherGlassButton()
+            .aetherButton()
             .controlSize(.small)
             .disabled(!tunnel.canModifyProfiles || isWorking)
             .help(editLockReason ?? "")
@@ -1130,7 +1121,7 @@ private struct ManagedProfileRow: View {
                         isWorking: tunnel.isRefreshingSubscription
                     )
                 }
-                .aetherGlassButton()
+                .aetherButton()
                 .controlSize(.small)
                 .disabled(!canModify || tunnel.isRefreshingSubscription)
             }
@@ -1145,7 +1136,7 @@ private struct ManagedProfileRow: View {
                 Button(AppLocalization.string("Use")) {
                     activate()
                 }
-                .aetherGlassButton()
+                .aetherButton()
                 .controlSize(.small)
                 .disabled(!canActivate)
                 .transition(.opacity)
@@ -1377,7 +1368,7 @@ private struct ProfileRenameSheet: View {
                         isWorking: isSaving
                     )
                 }
-                .aetherGlassButton(prominent: true)
+                .aetherButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1429,7 +1420,7 @@ struct SubscriptionEditorSheet: View {
                 } label: {
                     Label(AppLocalization.string("Paste"), systemImage: "doc.on.clipboard")
                 }
-                .aetherGlassButton()
+                .aetherButton()
                 .controlSize(.regular)
                 .accessibilityIdentifier("subscription-paste-button")
             }
@@ -1484,7 +1475,7 @@ struct SubscriptionEditorSheet: View {
                         isWorking: tunnel.isRefreshingSubscription
                     )
                 }
-                .aetherGlassButton(prominent: true)
+                .aetherButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

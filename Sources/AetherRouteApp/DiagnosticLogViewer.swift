@@ -48,7 +48,7 @@ struct DiagnosticLogViewer: View {
                     .disabled(filtered.isEmpty)
                     .accessibilityIdentifier("logs-copy")
                 Button(AppLocalization.string("Done")) { dismiss() }
-                    .aetherGlassButton(prominent: true)
+                    .aetherButton(prominent: true)
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("logs-done")
             }
@@ -141,7 +141,7 @@ struct DiagnosticLogViewer: View {
                 isWorking: isLoading
             )
         }
-        .aetherGlassButton()
+        .aetherButton()
         .fixedSize()
         .disabled(isLoading)
         .accessibilityIdentifier("logs-refresh")

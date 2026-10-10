@@ -109,7 +109,7 @@ struct RulesView: View {
                                 } label: {
                                     Label(AppLocalization.string("Add Rule"), systemImage: "plus")
                                 }
-                                .aetherGlassButton()
+                                .aetherButton()
                                 .accessibilityIdentifier("add-custom-rule")
                             }
 
@@ -265,7 +265,7 @@ struct RulesView: View {
                 Button(AppLocalization.string("Test")) {
                     performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
                 }
-                .aetherGlassButton(prominent: true)
+                .aetherButton(prominent: true)
                 .controlSize(.large)
                 .disabled(testQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityIdentifier("rule-test-button")
@@ -299,7 +299,7 @@ struct RulesView: View {
                     } label: {
                         Label(AppLocalization.string("Locate"), systemImage: "scope")
                     }
-                    .aetherGlassButton()
+                    .aetherButton()
                     .controlSize(.small)
                 }
                 .accessibilityElement(children: .contain)
@@ -368,7 +368,7 @@ struct RulesView: View {
                             editingRule = nil
                             showAddRuleSheet = true
                         }
-                        .aetherGlassButton()
+                        .aetherButton()
                         .controlSize(.small)
                     }
                     .padding(AetherVisual.s4)
@@ -777,10 +777,10 @@ struct CustomRuleRow: View {
 
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
-            Toggle("", isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { rule.isEnabled },
                 set: { _ in onToggle() }
-            ))
+            )) { EmptyView() }
             // Switches inside a list row are small; labelled rows use
             // AetherRowToggleStyle at the regular size.
             .toggleStyle(.switch)
@@ -1091,7 +1091,7 @@ struct CustomRuleEditorSheet: View {
                     Label(AppLocalization.string("Verify rule"), systemImage: "bolt.badge.clock.fill")
                         .font(.subheadline.weight(.semibold))
                 }
-                .aetherGlassButton()
+                .aetherButton()
                 .controlSize(.small)
                 .disabled(!validationResult.isValid || isSaving)
             }
@@ -1150,7 +1150,7 @@ struct CustomRuleEditorSheet: View {
                 } label: {
                     AetherProgressButtonLabel(AppLocalization.string("Save rule"), isWorking: isSaving)
                 }
-                .aetherGlassButton(prominent: true)
+                .aetherButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!validationResult.isValid || isSaving)
             }

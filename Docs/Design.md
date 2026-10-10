@@ -11,15 +11,20 @@ keyboard focus, VoiceOver semantics, and Reduce Motion.
   opaque, as Apple's guidelines ask (a translucent window let a bright
   wallpaper wash out secondary text and failed the contrast audit); the
   sidebar is a floating glass pane inset
-  8 pt from the window edges with the window controls inside it; cards,
-  buttons and segmented controls are glass. Every glass surface is the
-  system's own (`glassEffect`, glass button styles, native segmented
-  controls), so the person's Liquid Glass setting (clear or tinted) and
-  Reduce Transparency apply to AetherRoute exactly as to Apple's apps. On
-  macOS 15 the same surfaces fall back to the closest material.
+  8 pt from the window edges with the window controls inside it. Glass is
+  only the navigation and control layer: the sidebar, the menu bar panel,
+  the command palette and segmented controls. Content never sits on glass
+  (1.5.1): cards and grouped sections are the system fill
+  `AetherVisual.cardFill`, and buttons in pages and sheets are the system
+  bordered styles (`aetherButton`), which macOS 26 draws in its own shape.
+  Glass cards with glass buttons on them stacked glass on glass. Every
+  remaining glass surface is the system's own (`glassEffect`), so the
+  person's Liquid Glass setting and Reduce Transparency apply to
+  AetherRoute exactly as to Apple's apps; on macOS 15 it falls back to the
+  closest material.
 - Pages read like System Settings: a large title and the page's actions on
   one line, no subtitle (the section's description stays with VoiceOver);
-  groups of rows inside glass cards, each row a colour tile, a title, then
+  groups of rows inside cards, each row a colour tile, a title, then
   the value or control on the trailing edge; a quiet section heading above a
   group and a short footnote below it.
 - Colour tiles name things, never state: one colour per sidebar page,
@@ -70,7 +75,7 @@ around them.
   `pillHorizontalPadding`/`pillVerticalPadding`. Fills come from
   `neutralFill`, `tintFill(_:)`, `subtleFill`, `hoverFill` and
   `selectionFill`; inline messages use `aetherCallout(tint:)`.
-- **Radii.** `panelRadius` for every card, `compactPanelRadius` for glass
+- **Radii.** `panelRadius` for every card, `compactPanelRadius` for
   groups on compact surfaces (menu bar panel, Connections session bar),
   `cardRadius` or smaller for anything inside a card.
 - **Sheets.** Small single-purpose sheets use `aetherSheetFrame()`; sheets
@@ -95,7 +100,7 @@ around them.
   `.headline`.
 - **Sheet footers.** Cancel and the primary action both sit on the
   trailing edge, Cancel first, as in every macOS sheet; the primary action
-  is the prominent glass button with the default-action shortcut, and a
+  is the prominent bordered button with the default-action shortcut, and a
   sheet with a single "Done" uses the same. Sheet headers are
   `AetherSheetHeader`.
 - **Messages.** `AetherInlineMessage`: red with a circle when an action
@@ -119,13 +124,19 @@ state still changes, only the travel is dropped.
 |---|---|
 | `pressFeedback` (120 ms ease-out) | Press dip and hover fades |
 | `quickFade` (180 ms) | Status text, badges, icon swaps |
-| `pageEntrance` (220 ms) | A page arriving after sidebar navigation |
-| `valueChange` (spring 0.36 s) | Numbers rolling to a new value |
+| `valueChange` (spring 0.36 s) | Numbers rolling to a new value, only when something happened (`aetherNumericValue`); values that tick on their own swap in place (`aetherLiveValue`) |
 | `disclosure` (spring 0.3 s) | Disclosure chevrons and the content they reveal |
 | `gentleSpring` (spring 0.32 s) | Layout and list changes, inline messages |
 | `panelSpring` (spring 0.42 s) | Larger surfaces and the connection lens |
 | `switchToggle` (spring 0.3 s) | The connection switch's knob |
 | `attentionPulse` (1.2 s, repeating) | The menu bar's "new version" badge |
+
+Pages switch at once, as panes do in System Settings: an entrance animation
+laid the incoming page out again on its frames and doubled the slowest
+switches (1.5.1). Rolling digits on a once-a-second value filled the
+CoreGraphics glyph cache with every animation frame and grew the app by about
+90 MB (1.5.1), so live values never roll. `scripts/test_ui_performance_gate.sh`
+holds both to a budget on every release.
 
 Shared pieces apply them the same way everywhere:
 

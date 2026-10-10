@@ -25,6 +25,24 @@ case "$RUN_RESPONSIVENESS" in YES|NO) ;; *)
   echo 'AETHERROUTE_RUN_UI_RESPONSIVENESS must be YES or NO' >&2
   exit 64 ;;
 esac
+# The gate's own defaults; a short run must also say SMOKE=YES, which the
+# test enforces. PROFILE picks the review fixture ("large" for the stress set).
+RESPONSIVENESS_SECONDS=${AETHERROUTE_UI_RESPONSIVENESS_SECONDS:-1800}
+RESPONSIVENESS_MAX_P95_MS=${AETHERROUTE_UI_RESPONSIVENESS_MAX_P95_MS:-120}
+RESPONSIVENESS_SMOKE=${AETHERROUTE_UI_RESPONSIVENESS_SMOKE:-NO}
+RESPONSIVENESS_PROFILE=${AETHERROUTE_UI_RESPONSIVENESS_PROFILE:-}
+case "$RESPONSIVENESS_SECONDS$RESPONSIVENESS_MAX_P95_MS" in *[!0-9]*)
+  echo 'AETHERROUTE_UI_RESPONSIVENESS_SECONDS and _MAX_P95_MS must be integers' >&2
+  exit 64 ;;
+esac
+case "$RESPONSIVENESS_SMOKE" in YES|NO) ;; *)
+  echo 'AETHERROUTE_UI_RESPONSIVENESS_SMOKE must be YES or NO' >&2
+  exit 64 ;;
+esac
+case "$RESPONSIVENESS_PROFILE" in ''|large|showcase|groups) ;; *)
+  echo 'AETHERROUTE_UI_RESPONSIVENESS_PROFILE must be empty, large, showcase or groups' >&2
+  exit 64 ;;
+esac
 STAMP=$(date -u '+%Y%m%dT%H%M%SZ')
 [ -n "$EVIDENCE" ] || EVIDENCE="$ROOT/outputs/ui-vm-$STAMP"
 case "$EVIDENCE" in /*) ;; *) EVIDENCE="$ROOT/$EVIDENCE" ;; esac
@@ -86,10 +104,11 @@ status=0
 vm "cd '$REMOTE_DIR' && \
   TEST_RUNNER_AETHERROUTE_UI_TEST_ISOLATED_HOME='$REMOTE_DIR/Home' \
   TEST_RUNNER_AETHERROUTE_RUN_UI_RESPONSIVENESS='$RUN_RESPONSIVENESS' \
-  TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_SECONDS=1800 \
-  TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_MAX_P95_MS=120 \
-  TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_SMOKE=NO \
-  TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_EVIDENCE='$REMOTE_DIR/responsiveness' \
+  TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_SECONDS='$RESPONSIVENESS_SECONDS' \
+  TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_MAX_P95_MS='$RESPONSIVENESS_MAX_P95_MS' \
+  TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_SMOKE='$RESPONSIVENESS_SMOKE' \
+  TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_PROFILE='$RESPONSIVENESS_PROFILE' \
+  TEST_RUNNER_AETHERROUTE_UI_RESPONSIVENESS_EVIDENCE='$REMOTE_DIR/Home/responsiveness' \
   HOME='$REMOTE_DIR/Home' CFFIXED_USER_HOME='$REMOTE_DIR/Home' TMPDIR='$REMOTE_DIR/Home/tmp' \
   AETHERROUTE_UI_TEST_ISOLATED_HOME='$REMOTE_DIR/Home' \
   /usr/bin/caffeinate -dimsu xcodebuild test-without-building \
@@ -101,7 +120,7 @@ vm "cd '$REMOTE_DIR' && \
 echo "==> Collecting results"
 rsync -a -e "ssh $SSH_OPTIONS" "$REMOTE:$REMOTE_DIR/result.xcresult/" "$EVIDENCE/result.xcresult/" 2>/dev/null || true
 if [ "$RUN_RESPONSIVENESS" = YES ]; then
-  if ! rsync -a -e "ssh $SSH_OPTIONS" "$REMOTE:$REMOTE_DIR/responsiveness/" \
+  if ! rsync -a -e "ssh $SSH_OPTIONS" "$REMOTE:$REMOTE_DIR/Home/responsiveness/" \
     "$EVIDENCE/responsiveness/" 2>/dev/null; then
     echo 'Requested responsiveness evidence could not be collected.' >&2
     [ "$status" -ne 0 ] || status=1

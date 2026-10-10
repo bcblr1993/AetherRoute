@@ -22,7 +22,7 @@ enum AetherVisual {
     static let s5: CGFloat = 20
     static let s6: CGFloat = 24
 
-    // Radii, smallest to largest. A card is always `panelRadius` glass
+    // Radii, smallest to largest. A card is always a `panelRadius` surface
     // (`aetherPanel()`); anything drawn inside a card uses `cardRadius` or
     // smaller so nested corners stay concentric.
     /// Badges and tags.
@@ -47,6 +47,13 @@ enum AetherVisual {
     static let manualNodesTint = Color.indigo
     static let localProfileTint = Color.orange
     static let iCloudTint = Color.blue
+
+    /// The surface of every card and grouped section. Content does not sit
+    /// on Liquid Glass: Apple reserves glass for the navigation and control
+    /// layer (sidebar, toolbars, floating panels), and glass cards with
+    /// glass buttons on them stacked glass on glass (1.5.1). A system fill,
+    /// so it follows light, dark and Increase Contrast like grouped forms.
+    static let cardFill = Color(nsColor: .quaternarySystemFill)
 
     // Fills, weakest to strongest. Every drawn background picks one of
     // these instead of its own opacity.
@@ -86,9 +93,6 @@ enum AetherVisual {
     static let gentleSpring = Animation.spring(response: 0.32, dampingFraction: 0.86)
     /// Larger surfaces: panel swaps, list reflow, section reveals.
     static let panelSpring = Animation.spring(response: 0.42, dampingFraction: 0.88)
-    /// A page arriving after sidebar navigation: quick enough to never delay
-    /// reading, long enough to show where the content came from.
-    static let pageEntrance = Animation.easeOut(duration: 0.22)
 
     /// Returns `animation` unless the user asked for reduced motion, in which
     /// case state still changes but does so without travel.
@@ -283,7 +287,8 @@ struct ConnectionLuminousBar: View {
 
 private struct AetherPanelModifier: ViewModifier {
     func body(content: Content) -> some View {
-        content.aetherGlass(
+        content.background(
+            AetherVisual.cardFill,
             in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
         )
     }
@@ -304,21 +309,15 @@ extension View {
         }
     }
 
-    /// Glass buttons from macOS 26; bordered buttons before it.
+    /// A button in page or sheet content: the system bordered styles, which
+    /// macOS 26 already draws in its new shape. Glass buttons are for the
+    /// control layer; on a card they stacked glass on glass (1.5.1).
     @ViewBuilder
-    func aetherGlassButton(prominent: Bool = false) -> some View {
-        if #available(macOS 26, *) {
-            if prominent {
-                buttonStyle(.glassProminent)
-            } else {
-                buttonStyle(.glass)
-            }
+    func aetherButton(prominent: Bool = false) -> some View {
+        if prominent {
+            buttonStyle(.borderedProminent)
         } else {
-            if prominent {
-                buttonStyle(.borderedProminent)
-            } else {
-                buttonStyle(.bordered)
-            }
+            buttonStyle(.bordered)
         }
     }
 }
@@ -599,14 +598,12 @@ struct AetherSearchField: View {
                 .transition(.opacity)
             }
         }
-        .padding(.horizontal, AetherVisual.s2)
+        // A capsule, the shape of search fields from macOS 26 on.
+        .padding(.horizontal, AetherVisual.s3)
         .padding(.vertical, AetherVisual.sCompact)
-        .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
-        )
+        .background(Color(nsColor: .controlBackgroundColor), in: Capsule())
         .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+            Capsule()
                 .stroke(
                     isFocused ? Color.accentColor.opacity(0.6) : Color(nsColor: .separatorColor),
                     lineWidth: isFocused ? 1.5 : 0.5
@@ -755,8 +752,8 @@ extension AetherSheetHeader where Accessory == EmptyView {
 }
 
 extension View {
-    /// Every Settings pane and form sheet: sections as glass cards, the same
-    /// as the main window's pages, with an optional large page title.
+    /// Every Settings pane and form sheet: sections as cards, the same as
+    /// the main window's pages, with an optional large page title.
     func aetherSettingsForm(title: String? = nil, isSheet: Bool = false) -> some View {
         formStyle(AetherGlassFormStyle(title: title, isSheet: isSheet))
     }
@@ -1254,7 +1251,7 @@ private struct AetherGlassFormSection: View {
                         }
                     }
                 }
-                .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous))
+                .aetherPanel()
             }
             if !section.footer.isEmpty {
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
@@ -1280,7 +1277,7 @@ struct AetherRowToggleStyle: ToggleStyle {
             configuration.label
                 .foregroundStyle(.primary)
             Spacer(minLength: AetherVisual.s3)
-            Toggle("", isOn: configuration.$isOn)
+            Toggle(isOn: configuration.$isOn) { EmptyView() }
                 .toggleStyle(.switch)
                 .labelsHidden()
                 .accessibilityHidden(true)

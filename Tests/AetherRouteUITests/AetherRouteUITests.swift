@@ -355,13 +355,16 @@ final class AetherRouteUITests: XCTestCase {
             systemReduceMotionAtStart,
             "Default-animation acceptance requires system Reduce Motion to be off; the test does not change user settings."
         )
+        let reviewProfile = environment["AETHERROUTE_UI_RESPONSIVENESS_PROFILE"]
+            .flatMap { $0.isEmpty ? nil : $0 }
         let app = launchReviewApp(
             appearance: "light",
             state: "connected",
             language: "en",
             windowSize: "940x640",
             reduceMotion: false,
-            responsivenessOutput: appSamplesURL.path
+            responsivenessOutput: appSamplesURL.path,
+            reviewProfile: reviewProfile
         )
         defer { app.terminate() }
         XCTAssertTrue(mainProductRoot(in: app).waitForExistence(timeout: 5))

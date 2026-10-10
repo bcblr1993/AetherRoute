@@ -84,7 +84,7 @@ struct BypassRulesSection: View {
                     )
                 )
                 .foregroundStyle(AetherVisual.secondaryText)
-                .contentTransition(.numericText())
+                .aetherNumericValue(tunnel.bypassPolicy.rules.count)
             }
         } footer: {
             VStack(alignment: .leading, spacing: AetherVisual.s2) {

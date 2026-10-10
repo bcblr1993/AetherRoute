@@ -134,12 +134,6 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedSection: AppSection? = .overview
-    /// When the page last changed, and whether the current change animates:
-    /// a click within `rapidPageSwitchInterval` of the previous one switches
-    /// at once, so quick browsing never stacks entrance animations on top of
-    /// page rebuilds.
-    @State private var lastSectionChangeAt: Date = .distantPast
-    @State private var animatesSectionChange = true
     @State private var isCommandPalettePresented = false
 
     var body: some View {
@@ -284,8 +278,39 @@ struct ContentView: View {
                 openSettings()
             }
 #endif
+#if AETHERROUTE_UI_RESPONSIVENESS
+            if let seconds = ProcessInfo.processInfo.environment[
+                "AETHERROUTE_UI_RESPONSIVENESS_AUTOCYCLE_SECONDS"
+            ].flatMap(Double.init), seconds > 0 {
+                await cycleSectionsForResponsiveness(seconds: seconds)
+            }
+#endif
         }
     }
+
+#if AETHERROUTE_UI_RESPONSIVENESS
+    /// Measurement builds only: switches pages on a fixed beat so the
+    /// probe can time navigation on a Mac where the XCUITest runner cannot
+    /// run the gate (its sandbox cannot write evidence there), then quits.
+    private func cycleSectionsForResponsiveness(seconds: Double) async {
+        let deadline = Date().addingTimeInterval(seconds)
+        // AETHERROUTE_UI_RESPONSIVENESS_AUTOCYCLE_SECTIONS=overview,dns
+        // narrows the cycle to the pages being profiled.
+        let requested = ProcessInfo.processInfo.environment[
+            "AETHERROUTE_UI_RESPONSIVENESS_AUTOCYCLE_SECTIONS"
+        ]?.split(separator: ",").compactMap { AppSection(rawValue: String($0)) } ?? []
+        let sections = requested.isEmpty ? Array(AppSection.allCases.reversed()) : requested
+        try? await Task.sleep(for: .seconds(2))
+        while Date() < deadline {
+            for section in sections {
+                selectSection(section)
+                try? await Task.sleep(for: .milliseconds(700))
+            }
+        }
+        try? await Task.sleep(for: .seconds(1))
+        NSApplication.shared.terminate(nil)
+    }
+#endif
 
     private var applicationContent: some View {
         NavigationSplitView {
@@ -329,9 +354,6 @@ struct ContentView: View {
         reduceMotion || uiReviewRequestsReducedMotion
     }
 
-    /// Longer than the 0.22 s entrance itself: a click while the previous
-    /// page is still fading in counts as browsing.
-    static let rapidPageSwitchInterval: TimeInterval = 0.35
 
     private var effectiveDynamicTypeSize: DynamicTypeSize {
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
@@ -550,10 +572,6 @@ struct ContentView: View {
         if let section {
             UIResponsivenessProbe.begin("main.\(section.rawValue)")
         }
-        let now = Date()
-        animatesSectionChange =
-            now.timeIntervalSince(lastSectionChangeAt) >= Self.rapidPageSwitchInterval
-        lastSectionChangeAt = now
         selectedSection = section
     }
 
@@ -579,22 +597,12 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Each page is a new identity: the incoming page fades up into
-            // place and the outgoing one leaves at once. Scoping the
-            // animation here keeps the sidebar and window chrome still;
-            // animating the whole tree made the old page's cards morph into
-            // the new page's layout.
+            // Each page is a new identity and appears at once, as panes do in
+            // System Settings. The 0.22 s fade-up entrance laid the incoming
+            // page out again on its animation frames and doubled the slowest
+            // switches (Connections p95 377 ms with it, 171 ms without, on
+            // the Mac mini with 2,000 flows; 1.5.1).
             .id(section)
-            .transition(
-                .asymmetric(
-                    insertion: .opacity.combined(with: .offset(y: AetherVisual.s2)),
-                    removal: .identity
-                )
-            )
-            .animation(
-                effectiveReduceMotion || !animatesSectionChange ? nil : AetherVisual.pageEntrance,
-                value: section
-            )
         }
         .navigationTitle(section.title)
         .accessibilityElement(children: .contain)
@@ -939,7 +947,7 @@ private struct RecoverySection: View {
                 } label: {
                     Label(AppLocalization.string("Set Up Permissions Again"), systemImage: "lock.shield")
                 }
-                .aetherGlassButton(prominent: true)
+                .aetherButton(prominent: true)
                 .accessibilityIdentifier("recovery-networkSetup")
             }
             if plan.primaryAction == .reviewProfiles || plan.secondaryAction == .reviewProfiles {
@@ -948,9 +956,9 @@ private struct RecoverySection: View {
                 }
                 .accessibilityIdentifier("recovery-reviewProfiles")
                 if plan.primaryAction == .reviewProfiles {
-                    button.aetherGlassButton(prominent: true)
+                    button.aetherButton(prominent: true)
                 } else {
-                    button.aetherGlassButton()
+                    button.aetherButton()
                 }
             }
         }
@@ -1033,10 +1041,13 @@ private struct ConnectionHero: View {
         }
         .padding(AetherVisual.s6)
         .frame(maxWidth: .infinity)
-        .aetherGlass(
-            in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous),
-            tint: phase.color.opacity(phase == .idle ? 0 : 0.14)
+        // The state colour as a wash over the card, which the readable
+        // grey on it was measured against (strongSecondaryText).
+        .background(
+            phase == .idle ? Color.clear : AetherVisual.tintWash(phase.color),
+            in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
         )
+        .aetherPanel()
         .overlay(alignment: .top) {
             if tunnel.state == .connecting {
                 ConnectionLuminousBar()
@@ -1080,14 +1091,14 @@ private struct ConnectionHero: View {
                 } label: {
                     Label(AppLocalization.string("Open System Settings"), systemImage: "gearshape")
                 }
-                .aetherGlassButton(prominent: true)
+                .aetherButton(prominent: true)
                 .accessibilityIdentifier("extension-approval-open-settings")
                 Button {
                     Task { await tunnel.recheckSystemExtensionApproval() }
                 } label: {
                     Label(AppLocalization.string("Check Again"), systemImage: "arrow.clockwise")
                 }
-                .aetherGlassButton()
+                .aetherButton()
                 .accessibilityIdentifier("extension-approval-recheck")
             }
             .controlSize(.large)
@@ -1303,6 +1314,18 @@ private struct OverviewRow<Trailing: View>: View {
     }
 
     private var label: some View {
+        OverviewRowLabel(symbol: symbol, tint: tint, title: title, help: help)
+    }
+}
+
+/// The tile, title and help button that lead an Overview row.
+private struct OverviewRowLabel: View {
+    let symbol: String
+    let tint: Color
+    let title: String
+    var help: HelpTopic?
+
+    var body: some View {
         HStack(spacing: AetherVisual.s3) {
             AetherIconTile(symbol: symbol, color: tint, size: AetherVisual.rowTileSize)
             HStack(spacing: AetherVisual.s1) {
@@ -1318,6 +1341,104 @@ private struct OverviewRow<Trailing: View>: View {
                         .controlSize(.small)
                 }
             }
+        }
+    }
+}
+
+/// A mode row: title, hint and control on one line when they fit, without
+/// the hint when only the title and control do, and the control below the
+/// title otherwise (long translations, narrow windows).
+private struct OverviewModeRow<Control: View>: View {
+    let symbol: String
+    let tint: Color
+    let title: String
+    let help: HelpTopic
+    let hint: String
+    @ViewBuilder var control: Control
+
+    var body: some View {
+        OverviewAdaptiveRowLayout {
+            OverviewRowLabel(symbol: symbol, tint: tint, title: title, help: help)
+            // Proposed no width when it does not fit, it draws nothing
+            // rather than a lone ellipsis.
+            ViewThatFits(in: .horizontal) {
+                ModeHint(text: hint)
+                Color.clear.frame(width: 0, height: 0)
+            }
+            control
+        }
+        .frame(minHeight: AetherVisual.rowHeight)
+        .padding(.horizontal, AetherVisual.s4)
+    }
+}
+
+/// Lays out a mode row's label, hint and control. One instance of each
+/// rather than `ViewThatFits` over three whole rows, which built and
+/// measured a native segmented control for every candidate on each visit
+/// to Overview (1.5.1).
+private struct OverviewAdaptiveRowLayout: Layout {
+    private enum Arrangement {
+        case withHint
+        case inline
+        case stacked
+    }
+
+    private static let gap = AetherVisual.s3
+    private static let stackedSpacing = AetherVisual.s2
+
+    private func arrangement(width: CGFloat, subviews: Subviews) -> Arrangement {
+        let label = subviews[0].sizeThatFits(.unspecified).width
+        let hint = subviews[1].sizeThatFits(.unspecified).width
+        let control = subviews[2].sizeThatFits(.unspecified).width
+        if label + Self.gap + hint + Self.gap + control <= width { return .withHint }
+        if label + Self.gap + control <= width { return .inline }
+        return .stacked
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let control = subviews[2].sizeThatFits(.unspecified)
+        let label = subviews[0].sizeThatFits(.unspecified)
+        let hint = subviews[1].sizeThatFits(.unspecified)
+        let idealWidth = label.width + Self.gap + hint.width + Self.gap + control.width
+        let width = proposal.width ?? idealWidth
+        switch arrangement(width: width, subviews: subviews) {
+        case .withHint, .inline:
+            return CGSize(width: width, height: max(label.height, hint.height, control.height))
+        case .stacked:
+            let wrapped = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil))
+            return CGSize(
+                width: width,
+                height: Self.stackedSpacing * 3 + wrapped.height + control.height
+            )
+        }
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let control = subviews[2].sizeThatFits(.unspecified)
+        let hidden = ProposedViewSize(width: 0, height: 0)
+        switch arrangement(width: bounds.width, subviews: subviews) {
+        case .withHint, .inline:
+            let showsHint = arrangement(width: bounds.width, subviews: subviews) == .withHint
+            subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .unspecified)
+            subviews[2].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: .unspecified)
+            subviews[1].place(
+                at: CGPoint(x: bounds.maxX - control.width - Self.gap, y: bounds.midY),
+                anchor: .trailing,
+                proposal: showsHint ? .unspecified : hidden
+            )
+        case .stacked:
+            let wrapped = subviews[0].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+            subviews[0].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY + Self.stackedSpacing),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: bounds.width, height: nil)
+            )
+            subviews[2].place(
+                at: CGPoint(x: bounds.maxX, y: bounds.minY + Self.stackedSpacing * 2 + wrapped.height),
+                anchor: .topTrailing,
+                proposal: .unspecified
+            )
+            subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.minY), proposal: hidden)
         }
     }
 }
@@ -1401,61 +1522,29 @@ private struct OverviewModeRows: View {
             // control alone does not fit beside the title (long
             // translations), the control moves below it rather than
             // overlapping the title and widening the page.
-            ViewThatFits(in: .horizontal) {
-                routingRow(isStacked: false) {
-                    HStack(spacing: AetherVisual.s3) {
-                        ModeHint(text: routingMode.shortHint)
-                        routingPicker
-                    }
-                }
-                routingRow(isStacked: false) { routingPicker }
-                routingRow(isStacked: true) { routingPicker }
+            OverviewModeRow(
+                symbol: "arrow.triangle.branch",
+                tint: .orange,
+                title: AppLocalization.string("Routing mode"),
+                help: .routingMode,
+                hint: routingMode.shortHint
+            ) {
+                routingPicker
             }
 #if AETHERROUTE_INDEPENDENT
             OverviewRowDivider()
-            ViewThatFits(in: .horizontal) {
-                engineRow(isStacked: false) {
-                    HStack(spacing: AetherVisual.s3) {
-                        ModeHint(text: networkEngineMode.shortHint)
-                        enginePicker
-                    }
-                }
-                engineRow(isStacked: false) { enginePicker }
-                engineRow(isStacked: true) { enginePicker }
+            OverviewModeRow(
+                symbol: networkEngineMode == .tun ? "bolt.shield.fill" : "shield.fill",
+                tint: .blue,
+                title: AppLocalization.string("Network engine"),
+                help: .networkEngine,
+                hint: networkEngineMode.shortHint
+            ) {
+                enginePicker
             }
 #endif
         }
     }
-
-    private func routingRow<Content: View>(
-        isStacked: Bool,
-        @ViewBuilder control: () -> Content
-    ) -> some View {
-        OverviewRow(
-            symbol: "arrow.triangle.branch",
-            tint: .orange,
-            title: AppLocalization.string("Routing mode"),
-            help: .routingMode,
-            isStacked: isStacked,
-            trailing: control
-        )
-    }
-
-#if AETHERROUTE_INDEPENDENT
-    private func engineRow<Content: View>(
-        isStacked: Bool,
-        @ViewBuilder control: () -> Content
-    ) -> some View {
-        OverviewRow(
-            symbol: networkEngineMode == .tun ? "bolt.shield.fill" : "shield.fill",
-            tint: .blue,
-            title: AppLocalization.string("Network engine"),
-            help: .networkEngine,
-            isStacked: isStacked,
-            trailing: control
-        )
-    }
-#endif
 
     private var routingPicker: some View {
         RoutingModeSegmentedControl(
@@ -1522,7 +1611,7 @@ private struct OverviewRouteCheckRow: View {
                             )
                         }
                     }
-                    .aetherGlassButton()
+                    .aetherButton()
                     .controlSize(.small)
                     .help(AppLocalization.string("Run end-to-end network connectivity diagnostics."))
                     .accessibilityIdentifier("overview-diagnose-button")
@@ -1791,7 +1880,7 @@ private struct LiveTelemetryMetricValue: View {
                 .font(.largeTitle.weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(isConnected ? AnyShapeStyle(Color.primary) : AnyShapeStyle(AetherVisual.secondaryText))
-                .aetherNumericValue(parts.number)
+                .aetherLiveValue()
             if let unit = parts.unit {
                 Text(unit)
                     .font(.callout.weight(.medium))
@@ -1901,30 +1990,26 @@ private struct LiveTrafficHistoryGraph: View {
     )
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: Self.frameInterval, paused: !isRealtime)) { context in
-            let lastSample = model.history.samples.last?.date
-            // Live: the window slides continuously, one sampling period
-            // behind the clock, so each new sample enters at the right edge
-            // and drifts left instead of appearing mid-chart every 3 seconds.
-            // Paused: nothing new arrives; anchoring the window at the last
-            // sample keeps the final 30 seconds on screen instead of sliding
-            // them off into an empty chart.
-            let now = isRealtime
-                ? context.date.addingTimeInterval(-Self.entryLag)
-                : (lastSample ?? context.date)
-            let samples = model.history.visible(at: now)
-            VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                // The chart's scale, the busiest moment in view, sits on its
-                // own line so it never covers the curve.
-                HStack {
-                    Spacer(minLength: 0)
-                    Text(peakRate(samples).map {
-                        String.localizedStringWithFormat(AppLocalization.string("Peak %@"), $0)
-                    } ?? " ")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(AetherVisual.secondaryText)
-                    .aetherNumericValue(peakRate(samples) ?? "")
-                }
+        // Only the waveform redraws every frame. The labels around it change
+        // at most once per sample, so they sit outside the timeline: inside
+        // it every caption was re-resolved and laid out 24 times a second
+        // (1.5.1).
+        let lastSample = model.history.samples.last?.date
+        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+            // The chart's scale, the busiest moment in view, sits on its
+            // own line so it never covers the curve.
+            HStack {
+                Spacer(minLength: 0)
+                Text(peakRate(model.history.visible(at: windowEnd(at: .now, lastSample: lastSample))).map {
+                    String.localizedStringWithFormat(AppLocalization.string("Peak %@"), $0)
+                } ?? " ")
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(AetherVisual.secondaryText)
+                .aetherLiveValue()
+            }
+            TimelineView(.animation(minimumInterval: Self.frameInterval, paused: !isRealtime)) { context in
+                let now = windowEnd(at: context.date, lastSample: lastSample)
+                let samples = model.history.visible(at: now)
                 ZStack {
                     AetherTrafficMiniGraph(
                         downloadSamples: samples.map(\.download),
@@ -1940,17 +2025,28 @@ private struct LiveTrafficHistoryGraph: View {
                     }
                 }
                 .animation(AetherVisual.animation(AetherVisual.quickFade), value: samples.count < 2)
-                HStack {
-                    Text(AppLocalization.string("30 s ago"))
-                    Spacer(minLength: AetherVisual.s2)
-                    refreshStatus(lastSample: lastSample)
-                    Spacer(minLength: AetherVisual.s2)
-                    Text(AppLocalization.string("Now"))
-                }
-                .font(.caption)
-                .foregroundStyle(AetherVisual.secondaryText)
             }
+            HStack {
+                Text(AppLocalization.string("30 s ago"))
+                Spacer(minLength: AetherVisual.s2)
+                refreshStatus(lastSample: lastSample)
+                Spacer(minLength: AetherVisual.s2)
+                Text(AppLocalization.string("Now"))
+            }
+            .font(.caption)
+            .foregroundStyle(AetherVisual.secondaryText)
         }
+    }
+
+    /// Live: the window slides continuously, one sampling period behind the
+    /// clock, so each new sample enters at the right edge and drifts left
+    /// instead of appearing mid-chart every 3 seconds. Paused: nothing new
+    /// arrives; anchoring the window at the last sample keeps the final 30
+    /// seconds on screen instead of sliding them off into an empty chart.
+    private func windowEnd(at date: Date, lastSample: Date?) -> Date {
+        isRealtime
+            ? date.addingTimeInterval(-Self.entryLag)
+            : (lastSample ?? date)
     }
 
     private func peakRate(_ samples: [TrafficHistory.Sample]) -> String? {

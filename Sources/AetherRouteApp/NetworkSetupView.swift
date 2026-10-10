@@ -58,7 +58,7 @@ struct NetworkSetupView: View {
             HStack(spacing: AetherVisual.s3) {
                 if !isOnboarding, let onClose {
                     Button(AppLocalization.string("Later"), action: onClose)
-                        .aetherGlassButton()
+                        .aetherButton()
                         .controlSize(.extraLarge)
                         .keyboardShortcut(.cancelAction)
                 }

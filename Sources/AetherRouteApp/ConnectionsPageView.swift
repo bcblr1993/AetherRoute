@@ -302,6 +302,7 @@ struct ConnectionsView: View {
                 Text(verbatim: "\(row.connectionCount)")
                     .font(.body.monospacedDigit())
                     .frame(maxWidth: .infinity, alignment: .trailing)
+                    .frame(height: AetherVisual.tableRowHeight)
             }
             .width(min: 72, ideal: 84, max: 120)
             .alignment(.numeric)
@@ -309,6 +310,8 @@ struct ConnectionsView: View {
                 Text(row.outletSummary)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: AetherVisual.tableRowHeight)
                     .help(row.outletSummary)
             }
             .width(min: 84, ideal: 120, max: 320)
@@ -319,6 +322,7 @@ struct ConnectionsView: View {
                 }
                 .font(.body.monospacedDigit())
                 .frame(maxWidth: .infinity, alignment: .trailing)
+                .frame(height: AetherVisual.tableRowHeight)
             }
             .width(min: 64, ideal: 80, max: 120)
             .alignment(.numeric)
@@ -486,7 +490,7 @@ struct ConnectionsView: View {
                     systemImage: "square.stack.3d.up"
                 )
             }
-            .aetherGlassButton()
+            .aetherButton()
             .tint(groupsByApp ? .accentColor : nil)
             .help(AppLocalization.string(groupsByApp ? "Show each connection" : "Group by app"))
             .accessibilityValue(Text(AppLocalization.string(groupsByApp ? "On" : "Off")))
@@ -503,7 +507,7 @@ struct ConnectionsView: View {
                         .contentTransition(.symbolEffect(.replace))
                 }
             }
-            .aetherGlassButton()
+            .aetherButton()
             // A frozen list must not pass for a live one: the button stays
             // tinted while the list is paused.
             .tint(pausedConnections == nil ? nil : .orange)
@@ -524,7 +528,7 @@ struct ConnectionsView: View {
                 Button(AppLocalization.string("Close All"), systemImage: "xmark.circle") {
                     close(.all)
                 }
-                .aetherGlassButton()
+                .aetherButton()
                 .disabled(tunnel.isTransitioning || telemetry.snapshot.connections.isEmpty)
                 .help(AppLocalization.string("Close all connections without disconnecting"))
                 .accessibilityIdentifier("close-all-connections")
@@ -533,7 +537,7 @@ struct ConnectionsView: View {
                 Button(AppLocalization.string("Disconnect"), systemImage: "power") {
                     showingDisconnectConfirmation = true
                 }
-                .aetherGlassButton()
+                .aetherButton()
                 .disabled(tunnel.isTransitioning || telemetry.snapshot.connections.isEmpty)
                 .accessibilityIdentifier("disconnect-all-connections")
                 .confirmationDialog(
@@ -693,7 +697,7 @@ private struct SessionBar: View {
                 Button(tunnel.primaryActionTitle) {
                     Task { await tunnel.setEnabled(!tunnel.isEnabled) }
                 }
-                .aetherGlassButton(prominent: true)
+                .aetherButton(prominent: true)
                 .controlSize(.small)
                 .disabled(!tunnel.canPerformPrimaryAction)
                 .accessibilityIdentifier("connections-primary-action")
@@ -702,7 +706,10 @@ private struct SessionBar: View {
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s1)
         .frame(minHeight: AetherVisual.compactRowHeight)
-        .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.compactPanelRadius, style: .continuous))
+        .background(
+            AetherVisual.cardFill,
+            in: RoundedRectangle(cornerRadius: AetherVisual.compactPanelRadius, style: .continuous)
+        )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("connections-session-bar")
     }
@@ -716,7 +723,7 @@ private struct SessionBar: View {
             Text(value)
                 .font(.body.monospacedDigit())
                 .foregroundStyle(.primary)
-                .aetherNumericValue(value)
+                .aetherLiveValue()
         }
         .accessibilityElement(children: .combine)
     }
@@ -768,6 +775,7 @@ private struct ConnectionAppCell: View {
                 .truncationMode(.tail)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: AetherVisual.tableRowHeight)
         .help(Text(verbatim: app.detail))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("connection-app")
@@ -829,7 +837,7 @@ private struct ConnectionDestinationCell: View {
                     .fill(outlet == .rejected ? Color.red : Color.green)
                     .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
                     .accessibilityHidden(true)
-                Text(connection.transport == .tcp ? "TCP" : "UDP")
+                Text(verbatim: connection.transport == .tcp ? "TCP" : "UDP")
                     .font(.caption.monospaced())
                     .foregroundStyle(AetherVisual.secondaryText)
             }
@@ -871,6 +879,8 @@ private struct ConnectionRuleCell: View {
                     .truncationMode(.middle)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: AetherVisual.tableRowHeight)
         .help(connection.ruleSummary)
         .accessibilityElement(children: .combine)
     }
@@ -888,6 +898,8 @@ private struct ConnectionOutletCell: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: AetherVisual.tableRowHeight)
         .help(outlet.localizedTitle)
         .accessibilityElement(children: .combine)
     }
@@ -925,6 +937,7 @@ private struct ConnectionTrafficCell: View {
         .font(.body.monospacedDigit())
         .foregroundStyle(.primary)
         .frame(maxWidth: .infinity, alignment: .trailing)
+        .frame(height: AetherVisual.tableRowHeight)
     }
 }
 
@@ -940,6 +953,7 @@ private struct ConnectionDurationCell: View {
             .fixedSize(horizontal: false, vertical: true)
             .multilineTextAlignment(.trailing)
             .frame(maxWidth: .infinity, alignment: .trailing)
+            .frame(height: AetherVisual.tableRowHeight)
             .accessibilityIdentifier("connection-duration")
             .accessibilityLabel(Text(AppLocalization.string("Connection duration")))
             .accessibilityValue(text)
@@ -1017,7 +1031,7 @@ private struct ConnectionInspector: View {
                 }
                 Spacer()
                 Button(AppLocalization.string("Done")) { dismiss() }
-                    .aetherGlassButton(prominent: true)
+                    .aetherButton(prominent: true)
                     .keyboardShortcut(.defaultAction)
             }
             .padding([.horizontal, .bottom], AetherVisual.dialogPadding)

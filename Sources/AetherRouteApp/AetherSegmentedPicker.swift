@@ -115,6 +115,8 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
         // One probe per title: relabelling a probe does not refresh its
         // intrinsic width, which then stayed at the first label's size.
         titles.map { title in
+            let key = "\(controlSize.rawValue)|\(title)"
+            if let width = SegmentTitleWidthCache.widths[key] { return width }
             let probe = NSSegmentedControl(
                 labels: [title],
                 trackingMode: .selectOne,
@@ -124,7 +126,9 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
             probe.controlSize = controlSize
             probe.segmentDistribution = .fit
             probe.selectedSegment = 0
-            return probe.intrinsicContentSize.width
+            let width = probe.intrinsicContentSize.width
+            SegmentTitleWidthCache.widths[key] = width
+            return width
         }.max().map(ceil) ?? 0
     }
 
@@ -174,4 +178,14 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
 /// concurrency checking rejects in a main-actor method.
 private func segmentTitleWithWidestDigits(_ title: String) -> String {
     String(title.map { $0.isNumber ? "8" : $0 })
+}
+
+/// Segment widths already measured, by control size and title. A picker is
+/// rebuilt on every visit to its page, so a per-instance cache measured the
+/// same labels again on each page switch (1.5.1). The set of titles is small
+/// and fixed by the interface language. Outside the generic picker because a
+/// generic type cannot hold static storage.
+@MainActor
+private enum SegmentTitleWidthCache {
+    static var widths: [String: CGFloat] = [:]
 }
