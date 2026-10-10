@@ -89,6 +89,13 @@ extern int32_t clash_flow_telemetry_snapshot_v3(
     size_t,
     size_t *
 );
+extern int32_t clash_flow_telemetry_snapshot_v4(
+    clash_flow_engine_t *,
+    uint32_t,
+    uint8_t *,
+    size_t,
+    size_t *
+);
 extern int32_t clash_flow_close_connections_v1(
     clash_flow_engine_t *,
     const uint8_t *,
@@ -345,6 +352,22 @@ static int32_t telemetry_snapshot_v3_adapter(
     );
 }
 
+static int32_t telemetry_snapshot_v4_adapter(
+    void *engine,
+    uint32_t maximum_connections,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+) {
+    return clash_flow_telemetry_snapshot_v4(
+        (clash_flow_engine_t *)engine,
+        maximum_connections,
+        output,
+        output_capacity,
+        required_length
+    );
+}
+
 static int32_t close_connections_v1_adapter(
     void *engine,
     const uint8_t *request,
@@ -589,5 +612,22 @@ int32_t aetherroute_flow_abi_load_v6(aetherroute_flow_abi_v6_t *output) {
     }
     output->close_connections_v1 = close_connections_v1_adapter;
     output->telemetry_snapshot_v3 = telemetry_snapshot_v3_adapter;
+    return 1;
+}
+
+int32_t aetherroute_flow_abi_load_v7(aetherroute_flow_abi_v7_t *output) {
+    if (output == NULL || output->struct_size != sizeof(*output)) {
+        return 0;
+    }
+    const uint32_t struct_size = output->struct_size;
+    memset(output, 0, sizeof(*output));
+    output->struct_size = struct_size;
+    output->v6.struct_size = sizeof(output->v6);
+    if (aetherroute_flow_abi_load_v6(&output->v6) != 1) {
+        memset(output, 0, sizeof(*output));
+        output->struct_size = struct_size;
+        return 0;
+    }
+    output->telemetry_snapshot_v4 = telemetry_snapshot_v4_adapter;
     return 1;
 }

@@ -18,7 +18,7 @@ grep -Fq 'count: NetworkTelemetryCodec.maximumMessageBytes' "$CORE" \
 
 method=$(sed -n '/    func telemetrySnapshot(/,/    fileprivate func writePacket(/p' "$CORE")
 call_count=$(printf '%s\n' "$method" \
-  | grep -F -c 'clash_packet_telemetry_snapshot_v3(')
+  | grep -F -c 'clash_packet_telemetry_snapshot_v4(')
 test "$call_count" -eq 1 \
   || fail "each telemetry poll must create exactly one Rust snapshot"
 printf '%s\n' "$method" | grep -Fq 'telemetryOutputBuffer.withUnsafeMutableBytes' \
@@ -28,7 +28,7 @@ printf '%s\n' "$method" | grep -Fq 'telemetryOutputBuffer.prefix(requiredLength)
 if printf '%s\n' "$method" | grep -Fq 'for _ in 0..<2'; then
   fail "query/copy retry loop must not return"
 fi
-if printf '%s\n' "$method" | grep -Eq 'clash_packet_telemetry_snapshot_v3\([^)]*nil'; then
+if printf '%s\n' "$method" | grep -Eq 'clash_packet_telemetry_snapshot_v4\([^)]*nil'; then
   fail "size-query snapshot must not return"
 fi
 

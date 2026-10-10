@@ -49,9 +49,9 @@ public struct ConnectionTelemetry: Sendable, Equatable {
 }
 
 /// Lifetime traffic of one source app through one proxy chain, as the engine
-/// reports it in `ART3`: closed connections plus the current bytes of active
-/// ones. It covers every connection, not just the listed ones, and only
-/// grows while the engine runs.
+/// reports it in `ART3` and `ART4`: closed connections plus the current bytes
+/// of active ones. It covers every connection, not just the listed ones, and
+/// only grows within one incarnation while the engine runs.
 public struct TrafficTotalTelemetry: Sendable, Equatable {
     public let sourceAppIdentifier: String
     public let sourceAppPath: String
@@ -59,19 +59,25 @@ public struct TrafficTotalTelemetry: Sendable, Equatable {
     public let proxyChain: String
     public let uploadTotal: UInt64
     public let downloadTotal: UInt64
+    /// Which life of the pair this total counts (`ART4`). A pair the engine
+    /// forgot and later saw again restarts from zero under a larger one. Nil
+    /// from an `ART3` engine.
+    public let incarnation: UInt64?
 
     public init(
         sourceAppIdentifier: String,
         sourceAppPath: String,
         proxyChain: String,
         uploadTotal: UInt64,
-        downloadTotal: UInt64
+        downloadTotal: UInt64,
+        incarnation: UInt64? = nil
     ) {
         self.sourceAppIdentifier = sourceAppIdentifier
         self.sourceAppPath = sourceAppPath
         self.proxyChain = proxyChain
         self.uploadTotal = uploadTotal
         self.downloadTotal = downloadTotal
+        self.incarnation = incarnation
     }
 }
 
@@ -82,10 +88,15 @@ public struct NetworkTelemetrySnapshot: Sendable, Equatable {
     public let downloadTotal: UInt64
     public let memoryBytes: UInt64
     public let connections: [ConnectionTelemetry]
-    /// Per-(app, chain) lifetime totals, largest first. Empty from an engine
-    /// that predates `ART3`; `reportsTrafficTotals` tells the two apart.
+    /// Per-(app, chain) lifetime totals, at most 256 per sample: those still
+    /// changing first. A total left out keeps its last value. Empty from an
+    /// engine that predates `ART3`; `reportsTrafficTotals` tells the two
+    /// apart.
     public let trafficTotals: [TrafficTotalTelemetry]
     public let reportsTrafficTotals: Bool
+    /// Every total incarnation below this already existed when the sample
+    /// was taken (`ART4`); nil from an older engine.
+    public let trafficTotalWatermark: UInt64?
 
     public init(
         uploadBytesPerSecond: UInt64,
@@ -95,7 +106,8 @@ public struct NetworkTelemetrySnapshot: Sendable, Equatable {
         memoryBytes: UInt64,
         connections: [ConnectionTelemetry],
         trafficTotals: [TrafficTotalTelemetry] = [],
-        reportsTrafficTotals: Bool? = nil
+        reportsTrafficTotals: Bool? = nil,
+        trafficTotalWatermark: UInt64? = nil
     ) {
         self.uploadBytesPerSecond = uploadBytesPerSecond
         self.downloadBytesPerSecond = downloadBytesPerSecond
@@ -104,7 +116,9 @@ public struct NetworkTelemetrySnapshot: Sendable, Equatable {
         self.memoryBytes = memoryBytes
         self.connections = connections
         self.trafficTotals = trafficTotals
-        self.reportsTrafficTotals = reportsTrafficTotals ?? !trafficTotals.isEmpty
+        self.reportsTrafficTotals = trafficTotalWatermark != nil
+            || (reportsTrafficTotals ?? !trafficTotals.isEmpty)
+        self.trafficTotalWatermark = trafficTotalWatermark
     }
 
     public static let empty = NetworkTelemetrySnapshot(
@@ -131,13 +145,16 @@ public enum NetworkTelemetryCodecError: Error, Sendable, Equatable {
 /// `maximumSourceAppBytes`. `ART3` (1.4.0) is `ART2` followed by the
 /// per-(app, chain) lifetime totals: a `UInt32` count, then per total two
 /// `UInt64` counters, three `UInt32` lengths and the identifier, path and
-/// chain strings. The decoder accepts all three, so a host and an engine from
-/// different builds still agree.
+/// chain strings. `ART4` (1.5.1) puts a `UInt64` incarnation watermark before
+/// that count and a `UInt64` incarnation after each total's two counters.
+/// The decoder accepts all four, so a host and an engine from different
+/// builds still agree.
 public enum NetworkTelemetryCodec {
     public enum Version: Sendable {
         case v1
         case v2
         case v3
+        case v4
     }
 
     public static let maximumConnections = 128
@@ -151,7 +168,9 @@ public enum NetworkTelemetryCodec {
     private static let magic: [UInt8] = [0x41, 0x52, 0x54, 0x31]
     private static let magicV2: [UInt8] = [0x41, 0x52, 0x54, 0x32]
     private static let magicV3: [UInt8] = [0x41, 0x52, 0x54, 0x33]
+    private static let magicV4: [UInt8] = [0x41, 0x52, 0x54, 0x34]
     private static let trafficTotalHeaderBytes = 28
+    private static let incarnationBytes = 8
     private static let headerBytes = 48
     private static let recordHeaderBytes = 44
     private static let sourceAppHeaderBytes = 8
@@ -162,7 +181,10 @@ public enum NetworkTelemetryCodec {
     ) throws -> Data {
         // By default a snapshot is written in the newest form that keeps
         // everything it holds.
-        let version = version ?? (snapshot.reportsTrafficTotals ? .v3 : .v2)
+        let version = version ?? (
+            snapshot.trafficTotalWatermark != nil ? .v4
+                : snapshot.reportsTrafficTotals ? .v3 : .v2
+        )
         guard snapshot.connections.count <= maximumConnections else {
             throw NetworkTelemetryCodecError.tooLarge
         }
@@ -171,6 +193,7 @@ public enum NetworkTelemetryCodec {
         case .v1: magic
         case .v2: magicV2
         case .v3: magicV3
+        case .v4: magicV4
         }
         var output = Data(headerMagic)
         for value in [
@@ -217,18 +240,26 @@ public enum NetworkTelemetryCodec {
                 throw NetworkTelemetryCodecError.tooLarge
             }
         }
-        if version == .v3 {
-            try appendTrafficTotals(snapshot.trafficTotals, to: &output)
+        switch version {
+        case .v1, .v2:
+            break
+        case .v3:
+            try appendTrafficTotals(snapshot.trafficTotals, includesIncarnation: false, to: &output)
+        case .v4:
+            appendUInt64(snapshot.trafficTotalWatermark ?? 0, to: &output)
+            try appendTrafficTotals(snapshot.trafficTotals, includesIncarnation: true, to: &output)
         }
         return output
     }
 
-    /// Largest first, as the engine sends them; totals that would not fit the
-    /// budget are left out instead of failing the whole sample.
+    /// In the engine's order; totals that would not fit the budget are left
+    /// out instead of failing the whole sample.
     private static func appendTrafficTotals(
         _ totals: [TrafficTotalTelemetry],
+        includesIncarnation: Bool,
         to output: inout Data
     ) throws {
+        let headerBytes = trafficTotalHeaderBytes + (includesIncarnation ? incarnationBytes : 0)
         let countOffset = output.count
         appendUInt32(0, to: &output)
         var count: UInt32 = 0
@@ -246,10 +277,13 @@ public enum NetworkTelemetryCodec {
                 ),
                 try stringData(total.proxyChain, allowsEmpty: true),
             ]
-            let recordBytes = trafficTotalHeaderBytes + strings.reduce(0) { $0 + $1.count }
+            let recordBytes = headerBytes + strings.reduce(0) { $0 + $1.count }
             guard output.count + recordBytes <= encodedBudgetBytes else { break }
             appendUInt64(total.uploadTotal, to: &output)
             appendUInt64(total.downloadTotal, to: &output)
+            if includesIncarnation {
+                appendUInt64(total.incarnation ?? 0, to: &output)
+            }
             for value in strings {
                 appendUInt32(UInt32(value.count), to: &output)
             }
@@ -276,10 +310,11 @@ public enum NetworkTelemetryCodec {
         else { throw NetworkTelemetryCodecError.tooLarge }
         let bytes = [UInt8](data)
         let header = Array(bytes[0..<4])
-        guard header == magic || header == magicV2 || header == magicV3 else {
+        guard header == magic || header == magicV2 || header == magicV3 || header == magicV4 else {
             throw NetworkTelemetryCodecError.malformed
         }
-        let includesTrafficTotals = header == magicV3
+        let includesIncarnations = header == magicV4
+        let includesTrafficTotals = header == magicV3 || includesIncarnations
         let includesSourceApp = header != magic
         let recordBytes = recordHeaderBytes
             + (includesSourceApp ? sourceAppHeaderBytes : 0)
@@ -376,6 +411,16 @@ public enum NetworkTelemetryCodec {
             )
         }
         var trafficTotals: [TrafficTotalTelemetry] = []
+        var trafficTotalWatermark: UInt64?
+        if includesIncarnations {
+            guard let watermark = readUInt64(bytes, at: offset) else {
+                throw NetworkTelemetryCodecError.malformed
+            }
+            trafficTotalWatermark = watermark
+            offset += incarnationBytes
+        }
+        let totalHeaderBytes = trafficTotalHeaderBytes
+            + (includesIncarnations ? incarnationBytes : 0)
         if includesTrafficTotals {
             guard
                 let totalCount = readUInt32(bytes, at: offset),
@@ -384,15 +429,19 @@ public enum NetworkTelemetryCodec {
             offset += 4
             trafficTotals.reserveCapacity(Int(totalCount))
             for _ in 0..<totalCount {
+                let lengths = offset + 16 + (includesIncarnations ? incarnationBytes : 0)
                 guard
-                    offset + trafficTotalHeaderBytes <= bytes.count,
+                    offset + totalHeaderBytes <= bytes.count,
                     let upload = readUInt64(bytes, at: offset),
                     let download = readUInt64(bytes, at: offset + 8),
-                    let identifierLength = readUInt32(bytes, at: offset + 16),
-                    let pathLength = readUInt32(bytes, at: offset + 20),
-                    let chainLength = readUInt32(bytes, at: offset + 24)
+                    let identifierLength = readUInt32(bytes, at: lengths),
+                    let pathLength = readUInt32(bytes, at: lengths + 4),
+                    let chainLength = readUInt32(bytes, at: lengths + 8)
                 else { throw NetworkTelemetryCodecError.malformed }
-                offset += trafficTotalHeaderBytes
+                let incarnation = includesIncarnations
+                    ? readUInt64(bytes, at: offset + 16)
+                    : nil
+                offset += totalHeaderBytes
                 let identifier = try readString(
                     bytes,
                     offset: &offset,
@@ -418,7 +467,8 @@ public enum NetworkTelemetryCodec {
                     sourceAppPath: path,
                     proxyChain: chain,
                     uploadTotal: upload,
-                    downloadTotal: download
+                    downloadTotal: download,
+                    incarnation: incarnation
                 ))
             }
         }
@@ -433,7 +483,8 @@ public enum NetworkTelemetryCodec {
             memoryBytes: memoryBytes,
             connections: connections,
             trafficTotals: trafficTotals,
-            reportsTrafficTotals: includesTrafficTotals
+            reportsTrafficTotals: includesTrafficTotals,
+            trafficTotalWatermark: trafficTotalWatermark
         )
     }
 

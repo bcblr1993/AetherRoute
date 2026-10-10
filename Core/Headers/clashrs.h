@@ -241,10 +241,22 @@ int32_t clash_packet_telemetry_snapshot_v2(
 );
 /* "ART3": ART2 followed by lifetime traffic totals per (source app, proxy
  * chain), covering every connection, not only the listed ones: a uint32
- * count (at most 256, largest first), then per total uint64 upload, uint64
+ * count (at most 256, in the ART4 order), then per total uint64 upload, uint64
  * download, three uint32 lengths and the identifier, path and chain strings.
  * Totals that would exceed the 1 MiB bound are left out. */
 int32_t clash_packet_telemetry_snapshot_v3(
+    uint32_t maximum_connections,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+);
+/* "ART4": ART2 followed by a uint64 incarnation watermark and the ART3
+ * totals, each with a uint64 incarnation after its download counter. At most
+ * 256 totals: pairs with active connections first, then the most recently
+ * changed. The engine remembers at most 2,048 pairs; a forgotten pair seen
+ * again restarts from zero under a larger incarnation. Incarnations below
+ * the watermark already existed when the sample was taken. */
+int32_t clash_packet_telemetry_snapshot_v4(
     uint32_t maximum_connections,
     uint8_t *output,
     size_t output_capacity,
@@ -352,6 +364,15 @@ int32_t clash_flow_telemetry_snapshot_v2(
 /* "ART3" variant: ART2 plus lifetime traffic totals per (source app, proxy
  * chain); see clash_packet_telemetry_snapshot_v3 for the layout. */
 int32_t clash_flow_telemetry_snapshot_v3(
+    clash_flow_engine_t *engine,
+    uint32_t maximum_connections,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+);
+/* "ART4" variant: totals carry incarnations; see
+ * clash_packet_telemetry_snapshot_v4 for the layout. */
+int32_t clash_flow_telemetry_snapshot_v4(
     clash_flow_engine_t *engine,
     uint32_t maximum_connections,
     uint8_t *output,

@@ -74,6 +74,11 @@ public struct TrafficSampleAttribution: Sendable, Equatable {
 /// between samples; a connection that opens and closes between two samples,
 /// or falls outside the listed connections, then counts toward the total but
 /// not toward an app or node.
+///
+/// `ART4` adds an incarnation to each total. The engine remembers a bounded
+/// number of (app, chain) pairs and forgets idle ones; a forgotten pair seen
+/// again restarts from zero under a larger incarnation, which is counted from
+/// zero rather than against the old value.
 public struct TrafficStatisticsAccumulator: Sendable {
     public struct AppKey: Sendable, Equatable {
         public let key: String
@@ -95,6 +100,13 @@ public struct TrafficStatisticsAccumulator: Sendable {
     /// sample (it fell out of the engine's bounded list) keeps its value, so
     /// its return is not counted twice.
     private var lastTrafficTotals: [String: TrafficVolume] = [:]
+    /// `ART4`: the newest incarnation seen for each (app, chain) pair and
+    /// its last value. Older incarnations are dropped once a newer one
+    /// appears, since the engine has forgotten them.
+    private var lastIncarnations: [String: (incarnation: UInt64, volume: TrafficVolume)] = [:]
+    /// Incarnations below this existed before the first sample, so their
+    /// earlier bytes were never seen here and only set a baseline.
+    private var incarnationBaseline: UInt64 = 0
 
     public init() {}
 
@@ -105,6 +117,8 @@ public struct TrafficStatisticsAccumulator: Sendable {
         lastSessionStartedAt = nil
         lastConnections = [:]
         lastTrafficTotals = [:]
+        lastIncarnations = [:]
+        incarnationBaseline = 0
     }
 
     public mutating func ingest(
@@ -136,6 +150,11 @@ public struct TrafficStatisticsAccumulator: Sendable {
         if engineRestarted {
             lastConnections = [:]
             lastTrafficTotals = [:]
+            lastIncarnations = [:]
+            // Every pair of a fresh engine is new.
+            incarnationBaseline = 0
+        } else if lastTotal == nil {
+            incarnationBaseline = snapshot.trafficTotalWatermark ?? 0
         }
 
         if snapshot.reportsTrafficTotals {
@@ -146,8 +165,25 @@ public struct TrafficStatisticsAccumulator: Sendable {
                     upload: total.uploadTotal,
                     download: total.downloadTotal
                 )
-                let previous = lastTrafficTotals[key]
-                lastTrafficTotals[key] = volume
+                let previous: TrafficVolume?
+                if let incarnation = total.incarnation {
+                    let known = lastIncarnations[key]
+                    if let known, incarnation < known.incarnation { continue }
+                    lastIncarnations[key] = (incarnation, volume)
+                    if let known, known.incarnation == incarnation {
+                        previous = known.volume
+                    } else if known == nil, incarnation < incarnationBaseline {
+                        // Already counting before the first sample: its
+                        // earlier bytes are not this session's to attribute.
+                        continue
+                    } else {
+                        // New, or a forgotten pair's new life from zero.
+                        previous = nil
+                    }
+                } else {
+                    previous = lastTrafficTotals[key]
+                    lastTrafficTotals[key] = volume
+                }
                 guard lastTotal != nil else { continue }
                 // A total first seen now moved all of its bytes since the
                 // last sample. One that shrank lost bytes the engine could

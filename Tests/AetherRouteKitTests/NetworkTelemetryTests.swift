@@ -135,6 +135,64 @@ final class NetworkTelemetryTests: XCTestCase {
         XCTAssertThrowsError(try NetworkTelemetryCodec.decode(truncated))
     }
 
+    func testART4CarriesIncarnationsInTheEngineLayout() throws {
+        // Mirrors clash-ffi's telemetry_v3_appends_bounded_traffic_totals.
+        let totals = [
+            TrafficTotalTelemetry(
+                sourceAppIdentifier: "com.a",
+                sourceAppPath: "/p",
+                proxyChain: "Auto → HK",
+                uploadTotal: 5,
+                downloadTotal: 7,
+                incarnation: 9
+            ),
+            TrafficTotalTelemetry(
+                sourceAppIdentifier: "",
+                sourceAppPath: "/p",
+                proxyChain: "Auto → HK",
+                uploadTotal: 0,
+                downloadTotal: 7,
+                incarnation: 9
+            ),
+        ]
+        let snapshot = NetworkTelemetrySnapshot(
+            uploadBytesPerSecond: 0,
+            downloadBytesPerSecond: 0,
+            uploadTotal: 0,
+            downloadTotal: 0,
+            memoryBytes: 0,
+            connections: [],
+            trafficTotals: totals,
+            trafficTotalWatermark: 12
+        )
+        let data = [UInt8](try NetworkTelemetryCodec.encode(snapshot))
+        XCTAssertEqual(Array(data.prefix(4)), [0x41, 0x52, 0x54, 0x34])
+        XCTAssertEqual(Array(data[48..<56]), [0, 0, 0, 0, 0, 0, 0, 12])
+        XCTAssertEqual(Array(data[56..<60]), [0, 0, 0, 2])
+        XCTAssertEqual(Array(data[60..<68]), [0, 0, 0, 0, 0, 0, 0, 5])
+        XCTAssertEqual(Array(data[76..<84]), [0, 0, 0, 0, 0, 0, 0, 9])
+        XCTAssertEqual(Array(data[84..<88]), [0, 0, 0, 5])
+        XCTAssertEqual(Array(data[96..<(96 + 7)]), Array("com.a/p".utf8))
+        let decoded = try NetworkTelemetryCodec.decode(Data(data))
+        XCTAssertEqual(decoded, snapshot)
+        XCTAssertTrue(decoded.reportsTrafficTotals)
+        XCTAssertEqual(decoded.trafficTotalWatermark, 12)
+
+        // The same totals as ART3 lose only the incarnations.
+        let art3 = try NetworkTelemetryCodec.decode(
+            NetworkTelemetryCodec.encode(snapshot, version: .v3)
+        )
+        XCTAssertNil(art3.trafficTotalWatermark)
+        XCTAssertEqual(art3.trafficTotals.map(\.incarnation), [nil, nil])
+        XCTAssertEqual(art3.trafficTotals.map(\.downloadTotal), [7, 7])
+
+        var truncated = Data(data)
+        truncated.removeLast()
+        XCTAssertThrowsError(try NetworkTelemetryCodec.decode(truncated))
+        // A watermark with no count after it is malformed.
+        XCTAssertThrowsError(try NetworkTelemetryCodec.decode(Data(data[0..<56])))
+    }
+
     func testEncoderRejectsOversizedConnectionList() {
         let connection = sampleTelemetry().connections[0]
         let snapshot = NetworkTelemetrySnapshot(

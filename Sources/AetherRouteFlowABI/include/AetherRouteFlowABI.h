@@ -203,6 +203,25 @@ typedef struct aetherroute_flow_abi_v6 {
 
 int32_t aetherroute_flow_abi_load_v6(aetherroute_flow_abi_v6_t *output);
 
+/*
+ * V7 (1.5.1) adds the "ART4" telemetry snapshot: each traffic total carries
+ * the incarnation of its (source app, proxy chain) pair, so a pair the engine
+ * forgot and later saw again is neither lost nor counted twice.
+ */
+typedef struct aetherroute_flow_abi_v7 {
+    uint32_t struct_size;
+    aetherroute_flow_abi_v6_t v6;
+    int32_t (*telemetry_snapshot_v4)(
+        void *,
+        uint32_t,
+        uint8_t *,
+        size_t,
+        size_t *
+    );
+} aetherroute_flow_abi_v7_t;
+
+int32_t aetherroute_flow_abi_load_v7(aetherroute_flow_abi_v7_t *output);
+
 #ifdef __cplusplus
 }
 #endif

@@ -51,5 +51,20 @@ int main(void) {
     }
     aetherroute_flow_abi_v6_t mismatched_v6 = {0};
     mismatched_v6.struct_size = (uint32_t)sizeof(v5);
-    return aetherroute_flow_abi_load_v6(&mismatched_v6) == 0 ? 0 : 11;
+    if (aetherroute_flow_abi_load_v6(&mismatched_v6) != 0) {
+        return 11;
+    }
+    aetherroute_flow_abi_v7_t v7 = {0};
+    v7.struct_size = (uint32_t)sizeof(v7);
+    if (aetherroute_flow_abi_load_v7(&v7) != 1) {
+        return 12;
+    }
+    if (v7.v6.telemetry_snapshot_v3 == NULL
+        || v7.v6.close_connections_v1 == NULL
+        || v7.telemetry_snapshot_v4 == NULL) {
+        return 13;
+    }
+    aetherroute_flow_abi_v7_t mismatched_v7 = {0};
+    mismatched_v7.struct_size = (uint32_t)sizeof(v6);
+    return aetherroute_flow_abi_load_v7(&mismatched_v7) == 0 ? 0 : 14;
 }
