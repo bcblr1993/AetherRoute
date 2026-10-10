@@ -4,6 +4,30 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-10-10
+
+The first run is now a guided three-page setup: privacy commitments, network permissions with each engine's state on its own row, and a final page confirming that everything is ready.
+
+### Added
+
+- First run: three pages (privacy commitments, network permissions, all set), each with an illustration, page dots and the main action pinned at the bottom.
+- Network permissions: Transparent Proxy and TUN each have a row. Allow grants it right on the row; a granted engine shows a green check, and opening System Settings, retrying or restarting is offered on the same row when needed.
+- All set: once both engines are granted, a last page sums up the privacy commitments and both engines, and Start Using AetherRoute opens the main window. An engine this Mac cannot use is noted there; the other one still works.
+
+### Changed
+
+- In the smallest window the page scrolls beneath the main action instead of pushing it out of the window.
+- The sheet asking to grant a permission again after it was withdrawn uses the same design, without the page dots or the last page.
+- Update notes in the in-app update window are grouped by kind (new, fixed, improved) and styled.
+
+### Verified
+
+- Local regression suites, `./scripts/test.sh` (including the UI design-token guards) and all five protocol interop gates (48 cases, 26 certificate rejections) passed.
+- Tart VM matrix (tun / transparent × rule / global / direct) and the Mac mini remote gate passed.
+- On the Mac mini with the notarized build 2026101002, in both TUN and transparent mode: automatic restore on launch, idle reuse, 2 MiB upload, the connection intent kept after a quit while connected, and restore again on the next launch.
+- UI suite on macOS 27: 48 passed, 0 failed (3 opt-in tests skipped); new tests cover each first-run page in both languages and appearances, the consent in the smallest window, and finishing on the last page.
+- 5,000-node import: 0.366 s and 4.33 MB peak RSS growth (1.4.2: 0.346 s, 4.49 MB).
+
 ## [1.4.2] - 2026-10-10
 
 Fixes layouts that overflowed the narrowest window and repairs five UI tests that had failed since 1.3.3.

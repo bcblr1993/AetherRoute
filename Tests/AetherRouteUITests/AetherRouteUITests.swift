@@ -1940,7 +1940,6 @@ final class AetherRouteUITests: XCTestCase {
                     let consent = app.buttons["privacy-consent-button"]
                     XCTAssertTrue(consent.waitForExistence(timeout: 5))
                     XCTAssertTrue(mainProductWindow(in: app).frame.contains(consent.frame))
-                    XCTAssertTrue(consent.isHittable)
                     XCTAssertEqual(
                         app.descendants(matching: .any)["onboarding-page-dots"].value as? String,
                         language == "en" ? "Page 1 of 3" : "第 1 页，共 3 页"
@@ -1950,6 +1949,11 @@ final class AetherRouteUITests: XCTestCase {
                     attachment.lifetime = .keepAlways
                     add(attachment)
                     try auditProductAccessibility(in: app)
+                    // The page scrolls beneath the action bar, so XCUITest's
+                    // isHittable reports the row behind it; a real click at
+                    // the button still lands on the button.
+                    consent.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+                    XCTAssertTrue(app.buttons["primary-navigation-overview"].waitForExistence(timeout: 3))
                 }()
             }
         }
