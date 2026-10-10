@@ -1926,6 +1926,107 @@ final class AetherRouteUITests: XCTestCase {
         }
     }
 
+    /// First-run page 1 in the smallest window: the consent stays in reach
+    /// above the commitments, and the dots show the first of three pages.
+    func testPrivacyPageKeepsConsentInReachAcrossLanguagesAndAppearances() throws {
+        for language in ["en", "zh-Hans"] {
+            for appearance in ["light", "dark"] {
+                try { () throws in
+                    let app = launchReviewApp(
+                        appearance: appearance, state: "disconnected", privacyPending: true,
+                        language: language, windowSize: "780x560"
+                    )
+                    defer { app.terminate() }
+                    let consent = app.buttons["privacy-consent-button"]
+                    XCTAssertTrue(consent.waitForExistence(timeout: 5))
+                    XCTAssertTrue(mainProductWindow(in: app).frame.contains(consent.frame))
+                    XCTAssertTrue(consent.isHittable)
+                    XCTAssertEqual(
+                        app.descendants(matching: .any)["onboarding-page-dots"].value as? String,
+                        language == "en" ? "Page 1 of 3" : "第 1 页，共 3 页"
+                    )
+                    let attachment = XCTAttachment(screenshot: mainProductWindow(in: app).screenshot())
+                    attachment.name = "privacy-page-\(language)-\(appearance)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                    try auditProductAccessibility(in: app)
+                }()
+            }
+        }
+    }
+
+    /// First-run pages 2 and 3: each engine's state sits on its row, the
+    /// dots say where the first run is, and "Continue" leads to the final
+    /// page before the main window opens.
+    func testNetworkSetupPagesShowEachStateAndFinishOnThePageAfter() throws {
+        for language in ["en", "zh-Hans"] {
+            for appearance in ["light", "dark"] {
+                let english = language == "en"
+                let launch = { (scenario: String) in
+                    self.launchReviewApp(
+                        appearance: appearance, state: "disconnected",
+                        language: language, windowSize: "780x560", networkSetup: scenario
+                    )
+                }
+                // Not set up: each engine offers Allow; page 2 of 3.
+                try { () throws in
+                    let app = launch("pending")
+                    defer { app.terminate() }
+                    XCTAssertTrue(app.descendants(matching: .any)["network-setup"].waitForExistence(timeout: 5))
+                    XCTAssertTrue(app.buttons["network-setup-allow-transparent"].exists)
+                    XCTAssertTrue(app.buttons["network-setup-allow-tun"].exists)
+                    let dots = app.descendants(matching: .any)["onboarding-page-dots"]
+                    XCTAssertTrue(dots.exists)
+                    // Read as text: macOS reports a static text's words as its value.
+                    XCTAssertEqual(dots.value as? String, english ? "Page 2 of 3" : "第 2 页，共 3 页")
+                    XCTAssertTrue(app.buttons["network-setup-primary"].isEnabled)
+                    let attachment = XCTAttachment(screenshot: mainProductWindow(in: app).screenshot())
+                    attachment.name = "network-setup-pending-\(language)-\(appearance)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                    try auditProductAccessibility(in: app)
+                }()
+                // Waiting for the switch in System Settings, and a failure.
+                try { () throws in
+                    let app = launch("waiting")
+                    defer { app.terminate() }
+                    XCTAssertTrue(app.buttons["network-setup-open-settings-tun"].waitForExistence(timeout: 5))
+                    XCTAssertTrue(app.descendants(matching: .any)["onboarding-row-network-setup-transparent-granted"].exists)
+                }()
+                try { () throws in
+                    let app = launch("failed")
+                    defer { app.terminate() }
+                    XCTAssertTrue(app.buttons["network-setup-retry-tun"].waitForExistence(timeout: 5))
+                }()
+                // Everything granted: Continue shows page 3, which opens the
+                // main window.
+                try { () throws in
+                    let app = launch("done")
+                    defer { app.terminate() }
+                    let primary = app.buttons["network-setup-primary"]
+                    XCTAssertTrue(primary.waitForExistence(timeout: 5))
+                    primary.click()
+                    let start = app.buttons["onboarding-start-using"]
+                    XCTAssertTrue(start.waitForExistence(timeout: 3))
+                    for row in ["completion-privacy", "completion-transparent", "completion-tun"] {
+                        XCTAssertTrue(app.descendants(matching: .any)["onboarding-row-\(row)-granted"].exists, row)
+                    }
+                    XCTAssertEqual(
+                        app.descendants(matching: .any)["onboarding-page-dots"].value as? String,
+                        english ? "Page 3 of 3" : "第 3 页，共 3 页"
+                    )
+                    let attachment = XCTAttachment(screenshot: mainProductWindow(in: app).screenshot())
+                    attachment.name = "network-setup-done-\(language)-\(appearance)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                    try auditProductAccessibility(in: app)
+                    start.click()
+                    XCTAssertTrue(app.buttons["primary-navigation-overview"].waitForExistence(timeout: 5))
+                }()
+            }
+        }
+    }
+
     func testShareLinkImportRejectsInvalidTextAndCreatesEditableProfile() {
         for language in ["en", "zh-Hans"] {
             for appearance in ["light", "dark"] {
@@ -4092,10 +4193,14 @@ final class AetherRouteUITests: XCTestCase {
         invalidConnectionTimestamps: Bool = false,
         responsivenessOutput: String? = nil,
         section: String? = nil,
-        reviewProfile: String? = nil
+        reviewProfile: String? = nil,
+        networkSetup: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["AETHERROUTE_UI_REVIEW"] = state
+        if let networkSetup {
+            app.launchEnvironment["AETHERROUTE_UI_REVIEW_SETUP"] = networkSetup
+        }
         app.launchEnvironment["AETHERROUTE_UI_REVIEW_APPEARANCE"] = appearance
         if let section { app.launchEnvironment["AETHERROUTE_UI_REVIEW_SECTION"] = section }
         app.launchEnvironment["AETHERROUTE_UI_REVIEW_REDUCE_MOTION"] =

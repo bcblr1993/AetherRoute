@@ -205,6 +205,12 @@ enum AetherVisual {
     /// A large sheet with a sidebar and a detail pane (licenses).
     static let splitSheetMinWidth: CGFloat = 760
     static let onboardingTopPadding = s6 + s5
+    /// First-run pages: the card of what is granted, its row hairline inset
+    /// (past the leading icon), the primary button and the illustration band.
+    static let onboardingCardWidth: CGFloat = 520
+    static let onboardingRowDividerInset = s4 + rowTileSize + s3
+    static let onboardingButtonWidth: CGFloat = 240
+    static let onboardingIllustrationHeight: CGFloat = 128
     /// Distance from the window top to floating overlays (command palette).
     static let overlayTopInset = s6 * 3
     static let tableContentIndent = s6 * 3
