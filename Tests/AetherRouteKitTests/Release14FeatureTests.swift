@@ -470,14 +470,26 @@ final class TrafficStatisticsTests: XCTestCase {
         let url = directory.appendingPathComponent("TrafficStatistics.v1.sealed")
         let keys = InMemoryProfileKeyStore()
         let store = TrafficStatisticsStore(fileURL: url, keyStore: keys)
+        // Markers long enough that random ciphertext cannot contain them by
+        // chance: a two-byte name ("HK") matched about once in 300 runs.
+        let node = "Hong Kong Sealed Outlet"
         var ledger = TrafficStatisticsLedger()
-        ledger.add(sample(), day: "2026-09-01")
+        ledger.add(
+            TrafficSampleAttribution(
+                total: TrafficVolume(upload: 1, download: 2),
+                apps: ["com.example.sealed-app": TrafficVolume(upload: 1, download: 0)],
+                appNames: ["com.example.sealed-app": "Sealed App"],
+                nodes: [node: TrafficVolume(upload: 0, download: 2)]
+            ),
+            day: "2026-09-01"
+        )
 
         try store.save(ledger)
         XCTAssertEqual(store.load(), ledger)
         let onDisk = try Data(contentsOf: url)
         XCTAssertNil(onDisk.range(of: Data("2026-09-01".utf8)))
-        XCTAssertNil(onDisk.range(of: Data("HK".utf8)))
+        XCTAssertNil(onDisk.range(of: Data(node.utf8)))
+        XCTAssertNil(onDisk.range(of: Data("com.example.sealed-app".utf8)))
 
         // Without the key the ledger reads as empty instead of failing.
         let stranger = TrafficStatisticsStore(fileURL: url, keyStore: InMemoryProfileKeyStore())
