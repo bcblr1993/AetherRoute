@@ -99,7 +99,12 @@ rsync -a --delete -e "ssh $SSH_OPTIONS" "$EXPORT/" "$REMOTE:$REMOTE_DIR/Products
 XCTESTRUN=$(cd "$EXPORT" && ls ./*.xctestrun | head -1 | sed 's|^\./||')
 echo "==> Running in the VM ($XCTESTRUN)"
 only=
-[ -z "$ONLY_TEST" ] || only="-only-testing:$ONLY_TEST"
+# A comma-separated list runs several tests in one pass.
+if [ -n "$ONLY_TEST" ]; then
+  for test_id in $(printf '%s' "$ONLY_TEST" | tr ',' ' '); do
+    only="$only -only-testing:$test_id"
+  done
+fi
 status=0
 vm "cd '$REMOTE_DIR' && \
   TEST_RUNNER_AETHERROUTE_UI_TEST_ISOLATED_HOME='$REMOTE_DIR/Home' \

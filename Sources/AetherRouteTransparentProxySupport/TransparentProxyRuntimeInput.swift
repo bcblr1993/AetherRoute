@@ -123,7 +123,8 @@ public enum TransparentProxyRuntimeInputLoader {
             throw error
         }
         TransparentRuntimeInputLog.logger.info("stage=loadValidatedProfile success")
-        guard let profile = activeProfile.yaml.data(using: .utf8) else {
+        // Restarting without the app: build the same groups it would.
+        guard let profile = activeProfile.runtimeYAML.data(using: .utf8) else {
             TransparentRuntimeInputLog.logger.error("stage=encodeProfile failed")
             throw TransparentProxyRuntimeInputError.profileEncodingFailed
         }

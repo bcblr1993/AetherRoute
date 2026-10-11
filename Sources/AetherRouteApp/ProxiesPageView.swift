@@ -7,6 +7,9 @@ import SwiftUI
 struct ProxiesView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var selectedGroupId: Int?
+    @State private var showsNewGroup = false
+    @State private var showsRegionGroups = false
+    @State private var showsHiddenNodes = false
 
     var body: some View {
         Group {
@@ -28,6 +31,17 @@ struct ProxiesView: View {
             }
         }
         .accessibilityIdentifier("proxies-page")
+#if DEBUG
+        .task {
+            // Isolated screenshot review only: open one sheet on launch.
+            switch ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_SHEET"] {
+            case "new-group": showsNewGroup = true
+            case "region-groups": showsRegionGroups = true
+            case "hidden-nodes": showsHiddenNodes = true
+            default: break
+            }
+        }
+#endif
     }
 
     private func content(summary: ProfileConfigurationSummary) -> some View {
@@ -47,7 +61,7 @@ struct ProxiesView: View {
     ) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
-                AetherPageHeader(.proxies)
+                AetherPageHeader(.proxies) { overrideActions(summary: summary) }
 
                 if !summary.proxyGroups.isEmpty {
                     if summary.proxyGroups.count > 1, isWideGroupLayout {
@@ -89,6 +103,55 @@ struct ProxiesView: View {
             .accessibilityLabel(AppLocalization.string("Proxy configuration"))
             .accessibilityIdentifier("proxies-page-content")
         }
+    }
+
+    /// New groups and hidden nodes change only this app's view of the
+    /// profile (1.7.0); the subscription is never edited.
+    @ViewBuilder
+    private func overrideActions(summary: ProfileConfigurationSummary) -> some View {
+        let catchAll = ProxyConnectionReadinessPolicy.groupsToVerify(summary: summary)
+            .first { tunnel.customProxyGroup(named: $0.name) == nil }?.name
+        Button {
+            showsNewGroup = true
+        } label: {
+            Label(AppLocalization.string("New Group"), systemImage: "plus")
+        }
+        .labelStyle(.titleAndIcon)
+        .aetherButton(prominent: true)
+        .disabled(!canEditOverrides)
+        .accessibilityIdentifier("proxies-new-group")
+        .sheet(isPresented: $showsNewGroup) {
+            CustomProxyGroupSheet(defaultParent: catchAll)
+        }
+        Menu {
+            Button(AppLocalization.string("Groups by Region…"), systemImage: "globe.asia.australia") {
+                showsRegionGroups = true
+            }
+            .accessibilityIdentifier("proxies-region-groups")
+            Button(AppLocalization.string("Hide Nodes…"), systemImage: "eye.slash") {
+                showsHiddenNodes = true
+            }
+            .accessibilityIdentifier("proxies-hidden-nodes")
+        } label: {
+            Label(AppLocalization.string("More"), systemImage: "ellipsis.circle")
+        }
+        .menuIndicator(.hidden)
+        .aetherButton()
+        .fixedSize()
+        .disabled(!canEditOverrides)
+        .accessibilityIdentifier("proxies-more-menu")
+        .sheet(isPresented: $showsRegionGroups) {
+            RegionGroupsSheet(defaultParent: catchAll)
+        }
+        .sheet(isPresented: $showsHiddenNodes) {
+            HiddenNodesSheet()
+        }
+    }
+
+    /// Overrides can change while connected (the running profile reloads),
+    /// but not in the middle of a connect or another profile operation.
+    private var canEditOverrides: Bool {
+        !tunnel.isTransitioning && !tunnel.isUpdatingProfiles && !tunnel.isRefreshingSubscription
     }
 
     nonisolated private static let wideGroupLayoutWidth: CGFloat = 720
@@ -286,6 +349,7 @@ private struct ActiveProxyGroupView: View {
     /// moment instead of keeping a permanent caption on the card.
     @State private var showsNextConnectionNote = false
     @State private var showsSwitchHistory = false
+    @State private var editsCustomGroup = false
     let group: ProxyGroupConfigurationSummary
     let protocols: [String: String]
 
@@ -349,10 +413,21 @@ private struct ActiveProxyGroupView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: AetherVisual.s2) {
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                Text(group.name)
-                    .font(.title3.weight(.bold))
-                    .lineLimit(1)
-                    .accessibilityIdentifier("proxy-active-group-name")
+                HStack(spacing: AetherVisual.s2) {
+                    Text(group.name)
+                        .font(.title3.weight(.bold))
+                        .lineLimit(1)
+                        .accessibilityIdentifier("proxy-active-group-name")
+                    if customGroup != nil {
+                        Text(AppLocalization.string("Custom"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AetherVisual.secondaryText)
+                            .padding(.horizontal, AetherVisual.s1)
+                            .padding(.vertical, AetherVisual.sMicro)
+                            .background(AetherVisual.neutralFill, in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+                            .accessibilityIdentifier("proxy-group-custom-badge")
+                    }
+                }
                 currentNodeLine
                 if showsNextConnectionNote {
                     Label(
@@ -365,6 +440,21 @@ private struct ActiveProxyGroupView: View {
                 }
             }
             Spacer(minLength: AetherVisual.s2)
+            if let customGroup {
+                Button {
+                    editsCustomGroup = true
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .aetherButton()
+                .controlSize(.small)
+                .help(AppLocalization.string("Edit group"))
+                .accessibilityLabel(AppLocalization.string("Edit group"))
+                .accessibilityIdentifier("proxy-edit-custom-group")
+                .sheet(isPresented: $editsCustomGroup) {
+                    CustomProxyGroupSheet(initial: customGroup)
+                }
+            }
             if selectionMode.switchesAutomatically {
                 switchHistoryButton
             }
@@ -603,6 +693,10 @@ private struct ActiveProxyGroupView: View {
 
     private var selectionMode: ProxySelectionMode {
         tunnel.proxySelectionMode(for: group.name)
+    }
+
+    private var customGroup: CustomProxyGroup? {
+        tunnel.customProxyGroup(named: group.name)
     }
 
     private var preferredMember: String? {

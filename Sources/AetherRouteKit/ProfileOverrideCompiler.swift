@@ -104,6 +104,15 @@ public enum ProfileOverrideCompiler {
         )
     }
 
+    /// Every node the profile defines, in order (no 500-item display cap).
+    public static func nodeNames(in yaml: String) -> [String] {
+        if yaml.first(where: { !$0.isWhitespace }) == "{" {
+            let root = (try? JSONSerialization.jsonObject(with: Data(yaml.utf8))) as? [String: Any]
+            return (root?["proxies"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+        }
+        return YAMLDocument(yaml).nodeNames
+    }
+
     // MARK: - Plan
 
     /// What the override does to this profile, independent of its syntax.

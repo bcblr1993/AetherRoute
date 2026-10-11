@@ -685,7 +685,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 let resourceStore = RoutingResourceStore(applicationSupportDirectory: store.directoryURL)
                 let resources = (try? resourceStore.launchResourceSnapshot(for: activeProfile.yaml)) ?? [:]
                 snapshot = try ProviderLaunchSnapshot(
-                    profileYAML: activeProfile.yaml,
+                    profileYAML: activeProfile.runtimeYAML,
                     routingMode: routingMode,
                     bypassPolicy: (try? BypassPolicyStore.applicationGroup().load()) ?? .empty,
                     dnsPolicy: .inherited,
@@ -935,6 +935,10 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             ("172.16.0.0", 12),
             ("192.168.0.0", 16),
             ("169.254.0.0", 16),
+            // Tailscale and other CGNAT overlays (1.7.0): their interface
+            // routes these addresses, and sending them through a node would
+            // depend on a DIRECT rule existing. fd7a::/48 is inside fc00::/7.
+            ("100.64.0.0", 10),
         ]
         for (base, prefix) in infrastructureIPv4Exclusions {
             if let address = Network.IPv4Address(base) {

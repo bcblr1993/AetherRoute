@@ -657,7 +657,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 let resourceStore = RoutingResourceStore(applicationSupportDirectory: store.directoryURL)
                 let resources = (try? resourceStore.launchResourceSnapshot(for: activeProfile.yaml)) ?? [:]
                 snapshot = try ProviderLaunchSnapshot(
-                    profileYAML: activeProfile.yaml,
+                    profileYAML: activeProfile.runtimeYAML,
                     routingMode: routingMode,
                     bypassPolicy: (try? BypassPolicyStore.applicationGroup().load()) ?? .empty,
                     dnsPolicy: .inherited,

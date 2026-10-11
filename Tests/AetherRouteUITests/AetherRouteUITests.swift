@@ -177,7 +177,7 @@ final class AetherRouteUITests: XCTestCase {
     /// switches, and picking the preferred node again returns to it.
     func testFailoverModeShowsBackupPreferredAndHistory() throws {
         for item in [
-            (language: "en", appearance: "light", window: "1100x760"),
+            (language: "en", appearance: "light", window: "1000x740"),
             (language: "zh-Hans", appearance: "dark", window: "820x640"),
         ] {
             let app = launchReviewApp(
@@ -263,6 +263,85 @@ final class AetherRouteUITests: XCTestCase {
         expectation(for: noBadge, evaluatedWith: app.descendants(matching: .any)["proxy-node-badge-preferred"])
         waitForExpectations(timeout: 3)
         XCTAssertFalse(app.buttons["proxy-switch-history-button"].exists)
+    }
+
+    /// Custom groups (1.7.0): created from regions with a live preview,
+    /// listed with a Custom badge, edited and deleted again.
+    func testCustomGroupCreateEditAndDelete() throws {
+        let app = launchReviewApp(appearance: "light", windowSize: "1000x740", section: "proxies", reviewProfile: "showcase")
+        defer { app.terminate() }
+        let newGroup = app.buttons["proxies-new-group"]
+        XCTAssertTrue(newGroup.waitForExistence(timeout: 5))
+        newGroup.click()
+
+        let sheet = app.descendants(matching: .any)["custom-group-sheet"]
+        XCTAssertTrue(sheet.waitForExistence(timeout: 3))
+        let save = app.buttons["custom-group-save"]
+        XCTAssertFalse(save.isEnabled, "An empty group can be saved.")
+        let name = app.textFields["custom-group-name-field"]
+        name.click()
+        name.typeText("HK Auto")
+        app.buttons["region-chip-HK"].click()
+        let count = app.staticTexts["override-preview-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 2))
+        XCTAssertTrue((count.value as? String ?? count.label).contains("2"), "Preview: \(count.label)")
+        try auditProductAccessibility(in: app)
+        XCTAssertTrue(save.isEnabled)
+        save.click()
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: 3))
+
+        let group = app.buttons["proxy-group-HK Auto"]
+        XCTAssertTrue(group.waitForExistence(timeout: 3), "The new group is not listed.")
+        group.click()
+        XCTAssertTrue(app.descendants(matching: .any)["proxy-group-custom-badge"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["Hong Kong 01"].exists)
+        XCTAssertFalse(app.buttons["Tokyo 01"].exists)
+
+        // Listed first in the main group.
+        app.buttons["proxy-group-Balanced"].click()
+        XCTAssertTrue(app.buttons["HK Auto"].waitForExistence(timeout: 2), "Not listed in Balanced.")
+
+        app.buttons["proxy-group-HK Auto"].click()
+        let edit = app.buttons["proxy-edit-custom-group"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 2))
+        edit.click()
+        XCTAssertTrue(sheet.waitForExistence(timeout: 3))
+        app.buttons["custom-group-delete"].click()
+        let confirm = app.buttons["custom-group-confirm-delete"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 2))
+        confirm.click()
+        XCTAssertTrue(group.waitForNonExistence(timeout: 3), "The deleted group is still listed.")
+    }
+
+    /// Groups by region and hidden nodes, from the Proxies page's More menu.
+    func testRegionGroupsAndHiddenNodes() {
+        let app = launchReviewApp(appearance: "dark", language: "zh-Hans", windowSize: "1000x740", section: "proxies", reviewProfile: "showcase")
+        defer { app.terminate() }
+        let more = app.descendants(matching: .any)["proxies-more-menu"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        more.click()
+        app.menuItems["proxies-region-groups"].click()
+        let create = app.buttons["region-groups-create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["region-group-HK"].exists)
+        create.click()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'proxy-group-' AND identifier CONTAINS '香港'")).firstMatch.waitForExistence(timeout: 3), "No Hong Kong group.")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'proxy-group-' AND identifier CONTAINS '日本'")).firstMatch.exists)
+
+        more.click()
+        app.menuItems["proxies-hidden-nodes"].click()
+        let field = app.textFields["hidden-nodes-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.click()
+        field.typeText("Tokyo\r")
+        let count = app.staticTexts["override-preview-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 2))
+        XCTAssertTrue((count.value as? String ?? count.label).contains("2"), "Hidden: \(count.label)")
+        app.buttons["hidden-nodes-save"].click()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 3))
+        app.buttons["proxy-group-Balanced"].click()
+        XCTAssertTrue(app.buttons["Hong Kong 01"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["Tokyo 01"].exists, "A hidden node is still listed.")
     }
 
     /// The View and More menus are native Menus the accessibility audit
@@ -2905,6 +2984,8 @@ final class AetherRouteUITests: XCTestCase {
                    "dns-runtime-resolution-mode",
                    "dns-runtime-ipv6",
                    "dns-runtime-respect-rules",
+                   "custom-group-parent",
+                   "region-groups-parent",
                ].contains(element.identifier),
                element.isHittable {
                 // The native SwiftUI menu Picker is clicked successfully by
@@ -2928,14 +3009,37 @@ final class AetherRouteUITests: XCTestCase {
             if issue.auditType == .action,
                let element = issue.element,
                element.elementType == .menuButton,
-               (["profiles-more-menu", "profiles-add-menu", "rules-action-filter", "proxy-sort-picker", "add-application-rule", "connections-view-menu", "connections-more-menu"].contains(element.identifier)
+               (["profiles-more-menu", "profiles-add-menu", "rules-action-filter", "proxy-sort-picker", "add-application-rule", "connections-view-menu", "connections-more-menu", "proxies-more-menu"].contains(element.identifier)
                     || element.identifier.hasPrefix("profile-actions-")),
                element.isHittable {
                 // SwiftUI's native Menu is exercised by the profile-library
                 // UI test, but Xcode 26 omits the equivalent AppKit press
                 // action from its audit metadata. Rules › Add App (1.3.0) and
                 // the Connections View and More menus (1.5.2) are the same
-                // native Menu; testConnectionsMenusOpen presses both.
+                // native Menu; testConnectionsMenusOpen presses both, and
+                // testRegionGroupsAndHiddenNodes opens the Proxies More menu
+                // (1.7.0).
+                return true
+            }
+            let mainSheet = mainWindow.sheets.firstMatch
+            if !settingsWindow.exists, mainSheet.exists,
+               let element = issue.element,
+               !mainSheet.frame.insetBy(dx: -1, dy: -1).contains(element.frame)
+                || !self.isDescendant(element, ofVisibleSettingsWindow: mainSheet) {
+                // A sheet on the main window dims the page behind it; Xcode
+                // still samples that covered, inactive text for contrast.
+                // Everything inside the sheet stays audited.
+                return true
+            }
+            if !settingsWindow.exists, mainSheet.exists,
+               let element = issue.element,
+               element.elementType == .group,
+               element.identifier.isEmpty,
+               element.label.isEmpty,
+               abs(element.frame.width - mainSheet.frame.width) < 1,
+               abs(element.frame.height - mainSheet.frame.height) < 1 {
+                // The sheet's own anonymous hosting group, as for Settings
+                // sheets above; its controls are audited one by one.
                 return true
             }
             if issue.auditType == .sufficientElementDescription,

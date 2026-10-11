@@ -45,10 +45,12 @@ extension TunnelManager {
         }
         applyProxySelectionModes(modes)
         preferredProxyMembers = [:]
+        // Custom groups (1.7.0) keep their mode in the profile's override.
+        applyCustomGroupModes()
         failoverRecoveryTracker.resetAll()
         failoverRecoveryScannedAt = [:]
         guard !isUIReviewMode, let profileYAML,
-              modes.values.contains(.failover) else { return }
+              proxySelectionModes.values.contains(.failover) else { return }
         Task { await loadPreferredProxyMembers(profileYAML: profileYAML) }
     }
 
@@ -126,7 +128,12 @@ extension TunnelManager {
 
         let previous = proxySelectionMode(for: groupName)
         guard previous != mode else { return }
-        persistProxySelectionMode(mode, group: groupName, profileYAML: yaml)
+        let isCustom = customProxyGroup(named: groupName) != nil
+        if isCustom {
+            guard await persistCustomGroupMode(mode, group: groupName) else { return }
+        } else {
+            persistProxySelectionMode(mode, group: groupName, profileYAML: yaml)
+        }
         var modes = proxySelectionModes
         modes[groupName] = mode == .manual ? nil : mode
         applyProxySelectionModes(modes)
@@ -173,7 +180,11 @@ extension TunnelManager {
             )
             automaticReadinessGroupNames.insert(groupName)
         } catch {
-            persistProxySelectionMode(previous, group: groupName, profileYAML: yaml)
+            if isCustom {
+                _ = await persistCustomGroupMode(previous, group: groupName)
+            } else {
+                persistProxySelectionMode(previous, group: groupName, profileYAML: yaml)
+            }
             var reverted = proxySelectionModes
             reverted[groupName] = previous == .manual ? nil : previous
             applyProxySelectionModes(reverted)

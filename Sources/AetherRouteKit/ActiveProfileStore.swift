@@ -32,6 +32,14 @@ public struct ActiveProfile: Codable, Equatable, Sendable {
         self.overrides = overrides?.isEmpty == true ? nil : overrides
     }
 
+    /// The profile as it runs: its text with the overrides applied. Node
+    /// choices and other settings stay bound to `yaml`, the text the
+    /// provider sent, so changing an override never loses them.
+    public var runtimeYAML: String {
+        guard let overrides else { return yaml }
+        return ProfileOverrideCompiler.apply(overrides, to: yaml).yaml
+    }
+
     /// The same profile with other overrides (nil clears them).
     public func withOverrides(_ overrides: ProfileOverride?) -> ActiveProfile {
         ActiveProfile(

@@ -57,6 +57,16 @@ enum AppLocalization {
         )
     }
 
+    /// A region's name in the app's language ("香港", "Hong Kong"). Node
+    /// names use UK for the United Kingdom.
+    static func regionName(_ code: String) -> String {
+        let identifier = lock.withLock { localeIdentifier }
+        let locale = identifier.map { Locale(identifier: $0) }
+            ?? .autoupdatingCurrent
+        let iso = code.uppercased() == "UK" ? "GB" : code.uppercased()
+        return locale.localizedString(forRegionCode: iso) ?? code
+    }
+
     /// The one elapsed-time format in the app: the two largest units,
     /// abbreviated ("2小时11分钟", "2h 11m"), in the app's chosen language.
     /// Live timers pass `includesSeconds` so a short session still moves

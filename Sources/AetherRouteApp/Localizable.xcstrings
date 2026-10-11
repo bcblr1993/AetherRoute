@@ -14062,6 +14062,536 @@
           }
         }
       }
+    },
+    "%lld chosen": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已选 %lld 个"
+          }
+        }
+      }
+    },
+    "%lld nodes hidden": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已隐藏 %lld 个节点"
+          }
+        }
+      }
+    },
+    "%lld nodes match": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匹配到 %lld 个节点"
+          }
+        }
+      }
+    },
+    "A node or group in this profile already has this name.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此配置中已有同名的节点或分组。"
+          }
+        }
+      }
+    },
+    "Add a word, e.g. Expire": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加关键词，例如“到期”"
+          }
+        }
+      }
+    },
+    "Already exists": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已存在"
+          }
+        }
+      }
+    },
+    "Choose regions, keywords or nodes for the group.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请为分组选择地区、关键词或节点。"
+          }
+        }
+      }
+    },
+    "Choose…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择…"
+          }
+        }
+      }
+    },
+    "Create %lld groups": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建 %lld 个分组"
+          }
+        }
+      }
+    },
+    "Delete Group": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除分组"
+          }
+        }
+      }
+    },
+    "Delete the group %@?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除分组“%@”？"
+          }
+        }
+      }
+    },
+    "Edit group": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑分组"
+          }
+        }
+      }
+    },
+    "First": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最前"
+          }
+        }
+      }
+    },
+    "Found in this profile:": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此配置中出现："
+          }
+        }
+      }
+    },
+    "Groups by Region…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按地区生成分组…"
+          }
+        }
+      }
+    },
+    "Groups by region": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按地区生成分组"
+          }
+        }
+      }
+    },
+    "Groups that list it no longer do. The subscription itself is not changed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包含它的分组将不再列出它。订阅本身不会被修改。"
+          }
+        }
+      }
+    },
+    "Hide Nodes…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏节点…"
+          }
+        }
+      }
+    },
+    "Hide nodes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏节点"
+          }
+        }
+      }
+    },
+    "Keywords, separated by commas": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关键词，用逗号分隔"
+          }
+        }
+      }
+    },
+    "Last": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最后"
+          }
+        }
+      }
+    },
+    "Leave out names containing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "排除名称含有"
+          }
+        }
+      }
+    },
+    "Members follow the rules below, so nodes the subscription adds or removes join or leave on their own.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成员按下面的规则自动决定，订阅新增或下线节点时会自动加入或移出。"
+          }
+        }
+      }
+    },
+    "Name contains": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称包含"
+          }
+        }
+      }
+    },
+    "New Group": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建分组"
+          }
+        }
+      }
+    },
+    "New group": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建分组"
+          }
+        }
+      }
+    },
+    "No node is hidden.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有隐藏任何节点。"
+          }
+        }
+      }
+    },
+    "No node matches yet. The group is kept and uses a direct connection until one does.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时没有匹配的节点。分组会保留，在有节点匹配之前使用直连。"
+          }
+        }
+      }
+    },
+    "No node name contains these words.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有节点名称包含这些词。"
+          }
+        }
+      }
+    },
+    "No other group": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不加入其他分组"
+          }
+        }
+      }
+    },
+    "No regions found": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未识别到地区"
+          }
+        }
+      }
+    },
+    "No two nodes in this profile name the same region. Use New Group with keywords instead.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此配置中没有两个以上节点属于同一地区。可以用“新建分组”按关键词筛选。"
+          }
+        }
+      }
+    },
+    "Nodes to include": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包含的节点"
+          }
+        }
+      }
+    },
+    "Nodes whose names contain these words leave every group. The subscription itself is not changed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称含有这些词的节点会从所有分组中移除。订阅本身不会被修改。"
+          }
+        }
+      }
+    },
+    "One group for each region, kept up to date as the subscription changes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个地区一个分组，随订阅变化自动更新。"
+          }
+        }
+      }
+    },
+    "Picked nodes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手选节点"
+          }
+        }
+      }
+    },
+    "Position": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置"
+          }
+        }
+      }
+    },
+    "Preview": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预览"
+          }
+        }
+      }
+    },
+    "Regions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地区"
+          }
+        }
+      }
+    },
+    "Show in": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入到"
+          }
+        }
+      }
+    },
+    "e.g. Hong Kong Auto": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如：香港自动"
+          }
+        }
+      }
+    },
+    "e.g. game, 0.1x": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如：游戏, 0.1x"
+          }
+        }
+      }
+    },
+    "These customizations were saved by a newer version of AetherRoute.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些自定义设置来自更新版本的 AetherRoute。"
+          }
+        }
+      }
+    },
+    "A profile can have at most %lld custom groups.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个配置最多 %lld 个自定义分组。"
+          }
+        }
+      }
+    },
+    "Use at most %lld keywords.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多使用 %lld 个关键词。"
+          }
+        }
+      }
+    },
+    "Pick at most %lld nodes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多选择 %lld 个节点。"
+          }
+        }
+      }
+    },
+    "A keyword is too long or contains control characters.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关键词过长或包含控制字符。"
+          }
+        }
+      }
+    },
+    "Enter a name without quotes or backslashes that is not DIRECT, REJECT or GLOBAL.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入不含引号或反斜杠、且不是 DIRECT、REJECT、GLOBAL 的名称。"
+          }
+        }
+      }
+    },
+    "Another custom group is already named %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有名为“%@”的自定义分组。"
+          }
+        }
+      }
+    },
+    "Tailscale is running": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale 正在运行"
+          }
+        }
+      }
+    },
+    "Addresses in your tailnet go straight to Tailscale. HTTPS sites still follow your rules by name, even when Tailscale's DNS answers first.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tailnet 内的地址直接交给 Tailscale。即使 Tailscale 的 DNS 先应答，HTTPS 网站仍按域名走你的规则。"
+          }
+        }
+      }
+    },
+    "A Tailscale exit node is carrying this Mac's traffic. Turn it off while AetherRoute is connected, or the two will compete for every connection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale 出口节点正在承载这台 Mac 的流量。连接 AetherRoute 时请关闭出口节点，否则两者会争抢每一个连接。"
+          }
+        }
+      }
+    },
+    "Works alongside Tailscale: tailnet addresses go straight to Tailscale, and HTTPS sites follow your rules by name even when Tailscale's DNS answers first.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可与 Tailscale 共存：tailnet 地址直接交给 Tailscale；即使 Tailscale 的 DNS 先应答，HTTPS 网站也按域名走你的规则。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

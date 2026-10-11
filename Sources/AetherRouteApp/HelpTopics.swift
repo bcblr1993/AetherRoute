@@ -82,7 +82,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
                         AppLocalization.string("Can offer a local HTTP / SOCKS proxy (127.0.0.1:7890) for Terminal and developer tools."),
                         AppLocalization.string("DNS behaviour, such as Fake-IP, can be adjusted on the DNS page."),
                         AppLocalization.string("Bypass rules use IP ranges only, not domains."),
-                        AppLocalization.string("With other software that also uses a virtual interface, such as Tailscale, domain names may fail to resolve."),
+                        AppLocalization.string("Works alongside Tailscale: tailnet addresses go straight to Tailscale, and HTTPS sites follow your rules by name even when Tailscale's DNS answers first."),
                     ]
                 ),
                 Section(

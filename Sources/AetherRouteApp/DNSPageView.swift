@@ -4,6 +4,7 @@ import SwiftUI
 struct DNSView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var showsAdvancedDNS = false
+    @State private var tailscale = TailscalePresence.absent
 
     var body: some View {
         Group {
@@ -11,6 +12,9 @@ struct DNSView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
                         AetherPageHeader(.dns)
+                        if tailscale.isRunning {
+                            TailscaleCoexistenceNote(presence: tailscale)
+                        }
                         if usesAutomaticTUNDNS(summary.dns) {
 #if AETHERROUTE_INDEPENDENT
                             automaticTUNDNSCard(summary.dns)
@@ -42,6 +46,21 @@ struct DNSView: View {
             }
         }
         .accessibilityIdentifier("dns-page")
+        // Read when the page appears; reading interfaces is cheap.
+        .task { tailscale = Self.reviewTailscale ?? TailscalePresence.current() }
+    }
+
+    /// Screenshot review can show the note without Tailscale installed.
+    private static var reviewTailscale: TailscalePresence? {
+#if DEBUG
+        switch ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_TAILSCALE"] {
+        case "1": return TailscalePresence(isRunning: true, usesExitNode: false)
+        case "exit-node": return TailscalePresence(isRunning: true, usesExitNode: true)
+        default: return nil
+        }
+#else
+        return nil
+#endif
     }
 
     @ViewBuilder
@@ -839,5 +858,38 @@ private struct DNSCountLabel: View {
         Text(title)
             .foregroundStyle(.primary)
             .frame(minWidth: 80, alignment: .leading)
+    }
+}
+
+/// How AetherRoute shares the network with Tailscale (1.7.0).
+private struct TailscaleCoexistenceNote: View {
+    let presence: TailscalePresence
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            Label {
+                Text(AppLocalization.string("Tailscale is running"))
+                    .font(.headline)
+            } icon: {
+                Image(systemName: "point.3.filled.connected.trianglepath.dotted")
+                    .foregroundStyle(Color.accentColor)
+            }
+            Text(AppLocalization.string("Addresses in your tailnet go straight to Tailscale. HTTPS sites still follow your rules by name, even when Tailscale's DNS answers first."))
+                .font(.callout)
+                .foregroundStyle(AetherVisual.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            if presence.usesExitNode {
+                AetherInlineMessage(
+                    text: AppLocalization.string("A Tailscale exit node is carrying this Mac's traffic. Turn it off while AetherRoute is connected, or the two will compete for every connection."),
+                    kind: .warning,
+                    isCompact: true
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(AetherVisual.cardPadding)
+        .aetherPanel()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("dns-tailscale-note")
     }
 }

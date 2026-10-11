@@ -731,10 +731,11 @@ extension TunnelManager {
             throw ActiveProfileStoreError.noActiveProfile
         }
         let rawProfileYAML = activeProfile.yaml
+        let baseProfileYAML = activeProfile.runtimeYAML
         let remoteRules = await RuleProviderEngine.shared.compileActiveRules()
         let profileYAML = isDomesticOptimizationEnabled
-            ? DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML, customRules: customRules, remoteRules: remoteRules)
-            : (customRules.isEmpty && remoteRules.isEmpty ? rawProfileYAML : DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML, customRules: customRules, remoteRules: remoteRules))
+            ? DomesticRoutingOptimizer.optimizedProfile(for: baseProfileYAML, customRules: customRules, remoteRules: remoteRules)
+            : (customRules.isEmpty && remoteRules.isEmpty ? baseProfileYAML : DomesticRoutingOptimizer.optimizedProfile(for: baseProfileYAML, customRules: customRules, remoteRules: remoteRules))
 #if AETHERROUTE_QA_AUTOMATION
         if let appGroupDir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup)?
             .appendingPathComponent("Library/Application Support/AetherRoute", isDirectory: true) {
@@ -1168,8 +1169,8 @@ extension TunnelManager {
         activeProfile = projection.catalog.activeProfile?.profile
         if let active = projection.catalog.activeProfile?.profile, !customRules.isEmpty {
             let optimized = isDomesticOptimizationEnabled
-                ? DomesticRoutingOptimizer.optimizedProfile(for: active.yaml, customRules: customRules)
-                : DomesticRoutingOptimizer.optimizedProfile(for: active.yaml, customRules: customRules)
+                ? DomesticRoutingOptimizer.optimizedProfile(for: active.runtimeYAML, customRules: customRules)
+                : DomesticRoutingOptimizer.optimizedProfile(for: active.runtimeYAML, customRules: customRules)
             activeProfileSummary = ProfileConfigurationInspector.inspect(yaml: optimized, customRules: customRules)
         } else {
             activeProfileSummary = projection.summary
