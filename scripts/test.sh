@@ -176,4 +176,5 @@ AETHERROUTE_DERIVED_DATA_PATH="$DERIVED_DATA_PATH" "$ROOT/scripts/test_product_b
 "$ROOT/scripts/test_local_proxy.sh"
 "$ROOT/scripts/test_http_node_dial.sh"
 "$ROOT/scripts/test_manual_nodes.sh"
+"$ROOT/scripts/test_profile_override_cores.sh"
 "$ROOT/scripts/test_protocol_input_compatibility.sh"

@@ -10,13 +10,18 @@ public struct ActiveProfile: Codable, Equatable, Sendable {
     public let importedAt: Date
     public let subscription: ProfileSubscription?
     public let nativeNodes: [AetherNode]?
+    /// The person's changes to this profile (1.7.0). Stored with it, so
+    /// they survive subscription updates and travel with exports; an older
+    /// version ignores the field.
+    public let overrides: ProfileOverride?
 
     public init(
         name: String,
         yaml: String,
         importedAt: Date = .now,
         subscription: ProfileSubscription? = nil,
-        nativeNodes: [AetherNode]? = nil
+        nativeNodes: [AetherNode]? = nil,
+        overrides: ProfileOverride? = nil
     ) {
         self.formatVersion = Self.currentFormatVersion
         self.name = name
@@ -24,6 +29,19 @@ public struct ActiveProfile: Codable, Equatable, Sendable {
         self.importedAt = importedAt
         self.subscription = subscription
         self.nativeNodes = nativeNodes
+        self.overrides = overrides?.isEmpty == true ? nil : overrides
+    }
+
+    /// The same profile with other overrides (nil clears them).
+    public func withOverrides(_ overrides: ProfileOverride?) -> ActiveProfile {
+        ActiveProfile(
+            name: name,
+            yaml: yaml,
+            importedAt: importedAt,
+            subscription: subscription,
+            nativeNodes: nativeNodes,
+            overrides: overrides
+        )
     }
 }
 
@@ -82,6 +100,7 @@ public struct ActiveProfileStore: Sendable {
         suggestedName: String,
         importedAt: Date = .now,
         subscription: ProfileSubscription? = nil,
+        overrides: ProfileOverride? = nil,
         fileManager: FileManager = .default
     ) throws -> ActiveProfile {
         try rejectLegacyProfile(fileManager: fileManager)
@@ -96,7 +115,8 @@ public struct ActiveProfileStore: Sendable {
             name: cleanName.isEmpty ? "Imported profile" : cleanName,
             yaml: yaml,
             importedAt: importedAt,
-            subscription: subscription
+            subscription: subscription,
+            overrides: overrides
         )
 
         let key: Data

@@ -53,14 +53,20 @@ public enum ProfileSettingsMigration {
         selectionStore: ProxySelectionStore?,
         preferenceStore: ProxySelectionStore?,
         dnsStore: DNSRuntimePolicyStore?,
-        defaults: UserDefaults
+        defaults: UserDefaults,
+        overrides: ProfileOverride? = nil
     ) -> ProfileSettingsMigrationReport {
         var report = ProfileSettingsMigrationReport()
         guard oldYAML != newYAML else { return report }
 
-        let oldGroups = ProfileConfigurationInspector.inspect(yaml: oldYAML).proxyGroups
+        // Settings are stored under the profile's own text, but custom
+        // groups (1.7.0) exist only once overrides are applied; judge
+        // groups and nodes by the profile as it runs.
+        let oldEffective = ProfileOverrideCompiler.apply(overrides, to: oldYAML).yaml
+        let newEffective = ProfileOverrideCompiler.apply(overrides, to: newYAML).yaml
+        let oldGroups = ProfileConfigurationInspector.inspect(yaml: oldEffective).proxyGroups
         let newGroups = Dictionary(
-            ProfileConfigurationInspector.inspect(yaml: newYAML).proxyGroups
+            ProfileConfigurationInspector.inspect(yaml: newEffective).proxyGroups
                 .map { ($0.name, $0) },
             uniquingKeysWith: { first, _ in first }
         )
@@ -120,7 +126,8 @@ public enum ProfileSettingsMigration {
     public static func migrateInApplicationGroup(
         fromYAML oldYAML: String,
         toYAML newYAML: String,
-        defaults: UserDefaults
+        defaults: UserDefaults,
+        overrides: ProfileOverride? = nil
     ) -> ProfileSettingsMigrationReport {
         migrate(
             fromYAML: oldYAML,
@@ -128,7 +135,8 @@ public enum ProfileSettingsMigration {
             selectionStore: try? ProxySelectionStore.applicationGroup(kind: .selections),
             preferenceStore: try? ProxySelectionStore.applicationGroup(kind: .preferences),
             dnsStore: try? DNSRuntimePolicyStore.applicationGroup(),
-            defaults: defaults
+            defaults: defaults,
+            overrides: overrides
         )
     }
 

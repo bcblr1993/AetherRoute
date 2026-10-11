@@ -129,6 +129,28 @@ final class ProfileSettingsMigrationTests: XCTestCase {
         XCTAssertEqual(try selections.selections(forProfileYAML: yaml), ["Proxy": "HK 01"])
     }
 
+    func testCustomGroupSettingsFollowToo() throws {
+        let old = profile(nodes: ["HK 01", "HK 02", "Traffic 10GB"])
+        let new = profile(nodes: ["HK 01", "HK 02", "Traffic 9GB"])
+        let overrides = try ProfileOverride(groups: [
+            CustomProxyGroup(name: "Hong Kong", regions: ["HK"], mode: .failover, parentGroup: "Proxy"),
+        ]).validated()
+        let (selections, preferences, _) = stores()
+        try selections.mergeSelections(["Hong Kong": "HK 02"], profileYAML: old)
+        try preferences.mergeSelections(["Hong Kong": "HK 01"], profileYAML: old)
+
+        let report = ProfileSettingsMigration.migrate(
+            fromYAML: old, toYAML: new,
+            selectionStore: selections, preferenceStore: preferences, dnsStore: nil,
+            defaults: defaults, overrides: overrides
+        )
+
+        XCTAssertEqual(try selections.selections(forProfileYAML: new), ["Hong Kong": "HK 02"])
+        XCTAssertEqual(try preferences.selections(forProfileYAML: new), ["Hong Kong": "HK 01"])
+        XCTAssertEqual(report.selections, 1)
+        XCTAssertEqual(report.preferredNodes, 1)
+    }
+
     func testPreferenceKeysAreTheOnes160Wrote() {
         // 1.6.0 derived these in the app; moving them to the kit must not
         // change a single byte, or every saved mode would be lost.

@@ -498,6 +498,78 @@ final class ProfileCatalogStoreTests: XCTestCase {
         }
     }
 
+    /// Overrides (1.7.0) stay with the profile through every rebuild a
+    /// subscription update or rename makes, until they are set again.
+    func testOverridesSurviveReplaceAndRenameUntilCleared() throws {
+        try withStores { directory, activeStore, catalogStore in
+            let catalog = try catalogStore.addValidated(
+                data: profileData(name: "hk-node", secret: "one"),
+                suggestedName: "Provider",
+                importedAt: Date(timeIntervalSince1970: 1_800_000_000)
+            )
+            let id = try XCTUnwrap(catalog.activeProfileID)
+            let override = ProfileOverride(
+                groups: [CustomProxyGroup(name: "Hong Kong Picks", includeKeywords: ["hk"])],
+                hiddenNodeKeywords: ["Expired Marker"]
+            )
+            try catalogStore.setOverrides(id: id, overrides: override)
+            XCTAssertEqual(try activeStore.loadValidated().overrides, override)
+
+            // A subscription update rebuilds the profile without overrides.
+            let updated = try catalogStore.replace(
+                id: id,
+                with: ActiveProfile(
+                    name: "Provider",
+                    yaml: String(decoding: profileData(name: "hk-node-2", secret: "two"), as: UTF8.self)
+                )
+            )
+            XCTAssertEqual(updated.activeProfile?.profile.overrides, override)
+            XCTAssertEqual(try activeStore.loadValidated().overrides, override)
+            let renamed = try catalogStore.rename(id: id, to: "Renamed")
+            XCTAssertEqual(renamed.activeProfile?.profile.overrides, override)
+
+            // Stored encrypted with the rest of the profile.
+            let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            for file in files where !file.hasDirectoryPath {
+                let data = try Data(contentsOf: file)
+                XCTAssertNil(data.range(of: Data("Hong Kong Picks".utf8)), file.lastPathComponent)
+                XCTAssertNil(data.range(of: Data("Expired Marker".utf8)), file.lastPathComponent)
+            }
+
+            let cleared = try catalogStore.setOverrides(id: id, overrides: nil)
+            XCTAssertNil(cleared.activeProfile?.profile.overrides)
+            XCTAssertNil(try activeStore.loadValidated().overrides)
+            XCTAssertThrowsError(try catalogStore.setOverrides(
+                id: id,
+                overrides: ProfileOverride(groups: [CustomProxyGroup(name: "No source")])
+            ))
+        }
+    }
+
+    /// A profile saved by 1.6.0 (no overrides field) still decodes, and one
+    /// with overrides decodes in a version that does not know the field.
+    func testOverridesFieldIsOptionalBothWays() throws {
+        let old = #"{"formatVersion":1,"name":"A","yaml":"proxies: []","importedAt":0}"#
+        let decoded = try JSONDecoder().decode(ActiveProfile.self, from: Data(old.utf8))
+        XCTAssertNil(decoded.overrides)
+
+        struct OldActiveProfile: Decodable {
+            let formatVersion: Int
+            let name: String
+            let yaml: String
+        }
+        let withOverrides = ActiveProfile(
+            name: "B",
+            yaml: "proxies: []",
+            overrides: ProfileOverride(hiddenNodeKeywords: ["x"])
+        )
+        let data = try JSONEncoder().encode(withOverrides)
+        XCTAssertEqual(try JSONDecoder().decode(OldActiveProfile.self, from: data).name, "B")
+        XCTAssertEqual(try JSONDecoder().decode(ActiveProfile.self, from: data).overrides, withOverrides.overrides)
+        // An empty override is stored as none.
+        XCTAssertNil(ActiveProfile(name: "C", yaml: "proxies: []", overrides: ProfileOverride()).overrides)
+    }
+
     private func profileData(name: String, secret: String) -> Data {
         Data(
             """

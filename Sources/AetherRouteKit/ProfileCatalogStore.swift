@@ -243,6 +243,41 @@ public struct ProfileCatalogStore: Sendable {
             throw ProfileCatalogStoreError.profileNotFound
         }
 
+        // Every caller rebuilds the profile from its parts (a subscription
+        // update, a rename, a node edit); overrides it does not mention are
+        // kept. `setOverrides` is the one way to change or clear them.
+        let profile = profile.overrides == nil
+            ? profile.withOverrides(current.profiles[index].profile.overrides)
+            : profile
+        var profiles = current.profiles
+        profiles[index] = ManagedProfile(id: id, profile: profile)
+        let updated = ProfileCatalog(
+            activeProfileID: current.activeProfileID,
+            profiles: profiles
+        )
+        try commit(
+            updated,
+            previous: current,
+            mirrorProfile: current.activeProfileID == id ? profile : nil,
+            fileManager: fileManager
+        )
+        return updated
+    }
+
+    /// Replaces or clears a profile's overrides (1.7.0).
+    @discardableResult
+    public func setOverrides(
+        id: UUID,
+        overrides: ProfileOverride?,
+        fileManager: FileManager = .default
+    ) throws -> ProfileCatalog {
+        let validated = try overrides?.validated()
+        let current = try loadOrMigrate(fileManager: fileManager)
+        guard let index = current.profiles.firstIndex(where: { $0.id == id }) else {
+            throw ProfileCatalogStoreError.profileNotFound
+        }
+        let profile = current.profiles[index].profile.withOverrides(validated)
+        try profile.validateForStorage()
         var profiles = current.profiles
         profiles[index] = ManagedProfile(id: id, profile: profile)
         let updated = ProfileCatalog(
@@ -522,6 +557,9 @@ public struct ProfileCatalogStore: Sendable {
             suggestedName: profile.name,
             importedAt: profile.importedAt,
             subscription: profile.subscription,
+            // A network extension that restarts on its own reads this mirror
+            // and must build the same groups the app would (1.7.0).
+            overrides: profile.overrides,
             fileManager: fileManager
         )
     }
@@ -574,6 +612,9 @@ extension ActiveProfile {
                 throw ProfileCatalogStoreError.nativeProfileMismatch
             }
         }
+        if let overrides {
+            _ = try overrides.validated()
+        }
     }
 
     fileprivate func isEquivalentForPortableMerge(
@@ -583,6 +624,7 @@ extension ActiveProfile {
             && yaml == other.yaml
             && subscription?.url == other.subscription?.url
             && nativeNodes == other.nativeNodes
+            && overrides == other.overrides
     }
 
     fileprivate func isEquivalentForActiveMirror(
@@ -592,6 +634,7 @@ extension ActiveProfile {
             && yaml == other.yaml
             && importedAt == other.importedAt
             && subscription == other.subscription
+            && overrides == other.overrides
     }
 
 }

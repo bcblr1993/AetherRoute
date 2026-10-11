@@ -177,7 +177,8 @@ extension TunnelManager {
                         ProfileSettingsMigration.migrateInApplicationGroup(
                             fromYAML: previousYAML,
                             toYAML: updated.profile.yaml,
-                            defaults: defaults
+                            defaults: defaults,
+                            overrides: updated.profile.overrides
                         )
                     }
                     return catalog
@@ -1013,7 +1014,8 @@ extension TunnelManager {
                 ProfileSettingsMigration.migrateInApplicationGroup(
                     fromYAML: profile.yaml,
                     toYAML: updated.yaml,
-                    defaults: defaults
+                    defaults: defaults,
+                    overrides: profile.overrides
                 )
                 return catalog
             }
