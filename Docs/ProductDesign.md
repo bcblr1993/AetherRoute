@@ -15,11 +15,11 @@ that state before shutdown begins.
   destructive actions without confirmation.
 - Standard macOS type, controls, focus rings, keyboard navigation, materials,
   semantic colors, and SF Symbols take precedence over custom drawing.
-- The primary window uses `NavigationSplitView` with the fixed 236-point
-  navigation rail from the final handoff. The automatic sidebar toggle is
-  removed so the compact title bar and the 940-point window geometry remain
-  stable. The sidebar owns navigation only; content panels never imitate
-  navigation material.
+- The primary window uses `NavigationSplitView`. Since 1.5.2 the sidebar can
+  be hidden with the system sidebar button in the compact glass toolbar and
+  resized from 180 to 260 points (`sidebarMinWidth`/`sidebarMaxWidth`). The
+  sidebar owns navigation only; content panels never imitate navigation
+  material.
 - Node selection is a per-group choice of Manual, Fastest or Failover
   (1.6.0). Manual never moves traffic off a node the person pinned, even when
   it stops answering. Fastest and Failover check the route every 10 seconds,
