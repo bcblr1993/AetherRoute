@@ -340,6 +340,12 @@ targets:
         PRODUCT_NAME: AetherRoute
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Config/App/AppIcon.icns (every size, 16–1024 px) is the bundle's
+        # loose icon. By default the asset catalog also writes a thin
+        # AppIcon.icns (16–256 px) to the same path, and which one landed
+        # depended on build order (1.6.0 candidate). Keep the catalog's
+        # icon in Assets.car only.
+        ASSETCATALOG_COMPILER_STANDALONE_ICON_BEHAVIOR: none
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) AETHERROUTE_INDEPENDENT
         PROVISIONING_PROFILE_SPECIFIER: $(AETHERROUTE_HOST_PROFILE_SPECIFIER)
         CODE_SIGN_ENTITLEMENTS: $(AETHERROUTE_HOST_ENTITLEMENTS)

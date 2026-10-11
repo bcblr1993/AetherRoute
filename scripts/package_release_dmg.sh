@@ -94,6 +94,12 @@ test "$APP_BUILD" = "$BUILD_NUMBER" || {
   echo "App build ($APP_BUILD) does not match expected build ($BUILD_NUMBER)" >&2
   exit 1
 }
+# The loose icon must be the full one from the repository, not a thin icon
+# the asset catalog wrote over it (16–256 px only, seen in a 1.6.0 build).
+cmp -s "$APP/Contents/Resources/AppIcon.icns" "$ROOT/Config/App/AppIcon.icns" || {
+  echo "AppIcon.icns in the app differs from Config/App/AppIcon.icns" >&2
+  exit 1
+}
 APP_CHANNEL=$(plutil -extract AetherRouteReleaseChannel raw -o - "$APP/Contents/Info.plist" 2>/dev/null || echo missing)
 test "$APP_CHANNEL" = stable || {
   echo "App release channel is '$APP_CHANNEL'; a published DMG must be built with AETHERROUTE_CANDIDATE_CHANNEL=stable" >&2
