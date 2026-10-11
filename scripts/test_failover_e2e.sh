@@ -38,7 +38,9 @@ BRIDGE_ADDRESS=${AETHERROUTE_FAILOVER_BRIDGE:-192.168.64.1}
 PORT_A=59231
 PORT_B=59232
 MIHOMO_GZ=$ROOT/build/interop-tools/mihomo-darwin-arm64-v1.19.29.gz
-PROBE_URL=https://www.apple.com/library/test/success.html
+# Not an Apple or mainland address: those match the built-in direct rules
+# and never reach a node.
+PROBE_URL=https://cp.cloudflare.com/generate_204
 SLOW_URL='https://httpbin.org/drip?duration=150&numbytes=150&code=200&delay=0'
 
 usage() {
@@ -170,6 +172,7 @@ EOF
 start_fixture a "$PORT_A"
 start_fixture b "$PORT_B"
 PID_A=$(cat "$WORK/fixture-a.pid")
+PID_B=$(cat "$WORK/fixture-b.pid")
 log "fixtures listening: A=$BRIDGE_ADDRESS:$PORT_A B=$BRIDGE_ADDRESS:$PORT_B"
 
 # Connections a fixture carried, leaving out the app's own health probes
@@ -257,24 +260,43 @@ log "fixture profile imported"
 
 probe() {
   code=$(vm "curl -sS -o /dev/null -m 8 -w '%{http_code}' '$PROBE_URL' 2>/dev/null" || true)
-  test "$code" = 200
+  test "$code" = 204
+}
+
+# Which fixture carried one probe: the one whose count grew while it ran and
+# the other's did not. Prints a, b, mixed (both or neither grew) or none.
+probe_route() {
+  a0=$(hits a)
+  b0=$(hits b)
+  if probe; then
+    sleep 1
+    a1=$(hits a)
+    b1=$(hits b)
+    if [ "$a1" -gt "$a0" ] && [ "$b1" -eq "$b0" ]; then echo a
+    elif [ "$b1" -gt "$b0" ] && [ "$a1" -eq "$a0" ]; then echo b
+    else echo mixed; fi
+  else
+    echo none
+  fi
 }
 
 connect() {
   engine=$1
   mode=$2
   quit_app
+  # The base VM keeps whatever routing mode its last matrix run ended on
+  # (often direct, which bypasses every node).
   vm "defaults write \"$PREF\" AetherRoute.NetworkEngineMode -string $engine
+    defaults write \"$PREF\" defaultRoutingMode -string rule
     open -a /Applications/AetherRoute.app --env AETHERROUTE_QA_AUTOCONNECT=1 \
       --env AETHERROUTE_QA_SELECTION_MODE=Proxy=$mode"
-  start_hits=$(hits a)
+  CONNECTED_ROUTE=none
   waited=0
   while [ "$waited" -lt 150 ]; do
     sleep 5
     waited=$((waited + 5))
-    if probe && [ "$(hits a)" -gt "$start_hits" ]; then
-      return 0
-    fi
+    CONNECTED_ROUTE=$(probe_route)
+    case "$CONNECTED_ROUTE" in a|b) return 0 ;; esac
   done
   return 1
 }
@@ -284,8 +306,8 @@ for engine in $ENGINES; do
   STAGE=$engine-failover
   log "=== $engine: failover mode ==="
   prime_engine "$engine"
-  if ! connect "$engine" failover; then
-    fail "$engine: never connected through the preferred node A"
+  if ! connect "$engine" failover || [ "$CONNECTED_ROUTE" != a ]; then
+    fail "$engine: never connected through the preferred node A (route $CONNECTED_ROUTE)"
     quit_app
     continue
   fi
@@ -308,7 +330,7 @@ for engine in $ENGINES; do
     if [ -z "$closed_after" ] && ! vm "kill -0 $slow_pid" 2>/dev/null; then
       closed_after=$(( $(date +%s) - frozen_at ))
     fi
-    if probe && [ "$(hits b)" -gt "$b_before" ]; then
+    if [ "$(probe_route)" = b ]; then
       switched=$(( $(date +%s) - frozen_at ))
       break
     fi
@@ -332,17 +354,19 @@ for engine in $ENGINES; do
     vm "kill $slow_pid" 2>/dev/null || true
   fi
 
-  a_before=$(hits a)
   kill -CONT "$PID_A"
   resumed_at=$(date +%s)
   log "$engine: resumed A"
+  # Connections A accepted while frozen are logged once it resumes; let
+  # them drain so they are not read as traffic coming back.
+  sleep 20
   returned=0
   while [ $(( $(date +%s) - resumed_at )) -lt "$RETURN_BUDGET" ]; do
-    sleep 10
-    if probe && [ "$(hits a)" -gt "$a_before" ]; then
+    if [ "$(probe_route)" = a ]; then
       returned=$(( $(date +%s) - resumed_at ))
       break
     fi
+    sleep 5
   done
   if [ "$returned" -gt 0 ]; then
     pass "$engine: traffic returned to A ${returned}s after it answered again (budget ${RETURN_BUDGET}s)"
@@ -351,26 +375,31 @@ for engine in $ENGINES; do
   fi
 
   STAGE=$engine-manual
-  log "=== $engine: manual mode pinned to A ==="
+  log "=== $engine: manual mode ==="
   if ! connect "$engine" manual; then
-    fail "$engine: manual mode never connected through A"
+    fail "$engine: manual mode never connected"
     quit_app
     continue
   fi
-  b_before=$(hits b)
-  kill -STOP "$PID_A"
+  # Freeze whichever node manual mode is pinned to; the other must never
+  # carry traffic.
+  pinned=$CONNECTED_ROUTE
+  if [ "$pinned" = a ]; then pinned_pid=$PID_A; other=b; else pinned_pid=$PID_B; other=a; fi
+  sleep 10
+  other_before=$(hits "$other")
+  kill -STOP "$pinned_pid"
   pinned_at=$(date +%s)
   leaked=0
   while [ $(( $(date +%s) - pinned_at )) -lt "$PINNED_SECONDS" ]; do
     probe || true
-    if [ "$(hits b)" -gt "$b_before" ]; then leaked=1; break; fi
+    if [ "$(hits "$other")" -gt "$other_before" ]; then leaked=1; break; fi
     sleep 3
   done
-  kill -CONT "$PID_A"
+  kill -CONT "$pinned_pid"
   if [ "$leaked" -eq 0 ]; then
-    pass "$engine: manual mode stayed on A for ${PINNED_SECONDS}s and never used B"
+    pass "$engine: manual mode stayed pinned to $pinned for ${PINNED_SECONDS}s while it was down and never used $other"
   else
-    fail "$engine: manual mode moved traffic to B"
+    fail "$engine: manual mode moved traffic from $pinned to $other"
   fi
   quit_app
 done
