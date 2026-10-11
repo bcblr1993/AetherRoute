@@ -172,6 +172,25 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["List paused · session counters are live"].exists)
     }
 
+    /// The View and More menus are native Menus the accessibility audit
+    /// cannot press; open both and check their items so they stay usable.
+    func testConnectionsMenusOpen() {
+        let app = launchReviewApp(appearance: "light", windowSize: "940x640")
+        defer { app.terminate() }
+        navigationButton(in: app, title: "Connections").click()
+        let view = app.descendants(matching: .any)["connections-view-menu"]
+        XCTAssertTrue(view.waitForExistence(timeout: 3))
+        view.click()
+        XCTAssertTrue(app.menuItems["Group by app"].waitForExistence(timeout: 2))
+        app.typeKey(.escape, modifierFlags: [])
+        let more = app.descendants(matching: .any)["connections-more-menu"]
+        XCTAssertTrue(more.waitForExistence(timeout: 2))
+        more.click()
+        XCTAssertTrue(app.menuItems["Close All"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.menuItems["Disconnect"].exists)
+        app.typeKey(.escape, modifierFlags: [])
+    }
+
     func testProfileSearchFiltersAndClears() {
         let app = launchReviewApp(appearance: "light", state: "disconnected")
         defer { app.terminate() }
@@ -2813,13 +2832,14 @@ final class AetherRouteUITests: XCTestCase {
             if issue.auditType == .action,
                let element = issue.element,
                element.elementType == .menuButton,
-               (["profiles-more-menu", "profiles-add-menu", "rules-action-filter", "proxy-sort-picker", "add-application-rule"].contains(element.identifier)
+               (["profiles-more-menu", "profiles-add-menu", "rules-action-filter", "proxy-sort-picker", "add-application-rule", "connections-view-menu", "connections-more-menu"].contains(element.identifier)
                     || element.identifier.hasPrefix("profile-actions-")),
                element.isHittable {
                 // SwiftUI's native Menu is exercised by the profile-library
                 // UI test, but Xcode 26 omits the equivalent AppKit press
-                // action from its audit metadata. Rules › Add App (1.3.0) is
-                // the same native Menu.
+                // action from its audit metadata. Rules › Add App (1.3.0) and
+                // the Connections View and More menus (1.5.2) are the same
+                // native Menu; testConnectionsMenusOpen presses both.
                 return true
             }
             if issue.auditType == .sufficientElementDescription,

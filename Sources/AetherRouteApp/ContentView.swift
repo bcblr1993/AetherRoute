@@ -1409,8 +1409,12 @@ private struct OverviewAdaptiveRowLayout: Layout {
         let control = subviews[2].sizeThatFits(.unspecified)
         let label = subviews[0].sizeThatFits(.unspecified)
         let hint = subviews[1].sizeThatFits(.unspecified)
-        let idealWidth = label.width + Self.gap + hint.width + Self.gap + control.width
-        let width = proposal.width ?? idealWidth
+        // A zero-width probe asks for a minimum: answer with one line rather
+        // than a label wrapped to nothing.
+        guard let proposedWidth = proposal.width, proposedWidth >= 1 else {
+            return CGSize(width: 0, height: max(label.height, hint.height, control.height))
+        }
+        let width = proposedWidth
         switch arrangement(width: width, subviews: subviews) {
         case .withHint, .inline:
             return CGSize(width: width, height: max(label.height, hint.height, control.height))

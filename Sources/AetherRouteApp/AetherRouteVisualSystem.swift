@@ -165,6 +165,8 @@ enum AetherVisual {
     /// A search field in a page header or toolbar. On a row of its own it
     /// fills the column instead.
     static let searchFieldWidth: CGFloat = 220
+    /// The narrowest a search field shrinks to beside a filter.
+    static let searchFieldMinWidth: CGFloat = 140
     /// A vertical separator between groups of values on one line.
     static let inlineSeparatorHeight: CGFloat = 18
     /// The brand mark: beside the app name in the sidebar, and large on
@@ -505,16 +507,70 @@ struct AetherPageHeader<Accessory: View>: View {
             Text(section.title)
                 .font(.largeTitle.weight(.bold))
                 .foregroundStyle(.primary)
+                .lineLimit(2)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityHint(Text(section.subtitle))
                 .accessibilityIdentifier("page-header-title-\(section.rawValue)")
-            HStack(spacing: AetherVisual.s2) {
+            // Wraps onto further lines rather than widening the page when
+            // long translations or a narrow window leave too little room.
+            AetherFlowLayout(spacing: AetherVisual.s2) {
                 accessory
             }
-            .fixedSize()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// Lays its subviews out left to right at their ideal sizes and starts a
+/// new line when the next one would pass the proposed width.
+struct AetherFlowLayout: Layout {
+    var spacing: CGFloat
+
+    private func lines(width: CGFloat, subviews: Subviews) -> [[(index: Int, size: CGSize)]] {
+        var result: [[(index: Int, size: CGSize)]] = [[]]
+        var lineWidth: CGFloat = 0
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let needed = result[result.count - 1].isEmpty ? size.width : lineWidth + spacing + size.width
+            if needed > width, !result[result.count - 1].isEmpty {
+                result.append([(index, size)])
+                lineWidth = size.width
+            } else {
+                result[result.count - 1].append((index, size))
+                lineWidth = needed
+            }
+        }
+        return result
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        // A zero-width probe asks for a minimum; one line answers it.
+        let proposedWidth = proposal.width ?? .infinity
+        let all = lines(width: proposedWidth >= 1 ? proposedWidth : .infinity, subviews: subviews)
+        let width = all.map { line in
+            line.map(\.size.width).reduce(0, +) + spacing * CGFloat(max(0, line.count - 1))
+        }.max() ?? 0
+        let height = all.map { $0.map(\.size.height).max() ?? 0 }.reduce(0, +)
+            + spacing * CGFloat(max(0, all.count - 1))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for line in lines(width: bounds.width, subviews: subviews) {
+            let lineHeight = line.map(\.size.height).max() ?? 0
+            var x = bounds.minX
+            for item in line {
+                subviews[item.index].place(
+                    at: CGPoint(x: x, y: y + lineHeight / 2),
+                    anchor: .leading,
+                    proposal: ProposedViewSize(item.size)
+                )
+                x += item.size.width + spacing
+            }
+            y += lineHeight + spacing
+        }
     }
 }
 
@@ -533,12 +589,20 @@ private struct AetherPageHeaderLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let title = subviews[0].sizeThatFits(.unspecified)
         let actions = subviews[1].sizeThatFits(.unspecified)
-        let width = proposal.width ?? (title.width + Self.gap + actions.width)
+        // Stacks probe their children with a zero width for a minimum size;
+        // wrapping the title to zero width answered with one letter per
+        // line, a page taller than the window (1.5.2). Answer such probes
+        // with the one-line size; only a real width wraps.
+        guard let proposedWidth = proposal.width, proposedWidth >= 1 else {
+            return CGSize(width: 0, height: max(title.height, actions.height))
+        }
+        let width = proposedWidth
         if fitsOnOneLine(width: width, subviews: subviews) {
             return CGSize(width: width, height: max(title.height, actions.height))
         }
         let wrapped = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil))
-        return CGSize(width: width, height: wrapped.height + Self.stackedSpacing + actions.height)
+        let wrappedActions = subviews[1].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        return CGSize(width: width, height: wrapped.height + Self.stackedSpacing + wrappedActions.height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -555,7 +619,7 @@ private struct AetherPageHeaderLayout: Layout {
             subviews[1].place(
                 at: CGPoint(x: bounds.minX, y: bounds.minY + wrapped.height + Self.stackedSpacing),
                 anchor: .topLeading,
-                proposal: .unspecified
+                proposal: ProposedViewSize(width: bounds.width, height: nil)
             )
         }
     }

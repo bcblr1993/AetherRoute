@@ -35,12 +35,6 @@ struct ConnectionsView: View {
             // page margins themselves instead of `aetherPageContent`.
             AetherPageHeader(.connections) {
                 connectionActions
-                AetherSearchField(
-                    text: $searchText,
-                    prompt: AppLocalization.string("Search connections"),
-                    accessibilityIdentifier: "connections-search-field"
-                )
-                .frame(width: AetherVisual.searchFieldWidth)
             }
                 .padding(.horizontal, AetherVisual.pageHorizontalPadding)
                 .padding(.top, AetherVisual.pageTopPadding)
@@ -161,9 +155,20 @@ struct ConnectionsView: View {
             // is left here: segments, or a pop-up menu when a long
             // translation would draw them past the window. The old two-level
             // ViewThatFits built every control twice on each visit.
-            ViewThatFits(in: .horizontal) {
-                segmentedFilter(counts: counts)
-                menuFilter()
+            // The filter leading and the search trailing, as on Rules; the
+            // search wraps below the filter when the row is too narrow.
+            HStack(spacing: AetherVisual.s3) {
+                ViewThatFits(in: .horizontal) {
+                    segmentedFilter(counts: counts)
+                    menuFilter()
+                }
+                Spacer(minLength: 0)
+                AetherSearchField(
+                    text: $searchText,
+                    prompt: AppLocalization.string("Search connections"),
+                    accessibilityIdentifier: "connections-search-field"
+                )
+                .frame(minWidth: AetherVisual.searchFieldMinWidth, maxWidth: AetherVisual.searchFieldWidth)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, AetherVisual.s3)
@@ -511,6 +516,10 @@ struct ConnectionsView: View {
                 Image(systemName: pausedConnections == nil ? "pause.fill" : "play.fill")
                     .contentTransition(.symbolEffect(.replace))
             }
+            // The symbol alone keeps the header on one line in the smallest
+            // window; the name stays in the tooltip and for VoiceOver, and
+            // a paused list turns the button orange.
+            .labelStyle(.iconOnly)
         }
         // A frozen list must not pass for a live one: the button stays
         // tinted while the list is paused.
