@@ -27,7 +27,16 @@ extension TunnelManager {
 
     static let proxySelectionRefreshInterval: TimeInterval = 10
 
+    /// A node picked by the person. In failover mode it becomes the
+    /// preferred node; a group picking the fastest node ignores the pick.
     func selectProxy(group groupName: String, member: String) async {
+        switch proxySelectionMode(for: groupName) {
+        case .manual: break
+        case .fastest: return
+        case .failover:
+            await setPreferredProxy(group: groupName, member: member)
+            return
+        }
         await performProxySelectionRequest(
             group: groupName,
             requestedMember: member
@@ -65,56 +74,6 @@ extension TunnelManager {
         )
     }
 
-    func setProxySelectionAutomatic(
-        group groupName: String,
-        isAutomatic: Bool
-    ) async {
-        guard let group = activeProfileSummary?.proxyGroups.first(where: {
-            $0.name == groupName
-                && $0.strategy.caseInsensitiveCompare("select") == .orderedSame
-        }), group.memberCount > 1, let yaml = activeProfile?.yaml else { return }
-
-        let previous = automaticProxySelectionGroups.contains(groupName)
-        guard previous != isAutomatic else { return }
-        let key = automaticProxySelectionPreferenceKey(
-            profileYAML: yaml,
-            group: groupName
-        )
-        userDefaults.set(isAutomatic, forKey: key)
-        if isAutomatic {
-            automaticProxySelectionGroups.insert(groupName)
-        } else {
-            automaticProxySelectionGroups.remove(groupName)
-            automaticReadinessGroupNames.remove(groupName)
-            automaticReadinessChildGroups[groupName] = nil
-            automaticRouteFailureCounts[groupName] = nil
-            updateAutomaticRouteRecoveryPresentation()
-            proxySelectionMessages[groupName] = nil
-            return
-        }
-
-        guard isConnected else {
-            proxySelectionMessages[groupName] = nil
-            return
-        }
-
-        do {
-            let client = makeProxySelectionProviderClient()
-            _ = try await selectFastestAvailableProxy(
-                group: group,
-                client: client
-            )
-            automaticReadinessGroupNames.insert(groupName)
-            proxySelectionMessages[groupName] = nil
-        } catch {
-            userDefaults.set(previous, forKey: key)
-            automaticProxySelectionGroups.remove(groupName)
-            proxySelectionMessages[groupName] = AppLocalization.string(
-                "No proxy node in this group passed the automatic connection check."
-            )
-        }
-    }
-
     func makeProxySelectionProviderClient()
         -> ProxySelectionProviderClient
     {
@@ -130,10 +89,14 @@ extension TunnelManager {
         }
     }
 
+    /// Selects the fastest node that passes a real 204 probe. With a
+    /// preferred node (failover mode) that node is tried first and wins
+    /// whenever it passes.
     @discardableResult
     func selectFastestAvailableProxy(
         group: ProxyGroupConfigurationSummary,
-        client: ProxySelectionProviderClient
+        client: ProxySelectionProviderClient,
+        preferredMember: String? = nil
     ) async throws -> ProxySelectionState {
         let previous = try await client.snapshot(group: group.name)
         let latency = try await client.latency(
@@ -148,14 +111,17 @@ extension TunnelManager {
                 result.delayMilliseconds == nil ? nil : result.member
             }
         )
-        let candidates = ProxyConnectionReadinessPolicy
-            .orderedRouteCandidates(
-                selectedMember: previous.selectedMember,
-                summaryMembers: group.members,
-                snapshotMembers: previous.members,
-                latency: latency
-            )
-            .filter(responsiveMembers.contains)
+        let candidates = ProxyFailoverPolicy.orderedCandidates(
+            ProxyConnectionReadinessPolicy
+                .orderedRouteCandidates(
+                    selectedMember: previous.selectedMember,
+                    summaryMembers: group.members,
+                    snapshotMembers: previous.members,
+                    latency: latency
+                )
+                .filter(responsiveMembers.contains),
+            preferred: preferredMember
+        )
         guard !candidates.isEmpty else {
             throw TunnelManagerError.noResponsiveProxy
         }
@@ -189,12 +155,17 @@ extension TunnelManager {
                     continue
                 }
                 do {
-                    let statusCode = try await currentRouteDataPlaneStatus(
-                        timeoutInterval: TimeInterval(
-                            TunnelStartupTimingPolicy
-                                .automaticRouteCandidateProbeTimeoutSeconds
+                    // Only the catch-all group's node carries the 204
+                    // request; another group's candidate is accepted on its
+                    // provider probe, which it has already passed.
+                    let statusCode = isCatchAllRouteGroup(group.name)
+                        ? try await currentRouteDataPlaneStatus(
+                            timeoutInterval: TimeInterval(
+                                TunnelStartupTimingPolicy
+                                    .automaticRouteCandidateProbeTimeoutSeconds
+                            )
                         )
-                    )
+                        : 204
                     measurements.append(.init(
                         member: candidate,
                         elapsedMilliseconds: candidateDelay,
@@ -498,6 +469,14 @@ extension TunnelManager {
         return error.localizedDescription
     }
 
+    /// Whether the catch-all rule routes through this group, so the
+    /// external 204 probe actually passes through its node.
+    func isCatchAllRouteGroup(_ groupName: String) -> Bool {
+        guard let summary = activeProfileSummary else { return true }
+        return ProxyConnectionReadinessPolicy.groupsToVerify(summary: summary)
+            .first?.name == groupName
+    }
+
     func selectableProxyGroup(
         named name: String
     ) -> ProxyGroupConfigurationSummary? {
@@ -605,6 +584,8 @@ extension TunnelManager {
         automaticReadinessChildGroups = [:]
         automaticRouteFailureCounts = [:]
         isAutomaticRouteRecovering = false
+        failoverRecoveryTracker.resetAll()
+        failoverRecoveryScannedAt = [:]
         proxySelections = [:]
         proxySelectionMessages = [:]
         proxySelectionRequests = []

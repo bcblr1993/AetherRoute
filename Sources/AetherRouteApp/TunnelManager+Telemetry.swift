@@ -243,9 +243,22 @@ extension TunnelManager {
             guard state == .connected, !Task.isCancelled else { return }
             var responsiveLatency: ProxyLatencyState?
             var recoveryAttempted = false
-            for _ in 0..<TunnelStartupTimingPolicy
+            for attempt in 0..<TunnelStartupTimingPolicy
                 .automaticRouteFailoverAttemptCount
             {
+                if attempt == 1 {
+                    // Confirm a failure on the same node before moving to
+                    // another one: a single lost probe must not switch a
+                    // working route.
+                    do {
+                        try await Task.sleep(for: .milliseconds(
+                            TunnelStartupTimingPolicy
+                                .automaticRouteFailureConfirmationDelayMilliseconds
+                        ))
+                    } catch {
+                        return
+                    }
+                }
                 do {
                     let latency = try await client.activeLatency(
                         group: group,
@@ -256,7 +269,12 @@ extension TunnelManager {
                     if latency.results.count == 1,
                        latency.results[0].delayMilliseconds != nil {
                         do {
-                            try await verifyCurrentRouteDataPlane()
+                            // The 204 request follows the rules, so it only
+                            // tests the group the catch-all rule uses; other
+                            // groups are judged by their node's own probe.
+                            if isCatchAllRouteGroup(group) {
+                                try await verifyCurrentRouteDataPlane()
+                            }
                             responsiveLatency = latency
                             break
                         } catch {
@@ -272,6 +290,8 @@ extension TunnelManager {
                     // A missing or late reply consumes this bounded attempt.
                 }
 
+                // The first failure is only confirmed by the next attempt.
+                guard attempt > 0 else { continue }
                 let recovery = AutomaticRouteHealthRecoveryPolicy.action(
                     automaticChildGroup:
                         automaticReadinessChildGroups[group],
@@ -306,14 +326,26 @@ extension TunnelManager {
                             throw TunnelManagerError
                                 .providerSelectorUnavailable
                         }
-                        _ = try await selectFastestAvailableProxy(
+                        let previousMember = proxySelections[group]?.selectedMember
+                        let selected = try await selectFastestAvailableProxy(
                             group: summary,
-                            client: client
+                            client: client,
+                            preferredMember: proxySelectionMode(for: group) == .failover
+                                ? preferredProxyMembers[group]
+                                : nil
                         )
                         proxySelectionMessages[group] = nil
                         Self.runtimeLogger.info(
                             "stage=automaticRouteHealth explicitReselection success"
                         )
+                        if let member = selected.selectedMember {
+                            await recordAutomaticProxySwitch(
+                                group: group,
+                                from: previousMember,
+                                to: member,
+                                reason: .unresponsive
+                            )
+                        }
                     case .none:
                         break
                     }
@@ -338,6 +370,11 @@ extension TunnelManager {
                 Self.runtimeLogger.info(
                     "stage=automaticRouteHealth success attemptsMax=\(TunnelStartupTimingPolicy.automaticRouteFailoverAttemptCount, privacy: .public)"
                 )
+                if proxySelectionMode(for: group) == .failover,
+                   let summary = activeProfileSummary?.proxyGroups
+                    .first(where: { $0.name == group }) {
+                    await checkFailoverRecovery(group: summary, client: client)
+                }
                 continue
             }
 

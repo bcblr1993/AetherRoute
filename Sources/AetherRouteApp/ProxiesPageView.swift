@@ -285,6 +285,7 @@ private struct ActiveProxyGroupView: View {
     /// A choice made while disconnected takes effect later; say so for a
     /// moment instead of keeping a permanent caption on the card.
     @State private var showsNextConnectionNote = false
+    @State private var showsSwitchHistory = false
     let group: ProxyGroupConfigurationSummary
     let protocols: [String: String]
 
@@ -298,6 +299,18 @@ private struct ActiveProxyGroupView: View {
                 .padding(.horizontal, AetherVisual.s4)
                 .padding(.vertical, AetherVisual.s3)
             Divider().padding(.horizontal, AetherVisual.s4)
+
+            if tunnel.isConnected, let preferredMember, let backupMember {
+                FailoverBackupBanner(
+                    preferred: preferredMember,
+                    backup: backupMember,
+                    since: tunnel.proxySwitchLog.latest(forGroup: group.name)
+                        .flatMap { $0.reason == .unresponsive && $0.to == backupMember ? $0.date : nil }
+                )
+                .padding(.horizontal, AetherVisual.s4)
+                .padding(.top, AetherVisual.s3)
+                .transition(AetherVisual.insertion)
+            }
 
             if let message = tunnel.proxySelectionMessages[group.name] {
                 AetherInlineMessage(text: message, isCompact: true)
@@ -319,6 +332,7 @@ private struct ActiveProxyGroupView: View {
         .aetherPanel()
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.proxySelectionMessages[group.name])
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: showsNextConnectionNote)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: backupMember)
         .task(id: tunnel.isConnected) {
             guard isManuallySelectable else { return }
             await tunnel.refreshProxySelection(group: group.name)
@@ -351,6 +365,9 @@ private struct ActiveProxyGroupView: View {
                 }
             }
             Spacer(minLength: AetherVisual.s2)
+            if selectionMode.switchesAutomatically {
+                switchHistoryButton
+            }
             sortMenu
             Button {
                 Task { await tunnel.testProxyLatency(group: group.name) }
@@ -397,6 +414,22 @@ private struct ActiveProxyGroupView: View {
         }
     }
 
+    private var switchHistoryButton: some View {
+        Button {
+            showsSwitchHistory.toggle()
+        } label: {
+            Image(systemName: "clock.arrow.circlepath")
+        }
+        .aetherButton()
+        .controlSize(.small)
+        .help(AppLocalization.string("Automatic switches"))
+        .accessibilityLabel(AppLocalization.string("Automatic switches"))
+        .accessibilityIdentifier("proxy-switch-history-button")
+        .popover(isPresented: $showsSwitchHistory, arrowEdge: .bottom) {
+            ProxySwitchHistoryView(events: tunnel.proxySwitchLog.events(forGroup: group.name))
+        }
+    }
+
     private var sortMenu: some View {
         Menu {
             Picker(AppLocalization.string("Sort"), selection: $sort) {
@@ -434,35 +467,37 @@ private struct ActiveProxyGroupView: View {
     @ViewBuilder
     private var modeRow: some View {
         if isManuallySelectable {
-            HStack(spacing: AetherVisual.s3) {
-                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    Text(AppLocalization.string("Pick the fastest node automatically"))
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                HStack(spacing: AetherVisual.s3) {
+                    Text(AppLocalization.string("Node selection"))
                         .font(.body.weight(.semibold))
-                    Text(AppLocalization.string("When on, AetherRoute uses the node with the lowest latency, so you never switch by hand."))
-                        .font(.caption)
-                        .foregroundStyle(AetherVisual.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: AetherVisual.s3)
-                Toggle(
-                    AppLocalization.string("Pick the fastest node automatically"),
-                    isOn: Binding(
-                        get: { isAutomaticSelectionMode },
-                        set: { isAutomatic in
-                            Task {
-                                await tunnel.setProxySelectionAutomatic(
-                                    group: group.name,
-                                    isAutomatic: isAutomatic
-                                )
+                    Spacer(minLength: AetherVisual.s3)
+                    AetherSegmentedPicker(
+                        selection: Binding(
+                            get: { selectionMode },
+                            set: { mode in
+                                Task {
+                                    await tunnel.setProxySelectionMode(
+                                        group: group.name,
+                                        mode: mode
+                                    )
+                                }
                             }
-                        }
+                        ),
+                        options: ProxySelectionMode.allCases.map {
+                            .init(value: $0, title: $0.localizedTitle)
+                        },
+                        accessibilityLabel: AppLocalization.string("Node selection"),
+                        accessibilityIdentifier: "proxy-selection-mode-\(group.name)"
                     )
-                )
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .controlSize(.small)
-                .disabled(tunnel.proxySelectionRequests.contains(group.name))
-                .accessibilityIdentifier("proxy-auto-select-\(group.name)")
+                    .fixedSize()
+                    .disabled(tunnel.proxySelectionRequests.contains(group.name))
+                }
+                Text(selectionMode.localizedExplanation)
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("proxy-selection-mode-explanation")
             }
         } else {
             Label {
@@ -545,7 +580,10 @@ private struct ActiveProxyGroupView: View {
                 status: status(for: member),
                 isSelected: member == selectedMember,
                 isBusy: isBusy,
-                showsLatency: !isBuiltInOutlet(member)
+                showsLatency: !isBuiltInOutlet(member),
+                badge: member == preferredMember
+                    ? .preferred
+                    : (member == backupMember ? .backupInUse : nil)
             )
         }
     }
@@ -560,7 +598,22 @@ private struct ActiveProxyGroupView: View {
     }
 
     private var isAutomaticSelectionMode: Bool {
-        tunnel.automaticProxySelectionGroups.contains(group.name)
+        selectionMode == .fastest
+    }
+
+    private var selectionMode: ProxySelectionMode {
+        tunnel.proxySelectionMode(for: group.name)
+    }
+
+    private var preferredMember: String? {
+        selectionMode == .failover ? tunnel.preferredProxyMembers[group.name] : nil
+    }
+
+    /// Failover mode is on a backup: the node in use is not the preferred one.
+    private var backupMember: String? {
+        guard let preferredMember, let selectedMember,
+              selectedMember != preferredMember else { return nil }
+        return selectedMember
     }
 
     private var members: [String] {
@@ -687,6 +740,10 @@ private struct ProxyNodeRow: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .help(row.member)
+            if let badge = row.badge {
+                ProxyNodeBadge(badge: badge)
+                    .transition(.opacity)
+            }
             if !showsSelectionControl, row.isSelected {
                 Text(AppLocalization.string("Current"))
                     .font(.caption.weight(.semibold))
@@ -720,12 +777,20 @@ private struct ProxyNodeRow: View {
 }
 
 private struct ProxyMemberTableItem: Identifiable {
+    enum Badge: Equatable {
+        /// Failover mode's preferred node.
+        case preferred
+        /// The node failover mode is using while the preferred one is down.
+        case backupInUse
+    }
+
     let member: String
     let protocolName: String?
     let status: ProxyLatencyStatus
     let isSelected: Bool
     let isBusy: Bool
     let showsLatency: Bool
+    var badge: Badge?
 
     var id: String { member }
 }
@@ -757,6 +822,173 @@ struct ProxyLatencyText: View {
     private var color: Color {
         guard isResult else { return .secondary }
         return colorScheme == .dark ? status.tint : status.tint.mix(with: .black, by: 0.3)
+    }
+}
+
+/// "Preferred" or "Backup in use" beside a node's name in failover mode.
+private struct ProxyNodeBadge: View {
+    let badge: ProxyMemberTableItem.Badge
+
+    var body: some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(AetherReadableTint(color: tint))
+            .padding(.horizontal, AetherVisual.s1)
+            .padding(.vertical, AetherVisual.sMicro)
+            .background(AetherVisual.tintFill(tint), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+            .fixedSize()
+            .accessibilityIdentifier(badge == .preferred ? "proxy-node-badge-preferred" : "proxy-node-badge-backup")
+    }
+
+    private var title: String {
+        switch badge {
+        case .preferred: AppLocalization.string("Preferred")
+        case .backupInUse: AppLocalization.string("Backup in use")
+        }
+    }
+
+    private var tint: Color {
+        switch badge {
+        case .preferred: .accentColor
+        case .backupInUse: .orange
+        }
+    }
+}
+
+/// Shown while failover mode uses a backup: which node is down, since when,
+/// and that traffic returns on its own.
+private struct FailoverBackupBanner: View {
+    let preferred: String
+    let backup: String
+    let since: Date?
+
+    var body: some View {
+        Label {
+            Text(message)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "arrow.triangle.branch")
+                .foregroundStyle(AetherReadableTint(color: .orange))
+        }
+        .font(.callout)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(AetherVisual.s3)
+        .background(AetherVisual.tintFill(.orange), in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("proxy-failover-backup-banner")
+    }
+
+    private var message: String {
+        if let since {
+            return String.localizedStringWithFormat(
+                AppLocalization.string("%1$@ stopped answering, so %2$@ took over at %3$@. Traffic returns to %1$@ once it answers again."),
+                preferred,
+                backup,
+                since.formatted(date: .omitted, time: .shortened)
+            )
+        }
+        return String.localizedStringWithFormat(
+            AppLocalization.string("%1$@ is not answering, so %2$@ is in use. Traffic returns to %1$@ once it answers again."),
+            preferred,
+            backup
+        )
+    }
+}
+
+/// The group's recent automatic switches, newest first. Kept for this run
+/// only.
+private struct ProxySwitchHistoryView: View {
+    let events: [ProxySwitchEvent]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            Text(AppLocalization.string("Automatic switches"))
+                .font(.headline)
+            if events.isEmpty {
+                Text(AppLocalization.string("No automatic switches yet."))
+                    .font(.callout)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .padding(.vertical, AetherVisual.s2)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(events) { event in
+                            row(event)
+                            if event.id != events.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 280)
+            }
+            Text(AppLocalization.string("Kept until AetherRoute quits."))
+                .font(.caption)
+                .foregroundStyle(AetherVisual.tertiaryText)
+        }
+        .padding(AetherVisual.s4)
+        .frame(width: 340)
+        .accessibilityIdentifier("proxy-switch-history")
+    }
+
+    private func row(_ event: ProxySwitchEvent) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s3) {
+            Text(event.date.formatted(date: .omitted, time: .standard))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(AetherVisual.secondaryText)
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                HStack(spacing: AetherVisual.s1) {
+                    Text(event.from ?? "—")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Image(systemName: "arrow.right")
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                    Text(event.to)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .font(.callout)
+                Text(event.reason.localizedTitle)
+                    .font(.caption)
+                    .foregroundStyle(event.reason == .unresponsive
+                        ? AnyShapeStyle(AetherReadableTint(color: .orange))
+                        : AnyShapeStyle(AetherVisual.secondaryText))
+            }
+        }
+        .padding(.vertical, AetherVisual.s2)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+extension ProxySelectionMode {
+    var localizedTitle: String {
+        switch self {
+        case .manual: AppLocalization.string("Manual")
+        case .fastest: AppLocalization.string("Fastest")
+        case .failover: AppLocalization.string("Failover")
+        }
+    }
+
+    var localizedExplanation: String {
+        switch self {
+        case .manual:
+            AppLocalization.string("The node you pick stays in use, even when it stops answering.")
+        case .fastest:
+            AppLocalization.string("Uses the fastest node that works, and moves on as soon as it stops answering.")
+        case .failover:
+            AppLocalization.string("Uses the node you pick. When it stops answering, the fastest working node takes over until it answers again.")
+        }
+    }
+}
+
+extension ProxySwitchEvent.Reason {
+    var localizedTitle: String {
+        switch self {
+        case .unresponsive: AppLocalization.string("Previous node stopped answering")
+        case .preferredRecovered: AppLocalization.string("Preferred node answers again")
+        }
     }
 }
 

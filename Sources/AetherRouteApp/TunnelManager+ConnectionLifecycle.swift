@@ -142,10 +142,14 @@ extension TunnelManager {
                 try Task.checkCancellation()
                 let explicitlyAutomatic = automaticProxySelectionGroups
                     .contains(group.name)
+                let preferred = proxySelectionMode(for: group.name) == .failover
+                    ? await ensurePreferredProxyMember(group: group)
+                    : nil
                 let snapshot = explicitlyAutomatic
                     ? try await selectFastestAvailableProxy(
                         group: group,
-                        client: client
+                        client: client,
+                        preferredMember: preferred
                     )
                     : try await client.snapshot(group: group.name)
                 guard let selectedMember = snapshot.selectedMember else {
@@ -300,6 +304,12 @@ extension TunnelManager {
                     return (selection.group, automaticGroup.name)
                 }
             )
+            // Every group that switches on its own is checked from now on,
+            // not only the one the catch-all rule uses.
+            for name in automaticProxySelectionGroups.sorted()
+                .prefix(TunnelStartupTimingPolicy.maximumMonitoredAutomaticGroupCount) {
+                automaticReadinessGroupNames.insert(name)
+            }
             automaticRouteFailureCounts = [:]
             readinessVerifiedConnectionID = connectionID
             isVerifyingProxyReadiness = false

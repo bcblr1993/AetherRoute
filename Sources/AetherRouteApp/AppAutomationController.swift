@@ -26,11 +26,16 @@ final class AppAutomationController: ObservableObject {
     @Published private(set) var notificationsEnabled: Bool
     @Published private(set) var notificationPermission: NotificationPermissionState
     @Published private(set) var subscriptionNotificationsEnabled: Bool
+    @Published private(set) var proxySwitchNotificationsEnabled: Bool
 
     private static let notificationsPreferenceKey =
         "AetherRoute.ConnectionNotificationsEnabled"
     private static let subscriptionNotificationsPreferenceKey =
         "AetherRoute.SubscriptionNotificationsEnabled"
+    private static let proxySwitchNotificationsPreferenceKey =
+        "AetherRoute.ProxySwitchNotificationsEnabled"
+    private static let proxySwitchNotificationIdentifier =
+        "AetherRoute.ProxySwitch"
     private static let subscriptionAlertHistoryKey =
         "AetherRoute.SubscriptionAlertLastSent"
     private static let subscriptionNotificationIdentifier =
@@ -51,6 +56,7 @@ final class AppAutomationController: ObservableObject {
     private var licenseAccessObservation: AnyCancellable?
     private var privacyObservation: AnyCancellable?
     private var subscriptionObservation: AnyCancellable?
+    private var proxySwitchObservation: AnyCancellable?
     private var licenseRefreshTask: Task<Void, Never>?
     private var previousTunnelState: TunnelManager.State
 
@@ -83,6 +89,7 @@ final class AppAutomationController: ObservableObject {
             notificationPermission = .authorized
             shortcutState = .active
             subscriptionNotificationsEnabled = false
+            proxySwitchNotificationsEnabled = false
         } else {
             shortcutPreferences = shortcutStore.load()
             notificationsEnabled = userDefaults.bool(
@@ -91,6 +98,9 @@ final class AppAutomationController: ObservableObject {
             notificationPermission = .notRequested
             subscriptionNotificationsEnabled = userDefaults.bool(
                 forKey: Self.subscriptionNotificationsPreferenceKey
+            )
+            proxySwitchNotificationsEnabled = userDefaults.bool(
+                forKey: Self.proxySwitchNotificationsPreferenceKey
             )
         }
 
@@ -102,6 +112,11 @@ final class AppAutomationController: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] usage in
                 self?.notifyIfSubscriptionNeedsAttention(usage)
+            }
+        proxySwitchObservation = tunnel.proxySwitchEvents
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] event in
+                self?.notifyProxySwitch(event)
             }
         stateObservation = tunnel.$state
             .dropFirst()
@@ -180,6 +195,58 @@ final class AppAutomationController: ObservableObject {
         if granted {
             notifyIfSubscriptionNeedsAttention(tunnel.activeProfile?.subscription?.usage)
         }
+    }
+
+    /// Optional, off by default, like subscription alerts.
+    func setProxySwitchNotificationsEnabled(_ isEnabled: Bool) async {
+        guard !isUIReviewMode else {
+            proxySwitchNotificationsEnabled = isEnabled
+            return
+        }
+        if !isEnabled {
+            proxySwitchNotificationsEnabled = false
+            userDefaults.set(false, forKey: Self.proxySwitchNotificationsPreferenceKey)
+            notificationCenter.removeDeliveredNotifications(
+                withIdentifiers: [Self.proxySwitchNotificationIdentifier]
+            )
+            return
+        }
+        let granted: Bool
+        do {
+            granted = try await notificationCenter.requestAuthorization(
+                options: [.alert, .sound]
+            )
+            notificationPermission = granted ? .authorized : .denied
+        } catch {
+            granted = false
+            notificationPermission = .unavailable
+        }
+        proxySwitchNotificationsEnabled = granted
+        userDefaults.set(granted, forKey: Self.proxySwitchNotificationsPreferenceKey)
+    }
+
+    /// No node, group or profile names, as with every other alert: the
+    /// Proxies page shows the details. Skipped while the app is in front,
+    /// where the page already says what happened.
+    private func notifyProxySwitch(_ event: ProxySwitchEvent) {
+        guard proxySwitchNotificationsEnabled, !isUIReviewMode,
+              notificationPermission == .authorized,
+              !NSApplication.shared.isActive else { return }
+        let content = UNMutableNotificationContent()
+        switch event.reason {
+        case .unresponsive:
+            content.title = AppLocalization.string("Switched to a working node")
+            content.body = AppLocalization.string("The node in use stopped answering. Open AetherRoute to see which node took over.")
+        case .preferredRecovered:
+            content.title = AppLocalization.string("Back on your preferred node")
+            content.body = AppLocalization.string("Your preferred node answers again and carries traffic once more.")
+        }
+        // One entry in Notification Center, replaced by the next switch.
+        notificationCenter.add(UNNotificationRequest(
+            identifier: Self.proxySwitchNotificationIdentifier,
+            content: content,
+            trigger: nil
+        ))
     }
 
     private func notifyIfSubscriptionNeedsAttention(_ usage: SubscriptionUsage?) {

@@ -20,6 +20,13 @@ that state before shutdown begins.
   removed so the compact title bar and the 940-point window geometry remain
   stable. The sidebar owns navigation only; content panels never imitate
   navigation material.
+- Node selection is a per-group choice of Manual, Fastest or Failover
+  (1.6.0). Manual never moves traffic off a node the person pinned, even when
+  it stops answering. Fastest and Failover check the route every 10 seconds,
+  confirm a failure once before switching, verify the new node with a real
+  request, and close the connections left on a node that stopped answering
+  so apps reconnect. Failover returns to the preferred node after it answers
+  in two scans in a row, a minute apart.
 - The minimum window is 780 x 560 points. Content must remain usable at the
   minimum size and expand without fixed-width clipping.
 - Window size is stable within each task class. All six primary destinations

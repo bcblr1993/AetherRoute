@@ -13842,6 +13842,226 @@
           }
         }
       }
+    },
+    "Node selection": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点选择方式"
+          }
+        }
+      }
+    },
+    "Manual": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动"
+          }
+        }
+      }
+    },
+    "Fastest": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动最快"
+          }
+        }
+      }
+    },
+    "Failover": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "故障转移"
+          }
+        }
+      }
+    },
+    "The node you pick stays in use, even when it stops answering.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一直使用你选中的节点，即使它无响应也不会自动切换。"
+          }
+        }
+      }
+    },
+    "Uses the fastest node that works, and moves on as soon as it stops answering.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用延迟最低且能正常访问的节点；当前节点无响应时立即切换。"
+          }
+        }
+      }
+    },
+    "Uses the node you pick. When it stops answering, the fastest working node takes over until it answers again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "优先使用你选中的节点；它无响应时由最快的可用节点接替，恢复后自动切回。"
+          }
+        }
+      }
+    },
+    "Preferred": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首选"
+          }
+        }
+      }
+    },
+    "Backup in use": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备用中"
+          }
+        }
+      }
+    },
+    "%1$@ stopped answering, so %2$@ took over at %3$@. Traffic returns to %1$@ once it answers again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首选节点“%1$@”无响应，已于 %3$@ 切换到“%2$@”。“%1$@”恢复后会自动切回。"
+          }
+        }
+      }
+    },
+    "%1$@ is not answering, so %2$@ is in use. Traffic returns to %1$@ once it answers again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首选节点“%1$@”暂无响应，正在使用“%2$@”。“%1$@”恢复后会自动切回。"
+          }
+        }
+      }
+    },
+    "Automatic switches": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动切换记录"
+          }
+        }
+      }
+    },
+    "No automatic switches yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有自动切换。"
+          }
+        }
+      }
+    },
+    "Kept until AetherRoute quits.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅保留到退出 AetherRoute。"
+          }
+        }
+      }
+    },
+    "Previous node stopped answering": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原节点无响应"
+          }
+        }
+      }
+    },
+    "Preferred node answers again": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首选节点已恢复"
+          }
+        }
+      }
+    },
+    "Node switch alerts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点自动切换提醒"
+          }
+        }
+      }
+    },
+    "Notify me when a group in Fastest or Failover mode moves to another node because the one in use stopped answering, or returns to the preferred node.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "处于“自动最快”或“故障转移”的分组因当前节点无响应而切换节点，或切回首选节点时通知我。"
+          }
+        }
+      }
+    },
+    "Switched to a working node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已切换到可用节点"
+          }
+        }
+      }
+    },
+    "The node in use stopped answering. Open AetherRoute to see which node took over.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前节点无响应，已自动切换。打开 AetherRoute 查看接替的节点。"
+          }
+        }
+      }
+    },
+    "Back on your preferred node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已切回首选节点"
+          }
+        }
+      }
+    },
+    "Your preferred node answers again and carries traffic once more.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首选节点已恢复响应，流量重新经由它转发。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

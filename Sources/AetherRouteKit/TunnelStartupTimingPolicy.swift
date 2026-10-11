@@ -39,9 +39,24 @@ public enum TunnelStartupTimingPolicy {
     public static let statisticsTelemetryPollingIntervalSeconds = 60
     /// Legacy alias for backward compatibility with existing tests and call sites.
     public static let telemetryPollingIntervalSeconds = backgroundTelemetryPollingIntervalSeconds
-    public static let automaticRouteHealthIntervalSeconds = 15
+    /// How often an automatic route is checked (15 s before 1.6.0). Each
+    /// check is one active-node latency probe and one 204 request.
+    public static let automaticRouteHealthIntervalSeconds = 10
     public static let automaticRouteFailoverAttemptCount = 8
     public static let automaticRouteFailureThreshold = 2
+    /// A failed check is repeated once on the same node after this pause
+    /// before the group moves to another node, so a single lost probe does
+    /// not switch a working route.
+    public static let automaticRouteFailureConfirmationDelayMilliseconds = 1_000
+    /// While failover mode uses a backup, the group is scanned this often to
+    /// see whether the preferred node answers again.
+    public static let failoverRecoveryScanIntervalSeconds = 60
+    /// Consecutive scans the preferred node must answer before traffic goes
+    /// back to it.
+    public static let failoverRecoveryRequiredStreak = 2
+    /// Groups with automatic switching that are checked after connecting,
+    /// beyond the one the catch-all rule uses.
+    public static let maximumMonitoredAutomaticGroupCount = 4
     /// Manual mode stays pinned to the selected leaf, but a single lost
     /// readiness request must not turn a healthy node into a failed profile
     /// switch. These retries never select a sibling node.

@@ -1,4 +1,5 @@
 import AetherRouteKit
+import Combine
 import Foundation
 import Network
 import NetworkExtension
@@ -371,7 +372,19 @@ final class TunnelManager: ObservableObject {
     @Published var proxySelectionRequests: Set<String> = []
     /// When each group's selection was last read, and on which connection.
     var proxySelectionRefreshedAt: [String: (connectionID: UUID?, at: Date)] = [:]
+    /// Groups that switch nodes on their own: every `select` group whose
+    /// mode is not manual. Kept in step with `proxySelectionModes`.
     @Published var automaticProxySelectionGroups: Set<String> = []
+    /// The mode of each `select` group that is not manual (1.6.0).
+    @Published var proxySelectionModes: [String: ProxySelectionMode] = [:]
+    /// The preferred node of each group in failover mode.
+    @Published var preferredProxyMembers: [String: String] = [:]
+    /// Automatic switches in this run, newest first. Never written to disk.
+    @Published var proxySwitchLog = ProxySwitchLog()
+    /// Each automatic switch as it happens, for notifications.
+    let proxySwitchEvents = PassthroughSubject<ProxySwitchEvent, Never>()
+    var failoverRecoveryTracker = ProxyFailoverRecoveryTracker()
+    var failoverRecoveryScannedAt: [String: Date] = [:]
     @Published var proxyLatencies: [String: ProxyLatencyState] = [:]
     @Published var proxyLatencyRequests: Set<String> = []
     @Published var memberLatencyRequests: Set<String> = []
@@ -772,6 +785,9 @@ final class TunnelManager: ObservableObject {
                     )
                 }
                 installReviewTelemetry()
+                if environment["AETHERROUTE_UI_REVIEW_FAILOVER"] == "1" {
+                    installReviewFailover()
+                }
             }
             return
         }
@@ -1077,6 +1093,19 @@ final class TunnelManager: ObservableObject {
                 "stage=qaAutomation autoImport requested url=\(subURL.sanitizedURLForLogging, privacy: .private)"
             )
             _ = await addSubscription(urlText: subURL)
+        }
+        // "Group=mode" sets a select group's node selection mode before
+        // connecting, for the failover end-to-end test.
+        if let spec = qaAutomationEnvironment["AETHERROUTE_QA_SELECTION_MODE"],
+           let separator = spec.lastIndex(of: "="),
+           let mode = ProxySelectionMode(
+               rawValue: String(spec[spec.index(after: separator)...])
+           ) {
+            let group = String(spec[..<separator])
+            await setProxySelectionMode(group: group, mode: mode)
+            Self.runtimeLogger.info(
+                "stage=qaAutomation selectionMode applied=\(self.proxySelectionMode(for: group).rawValue, privacy: .public)"
+            )
         }
         guard qaAutomationEnvironment["AETHERROUTE_QA_AUTOCONNECT"] == "1",
               state == .disconnected else { return }
@@ -2248,6 +2277,47 @@ extension TunnelManager {
         return lines.joined(separator: "\n")
     }()
 
+    /// Failover mode on a backup: the first node is preferred and down, the
+    /// second carries traffic, and two earlier switches are on record.
+    func installReviewFailover() {
+        guard let selection = proxySelections["Balanced"],
+              selection.members.count > 1 else { return }
+        let preferred = selection.members[0]
+        let backup = selection.members[1]
+        applyProxySelectionModes(["Balanced": .failover])
+        preferredProxyMembers["Balanced"] = preferred
+        proxySelections["Balanced"] = ProxySelectionState(
+            selectedMember: backup,
+            members: selection.members
+        )
+        if let latency = proxyLatencies["Balanced"] {
+            proxyLatencies["Balanced"] = ProxyLatencyState(
+                results: latency.results.map {
+                    $0.member == preferred
+                        ? ProxyLatencyResult(member: preferred, delayMilliseconds: nil)
+                        : $0
+                }
+            )
+        }
+        let base = Date(timeIntervalSince1970: 1_775_005_320)
+        proxySwitchLog = ProxySwitchLog(events: [
+            ProxySwitchEvent(
+                date: base,
+                group: "Balanced",
+                from: preferred,
+                to: backup,
+                reason: .unresponsive
+            ),
+            ProxySwitchEvent(
+                date: base.addingTimeInterval(-3_480),
+                group: "Balanced",
+                from: backup,
+                to: preferred,
+                reason: .preferredRecovered
+            ),
+        ])
+    }
+
     func installShowcaseReviewSelections() {
         let nodes = Self.showcaseReviewNodes
         let latencies = ProxyLatencyState(
@@ -2269,5 +2339,6 @@ extension TunnelManager {
     static let largeReviewProfileYAML = ""
     static let showcaseReviewProfileYAML = ""
     func installShowcaseReviewSelections() {}
+    func installReviewFailover() {}
 }
 #endif

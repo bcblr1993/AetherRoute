@@ -1145,18 +1145,9 @@ extension TunnelManager {
         } else {
             activeProfileSummary = projection.summary
         }
-        automaticProxySelectionGroups = Set(
-            projection.summary?.proxyGroups.filter { group in
-                group.strategy.caseInsensitiveCompare("select") == .orderedSame
-                    && projection.catalog.activeProfile.map { active in
-                        userDefaults.bool(
-                            forKey: automaticProxySelectionPreferenceKey(
-                                profileYAML: active.profile.yaml,
-                                group: group.name
-                            )
-                        )
-                    } == true
-            }.map(\.name) ?? []
+        loadProxySelectionModes(
+            groups: projection.summary?.proxyGroups ?? [],
+            profileYAML: projection.catalog.activeProfile?.profile.yaml
         )
         dnsRuntimePolicy = projection.dnsPolicy
         dnsRuntimePolicyMessage = projection.dnsErrorDescription

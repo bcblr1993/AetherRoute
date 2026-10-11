@@ -403,26 +403,55 @@ public struct ProxySelectionStore: Sendable {
     public static let maximumSelectionCount = 4_096
     public static let maximumEncryptedBytes = 2_097_152
 
+    /// What the store holds. Each kind has its own file and its own
+    /// authenticated purpose, so one file can never be read as the other.
+    public enum Kind: Sendable {
+        /// The node each group uses, restored by the extension at launch.
+        case selections
+        /// The preferred node of each group in failover mode (1.6.0). Only
+        /// the app reads it; the extension's file format is unchanged.
+        case preferences
+
+        var fileName: String {
+            switch self {
+            case .selections: "proxy-selections.v1.json"
+            case .preferences: "proxy-preferences.v1.json"
+            }
+        }
+
+        var purpose: String {
+            switch self {
+            case .selections: "AetherRoute.ProxySelections"
+            case .preferences: "AetherRoute.ProxyPreferences"
+            }
+        }
+    }
+
     public let directoryURL: URL
     private let keyStore: any ProfileKeyStoring
-    private let codec = ProxySelectionEnvelopeCodec()
+    private let kind: Kind
+    private let codec: ProxySelectionEnvelopeCodec
 
     private var selectionURL: URL {
         directoryURL.appendingPathComponent(
-            "proxy-selections.v1.json",
+            kind.fileName,
             isDirectory: false
         )
     }
 
     public init(
         directoryURL: URL,
-        keyStore: any ProfileKeyStoring = DataProtectionProfileKeyStore()
+        keyStore: any ProfileKeyStoring = DataProtectionProfileKeyStore(),
+        kind: Kind = .selections
     ) {
         self.directoryURL = directoryURL
         self.keyStore = keyStore
+        self.kind = kind
+        codec = ProxySelectionEnvelopeCodec(purpose: kind.purpose)
     }
 
     public static func applicationGroup(
+        kind: Kind = .selections,
         fileManager: FileManager = .default
     ) throws -> Self {
         guard let container = fileManager.containerURL(
@@ -434,7 +463,8 @@ public struct ProxySelectionStore: Sendable {
             directoryURL: container.appendingPathComponent(
                 "Library/Application Support/AetherRoute",
                 isDirectory: true
-            )
+            ),
+            kind: kind
         )
     }
 
@@ -741,8 +771,8 @@ private struct ProxySelectionEnvelope: Codable, Sendable {
 private struct ProxySelectionEnvelopeCodec: Sendable {
     static let currentFormatVersion = 1
     static let algorithm = "AES-256-GCM"
-    static let purpose = "AetherRoute.ProxySelections"
 
+    let purpose: String
     let keyID = EncryptedProfileCodec.defaultKeyID
 
     func seal(
@@ -852,7 +882,7 @@ private struct ProxySelectionEnvelopeCodec: Sendable {
 
     private func authenticatedData(keyID: String) -> Data {
         Data(
-            "\(Self.purpose)|\(Self.currentFormatVersion)|\(keyID)".utf8
+            "\(purpose)|\(Self.currentFormatVersion)|\(keyID)".utf8
         )
     }
 }

@@ -172,6 +172,99 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["List paused · session counters are live"].exists)
     }
 
+    /// Failover mode on a backup (1.6.0): the banner names both nodes, the
+    /// rows carry Preferred and Backup in use, the history lists the
+    /// switches, and picking the preferred node again returns to it.
+    func testFailoverModeShowsBackupPreferredAndHistory() throws {
+        for item in [
+            (language: "en", appearance: "light", window: "1100x760"),
+            (language: "zh-Hans", appearance: "dark", window: "820x640"),
+        ] {
+            let app = launchReviewApp(
+                appearance: item.appearance,
+                language: item.language,
+                windowSize: item.window,
+                section: "proxies",
+                failover: true
+            )
+            defer { app.terminate() }
+            let banner = app.descendants(matching: .any)["proxy-failover-backup-banner"]
+            XCTAssertTrue(banner.waitForExistence(timeout: 5), "No backup banner (\(item.language)).")
+            XCTAssertTrue(mainProductWindow(in: app).frame.contains(banner.frame))
+            XCTAssertTrue(app.descendants(matching: .any)["proxy-node-badge-preferred"].exists)
+            XCTAssertTrue(app.descendants(matching: .any)["proxy-node-badge-backup"].exists)
+            XCTAssertTrue(app.descendants(matching: .any)["proxy-selection-mode-Balanced"].exists)
+
+            let history = app.buttons["proxy-switch-history-button"]
+            XCTAssertTrue(history.waitForExistence(timeout: 2))
+            history.click()
+            let list = app.descendants(matching: .any)["proxy-switch-history"]
+            XCTAssertTrue(list.waitForExistence(timeout: 2), "History did not open (\(item.language)).")
+            let reason = item.language == "en" ? "Previous node stopped answering" : "原节点无响应"
+            XCTAssertTrue(
+                app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", reason))
+                    .firstMatch.waitForExistence(timeout: 2)
+                    || list.staticTexts.containing(NSPredicate(format: "value CONTAINS %@", reason))
+                    .firstMatch.exists,
+                "History does not show the reason (\(item.language))."
+            )
+            app.typeKey(.escape, modifierFlags: [])
+
+            if item.language == "en" {
+                try auditProductAccessibility(in: app)
+                // Picking the preferred node returns to it.
+                let preferred = app.buttons["Singapore Edge"]
+                XCTAssertTrue(preferred.waitForExistence(timeout: 2))
+                XCTAssertTrue(preferred.isEnabled, "The preferred node cannot be picked in failover mode.")
+                preferred.click()
+                let gone = NSPredicate(format: "exists == false")
+                expectation(for: gone, evaluatedWith: banner)
+                waitForExpectations(timeout: 3)
+                XCTAssertFalse(app.descendants(matching: .any)["proxy-node-badge-backup"].exists)
+                XCTAssertTrue(app.descendants(matching: .any)["proxy-node-badge-preferred"].exists)
+            }
+        }
+    }
+
+    /// The three modes change what node rows do: Manual and Failover take
+    /// picks, Fastest does not; Failover marks the node in use as preferred.
+    func testNodeSelectionModesSwitch() {
+        let app = launchReviewApp(appearance: "light", windowSize: "1000x720", section: "proxies")
+        defer { app.terminate() }
+        let picker = app.descendants(matching: .any)["proxy-selection-mode-Balanced"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        let explanation = app.staticTexts["proxy-selection-mode-explanation"]
+        XCTAssertTrue(explanation.waitForExistence(timeout: 2))
+        let node = app.buttons["Tokyo Direct"]
+        XCTAssertTrue(node.waitForExistence(timeout: 2))
+        XCTAssertTrue(node.isEnabled, "Manual mode does not take picks.")
+        XCTAssertFalse(app.descendants(matching: .any)["proxy-node-badge-preferred"].exists)
+
+        picker.radioButtons["Fastest"].click()
+        let disabled = NSPredicate(format: "enabled == false")
+        expectation(for: disabled, evaluatedWith: node)
+        waitForExpectations(timeout: 3)
+        XCTAssertTrue(app.buttons["proxy-switch-history-button"].exists)
+
+        picker.radioButtons["Failover"].click()
+        let enabled = NSPredicate(format: "enabled == true")
+        expectation(for: enabled, evaluatedWith: node)
+        waitForExpectations(timeout: 3)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["proxy-node-badge-preferred"].waitForExistence(timeout: 2),
+            "Failover mode does not mark the node in use as preferred."
+        )
+        app.buttons["proxy-switch-history-button"].click()
+        XCTAssertTrue(app.staticTexts["No automatic switches yet."].waitForExistence(timeout: 2))
+        app.typeKey(.escape, modifierFlags: [])
+
+        picker.radioButtons["Manual"].click()
+        let noBadge = NSPredicate(format: "exists == false")
+        expectation(for: noBadge, evaluatedWith: app.descendants(matching: .any)["proxy-node-badge-preferred"])
+        waitForExpectations(timeout: 3)
+        XCTAssertFalse(app.buttons["proxy-switch-history-button"].exists)
+    }
+
     /// The View and More menus are native Menus the accessibility audit
     /// cannot press; open both and check their items so they stay usable.
     func testConnectionsMenusOpen() {
@@ -613,7 +706,7 @@ final class AetherRouteUITests: XCTestCase {
 
             navigationButton(in: app, title: "Proxies").click()
             let automaticSelection = app.descendants(matching: .any)[
-                "proxy-auto-select-Balanced"
+                "proxy-selection-mode-Balanced"
             ]
             XCTAssertTrue(automaticSelection.waitForExistence(timeout: 2))
             XCTAssertTrue(
@@ -669,7 +762,7 @@ final class AetherRouteUITests: XCTestCase {
                     XCTAssertTrue(note.waitForExistence(timeout: 2), "\(group) does not explain its automatic choice.")
                 } else {
                     XCTAssertTrue(
-                        app.descendants(matching: .any)["proxy-auto-select-\(group)"].waitForExistence(timeout: 2),
+                        app.descendants(matching: .any)["proxy-selection-mode-\(group)"].waitForExistence(timeout: 2),
                         "\(group) lost its manual controls."
                     )
                 }
@@ -1496,6 +1589,9 @@ final class AetherRouteUITests: XCTestCase {
                 "Failure and unexpected disconnect alerts are on"
             ].exists
         )
+        let switchAlerts = app.descendants(matching: .any)["proxy-switch-notifications-toggle"]
+        XCTAssertTrue(switchAlerts.waitForExistence(timeout: 2), "No node switch alerts setting.")
+        XCTAssertEqual(switchAlerts.value as? Int, 0, "Node switch alerts must be off by default.")
         try auditProductAccessibility(in: app)
     }
 
@@ -4231,10 +4327,14 @@ final class AetherRouteUITests: XCTestCase {
         responsivenessOutput: String? = nil,
         section: String? = nil,
         reviewProfile: String? = nil,
-        networkSetup: String? = nil
+        networkSetup: String? = nil,
+        failover: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["AETHERROUTE_UI_REVIEW"] = state
+        if failover {
+            app.launchEnvironment["AETHERROUTE_UI_REVIEW_FAILOVER"] = "1"
+        }
         if let networkSetup {
             app.launchEnvironment["AETHERROUTE_UI_REVIEW_SETUP"] = networkSetup
         }

@@ -121,6 +121,20 @@ around them.
   `AetherReadableTint`.
 - **Switches.** A labelled switch is a row (`AetherRowToggleStyle`, regular
   size); a switch inside a list row is small.
+- **Node selection (1.6.0).** A `select` group's card has one
+  `AetherSegmentedPicker` with Manual, Fastest and Failover, and one caption
+  line saying what the chosen mode does. In Failover the preferred node's row
+  carries an accent "Preferred" badge and a backup in use an orange "Backup in
+  use" badge; while a backup carries traffic an orange `tintFill` banner
+  names both nodes and the time of the switch. A clock button in the card
+  header opens the run's automatic switches in a popover. Notifications about
+  switches never name a node, group or profile.
+- **Layouts beside flexible controls.** Never place `ViewThatFits` or a
+  native segmented control next to a flexible sibling in an `HStack`: the
+  stack probes it several times per pass (this cost Connections 70 ms per
+  visit in 1.5.2). Use a custom `Layout` (`AetherPageHeaderLayout`,
+  `AetherFilterBarLayout`) that measures each child once, and answer
+  zero-width probes with the one-line size.
 - **Copy.** Interface strings go through `AppLocalization.string`, so the
   language chosen in Settings applies everywhere; names that are never
   translated use `Text(verbatim:)`.

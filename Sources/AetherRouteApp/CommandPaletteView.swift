@@ -257,7 +257,9 @@ struct CommandPaletteView: View {
                     subtitle: group.name,
                     symbol: "point.3.connected.trianglepath.dotted",
                     isCurrent: member == selected,
-                    isEnabled: !tunnel.automaticProxySelectionGroups.contains(group.name),
+                    // A group picking the fastest node ignores picks; in
+                    // failover mode a pick sets the preferred node.
+                    isEnabled: tunnel.proxySelectionMode(for: group.name) != .fastest,
                     perform: { Task { await tunnel.selectProxy(group: group.name, member: member) } }
                 ))
             }

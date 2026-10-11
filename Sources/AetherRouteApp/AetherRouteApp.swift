@@ -1391,7 +1391,8 @@ private struct MenuNodeListInline: View {
                                 }
                             }
                             .disabled(selecting || tunnel.proxySelectionRequests.contains(group.name)
-                                || group.strategy.lowercased() != "select" || unsupported.contains(member))
+                                || group.strategy.lowercased() != "select" || unsupported.contains(member)
+                                || tunnel.proxySelectionMode(for: group.name) == .fastest)
                         }
                     }
                 }
@@ -2373,6 +2374,18 @@ private struct SettingsView: View {
             )
             .accessibilityIdentifier("subscription-notifications-toggle")
             .help(AppLocalization.string("Notify me when the subscription in use is about to expire or has little traffic left."))
+
+            Toggle(
+                AppLocalization.string("Node switch alerts"),
+                isOn: Binding(
+                    get: { automation.proxySwitchNotificationsEnabled },
+                    set: { enabled in
+                        Task { await automation.setProxySwitchNotificationsEnabled(enabled) }
+                    }
+                )
+            )
+            .accessibilityIdentifier("proxy-switch-notifications-toggle")
+            .help(AppLocalization.string("Notify me when a group in Fastest or Failover mode moves to another node because the one in use stopped answering, or returns to the preferred node."))
 
             Label(notificationStatusText, systemImage: notificationStatusSymbol)
                 .font(.caption)
