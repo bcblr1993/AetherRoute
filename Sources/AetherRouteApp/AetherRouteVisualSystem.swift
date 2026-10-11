@@ -637,6 +637,49 @@ private struct AetherPageHeaderLayout: Layout {
     }
 }
 
+/// A filter row: the filter leading, the search field trailing (1.5.2).
+/// The search gets its width first, from 140 up to 220 pt; the filter is
+/// offered what is left. One measurement of each per pass: an `HStack`
+/// with a flexible search field probed the filter's `ViewThatFits` (and
+/// its native segmented control) many times per layout, which made
+/// switching to Connections about 70 ms slower.
+struct AetherFilterBarLayout: Layout {
+    private static let gap = AetherVisual.s3
+
+    private func widths(for width: CGFloat, subviews: Subviews) -> (filter: CGFloat, search: CGFloat) {
+        let filterIdeal = subviews[0].sizeThatFits(.unspecified).width
+        let room = width - filterIdeal - Self.gap
+        let search = min(AetherVisual.searchFieldWidth, max(AetherVisual.searchFieldMinWidth, room))
+        return (max(0, width - search - Self.gap), search)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let filterHeight = subviews[0].sizeThatFits(.unspecified).height
+        let searchHeight = subviews[1].sizeThatFits(.unspecified).height
+        let height = max(filterHeight, searchHeight)
+        // Zero-width and unspecified probes get the row's height without
+        // measuring the filter again.
+        guard let width = proposal.width, width >= 1, width.isFinite else {
+            return CGSize(width: 0, height: height)
+        }
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let split = widths(for: bounds.width, subviews: subviews)
+        subviews[0].place(
+            at: CGPoint(x: bounds.minX, y: bounds.midY),
+            anchor: .leading,
+            proposal: ProposedViewSize(width: split.filter, height: nil)
+        )
+        subviews[1].place(
+            at: CGPoint(x: bounds.maxX, y: bounds.midY),
+            anchor: .trailing,
+            proposal: ProposedViewSize(width: split.search, height: nil)
+        )
+    }
+}
+
 extension AetherPageHeader where Accessory == EmptyView {
     init(_ section: AppSection) {
         self.init(section) { EmptyView() }

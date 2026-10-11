@@ -156,19 +156,17 @@ struct ConnectionsView: View {
             // translation would draw them past the window. The old two-level
             // ViewThatFits built every control twice on each visit.
             // The filter leading and the search trailing, as on Rules; the
-            // search wraps below the filter when the row is too narrow.
-            HStack(spacing: AetherVisual.s3) {
+            // search narrows first when the row is tight.
+            AetherFilterBarLayout {
                 ViewThatFits(in: .horizontal) {
                     segmentedFilter(counts: counts)
                     menuFilter()
                 }
-                Spacer(minLength: 0)
                 AetherSearchField(
                     text: $searchText,
                     prompt: AppLocalization.string("Search connections"),
                     accessibilityIdentifier: "connections-search-field"
                 )
-                .frame(minWidth: AetherVisual.searchFieldMinWidth, maxWidth: AetherVisual.searchFieldWidth)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, AetherVisual.s3)
