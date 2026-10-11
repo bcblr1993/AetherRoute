@@ -548,18 +548,30 @@ struct AetherFlowLayout: Layout {
         // A zero-width probe asks for a minimum; one line answers it.
         let proposedWidth = proposal.width ?? .infinity
         let all = lines(width: proposedWidth >= 1 ? proposedWidth : .infinity, subviews: subviews)
-        let width = all.map { line in
-            line.map(\.size.width).reduce(0, +) + spacing * CGFloat(max(0, line.count - 1))
-        }.max() ?? 0
-        let height = all.map { $0.map(\.size.height).max() ?? 0 }.reduce(0, +)
-            + spacing * CGFloat(max(0, all.count - 1))
+        // Spelled out with explicit types: as one chained expression it
+        // exceeded the type checker's time limit on slower Macs (1.5.2).
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+        for (lineIndex, line) in all.enumerated() {
+            var lineWidth: CGFloat = 0
+            var lineHeight: CGFloat = 0
+            for (itemIndex, item) in line.enumerated() {
+                lineWidth += item.size.width
+                if itemIndex > 0 { lineWidth += spacing }
+                lineHeight = max(lineHeight, item.size.height)
+            }
+            width = max(width, lineWidth)
+            height += lineHeight
+            if lineIndex > 0 { height += spacing }
+        }
         return CGSize(width: width, height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var y = bounds.minY
         for line in lines(width: bounds.width, subviews: subviews) {
-            let lineHeight = line.map(\.size.height).max() ?? 0
+            var lineHeight: CGFloat = 0
+            for item in line { lineHeight = max(lineHeight, item.size.height) }
             var x = bounds.minX
             for item in line {
                 subviews[item.index].place(
