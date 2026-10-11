@@ -161,11 +161,26 @@ extension TunnelManager {
                     )
                 )
             } else {
+                let previousYAML = profiles.first(where: { $0.id == id })?.profile.yaml
+                // UserDefaults is documented thread-safe; it is only
+                // read and written here, off the main actor.
+                nonisolated(unsafe) let defaults = userDefaults
                 try await performProductionProfileCatalogOperation {
-                    try ProfileCatalogStore.applicationGroup().updateNative(
+                    let catalog = try ProfileCatalogStore.applicationGroup().updateNative(
                         id: id,
                         nodes: nodes
                     )
+                    // Editing nodes rewrites the profile's text; keep the
+                    // node choices, modes and DNS override that still apply.
+                    if let previousYAML,
+                       let updated = catalog.profiles.first(where: { $0.id == id }) {
+                        ProfileSettingsMigration.migrateInApplicationGroup(
+                            fromYAML: previousYAML,
+                            toYAML: updated.profile.yaml,
+                            defaults: defaults
+                        )
+                    }
+                    return catalog
                 }
             }
             diagnosticEvents.record(.profileImported)
@@ -961,6 +976,9 @@ extension TunnelManager {
                 throw ProfileCatalogStoreError.activeProfileNotFound
             }
             let update = try await subscriptionClient.fetch(subscription)
+            // UserDefaults is documented thread-safe; it is only read and
+            // written here, off the main actor.
+            nonisolated(unsafe) let defaults = userDefaults
             try await performProductionProfileCatalogOperation {
                 let updated: ActiveProfile
                 switch update {
@@ -985,10 +1003,19 @@ extension TunnelManager {
                         subscription: metadata
                     )
                 }
-                return try ProfileCatalogStore.applicationGroup().replace(
+                let catalog = try ProfileCatalogStore.applicationGroup().replace(
                     id: activeProfileID,
                     with: updated
                 )
+                // A provider that changes any node name changes the text the
+                // settings are bound to; carry them over before the new
+                // profile is installed and read.
+                ProfileSettingsMigration.migrateInApplicationGroup(
+                    fromYAML: profile.yaml,
+                    toYAML: updated.yaml,
+                    defaults: defaults
+                )
+                return catalog
             }
             switch update {
             case let .updated(_, _, report):
@@ -1160,10 +1187,7 @@ extension TunnelManager {
         profileYAML: String,
         group: String
     ) -> String {
-        let digest = ProxySelectionStore.profileDigest(
-            yaml: profileYAML + "\u{0}automatic-selection\u{0}" + group
-        )
-        return "AetherRoute.ProxySelection.Automatic.\(digest)"
+        ProxySelectionPreferenceKeys.legacyAutomatic(profileYAML: profileYAML, group: group)
     }
 
     func applyProductionProfileCatalog(

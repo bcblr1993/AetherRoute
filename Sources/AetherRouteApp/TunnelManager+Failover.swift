@@ -13,10 +13,7 @@ extension TunnelManager {
         profileYAML: String,
         group: String
     ) -> String {
-        let digest = ProxySelectionStore.profileDigest(
-            yaml: profileYAML + "\u{0}selection-mode\u{0}" + group
-        )
-        return "AetherRoute.ProxySelection.Mode.\(digest)"
+        ProxySelectionPreferenceKeys.mode(profileYAML: profileYAML, group: group)
     }
 
     /// Reads every `select` group's mode for the active profile. A group

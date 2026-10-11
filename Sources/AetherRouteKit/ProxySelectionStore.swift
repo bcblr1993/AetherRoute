@@ -429,7 +429,7 @@ public struct ProxySelectionStore: Sendable {
 
     public let directoryURL: URL
     private let keyStore: any ProfileKeyStoring
-    private let kind: Kind
+    public let kind: Kind
     private let codec: ProxySelectionEnvelopeCodec
 
     private var selectionURL: URL {
@@ -517,6 +517,45 @@ public struct ProxySelectionStore: Sendable {
             group: group,
             member: member,
             profileYAML: profileYAML,
+            fileManager: fileManager
+        )
+    }
+
+    /// Adds several choices for one profile in a single write, keeping any
+    /// choice the profile already has. Used to carry choices over when a
+    /// subscription update changes the profile's text (1.7.0); the caller
+    /// has already checked each pair against the new profile.
+    public func mergeSelections(
+        _ selections: [String: String],
+        profileYAML: String,
+        fileManager: FileManager = .default
+    ) throws {
+        guard !selections.isEmpty else { return }
+        for (group, member) in selections {
+            try Self.validateName(group)
+            try Self.validateName(member)
+        }
+        let digest = Self.profileDigest(yaml: profileYAML)
+        let existing = try load(fileManager: fileManager)
+        var profiles = existing?.profiles ?? [:]
+        var profileOrder = existing?.profileOrder ?? []
+        if profiles[digest] == nil,
+           profiles.count >= Self.maximumProfileCount,
+           let oldestDigest = profileOrder.first {
+            profiles.removeValue(forKey: oldestDigest)
+            profileOrder.removeFirst()
+        }
+        let current = profiles[digest] ?? [:]
+        let merged = current.merging(selections) { kept, _ in kept }
+        guard merged != current else { return }
+        profiles[digest] = merged
+        profileOrder.removeAll { $0 == digest }
+        profileOrder.append(digest)
+        try save(
+            ProxySelectionPayload(
+                profiles: profiles,
+                profileOrder: profileOrder
+            ),
             fileManager: fileManager
         )
     }
