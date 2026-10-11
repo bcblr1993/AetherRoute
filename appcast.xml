@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.5.2 (Build 2026101101)</title>
-            <pubDate>Sun, 11 Oct 2026 13:24:41 +0800</pubDate>
-            <sparkle:version>2026101101</sparkle:version>
-            <sparkle:shortVersionString>1.5.2</sparkle:shortVersionString>
+            <title>Version 1.6.0 (Build 2026101102)</title>
+            <pubDate>Sun, 11 Oct 2026 16:51:04 +0800</pubDate>
+            <sparkle:version>2026101102</sparkle:version>
+            <sparkle:shortVersionString>1.6.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,36 +119,34 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.5.2 更新要点</span>
-  <span class="release-badge">Build 2026101101 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.6.0 更新要点</span>
+  <span class="release-badge">Build 2026101102 · 正式发布</span>
+</div>
+<div class="section">
+  <span class="section-tag tag-feature">🆕 新增</span>
+  <ul>
+    <li><strong>节点故障转移</strong>：每个代理分组可选“手动 / 自动最快 / 故障转移”。故障转移模式优先使用你选中的节点，它无响应时自动切到最快的可用节点，恢复后自动切回。</li>
+    <li>代理页标出“首选”与“备用中”节点，使用备用节点时顶部会说明原因与时间；时钟按钮可查看本次运行的自动切换记录。</li>
+    <li>设置中新增“节点自动切换提醒”（默认关闭，通知不含节点名）。</li>
+  </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">✨ 优化</span>
   <ul>
-    <li><strong>页头重新设计</strong>：各页面的操作按钮与大标题同行、分组排列，并与内容边缘对齐；窗口变窄时自动换行。</li>
-    <li><strong>连接页更整洁</strong>：七个按钮收为"显示""暂停""更多"三组，搜索框移到过滤条右侧。</li>
-    <li><strong>添加规则弹窗</strong>：重新设计为分组卡片，按钮位置统一。</li>
-    <li>切换页面时内容淡入；窗口加入 Liquid Glass 侧边栏按钮，侧边栏可隐藏、可调宽度。</li>
-    <li>切页更快：最慢一次从 0.2 秒降到 0.17 秒；内存从约 70 MB 降到约 61 MB。</li>
-  </ul>
-</div>
-<div class="section">
-  <span class="section-tag tag-fix">🛠 修复</span>
-  <ul>
-    <li>小窗口下连接详情弹窗超出窗口、看不到"完成"按钮的问题。</li>
-    <li>窄窗口或放大字号时页面被撑高、超出窗口的问题。</li>
+    <li>节点故障后，卡在旧节点上的连接会被关闭，应用立即改走新节点，不再一直卡住。</li>
+    <li>切换前先复测确认，偶发抖动不会误切；检查间隔从 15 秒缩短到 10 秒。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.5.2/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.6.0/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.5.2/AetherRoute-1.5.2-build-2026101101-arm64.dmg"
-                sparkle:edSignature="ZR9QqUZlLRMwEleT1NzxikuOtK06LhN5PY3xz1zDGy8taI92+I2mFIy7Bl/5qIFdbWa1IltqjbQEplheY5TmDg=="
-                length="26976491"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.6.0/AetherRoute-1.6.0-build-2026101102-arm64.dmg"
+                sparkle:edSignature="lBCWdzRM2MUssVsGBQqYvv+sF5C9G62329sTXLM7jcKoot1IayeC/R5o9xokn89iolr8KH6JWntXj5uI/vcnDg=="
+                length="27071473"
                 type="application/octet-stream" />
         </item>
     </channel>

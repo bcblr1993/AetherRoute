@@ -4,6 +4,44 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-10-11
+
+Node failover: each proxy group can now choose Manual, Fastest or Failover. In Failover mode, traffic moves to a working node when the preferred one stops answering, and returns once it answers again.
+
+### Added
+
+- Node selection: every select group on the Proxies page has a three-way choice.
+  - **Manual** keeps the node you pick, even when it stops answering.
+  - **Fastest** uses the fastest node that works (the former "Pick the fastest node automatically" switch; groups that had it on read as Fastest).
+  - **Failover** uses the node you pick as the preferred node. When it stops answering, the fastest working node takes over. Once the preferred node has answered in two scans in a row, a minute apart, traffic returns to it.
+- In Failover mode the preferred node is marked "Preferred" and a backup in use "Backup in use". While a backup carries traffic, a banner names both nodes and the time of the switch.
+- Automatic switches: a clock button on the group card lists this run's switches (time, from, to, reason). They are kept in memory only.
+- Settings › Shortcuts & Notifications › Node switch alerts (off by default). A notification says a switch happened without naming any node, group or profile.
+
+### Changed
+
+- When a group moves away from a node that stopped answering, the connections still on that node are closed, so apps reconnect through the new node instead of hanging until they time out. Returning to the preferred node follows the "Close connections when switching nodes" setting.
+- A failed check is repeated once on the same node before switching, so a single lost probe no longer moves a working route. Routes are checked every 10 seconds instead of 15.
+- Every group in Fastest or Failover mode is checked from the moment the tunnel connects, not only the group the catch-all rule uses. The external 204 request now judges only that catch-all group, and other groups are judged by their own node's probe.
+- The menu bar panel and the command palette follow the mode: nodes cannot be picked in Fastest mode, and a pick in Failover mode sets the preferred node.
+- The preferred node is stored encrypted in its own file. The selection file the network extensions read keeps its format, so older extensions are unaffected.
+
+### Fixed
+
+- The app's loose icon file is always the full one (16–1024 px). The asset catalog could write a thin copy (16–256 px) over it depending on build order, and release packaging now checks it.
+
+### Verified
+
+- Real failover, end to end (new `scripts/test_failover_e2e.sh`, on a throwaway clone of the `macos27` VM with the QA build). Two proxy fixtures, A (preferred) and B, ran on the host; A was frozen to simulate a node that stops answering.
+  - TUN: traffic reached B 22 s after A stopped answering, the download stuck on A was closed after 31 s, and traffic returned to A 61 s after it answered again.
+  - Transparent proxy: the same steps took 23 s, 31 s and 75 s.
+  - In both engines, Manual mode stayed on its frozen node for 45 s and never used the other one.
+- Unit tests for modes, migration, candidate order, switch confirmation, closing connections, switching back and sealed preferred-node storage; `./scripts/test.sh` passed. All five protocol interop gates passed (48 cases, 26 certificate rejections); the engine is unchanged (core `183c120`).
+- UI suite on the `macos27` VM: 51 passed, 0 failed, 3 opt-in tests skipped. New tests cover the failover backup state, the switch history, the three modes and the alert setting; the Proxies accessibility audit passes with the new controls.
+- Tart VM matrix (tun / transparent × rule / global / direct) passed with QA build 2026101102, including idle reuse after 50 s, a 2 MiB upload and transparent SNI recovery.
+- Mac mini remote gate passed. On the Mac mini with notarized build 2026101102, idle reuse and a 2 MiB upload passed in transparent mode (3.5 s, 66 MB footprint) and in TUN mode (6.5 s, 65 MB).
+- UI performance and memory gate on the Mac mini (Release, live traffic, 5 minutes per profile): page switch p95 130 ms and slowest 173 ms on both profiles; the Proxies page p95 is 82–85 ms with the new controls (1.5.2: 81–85 ms). Footprint median 61 MB, peak 64–65 MB, +1 MB over the run.
+
 ## [1.5.2] - 2026-10-11
 
 Each page's actions now sit on the title's line and are grouped, the window gets the Liquid Glass sidebar button, the Add Rule sheet is redesigned, and pages fade in when you switch to them.
