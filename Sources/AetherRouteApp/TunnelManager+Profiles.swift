@@ -959,6 +959,28 @@ extension TunnelManager {
         await refreshSubscription(isAutomatic: true)
     }
 
+    /// Replaces a profile's contents as a subscription update does: the
+    /// overrides stay with the profile, and settings bound to the old text
+    /// move to the new text before the new profile is installed and read.
+    nonisolated static func replaceProfileContents(
+        id: UUID,
+        previous: ActiveProfile,
+        with updated: ActiveProfile,
+        defaults: UserDefaults
+    ) throws -> ProfileCatalog {
+        let catalog = try ProfileCatalogStore.applicationGroup().replace(
+            id: id,
+            with: updated
+        )
+        ProfileSettingsMigration.migrateInApplicationGroup(
+            fromYAML: previous.yaml,
+            toYAML: updated.yaml,
+            defaults: defaults,
+            overrides: previous.overrides
+        )
+        return catalog
+    }
+
     func refreshSubscription(isAutomatic: Bool) async {
         guard ensurePrivacyConsent(), canModifyProfiles,
               let profile = activeProfile,
@@ -1005,20 +1027,12 @@ extension TunnelManager {
                         subscription: metadata
                     )
                 }
-                let catalog = try ProfileCatalogStore.applicationGroup().replace(
+                return try Self.replaceProfileContents(
                     id: activeProfileID,
-                    with: updated
+                    previous: profile,
+                    with: updated,
+                    defaults: defaults
                 )
-                // A provider that changes any node name changes the text the
-                // settings are bound to; carry them over before the new
-                // profile is installed and read.
-                ProfileSettingsMigration.migrateInApplicationGroup(
-                    fromYAML: profile.yaml,
-                    toYAML: updated.yaml,
-                    defaults: defaults,
-                    overrides: profile.overrides
-                )
-                return catalog
             }
             switch update {
             case let .updated(_, _, report):

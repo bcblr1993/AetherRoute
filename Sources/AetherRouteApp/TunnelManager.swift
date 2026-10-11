@@ -1094,6 +1094,29 @@ final class TunnelManager: ObservableObject {
             )
             _ = await addSubscription(urlText: subURL)
         }
+        // Overrides from a JSON file, then the profile's text replaced the
+        // way a subscription update replaces it, for the override
+        // end-to-end test (1.7.0).
+        if let path = qaAutomationEnvironment["AETHERROUTE_QA_OVERRIDES_PATH"],
+           let data = FileManager.default.contents(atPath: path),
+           let overrides = try? JSONDecoder().decode(ProfileOverride.self, from: data) {
+            let saved = await setProfileOverrides(overrides, reloadsRunningProfile: false)
+            Self.runtimeLogger.info("stage=qaAutomation overrides applied=\(saved, privacy: .public)")
+        }
+        if let path = qaAutomationEnvironment["AETHERROUTE_QA_REPLACE_PROFILE_PATH"],
+           let yaml = try? String(contentsOfFile: path, encoding: .utf8),
+           let id = activeProfileID, let previous = activeProfile {
+            nonisolated(unsafe) let defaults = userDefaults
+            let updated = ActiveProfile(name: previous.name, yaml: yaml, subscription: previous.subscription)
+            do {
+                try await performProductionProfileCatalogOperation {
+                    try Self.replaceProfileContents(id: id, previous: previous, with: updated, defaults: defaults)
+                }
+                Self.runtimeLogger.info("stage=qaAutomation profileReplaced success")
+            } catch {
+                Self.runtimeLogger.error("stage=qaAutomation profileReplaced failed")
+            }
+        }
         // "Group=mode" sets a select group's node selection mode before
         // connecting, for the failover end-to-end test.
         if let spec = qaAutomationEnvironment["AETHERROUTE_QA_SELECTION_MODE"],
