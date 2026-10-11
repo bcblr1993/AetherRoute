@@ -209,15 +209,20 @@ struct WindowChromeSynchronizer: NSViewRepresentable {
     let title: String
     let showsTitle: Bool
     var isMainWindow: Bool = false
+    /// The main window keeps SwiftUI's own toolbar: the page title, page
+    /// actions, search and the sidebar button sit in the Liquid Glass
+    /// toolbar (1.5.2). Settings keeps the compact title bar, as System
+    /// Settings does.
+    var usesNativeToolbar: Bool = false
 
     func makeNSView(context: Context) -> WindowChromeView {
         let view = WindowChromeView()
-        view.update(title: title, showsTitle: showsTitle, isMainWindow: isMainWindow)
+        view.update(title: title, showsTitle: showsTitle, isMainWindow: isMainWindow, usesNativeToolbar: usesNativeToolbar)
         return view
     }
 
     func updateNSView(_ nsView: WindowChromeView, context: Context) {
-        nsView.update(title: title, showsTitle: showsTitle, isMainWindow: isMainWindow)
+        nsView.update(title: title, showsTitle: showsTitle, isMainWindow: isMainWindow, usesNativeToolbar: usesNativeToolbar)
     }
 }
 
@@ -228,13 +233,15 @@ final class WindowChromeView: NSView {
     private var expectedTitle = ""
     private var showsWindowTitle = true
     private var isMainWindow = false
+    private var usesNativeToolbar = false
     private weak var observedWindow: NSWindow?
     private let visibilityCoordinator = WindowVisibilityCoordinator()
 
-    func update(title: String, showsTitle: Bool, isMainWindow: Bool = false) {
+    func update(title: String, showsTitle: Bool, isMainWindow: Bool = false, usesNativeToolbar: Bool = false) {
         expectedTitle = title
         showsWindowTitle = showsTitle
         self.isMainWindow = isMainWindow
+        self.usesNativeToolbar = usesNativeToolbar
         applyWindowChrome()
         if isMainWindow, let window {
             AppWindowManager.shared.registerMainWindow(window)
@@ -302,6 +309,8 @@ final class WindowChromeView: NSView {
 
     private func applyWindowChrome() {
         guard let window = observedWindow ?? window else { return }
+        // SwiftUI owns the title and toolbar of a window that uses them.
+        guard !usesNativeToolbar else { return }
         if window.title != expectedTitle {
             window.title = expectedTitle
         }
@@ -506,6 +515,9 @@ struct AetherRouteApp: App {
             height: isMenuPanelReview ? 440 : AetherVisual.windowHeight
         )
         .windowResizability(isMenuPanelReview ? .contentSize : .contentMinSize)
+        // A compact glass toolbar holding only the sidebar button (1.5.2);
+        // each page draws its title and actions in its own header, aligned
+        // with its content, and scrolls beneath the glass.
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .commands {
             CommandGroup(after: .appInfo) {

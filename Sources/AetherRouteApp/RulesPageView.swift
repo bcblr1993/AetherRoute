@@ -108,8 +108,9 @@ struct RulesView: View {
                                     showAddRuleSheet = true
                                 } label: {
                                     Label(AppLocalization.string("Add Rule"), systemImage: "plus")
+                                        .labelStyle(.titleAndIcon)
                                 }
-                                .aetherButton()
+                                .aetherButton(prominent: true)
                                 .accessibilityIdentifier("add-custom-rule")
                             }
 
@@ -997,144 +998,145 @@ struct CustomRuleEditorSheet: View {
                 tint: AppSection.rules.tileColor
             )
 
-            AetherSegmentedPicker(
-                selection: $mode,
-                options: InputMode.allCases.map { .init(value: $0, title: $0.title) },
-                accessibilityLabel: AppLocalization.string("Input mode"),
-                accessibilityIdentifier: "custom-rule-input-mode",
-                fillsWidth: true
-            )
+            // A compact switch between the two ways to write a rule; a
+            // full-width bar outweighed the fields it switches (1.5.2).
+            HStack {
+                Spacer(minLength: 0)
+                AetherSegmentedPicker(
+                    selection: $mode,
+                    options: InputMode.allCases.map { .init(value: $0, title: $0.title) },
+                    accessibilityLabel: AppLocalization.string("Input mode"),
+                    accessibilityIdentifier: "custom-rule-input-mode"
+                )
+                .fixedSize()
+                Spacer(minLength: 0)
+            }
 
-            if mode == .form {
-                Grid(alignment: .leading, horizontalSpacing: AetherVisual.s3, verticalSpacing: AetherVisual.s3) {
-                    GridRow {
-                        fieldLabel(AppLocalization.string("Rule kind"))
+            // Grouped rows as in Settings: the name leading, the control
+            // trailing, every row on one grid.
+            VStack(spacing: 0) {
+                if mode == .form {
+                    ruleRow(AppLocalization.string("Rule kind")) {
                         Picker(AppLocalization.string("Rule kind"), selection: $selectedKind) {
                             ForEach(CustomRuleKind.editableKinds, id: \.self) { kind in
                                 Text(kind.displayName).tag(kind)
                             }
                         }
                         .labelsHidden()
+                        .fixedSize()
                     }
-                    GridRow {
-                        fieldLabel(AppLocalization.string("Match"))
+                    ruleDivider
+                    ruleRow(AppLocalization.string("Match")) {
                         TextField(placeholderForKind(selectedKind), text: $ruleValue)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(.plain)
+                            .multilineTextAlignment(.trailing)
                             .accessibilityIdentifier("custom-rule-value-field")
                     }
                     if selectedKind == .ipCIDR || selectedKind == .ipCIDR6 || selectedKind == .geoIP {
-                        GridRow {
-                            Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
-                            Toggle(AppLocalization.string("Match by IP without DNS lookup (no-resolve)"), isOn: $noResolve)
-                        }
+                        ruleDivider
+                        Toggle(AppLocalization.string("Match by IP without DNS lookup (no-resolve)"), isOn: $noResolve)
+                            .toggleStyle(AetherRowToggleStyle())
+                            .padding(.horizontal, AetherVisual.s4)
+                            .frame(minHeight: AetherVisual.compactRowHeight)
+                            .transition(.opacity)
                     }
-                    GridRow {
-                        fieldLabel(AppLocalization.string("Action"))
+                    ruleDivider
+                    ruleRow(AppLocalization.string("Action")) {
                         Picker(AppLocalization.string("Action"), selection: $selectedTargetKind) {
                             ForEach(TargetKind.allCases) { t in
                                 Text(t.title).tag(t)
                             }
                         }
                         .labelsHidden()
+                        .fixedSize()
                     }
                     if selectedTargetKind == .proxy {
-                        GridRow {
-                            fieldLabel(AppLocalization.string("Node or group"))
+                        ruleDivider
+                        ruleRow(AppLocalization.string("Node or group")) {
                             TextField(AppLocalization.string("e.g. PROXY, Node Select, Auto…"), text: $customTargetName)
-                                .textFieldStyle(.roundedBorder)
+                                .textFieldStyle(.plain)
+                                .multilineTextAlignment(.trailing)
                         }
+                        .transition(.opacity)
                     }
-                    GridRow {
-                        fieldLabel(AppLocalization.string("Note"))
+                    ruleDivider
+                    ruleRow(AppLocalization.string("Note")) {
                         TextField(AppLocalization.string("Optional, e.g. Tailscale node / local service"), text: $comment)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(.plain)
+                            .multilineTextAlignment(.trailing)
                     }
-                }
-            } else {
-                Grid(alignment: .leading, horizontalSpacing: AetherVisual.s3, verticalSpacing: AetherVisual.s3) {
-                    GridRow {
-                        fieldLabel(AppLocalization.string("Rule"))
+                } else {
+                    ruleRow(AppLocalization.string("Rule")) {
                         TextField(AppLocalization.string("e.g. DOMAIN-SUFFIX,baizhiedu.xin,DIRECT or IP-CIDR,100.64.0.0/10,DIRECT,no-resolve"), text: $rawClashString)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(.plain)
                             .font(.body.monospaced())
+                            // A whole rule line reads from its start.
+                            .multilineTextAlignment(.leading)
                             .accessibilityIdentifier("custom-rule-raw-field")
                     }
-                    GridRow {
-                        fieldLabel(AppLocalization.string("Note"))
+                    ruleDivider
+                    ruleRow(AppLocalization.string("Note")) {
                         TextField(AppLocalization.string("Optional, e.g. Direct private subnet"), text: $comment)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(.plain)
+                            .multilineTextAlignment(.trailing)
                     }
                 }
             }
+            .aetherPanel()
 
-            // 实时校验提示 (Validation Status)
-            HStack(spacing: AetherVisual.s2) {
-                switch validationResult {
-                case .valid:
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundStyle(Color.green)
-                    Text(AppLocalization.string("Rule syntax is valid and active"))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Color.green)
-                case let .invalid(reason):
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Color.orange)
-                    Text(reason)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Color.orange)
-                }
-                Spacer()
-
-                Button {
-                    verifyRule()
-                } label: {
-                    Label(AppLocalization.string("Verify rule"), systemImage: "bolt.badge.clock.fill")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .aetherButton()
-                .controlSize(.small)
-                .disabled(!validationResult.isValid || isSaving)
+            // One quiet line under the fields, once there is something to
+            // judge: an empty form is not an error yet.
+            if hasEnteredRule {
+                validationLine
+                    .padding(.horizontal, AetherVisual.sectionHeaderInset)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .padding(.horizontal, AetherVisual.s3)
-            .padding(.vertical, AetherVisual.s2)
-            .aetherCallout(tint: validationResult.isValid ? .green : .orange)
 
             // 规则验证结果 (Dry-run Result)
             if hasTested {
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     if let res = testResult {
-                        HStack(spacing: AetherVisual.s2) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(Color.green)
+                        Label {
                             Text(String.localizedStringWithFormat(AppLocalization.string("Simulated match: %@ -> %@"), res.matchedRule.kind, res.target))
-                                .font(.callout.weight(.bold))
-                                .foregroundStyle(Color.green)
+                                .font(.callout.weight(.semibold))
+                        } icon: {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(AetherReadableTint(color: .green))
                         }
                     } else if !testExplanation.isEmpty {
-                        HStack(spacing: AetherVisual.s2) {
+                        Label {
+                            Text(testExplanation)
+                                .font(.callout)
+                        } icon: {
                             Image(systemName: "info.circle.fill")
                                 .foregroundStyle(AetherVisual.secondaryText)
-                            Text(testExplanation)
-                                .font(.caption)
-                                .foregroundStyle(.primary)
                         }
                     }
                 }
                 .padding(.horizontal, AetherVisual.s3)
                 .padding(.vertical, AetherVisual.s2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AetherVisual.subtleFill, in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius))
+                .aetherCallout(tint: testResult == nil ? .gray : .green)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             if saveFailed, let message = tunnel.customRuleMessage {
                 AetherInlineMessage(text: message)
             }
-            // Action Buttons
-            HStack {
-                // Cancel and the primary action share the trailing edge, as in
-                // every macOS sheet.
+
+            // Verify is a secondary step and leads; Cancel and Save share
+            // the trailing edge, as in every macOS sheet.
+            HStack(spacing: AetherVisual.s2) {
+                Button {
+                    verifyRule()
+                } label: {
+                    Label(AppLocalization.string("Verify rule"), systemImage: "checkmark.shield")
+                }
+                .aetherButton()
+                .disabled(!validationResult.isValid || isSaving)
                 Spacer()
                 Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
+                    .aetherButton()
                     .disabled(isSaving)
                     .keyboardShortcut(.cancelAction)
                 Button {
@@ -1154,11 +1156,15 @@ struct CustomRuleEditorSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(!validationResult.isValid || isSaving)
             }
+            .controlSize(.large)
         }
         .padding(AetherVisual.dialogPadding)
         .aetherSheetFrame()
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: mode)
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: selectedTargetKind)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: selectedKind)
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: hasEnteredRule)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: hasTested)
         .disabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
     }
@@ -1174,10 +1180,47 @@ struct CustomRuleEditorSheet: View {
             || !customTargetName.isEmpty || noResolve || selectedKind != .domainSuffix || selectedTargetKind != .direct
     }
 
-    private func fieldLabel(_ title: String) -> some View {
-        Text(title)
+    /// Whether there is anything to validate yet.
+    private var hasEnteredRule: Bool {
+        mode == .raw
+            ? !rawClashString.trimmingCharacters(in: .whitespaces).isEmpty
+            : !ruleValue.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    @ViewBuilder
+    private var validationLine: some View {
+        switch validationResult {
+        case .valid:
+            Label {
+                Text(AppLocalization.string("Rule syntax is valid and active"))
+            } icon: {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(AetherReadableTint(color: .green))
+            }
+            .font(.callout)
             .foregroundStyle(AetherVisual.secondaryText)
-            .gridColumnAlignment(.trailing)
+        case let .invalid(reason):
+            AetherInlineMessage(text: reason, kind: .warning)
+        }
+    }
+
+    private func ruleRow<Control: View>(
+        _ title: String,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(spacing: AetherVisual.s3) {
+            Text(title)
+                .foregroundStyle(.primary)
+                .fixedSize()
+            Spacer(minLength: AetherVisual.s3)
+            control()
+        }
+        .padding(.horizontal, AetherVisual.s4)
+        .frame(minHeight: AetherVisual.compactRowHeight)
+    }
+
+    private var ruleDivider: some View {
+        Divider().padding(.leading, AetherVisual.s4)
     }
 
     private func placeholderForKind(_ kind: CustomRuleKind) -> String {

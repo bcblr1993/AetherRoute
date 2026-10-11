@@ -446,6 +446,8 @@ struct ProfilesView: View {
                 .accessibilityIdentifier("import-share-links")
             } label: {
                 Label(AppLocalization.string("Add"), systemImage: "plus")
+                    // The page's main action keeps its name in the toolbar.
+                    .labelStyle(.titleAndIcon)
             }
             .menuIndicator(.visible)
             .aetherButton(prominent: true)
@@ -473,7 +475,9 @@ struct ProfilesView: View {
                 }
                 .disabled(!tunnel.canModifyProfiles)
             } label: {
-                Image(systemName: "ellipsis")
+                // Named, like Add beside it: a lone ellipsis drew a button
+                // half its height.
+                Label(AppLocalization.string("More"), systemImage: "ellipsis.circle")
             }
             .menuIndicator(.hidden)
             .aetherButton()

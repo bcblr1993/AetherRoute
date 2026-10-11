@@ -215,7 +215,8 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Singapore Edge"].waitForExistence(timeout: 2))
         navigationButton(in: app, title: "Connections").click()
         XCTAssertTrue(app.staticTexts["Counted on this Mac only; nothing is reported."].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.buttons["disconnect-all-connections"].isHittable)
+        // Close All and Disconnect live in the toolbar's More menu (1.5.2).
+        XCTAssertTrue(app.descendants(matching: .any)["connections-more-menu"].isHittable)
         app.buttons["Profiles"].click()
         XCTAssertTrue(app.menuButtons["profiles-add-menu"].waitForExistence(timeout: 2))
         navigationButton(in: app, title: "Rules").click()
@@ -240,14 +241,17 @@ final class AetherRouteUITests: XCTestCase {
 
         let mainWindow = mainProductWindow(in: app)
         XCTAssertTrue(mainWindow.waitForExistence(timeout: 5))
-        assertNativeCompactWindowChrome(mainWindow)
+        // The main window has the Liquid Glass toolbar with the system
+        // sidebar button since 1.5.2; Settings keeps the compact title bar
+        // without one, as System Settings does.
+        assertNativeCompactWindowChrome(mainWindow, expectsSidebarButton: true)
 
         openSettings(in: app, tabLabel: "General")
         let settingsWindow = app.windows[
             "com_apple_SwiftUI_Settings_window"
         ]
         XCTAssertTrue(settingsWindow.waitForExistence(timeout: 5))
-        assertNativeCompactWindowChrome(settingsWindow)
+        assertNativeCompactWindowChrome(settingsWindow, expectsSidebarButton: false)
     }
 
     func testPageNavigationPreservesWindowSizeWithinEachWindowClass() {
@@ -3378,7 +3382,7 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(bounds.contains(table.frame))
         for identifier in [
             "connections-session-bar", "connections-filter-picker",
-            "connections-sort-picker", "disconnect-all-connections",
+            "connections-view-menu", "connections-more-menu",
             "connections-count-summary", "connections-privacy-summary",
         ] {
             let element = app.descendants(matching: .any)[identifier]
@@ -3984,7 +3988,10 @@ final class AetherRouteUITests: XCTestCase {
         )
     }
 
-    private func assertNativeCompactWindowChrome(_ window: XCUIElement) {
+    private func assertNativeCompactWindowChrome(
+        _ window: XCUIElement,
+        expectsSidebarButton: Bool
+    ) {
         for identifier in [
             "_XCUI:CloseWindow",
             "_XCUI:MinimizeWindow",
@@ -4003,12 +4010,15 @@ final class AetherRouteUITests: XCTestCase {
             "Missing native macOS zoom/full-screen window control."
         )
 
-        for label in ["Hide Sidebar", "Show Sidebar", "隐藏边栏", "显示边栏"] {
-            XCTAssertFalse(
-                window.buttons[label].exists,
-                "The automatic sidebar toolbar item should not occupy the compact title bar."
-            )
-        }
+        let sidebarButtonExists = ["Hide Sidebar", "Show Sidebar", "隐藏边栏", "显示边栏"]
+            .contains { window.buttons[$0].exists }
+        XCTAssertEqual(
+            sidebarButtonExists,
+            expectsSidebarButton,
+            expectsSidebarButton
+                ? "The main window's toolbar should offer the system sidebar button."
+                : "The automatic sidebar toolbar item should not occupy the compact title bar."
+        )
     }
 
     /// WCAG contrast between an element's text and its background, measured
@@ -4164,7 +4174,7 @@ final class AetherRouteUITests: XCTestCase {
             }
             if destination.pageIdentifier == "connections-page" {
                 assertConnectionsFit(in: app)
-                let disconnectAll = app.buttons["disconnect-all-connections"]
+                let disconnectAll = app.descendants(matching: .any)["connections-more-menu"]
                 XCTAssertTrue(disconnectAll.isHittable)
                 XCTAssertTrue(windowFrame.contains(disconnectAll.frame))
                 XCTAssertGreaterThanOrEqual(disconnectAll.frame.height, 20)

@@ -22,8 +22,16 @@ keyboard focus, VoiceOver semantics, and Reduce Motion.
   person's Liquid Glass setting and Reduce Transparency apply to
   AetherRoute exactly as to Apple's apps; on macOS 15 it falls back to the
   closest material.
-- Pages read like System Settings: a large title and the page's actions on
-  one line, no subtitle (the section's description stays with VoiceOver);
+- The window's compact glass toolbar holds only the sidebar button and has
+  no background of its own; pages run to the top edge and scroll beneath it
+  (1.5.2). Each page opens with `AetherPageHeader`: the large title leading
+  and the page's actions trailing on one line, aligned with the content's
+  margins, as in App Store and Music; when they do not fit, the actions move
+  below the title. Actions are grouped and named (a "View" menu for display
+  options, a "More" menu for actions on everything), never a row of bare
+  icons, and the page's main action is the prominent button.
+- Pages read like System Settings: no subtitle under the title (the
+  section's description stays with VoiceOver);
   groups of rows inside cards, each row a colour tile, a title, then
   the value or control on the trailing edge; a quiet section heading above a
   group and a short footnote below it.
@@ -98,6 +106,10 @@ around them.
   onboarding card `heroCardPadding` (20), and a card holding a list whose
   rows carry their own padding `listCardInset` (8). A card's title is
   `.headline`.
+- **Sheet forms.** Fields sit in a grouped card, the name leading and the
+  control trailing, like Settings. Validation appears as one quiet line under
+  the card once there is something to judge, never as a warning on an empty
+  form. A secondary step (Verify) leads the footer.
 - **Sheet footers.** Cancel and the primary action both sit on the
   trailing edge, Cancel first, as in every macOS sheet; the primary action
   is the prominent bordered button with the default-action shortcut, and a
@@ -124,6 +136,7 @@ state still changes, only the travel is dropped.
 |---|---|
 | `pressFeedback` (120 ms ease-out) | Press dip and hover fades |
 | `quickFade` (180 ms) | Status text, badges, icon swaps |
+| `pageFade` (160 ms ease-out) | A page arriving after sidebar navigation: opacity only, so the page is laid out once |
 | `valueChange` (spring 0.36 s) | Numbers rolling to a new value, only when something happened (`aetherNumericValue`); values that tick on their own swap in place (`aetherLiveValue`) |
 | `disclosure` (spring 0.3 s) | Disclosure chevrons and the content they reveal |
 | `gentleSpring` (spring 0.32 s) | Layout and list changes, inline messages |
@@ -131,9 +144,9 @@ state still changes, only the travel is dropped.
 | `switchToggle` (spring 0.3 s) | The connection switch's knob |
 | `attentionPulse` (1.2 s, repeating) | The menu bar's "new version" badge |
 
-Pages switch at once, as panes do in System Settings: an entrance animation
-laid the incoming page out again on its frames and doubled the slowest
-switches (1.5.1). Rolling digits on a once-a-second value filled the
+Pages fade in on opacity alone (`pageFade`): the 1.5.0 entrance also moved
+the page, which laid it out again on every frame and doubled the slowest
+switches (1.5.1); opacity is only composited. Rolling digits on a once-a-second value filled the
 CoreGraphics glyph cache with every animation frame and grew the app by about
 90 MB (1.5.1), so live values never roll. `scripts/test_ui_performance_gate.sh`
 holds both to a budget on every release.

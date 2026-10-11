@@ -89,6 +89,9 @@ enum AetherVisual {
 
     /// Status changes, badges, and inline text swaps.
     static let quickFade = Animation.easeOut(duration: 0.18)
+    /// A page arriving after sidebar navigation: opacity only, so the page
+    /// is laid out once and only composited during the fade.
+    static let pageFade = Animation.easeOut(duration: 0.16)
     /// Default for layout and value changes that should feel physical.
     static let gentleSpring = Animation.spring(response: 0.32, dampingFraction: 0.86)
     /// Larger surfaces: panel swaps, list reflow, section reveals.
@@ -132,6 +135,8 @@ enum AetherVisual {
     /// so a maximized window does not read as half-loaded.
     static let wideContentMaxWidth: CGFloat = 960
     static let sidebarWidth: CGFloat = 200
+    static let sidebarMinWidth: CGFloat = 180
+    static let sidebarMaxWidth: CGFloat = 260
     static let windowWidth: CGFloat = 960
     static let windowHeight: CGFloat = 680
     /// The smallest main and Settings window; every page is reviewed at it.
@@ -206,6 +211,11 @@ enum AetherVisual {
     static let largeSheetMinHeight: CGFloat = 480
     static let largeSheetIdealHeight: CGFloat = 600
     static let largeSheetMaxHeight: CGFloat = 760
+    /// The scrolling form of a detail sheet whose actions stay pinned below
+    /// it, so the sheet fits the smallest window under the toolbar.
+    static let sheetFormMinHeight: CGFloat = 240
+    static let sheetFormIdealHeight: CGFloat = 420
+    static let sheetFormMaxHeight: CGFloat = 520
     /// A large sheet with a sidebar and a detail pane (licenses).
     static let splitSheetMinWidth: CGFloat = 760
     static let onboardingTopPadding = s6 + s5
@@ -471,8 +481,13 @@ struct AetherStatusSymbol: View {
     }
 }
 
-/// A large title and the page's actions, as in System Settings. The
-/// section's one-line description stays available to VoiceOver only.
+/// The page's large title with its actions on the same line, aligned to the
+/// content's margins, as in App Store and Music on macOS 26. The window's
+/// glass toolbar keeps only the sidebar button; the page scrolls beneath it.
+/// The title and the actions are each built once and placed by
+/// `AetherPageHeaderLayout`: the `ViewThatFits` this replaced built every
+/// action twice on each page visit and measured them again on every layout,
+/// the largest fixed cost of a page switch (1.5.2).
 struct AetherPageHeader<Accessory: View>: View {
     let section: AppSection
     @ViewBuilder var accessory: Accessory
@@ -486,36 +501,63 @@ struct AetherPageHeader<Accessory: View>: View {
     }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: AetherVisual.s3) {
-                titles
-                Spacer(minLength: AetherVisual.s2)
-                accessoryRow
+        AetherPageHeaderLayout {
+            Text(section.title)
+                .font(.largeTitle.weight(.bold))
+                .foregroundStyle(.primary)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityHint(Text(section.subtitle))
+                .accessibilityIdentifier("page-header-title-\(section.rawValue)")
+            HStack(spacing: AetherVisual.s2) {
+                accessory
             }
-            VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                titles
-                accessoryRow
-            }
+            .fixedSize()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("page-header-\(section.rawValue)")
+    }
+}
+
+/// Title leading and actions trailing on one line when both fit; otherwise
+/// the actions move below the title, leading-aligned.
+private struct AetherPageHeaderLayout: Layout {
+    private static let gap = AetherVisual.s3
+    private static let stackedSpacing = AetherVisual.s2
+
+    private func fitsOnOneLine(width: CGFloat, subviews: Subviews) -> Bool {
+        let title = subviews[0].sizeThatFits(.unspecified).width
+        let actions = subviews[1].sizeThatFits(.unspecified).width
+        return actions == 0 || title + Self.gap + actions <= width
     }
 
-    private var titles: some View {
-        Text(section.title)
-            .font(.largeTitle.weight(.bold))
-            .foregroundStyle(.primary)
-            .accessibilityAddTraits(.isHeader)
-            .accessibilityHint(Text(section.subtitle))
-            .accessibilityIdentifier("page-header-title-\(section.rawValue)")
-    }
-
-    private var accessoryRow: some View {
-        HStack(spacing: AetherVisual.s2) {
-            accessory
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let title = subviews[0].sizeThatFits(.unspecified)
+        let actions = subviews[1].sizeThatFits(.unspecified)
+        let width = proposal.width ?? (title.width + Self.gap + actions.width)
+        if fitsOnOneLine(width: width, subviews: subviews) {
+            return CGSize(width: width, height: max(title.height, actions.height))
         }
-        .fixedSize()
+        let wrapped = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        return CGSize(width: width, height: wrapped.height + Self.stackedSpacing + actions.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        if fitsOnOneLine(width: bounds.width, subviews: subviews) {
+            subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .unspecified)
+            subviews[1].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: .unspecified)
+        } else {
+            let wrapped = subviews[0].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+            subviews[0].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: bounds.width, height: nil)
+            )
+            subviews[1].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY + wrapped.height + Self.stackedSpacing),
+                anchor: .topLeading,
+                proposal: .unspecified
+            )
+        }
     }
 }
 

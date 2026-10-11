@@ -173,7 +173,8 @@ struct ContentView: View {
             WindowChromeSynchronizer(
                 title: "AetherRoute",
                 showsTitle: false,
-                isMainWindow: true
+                isMainWindow: true,
+                usesNativeToolbar: true
             )
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
@@ -318,10 +319,11 @@ struct ContentView: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(AppLocalization.string("Primary navigation"))
                 .accessibilityIdentifier("aetherroute-primary-navigation")
+                // Resizable within reason, as in Mail and Finder.
                 .navigationSplitViewColumnWidth(
-                    min: AetherVisual.sidebarWidth,
+                    min: AetherVisual.sidebarMinWidth,
                     ideal: AetherVisual.sidebarWidth,
-                    max: AetherVisual.sidebarWidth
+                    max: AetherVisual.sidebarMaxWidth
                 )
         } detail: {
             // No label or identifier of its own: every page's root is a scroll
@@ -330,7 +332,10 @@ struct ContentView: View {
             detail
         }
         .navigationSplitViewStyle(.balanced)
-        .toolbar(removing: .sidebarToggle)
+        // The toolbar holds only the sidebar button; without its own
+        // background the pages run to the top edge and the button floats
+        // in glass above them, instead of an empty bar across the window.
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AppLocalization.string("Primary navigation and content"))
         .accessibilityIdentifier("aetherroute-navigation-split")
@@ -597,12 +602,17 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Each page is a new identity and appears at once, as panes do in
-            // System Settings. The 0.22 s fade-up entrance laid the incoming
-            // page out again on its animation frames and doubled the slowest
-            // switches (Connections p95 377 ms with it, 171 ms without, on
-            // the Mac mini with 2,000 flows; 1.5.1).
+            // Each page is a new identity. It fades in on opacity alone: the
+            // 1.5.0 fade-up also moved the page, which laid it out again on
+            // every animation frame and doubled the slowest switches
+            // (Connections p95 377 ms with it, 171 ms without; 1.5.1).
+            // Opacity is composited, so the page is laid out once.
             .id(section)
+            .transition(.asymmetric(insertion: .opacity, removal: .identity))
+            .animation(
+                effectiveReduceMotion ? nil : AetherVisual.pageFade,
+                value: section
+            )
         }
         .navigationTitle(section.title)
         .accessibilityElement(children: .contain)

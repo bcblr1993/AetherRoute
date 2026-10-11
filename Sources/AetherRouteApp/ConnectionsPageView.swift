@@ -33,9 +33,8 @@ struct ConnectionsView: View {
         VStack(spacing: 0) {
             // Tables use the full width, so the header and bars carry the
             // page margins themselves instead of `aetherPageContent`.
-            // Search sits in the header, as on Proxies: a separate row made
-            // the page taller than the 560 pt minimum window.
             AetherPageHeader(.connections) {
+                connectionActions
                 AetherSearchField(
                     text: $searchText,
                     prompt: AppLocalization.string("Search connections"),
@@ -43,9 +42,9 @@ struct ConnectionsView: View {
                 )
                 .frame(width: AetherVisual.searchFieldWidth)
             }
-            .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-            .padding(.top, AetherVisual.pageTopPadding)
-            .padding(.bottom, AetherVisual.s3)
+                .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+                .padding(.top, AetherVisual.pageTopPadding)
+                .padding(.bottom, AetherVisual.s3)
 
             SessionBar(telemetry: telemetry)
                 .environmentObject(tunnel)
@@ -158,29 +157,13 @@ struct ConnectionsView: View {
         // with 2,000 flows that was 8 passes over every proxy chain.
         let counts = outletCounts
         return VStack(alignment: .leading, spacing: 0) {
+            // The actions moved to the toolbar (1.5.2), so only the filter
+            // is left here: segments, or a pop-up menu when a long
+            // translation would draw them past the window. The old two-level
+            // ViewThatFits built every control twice on each visit.
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: AetherVisual.s2) {
-                    segmentedFilter(counts: counts)
-                    connectionActions
-                }
-                .fixedSize(horizontal: true, vertical: false)
-
-                // Narrower windows: the filter on its own line, actions as
-                // icons beneath it (their names stay as tooltips and
-                // VoiceOver labels).
-                VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                    // Still too wide (a long translation): a pop-up menu
-                    // instead of segments that would draw past the window.
-                    ViewThatFits(in: .horizontal) {
-                        segmentedFilter(counts: counts)
-                        menuFilter()
-                    }
-                    HStack {
-                        Spacer(minLength: 0)
-                        connectionActions
-                            .labelStyle(.iconOnly)
-                    }
-                }
+                segmentedFilter(counts: counts)
+                menuFilter()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, AetherVisual.s3)
@@ -478,83 +461,102 @@ struct ConnectionsView: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
+    /// The page's actions in three groups (1.5.2): how the list is shown,
+    /// pausing it, and what acts on every flow. Seven loose buttons read as
+    /// clutter; a menu per group keeps every name visible where it is chosen.
+    @ViewBuilder
     private var connectionActions: some View {
-        HStack(spacing: AetherVisual.s2) {
-            Button {
-                withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                    groupsByApp.toggle()
+        Menu {
+            Toggle(isOn: Binding(
+                get: { groupsByApp },
+                set: { value in
+                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                        groupsByApp = value
+                    }
                 }
-            } label: {
-                Label(
-                    AppLocalization.string("Group by app"),
-                    systemImage: "square.stack.3d.up"
-                )
+            )) {
+                Label(AppLocalization.string("Group by app"), systemImage: "square.stack.3d.up")
             }
-            .aetherButton()
-            .tint(groupsByApp ? .accentColor : nil)
-            .help(AppLocalization.string(groupsByApp ? "Show each connection" : "Group by app"))
-            .accessibilityValue(Text(AppLocalization.string(groupsByApp ? "On" : "Off")))
             .accessibilityIdentifier("connections-group-by-app")
-            Button {
-                withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                    pausedConnections = pausedConnections == nil ? telemetry.snapshot.connections : nil
-                }
-            } label: {
-                Label {
-                    Text(AppLocalization.string(pausedConnections == nil ? "Pause list" : "Resume list"))
-                } icon: {
-                    Image(systemName: pausedConnections == nil ? "pause.fill" : "play.fill")
-                        .contentTransition(.symbolEffect(.replace))
-                }
-            }
-            .aetherButton()
-            // A frozen list must not pass for a live one: the button stays
-            // tinted while the list is paused.
-            .tint(pausedConnections == nil ? nil : .orange)
-            .help(AppLocalization.string(pausedConnections == nil ? "Pause list" : "Resume list"))
-            .accessibilityIdentifier("connections-pause-button")
+            Divider()
             Picker(AppLocalization.string("Sort"), selection: $sort) {
                 ForEach(ConnectionSort.allCases) { option in
                     Text(option.localizedTitle).tag(option)
                 }
             }
-            .labelsHidden()
+            .pickerStyle(.inline)
             .accessibilityIdentifier("connections-sort-picker")
-            .frame(width: 112)
+        } label: {
+            Label(
+                AppLocalization.string("View"),
+                systemImage: groupsByApp
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle"
+            )
+        }
+        .menuIndicator(.visible)
+        .aetherButton()
+        .fixedSize()
+        .help(AppLocalization.string("Group and sort connections"))
+        .accessibilityIdentifier("connections-view-menu")
 
-            if tunnel.isConnected {
-                // Ends every listed flow but keeps the tunnel up; apps open
-                // fresh connections, which follow the current rules and nodes.
-                Button(AppLocalization.string("Close All"), systemImage: "xmark.circle") {
-                    close(.all)
-                }
-                .aetherButton()
-                .disabled(tunnel.isTransitioning || telemetry.snapshot.connections.isEmpty)
-                .help(AppLocalization.string("Close all connections without disconnecting"))
-                .accessibilityIdentifier("close-all-connections")
-                // This stops the tunnel, not only the listed flows, so it says
-                // "Disconnect" like the overview and confirms first.
-                Button(AppLocalization.string("Disconnect"), systemImage: "power") {
-                    showingDisconnectConfirmation = true
-                }
-                .aetherButton()
-                .disabled(tunnel.isTransitioning || telemetry.snapshot.connections.isEmpty)
-                .accessibilityIdentifier("disconnect-all-connections")
-                .confirmationDialog(
-                    AppLocalization.string("Disconnect Tunnel"),
-                    isPresented: $showingDisconnectConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button(AppLocalization.string("Disconnect"), role: .destructive) {
-                        Task { await tunnel.setEnabled(false) }
-                    }
-                    Button(AppLocalization.string("Cancel"), role: .cancel) {}
-                } message: {
-                    Text(AppLocalization.string("Disconnecting the tunnel will stop proxy routing and terminate all active connections."))
-                }
+        Button {
+            withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                pausedConnections = pausedConnections == nil ? telemetry.snapshot.connections : nil
+            }
+        } label: {
+            Label {
+                Text(AppLocalization.string(pausedConnections == nil ? "Pause list" : "Resume list"))
+            } icon: {
+                Image(systemName: pausedConnections == nil ? "pause.fill" : "play.fill")
+                    .contentTransition(.symbolEffect(.replace))
             }
         }
-        .fixedSize(horizontal: true, vertical: false)
+        // A frozen list must not pass for a live one: the button stays
+        // tinted while the list is paused.
+        .tint(pausedConnections == nil ? nil : .orange)
+        .aetherButton(prominent: pausedConnections != nil)
+        .help(AppLocalization.string(pausedConnections == nil ? "Pause list" : "Resume list"))
+        .accessibilityIdentifier("connections-pause-button")
+
+        Menu {
+            // Ends every listed flow but keeps the tunnel up; apps open
+            // fresh connections, which follow the current rules and nodes.
+            Button(AppLocalization.string("Close All"), systemImage: "xmark.circle") {
+                close(.all)
+            }
+            .disabled(!tunnel.isConnected || tunnel.isTransitioning || telemetry.snapshot.connections.isEmpty)
+            .accessibilityIdentifier("close-all-connections")
+            Divider()
+            // This stops the tunnel, not only the listed flows, so it says
+            // "Disconnect" like the overview and confirms first.
+            Button(AppLocalization.string("Disconnect"), systemImage: "power", role: .destructive) {
+                showingDisconnectConfirmation = true
+            }
+            .disabled(!tunnel.isConnected || tunnel.isTransitioning)
+            .accessibilityIdentifier("disconnect-all-connections")
+        } label: {
+            // Named, like the actions beside it: a lone ellipsis drew a
+            // button half their height.
+            Label(AppLocalization.string("More"), systemImage: "ellipsis.circle")
+        }
+        .menuIndicator(.hidden)
+        .aetherButton()
+        .fixedSize()
+        .help(AppLocalization.string("Close all connections without disconnecting"))
+        .accessibilityIdentifier("connections-more-menu")
+        .confirmationDialog(
+            AppLocalization.string("Disconnect Tunnel"),
+            isPresented: $showingDisconnectConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(AppLocalization.string("Disconnect"), role: .destructive) {
+                Task { await tunnel.setEnabled(false) }
+            }
+            Button(AppLocalization.string("Cancel"), role: .cancel) {}
+        } message: {
+            Text(AppLocalization.string("Disconnecting the tunnel will stop proxy routing and terminate all active connections."))
+        }
     }
 
     private var connectionRows: [ConnectionTableItem] {
@@ -1020,9 +1022,15 @@ private struct ConnectionInspector: View {
                 }
             }
             .aetherSettingsForm(isSheet: true)
-            .scrollDisabled(true)
             .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
+            // Scrolls within a bounded height, with Copy and Done pinned
+            // below: sized to its whole content the sheet grew past a
+            // 640 pt window under the 1.5.2 toolbar and put Done off screen.
+            .frame(
+                minHeight: AetherVisual.sheetFormMinHeight,
+                idealHeight: AetherVisual.sheetFormIdealHeight,
+                maxHeight: AetherVisual.sheetFormMaxHeight
+            )
 
             HStack {
                 AetherCopyButton(title: Text(AppLocalization.string("Copy destination"))) {
