@@ -2636,8 +2636,8 @@
     }
   ],
   "coreArtifacts": {
-    "packetTunnel": "1c7fbbb93b0cd92296a948a282ef8023c64c91a7a5ae4717255552bf7e01ad45",
-    "transparentProxy": "0e2d177e1d4dae9081aebfbd29e7d91b64531f9f76ecfec255d6205a2c833012"
+    "packetTunnel": "05c5677a5436414744e59a882795f841c70041f037bc110d749c212145c1db2d",
+    "transparentProxy": "febdc9f61a91ed91fc8a229f4369754cf432040d14a10a4e0b9d200b30210e05"
   },
   "licenses": [
     {
