@@ -4,6 +4,34 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.2] - 2026-10-11
+
+Each page's actions now sit on the title's line and are grouped, the window gets the Liquid Glass sidebar button, the Add Rule sheet is redesigned, and pages fade in when you switch to them.
+
+### Changed
+
+- Page headers: the large title and the page's actions share one line and line up with the content's margins. When they do not fit (a narrow window or larger text), the actions wrap below the title. The window's compact glass toolbar holds only the sidebar button; the sidebar can be hidden and resized from 180 to 260 pt. The toolbar has no background, so pages run to the top edge.
+- Connections: seven loose buttons became View (group by app, sort), Pause, and More (Close All, Disconnect). Pause shows only its icon and turns orange while paused. The search field moved to the right of the filter row, as on Rules. Profiles and Rules keep their main action as the prominent button, and their More menus are labelled.
+- Add/Edit Rule sheet: a compact mode switch and the fields in one grouped card, with the label leading and the control trailing. Validation appears as one line under the card once something is typed. The footer has Verify leading and Cancel and Save trailing.
+- Pages fade in when switched. The fade changes opacity only and lasts 160 ms; Reduce Motion turns it off.
+
+### Fixed
+
+- Connection details: in a small window the sheet grew past the window, so its Done button was off screen. The details now scroll, and Copy and Done stay pinned below them.
+- Page headers no longer grow taller than the window in a narrow window or with larger text. Custom layouts now answer the zero-width size probe with their one-line size instead of wrapping one letter per line.
+
+### Performance
+
+- Page headers and the Connections filter row use custom layouts instead of `ViewThatFits` in a stack, which measured every action and the native segmented control several times on each visit. Page switch p95 153 → 130 ms, slowest 201 → 170 ms; footprint median 69–70 → 61 MB.
+
+### Verified
+
+- Local regression suites, `./scripts/test.sh` and all five protocol interop gates passed. The engine is unchanged (core `183c120`); interop ran 48 cases with 26 certificate rejections. A unit test that checked ciphertext for a two-byte marker, which random bytes matched about once in 300 runs, now uses longer markers.
+- UI suite on the `macos27` VM: 49 passed, 0 failed, 3 opt-in tests skipped. The new `testConnectionsMenusOpen` opens both Connections menus.
+- Tart VM matrix (tun / transparent × rule / global / direct) passed with QA build 2026101101 (sources before the Connections filter-row layout change). This covers idle reuse after 50 s, a 2 MiB upload in 3.5–28 s, and transparent SNI recovery.
+- Mac mini remote gate passed. On the Mac mini with notarized build 2026101101, idle reuse and a 2 MiB upload passed in transparent mode (3.6 s, 63 MB footprint) and in TUN mode (3.5 s, 66 MB).
+- UI performance and memory gate on the Mac mini (Release build, live traffic, 5 minutes per profile): page switch p95 130 ms and slowest 170 ms on both the everyday and the heavy profile (1.5.1: p95 153 ms, slowest 201 ms); footprint median 61 MB, peak 63–65 MB, +1 MB over the run (1.5.1: 69–70 MB, 75 MB, +2 MB).
+
 ## [1.5.1] - 2026-10-11
 
 Switching pages no longer stalls, the app stays around 70 MB instead of growing past 200 MB, per-app traffic statistics stay complete in long sessions, and page content follows the macOS 26 Liquid Glass guidelines.

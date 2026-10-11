@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.5.1 (Build 2026101003)</title>
-            <pubDate>Sun, 11 Oct 2026 01:54:54 +0800</pubDate>
-            <sparkle:version>2026101003</sparkle:version>
-            <sparkle:shortVersionString>1.5.1</sparkle:shortVersionString>
+            <title>Version 1.5.2 (Build 2026101101)</title>
+            <pubDate>Sun, 11 Oct 2026 13:24:41 +0800</pubDate>
+            <sparkle:version>2026101101</sparkle:version>
+            <sparkle:shortVersionString>1.5.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,34 +119,36 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.5.1 更新要点</span>
-  <span class="release-badge">Build 2026101003 · 正式发布</span>
-</div>
-<div class="section">
-  <span class="section-tag tag-fix">🛠 修复</span>
-  <ul>
-    <li><strong>内存占用</strong>：开着主窗口时内存会持续上涨到 200 MB 以上，现稳定在约 70 MB。</li>
-    <li><strong>切换页面不再卡顿</strong>：最慢一次从 0.8 秒降到约 0.2 秒，连接页与规则页切换明显更顺。</li>
-    <li><strong>按应用流量统计</strong>：长时间使用时，后出现的应用也能正确统计流量，不会漏算或重复计算。</li>
-  </ul>
+  <span class="release-title">AetherRoute 1.5.2 更新要点</span>
+  <span class="release-badge">Build 2026101101 · 正式发布</span>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">✨ 优化</span>
   <ul>
-    <li>页面内容对齐 macOS 26 Liquid Glass 设计规范：卡片与按钮改用系统样式，侧边栏与菜单栏面板保留玻璃效果。</li>
-    <li>搜索框改为胶囊形，更新说明采用新版式。</li>
+    <li><strong>页头重新设计</strong>：各页面的操作按钮与大标题同行、分组排列，并与内容边缘对齐；窗口变窄时自动换行。</li>
+    <li><strong>连接页更整洁</strong>：七个按钮收为"显示""暂停""更多"三组，搜索框移到过滤条右侧。</li>
+    <li><strong>添加规则弹窗</strong>：重新设计为分组卡片，按钮位置统一。</li>
+    <li>切换页面时内容淡入；窗口加入 Liquid Glass 侧边栏按钮，侧边栏可隐藏、可调宽度。</li>
+    <li>切页更快：最慢一次从 0.2 秒降到 0.17 秒；内存从约 70 MB 降到约 61 MB。</li>
+  </ul>
+</div>
+<div class="section">
+  <span class="section-tag tag-fix">🛠 修复</span>
+  <ul>
+    <li>小窗口下连接详情弹窗超出窗口、看不到"完成"按钮的问题。</li>
+    <li>窄窗口或放大字号时页面被撑高、超出窗口的问题。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.5.1/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.5.2/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.5.1/AetherRoute-1.5.1-build-2026101003-arm64.dmg"
-                sparkle:edSignature="7yniGLXBFO/2hMvFqz7cEGxqN57EUWGYGuIftg5Q890VSnBmtuuELjfiZnBww0du/Y6SeyVK+RjWGUbHgWV9AA=="
-                length="26970415"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.5.2/AetherRoute-1.5.2-build-2026101101-arm64.dmg"
+                sparkle:edSignature="ZR9QqUZlLRMwEleT1NzxikuOtK06LhN5PY3xz1zDGy8taI92+I2mFIy7Bl/5qIFdbWa1IltqjbQEplheY5TmDg=="
+                length="26976491"
                 type="application/octet-stream" />
         </item>
     </channel>
