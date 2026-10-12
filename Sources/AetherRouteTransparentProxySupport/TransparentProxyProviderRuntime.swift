@@ -52,6 +52,11 @@ public protocol TransparentProxyFlowEngine: AnyObject, Sendable {
     /// Closes the active connections an `ARC1` request selects.
     func closeConnections(request: Data) throws -> UInt64
 
+    /// Moves the engine's outbound sockets onto the physical interface with
+    /// this index (zero lets the engine choose), and drops upstream
+    /// connections and DNS clients still bound to the previous uplink.
+    func resetNetworkState(interfaceIndex: UInt32) throws -> EngineNetworkResetOutcome
+
     func shutdown(completion: @escaping @Sendable () -> Void)
 }
 
@@ -96,6 +101,23 @@ public extension TransparentProxyFlowEngine {
     func closeConnections(request _: Data) throws -> UInt64 {
         throw TransparentProxySelectionError.unsupported
     }
+
+    func resetNetworkState(interfaceIndex _: UInt32) throws -> EngineNetworkResetOutcome {
+        throw TransparentProxySelectionError.unsupported
+    }
+}
+
+/// Result of asking the engine to follow a new physical uplink. Only `reset`
+/// means the engine is on the requested interface; the others leave it where
+/// it was, and the recovery loop tries again on its next attempt.
+public enum EngineNetworkResetOutcome: Sendable, Equatable {
+    case reset
+    /// Another reset was still running.
+    case busy
+    /// The named interface is not a usable physical uplink yet.
+    case interfaceUnavailable
+    /// The reset missed its deadline, typically on a wedged socket.
+    case timedOut
 }
 
 public enum TransparentProxySelectionError: Error, Sendable, Equatable {
@@ -345,13 +367,40 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         if drain { beginDrain() }
     }
 
-    public func resetNetworkState() {
+    /// Moves the engine onto the uplink with `interfaceIndex` (zero lets the
+    /// engine choose), then cancels the host sessions so apps reconnect over
+    /// it. Returns the engine's outcome, or nil when the runtime is stopping
+    /// or the engine could not be asked.
+    ///
+    /// Cancelling sessions alone was the whole reset until 1.7.1. It is enough
+    /// while the uplink stays on the same interface, but every outbound socket
+    /// is bound to the interface the engine started on, so after a move from
+    /// Wi-Fi to wired Ethernet nothing reached the network until a restart.
+    @discardableResult
+    public func resetNetworkState(
+        interfaceIndex: UInt32
+    ) -> EngineNetworkResetOutcome? {
+        TransparentLifecycleLog.logger.info(
+            "stage=flowRuntimeResetNetwork begin interface=\(interfaceIndex, privacy: .public)"
+        )
+        var outcome: EngineNetworkResetOutcome?
+        do {
+            outcome = try withControlCall {
+                try engine.resetNetworkState(interfaceIndex: interfaceIndex)
+            }
+        } catch {
+            TransparentLifecycleLog.logger.error(
+                "stage=flowRuntimeResetNetwork engineFailed error=\(String(reflecting: error), privacy: .public)"
+            )
+        }
         admissionLock.withLock {
             guard acceptingFlows else { return }
-            TransparentLifecycleLog.logger.info("stage=flowRuntimeResetNetwork begin")
             registry.cancelActiveSessions()
-            TransparentLifecycleLog.logger.info("stage=flowRuntimeResetNetwork success")
         }
+        TransparentLifecycleLog.logger.info(
+            "stage=flowRuntimeResetNetwork done outcome=\(String(describing: outcome), privacy: .public)"
+        )
+        return outcome
     }
 
     public func snapshot() -> TransparentProxyRuntimeSnapshot {
@@ -506,6 +555,7 @@ public final class TransparentProxyProviderLifecycleController:
     private var pendingStartError: TransparentProxyProviderLifecycleError?
     private var stopRequested = false
     private var stopCompletions: [ProviderStopCompletion] = []
+    private var rebuildInFlight = false
 
     public init(
         identityGuard: TransparentProxySelfIdentityGuard = .init(),
@@ -609,6 +659,63 @@ public final class TransparentProxyProviderLifecycleController:
             case .stopping:
                 TransparentLifecycleLog.logger.info("stage=lifecycleStop phase=stopping")
                 stopCompletions.append(completion)
+            }
+        }
+    }
+
+    /// Swaps the running runtime for a fresh one built by `runtimeFactory`,
+    /// the in-process equivalent of a disconnect and reconnect. Network
+    /// settings and the provider's flow gates stay as they are, so the system
+    /// keeps routing flows here; new flows reach the fresh engine and the old
+    /// runtime drains and closes its own. Calls `completion` with false when
+    /// nothing was swapped: not running, a rebuild already in flight, the
+    /// factory failed, or a stop or restart began meanwhile.
+    public func rebuildRuntime(
+        runtimeFactory rebuildFactory: @escaping RuntimeFactory,
+        completion: @escaping @Sendable (Bool) -> Void
+    ) {
+        lifecycleQueue.async { [self] in
+            guard phase == .running, let current = runtime, !rebuildInFlight else {
+                TransparentLifecycleLog.logger.info(
+                    "stage=runtimeRebuild rejected phase=\(String(describing: self.phase), privacy: .public) inFlight=\(self.rebuildInFlight, privacy: .public)"
+                )
+                callbackQueue.async { completion(false) }
+                return
+            }
+            rebuildInFlight = true
+            TransparentLifecycleLog.logger.info("stage=runtimeRebuild begin")
+            preparationQueue.async { [self] in
+                let result = Result { try rebuildFactory() }
+                lifecycleQueue.async { [self] in
+                    rebuildInFlight = false
+                    switch result {
+                    case let .failure(error):
+                        TransparentLifecycleLog.logger.error(
+                            "stage=runtimeRebuild failed error=\(String(reflecting: error), privacy: .public)"
+                        )
+                        callbackQueue.async { completion(false) }
+                    case let .success(fresh):
+                        // A stop, or a stop and a new start, may have run while
+                        // the engine was being built. Only the runtime this
+                        // rebuild set out to replace may be replaced.
+                        guard phase == .running, runtime === current else {
+                            TransparentLifecycleLog.logger.info(
+                                "stage=runtimeRebuild discarded reason=stale"
+                            )
+                            fresh.stop {}
+                            callbackQueue.async { completion(false) }
+                            return
+                        }
+                        runtime = fresh
+                        TransparentLifecycleLog.logger.info("stage=runtimeRebuild swapped")
+                        current.stop {
+                            TransparentLifecycleLog.logger.info(
+                                "stage=runtimeRebuild previousRuntimeStopped"
+                            )
+                        }
+                        callbackQueue.async { completion(true) }
+                    }
+                }
             }
         }
     }
@@ -778,9 +885,12 @@ public final class TransparentProxyProviderLifecycleController:
         return try runtime.closeConnections(request: request)
     }
 
-    public func resetNetworkState() {
-        guard let runtime = runningRuntime() else { return }
-        runtime.resetNetworkState()
+    @discardableResult
+    public func resetNetworkState(
+        interfaceIndex: UInt32
+    ) -> EngineNetworkResetOutcome? {
+        guard let runtime = runningRuntime() else { return nil }
+        return runtime.resetNetworkState(interfaceIndex: interfaceIndex)
     }
 
     private func completePreparation(

@@ -3,12 +3,12 @@ import Foundation
 /// Connectivity probes are evidence about a route, not proof that a provider
 /// has failed. A blocked endpoint or an unused GLOBAL selection must never
 /// cause the provider to tear down unrelated, working rule-based traffic.
+///
+/// Only a probe through the engine counts. Received bytes used to count as
+/// well, but any flow produces them, including ones that bypass the engine's
+/// outbound path, so a recovery could report success while proxied traffic
+/// was still dead (1.7.1).
 public enum NetworkRecoveryHealthPolicy {
-    public static func hasReceivedTraffic(since baseline: UInt64?, total: UInt64?) -> Bool {
-        guard let baseline, let total else { return false }
-        return total > baseline
-    }
-
     public static let probeURLs = [
         "https://www.google.com/generate_204",
         "https://cp.cloudflare.com/generate_204",
@@ -22,6 +22,30 @@ public enum NetworkRecoveryHealthPolicy {
             if (try? probe(url)) == true { return true }
         }
         return false
+    }
+
+    /// Engine groups to probe, in order; the first that answers proves the
+    /// data path. GLOBAL comes first: its node usually works and answers in
+    /// a few hundred milliseconds, while a direct probe of the first URL waits
+    /// out its timeout where that host is blocked. DIRECT follows because
+    /// what a network change breaks is the engine's own outbound path
+    /// (interface binding, DNS), which DIRECT tests without depending on a
+    /// node: a dead GLOBAL node alone must not keep a recovery failing, which
+    /// would rebuild a healthy transparent engine or hold TUN reasserting.
+    public static func probeGroups(routingMode: RoutingMode) -> [String] {
+        routingMode == .direct
+            ? ["DIRECT"]
+            : [ProxyConnectionReadinessPolicy.globalGroupName, "DIRECT"]
+    }
+
+    /// Whether any of `groups` reaches any probe URL.
+    public static func isReachable(
+        groups: [String],
+        probe: (_ group: String, _ url: String) throws -> Bool
+    ) -> Bool {
+        groups.contains { group in
+            isReachable { url in try probe(group, url) }
+        }
     }
 }
 

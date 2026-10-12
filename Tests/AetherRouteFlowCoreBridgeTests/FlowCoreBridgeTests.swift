@@ -97,6 +97,49 @@ final class FlowCoreBridgeTests: XCTestCase {
         XCTAssertEqual(backend.engineDestroyCalls, 0)
     }
 
+    func testNetworkResetMapsEngineStatusesToOutcomes() throws {
+        let backend = MockFlowCoreABI()
+        let engine = try makeEngine(backend: backend)
+        let cases: [(Int32, EngineNetworkResetOutcome)] = [
+            (FlowCoreABIStatus.success, .reset),
+            (FlowCoreABIStatus.backpressure, .busy),
+            (FlowCoreABIStatus.invalidState, .interfaceUnavailable),
+            (FlowCoreABIStatus.cancelled, .timedOut),
+        ]
+        for (status, outcome) in cases {
+            backend.resetStatus = status
+            XCTAssertEqual(try engine.resetNetworkState(interfaceIndex: 11), outcome)
+        }
+        backend.resetStatus = FlowCoreABIStatus.internalError
+        XCTAssertThrowsError(try engine.resetNetworkState(interfaceIndex: 11))
+        XCTAssertEqual(backend.resetIndexes, [11, 11, 11, 11, 11])
+
+        let stopped = expectation(description: "stopped")
+        engine.shutdown { stopped.fulfill() }
+        wait(for: [stopped], timeout: 2)
+        XCTAssertThrowsError(try engine.resetNetworkState(interfaceIndex: 11)) {
+            XCTAssertEqual($0 as? FlowCoreEngineError, .engineClosed)
+        }
+        XCTAssertEqual(backend.resetIndexes.count, 5)
+    }
+
+    func testLiveEngineResetsOntoTheChosenInterface() throws {
+        let engine = try FlowCoreEngine(
+            profile: Data("mode: rule\nproxies: []\nrules: []\n".utf8),
+            runtimeDirectory: FileManager.default.temporaryDirectory,
+            configuration: FlowCoreEngineConfiguration(routingMode: .direct)
+        )
+        // Zero lets the engine pick the uplink; no interface has this index.
+        XCTAssertEqual(try engine.resetNetworkState(interfaceIndex: 0), .reset)
+        XCTAssertEqual(
+            try engine.resetNetworkState(interfaceIndex: UInt32.max - 7),
+            .interfaceUnavailable
+        )
+        let stopped = expectation(description: "live engine stopped")
+        engine.shutdown { stopped.fulfill() }
+        wait(for: [stopped], timeout: 10)
+    }
+
     func testSelectorSelectionReturnsVerifiedCoreSnapshot() throws {
         let backend = MockFlowCoreABI()
         let engine = try makeEngine(backend: backend)
@@ -642,6 +685,18 @@ private final class MockFlowCoreABI: FlowCoreABIBackend, @unchecked Sendable {
     var holdTCPReadsUntilDestroy = false
     var blockTCPCreate = false
     var selectorSnapshotOverride: Data?
+    var resetStatus = FlowCoreABIStatus.success
+    private(set) var resetIndexes: [UInt32] = []
+
+    func resetNetworkState(
+        engine _: FlowCoreABIHandle,
+        interfaceIndex: UInt32
+    ) -> Int32 {
+        lock.withLock {
+            resetIndexes.append(interfaceIndex)
+            return resetStatus
+        }
+    }
 
     private(set) var tcpWriteCalls = 0
     private(set) var flowDestroyCalls = 0

@@ -47,13 +47,28 @@ private final class EventRecorder: @unchecked Sendable {
 }
 
 struct NetworkRecoveryCoordinatorTests {
-    @Test("only new received bytes provide evidence of a working data path")
-    func receivedTrafficIsEvidence() {
-        #expect(NetworkRecoveryHealthPolicy.hasReceivedTraffic(since: 100, total: 101))
-        #expect(!NetworkRecoveryHealthPolicy.hasReceivedTraffic(since: 100, total: 100))
-        #expect(!NetworkRecoveryHealthPolicy.hasReceivedTraffic(since: 100, total: 0))
-        #expect(!NetworkRecoveryHealthPolicy.hasReceivedTraffic(since: nil, total: 101))
-        #expect(!NetworkRecoveryHealthPolicy.hasReceivedTraffic(since: 100, total: nil))
+    @Test("a dead GLOBAL node does not fail recovery while DIRECT gets out")
+    func directProbeBacksUpGlobal() {
+        #expect(NetworkRecoveryHealthPolicy.probeGroups(routingMode: .direct) == ["DIRECT"])
+        #expect(NetworkRecoveryHealthPolicy.probeGroups(routingMode: .rule) == ["GLOBAL", "DIRECT"])
+        #expect(NetworkRecoveryHealthPolicy.probeGroups(routingMode: .global) == ["GLOBAL", "DIRECT"])
+
+        var visited: [String] = []
+        // A working node answers first; DIRECT is never asked.
+        #expect(NetworkRecoveryHealthPolicy.isReachable(groups: ["GLOBAL", "DIRECT"]) { group, _ in
+            visited.append(group)
+            return group == "GLOBAL"
+        })
+        #expect(visited == ["GLOBAL"])
+
+        // GLOBAL's node is down, DIRECT answers on its second URL: healthy.
+        #expect(NetworkRecoveryHealthPolicy.isReachable(groups: ["GLOBAL", "DIRECT"]) { group, url in
+            group == "DIRECT" && url == NetworkRecoveryHealthPolicy.probeURLs[1]
+        })
+        // Nothing answers, as after a move to an interface the engine is not bound to.
+        #expect(!NetworkRecoveryHealthPolicy.isReachable(groups: ["GLOBAL", "DIRECT"]) { _, _ in
+            throw CancellationError()
+        })
     }
 
     @Test("a blocked primary endpoint falls back without resetting the provider")

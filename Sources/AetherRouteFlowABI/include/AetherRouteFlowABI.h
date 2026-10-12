@@ -222,6 +222,20 @@ typedef struct aetherroute_flow_abi_v7 {
 
 int32_t aetherroute_flow_abi_load_v7(aetherroute_flow_abi_v7_t *output);
 
+/*
+ * V8 (1.7.1) adds a network reset: the engine moves its outbound sockets onto
+ * the given physical interface (zero lets it choose), closes every upstream
+ * connection and shuts down DNS clients, so traffic follows a switch to a
+ * different network interface without restarting the provider.
+ */
+typedef struct aetherroute_flow_abi_v8 {
+    uint32_t struct_size;
+    aetherroute_flow_abi_v7_t v7;
+    int32_t (*reset_network_state_v1)(void *, uint32_t);
+} aetherroute_flow_abi_v8_t;
+
+int32_t aetherroute_flow_abi_load_v8(aetherroute_flow_abi_v8_t *output);
+
 #ifdef __cplusplus
 }
 #endif

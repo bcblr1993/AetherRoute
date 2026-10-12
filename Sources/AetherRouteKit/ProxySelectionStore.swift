@@ -319,7 +319,18 @@ public enum AutomaticRouteHealthRecoveryPolicy {
 
     public enum ExhaustionAction: Equatable, Sendable {
         case continueMonitoring
+        /// Disconnect and reconnect once, as the user would by hand.
+        case reconnectProvider
     }
+
+    /// How long after a network change or wake a lost route is blamed on
+    /// that change. The provider recovers on its own within seconds; this
+    /// window covers its whole recovery run plus two failed health checks.
+    public static let networkChangeReconnectWindow: TimeInterval = 180
+    /// At most one automatic reconnect in this period. Reconnecting changes
+    /// the network path itself, and a node that is simply down must not turn
+    /// into a reconnect loop.
+    public static let networkChangeReconnectCooldown: TimeInterval = 600
 
     public static func action(
         automaticChildGroup: String?,
@@ -333,14 +344,31 @@ public enum AutomaticRouteHealthRecoveryPolicy {
         return explicitlyAutomatic ? .reselectExplicitGroup : .none
     }
 
-    /// Probe exhaustion never establishes provider failure, including when a
-    /// selected endpoint has been unavailable since startup. Keep the tunnel
-    /// available for other rules and for an explicit user disconnect.
+    /// Probe exhaustion alone never establishes provider failure, including
+    /// when a selected endpoint has been unavailable since startup. Keep the
+    /// tunnel available for other rules and for an explicit user disconnect.
+    ///
+    /// The exception is a route that worked and stopped right after the
+    /// network changed under it. The provider's own recovery should have
+    /// brought it back; when it has not, a reconnect is what the user would
+    /// do, and is done for them once.
     public static func exhaustionAction(
         connectionWasReady: Bool,
-        isInGracePeriod: Bool = false
+        isInGracePeriod: Bool = false,
+        secondsSinceNetworkChange: TimeInterval? = nil,
+        secondsSinceLastReconnect: TimeInterval? = nil
     ) -> ExhaustionAction {
-        .continueMonitoring
+        guard
+            connectionWasReady,
+            !isInGracePeriod,
+            let sinceChange = secondsSinceNetworkChange,
+            (0...networkChangeReconnectWindow).contains(sinceChange)
+        else { return .continueMonitoring }
+        if let sinceReconnect = secondsSinceLastReconnect,
+           sinceReconnect < networkChangeReconnectCooldown {
+            return .continueMonitoring
+        }
+        return .reconnectProvider
     }
 
 }

@@ -400,6 +400,19 @@ int32_t clash_flow_close_connections_v1(
 );
 
 /*
+ * Moves the engine's outbound sockets onto the physical interface with the
+ * given index (zero lets the engine choose), closes every upstream connection
+ * and shuts down DNS clients. Host flows are left to the caller. Returns
+ * within about two seconds: CLASH_FLOW_BACKPRESSURE while another reset runs,
+ * CLASH_FLOW_INVALID_STATE when the interface is not a usable uplink,
+ * CLASH_FLOW_CANCELLED when the reset missed its deadline.
+ */
+int32_t clash_flow_engine_reset_network_state_v1(
+    clash_flow_engine_t *engine,
+    uint32_t interface_index
+);
+
+/*
  * Endpoint v1 is a strict byte string:
  * version, transport, host-kind, port (BE), IPv6 scope-id (u32 BE),
  * payload-length (u16 BE), payload. Transport is 1/TCP or 2/UDP; host-kind is

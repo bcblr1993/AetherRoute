@@ -459,6 +459,66 @@ final class ProxySelectionStoreTests: XCTestCase {
         )
     }
 
+    /// The 2026-10-12 incident: the Mac woke onto wired Ethernet, the route
+    /// that had worked stayed dead, and only a manual reconnect fixed it.
+    func testRouteLostRightAfterANetworkChangeReconnectsOnce() {
+        typealias Policy = AutomaticRouteHealthRecoveryPolicy
+        let window = Policy.networkChangeReconnectWindow
+        let cooldown = Policy.networkChangeReconnectCooldown
+
+        XCTAssertEqual(
+            Policy.exhaustionAction(
+                connectionWasReady: true,
+                secondsSinceNetworkChange: 45
+            ),
+            .reconnectProvider
+        )
+        XCTAssertEqual(
+            Policy.exhaustionAction(
+                connectionWasReady: true,
+                secondsSinceNetworkChange: window
+            ),
+            .reconnectProvider
+        )
+        // Only once per cooldown: reconnecting changes the path itself.
+        XCTAssertEqual(
+            Policy.exhaustionAction(
+                connectionWasReady: true,
+                secondsSinceNetworkChange: 30,
+                secondsSinceLastReconnect: cooldown - 1
+            ),
+            .continueMonitoring
+        )
+        XCTAssertEqual(
+            Policy.exhaustionAction(
+                connectionWasReady: true,
+                secondsSinceNetworkChange: 30,
+                secondsSinceLastReconnect: cooldown
+            ),
+            .reconnectProvider
+        )
+        // A route that never worked, a change long ago, no change at all, or
+        // the wake grace period: a node that is down is not a network change.
+        for (ready, grace, since) in [
+            (false, false, 30.0),
+            (true, false, window + 1),
+            (true, true, 30.0),
+        ] {
+            XCTAssertEqual(
+                Policy.exhaustionAction(
+                    connectionWasReady: ready,
+                    isInGracePeriod: grace,
+                    secondsSinceNetworkChange: since
+                ),
+                .continueMonitoring
+            )
+        }
+        XCTAssertEqual(
+            Policy.exhaustionAction(connectionWasReady: true),
+            .continueMonitoring
+        )
+    }
+
     func testConnectedManualHotSwitchRequiresSelectedLeafToRespond() {
         let automatic = ProxyGroupConfigurationSummary(
             id: 2,

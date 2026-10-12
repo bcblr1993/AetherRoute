@@ -513,6 +513,10 @@ final class TunnelManager: ObservableObject {
     var isSystemSleeping = false
     var lastSystemWakeAt: Date = .distantPast
     let wakeGracePeriodDuration: TimeInterval = 20.0
+    /// Last wake or network path change, for blaming a lost route on it.
+    var lastNetworkChangeAt: Date?
+    /// Last reconnect made because a route did not come back after a change.
+    var lastNetworkRecoveryReconnectAt: Date?
 
     var isInWakeGracePeriod: Bool {
         isSystemSleeping || Date().timeIntervalSince(lastSystemWakeAt) < wakeGracePeriodDuration

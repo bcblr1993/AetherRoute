@@ -132,6 +132,7 @@ extension TunnelManager {
         case .systemDidWake:
             isSystemSleeping = false
             lastSystemWakeAt = Date()
+            lastNetworkChangeAt = lastSystemWakeAt
             automaticRouteFailureCounts.removeAll()
             Self.runtimeLogger.info(
                 "stage=handleRuntimeEnvironmentEvent wake entered gracePeriod=\(self.wakeGracePeriodDuration, privacy: .public)"
@@ -143,6 +144,7 @@ extension TunnelManager {
                 )
                 return
             }
+            lastNetworkChangeAt = Date()
             if isInWakeGracePeriod {
                 automaticRouteFailureCounts.removeAll()
             }
@@ -398,15 +400,35 @@ extension TunnelManager {
                   state == .connected else { continue }
             // Probe failure is route quality, not proof of a broken provider.
             // Keep monitoring even when the first readiness probe never passed.
+            let now = Date()
             switch AutomaticRouteHealthRecoveryPolicy.exhaustionAction(
                 connectionWasReady: readinessVerifiedConnectionID == providerConnectionID,
-                isInGracePeriod: isInWakeGracePeriod
+                isInGracePeriod: isInWakeGracePeriod,
+                secondsSinceNetworkChange: lastNetworkChangeAt.map {
+                    now.timeIntervalSince($0)
+                },
+                secondsSinceLastReconnect: lastNetworkRecoveryReconnectAt.map {
+                    now.timeIntervalSince($0)
+                }
             ) {
             case .continueMonitoring:
                 connectionQuality = .degraded
                 Self.runtimeLogger.error(
                     "stage=automaticRouteHealth degraded action=continueMonitoring"
                 )
+            case .reconnectProvider:
+                lastNetworkRecoveryReconnectAt = now
+                automaticRouteFailureCounts.removeAll()
+                updateAutomaticRouteRecoveryPresentation()
+                Self.runtimeLogger.error(
+                    "stage=automaticRouteHealth degraded action=reconnectProvider"
+                )
+                // Not awaited here: disconnecting stops telemetry polling,
+                // which cancels the task this health check runs on.
+                Task { @MainActor [weak self] in
+                    await self?.reconnect()
+                }
+                return
             }
         }
     }

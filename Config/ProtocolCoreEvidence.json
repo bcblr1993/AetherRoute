@@ -1,11 +1,11 @@
 {
   "artifacts": {
-    "flowCoreSHA256": "febdc9f61a91ed91fc8a229f4369754cf432040d14a10a4e0b9d200b30210e05",
-    "headerSHA256": "18b52598e6cfa08fd9c14ef80a869a0e82aae326d78dfe22fcdd72af2cfd1ad4",
+    "flowCoreSHA256": "5b1441502abd8e81f31e09b914c941a26f70c12021430d7225cdf49872277dda",
+    "headerSHA256": "bf25e15ff3eeecec9d140fc7190cea240f7d5878af51f017f50faf09dc1c5dee",
     "interopTestBinarySHA256": "65859d87d94f4b6cf082874e478882e91d73609a15c60ba27950b0f71a466d59",
-    "packetFlowCoreSHA256": "05c5677a5436414744e59a882795f841c70041f037bc110d749c212145c1db2d"
+    "packetFlowCoreSHA256": "e6566cea21d7557b176b9da9484e68a447beb336696c1e3bc32f7fb5b65995c5"
   },
-  "coreCommit": "d2cd0b43622905c2e4da2b62628d4e58d7867de1",
+  "coreCommit": "20143a58c3eb324b7093fd1d678957a92dd9e66c",
   "coreFeatures": [
     "aether-tuic",
     "shadowquic",
@@ -58,10 +58,10 @@
     "coreManifestSHA256": "4fbf58d2ceb861c1da90de95f06f3c637598ccbdf9676d303e57a69aa4553c41",
     "directSourceSHA256": "b3114f4181bcc30e700521ac752136d7318d42a3106a9179660c090a7b80f6fd",
     "dispatcherSHA256": "25fd5673badaf476defbcf02c53109f783c9156056a6c4ca1efa575e53819883",
-    "embeddedFlowSourceSHA256": "732cbea36a96d5d3946718e8669b95267ee1c227557b310de0a56cd00f28df01",
+    "embeddedFlowSourceSHA256": "eb498ce8e62a18426fc6ee656de64519ac6309951292031a19cb16d1cb6449f8",
     "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
     "ffiSourceSHA256": "c76a6e9acf2825c9c246fbac78a387c931bcb23000ca4c29ecea8059ba3cb141",
-    "flowFFISourceSHA256": "f023145d615e43a18e77ac4d4d7ead6c0198594229f267e00740ad3edb1da1ca",
+    "flowFFISourceSHA256": "63cf2ebcdeeee46867d5cd0a24c61b065cd54ef27a81a21d4410bef45697f833",
     "interopTestsSHA256": "78a7a3ef0d2fc1ea1dcb089953eecccf9bcb5d17de9fdd9c74ab7393a4fe240e",
     "outboundManagerSHA256": "a7200e3a318aef7588054aafbbaad3fd858c0be8d96339791c75866e6f2ceae1",
     "proxyManagerSHA256": "560fc42d699f21cf5a3801f587f6c76ddb1fce90bbe7a7b0a2eb69cf00ad9548",

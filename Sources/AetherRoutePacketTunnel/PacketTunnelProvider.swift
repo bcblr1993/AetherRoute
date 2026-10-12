@@ -55,7 +55,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private var physicalInterfaces: [NWInterface] = []
     private var resetSucceeded = false
     // Accessed only on the recovery coordinator's serial queue.
-    private var recoveryDownloadBaseline: UInt64?
     private var lastResetInterface: UInt32?
     private var lastResetSignature: String?
     private var providerStopping = false
@@ -86,8 +85,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 guard let self else { return }
                 switch event {
                 case .started:
-                    self.recoveryDownloadBaseline = try? self.currentCore()
-                        .telemetrySnapshot(maximumConnections: 0).downloadTotal
                     self.resetSucceeded = false
                     self.lastResetInterface = nil
                     self.lastResetSignature = nil
@@ -530,15 +527,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         let store = SCDynamicStoreCreate(nil, "AetherRoute health signature" as CFString, nil, nil)
         let signature = store.flatMap { PhysicalUplinkDetector.pathSignature(store: $0, uplink: uplink) }
         guard lastResetSignature == signature else { return false }
+        // Received bytes are no evidence: flows that bypass the engine's
+        // outbound path count too. Only a probe through the engine is.
         let activeCore = currentCore()
-        if NetworkRecoveryHealthPolicy.hasReceivedTraffic(
-            since: recoveryDownloadBaseline,
-            total: try? activeCore.telemetrySnapshot(maximumConnections: 0).downloadTotal
-        ) { return true }
-        let healthy = NetworkRecoveryHealthPolicy.isReachable { url in
+        let healthy = NetworkRecoveryHealthPolicy.isReachable(
+            groups: NetworkRecoveryHealthPolicy.probeGroups(
+                routingMode: uplinkLock.withLock { recoveryRoutingMode }
+            )
+        ) { group, url in
             let state = try activeCore.testActiveProxyLatency(
-                group: uplinkLock.withLock { recoveryRoutingMode == .direct } ? "DIRECT"
-                    : ProxyConnectionReadinessPolicy.globalGroupName,
+                group: group,
                 url: url,
                 timeoutMilliseconds: Self.healthProbeTimeoutMilliseconds
             )

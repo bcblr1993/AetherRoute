@@ -44,7 +44,27 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     /// that first access.
     private var recovery: NetworkRecoveryCoordinator!
     // Accessed only on the recovery coordinator's serial queue.
-    private var recoveryDownloadBaseline: UInt64?
+    private var resetSucceeded = false
+    private var lastResetInterface: UInt32?
+    private var lastResetSignature: String?
+    private var rebuiltDuringRun = false
+    /// Recovery attempt (zero-based) at which a run that has not regained a
+    /// data path replaces the engine, as a disconnect and reconnect would.
+    /// Attempts 0–1 already reset it onto the current uplink, about three
+    /// seconds and two health checks earlier.
+    private static let rebuildAttemptIndex = 2
+    private static let rebuildWaitSeconds: TimeInterval = 20
+
+    /// Everything the running engine was built from, plus the selections and
+    /// routing mode applied since, so a rebuild comes back as the user left
+    /// it. Guarded by `recipeLock`.
+    private struct RuntimeRecipe: Sendable {
+        let snapshot: ProviderLaunchSnapshot
+        var selections: [String: String]
+        var routingMode: RoutingMode
+    }
+    private let recipeLock = NSLock()
+    private var runtimeRecipe: RuntimeRecipe?
 
     private var pathMonitor: NWPathMonitor?
     private var uplinkStore: SCDynamicStore?
@@ -140,18 +160,27 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 Self.runtimeLog.aggregate(
                     "stage=flowRecovery attempt reason=\(reason) index=\(attempt)"
                 )
-                // Later attempts only probe. Repeated resets destroy flows
-                // opened while the uplink is still becoming usable.
-                if attempt == 0 {
-                    self?.runtimeController.resetNetworkState()
-                    Self.osLogger.info("stage=networkRecovery coreReset success")
-                }
+                self?.performNetworkRecovery(reason: reason, attempt: attempt)
             },
             verify: { [weak self] in self?.dataPathIsHealthy() ?? false },
             observer: { [weak self] event in
-                if case .started = event {
-                    self?.recoveryDownloadBaseline = try? self?.runtimeController
-                        .telemetrySnapshot(maximumConnections: 0).downloadTotal
+                switch event {
+                case .started:
+                    self?.resetSucceeded = false
+                    self?.lastResetInterface = nil
+                    self?.lastResetSignature = nil
+                    self?.rebuiltDuringRun = false
+                case .exhausted:
+                    // Resets and one rebuild did not bring the data path back.
+                    // The link may have come up only now; one more rebuild is
+                    // cheap next to leaving the user offline until they
+                    // reconnect by hand. Without an uplink there is nothing to
+                    // rebuild onto; the next path change starts a new run.
+                    if self?.currentPhysicalUplink() != nil {
+                        self?.rebuildRuntimeForRecovery(reason: "exhausted")
+                    }
+                default:
+                    break
                 }
                 // Exhaustion means the host never regained a data path, which
                 // is the one outcome that must stay visible with debug logging
@@ -204,58 +233,22 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             completion.call(error)
             return
         }
+        recipeLock.withLock {
+            runtimeRecipe = RuntimeRecipe(
+                snapshot: snapshot,
+                selections: snapshot.proxySelections,
+                routingMode: snapshot.routingMode
+            )
+        }
         runtimeController.start(
             runtimeFactory: { [identityGuard, diagnostics] in
-                do {
-                    Self.runtimeLog.aggregate("stage=loadLaunchProfile begin")
-                    let input = try TransparentProxyRuntimeInputLoader.load(
-                        snapshot: snapshot
-                    )
-                    Self.runtimeLog.aggregate("stage=loadLaunchProfile success")
-                    Self.runtimeLog.aggregate("stage=createFlowCore begin")
-                    let engine = try FlowCoreEngine(
-                        profile: input.profile,
-                        runtimeDirectory: input.runtimeDirectory,
-                        configuration: FlowCoreEngineConfiguration(
-                            routingMode: snapshot.routingMode
-                        )
-                    )
-                    Self.runtimeLog.aggregate("stage=createFlowCore success")
-                    Self.runtimeLog.aggregate("stage=restoreSelections begin")
-                    for (group, member) in snapshot.proxySelections.sorted(
-                        by: { $0.key < $1.key }
-                    ) {
-                        _ = try? engine.selectProxy(
-                            group: group,
-                            member: member
-                        )
-                    }
-                    if snapshot.proxySelections["GLOBAL"] == nil {
-                        _ = try? engine.selectProxy(group: "GLOBAL", member: "DIRECT")
-                    }
-                    Self.runtimeLog.aggregate(
-                        "stage=restoreSelections success count=\(snapshot.proxySelections.count)"
-                    )
-                    Self.runtimeLog.aggregate("stage=createFlowRuntime begin")
-                    let runtime = try TransparentProxyFlowRuntime(
-                        engine: engine,
-                        identityGuard: identityGuard,
-                        failureObserver: { failure in
-                            Self.runtimeLog.failure(
-                                "stage=flowIngress failed point=\(String(describing: failure))"
-                            )
-                            Self.aggregator.record(.admissionRejected)
-                        diagnostics.record(.flowAdmissionFailure)
-                        }
-                    )
-                    Self.runtimeLog.aggregate("stage=createFlowRuntime success")
-                    return runtime
-                } catch {
-                    Self.runtimeLog.failure(
-                        "runtime preparation failed: \(String(reflecting: error))"
-                    )
-                    throw error
-                }
+                try Self.makeRuntime(
+                    snapshot: snapshot,
+                    selections: snapshot.proxySelections,
+                    routingMode: snapshot.routingMode,
+                    identityGuard: identityGuard,
+                    diagnostics: diagnostics
+                )
             },
             installNetworkSettings: { [weak self] installed in
                 guard let self else {
@@ -316,6 +309,64 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         )
     }
 
+    /// Builds an engine and its flow runtime from a launch snapshot. Startup,
+    /// a profile reload and a recovery rebuild all go through here, so they
+    /// cannot drift apart. `selections` and `routingMode` start from the
+    /// snapshot's and, for a rebuild, include what the user changed since.
+    private static func makeRuntime(
+        snapshot: ProviderLaunchSnapshot,
+        selections: [String: String],
+        routingMode: RoutingMode,
+        identityGuard: TransparentProxySelfIdentityGuard,
+        diagnostics: ProviderDiagnosticAccumulator
+    ) throws -> TransparentProxyFlowRuntime {
+        do {
+            runtimeLog.aggregate("stage=loadLaunchProfile begin")
+            let input = try TransparentProxyRuntimeInputLoader.load(
+                snapshot: snapshot
+            )
+            runtimeLog.aggregate("stage=loadLaunchProfile success")
+            runtimeLog.aggregate("stage=createFlowCore begin")
+            let engine = try FlowCoreEngine(
+                profile: input.profile,
+                runtimeDirectory: input.runtimeDirectory,
+                configuration: FlowCoreEngineConfiguration(
+                    routingMode: routingMode
+                )
+            )
+            runtimeLog.aggregate("stage=createFlowCore success")
+            runtimeLog.aggregate("stage=restoreSelections begin")
+            for (group, member) in selections.sorted(by: { $0.key < $1.key }) {
+                _ = try? engine.selectProxy(group: group, member: member)
+            }
+            if selections["GLOBAL"] == nil {
+                _ = try? engine.selectProxy(group: "GLOBAL", member: "DIRECT")
+            }
+            runtimeLog.aggregate(
+                "stage=restoreSelections success count=\(selections.count)"
+            )
+            runtimeLog.aggregate("stage=createFlowRuntime begin")
+            let runtime = try TransparentProxyFlowRuntime(
+                engine: engine,
+                identityGuard: identityGuard,
+                failureObserver: { failure in
+                    runtimeLog.failure(
+                        "stage=flowIngress failed point=\(String(describing: failure))"
+                    )
+                    aggregator.record(.admissionRejected)
+                    diagnostics.record(.flowAdmissionFailure)
+                }
+            )
+            runtimeLog.aggregate("stage=createFlowRuntime success")
+            return runtime
+        } catch {
+            runtimeLog.failure(
+                "runtime preparation failed: \(String(reflecting: error))"
+            )
+            throw error
+        }
+    }
+
     override func stopProxy(
         with reason: NEProviderStopReason,
         completionHandler: @escaping () -> Void
@@ -324,6 +375,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         uplinkLock.withLock { providerStopping = true }
         stopPathMonitoring()
         recovery.cancel(reason: "stopProxy")
+        recipeLock.withLock { runtimeRecipe = nil }
         let completion = ProxyStopCompletion(completionHandler)
         runtimeController.stop {
             // NETransparentProxyProvider accepts only
@@ -351,17 +403,127 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         recovery.trigger(reason: "wake", supersedes: true)
     }
 
+    /// One recovery attempt, on the coordinator's queue.
+    ///
+    /// Resets the engine onto the current physical uplink whenever that uplink
+    /// (interface or addresses) differs from the last successful reset. An
+    /// unchanged uplink is left alone: repeating the reset would close
+    /// connections that were only just becoming usable. If the run still has
+    /// no data path at `rebuildAttemptIndex`, the engine is replaced outright,
+    /// once per run, and only once there is an uplink for it to start on.
+    private func performNetworkRecovery(reason: String, attempt: Int) {
+        guard !uplinkLock.withLock({ providerStopping }) else { return }
+        guard let uplink = currentPhysicalUplink() else {
+            resetSucceeded = false
+            Self.runtimeLog.aggregate(
+                "stage=networkRecovery waitingForPhysicalUplink attempt=\(attempt)"
+            )
+            return
+        }
+        if attempt >= Self.rebuildAttemptIndex, !rebuiltDuringRun {
+            rebuiltDuringRun = true
+            if rebuildRuntimeForRecovery(reason: reason) {
+                // A fresh engine selects its uplink as it starts.
+                lastResetInterface = UInt32(uplink.index)
+                lastResetSignature = pathSignature(for: uplink)
+                resetSucceeded = true
+                return
+            }
+            // The rebuild did not happen; fall through to a plain reset.
+        }
+        let index = UInt32(uplink.index)
+        let signature = pathSignature(for: uplink)
+        guard
+            !resetSucceeded
+                || lastResetInterface != index
+                || lastResetSignature != signature
+        else { return }
+        resetSucceeded = false
+        var outcome = runtimeController.resetNetworkState(interfaceIndex: index)
+        if outcome == .interfaceUnavailable {
+            // The engine enumerates interfaces itself and may not list one
+            // that has only just appeared; let it choose rather than give up.
+            outcome = runtimeController.resetNetworkState(interfaceIndex: 0)
+        }
+        Self.runtimeLog.aggregate(
+            "stage=networkRecovery coreReset reason=\(reason) attempt=\(attempt) interface=\(uplink.name) index=\(index) outcome=\(String(describing: outcome))"
+        )
+        guard outcome == .reset else { return }
+        lastResetInterface = index
+        lastResetSignature = signature
+        resetSucceeded = true
+    }
+
+    /// Replaces the engine in place from the current recipe and waits for the
+    /// swap. Returns whether a fresh engine is now serving flows.
+    @discardableResult
+    private func rebuildRuntimeForRecovery(reason: String) -> Bool {
+        guard !uplinkLock.withLock({ providerStopping }),
+              let recipe = recipeLock.withLock({ runtimeRecipe }) else {
+            return false
+        }
+        Self.runtimeLog.aggregate("stage=networkRecovery rebuild begin reason=\(reason)")
+        let result = RebuildResult()
+        runtimeController.rebuildRuntime(
+            runtimeFactory: { [identityGuard, diagnostics] in
+                try Self.makeRuntime(
+                    snapshot: recipe.snapshot,
+                    selections: recipe.selections,
+                    routingMode: recipe.routingMode,
+                    identityGuard: identityGuard,
+                    diagnostics: diagnostics
+                )
+            },
+            completion: { swapped in result.finish(swapped) }
+        )
+        let swapped = result.wait(seconds: Self.rebuildWaitSeconds)
+        if swapped {
+            Self.runtimeLog.aggregate("stage=networkRecovery rebuild swapped reason=\(reason)")
+        } else {
+            Self.runtimeLog.failure("stage=networkRecovery rebuild failed reason=\(reason)")
+        }
+        return swapped
+    }
+
+    private func currentPhysicalUplink() -> PhysicalUplink? {
+        guard let store = SCDynamicStoreCreate(
+            nil,
+            "AetherRoute transparent recovery uplink" as CFString,
+            nil,
+            nil
+        ) else { return nil }
+        let cached = uplinkLock.withLock { physicalInterfaces }
+        return PhysicalUplinkDetector.currentPhysicalUplink(
+            store: store,
+            cachedPathInterfaces: cached
+        )
+    }
+
+    private func pathSignature(for uplink: PhysicalUplink) -> String? {
+        SCDynamicStoreCreate(
+            nil,
+            "AetherRoute transparent recovery signature" as CFString,
+            nil,
+            nil
+        ).flatMap { PhysicalUplinkDetector.pathSignature(store: $0, uplink: uplink) }
+    }
+
     /// Probes the live route end to end. The provider's own sockets do not pass
     /// through the flows it proxies, so asking the core to URL-test the current
     /// route is the only way to see whether traffic can leave the host.
+    ///
+    /// Received bytes used to count as health too. Any flow does that,
+    /// including ones that never touch the engine's broken outbound path, so a
+    /// run could report `recovered` while proxied traffic was still dead. Only
+    /// a probe through the engine is evidence now.
     private func dataPathIsHealthy() -> Bool {
-        if NetworkRecoveryHealthPolicy.hasReceivedTraffic(
-            since: recoveryDownloadBaseline,
-            total: try? runtimeController.telemetrySnapshot(maximumConnections: 0).downloadTotal
-        ) { return true }
-        return NetworkRecoveryHealthPolicy.isReachable { url in
+        guard resetSucceeded else { return false }
+        let routingMode = recipeLock.withLock { runtimeRecipe?.routingMode } ?? .rule
+        return NetworkRecoveryHealthPolicy.isReachable(
+            groups: NetworkRecoveryHealthPolicy.probeGroups(routingMode: routingMode)
+        ) { group, url in
             let state = try runtimeController.testActiveProxyLatency(
-                group: ProxyConnectionReadinessPolicy.globalGroupName,
+                group: group,
                 url: url,
                 timeoutMilliseconds: Self.healthProbeTimeoutMilliseconds
             )
@@ -536,12 +698,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 case let .snapshot(group):
                     .snapshot(try runtimeController.selectorSnapshot(group: group))
                 case let .select(group, member):
-                    .snapshot(
-                        try runtimeController.selectProxy(
-                            group: group,
-                            member: member
-                        )
-                    )
+                    .snapshot(try self.applySelection(group: group, member: member))
                 case let .latency(group, url, timeoutMilliseconds):
                     .latency(
                         try runtimeController.testProxyLatency(
@@ -629,7 +786,19 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         _ mode: RoutingMode
     ) throws -> ProxySelectionProviderResponse {
         try runtimeController.setRoutingMode(mode)
+        recipeLock.withLock { runtimeRecipe?.routingMode = mode }
         return .routingMode(mode)
+    }
+
+    /// Selections made while running must survive a recovery rebuild, which
+    /// would otherwise bring back the ones from launch.
+    private func applySelection(
+        group: String,
+        member: String
+    ) throws -> ProxySelectionState {
+        let state = try runtimeController.selectProxy(group: group, member: member)
+        recipeLock.withLock { runtimeRecipe?.selections[group] = member }
+        return state
     }
 
     /// The host's level reaches this root-owned extension only through a
@@ -702,28 +871,21 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     completion(.failure(.unavailable))
                     return
                 }
+                self.recipeLock.withLock {
+                    self.runtimeRecipe = RuntimeRecipe(
+                        snapshot: snapshot,
+                        selections: snapshot.proxySelections,
+                        routingMode: snapshot.routingMode
+                    )
+                }
                 self.runtimeController.start(
                     runtimeFactory: {
-                        let input = try TransparentProxyRuntimeInputLoader.load(snapshot: snapshot)
-                        let engine = try FlowCoreEngine(
-                            profile: input.profile,
-                            runtimeDirectory: input.runtimeDirectory,
-                            configuration: FlowCoreEngineConfiguration(routingMode: snapshot.routingMode)
-                        )
-                        for (group, member) in snapshot.proxySelections.sorted(by: { $0.key < $1.key }) {
-                            _ = try? engine.selectProxy(group: group, member: member)
-                        }
-                        if snapshot.proxySelections["GLOBAL"] == nil {
-                            _ = try? engine.selectProxy(group: "GLOBAL", member: "DIRECT")
-                        }
-                        return try TransparentProxyFlowRuntime(
-                            engine: engine,
+                        try Self.makeRuntime(
+                            snapshot: snapshot,
+                            selections: snapshot.proxySelections,
+                            routingMode: snapshot.routingMode,
                             identityGuard: identityGuard,
-                            failureObserver: { failure in
-                                Self.runtimeLog.failure("stage=flowIngress failed point=\(String(describing: failure))")
-                                Self.aggregator.record(.admissionRejected)
-                                diagnostics.record(.flowAdmissionFailure)
-                            }
+                            diagnostics: diagnostics
                         )
                     },
                     installNetworkSettings: { [weak self] installed in
@@ -1217,5 +1379,25 @@ private extension NSLock {
         lock()
         defer { unlock() }
         return operation()
+    }
+}
+
+/// Hands a rebuild's outcome from the lifecycle callback queue to the
+/// recovery queue, which waits for it with a bound.
+private final class RebuildResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private let signal = DispatchSemaphore(value: 0)
+    private var swapped = false
+
+    func finish(_ swapped: Bool) {
+        lock.withLock { self.swapped = swapped }
+        signal.signal()
+    }
+
+    func wait(seconds: TimeInterval) -> Bool {
+        guard signal.wait(timeout: .now() + seconds) == .success else {
+            return false
+        }
+        return lock.withLock { swapped }
     }
 }

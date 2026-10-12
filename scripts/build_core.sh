@@ -139,6 +139,7 @@ for SYMBOL in \
   clash_flow_telemetry_snapshot_v3 \
   clash_flow_telemetry_snapshot_v4 \
   clash_flow_close_connections_v1 \
+  clash_flow_engine_reset_network_state_v1 \
   clash_flow_tcp_create \
   clash_flow_tcp_create_v2 \
   clash_flow_udp_create \
@@ -162,12 +163,13 @@ done
 # 1.3.0 added the source-app create and ART2 telemetry entry points; 24 since
 # 1.4.0 added clash_flow_close_connections_v1; 25 since 1.4.0 also added the
 # ART3 telemetry entry point; 26 since 1.5.1 added the ART4 one, whose totals
-# carry incarnations
+# carry incarnations; 27 since 1.7.1 added the network reset, so transparent
+# mode follows a switch to another network interface (Docs/Plan-1.7.1.zh-CN.md)
 # (Docs/Plan-1.3.0.zh-CN.md, section 4.2). This count is a deliberate ceiling
 # on the ABI surface: raising it should be a decision, not a side effect of
 # adding an export.
 FLOW_ABI_COUNT=$(printf '%s\n' "$FLOW_SYMBOLS" | grep -Ec '^_clash_flow_' || true)
-if [ "$FLOW_ABI_COUNT" -ne 26 ]; then
+if [ "$FLOW_ABI_COUNT" -ne 27 ]; then
   echo "Refusing core artifact with unexpected Flow ABI count: $FLOW_ABI_COUNT" >&2
   exit 1
 fi

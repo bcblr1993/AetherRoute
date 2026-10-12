@@ -215,6 +215,15 @@ public final class FlowCoreEngine: @unchecked Sendable {
         try storage.closeConnections(request: request)
     }
 
+    /// Moves outbound sockets onto the uplink with this interface index (zero
+    /// lets the engine choose) and drops upstream connections and DNS clients
+    /// bound to the previous one. Blocks for at most about two seconds.
+    public func resetNetworkState(
+        interfaceIndex: UInt32
+    ) throws -> EngineNetworkResetOutcome {
+        try storage.resetNetworkState(interfaceIndex: interfaceIndex)
+    }
+
     /// Idempotent engine callback barrier. Completion is never invoked from a
     /// Rust callback and runs only after all child flow destroy barriers.
     public func shutdown(completion: @escaping @Sendable () -> Void) {
@@ -584,6 +593,39 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
                     throw Self.selectorError(result.status, selecting: false)
                 }
                 return result.closedCount
+            }
+        }
+    }
+
+    func resetNetworkState(
+        interfaceIndex: UInt32
+    ) throws -> EngineNetworkResetOutcome {
+        // Runs on `queue`, like destruction, so the handle stays valid for the
+        // whole call. Other engine calls, flow creation included, wait behind
+        // it for at most the engine's two-second deadline; new flows could not
+        // reach the old uplink anyway.
+        guard gate.withLock({ acceptsFlows }) else {
+            throw FlowCoreEngineError.engineClosed
+        }
+        return try queue.sync {
+            guard phase == .running, let handle else {
+                throw FlowCoreEngineError.engineClosed
+            }
+            let status = backend.resetNetworkState(
+                engine: handle,
+                interfaceIndex: interfaceIndex
+            )
+            switch status {
+            case FlowCoreABIStatus.success:
+                return .reset
+            case FlowCoreABIStatus.backpressure:
+                return .busy
+            case FlowCoreABIStatus.invalidState:
+                return .interfaceUnavailable
+            case FlowCoreABIStatus.cancelled:
+                return .timedOut
+            default:
+                throw Self.selectorError(status, selecting: false)
             }
         }
     }

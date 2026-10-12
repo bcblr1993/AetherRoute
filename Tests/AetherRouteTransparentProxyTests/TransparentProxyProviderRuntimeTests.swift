@@ -801,6 +801,132 @@ final class TransparentProxyProviderRuntimeTests: XCTestCase,
         XCTAssertEqual(engine.shutdownCallCount, 1)
     }
 
+    // MARK: Network reset and in-place rebuild (1.7.1)
+
+    private func startedController(
+        engine: RuntimeFakeEngine
+    ) -> TransparentProxyProviderLifecycleController {
+        let controller = TransparentProxyProviderLifecycleController {
+            try self.makeRuntime(engine: engine)
+        }
+        let started = expectation(description: "started")
+        controller.start(
+            installNetworkSettings: { $0(true) },
+            completion: { error in
+                XCTAssertNil(error)
+                started.fulfill()
+            }
+        )
+        wait(for: [started], timeout: 2)
+        return controller
+    }
+
+    private func rebuild(
+        _ controller: TransparentProxyProviderLifecycleController,
+        factory: @escaping TransparentProxyProviderLifecycleController.RuntimeFactory
+    ) -> Bool {
+        let done = expectation(description: "rebuild")
+        let swapped = RuntimeLockedBox(false)
+        controller.rebuildRuntime(runtimeFactory: factory) { result in
+            swapped.mutate { $0 = result }
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 2)
+        return swapped.value
+    }
+
+    func testNetworkResetMovesEngineToTheGivenInterface() throws {
+        let engine = RuntimeFakeEngine()
+        let controller = startedController(engine: engine)
+
+        XCTAssertEqual(controller.resetNetworkState(interfaceIndex: 11), .reset)
+        engine.resetOutcome = .interfaceUnavailable
+        XCTAssertEqual(
+            controller.resetNetworkState(interfaceIndex: 99),
+            .interfaceUnavailable
+        )
+        XCTAssertEqual(engine.resetIndexes, [11, 99])
+
+        let stopped = expectation(description: "stopped")
+        controller.stop { stopped.fulfill() }
+        wait(for: [stopped], timeout: 2)
+        XCTAssertNil(controller.resetNetworkState(interfaceIndex: 11))
+        XCTAssertEqual(engine.resetIndexes, [11, 99])
+    }
+
+    func testRebuildSwapsInAFreshEngineAndStopsThePreviousOne() throws {
+        let original = RuntimeFakeEngine()
+        let replacement = RuntimeFakeEngine()
+        let controller = startedController(engine: original)
+
+        XCTAssertTrue(rebuild(controller) { try self.makeRuntime(engine: replacement) })
+        XCTAssertTrue(original.waitForShutdown(timeout: 2))
+        XCTAssertEqual(controller.snapshot().phase, .running)
+
+        // Control calls now reach the fresh engine only.
+        XCTAssertEqual(controller.resetNetworkState(interfaceIndex: 7), .reset)
+        XCTAssertEqual(replacement.resetIndexes, [7])
+        XCTAssertEqual(original.resetIndexes, [])
+        XCTAssertEqual(replacement.shutdownCallCount, 0)
+
+        let stopped = expectation(description: "stopped")
+        controller.stop { stopped.fulfill() }
+        wait(for: [stopped], timeout: 2)
+        XCTAssertEqual(replacement.shutdownCallCount, 1)
+        XCTAssertEqual(original.shutdownCallCount, 1)
+    }
+
+    func testFailedRebuildKeepsTheRunningEngine() throws {
+        let original = RuntimeFakeEngine()
+        let controller = startedController(engine: original)
+
+        XCTAssertFalse(rebuild(controller) { throw RuntimeTestError.injected })
+        XCTAssertEqual(original.shutdownCallCount, 0)
+        XCTAssertEqual(controller.resetNetworkState(interfaceIndex: 3), .reset)
+        XCTAssertEqual(original.resetIndexes, [3])
+    }
+
+    func testRebuildIsRefusedWhenNotRunning() {
+        let controller = TransparentProxyProviderLifecycleController {
+            throw RuntimeTestError.injected
+        }
+        XCTAssertFalse(rebuild(controller) { throw RuntimeTestError.injected })
+    }
+
+    func testStopDuringRebuildDiscardsTheFreshEngine() throws {
+        let original = RuntimeFakeEngine()
+        let replacement = RuntimeFakeEngine()
+        let controller = startedController(engine: original)
+        let factoryEntered = DispatchSemaphore(value: 0)
+        let releaseFactory = DispatchSemaphore(value: 0)
+        let done = expectation(description: "rebuild")
+        let swapped = RuntimeLockedBox(true)
+
+        controller.rebuildRuntime(runtimeFactory: {
+            factoryEntered.signal()
+            releaseFactory.wait()
+            return try self.makeRuntime(engine: replacement)
+        }) { result in
+            swapped.mutate { $0 = result }
+            done.fulfill()
+        }
+        XCTAssertEqual(factoryEntered.wait(timeout: .now() + 2), .success)
+
+        // A second rebuild while one is in flight is refused at once.
+        XCTAssertFalse(rebuild(controller) { try self.makeRuntime(engine: RuntimeFakeEngine()) })
+
+        let stopped = expectation(description: "stopped")
+        controller.stop { stopped.fulfill() }
+        wait(for: [stopped], timeout: 2)
+        releaseFactory.signal()
+        wait(for: [done], timeout: 2)
+
+        XCTAssertFalse(swapped.value)
+        XCTAssertTrue(replacement.waitForShutdown(timeout: 2))
+        XCTAssertEqual(original.shutdownCallCount, 1)
+        XCTAssertEqual(controller.snapshot().phase, .idle)
+    }
+
     private func makeRuntime(
         engine: RuntimeFakeEngine
     ) throws -> TransparentProxyFlowRuntime {
@@ -936,6 +1062,22 @@ private final class RuntimeFakeEngine:
 
     var shutdownCallCount: Int { lock.withLock { shutdownCalls } }
     var makeTCPCallCount: Int { lock.withLock { tcpCalls } }
+    private var resetOutcomeStorage: EngineNetworkResetOutcome = .reset
+    private var resetIndexStorage: [UInt32] = []
+    var resetOutcome: EngineNetworkResetOutcome {
+        get { lock.withLock { resetOutcomeStorage } }
+        set { lock.withLock { resetOutcomeStorage = newValue } }
+    }
+    var resetIndexes: [UInt32] { lock.withLock { resetIndexStorage } }
+
+    func resetNetworkState(
+        interfaceIndex: UInt32
+    ) throws -> EngineNetworkResetOutcome {
+        lock.withLock {
+            resetIndexStorage.append(interfaceIndex)
+            return resetOutcomeStorage
+        }
+    }
     var latencyCallCount: Int { lock.withLock { latencyCalls } }
 
     func waitForLatencyTest(timeout: TimeInterval) -> Bool {
