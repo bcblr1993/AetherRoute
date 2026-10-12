@@ -101,7 +101,14 @@ struct RulesView: View {
 
                 ScrollViewReader { scrollProxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: AetherVisual.sectionSpacing + AetherVisual.s1) {
+                        // A plain stack (1.7.1). As a LazyVStack the page took
+                        // a width wider than its column, slid under the
+                        // sidebar, and kept re-laying out until AppKit ended
+                        // the loop by crashing the app ("more Update
+                        // Constraints in Window passes than there are views").
+                        // It holds a dozen sections; the rule list below
+                        // stays lazy inside the same scroll view.
+                        VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing + AetherVisual.s1) {
                             AetherPageHeader(.rules) {
                                 Button {
                                     editingRule = nil
