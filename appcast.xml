@@ -6,10 +6,10 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.7.0 (Build 2026101103)</title>
-            <pubDate>Mon, 12 Oct 2026 10:05:45 +0800</pubDate>
-            <sparkle:version>2026101103</sparkle:version>
-            <sparkle:shortVersionString>1.7.0</sparkle:shortVersionString>
+            <title>Version 1.7.1 (Build 2026101204)</title>
+            <pubDate>Mon, 12 Oct 2026 17:30:52 +0800</pubDate>
+            <sparkle:version>2026101204</sparkle:version>
+            <sparkle:shortVersionString>1.7.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <description><![CDATA[
 <style>
@@ -119,36 +119,28 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.7.0 更新要点</span>
-  <span class="release-badge">Build 2026101103 · 正式发布</span>
-</div>
-<div class="section">
-  <span class="section-tag tag-feature">🆕 新增</span>
-  <ul>
-    <li><strong>新建分组</strong>：按地区、关键词或手选节点组成分组，订阅新增或下线节点时自动更新，可设为自动最快或故障转移。</li>
-    <li><strong>按地区生成分组</strong>：一键为每个地区建一个自动最快分组，并放进主分组。</li>
-    <li><strong>隐藏节点</strong>：把“剩余流量”“到期”这类提示条目从所有分组中移除。</li>
-    <li>以上改动都不修改订阅本身，订阅更新后依然有效。</li>
-  </ul>
+  <span class="release-title">AetherRoute 1.7.1 更新要点</span>
+  <span class="release-badge">Build 2026101204 · 正式发布</span>
 </div>
 <div class="section">
   <span class="section-tag tag-fix">🛠 修复</span>
   <ul>
-    <li>订阅更新后，节点选择、选择方式、首选节点和 DNS 设置不再被重置。</li>
-    <li>TUN 模式下开启 Tailscale MagicDNS 时，Google 等网站无法打开的问题。</li>
-    <li>透明代理不再接管 Tailscale 网段，tailnet 访问不受规则影响。</li>
+    <li><strong>切换网卡后自动恢复</strong>：透明代理模式下，从 Wi-Fi 换到有线网卡（或合盖唤醒后换了网卡）会一直断网，只能手动重连。现在 1–2 秒内自动恢复。</li>
+    <li>自动恢复不成功时会原地重建连接，保留你当前选择的节点和路由模式；仍不通则自动重连一次。</li>
+    <li>恢复判断更准确：不再因为有直连流量就误判为“已恢复”。</li>
+    <li><strong>规则页崩溃</strong>：打开规则页约半分钟后 App 可能闪退，页面内容也会滑到侧边栏下面。现已修复。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.7.0/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.7.1/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.7.0/AetherRoute-1.7.0-build-2026101103-arm64.dmg"
-                sparkle:edSignature="1naRZy4BJWp3pjqyaTM8UPT9OIoUuaPzszZjEQHelhFUZIeBdi4z4Y2QYccTFtsNzPuS42P0RvcOuMgivO3SDw=="
-                length="27333859"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.7.1/AetherRoute-1.7.1-build-2026101204-arm64.dmg"
+                sparkle:edSignature="KCuGo2dFdfgL+EbpawJzAIhPngH+HksX2ctsmtNiyzf9z06UsXuwZWZy4OuZugprmJaA9zPsvmz1r6vQ8hmnAA=="
+                length="27362963"
                 type="application/octet-stream" />
         </item>
     </channel>

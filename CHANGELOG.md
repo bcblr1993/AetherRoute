@@ -4,6 +4,30 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.1] - 2026-10-12
+
+Traffic now comes back on its own when the Mac moves to another network interface. In transparent proxy mode, moving from Wi-Fi to wired Ethernet — or waking onto a different one — left every connection dead until AetherRoute was disconnected and reconnected by hand. The Rules page no longer crashes the app.
+
+### Fixed
+
+- **Switching network interfaces in transparent proxy mode**: the proxy kept every outbound connection on the interface it started on. After a move from Wi-Fi to wired Ethernet nothing got through, and the automatic recovery, which only closed app connections, could not help. A move between networks on the same interface (Wi-Fi to a hotspot) was not affected. The engine now moves to the new interface, closes connections and DNS clients left on the old one, and traffic returns within about two seconds (core `20143a5`).
+- If resetting does not bring traffic back, the transparent proxy now replaces its engine in place, as a disconnect and reconnect would, keeping the node choices and routing mode changed since connecting. As a last resort, when a route that worked stops right after a network change or wake and stays down, the app reconnects once by itself (at most once every 10 minutes).
+- Recovery could report success too early: any data received counted, including direct traffic that never used the broken path. Both engines now only count a probe through the engine itself, trying the GLOBAL route first and DIRECT second, so a node that is down cannot hold recovery back either.
+- **The Rules page could crash the app**: about 30 seconds after the page was opened, AppKit ended a layout loop by terminating the app ("more Update Constraints in Window passes than there are views in the window"). The page's sections sat in a `LazyVStack` that took a width wider than its column, so the page also slid under the sidebar and hid its title. The sections are now a plain stack; the rule list itself stays lazy. 1.7.0 crashed the same way when it was checked again today.
+
+### Changed
+
+- Release gate: `scripts/test_interface_switch_recovery.sh` (started through `scripts/test_remote_interface_switch.sh`) switches off the network service carrying traffic on the Mac mini so traffic must move to the other interface, in both directions, three times, and requires a proxied probe to answer within 15 s each time. Run for both engines before every release (AGENTS.md). Merely reordering services keeps the old interface up and lets the broken build pass, so the gate takes the interface away.
+- The remote gate's scan for network-changing commands skips that one script, which it never runs.
+
+### Verified
+
+- Interface switching on the Mac mini (Ethernet en0 ↔ Wi-Fi en1): 1.7.0 in transparent proxy mode did not recover within 15 s when Ethernet went off. Release build 2026101204: transparent proxy 6 of 6 moves recovered in 2–3 s, TUN 6 of 6 in 1–2 s. Logs show the engine reset onto the new interface about 0.5 s after each change, without needing a rebuild.
+- New unit tests for the engine reset (Rust and FFI), the bridge status mapping, the in-place rebuild (including a stop during a rebuild), the reconnect decision and the probe order. `./scripts/test.sh` and the regression suites passed; all five protocol interop gates passed on core `20143a5` (48 cases, 26 certificate rejections).
+- Tart VM matrix with QA build 2026101204: all six combinations passed (idle reuse, SNI recovery, 2 MiB upload). Uploads took 7.2–33.4 s; the slowest combination differed between runs (TUN/rule 25.9 s with build 2026101203, TUN/global 33.4 s with 2026101204), which points at the VM's network rather than an engine.
+- Mac mini remote gate passed. With release build 2026101204: idle reuse and a 2 MiB upload passed in transparent mode (5.4 s) and TUN mode (5.6 s); footprint 65 MB and 64 MB.
+- UI performance and memory gate on the Mac mini (Release, live traffic, 5 minutes per profile): page switch p95 127.3 ms (showcase) and 126.5 ms (large), slowest 166.0 and 158.4 ms; footprint median 63 and 62 MB, peak 65 and 64 MB, growth +0 and −2 MB. Against 1.7.0 the median footprint fell by 3–4 MB (66 → 62–63 MB); the Rules page p50 rose from 76 to 94 ms now that its sections are no longer lazy, well inside the budget (p95 180 ms). The gate first failed on this release because of the Rules page crash above, which is how it was found.
+
 ## [1.7.0] - 2026-10-12
 
 Customize any profile without editing it. Custom groups pick their nodes by region or keyword and follow the subscription as it changes. Nodes can be hidden, and groups for each region are one click away. Settings now survive subscription updates, and TUN works alongside Tailscale MagicDNS.
