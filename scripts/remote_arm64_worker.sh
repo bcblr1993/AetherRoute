@@ -110,7 +110,11 @@ cmp -s "$EXPECTED_SOURCE" "$ACTUAL_SOURCE" || {
   exit 1
 }
 
-if grep -R -E -n \
+# test_interface_switch_recovery.sh switches network services off on purpose:
+# it is the NIC-switch recovery release gate, started on its own through
+# test_remote_interface_switch.sh and never by this worker. Every other script
+# must stay free of network mutations.
+if grep -R -E -n --exclude=test_interface_switch_recovery.sh \
   '^[[:space:]]*((sudo|doas)[[:space:]]+)?((/usr/sbin/)?networksetup[[:space:]]+-(set|create|delete)|(/sbin/)?route[[:space:]]+(add|delete|change)|(/usr/sbin/)?scutil[[:space:]]+--(set|nc))' \
   "$ROOT/scripts" >/dev/null; then
   echo "A remote validation script contains a forbidden system-network mutation command" >&2
