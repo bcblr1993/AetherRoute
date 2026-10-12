@@ -4,6 +4,40 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-10-12
+
+Customize any profile without editing it. Custom groups pick their nodes by region or keyword and follow the subscription as it changes. Nodes can be hidden, and groups for each region are one click away. Settings now survive subscription updates, and TUN works alongside Tailscale MagicDNS.
+
+### Added
+
+- **New Group** on the Proxies page: a group whose members follow rules instead of a fixed list.
+  - Rules: regions (with node counts), keywords the name contains or must not contain, and nodes picked by hand.
+  - A live preview shows the matching nodes before saving.
+  - The group can be listed first or last in another group, and uses Manual, Fastest or Failover like any other.
+  - When the subscription adds a Hong Kong node, it joins "Hong Kong"; a removed one leaves.
+  - Custom groups carry a "Custom" tag and can be edited or deleted.
+- **Groups by Region…**: one group for every region with at least two nodes, set to Fastest and listed in the main group. You choose which regions before anything is created.
+- **Hide Nodes…**: nodes whose names contain the given words leave every group, for example notices such as "Remaining traffic" or "Expire". Words of that kind found in the profile are suggested.
+- None of this edits the profile. The changes are stored with it, encrypted, and go with it through subscription updates, exports and iCloud sync. Saving while connected applies at once without reconnecting.
+- DNS page: when Tailscale is running, a note explains how the two share the network, and warns when a Tailscale exit node competes for traffic.
+
+### Fixed
+
+- The node each group uses, its selection mode, its preferred node and the DNS override were stored under the profile's exact text. They reset whenever a subscription update changed anything, such as a node name that shows the remaining traffic. They now carry over to the updated profile for every group and node that still exists.
+- TUN with Tailscale MagicDNS: macOS asks Tailscale's resolver first, which returned poisoned addresses for blocked sites, so they never loaded. HTTPS connections to an address now follow the name in their TLS handshake, as the transparent proxy already did (core `d2cd0b4`).
+- Transparent proxy: Tailscale and other CGNAT overlay addresses (100.64.0.0/10) are no longer captured, so the tailnet keeps working with any rule set, including with Domestic & Apple acceleration off.
+
+### Verified
+
+- Overrides end to end (new `scripts/test_profile_override_e2e.sh`, on a throwaway clone of the `macos27` VM with the QA build). Version 1 of a profile routed through a custom "HK Auto" group. Version 2 replaced the profile the way a subscription update does: a node was renamed, a Hong Kong node added and another node removed. Without the override being applied again, the group held both Hong Kong nodes and kept Fastest, moving to the other node 32 s (TUN) and 23 s (transparent proxy) after the one in use stopped answering.
+- Failover end to end, rerun on 1.7.0: switch in 22–43 s and 23 s, stuck download closed, return after 69–74 s, Manual never switched. The 43 s run was the 10-second check landing at its worst point; two reruns took 22 s and 24 s.
+- Tailscale on the Mac mini, TUN with MagicDNS turned on for the test and restored afterwards. On 1.6.0 Google and YouTube timed out because macOS resolved them through Tailscale to poisoned addresses. On 1.7.0, with the same poisoned answers, Google answered in 0.42 s and YouTube in 1.04 s. Tailnet addresses and MagicDNS names stayed reachable in both.
+- Local regression suites and `./scripts/test.sh` passed; the new check `test_profile_override_cores.sh` started both cores on overridden flow, block and JSON profiles with networking denied. All five protocol interop gates passed on core `d2cd0b4` (48 cases, 26 certificate rejections).
+- UI suite on the `macos27` VM: 53 passed, 0 failed, 3 opt-in tests skipped. New tests cover creating, editing and deleting a custom group, groups by region and hidden nodes.
+- Tart VM matrix with QA build 2026101103: every proxied combination passed, with a 2 MiB upload in 3.9–6.5 s. Both direct-mode uploads were slow (113 s) or cut off at 120 s after delivering every byte; with AetherRoute quit, the VM's own upload to the same site was also cut off at 120 s, so the slowness is the direct network path, not the app.
+- Mac mini remote gate passed. On the Mac mini with notarized build 2026101103, idle reuse and a 2 MiB upload passed in transparent mode (5.4 s) and TUN mode (7.1 s); footprint 65 MB in both.
+- UI performance and memory gate on the Mac mini (Release, live traffic, 5 minutes per profile): page switch p95 130–131 ms, slowest 139–154 ms; footprint median 66 MB, peak 70–71 MB, +1–2 MB over the run. Against 1.6.0 the median footprint rose by 5 MB (61 → 66 MB) and the Proxies page p50 by 5 ms (78 → 83 ms) with its new controls; both stay well inside the budget (p95 180 ms, median 90 MB).
+
 ## [1.6.0] - 2026-10-11
 
 Node failover: each proxy group can now choose Manual, Fastest or Failover. In Failover mode, traffic moves to a working node when the preferred one stops answering, and returns once it answers again.
