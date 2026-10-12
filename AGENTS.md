@@ -67,6 +67,11 @@
   ```
   两种模式都必须输出 `both requests answered` 并以 0 退出。该检查防止引擎再次在 60 秒空闲后关闭本机客户端连接（曾导致 Claude Desktop / Claude Code 会话 `ECONNRESET` 中断）。
 - **大请求上传（Mandatory，TUN 与透明代理各一次）**：同样在两种模式下执行 `sh scripts/test_large_upload.sh`，必须输出 `bytes delivered` 并以 0 退出。
+- **切换网卡自动恢复（Mandatory，1.7.1 起每次发布，TUN 与透明代理各一次）**：物理机连接后，在本机执行：
+  ```bash
+  sh scripts/test_remote_interface_switch.sh chenxu@100.64.0.3
+  ```
+  脚本把物理机的首选网络服务在有线 `en0` 与 Wi-Fi `en1` 之间来回切换（默认 3 轮、共 6 次）。每次切换后，经代理访问 `https://www.google.com/generate_204` 必须在 15 秒内自动恢复，不得手动断开重连。必须输出 `PASS: interface switch recovered` 并以 0 退出；FAIL 阻断发布，INCONCLUSIVE（缺少第二块网卡、切换没有生效、或切换前就不通）必须查明原因后重跑。结果里有每次切换的恢复秒数，写进 CHANGELOG。脚本在物理机上后台运行，切换时 SSH 会断，本机脚本会自动重连等结果；退出时会恢复原来的服务顺序。要用 Tailscale 地址登录：切换网卡时局域网地址也会跟着变。该检查源于 1.7.1 之前的缺陷：透明代理把出站连接固定在启动时的网卡上，从 Wi-Fi 换到有线网卡后一直不通，只能手动重连；同一网卡上换网络（Wi-Fi 换热点）不受影响，所以以前的网络切换测试（在 en0 上加地址别名）发现不了。
 - **UI 卡顿与内存预算门禁（Mandatory，1.5.1 起每次发布）**：在本机执行，脚本自行构建带探针的 Release 审查版，并在物理机的图形会话里运行（不触碰本机隧道）：
   ```bash
   ./scripts/test_ui_performance_gate.sh "$PWD/outputs/perf-gate-<VERSION>-<BUILD>"
