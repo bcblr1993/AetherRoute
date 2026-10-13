@@ -37,6 +37,8 @@ public enum DiagnosticCounter: Sendable {
     case tcpOpenFailed
     case udpOpened
     case udpOpenFailed
+    case bytesUpstream(Int)
+    case bytesClient(Int)
     case admissionRejected
     case sessionFailed
 }
@@ -74,6 +76,8 @@ public final class DiagnosticAggregator: @unchecked Sendable {
         case .tcpOpenFailed: snapshot.tcpOpenFailed += count
         case .udpOpened: snapshot.udpOpened += count
         case .udpOpenFailed: snapshot.udpOpenFailed += count
+        case let .bytesUpstream(bytes): snapshot.bytesToUpstream += bytes
+        case let .bytesClient(bytes): snapshot.bytesToClient += bytes
         case .admissionRejected: snapshot.admissionRejected += count
         case .sessionFailed: snapshot.sessionsFailed += count
         }

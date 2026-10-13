@@ -332,6 +332,12 @@ public enum AutomaticRouteHealthRecoveryPolicy {
     /// into a reconnect loop.
     public static let networkChangeReconnectCooldown: TimeInterval = 600
 
+    /// Number of consecutive provider message failures (reply missing or timed out)
+    /// required to declare the provider extension's control plane unresponsive.
+    public static let providerUnresponsiveThreshold: Int = 3
+    /// Minimum interval between automatic reconnects caused by an unresponsive provider.
+    public static let providerUnresponsiveCooldown: TimeInterval = 300
+
     public static func action(
         automaticChildGroup: String?,
         explicitlyAutomatic: Bool,
@@ -349,18 +355,30 @@ public enum AutomaticRouteHealthRecoveryPolicy {
     /// tunnel available for other rules and for an explicit user disconnect.
     ///
     /// The exception is a route that worked and stopped right after the
-    /// network changed under it. The provider's own recovery should have
-    /// brought it back; when it has not, a reconnect is what the user would
-    /// do, and is done for them once.
+    /// network changed under it, or a provider whose control plane is completely
+    /// unresponsive (consecutive missing/timeout replies). The provider's own
+    /// recovery should have brought it back; when it has not, a reconnect is what
+    /// the user would do, and is done for them once.
     public static func exhaustionAction(
         connectionWasReady: Bool,
         isInGracePeriod: Bool = false,
         secondsSinceNetworkChange: TimeInterval? = nil,
-        secondsSinceLastReconnect: TimeInterval? = nil
+        secondsSinceLastReconnect: TimeInterval? = nil,
+        consecutiveProviderUnresponsiveCount: Int = 0
     ) -> ExhaustionAction {
+        guard connectionWasReady, !isInGracePeriod else { return .continueMonitoring }
+
+        // 1. Control-plane hang self-healing: provider fails to answer control messages.
+        if consecutiveProviderUnresponsiveCount >= providerUnresponsiveThreshold {
+            if let sinceReconnect = secondsSinceLastReconnect,
+               sinceReconnect < providerUnresponsiveCooldown {
+                return .continueMonitoring
+            }
+            return .reconnectProvider
+        }
+
+        // 2. Data-plane / interface switch recovery.
         guard
-            connectionWasReady,
-            !isInGracePeriod,
             let sinceChange = secondsSinceNetworkChange,
             (0...networkChangeReconnectWindow).contains(sinceChange)
         else { return .continueMonitoring }

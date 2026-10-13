@@ -566,16 +566,22 @@ extension TunnelManager {
             Self.runtimeLogger.debug(
                 "stage=providerMessage hostSend success bytes=\(response.count, privacy: .public)"
             )
+            consecutiveProviderUnresponsiveCount = 0
             return response
         } catch {
+            if let tunnelError = error as? TunnelManagerError,
+               tunnelError == .providerReplyMissing || tunnelError == .providerMessageTimedOut {
+                consecutiveProviderUnresponsiveCount += 1
+            }
             Self.runtimeLogger.error(
-                "stage=providerMessage hostSend failed error=\(String(reflecting: error), privacy: .public)"
+                "stage=providerMessage hostSend failed error=\(String(reflecting: error), privacy: .public) consecutiveUnresponsive=\(self.consecutiveProviderUnresponsiveCount, privacy: .public)"
             )
             throw error
         }
     }
 
     func clearProxySelectionRuntimeState() {
+        consecutiveProviderUnresponsiveCount = 0
         latencyMeasuredAt = [:]
         pendingLatencyMeasuredAt = [:]
         stopTelemetryPolling()

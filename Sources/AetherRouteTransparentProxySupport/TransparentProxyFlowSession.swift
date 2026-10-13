@@ -205,9 +205,15 @@ final class TransparentTCPProxySession:
                 "transport=tcp session=\(self.sessionID.uuidString) stage=open success"
             )
         case let .failure(error):
-            TransparentSessionRuntimeLog.log.failure(
-                "transport=tcp session=\(self.sessionID.uuidString) stage=open failed error=\(String(reflecting: error))"
-            )
+            if error == .closed {
+                TransparentSessionRuntimeLog.log.verbose(
+                    "transport=tcp session=\(self.sessionID.uuidString) stage=open closedByPeer error=\(String(reflecting: error))"
+                )
+            } else {
+                TransparentSessionRuntimeLog.log.failure(
+                    "transport=tcp session=\(self.sessionID.uuidString) stage=open failed error=\(String(reflecting: error))"
+                )
+            }
         }
         let action = lock.withLock { () -> OpenAction in
             guard openCallbackPending else { return .none }
@@ -597,9 +603,15 @@ final class TransparentUDPProxySession:
                 "transport=udp session=\(self.sessionID.uuidString) stage=open success"
             )
         case let .failure(error):
-            TransparentSessionRuntimeLog.log.failure(
-                "transport=udp session=\(self.sessionID.uuidString) stage=open failed error=\(String(reflecting: error))"
-            )
+            if error == .closed {
+                TransparentSessionRuntimeLog.log.verbose(
+                    "transport=udp session=\(self.sessionID.uuidString) stage=open closedByPeer error=\(String(reflecting: error))"
+                )
+            } else {
+                TransparentSessionRuntimeLog.log.failure(
+                    "transport=udp session=\(self.sessionID.uuidString) stage=open failed error=\(String(reflecting: error))"
+                )
+            }
         }
         let action = lock.withLock { () -> OpenAction in
             guard openCallbackPending else { return .none }

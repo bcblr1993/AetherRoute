@@ -660,9 +660,22 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         let targetQueue = messageClass == .probe
             ? probeMessageQueue
             : providerMessageQueue
+
+        let watchdog = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        watchdog.schedule(deadline: .now() + .seconds(15))
+        watchdog.setEventHandler { [completion, request] in
+            Self.runtimeLog.failure(
+                "stage=providerMessage stalled request=\(Self.messageKind(request)) elapsed=15s"
+            )
+            completion.call(ProviderMessageRouting.encodedFailure(.unavailable))
+            watchdog.cancel()
+        }
+        watchdog.resume()
+
         targetQueue.async { [self, runtimeController, diagnostics] in
             if case let .reloadProfile(payloadData) = request {
                 self.handleReloadProfile(payloadData: payloadData) { response in
+                    watchdog.cancel()
                     if case let .failure(failure) = response {
                         Self.runtimeLog.failure(
                             "stage=providerMessage response=failure code=\(failure.rawValue)"
@@ -765,6 +778,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 Self.runtimeLog.verbose("stage=providerMessage response=success")
             }
 
+            watchdog.cancel()
             do {
                 completion.call(
                     try ProxySelectionProviderMessageCodec.encode(

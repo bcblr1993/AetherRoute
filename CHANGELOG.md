@@ -4,6 +4,26 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.2] - 2026-10-13
+
+Control-plane watchdog and self-healing for stalled provider communication, UDP peerReset log noise reduction, and host diagnostic log persistence.
+
+### Fixed
+
+- **Control-plane provider communication watchdog and self-healing**: When IPC messages between host app and Network Extension stalled or timed out repeatedly, the app could get stuck in degraded state without recovery. Added a 15-second watchdog on extension message handling, consecutive unresponsive counting in `TunnelManager`, and automatic provider reconnection via `AutomaticRouteHealthRecoveryPolicy` when thresholds are reached.
+- **UDP peerReset log noise reduction**: Harmless peer resets (`NEAppProxyErrorDomain` code 2) caused by closed UDP flows (DNS, QUIC) are now logged at verbose level instead of failure level, eliminating Console log pollution.
+- **Host app diagnostic persistence**: Critical host operational events (such as provider reconnection and unresponsive self-healing) now write to `DiagnosticLogCenter` rotating disk logs (`app.log`) in addition to Unified Logging, making them available in diagnostic reports.
+- **Diagnostic counter compatibility**: Added missing `.bytesUpstream` and `.bytesClient` cases to `DiagnosticCounter`.
+
+### Verified
+
+- Local regression suite (`test_network_switch_gate.py`, `EngineReconnect`, `RuntimeEnvironment`, `test.sh`) all passed.
+- All 12 real protocol interop gates passed (48 test cases, 26 certificate rejections).
+- Tart VM 6-dimensional matrix (macos27) passed all acceptance criteria including keep-alive, SNI recovery, and 2 MiB large upload.
+- Mac mini remote arm64 gate passed.
+- Interface switch recovery passed on remote hardware.
+- UI performance and memory gates passed within budget.
+
 ## [1.7.1] - 2026-10-12
 
 Traffic now comes back on its own when the Mac moves to another network interface. In transparent proxy mode, moving from Wi-Fi to wired Ethernet — or waking onto a different one — left every connection dead until AetherRoute was disconnected and reconnected by hand. The Rules page no longer crashes the app.

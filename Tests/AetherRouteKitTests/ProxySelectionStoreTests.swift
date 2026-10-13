@@ -519,6 +519,69 @@ final class ProxySelectionStoreTests: XCTestCase {
         )
     }
 
+    /// The 2026-10-13 incident: extension control plane hung for 6.5 hours with
+    /// consecutive missing/timeout replies, but no network switch occurred to trigger self-healing.
+    func testUnresponsiveProviderTriggersReconnectSelfHealing() {
+        typealias Policy = AutomaticRouteHealthRecoveryPolicy
+        let threshold = Policy.providerUnresponsiveThreshold
+        let cooldown = Policy.providerUnresponsiveCooldown
+
+        // Less than threshold: continue monitoring
+        XCTAssertEqual(
+            Policy.exhaustionAction(
+                connectionWasReady: true,
+                consecutiveProviderUnresponsiveCount: threshold - 1
+            ),
+            .continueMonitoring
+        )
+
+        // Threshold reached: triggers reconnectProvider
+        XCTAssertEqual(
+            Policy.exhaustionAction(
+                connectionWasReady: true,
+                consecutiveProviderUnresponsiveCount: threshold
+            ),
+            .reconnectProvider
+        )
+
+        // Within cooldown: continue monitoring
+        XCTAssertEqual(
+            Policy.exhaustionAction(
+                connectionWasReady: true,
+                secondsSinceLastReconnect: cooldown - 1,
+                consecutiveProviderUnresponsiveCount: threshold
+            ),
+            .continueMonitoring
+        )
+
+        // Cooldown passed: triggers reconnectProvider again
+        XCTAssertEqual(
+            Policy.exhaustionAction(
+                connectionWasReady: true,
+                secondsSinceLastReconnect: cooldown,
+                consecutiveProviderUnresponsiveCount: threshold
+            ),
+            .reconnectProvider
+        )
+
+        // Not ready or in wake grace period: continue monitoring
+        XCTAssertEqual(
+            Policy.exhaustionAction(
+                connectionWasReady: false,
+                consecutiveProviderUnresponsiveCount: threshold
+            ),
+            .continueMonitoring
+        )
+        XCTAssertEqual(
+            Policy.exhaustionAction(
+                connectionWasReady: true,
+                isInGracePeriod: true,
+                consecutiveProviderUnresponsiveCount: threshold
+            ),
+            .continueMonitoring
+        )
+    }
+
     func testConnectedManualHotSwitchRequiresSelectedLeafToRespond() {
         let automatic = ProxyGroupConfigurationSummary(
             id: 2,

@@ -215,6 +215,36 @@ extension TunnelManager {
         } catch {
             // A transient provider-message failure must not disconnect a healthy
             // tunnel or replace the last truthful sample with fabricated zeros.
+            await checkUnresponsiveProviderRecovery()
+        }
+    }
+
+    func checkUnresponsiveProviderRecovery() async {
+        guard state == .connected,
+              consecutiveProviderUnresponsiveCount >= AutomaticRouteHealthRecoveryPolicy.providerUnresponsiveThreshold
+        else { return }
+        let now = Date()
+        let action = AutomaticRouteHealthRecoveryPolicy.exhaustionAction(
+            connectionWasReady: readinessVerifiedConnectionID == providerConnectionID,
+            isInGracePeriod: isInWakeGracePeriod,
+            secondsSinceNetworkChange: lastNetworkChangeAt.map { now.timeIntervalSince($0) },
+            secondsSinceLastReconnect: lastNetworkRecoveryReconnectAt.map { now.timeIntervalSince($0) },
+            consecutiveProviderUnresponsiveCount: consecutiveProviderUnresponsiveCount
+        )
+        if action == .reconnectProvider {
+            lastNetworkRecoveryReconnectAt = now
+            consecutiveProviderUnresponsiveCount = 0
+            automaticRouteFailureCounts.removeAll()
+            updateAutomaticRouteRecoveryPresentation()
+            Self.runtimeLogger.error(
+                "stage=providerMessage degraded action=reconnectProvider reason=unresponsiveProvider"
+            )
+            Self.diagnosticLog.failure(
+                "stage=providerMessage degraded action=reconnectProvider reason=unresponsiveProvider"
+            )
+            Task { @MainActor [weak self] in
+                await self?.reconnect()
+            }
         }
     }
 
@@ -409,7 +439,8 @@ extension TunnelManager {
                 },
                 secondsSinceLastReconnect: lastNetworkRecoveryReconnectAt.map {
                     now.timeIntervalSince($0)
-                }
+                },
+                consecutiveProviderUnresponsiveCount: consecutiveProviderUnresponsiveCount
             ) {
             case .continueMonitoring:
                 connectionQuality = .degraded
@@ -418,6 +449,7 @@ extension TunnelManager {
                 )
             case .reconnectProvider:
                 lastNetworkRecoveryReconnectAt = now
+                consecutiveProviderUnresponsiveCount = 0
                 automaticRouteFailureCounts.removeAll()
                 updateAutomaticRouteRecoveryPresentation()
                 Self.runtimeLogger.error(

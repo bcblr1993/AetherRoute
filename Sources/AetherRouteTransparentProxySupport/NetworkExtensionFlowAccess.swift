@@ -630,15 +630,28 @@ public enum NetworkExtensionFlowLifecycle {
             DiagnosticFlowOpenObserver.shared.record(
                 transport: transport, succeeded: false
             )
-            NativeFlowRuntimeLog.log.failure(
-                """
-                stage=nativeOpen failed transport=\(transport) \
-                domain=\(nsError.domain) \
-                code=\(nsError.code) \
-                remote=\(remote) \
-                elapsedUs=\(elapsedMicroseconds)
-                """
-            )
+            let isBenignPeerReset = nsError.domain == NEAppProxyErrorDomain && nsError.code == NEAppProxyFlowError.peerReset.rawValue
+            if isBenignPeerReset {
+                NativeFlowRuntimeLog.log.verbose(
+                    """
+                    stage=nativeOpen benignReset transport=\(transport) \
+                    domain=\(nsError.domain) \
+                    code=\(nsError.code) \
+                    remote=\(remote) \
+                    elapsedUs=\(elapsedMicroseconds)
+                    """
+                )
+            } else {
+                NativeFlowRuntimeLog.log.failure(
+                    """
+                    stage=nativeOpen failed transport=\(transport) \
+                    domain=\(nsError.domain) \
+                    code=\(nsError.code) \
+                    remote=\(remote) \
+                    elapsedUs=\(elapsedMicroseconds)
+                    """
+                )
+            }
             completion(.failure(NetworkExtensionFlowErrorMapper.map(error)))
         } else {
             // Notice level so the success path survives in the default log

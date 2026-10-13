@@ -246,6 +246,7 @@ private final class StartupNetworkPathWatcher {
 @MainActor
 final class TunnelManager: ObservableObject {
     static let runtimeLogger = AppLog.logger(category: AppLog.Category.appRuntime)
+    static let diagnosticLog = DiagnosticLogCenter.current.log(category: AppLog.Category.appRuntime)
 
     enum State: Equatable {
         case privacyConsentRequired
@@ -517,6 +518,8 @@ final class TunnelManager: ObservableObject {
     var lastNetworkChangeAt: Date?
     /// Last reconnect made because a route did not come back after a change.
     var lastNetworkRecoveryReconnectAt: Date?
+    /// Consecutive control-plane message failures (reply missing or timed out).
+    var consecutiveProviderUnresponsiveCount: Int = 0
 
     var isInWakeGracePeriod: Bool {
         isSystemSleeping || Date().timeIntervalSince(lastSystemWakeAt) < wakeGracePeriodDuration
