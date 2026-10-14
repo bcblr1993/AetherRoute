@@ -94,6 +94,7 @@ if [ "$ACTION" = ready ]; then
   else
     test "$(scutil --nc status AetherRoute 2>/dev/null | head -1)" = Connected || exit 1
     route -n get default | awk '/interface:/{print $2;exit}' | grep -q '^utun' || exit 1
+    nc -z 127.0.0.1 7890 2>/dev/null || exit 1
   fi
   printf 'active candidate: engine=%s pid=%s started=%s\n' "$ARG" "$provider_pid" "$provider_started"
   exit 0

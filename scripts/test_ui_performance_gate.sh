@@ -100,13 +100,19 @@ fi
 APP=$(find "$TEMP/products" -maxdepth 4 -name AetherRoute.app -type d | head -1)
 [ -n "$APP" ] || { echo "The export has no AetherRoute.app" >&2; exit 1; }
 
+echo "==> Packaging review app for fast remote transfer over Tailscale"
+APP_ZIP="$TEMP/AetherRouteReview.zip"
+ditto -c -k --keepParent "$APP" "$APP_ZIP"
+$SSH "$REMOTE" "pkill -f '$REMOTE_DIR' 2>/dev/null; find '$REMOTE_DIR' -depth -delete 2>/dev/null; mkdir -p '$REMOTE_DIR'"
+scp -q -o BatchMode=yes -o ConnectTimeout=8 "$APP_ZIP" "$REMOTE:$REMOTE_DIR/app.zip"
+$SSH "$REMOTE" "ditto -x -k '$REMOTE_DIR/app.zip' '$REMOTE_DIR/' && rm -f '$REMOTE_DIR/app.zip'"
+
 run_profile() {
   profile=$1
   evidence="$OUTPUT/$profile"
   mkdir -p "$evidence"
   echo "==> $profile: switching pages for $SECONDS_PER_PROFILE s on $REMOTE"
-  $SSH "$REMOTE" "pkill -f '$REMOTE_DIR' 2>/dev/null; find '$REMOTE_DIR' -depth -delete 2>/dev/null; mkdir -p '$REMOTE_DIR/Home/tmp'"
-  rsync -a --delete -e "$SSH" "$APP/" "$REMOTE:$REMOTE_DIR/AetherRoute.app/"
+  $SSH "$REMOTE" "pkill -f '$REMOTE_DIR/AetherRoute.app' 2>/dev/null; rm -rf '$REMOTE_DIR/Home' '$REMOTE_DIR/footprint.txt' '$REMOTE_DIR/app.log'; mkdir -p '$REMOTE_DIR/Home/tmp'"
   # `open` starts the app in the logged-in GUI session; cfprefsd ignores
   # HOME, so the review bundle's defaults are cleared before and after.
   $SSH "$REMOTE" "defaults delete com.aetherroute.desktop.ui-review >/dev/null 2>&1; \
@@ -132,12 +138,14 @@ run_profile() {
   rsync -a -e "$SSH" "$REMOTE:$REMOTE_DIR/Home/samples.csv" \
     "$REMOTE:$REMOTE_DIR/footprint.txt" "$REMOTE:$REMOTE_DIR/app.log" \
     "$evidence/" 2>/dev/null || true
-  $SSH "$REMOTE" "find '$REMOTE_DIR' -depth -delete 2>/dev/null; defaults delete com.aetherroute.desktop.ui-review >/dev/null 2>&1; true"
+  $SSH "$REMOTE" "rm -rf '$REMOTE_DIR/Home' '$REMOTE_DIR/footprint.txt' '$REMOTE_DIR/app.log'; defaults delete com.aetherroute.desktop.ui-review >/dev/null 2>&1; true"
 }
 
 for profile in $PROFILES; do
   run_profile "$profile"
 done
+
+$SSH "$REMOTE" "pkill -f '$REMOTE_DIR/AetherRoute.app' 2>/dev/null; find '$REMOTE_DIR' -depth -delete 2>/dev/null; true"
 
 python3 -I - "$OUTPUT" "$PROFILES" \
   "$SHOWCASE_P95_MS" "$SHOWCASE_MAX_MS" "$LARGE_P95_MS" "$LARGE_MAX_MS" \

@@ -139,7 +139,7 @@ case "$command_name" in
       exit 97
     fi
     case "$*" in
-      *api.ipify.org*) printf '198.51.100.9' ;;
+      *api.ipify.org* | *icanhazip.com* | *httpbin.org/ip*) printf '198.51.100.9' ;;
       *ipv6.google.com*)
         case "${MOCK_IPV6_EXIT:-0}" in
           6 | 7) metrics='0.012345|0.001|0.000000|0.000000||000|0' ;;
@@ -178,6 +178,28 @@ cat >"$MOCK_ROOT/large-upload.sh" <<'MOCK'
 echo "large upload: mock outcome ${MOCK_LARGE_UPLOAD_EXIT:-0}"
 exit "${MOCK_LARGE_UPLOAD_EXIT:-0}"
 MOCK
+cat >"$MOCK_ROOT/transparent-udp.sh" <<'MOCK'
+#!/bin/sh
+echo "transparent UDP probe: mock outcome ${MOCK_TRANSPARENT_UDP_EXIT:-0}"
+exit "${MOCK_TRANSPARENT_UDP_EXIT:-0}"
+MOCK
+cat >"$MOCK_ROOT/transparent-lan.sh" <<'MOCK'
+#!/bin/sh
+echo "transparent LAN bypass: mock outcome ${MOCK_TRANSPARENT_LAN_EXIT:-0}"
+exit "${MOCK_TRANSPARENT_LAN_EXIT:-0}"
+MOCK
+cat >"$MOCK_ROOT/transparent-raw.sh" <<'MOCK'
+#!/bin/sh
+echo "transparent raw traffic: mock outcome ${MOCK_TRANSPARENT_RAW_EXIT:-0}"
+exit "${MOCK_TRANSPARENT_RAW_EXIT:-0}"
+MOCK
+cat >"$MOCK_ROOT/transparent-burst.py" <<'MOCK'
+#!/usr/bin/env python3
+import os, sys
+exit_code = int(os.environ.get("MOCK_TRANSPARENT_BURST_EXIT", "0"))
+print(f"transparent burst concurrency: mock outcome {exit_code}")
+sys.exit(exit_code)
+MOCK
 
 CASES=0
 run_case() {
@@ -191,6 +213,10 @@ run_case() {
     AETHERROUTE_APP_PATH="$APP" AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=NO \
     AETHERROUTE_ACCEPTANCE_IDLE_REUSE_SCRIPT="$MOCK_ROOT/idle-reuse.sh" \
     AETHERROUTE_ACCEPTANCE_SNI_RECOVERY_SCRIPT="$MOCK_ROOT/sni-recovery.sh" \
+    AETHERROUTE_ACCEPTANCE_TRANSPARENT_UDP_SCRIPT="$MOCK_ROOT/transparent-udp.sh" \
+    AETHERROUTE_ACCEPTANCE_TRANSPARENT_LAN_SCRIPT="$MOCK_ROOT/transparent-lan.sh" \
+    AETHERROUTE_ACCEPTANCE_TRANSPARENT_RAW_SCRIPT="$MOCK_ROOT/transparent-raw.sh" \
+    AETHERROUTE_ACCEPTANCE_TRANSPARENT_BURST_SCRIPT="$MOCK_ROOT/transparent-burst.py" \
     AETHERROUTE_ACCEPTANCE_LARGE_UPLOAD_SCRIPT="$MOCK_ROOT/large-upload.sh" \
     HTTP_PROXY=http://invalid HTTPS_PROXY=http://invalid ALL_PROXY=http://invalid NO_PROXY='*' \
     http_proxy=http://invalid https_proxy=http://invalid all_proxy=http://invalid no_proxy='*' \
@@ -275,6 +301,14 @@ run_case ipv6-timeout fail '[FAIL] IPv6 probe completion time' MOCK_IPV6_EXIT=28
 run_case invalid-ipv6-metrics fail 'invalid curl metrics' MOCK_IPV6_METRICS='bad response'
 run_case ipv6-success-without-tls fail '[FAIL] IPv6 probe HTTPS' \
   MOCK_IPV6_METRICS='0.012345|0.001|0.002|0.000000|2001:db8::1|200|0'
+run_case transparent-udp-pass pass '[PASS] transparent UDP datagram' MOCK_ENGINE=transparent
+run_case transparent-udp-fail fail '[FAIL] transparent UDP datagram' MOCK_ENGINE=transparent MOCK_TRANSPARENT_UDP_EXIT=1
+run_case transparent-lan-pass pass '[PASS] transparent LAN bypass' MOCK_ENGINE=transparent
+run_case transparent-lan-fail fail '[FAIL] transparent LAN bypass' MOCK_ENGINE=transparent MOCK_TRANSPARENT_LAN_EXIT=1
+run_case transparent-raw-pass pass '[PASS] transparent raw traffic' MOCK_ENGINE=transparent
+run_case transparent-raw-fail fail '[FAIL] transparent raw traffic' MOCK_ENGINE=transparent MOCK_TRANSPARENT_RAW_EXIT=1
+run_case transparent-burst-pass pass '[PASS] transparent burst concurrency' MOCK_ENGINE=transparent
+run_case transparent-burst-fail fail '[FAIL] transparent burst concurrency' MOCK_ENGINE=transparent MOCK_TRANSPARENT_BURST_EXIT=1
 
 # A fast handshake error has completed promptly, but is still an acceptance
 # failure. A successful mapped connection must not claim native IPv6 coverage.
@@ -285,6 +319,14 @@ done
 grep -F '[PASS] native IPv6 HTTPS coverage' "$TEMP/healthy-tun.txt" >/dev/null
 grep -F '[PASS] idle keep-alive reuse' "$TEMP/healthy-tun.txt" >/dev/null
 grep -F '[PASS] idle keep-alive reuse' "$TEMP/healthy-transparent.txt" >/dev/null
+grep -F '[PASS] transparent UDP datagram' "$TEMP/healthy-transparent.txt" >/dev/null
+grep -F '[PASS] transparent LAN bypass' "$TEMP/healthy-transparent.txt" >/dev/null
+grep -F '[PASS] transparent raw traffic' "$TEMP/healthy-transparent.txt" >/dev/null
+grep -F '[PASS] transparent burst concurrency' "$TEMP/healthy-transparent.txt" >/dev/null
+grep -F '[SKIP] transparent UDP datagram' "$TEMP/healthy-tun.txt" >/dev/null
+grep -F '[SKIP] transparent LAN bypass' "$TEMP/healthy-tun.txt" >/dev/null
+grep -F '[SKIP] transparent raw traffic' "$TEMP/healthy-tun.txt" >/dev/null
+grep -F '[SKIP] transparent burst concurrency' "$TEMP/healthy-tun.txt" >/dev/null
 grep -F '[SKIP] IPv6 probe HTTPS' "$TEMP/fast-ipv6-unavailable.txt" >/dev/null
 grep -F '[SKIP] native IPv6 HTTPS coverage' "$TEMP/fast-ipv6-unavailable.txt" >/dev/null
 printf 'Runtime acceptance regressions passed: %s cases\n' "$CASES"

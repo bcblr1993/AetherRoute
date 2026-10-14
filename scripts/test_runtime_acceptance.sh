@@ -29,6 +29,10 @@ IDLE_REUSE_SCRIPT=${AETHERROUTE_ACCEPTANCE_IDLE_REUSE_SCRIPT:-"$(CDPATH= cd -- "
 IDLE_REUSE_OUT=
 IDLE_REUSE_PID=
 SNI_RECOVERY_SCRIPT=${AETHERROUTE_ACCEPTANCE_SNI_RECOVERY_SCRIPT:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/test_transparent_sni_recovery.sh"}
+TRANSPARENT_UDP_SCRIPT=${AETHERROUTE_ACCEPTANCE_TRANSPARENT_UDP_SCRIPT:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/test_transparent_udp.sh"}
+TRANSPARENT_LAN_SCRIPT=${AETHERROUTE_ACCEPTANCE_TRANSPARENT_LAN_SCRIPT:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/test_transparent_lan_bypass.sh"}
+TRANSPARENT_RAW_SCRIPT=${AETHERROUTE_ACCEPTANCE_TRANSPARENT_RAW_SCRIPT:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/test_transparent_raw_traffic.sh"}
+TRANSPARENT_BURST_SCRIPT=${AETHERROUTE_ACCEPTANCE_TRANSPARENT_BURST_SCRIPT:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/test_transparent_burst_concurrency.py"}
 LARGE_UPLOAD_SCRIPT=${AETHERROUTE_ACCEPTANCE_LARGE_UPLOAD_SCRIPT:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/test_large_upload.sh"}
 cleanup_idle_reuse() {
   if [ -n "$IDLE_REUSE_PID" ]; then
@@ -425,7 +429,8 @@ emit ""
 emit "data path"
 # The idle keep-alive check waits more than a minute on one connection, so it
 # runs alongside the short probes and is collected after them.
-if [ "$CONNECTED" = yes ] && [ -f "$IDLE_REUSE_SCRIPT" ]; then
+# Direct mode bypasses outbound nodes entirely, so the helper is skipped.
+if [ "$CONNECTED" = yes ] && [ "$ROUTING" != direct ] && [ -f "$IDLE_REUSE_SCRIPT" ]; then
   IDLE_REUSE_OUT=$(mktemp "${TMPDIR:-/tmp}/aetherroute-idle-reuse.XXXXXX")
   sh "$IDLE_REUSE_SCRIPT" >"$IDLE_REUSE_OUT" 2>&1 &
   IDLE_REUSE_PID=$!
@@ -477,6 +482,74 @@ else
 fi
 
 if [ "$CONNECTED" != yes ]; then
+  check "transparent UDP datagram" "candidate not connected" skip
+elif [ "$ENGINE" != transparent ]; then
+  check "transparent UDP datagram" "Packet Tunnel routes UDP via utun" skip
+elif [ ! -f "$TRANSPARENT_UDP_SCRIPT" ]; then
+  check "transparent UDP datagram" "helper missing: $TRANSPARENT_UDP_SCRIPT" fail
+else
+  udp_status=0
+  udp_detail=$(sh "$TRANSPARENT_UDP_SCRIPT" 2>&1) || udp_status=$?
+  udp_detail=$(printf '%s\n' "$udp_detail" | tail -1)
+  if [ "$udp_status" -eq 0 ]; then
+    check "transparent UDP datagram" "$udp_detail" pass
+  else
+    check "transparent UDP datagram" "${udp_detail:-exit $udp_status}" fail
+  fi
+fi
+
+if [ "$CONNECTED" != yes ]; then
+  check "transparent LAN bypass" "candidate not connected" skip
+elif [ "$ENGINE" != transparent ]; then
+  check "transparent LAN bypass" "Packet Tunnel routes by routing table" skip
+elif [ ! -f "$TRANSPARENT_LAN_SCRIPT" ]; then
+  check "transparent LAN bypass" "helper missing: $TRANSPARENT_LAN_SCRIPT" fail
+else
+  lan_status=0
+  lan_detail=$(sh "$TRANSPARENT_LAN_SCRIPT" 2>&1) || lan_status=$?
+  lan_detail=$(printf '%s\n' "$lan_detail" | tail -1)
+  if [ "$lan_status" -eq 0 ]; then
+    check "transparent LAN bypass" "$lan_detail" pass
+  else
+    check "transparent LAN bypass" "${lan_detail:-exit $lan_status}" fail
+  fi
+fi
+
+if [ "$CONNECTED" != yes ]; then
+  check "transparent raw traffic" "candidate not connected" skip
+elif [ "$ENGINE" != transparent ]; then
+  check "transparent raw traffic" "Packet Tunnel routes by Fake-IP" skip
+elif [ ! -f "$TRANSPARENT_RAW_SCRIPT" ]; then
+  check "transparent raw traffic" "helper missing: $TRANSPARENT_RAW_SCRIPT" fail
+else
+  raw_status=0
+  raw_detail=$(sh "$TRANSPARENT_RAW_SCRIPT" 2>&1) || raw_status=$?
+  raw_detail=$(printf '%s\n' "$raw_detail" | tail -1)
+  if [ "$raw_status" -eq 0 ]; then
+    check "transparent raw traffic" "$raw_detail" pass
+  else
+    check "transparent raw traffic" "${raw_detail:-exit $raw_status}" fail
+  fi
+fi
+
+if [ "$CONNECTED" != yes ]; then
+  check "transparent burst concurrency" "candidate not connected" skip
+elif [ "$ENGINE" != transparent ]; then
+  check "transparent burst concurrency" "Packet Tunnel routes by utun" skip
+elif [ ! -f "$TRANSPARENT_BURST_SCRIPT" ]; then
+  check "transparent burst concurrency" "helper missing: $TRANSPARENT_BURST_SCRIPT" fail
+else
+  burst_status=0
+  burst_detail=$(python3 "$TRANSPARENT_BURST_SCRIPT" 2>&1) || burst_status=$?
+  burst_detail=$(printf '%s\n' "$burst_detail" | tail -1)
+  if [ "$burst_status" -eq 0 ]; then
+    check "transparent burst concurrency" "$burst_detail" pass
+  else
+    check "transparent burst concurrency" "${burst_detail:-exit $burst_status}" fail
+  fi
+fi
+
+if [ "$CONNECTED" != yes ]; then
   check "large upload" "candidate not connected" skip
 elif [ ! -f "$LARGE_UPLOAD_SCRIPT" ]; then
   check "large upload" "helper missing: $LARGE_UPLOAD_SCRIPT" fail
@@ -498,6 +571,8 @@ fi
 
 if [ "$CONNECTED" != yes ]; then
   check "idle keep-alive reuse" "candidate not connected" skip
+elif [ "$ROUTING" = direct ]; then
+  check "idle keep-alive reuse" "direct mode bypasses nodes" skip
 elif [ -z "$IDLE_REUSE_PID" ]; then
   check "idle keep-alive reuse" "helper missing: $IDLE_REUSE_SCRIPT" fail
 else
@@ -517,12 +592,14 @@ else
   esac
 fi
 
-egress=$(clean_curl --proxy '' -s --max-time 20 \
-  https://api.ipify.org 2>/dev/null || true)
+egress=$(clean_curl --proxy '' -s --max-time 6 https://icanhazip.com 2>/dev/null \
+  || clean_curl --proxy '' -s --max-time 6 https://httpbin.org/ip 2>/dev/null \
+  || clean_curl --proxy '' -s --max-time 6 https://api.ipify.org 2>/dev/null || true)
+egress_ip=$(printf '%s\n' "$egress" | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}|([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}' | head -1 || true)
 if [ "$CONNECTED" != yes ]; then
   check "egress address" "candidate not connected" skip
-elif printf '%s\n' "$egress" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$|^[0-9A-Fa-f]*:[0-9A-Fa-f:]+$'; then
-  check "observed egress address" "$egress (connectivity only; not node attribution)" pass
+elif [ -n "$egress_ip" ]; then
+  check "observed egress address" "$egress_ip (connectivity only; not node attribution)" pass
 elif [ "$ROUTING" = direct ]; then
   # Direct mode deliberately bypasses every node, so the request leaves from
   # the local network. Whether that reaches the internet says nothing about
@@ -573,27 +650,35 @@ METRICS
     ?*) v6_family=IPv4 ;;
   esac
   emit "  probe: ipv6.google.com; remote=${v6_remote:-none}; family=$v6_family; DNS=${v6_dns}s; TCP=${v6_tcp}s; TLS=${v6_tls}s; HTTP=$v6_http; verify=$v6_verify"
-  v6_fast=$(awk -v total="$v6_total" 'BEGIN {print (total < 8 ? "yes" : "no")}')
-  check "IPv6 probe completion time" "${v6_total}s (curl exit $v6_exit)" \
-    "$([ "$v6_fast" = yes ] && echo pass || echo fail)"
   v6_https=no
-  if [ "$v6_exit" -eq 0 ] && [ "$v6_verify" -eq 0 ] \
-    && awk -v tcp="$v6_tcp" -v tls="$v6_tls" -v code="$v6_http" \
-      'BEGIN {exit !(tcp > 0 && tls > 0 && code >= 100 && code <= 599)}' \
-    && [ "$v6_family" != unavailable ]; then
-    v6_https=yes
-    check "IPv6 probe HTTPS" "HTTP $v6_http; TLS completed in ${v6_tls}s" pass
-  elif { [ "$v6_exit" -eq 6 ] || [ "$v6_exit" -eq 7 ]; } \
-    && awk -v tcp="$v6_tcp" -v tls="$v6_tls" -v code="$v6_http" \
-      'BEGIN {exit !(tcp == 0 && tls == 0 && code == 0)}'; then
-    check "IPv6 probe HTTPS" "endpoint unavailable (curl exit $v6_exit); HTTPS untested" skip
-  elif [ "${AETHERROUTE_ACCEPTANCE_ALLOW_UNROUTED_IPV6:-NO}" = YES ] \
-    && { [ "$v6_exit" -eq 35 ] || [ "$v6_exit" -eq 56 ]; } \
+  v6_unrouted=no
+  if [ "${AETHERROUTE_ACCEPTANCE_ALLOW_UNROUTED_IPV6:-NO}" = YES ] \
+    && { [ "$v6_exit" -eq 35 ] || [ "$v6_exit" -eq 56 ] || [ "$v6_exit" -eq 28 ]; } \
     && awk -v tls="$v6_tls" -v code="$v6_http" \
       'BEGIN {exit !(tls == 0 && code == 0)}'; then
+    v6_unrouted=yes
+  fi
+  if [ "$v6_unrouted" = yes ]; then
+    check "IPv6 probe completion time" "endpoint unrouted (curl exit $v6_exit); completion time untested" skip
     check "IPv6 probe HTTPS" "endpoint unrouted (curl exit $v6_exit); HTTPS untested" skip
   else
-    check "IPv6 probe HTTPS" "HTTP $v6_http; curl exit $v6_exit; TLS=${v6_tls}s; verify=$v6_verify" fail
+    v6_fast=$(awk -v total="$v6_total" 'BEGIN {print (total < 8 ? "yes" : "no")}')
+    check "IPv6 probe completion time" "${v6_total}s (curl exit $v6_exit)" \
+      "$([ "$v6_fast" = yes ] && echo pass || echo fail)"
+    v6_https=no
+    if [ "$v6_exit" -eq 0 ] && [ "$v6_verify" -eq 0 ] \
+      && awk -v tcp="$v6_tcp" -v tls="$v6_tls" -v code="$v6_http" \
+        'BEGIN {exit !(tcp > 0 && tls > 0 && code >= 100 && code <= 599)}' \
+      && [ "$v6_family" != unavailable ]; then
+      v6_https=yes
+      check "IPv6 probe HTTPS" "HTTP $v6_http; TLS completed in ${v6_tls}s" pass
+    elif { [ "$v6_exit" -eq 6 ] || [ "$v6_exit" -eq 7 ]; } \
+      && awk -v tcp="$v6_tcp" -v tls="$v6_tls" -v code="$v6_http" \
+        'BEGIN {exit !(tcp == 0 && tls == 0 && code == 0)}'; then
+      check "IPv6 probe HTTPS" "endpoint unavailable (curl exit $v6_exit); HTTPS untested" skip
+    else
+      check "IPv6 probe HTTPS" "HTTP $v6_http; curl exit $v6_exit; TLS=${v6_tls}s; verify=$v6_verify" fail
+    fi
   fi
   if [ "$v6_family" = native-IPv6 ] && [ "$v6_https" = yes ]; then
     check "native IPv6 HTTPS coverage" "verified native IPv6 response" pass

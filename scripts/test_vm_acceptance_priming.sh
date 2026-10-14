@@ -25,6 +25,10 @@ shutil.copy2(root / 'scripts/vm_matrix_lifecycle.sh', fixture / 'scripts/vm_matr
 (fixture / 'scripts/test_runtime_acceptance.sh').write_text('#!/bin/sh\nexit 99\n')
 (fixture / 'scripts/test_idle_keepalive_reuse.sh').write_text('#!/bin/sh\nexit 99\n')
 (fixture / 'scripts/test_transparent_sni_recovery.sh').write_text('#!/bin/sh\nexit 99\n')
+(fixture / 'scripts/test_transparent_udp.sh').write_text('#!/bin/sh\nexit 99\n')
+(fixture / 'scripts/test_transparent_lan_bypass.sh').write_text('#!/bin/sh\nexit 99\n')
+(fixture / 'scripts/test_transparent_raw_traffic.sh').write_text('#!/bin/sh\nexit 99\n')
+(fixture / 'scripts/test_transparent_burst_concurrency.py').write_text('#!/bin/sh\nexit 99\n')
 (fixture / 'scripts/test_large_upload.sh').write_text('#!/bin/sh\nexit 99\n')
 candidate = temporary / 'candidate.zip'
 with zipfile.ZipFile(candidate, 'w') as archive:

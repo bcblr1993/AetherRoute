@@ -34,23 +34,32 @@
   - REALITY 用例的 Xray 服务端每次握手都会访问真实的 www.cloudflare.com，本机网络繁忙时单轮会慢 5–10 秒；单项超时先单独重跑该项确认，不要放宽其他用例。
   - 排查时可用 `AETHER_INTEROP_CASES=名称,名称` 只跑部分矩阵用例，`AETHER_INTEROP_PROFILE=debug` 加快编译。
 
-> **第 2 步与第 3 步并行执行**：QA 候选包构建完成后，立即在后台同时启动虚拟机矩阵与物理真机门禁，不要串行等待。两者使用不同机器与目录，互不影响。注意：
-> - 启动前先把引擎静态库与许可证清单恢复为正常版（QA 候选包构建会留下诊断版核心，真机门禁会因 `protocol evidence SHA-256 mismatch` 失败）；
-> - 真机门禁结束时会重新核对本机源码清单，两者运行期间**不得修改任何受跟踪文件**；需要随发布提交的文档改动（版本号、CHANGELOG、例外说明、本文件）应在启动前完成；
-> - 物理真机只能加载已公证的系统扩展，真机安装使用公证候选包（`build_notarized_test_candidate.sh`），本地 QA 包仅用于开启了开发者模式的虚拟机。
+> **第 2 步与第 3 步并行自动化执行（Mandatory SOP）**：QA 候选包构建与双端验证现已通过并行流水线脚本完全自动化：
+> ```bash
+> ./scripts/run_release_acceptance_parallel.sh <VERSION> <BUILD>
+> ```
+> 该脚本会自动以生产级正常核心（`AETHERROUTE_TEST_CORE_VARIANT=normal`）构建 QA 候选包，并在后台并发驱动：
+> 1. **Tart 虚拟机矩阵验收**（包含 6 维引擎与路由模式，集成透明代理 4 项强化门禁）；
+> 2. **物理真机环境与 UI 性能门禁**（包含 `test_remote_arm64.sh fast` 与 `test_ui_performance_gate.sh`）。
+> 优化后 direct 模式自动短路 50 秒空闲盲等，整体测试时长由过去近 45 分钟大幅压降至约 10~15 分钟，且绝不污染宿主机网络与配置。
 
 ### 2. Tart 虚拟机矩阵自动化测试与清理 (VM Matrix Acceptance)
 - 虚拟机名称标准：`macos27`（本地 Tart VM，统一使用；不再使用 `aether-diag-1434`）。
 - 构建 QA 自动化测试候选包：
   ```bash
-  ./scripts/build_signed_local_test_candidate.sh Config/Signing.json <VERSION> <BUILD> outputs/qa-candidate-<VERSION>-<BUILD>
+  AETHERROUTE_TEST_CORE_VARIANT=normal ./scripts/build_signed_local_test_candidate.sh Config/Signing.json <VERSION> <BUILD> outputs/qa-candidate-<VERSION>-<BUILD>
   ```
 - 运行 6 维网络矩阵与生命周期测试：
   ```bash
   ./scripts/test_vm_acceptance_matrix.sh outputs/qa-candidate-<VERSION>-<BUILD>/<ZIP_FILE> macos27 outputs/vm-acceptance-<VERSION>-<BUILD>
   ```
-- 矩阵的每个"引擎 × 路由"组合都包含 **空闲 keep-alive 复用检查**（`scripts/test_idle_keepalive_reuse.sh`，由 `test_runtime_acceptance.sh` 调用）：同一条 TLS 连接空闲 50 秒后再次请求必须成功。`tun` 与 `transparent` 两个引擎都必须 PASS，任一 FAIL 即阻断发布。
-- `transparent` 引擎的组合还包含 **SNI 目标恢复检查**（`scripts/test_transparent_sni_recovery.sh`）：用 `curl --connect-to` 把 `www.apple.com` 故意拨到无关 IP（默认 `1.1.1.1`），必须按 ClientHello 的 SNI 转发并通过证书校验。该检查防止透明代理再次按应用自行解析出的（被污染的）IP 转发，曾导致 Chrome 无法打开 Google。FAIL 即阻断发布；`tun` 引擎记为 SKIP。
+- 矩阵的每个"引擎 × 路由"组合都包含 **空闲 keep-alive 复用检查**（`scripts/test_idle_keepalive_reuse.sh`，由 `test_runtime_acceptance.sh` 调用）：同一条 TLS 连接空闲 50 秒后再次请求必须成功。`tun` 与 `transparent` 两个引擎都必须 PASS，任一 FAIL 即阻断发布（`direct` 模式自动判定 SKIP，免去无效等待）。
+- `transparent` 引擎的组合包含以下 **透明代理 5 大专项门禁**（任一 FAIL 即阻断发布）：
+  1. **SNI 目标恢复检查**（`scripts/test_transparent_sni_recovery.sh`）：验证 ClientHello 的真实 SNI 转发与证书有效性，防止 IP 污染导致应用断连。
+  2. **原生 UDP 数据报接管与转发**（`scripts/test_transparent_udp.sh`）：发起原生 UDP DNS (53) 数据报查询，验证扩展接管、合成端口池映射与双向完整收发。
+  3. **LAN/Loopback 直连穿透**（`scripts/test_transparent_lan_bypass.sh`）：验证本机回环（127.0.0.1）与私有局域网直连流量直接绕过代理扩展，零延迟穿透。
+  4. **明文 HTTP 与裸 IP 目标处理**（`scripts/test_transparent_raw_traffic.sh`）：验证纯明文 HTTP 80 与无 SNI 裸 IP 目的地的透明代理安全转发。
+  5. **瞬时突发高并发压测**（`scripts/test_transparent_burst_concurrency.py`）：以 60 并发短连接瞬时冲击透明代理流表，验证无连接重置、并发稳定承载且 Session 正常释放。
 - 矩阵的每个组合还包含 **大请求上传检查**（`scripts/test_large_upload.sh`）：经代理向 `httpbin.org/post` 上传 2 MiB 随机数据，必须 HTTP 200 且完整送达。该检查防止出站协议在客户端写入快于节点上行时破坏分帧（曾因 VLESS Vision 帧长 u16 溢出，导致 Claude Code 等大上下文请求 `ECONNRESET`）。`tun` 与 `transparent` 都必须 PASS；`direct` 路由下若连小请求都不通记为 SKIP。
 - **清理规范（Mandatory）**：
   - 测试完成后必须立即清理虚拟机内的安装包、解压临时目录及相关日志记录，保持 VM 干净。

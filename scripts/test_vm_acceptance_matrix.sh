@@ -168,6 +168,10 @@ send "$CANDIDATE" "$REMOTE_WORK/candidate.zip"
 send "$ROOT/scripts/test_runtime_acceptance.sh" "$REMOTE_WORK/test_runtime_acceptance.sh"
 send "$ROOT/scripts/test_idle_keepalive_reuse.sh" "$REMOTE_WORK/test_idle_keepalive_reuse.sh"
 send "$ROOT/scripts/test_transparent_sni_recovery.sh" "$REMOTE_WORK/test_transparent_sni_recovery.sh"
+send "$ROOT/scripts/test_transparent_udp.sh" "$REMOTE_WORK/test_transparent_udp.sh"
+send "$ROOT/scripts/test_transparent_lan_bypass.sh" "$REMOTE_WORK/test_transparent_lan_bypass.sh"
+send "$ROOT/scripts/test_transparent_raw_traffic.sh" "$REMOTE_WORK/test_transparent_raw_traffic.sh"
+send "$ROOT/scripts/test_transparent_burst_concurrency.py" "$REMOTE_WORK/test_transparent_burst_concurrency.py"
 send "$ROOT/scripts/test_large_upload.sh" "$REMOTE_WORK/test_large_upload.sh"
 send "$ROOT/scripts/vm_matrix_lifecycle.sh" "$REMOTE_WORK/vm_matrix_lifecycle.sh"
 actual_sha=$(vm "shasum -a 256 '$REMOTE_WORK/candidate.zip'" | awk '{print $1}')
@@ -379,7 +383,7 @@ for engine in $ENGINES; do
     fi
 
     remote_report=$REMOTE_WORK/acceptance-$engine-$routing.txt
-    if vm "AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=YES AETHERROUTE_ACCEPTANCE_ALLOW_UNROUTED_IPV6=YES '$REMOTE_WORK/test_runtime_acceptance.sh' $BUILD '$remote_report'" \
+    if vm "AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=YES AETHERROUTE_ACCEPTANCE_ALLOW_UNROUTED_IPV6=YES ${AETHERROUTE_IDLE_REUSE_HOST:+AETHERROUTE_IDLE_REUSE_HOST=\"$AETHERROUTE_IDLE_REUSE_HOST\"} '$REMOTE_WORK/test_runtime_acceptance.sh' $BUILD '$remote_report'" \
       >"$WORK/matrix-$engine-$routing.out" 2>&1; then
       failures=0
     else
