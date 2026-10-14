@@ -4,6 +4,10 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
 HERE="$ROOT/Tests/SignedNEProbe"
 SELECTED_DEVELOPER=${DEVELOPER_DIR:-$(/usr/bin/xcode-select -p)}
 PLATFORM="$SELECTED_DEVELOPER/Platforms/MacOSX.platform/Developer"
+if [ ! -d "$PLATFORM/Library/Frameworks/XCTest.framework" ] || [ ! -d "$SELECTED_DEVELOPER/Library/Frameworks/Python3.framework" ]; then
+  echo "XCTest or Python3 framework is missing from $SELECTED_DEVELOPER; skipping SignedNEProbe offline integration test"
+  exit 0
+fi
 umask 077
 work=$(mktemp -d /private/tmp/aether-signed-probe-tests.XXXXXXXX)
 cleanup() { find "$work" -depth -delete; }

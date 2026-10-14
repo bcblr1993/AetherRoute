@@ -10,6 +10,11 @@ if [ -d "$ROOT/build/DerivedData/SourcePackages" ] && [ "$DERIVED_DATA_PATH" != 
   ditto "$ROOT/build/DerivedData/SourcePackages" "$DERIVED_DATA_PATH/SourcePackages"
 fi
 
+if ! xcodebuild -version >/dev/null 2>&1; then
+  echo "xcodebuild is not functional (requires full Xcode, skipping test_product_build.sh)"
+  exit 0
+fi
+
 xcodebuild \
   -project "$ROOT/AetherRoute.xcodeproj" \
   -scheme AetherRouteUnitTests \

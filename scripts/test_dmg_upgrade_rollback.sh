@@ -10,6 +10,11 @@ V2_DMG=
 PHASE=initialization
 OPERATION=none
 
+if ! xcodebuild -version >/dev/null 2>&1; then
+  echo "xcodebuild is not functional (requires full Xcode, skipping test_dmg_upgrade_rollback.sh)"
+  exit 0
+fi
+
 attached_device_for_dmg() {
   dmg=$1
   test -n "$dmg" || return 0

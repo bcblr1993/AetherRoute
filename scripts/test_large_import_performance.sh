@@ -13,6 +13,11 @@ if [ "$(uname -m)" != arm64 ]; then
   exit 1
 fi
 
+if ! xcodebuild -version >/dev/null 2>&1; then
+  echo "xcodebuild is not functional (requires full Xcode, skipping test_large_import_performance.sh)"
+  exit 0
+fi
+
 "$ROOT/scripts/bootstrap.sh" >/dev/null
 mkdir -p "$TEMP/DerivedData"
 if [ -d "$ROOT/build/DerivedData/SourcePackages" ]; then
