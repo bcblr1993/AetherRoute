@@ -50,36 +50,43 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-xcrun xcstringstool compile "$CATALOG" \
-  --output-directory "$TEMP_DIR/compiled" \
-  --language zh-Hans \
-  --serialization-format text >/dev/null
+if xcrun --find xcstringstool >/dev/null 2>&1; then
+  mkdir -p "$TEMP_DIR/extracted" "$TEMP_DIR/compiled"
+  xcrun xcstringstool compile "$CATALOG" \
+    --output-directory "$TEMP_DIR/compiled" \
+    --language zh-Hans \
+    --serialization-format text >/dev/null
 
-# AppLanguageController deliberately resolves a previously extracted
-# String.LocalizationValue against the user's selected bundle. Feeding that
-# dynamic wrapper back into the literal-key extractor produces a misleading
-# "non-literal key" warning, while the file contains no user-facing literals.
-grep -Fq 'String(localized: value' \
-  "$ROOT/Sources/AetherRouteApp/AppLanguageController.swift"
-find "$ROOT/Sources/AetherRouteApp" -name '*.swift' \
-  ! -name 'AppLanguageController.swift' -print0 \
-  | xargs -0 xcrun xcstringstool extract \
-      --modern-localizable-strings \
-      --SwiftUI \
-      --avoid-arg-placeholder \
-      --output-format xcstrings \
-      --output-directory "$TEMP_DIR/extracted" 2>/dev/null
+  # AppLanguageController deliberately resolves a previously extracted
+  # String.LocalizationValue against the user's selected bundle. Feeding that
+  # dynamic wrapper back into the literal-key extractor produces a misleading
+  # "non-literal key" warning, while the file contains no user-facing literals.
+  grep -Fq 'String(localized: value' \
+    "$ROOT/Sources/AetherRouteApp/AppLanguageController.swift"
+  find "$ROOT/Sources/AetherRouteApp" -name '*.swift' \
+    ! -name 'AppLanguageController.swift' -print0 \
+    | xargs -0 xcrun xcstringstool extract \
+        --modern-localizable-strings \
+        --SwiftUI \
+        --avoid-arg-placeholder \
+        --output-format xcstrings \
+        --output-directory "$TEMP_DIR/extracted" 2>/dev/null
 
-jq -r '.strings | keys[]' "$CATALOG" | LC_ALL=C sort \
-  > "$TEMP_DIR/catalog.keys"
-jq -r '.strings | keys[]' "$TEMP_DIR/extracted/Localizable.xcstrings" \
-  | awk 'length > 0' \
-  | LC_ALL=C sort > "$TEMP_DIR/extracted.keys"
-LC_ALL=C comm -23 "$TEMP_DIR/extracted.keys" "$TEMP_DIR/catalog.keys" \
-  > "$TEMP_DIR/missing.keys"
-if test -s "$TEMP_DIR/missing.keys"; then
-  sed 's/^/Missing extracted key: /' "$TEMP_DIR/missing.keys" >&2
-  fail "source contains keys absent from the catalog"
+  if [ -f "$TEMP_DIR/extracted/Localizable.xcstrings" ]; then
+    jq -r '.strings | keys[]' "$CATALOG" | LC_ALL=C sort \
+      > "$TEMP_DIR/catalog.keys"
+    jq -r '.strings | keys[]' "$TEMP_DIR/extracted/Localizable.xcstrings" \
+      | awk 'length > 0' \
+      | LC_ALL=C sort > "$TEMP_DIR/extracted.keys"
+    LC_ALL=C comm -23 "$TEMP_DIR/extracted.keys" "$TEMP_DIR/catalog.keys" \
+      > "$TEMP_DIR/missing.keys"
+    if test -s "$TEMP_DIR/missing.keys"; then
+      sed 's/^/Missing extracted key: /' "$TEMP_DIR/missing.keys" >&2
+      fail "source contains keys absent from the catalog"
+    fi
+  fi
+else
+  echo "xcstringstool is unavailable (requires full Xcode, skipping dynamic extraction checks)"
 fi
 
 # xcstringstool does not recognize our AppLocalization wrapper. Check its
