@@ -29,6 +29,7 @@ if grep -Eq 'SHA1|provision|/absolute/path' "$OUTPUT"; then
 fi
 
 if command -v xcodebuild >/dev/null 2>&1 && \
+  xcodebuild -version >/dev/null 2>&1 && \
   [ -d "$ROOT/AetherRoute.xcodeproj" ]; then
   settings="$TEST_DIRECTORY/build-settings.json"
   mkdir -p "$TEST_DIRECTORY/DerivedData"
