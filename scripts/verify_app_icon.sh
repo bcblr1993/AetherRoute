@@ -18,10 +18,11 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 ICTOOL="/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool"
-test -x "$ICTOOL" || {
-  echo "App icon verification failed: Icon Composer ictool is unavailable" >&2
-  exit 1
-}
+if [ -x "$ICTOOL" ]; then
+  HAS_ICTOOL=1
+else
+  HAS_ICTOOL=0
+fi
 
 jq -e . "$ICON_DIRECTORY/Contents.json" >/dev/null
 jq -e '
@@ -90,24 +91,27 @@ for ASSET in SilverFlight.png; do
   }
 done
 
-for RENDITION in Default Dark Mono TintedLight TintedDark ClearLight ClearDark; do
-  for SIZE in 16 32 1024; do
-    OUTPUT="$RENDER_DIRECTORY/${RENDITION}-${SIZE}.png"
-    "$ICTOOL" "$COMPOSER_DIRECTORY" \
-      --export-image \
-      --output-file "$OUTPUT" \
-      --platform macOS \
-      --rendition "$RENDITION" \
-      --width "$SIZE" \
-      --height "$SIZE" \
-      --scale 1 >/dev/null
-    WIDTH=$(sips -g pixelWidth "$OUTPUT" 2>/dev/null | awk '/pixelWidth:/ { print $2 }')
-    HEIGHT=$(sips -g pixelHeight "$OUTPUT" 2>/dev/null | awk '/pixelHeight:/ { print $2 }')
-    test "$WIDTH" = "$SIZE" && test "$HEIGHT" = "$SIZE" || {
-      echo "App icon verification failed: $RENDITION ${SIZE}px export is invalid" >&2
-      exit 1
-    }
+if [ "$HAS_ICTOOL" -eq 1 ]; then
+  for RENDITION in Default Dark Mono TintedLight TintedDark ClearLight ClearDark; do
+    for SIZE in 16 32 1024; do
+      OUTPUT="$RENDER_DIRECTORY/${RENDITION}-${SIZE}.png"
+      "$ICTOOL" "$COMPOSER_DIRECTORY" \
+        --export-image \
+        --output-file "$OUTPUT" \
+        --platform macOS \
+        --rendition "$RENDITION" \
+        --width "$SIZE" \
+        --height "$SIZE" \
+        --scale 1 >/dev/null
+      WIDTH=$(sips -g pixelWidth "$OUTPUT" 2>/dev/null | awk '/pixelWidth:/ { print $2 }')
+      HEIGHT=$(sips -g pixelHeight "$OUTPUT" 2>/dev/null | awk '/pixelHeight:/ { print $2 }')
+      test "$WIDTH" = "$SIZE" && test "$HEIGHT" = "$SIZE" || {
+        echo "App icon verification failed: $RENDITION ${SIZE}px export is invalid" >&2
+        exit 1
+      }
+    done
   done
-done
-
-echo "App icon assets verified: Silver Flight, 7 renditions, 16-1024 px"
+  echo "App icon assets verified: Silver Flight, 7 renditions, 16-1024 px"
+else
+  echo "App icon assets verified: Silver Flight (ictool rendition export skipped due to missing full Xcode)"
+fi
