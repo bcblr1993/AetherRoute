@@ -56,6 +56,7 @@ public enum TransparentProxyUpstreamEndpointResolver {
         )
         var results: [TransparentProxyUpstreamExclusion] = []
         var seen: Set<TransparentProxyUpstreamExclusion> = []
+        var resolvedHosts: [String: [(String, TransparentProxyUpstreamExclusion.AddressFamily)]] = [:]
 
         for (index, endpoint) in endpoints.enumerated() {
             let host = normalizedHost(endpoint.host)
@@ -70,12 +71,20 @@ public enum TransparentProxyUpstreamEndpointResolver {
             }
 
             let addresses: [(String, TransparentProxyUpstreamExclusion.AddressFamily)]
-            if let ipv4 = IPv4Address(host) {
-                addresses = [(ipv4.debugDescription, .ipv4)]
+            if let cached = resolvedHosts[host] {
+                addresses = cached
+            } else if let ipv4 = IPv4Address(host) {
+                let resolved = [(ipv4.debugDescription, TransparentProxyUpstreamExclusion.AddressFamily.ipv4)]
+                resolvedHosts[host] = resolved
+                addresses = resolved
             } else if let ipv6 = IPv6Address(host) {
-                addresses = [(ipv6.debugDescription, .ipv6)]
+                let resolved = [(ipv6.debugDescription, TransparentProxyUpstreamExclusion.AddressFamily.ipv6)]
+                resolvedHosts[host] = resolved
+                addresses = resolved
             } else {
-                addresses = try resolveHost(host, index: index)
+                let resolved = try resolveHost(host, index: index)
+                resolvedHosts[host] = resolved
+                addresses = resolved
             }
 
             for (address, family) in addresses {

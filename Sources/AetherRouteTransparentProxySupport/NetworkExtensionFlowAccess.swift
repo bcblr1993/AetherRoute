@@ -67,6 +67,7 @@ final class NetworkExtensionTCPFlowAccess:
     private let flow: NEAppProxyTCPFlow
     private let executor: NetworkExtensionFlowExecutor
     private let drainGate = NativeFlowDrainGate()
+    private var isWriteClosed = false
 
     init(
         flow: NEAppProxyTCPFlow,
@@ -119,6 +120,11 @@ final class NetworkExtensionTCPFlowAccess:
                 completion(.failure(.cancelled))
                 return
             }
+            if isWriteClosed {
+                completion(.failure(.closed))
+                completeOperation()
+                return
+            }
             NativeFlowRuntimeLog.log.verbose(
                 "stage=tcpNativeWrite submit bytes=\(data.count)"
             )
@@ -135,6 +141,7 @@ final class NetworkExtensionTCPFlowAccess:
                             code == NEAppProxyFlowError.notConnected.rawValue
                             || code == NEAppProxyFlowError.peerReset.rawValue
                         if isPeerClosed {
+                            isWriteClosed = true
                             NativeFlowRuntimeLog.log.verbose(
                                 "stage=tcpNativeWrite peerClosed code=\(code)"
                             )
@@ -160,6 +167,7 @@ final class NetworkExtensionTCPFlowAccess:
 
     public func finishWriting() {
         executor.execute { [self] in
+            isWriteClosed = true
             guard drainGate.beginOperation() else { return }
             NativeFlowRuntimeLog.log.verbose("stage=tcpNativeFinishWrite")
             flow.closeWriteWithError(nil)
@@ -179,6 +187,7 @@ final class NetworkExtensionTCPFlowAccess:
         request.completions.forEach { $0() }
         guard request.shouldIssueClose else { return }
         executor.execute { [self] in
+            isWriteClosed = true
             NativeFlowRuntimeLog.log.verbose("stage=tcpNativeDrain close begin")
             let error = NetworkExtensionFlowErrorMapper.aborted
             flow.closeReadWithError(error)
@@ -240,6 +249,8 @@ final class NetworkExtensionUDPFlowAccess:
         }
     }
 
+    private static let maximumWriteSliceCount = 16
+
     public func writeDatagrams(
         _ datagrams: [UDPDatagram],
         completion: @escaping @Sendable (
@@ -267,11 +278,51 @@ final class NetworkExtensionUDPFlowAccess:
                 completion(.failure(.cancelled))
                 return
             }
-            let once = NativeOperationOnce()
-            flow.writeDatagrams(values) { error in
-                once.run { [self] in
+            if values.count <= Self.maximumWriteSliceCount {
+                let once = NativeOperationOnce()
+                flow.writeDatagrams(values) { error in
+                    once.run { [self] in
+                        Self.completeWrite(error, completion: completion)
+                        completeOperation()
+                    }
+                }
+            } else {
+                writeSlicesSequentially(values: values, startIndex: 0, completion: completion)
+            }
+        }
+    }
+
+    private func writeSlicesSequentially(
+        values: [(Data, Network.NWEndpoint)],
+        startIndex: Int,
+        completion: @escaping @Sendable (Result<Void, FlowIOError>) -> Void
+    ) {
+        guard drainGate.isAccepting else {
+            completion(.failure(.cancelled))
+            completeOperation()
+            return
+        }
+        guard startIndex < values.count else {
+            Self.completeWrite(nil, completion: completion)
+            completeOperation()
+            return
+        }
+        let endIndex = min(startIndex + Self.maximumWriteSliceCount, values.count)
+        let slice = Array(values[startIndex..<endIndex])
+        let once = NativeOperationOnce()
+        flow.writeDatagrams(slice) { [self] error in
+            once.run { [self] in
+                if let error {
                     Self.completeWrite(error, completion: completion)
                     completeOperation()
+                } else {
+                    executor.execute { [self] in
+                        writeSlicesSequentially(
+                            values: values,
+                            startIndex: endIndex,
+                            completion: completion
+                        )
+                    }
                 }
             }
         }
@@ -442,6 +493,10 @@ final class NativeFlowDrainGate: @unchecked Sendable {
     private var closeHasExecuted = false
     private var pendingOperationCount = 0
     private var drainCompletions: [@Sendable () -> Void] = []
+
+    var isAccepting: Bool {
+        lock.withLock { accepting }
+    }
 
     func beginOperation() -> Bool {
         lock.withLock {
@@ -630,8 +685,11 @@ public enum NetworkExtensionFlowLifecycle {
             DiagnosticFlowOpenObserver.shared.record(
                 transport: transport, succeeded: false
             )
-            let isBenignPeerReset = nsError.domain == NEAppProxyErrorDomain && nsError.code == NEAppProxyFlowError.peerReset.rawValue
-            if isBenignPeerReset {
+            let isBenignAbortOrReset = nsError.domain == NEAppProxyErrorDomain
+                && (nsError.code == NEAppProxyFlowError.peerReset.rawValue
+                    || nsError.code == NEAppProxyFlowError.aborted.rawValue
+                    || nsError.code == NEAppProxyFlowError.notConnected.rawValue)
+            if isBenignAbortOrReset {
                 NativeFlowRuntimeLog.log.verbose(
                     """
                     stage=nativeOpen benignReset transport=\(transport) \

@@ -310,7 +310,8 @@ let appcastXML = """
             <sparkle:version>\(build)</sparkle:version>
             <sparkle:shortVersionString>\(version)</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/\(version)/</sparkle:fullReleaseNotesLink>
+            <description xml:lang="en"><![CDATA[
 \(releaseNotesHTML)
             ]]></description>
             <enclosure

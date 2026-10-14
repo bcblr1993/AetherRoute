@@ -1154,10 +1154,15 @@ public struct AetherTrafficMiniGraph: View {
         GeometryReader { proxy in
             let width = proxy.size.width
             let actualHeight = proxy.size.height
-            let maxVal = max(
-                (downloadSamples + uploadSamples).max() ?? 1024,
-                1024
-            )
+            let maxDownload = downloadSamples.max() ?? 0
+            let maxUpload = uploadSamples.max() ?? 0
+            let maxVal = max(maxDownload, maxUpload, 1024)
+            let downloadPoints = downloadSamples.count > 1
+                ? smoothPoints(samples: downloadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                : []
+            let uploadPoints = uploadSamples.count > 1
+                ? smoothPoints(samples: uploadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                : []
 
             ZStack {
                 // 背景微弱参考网格线
@@ -1170,8 +1175,8 @@ public struct AetherTrafficMiniGraph: View {
                 }
 
                 // 下行平滑面积波形 (青蓝霓虹渐变)
-                if downloadSamples.count > 1 {
-                    smoothWaveformPath(samples: downloadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                if downloadPoints.count > 1 {
+                    smoothWaveformPath(points: downloadPoints, height: actualHeight)
                         .fill(
                             LinearGradient(
                                 colors: [Color.cyan.opacity(0.22), Color.cyan.opacity(0.0)],
@@ -1180,7 +1185,7 @@ public struct AetherTrafficMiniGraph: View {
                             )
                         )
 
-                    smoothWaveformLine(samples: downloadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                    smoothWaveformLine(points: downloadPoints)
                         .stroke(
                             Color.cyan,
                             style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
@@ -1188,8 +1193,8 @@ public struct AetherTrafficMiniGraph: View {
                 }
 
                 // 上行平滑面积波形 (紫粉霓虹渐变)
-                if uploadSamples.count > 1 {
-                    smoothWaveformPath(samples: uploadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                if uploadPoints.count > 1 {
+                    smoothWaveformPath(points: uploadPoints, height: actualHeight)
                         .fill(
                             LinearGradient(
                                 colors: [Color.purple.opacity(0.18), Color.purple.opacity(0.0)],
@@ -1198,7 +1203,7 @@ public struct AetherTrafficMiniGraph: View {
                             )
                         )
 
-                    smoothWaveformLine(samples: uploadSamples, width: width, height: actualHeight, maxVal: maxVal)
+                    smoothWaveformLine(points: uploadPoints)
                         .stroke(
                             Color.purple,
                             style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
@@ -1325,9 +1330,8 @@ public struct AetherTrafficMiniGraph: View {
         }
     }
 
-    private func smoothWaveformPath(samples: [Double], width: CGFloat, height: CGFloat, maxVal: Double) -> Path {
+    private func smoothWaveformPath(points: [CGPoint], height: CGFloat) -> Path {
         var path = Path()
-        let points = smoothPoints(samples: samples, width: width, height: height, maxVal: maxVal)
         guard points.count > 1 else { return path }
 
         path.move(to: CGPoint(x: points[0].x, y: height))
@@ -1338,9 +1342,8 @@ public struct AetherTrafficMiniGraph: View {
         return path
     }
 
-    private func smoothWaveformLine(samples: [Double], width: CGFloat, height: CGFloat, maxVal: Double) -> Path {
+    private func smoothWaveformLine(points: [CGPoint]) -> Path {
         var path = Path()
-        let points = smoothPoints(samples: samples, width: width, height: height, maxVal: maxVal)
         guard points.count > 1 else { return path }
 
         path.move(to: points[0])

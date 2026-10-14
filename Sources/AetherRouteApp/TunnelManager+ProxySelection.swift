@@ -526,7 +526,7 @@ extension TunnelManager {
 
     func sendProviderMessage(
         _ data: Data,
-        timeout: Duration = .seconds(5)
+        timeout: Duration = TunnelStartupTimingPolicy.standardProviderMessageTimeout
     ) async throws -> Data {
         guard state == .connected
                 || (state == .connecting && isVerifyingProxyReadiness),

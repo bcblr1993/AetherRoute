@@ -298,6 +298,10 @@ extension SparkleUpdaterController: SPUUpdaterDelegate {
 }
 
 extension SparkleUpdaterController: SPUStandardUserDriverDelegate {
+    nonisolated var supportsGentleScheduledUpdateReminders: Bool {
+        true
+    }
+
     nonisolated func standardUserDriverShouldHandleShowingScheduledUpdate(
         _ update: SUAppcastItem,
         andInImmediateFocus immediateFocus: Bool

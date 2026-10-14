@@ -145,4 +145,11 @@ public enum TunnelStartupTimingPolicy {
     public static var automaticRouteProviderMessageTimeout: Duration {
         .seconds(automaticRouteProviderMessageTimeoutSeconds)
     }
+
+    /// Default timeout for general provider messages (status, telemetry, diagnostics).
+    /// Elevated to 10 seconds to accommodate cold start IPC queueing and slow upstream DNS resolution.
+    public static let standardProviderMessageTimeoutSeconds = 10
+    public static var standardProviderMessageTimeout: Duration {
+        .seconds(standardProviderMessageTimeoutSeconds)
+    }
 }

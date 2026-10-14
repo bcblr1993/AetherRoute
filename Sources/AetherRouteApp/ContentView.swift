@@ -1996,9 +1996,9 @@ private struct LiveTrafficHistoryGraph: View {
     let isRealtime: Bool
     let isBackground: Bool
 
-    /// About 24 frames a second: the chart moves roughly one point per
-    /// frame, which reads as continuous without redrawing faster than needed.
-    private static let frameInterval: TimeInterval = 1.0 / 24
+    /// About 12 frames a second: silky smooth waveform progression while halving
+    /// heap allocations and timer interruptions compared to 24 FPS.
+    private static let frameInterval: TimeInterval = 1.0 / 12
     private static let entryLag = TimeInterval(
         TunnelStartupTimingPolicy.activeTelemetryPollingIntervalSeconds
     )
