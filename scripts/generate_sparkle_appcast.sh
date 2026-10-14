@@ -270,25 +270,25 @@ if let notesPath = customNotes, FileManager.default.fileExists(atPath: notesPath
 
 let defaultNotesContent = """
 <div class="section">
-  <span class="section-tag tag-feature">🚀 核心功能：全透明零配置国内与 Apple 服务加速</span>
+  <span class="section-tag tag-feature">🚀 核心功能：全面兼容 Shadowsocks 混淆插件</span>
   <ul>
-    <li><strong>零配置透明分流与加速</strong>：引入内存无损配置优化引擎，在不改写用户本地配置的前提下，运行时自动注入 Apple 服务与国内高优规则，达成“国内直连丝滑、国外自动代理”。</li>
-    <li><strong>Apple 服务线速直连与 CDN 保护</strong>：针对 swcdn.apple.com、updates.cdn-apple.com 等关键服务智能过滤 fake-ip 劫持，国内 DNS 直接解析就近 Anycast IP，下载速度满带宽线速饱和（实测 34.9 MB/s）。</li>
-    <li><strong>国内智能 DNS 优化</strong>：针对国内域名自动路由至国内高速 DNS（223.5.5.5），有效规避海外 DNS 污染与解析延迟。</li>
+    <li><strong>内置混淆插件安全放行</strong>：全面支持 <code>plugin: obfs</code> / <code>plugin-opts</code>、<code>v2ray-plugin</code> 及 <code>shadow-tls</code>。升级预检白名单准入机制，彻底解决导入 Clash Verge 等主流客户端混淆订阅时触发的误报拦截。</li>
+    <li><strong>内存级协议转换防护</strong>：严格保持对外部可执行文件、未知命令及脚本注入的拦截，所有受支持插件均由纯 Rust 内存协议转换引擎安全驱动。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 稳定性与自愈修复</span>
+  <span class="section-tag tag-fix">🐞 稳定性与长稳加固</span>
   <ul>
-    <li><strong>网络重置防振荡治理</strong>：消除应用层重复触发 resetNetwork 导致的无限重连振荡循环，保障休眠唤醒与 Wi-Fi 热点切换无感自愈。</li>
-    <li><strong>配置解析兼容性强化</strong>：完美支持顶层非缩进列表项及不规范大小写/复数配置键名，杜绝解析崩溃。</li>
+    <li><strong>控制面与系统扩展超时防护</strong>：优化宿主 App 与系统扩展通信超时机制及冷启动 DNS 边界，杜绝瞬时假死。</li>
+    <li><strong>短连接与 UDP 吞吐优化</strong>：增加短连接流关闭主动短路与 UDP 微批处理写机制，规避内核套接字写缓冲耗尽。</li>
+    <li><strong>流量图表重绘节流</strong>：流量波形刷新率优化至 12 FPS，显著减少堆内存分配与界面渲染开销。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">✨ 严苛真机与多环境验证</span>
   <ul>
-    <li><strong>物理真机 Mac mini 实测验证通过</strong>：在 Apple Silicon 物理设备上实测国内测速拉满、Apple 域名直连、Google 走代理，0 振荡 100% 稳定运行。</li>
-    <li><strong>Tart 虚拟机全量模式矩阵通过</strong>：TUN/透明代理 x 规则/全局/直连共 6 项大类矩阵全部通过（0 crash，0 fail）。</li>
+    <li><strong>物理真机 Mac mini 全量通过</strong>：Apple Silicon 真机环境全量 182 项测试门禁、空闲长连接复用与网络切换自愈 100% 通过。</li>
+    <li><strong>UI 卡顿与内存预算双 Profile 达标</strong>：常规流与万条规则/500节点重载切页 p95 均保持在 132 ms 左右，内存占用平稳控制在 66-84 MB 预算内。</li>
   </ul>
 </div>
 """

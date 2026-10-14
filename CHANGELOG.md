@@ -29,7 +29,12 @@ Full compatibility for Shadowsocks built-in obfuscation plugins (obfs / v2ray-pl
 
 - Local regression suite (`test_network_switch_gate.py`, `EngineReconnect`, `RuntimeEnvironment`, `test.sh`, and `test_plugin_obfs_subscription_gate.sh`) all passed.
 - All 12 real protocol interop gates passed (48 test cases, 26 certificate rejections).
-- Clash Verge active profile (363 KB, 227 nodes) parsed and validated with 0 errors.
+- Clash Verge active profile (`LPXmmk7mFXDi.yaml`, 363 KB, 227 nodes) parsed and validated with 0 errors.
+- Mac mini remote hardware gate passed without system network mutations (`outputs/test-evidence/remote-arm64-20261014T051434Z-fast`).
+- UI responsiveness and memory budget gate passed on physical hardware (`outputs/perf-gate-1.7.3-2026101401`):
+  - `showcase`: page switch p95 132.8 ms / max 143.7 ms (budget p95<=180 max<=300); footprint median 66 MB / peak 77 MB / growth +1 MB (budget median<=90 max<=110 growth<=8).
+  - `large` (500 nodes / 10,000 rules / 2,000 flows): page switch p95 132.5 ms / max 164.1 ms (budget p95<=180 max<=300); footprint median 67 MB / peak 84 MB / growth +1 MB (budget median<=90 max<=110 growth<=8).
+- Production Release DMG packaged and verified clean (Zero test notes), signed with Developer ID, and successfully notarized and stapled by Apple (`194f59b9de55ca0f0de8a39c9604ce81e6e7f3b9c43f074e717387f9f24145ae`).
 
 ## [1.7.2] - 2026-10-13
 
