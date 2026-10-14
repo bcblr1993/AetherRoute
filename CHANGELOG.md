@@ -4,6 +4,33 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.3] - 2026-10-14
+
+Full compatibility for Shadowsocks built-in obfuscation plugins (obfs / v2ray-plugin / shadow-tls) with security whitelist gate, and complete closure of 7 soak test resilience issues.
+
+### Added
+
+- **Shadowsocks built-in obfuscation plugin support (`plugin: obfs` / `plugin-opts`)**:
+  - Profiles containing Shadowsocks obfuscation plugins (`obfs`, `simple-obfs`, `v2ray-plugin`, `shadow-tls`) are now recognized and safely admitted. Previously, the strict pre-import validator flagged all `plugin` keys as executable risks.
+  - Upgraded `ProfileImportValidator` to a strict security whitelist: known memory-safe in-process protocol transforms implemented directly in Rust are permitted, while paths, external executables, scripts, or unknown plugins continue to be rejected.
+  - Added release gate `scripts/test_plugin_obfs_subscription_gate.sh` integrated into `./scripts/test.sh` to prevent regression.
+
+### Fixed
+
+- **Control-plane startup IPC timeout mitigation (ISSUE-01)**: Increased default host IPC timeout to 10 seconds and optimized DNS resolution boundaries during transparent proxy startup to prevent transient cold-start timeouts.
+- **Short-lived TCP connection write race (ISSUE-02)**: Added `isWriteClosed` state tracking in `NetworkExtensionFlowAccess` to short-circuit writes when connection closure is detected, eliminating kernel `flow is closed for writes` error logs.
+- **UDP abort/reset log noise reduction (ISSUE-03)**: Classified `NEAppProxyFlowError.aborted` (code 5) and `notConnected` (code 1) as benign teardowns, reducing diagnostic log noise.
+- **Kernel socket buffer backpressure protection (ISSUE-04)**: Implemented micro-batching (up to 16 datagrams / 32 KB per batch) for UDP write operations to prevent burst buffer exhaustion (`ENOBUFS: 55`).
+- **Sparkle 2.x Gentle Reminders delegate declaration (ISSUE-05)**: Added `supportsGentleScheduledUpdateAlerts: true` to prevent update framework startup warnings.
+- **Traffic history waveform memory optimization (ISSUE-06)**: Throttled graph redraw rate to 12 FPS and eliminated redundant bezier path recalculations and array concatenations, reducing Malloc Small heap allocations.
+- **Sparkle Appcast localization attribute (ISSUE-07)**: Added explicit `xml:lang` tags to Appcast description and release notes links.
+
+### Verified
+
+- Local regression suite (`test_network_switch_gate.py`, `EngineReconnect`, `RuntimeEnvironment`, `test.sh`, and `test_plugin_obfs_subscription_gate.sh`) all passed.
+- All 12 real protocol interop gates passed (48 test cases, 26 certificate rejections).
+- Clash Verge active profile (363 KB, 227 nodes) parsed and validated with 0 errors.
+
 ## [1.7.2] - 2026-10-13
 
 Control-plane watchdog and self-healing for stalled provider communication, UDP peerReset log noise reduction, and host diagnostic log persistence.
