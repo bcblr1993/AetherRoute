@@ -54,12 +54,14 @@ public enum TransparentProxyUpstreamEndpointResolver {
         let endpoints = ProfileUpstreamEndpointInspector.inspect(
             yaml: profileYAML
         )
+        let hosts = ProfileHostsInspector.inspect(yaml: profileYAML)
         var results: [TransparentProxyUpstreamExclusion] = []
         var seen: Set<TransparentProxyUpstreamExclusion> = []
         var resolvedHosts: [String: [(String, TransparentProxyUpstreamExclusion.AddressFamily)]] = [:]
+        var firstResolutionError: TransparentProxyUpstreamEndpointResolutionError?
 
         for (index, endpoint) in endpoints.enumerated() {
-            let host = normalizedHost(endpoint.host)
+            var host = normalizedHost(endpoint.host)
             guard !host.isEmpty,
                   host.utf8.count <= 253,
                   !host.contains("\0"),
@@ -69,6 +71,8 @@ public enum TransparentProxyUpstreamEndpointResolver {
                 throw TransparentProxyUpstreamEndpointResolutionError
                     .invalidEndpoint(index: index)
             }
+
+            host = normalizedHost(ProfileHostsInspector.resolveAlias(host, in: hosts))
 
             let addresses: [(String, TransparentProxyUpstreamExclusion.AddressFamily)]
             if let cached = resolvedHosts[host] {
@@ -82,9 +86,16 @@ public enum TransparentProxyUpstreamEndpointResolver {
                 resolvedHosts[host] = resolved
                 addresses = resolved
             } else {
-                let resolved = try resolveHost(host, index: index)
-                resolvedHosts[host] = resolved
-                addresses = resolved
+                do {
+                    let resolved = try resolveHost(host, index: index)
+                    resolvedHosts[host] = resolved
+                    addresses = resolved
+                } catch let error as TransparentProxyUpstreamEndpointResolutionError {
+                    if firstResolutionError == nil {
+                        firstResolutionError = error
+                    }
+                    continue
+                }
             }
 
             for (address, family) in addresses {
@@ -102,6 +113,11 @@ public enum TransparentProxyUpstreamEndpointResolver {
                 }
             }
         }
+
+        if results.isEmpty, let firstResolutionError {
+            throw firstResolutionError
+        }
+
         return results
     }
 

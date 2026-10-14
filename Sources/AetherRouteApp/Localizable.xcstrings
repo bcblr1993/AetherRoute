@@ -14592,6 +14592,96 @@
           }
         }
       }
+    },
+    "AetherRoute Update Available": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发现 AetherRoute 新版本"
+          }
+        }
+      }
+    },
+    "Version %@ is ready to install. Click to view release notes and update.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "版本 %@ 已就绪，点击查看更新日志并升级。"
+          }
+        }
+      }
+    },
+    "AetherRoute v%@ is available": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute v%@ 现已发布"
+          }
+        }
+      }
+    },
+    "New": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新"
+          }
+        }
+      }
+    },
+    "A new version is ready with improvements and bug fixes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新版本已准备就绪，包含功能优化与问题修复。"
+          }
+        }
+      }
+    },
+    "Update Now": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即更新"
+          }
+        }
+      }
+    },
+    "Dismiss for this version": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忽略此版本"
+          }
+        }
+      }
+    },
+    "New version available": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发现新版本"
+          }
+        }
+      }
+    },
+    "New version available. Click to update.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发现新版本，点击检查更新"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

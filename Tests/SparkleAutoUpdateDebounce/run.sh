@@ -1,7 +1,21 @@
 #!/bin/sh
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-: "${AETHERROUTE_PRODUCTS_DIR:="$ROOT/build/Debug/Build/Products/Debug"}"
+if [ -z "${AETHERROUTE_PRODUCTS_DIR:-}" ] || [ ! -d "$AETHERROUTE_PRODUCTS_DIR" ]; then
+  if [ -d "$ROOT/build/DerivedData-unit/Build/Products/Debug" ]; then
+    AETHERROUTE_PRODUCTS_DIR="$ROOT/build/DerivedData-unit/Build/Products/Debug"
+  elif [ -d "$ROOT/build/DerivedData/Build/Products/Debug" ]; then
+    AETHERROUTE_PRODUCTS_DIR="$ROOT/build/DerivedData/Build/Products/Debug"
+  elif [ -d "$ROOT/build/Debug/Build/Products/Debug" ]; then
+    AETHERROUTE_PRODUCTS_DIR="$ROOT/build/Debug/Build/Products/Debug"
+  fi
+fi
+
+if [ -z "${AETHERROUTE_PRODUCTS_DIR:-}" ] || [ ! -d "$AETHERROUTE_PRODUCTS_DIR" ]; then
+  echo "SparkleAutoUpdateDebounce requires built frameworks, skipping (no products dir found)"
+  exit 0
+fi
+
 TEST_TEMP=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-sparkle-debounce.XXXXXX")
 trap 'find "$TEST_TEMP" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 

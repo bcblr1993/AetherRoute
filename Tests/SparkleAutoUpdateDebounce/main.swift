@@ -1,3 +1,4 @@
+import AetherRouteKit
 import AppKit
 import Foundation
 
@@ -13,8 +14,12 @@ enum SparkleAutoUpdateDebounceTests {
         await testCooldownSuppressesImmediateRetrigger()
         await testCooldownElapsedAllowsCheck()
         await testUpdaterNotReadySkipsCheck()
+        await testStartupSilentCheckTriggeredWhenEnabled()
+        await testStartupSilentCheckSuppressedWhenDisabled()
+        await testNotificationDeduplicationPerVersion()
+        await testAvailabilityLifecycle()
 
-        print("Sparkle auto-update debounce tests: 7 scenarios passed successfully")
+        print("Sparkle auto-update debounce tests: 11 scenarios passed successfully")
     }
 
     @MainActor
@@ -196,5 +201,98 @@ enum SparkleAutoUpdateDebounceTests {
         try? await Task.sleep(for: .milliseconds(50))
 
         precondition(checkCount == 0, "Check should be skipped when updater cannot check (expected 0, got \(checkCount))")
+    }
+
+    @MainActor
+    private static func testStartupSilentCheckTriggeredWhenEnabled() async {
+        var backgroundCheckCount = 0
+        let controller = SparkleUpdaterController(
+            updaterController: nil,
+            startUpdater: false,
+            debounceDuration: .milliseconds(30),
+            cooldownInterval: 60,
+            now: { Date() },
+            performBackgroundCheckAction: { _ in backgroundCheckCount += 1 },
+            notificationAction: { _ in },
+            userDefaults: UserDefaults(suiteName: "test-sparkle-startup-enabled-\(UUID().uuidString)")!,
+            startupDelay: .milliseconds(20)
+        )
+
+        controller.setCanCheckForUpdatesForTesting(true)
+        controller.scheduleStartupSilentCheck()
+
+        try? await Task.sleep(for: .milliseconds(60))
+        precondition(backgroundCheckCount == 1, "Startup silent background check should fire when enabled (expected 1, got \(backgroundCheckCount))")
+    }
+
+    @MainActor
+    private static func testStartupSilentCheckSuppressedWhenDisabled() async {
+        var backgroundCheckCount = 0
+        let controller = SparkleUpdaterController(
+            updaterController: nil,
+            startUpdater: false,
+            debounceDuration: .milliseconds(30),
+            cooldownInterval: 60,
+            now: { Date() },
+            performBackgroundCheckAction: { _ in backgroundCheckCount += 1 },
+            notificationAction: { _ in },
+            userDefaults: UserDefaults(suiteName: "test-sparkle-startup-disabled-\(UUID().uuidString)")!,
+            startupDelay: .milliseconds(20)
+        )
+
+        controller.setCanCheckForUpdatesForTesting(true)
+        controller.setAutomaticallyChecksForUpdates(false)
+        controller.scheduleStartupSilentCheck()
+
+        try? await Task.sleep(for: .milliseconds(60))
+        precondition(backgroundCheckCount == 0, "Startup silent check should be suppressed when auto checks disabled (expected 0, got \(backgroundCheckCount))")
+    }
+
+    @MainActor
+    private static func testNotificationDeduplicationPerVersion() async {
+        var notifiedVersions: [String] = []
+        let defaults = UserDefaults(suiteName: "test-sparkle-notify-\(UUID().uuidString)")!
+        let controller = SparkleUpdaterController(
+            updaterController: nil,
+            startUpdater: false,
+            notificationAction: { version in notifiedVersions.append(version) },
+            userDefaults: defaults
+        )
+
+        // First notification for 1.7.4
+        controller.notifyUserIfNewVersion(version: "1.7.4")
+        precondition(notifiedVersions == ["1.7.4"], "First notification for 1.7.4 should be sent")
+
+        // Duplicate notification for 1.7.4 must be deduped
+        controller.notifyUserIfNewVersion(version: "1.7.4")
+        precondition(notifiedVersions == ["1.7.4"], "Duplicate notification for 1.7.4 must be suppressed")
+
+        // New version 1.7.5 should notify
+        controller.notifyUserIfNewVersion(version: "1.7.5")
+        precondition(notifiedVersions == ["1.7.4", "1.7.5"], "New release version 1.7.5 should be notified")
+    }
+
+    @MainActor
+    private static func testAvailabilityLifecycle() async {
+        var state = UpdateAvailability.unknown
+        precondition(state.availableVersion == nil, "Initial availability version should be nil")
+
+        state = state.applying(.foundUpdate(version: "1.7.4"))
+        precondition(state == .available(version: "1.7.4"), "Should transition to available(1.7.4)")
+        precondition(state.availableVersion == "1.7.4", "availableVersion should be 1.7.4")
+
+        // While an update is known, starting a new check should preserve the known version
+        state = state.applying(.checkStarted)
+        precondition(state == .available(version: "1.7.4"), "Known update should be preserved during checkStarted")
+        precondition(state.availableVersion == "1.7.4", "availableVersion should remain 1.7.4")
+
+        // Dismissing updates sets it to upToDate
+        state = state.applying(.updateDismissed)
+        precondition(state == .upToDate, "updateDismissed should transition to upToDate")
+        precondition(state.availableVersion == nil, "availableVersion should be nil after dismissal")
+
+        // Failed check does not regress upToDate
+        state = state.applying(.checkFailed)
+        precondition(state == .upToDate, "checkFailed should keep upToDate")
     }
 }

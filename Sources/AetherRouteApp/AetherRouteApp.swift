@@ -3,9 +3,10 @@ import AetherRouteKit
 import Darwin
 import OSLog
 import SwiftUI
+@preconcurrency import UserNotifications
 
 @MainActor
-final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSUserInterfaceValidations {
+final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSUserInterfaceValidations, UNUserNotificationCenterDelegate {
     private static let lifecycleLogger = AppLog.logger(category: AppLog.Category.appLifecycle)
 
     var tunnel: TunnelManager?
@@ -24,8 +25,31 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSM
         }
         installTerminationSignalSource()
         installQuitAppleEventHandler()
+        UNUserNotificationCenter.current().delegate = self
         Task { @MainActor [weak self] in
             await self?.tunnel?.prepare()
+        }
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        defer { completionHandler() }
+        DispatchQueue.main.async {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            #if !AETHERROUTE_APP_STORE
+            SparkleUpdaterController.shared.checkForUpdates()
+            #endif
         }
     }
 

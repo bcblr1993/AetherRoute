@@ -4,6 +4,7 @@ import Combine
 import Foundation
 import OSLog
 import SwiftUI
+@preconcurrency import UserNotifications
 
 #if !AETHERROUTE_APP_STORE
 import Sparkle
@@ -11,7 +12,9 @@ import Sparkle
 @MainActor
 final class SparkleUpdaterController: NSObject, ObservableObject {
     static let shared = SparkleUpdaterController()
-    private static let logger = AppLog.logger(category: AppLog.Category.appLifecycle)
+    static let lastNotifiedUpdateVersionKey = "AetherRoute.LastNotifiedUpdateVersion"
+    static let dismissedUpdateVersionKey = "AetherRoute.DismissedUpdateVersion"
+    private nonisolated static let logger = AppLog.logger(category: AppLog.Category.appLifecycle)
 
     @Published private(set) var canCheckForUpdates = false
     @Published private(set) var automaticallyChecksForUpdates = true
@@ -30,11 +33,16 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
     // MARK: - Rapid Switching & Cooldown Protection
 
     private var pendingAutoCheckTask: Task<Void, Never>?
+    private var pendingStartupCheckTask: Task<Void, Never>?
     private var lastTriggeredCheckDate: Date?
     private let debounceDuration: Duration
     private let cooldownInterval: TimeInterval
     private let now: () -> Date
     private let performCheckAction: (@MainActor (SparkleUpdaterController) -> Void)?
+    private let performBackgroundCheckAction: (@MainActor (SparkleUpdaterController) -> Void)?
+    private let notificationAction: ((String) -> Void)?
+    private let userDefaults: UserDefaults
+    private let startupDelay: Duration
 
     override convenience init() {
         self.init(
@@ -43,7 +51,11 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             debounceDuration: .milliseconds(800),
             cooldownInterval: 60,
             now: { Date() },
-            performCheckAction: nil
+            performCheckAction: nil,
+            performBackgroundCheckAction: nil,
+            notificationAction: nil,
+            userDefaults: .standard,
+            startupDelay: .seconds(3)
         )
     }
 
@@ -53,13 +65,21 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
         debounceDuration: Duration = .milliseconds(800),
         cooldownInterval: TimeInterval = 60,
         now: @escaping () -> Date = { Date() },
-        performCheckAction: (@MainActor (SparkleUpdaterController) -> Void)? = nil
+        performCheckAction: (@MainActor (SparkleUpdaterController) -> Void)? = nil,
+        performBackgroundCheckAction: (@MainActor (SparkleUpdaterController) -> Void)? = nil,
+        notificationAction: ((String) -> Void)? = nil,
+        userDefaults: UserDefaults = .standard,
+        startupDelay: Duration = .seconds(3)
     ) {
         self.updaterController = updaterController
         self.debounceDuration = debounceDuration
         self.cooldownInterval = cooldownInterval
         self.now = now
         self.performCheckAction = performCheckAction
+        self.performBackgroundCheckAction = performBackgroundCheckAction
+        self.notificationAction = notificationAction
+        self.userDefaults = userDefaults
+        self.startupDelay = startupDelay
         super.init()
 #if DEBUG
         // Isolated screenshot review only: pretend a newer release exists.
@@ -82,6 +102,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             configureUpdaterSubscriptions(for: controller.updater)
             setupSparkleWindowObserver()
         }
+        scheduleStartupSilentCheck()
     }
 
     private func configureUpdaterSubscriptions(for updater: SPUUpdater) {
@@ -123,6 +144,43 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             return
         }
         updater.checkForUpdates()
+    }
+
+    func checkForUpdatesInBackground() {
+        if let performBackgroundCheckAction {
+            performBackgroundCheckAction(self)
+            return
+        }
+        guard let updater = updaterController?.updater, updater.canCheckForUpdates else {
+            return
+        }
+        updater.checkForUpdatesInBackground()
+    }
+
+    func scheduleStartupSilentCheck() {
+        if notificationAction == nil {
+            guard NSClassFromString("XCTestCase") == nil else { return }
+            guard ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_WINDOW"] == nil,
+                  ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] == nil,
+                  ProcessInfo.processInfo.environment["AETHERROUTE_UI_RESPONSIVENESS"] == nil else {
+                return
+            }
+        }
+        guard automaticallyChecksForUpdates else { return }
+
+        pendingStartupCheckTask?.cancel()
+        pendingStartupCheckTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: self?.startupDelay ?? .seconds(3))
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled else { return }
+            guard self.automaticallyChecksForUpdates else { return }
+            guard self.canCheckForUpdatesEffective else { return }
+            Self.logger.info("stage=updateCheck executing startup silent background check")
+            self.checkForUpdatesInBackground()
+        }
     }
 
     func setAutomaticallyChecksForUpdates(_ enabled: Bool) {
@@ -236,6 +294,54 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
         NotificationCenter.default.removeObserver(self)
     }
 
+    func notifyUserIfNewVersion(version: String) {
+        if let notificationAction {
+            let lastNotified = userDefaults.string(forKey: Self.lastNotifiedUpdateVersionKey)
+            guard lastNotified != version else { return }
+            userDefaults.set(version, forKey: Self.lastNotifiedUpdateVersionKey)
+            notificationAction(version)
+            return
+        }
+
+        guard NSClassFromString("XCTestCase") == nil else { return }
+        guard ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_WINDOW"] == nil,
+              ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] == nil,
+              ProcessInfo.processInfo.environment["AETHERROUTE_UI_RESPONSIVENESS"] == nil else {
+            return
+        }
+
+        let lastNotified = userDefaults.string(forKey: Self.lastNotifiedUpdateVersionKey)
+        guard lastNotified != version else {
+            Self.logger.info("stage=updateNotify version \(version, privacy: .public) already notified, skipping")
+            return
+        }
+        userDefaults.set(version, forKey: Self.lastNotifiedUpdateVersionKey)
+        Self.logger.info("stage=updateNotify posting local notification for version \(version, privacy: .public)")
+
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+            guard granted, error == nil else { return }
+            let content = UNMutableNotificationContent()
+            content.title = AppLocalization.string("AetherRoute Update Available")
+            content.body = String(
+                format: AppLocalization.string("Version %@ is ready to install. Click to view release notes and update."),
+                version
+            )
+            content.sound = .default
+            content.userInfo = ["version": version]
+
+            let request = UNNotificationRequest(
+                identifier: "com.aetherroute.update.\(version)",
+                content: content,
+                trigger: nil
+            )
+            UNUserNotificationCenter.current().add(request) { addError in
+                if let addError {
+                    Self.logger.error("stage=updateNotify error scheduling notification: \(addError.localizedDescription, privacy: .public)")
+                }
+            }
+        }
+    }
+
     #if DEBUG
     func setCanCheckForUpdatesForTesting(_ canCheck: Bool) {
         canCheckForUpdates = canCheck
@@ -260,7 +366,10 @@ extension SparkleUpdaterController: SPUUpdaterDelegate {
 
     nonisolated func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         let version = item.displayVersionString
-        Task { @MainActor in self.apply(.foundUpdate(version: version)) }
+        Task { @MainActor in
+            self.apply(.foundUpdate(version: version))
+            self.notifyUserIfNewVersion(version: version)
+        }
     }
 
     nonisolated func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: any Error) {
@@ -326,6 +435,8 @@ struct CheckForUpdatesCommandButton: View {
 @MainActor
 final class SparkleUpdaterController: NSObject, ObservableObject {
     static let shared = SparkleUpdaterController()
+    static let lastNotifiedUpdateVersionKey = "AetherRoute.LastNotifiedUpdateVersion"
+    static let dismissedUpdateVersionKey = "AetherRoute.DismissedUpdateVersion"
     @Published private(set) var canCheckForUpdates = false
     @Published private(set) var automaticallyChecksForUpdates = false
     @Published private(set) var lastUpdateCheckDate: Date?
@@ -337,6 +448,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
 
     var canCheckForUpdatesEffective: Bool { false }
     func checkForUpdates() {}
+    func checkForUpdatesInBackground() {}
     func setAutomaticallyChecksForUpdates(_ enabled: Bool) {}
 }
 

@@ -48,8 +48,8 @@ settings:
     INFOPLIST_KEY_AetherRouteTunnelBundleIdentifier: $(AETHERROUTE_TUNNEL_BUNDLE_ID)
     INFOPLIST_KEY_AetherRouteTransparentProxyBundleIdentifier: $(AETHERROUTE_TRANSPARENT_PROXY_BUNDLE_ID)
     INFOPLIST_KEY_AetherRouteProfileArchiveTypeIdentifier: $(AETHERROUTE_PROFILE_ARCHIVE_TYPE)
-    MARKETING_VERSION: "1.7.3"
-    CURRENT_PROJECT_VERSION: "2026101401"
+    MARKETING_VERSION: "1.7.4"
+    CURRENT_PROJECT_VERSION: "2026101405"
   configs:
     Release:
       CODE_SIGN_STYLE: Manual
@@ -284,7 +284,7 @@ targets:
         SUFeedURL: https://aethernative.com/apps/aetherroute/appcast.xml
         SUPublicEDKey: hVgNMayXzdIN2G5V0aeepQYjD2moJQ/ANUy14lqMtEM=
         SUEnableAutomaticChecks: true
-        SUScheduledCheckInterval: 86400
+        SUScheduledCheckInterval: 14400
         NSHumanReadableCopyright: Created by 编程不良人 (BianChengBuLiangRen)
         NSHighResolutionCapable: true
         AetherRouteAppGroup: $(AETHERROUTE_APP_GROUP)

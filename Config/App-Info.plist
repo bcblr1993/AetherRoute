@@ -106,7 +106,7 @@
 	<key>SUPublicEDKey</key>
 	<string>hVgNMayXzdIN2G5V0aeepQYjD2moJQ/ANUy14lqMtEM=</string>
 	<key>SUScheduledCheckInterval</key>
-	<integer>86400</integer>
+	<integer>14400</integer>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

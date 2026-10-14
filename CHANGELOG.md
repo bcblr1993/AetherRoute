@@ -4,6 +4,28 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.4] - 2026-10-14
+
+Outbound DNS multi-hop hosts alias chain resolution, transparent proxy upstream hosts-alias exclusion, and automated Clash Verge subscription compatibility verification gate.
+
+### Fixed
+
+- **Outbound DNS multi-hop hosts alias chain resolution (`EnhancedResolver`)**:
+  - Outbound proxy nodes configured with private domain aliases (such as Clash Verge provider host mappings) were previously resolved using public DNS when `enhanced=false`, causing resolution timeouts and connection failures.
+  - Implemented `lookup_hosts_alias` in the core resolver with support for up to 8 hops of recursive alias chasing. Hosts mappings are now unconditionally prioritized regardless of Fake-IP state.
+- **Transparent proxy upstream exclusion for alias endpoints (`TransparentProxyUpstreamEndpointResolver`)**:
+  - Upstream exclusion planning now incorporates `ProfileHostsInspector` to resolve internal host aliases to their underlying IPv4/IPv6 destination addresses before configuring Network Extension rules, preventing traffic self-interception loops.
+- **Sparkle update check frequency adjustment**:
+  - Adjusted default background update check interval from 24h to 4h (`14400s`) to ensure rapid rollout and receipt of stability hotfixes.
+
+### Verified
+
+- Local regression suite (`test_network_switch_gate.py`, `EngineReconnect`, `RuntimeEnvironment`, `test.sh`, and `test_plugin_obfs_subscription_gate.sh`) all passed cleanly.
+- Real protocol interop tests passed for all supported transport and encryption types.
+- Clash Verge active profile with 227 nodes and complex hosts alias chains validated cleanly.
+- Tart VM 6-dimensional acceptance matrix (`macos27`) passed all criteria including keep-alive reuse, SNI recovery, and 2 MiB large upload.
+- Physical Apple Silicon Mac mini hardware gate passed with clean source manifest verification.
+
 ## [1.7.3] - 2026-10-14
 
 Full compatibility for Shadowsocks built-in obfuscation plugins (obfs / v2ray-plugin / shadow-tls) with security whitelist gate, and complete closure of 7 soak test resilience issues.

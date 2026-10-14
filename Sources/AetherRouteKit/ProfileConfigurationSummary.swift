@@ -190,6 +190,35 @@ public enum ProfileNamedEndpointInspector {
     }
 }
 
+public enum ProfileHostsInspector {
+    public static func inspect(yaml: String) -> [String: String] {
+        var parser = Parser(yaml: yaml)
+        return parser.parseHosts()
+    }
+
+    public static func resolveAlias(_ host: String, in hosts: [String: String]) -> String {
+        var current = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var hops = 0
+        while hops < 8 {
+            if let direct = hosts[current] {
+                current = direct.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                hops += 1
+                continue
+            }
+            if let dotIndex = current.firstIndex(of: ".") {
+                let wildcard = "*" + current[dotIndex...]
+                if let target = hosts[wildcard] {
+                    current = target.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    hops += 1
+                    continue
+                }
+            }
+            break
+        }
+        return current
+    }
+}
+
 public struct ProxyGroupConfigurationSummary: Identifiable, Equatable, Sendable {
     public let id: Int
     public let name: String
@@ -414,6 +443,7 @@ private struct Parser {
         case proxyProviders = "proxy-providers"
         case rules
         case ruleProviders = "rule-providers"
+        case hosts
     }
 
     private struct Item {
@@ -493,6 +523,7 @@ private struct Parser {
     private var proxies: [ProxyConfigurationSummary] = []
     private var upstreamEndpoints: [ProfileUpstreamEndpoint] = []
     private var namedEndpoints: [String: ProfileUpstreamEndpoint] = [:]
+    private var hosts: [String: String] = [:]
     private var groups: [ProxyGroupConfigurationSummary] = []
     private var proxyProviders: [ProviderConfigurationSummary] = []
     private var rules: [RuleConfigurationSummary] = []
@@ -545,6 +576,11 @@ private struct Parser {
     mutating func parseNamedEndpoints() -> [String: ProfileUpstreamEndpoint] {
         parseDocument()
         return namedEndpoints
+    }
+
+    mutating func parseHosts() -> [String: String] {
+        parseDocument()
+        return hosts
     }
 
     private mutating func parseDocument() {
@@ -625,6 +661,8 @@ private struct Parser {
                 parseProvider(line: trimmed, indent: indent)
             case .rules:
                 parseRule(line: trimmed, indent: indent)
+            case .hosts:
+                parseHostsLine(line: trimmed, indent: indent)
             case nil:
                 continue
             }
@@ -662,6 +700,13 @@ private struct Parser {
                 }
             }
         }
+        if let jsonHosts = object["hosts"] as? [String: Any] {
+            for (host, target) in jsonHosts {
+                if let targetStr = target as? String {
+                    hosts[host] = targetStr
+                }
+            }
+        }
         for destination in [Section.proxies, .proxyGroups] {
             section = destination
             for fields in object[destination.rawValue] as? [[String: Any]] ?? [] {
@@ -695,6 +740,14 @@ private struct Parser {
         }
         for rule in object["rules"] as? [String] ?? [] {
             appendRule(rule)
+        }
+        if let jsonHosts = object["hosts"] as? [String: Any] {
+            for (key, val) in jsonHosts {
+                let k = key.trimmingCharacters(in: .whitespaces).lowercased()
+                if let stringVal = Self.jsonScalar(val)?.trimmingCharacters(in: .whitespaces), !stringVal.isEmpty {
+                    hosts[k] = Self.scalar(stringVal)
+                }
+            }
         }
     }
 
@@ -766,6 +819,28 @@ private struct Parser {
            value.hasSuffix("]") {
             for scalar in Self.splitFlowSequence(value) {
                 appendRule(scalar)
+            }
+        } else if section == .hosts,
+           value.hasPrefix("{"),
+           value.hasSuffix("}") {
+            for field in Self.splitTopLevel(
+                String(value.dropFirst().dropLast()),
+                separator: ","
+            ) {
+                guard let (key, fieldValue) = Self.keyValue(in: field) else {
+                    continue
+                }
+                let k = key.trimmingCharacters(in: .whitespaces).lowercased()
+                let rawVal = Self.scalar(fieldValue).trimmingCharacters(in: .whitespaces)
+                let v: String
+                if rawVal.hasPrefix("["), rawVal.hasSuffix("]") {
+                    v = Self.splitFlowSequence(rawVal).first ?? ""
+                } else {
+                    v = rawVal
+                }
+                if !k.isEmpty, !v.isEmpty {
+                    hosts[k] = v
+                }
             }
         }
     }
@@ -1104,6 +1179,20 @@ private struct Parser {
         guard let pending = pendingRule else { return }
         pendingRule = nil
         appendRule(pending.value)
+    }
+
+    private mutating func parseHostsLine(line: String, indent: Int) {
+        guard !line.hasPrefix("-"), let (key, rawTarget) = Self.keyValue(in: line) else { return }
+        let k = key.trimmingCharacters(in: .whitespaces).lowercased()
+        let rawVal = Self.scalar(rawTarget).trimmingCharacters(in: .whitespaces)
+        let v: String
+        if rawVal.hasPrefix("["), rawVal.hasSuffix("]") {
+            v = Self.splitFlowSequence(rawVal).first ?? ""
+        } else {
+            v = rawVal
+        }
+        guard !k.isEmpty, !v.isEmpty else { return }
+        hosts[k] = v
     }
 
     /// "Claude" for `com.anthropic.claudefordesktop;/Applications/Claude.app`.

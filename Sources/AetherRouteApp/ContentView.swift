@@ -135,6 +135,9 @@ struct ContentView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedSection: AppSection? = .overview
     @State private var isCommandPalettePresented = false
+    @AppStorage(SparkleUpdaterController.dismissedUpdateVersionKey)
+    private var dismissedUpdateVersion: String = ""
+    @ObservedObject private var updater = SparkleUpdaterController.shared
 
     var body: some View {
         Group {
@@ -530,14 +533,31 @@ struct ContentView: View {
     }
 
     private var sidebarVersionLabel: some View {
-        Text(verbatim: currentAppVersion)
-            .font(.system(.subheadline, design: .monospaced, weight: .medium))
-            // A resolved grey: on the glass sidebar `.primary` was drawn
-            // vibrantly and failed the contrast audit.
-            .foregroundStyle(AetherVisual.secondaryText)
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-            .padding(.trailing, AetherVisual.s2)
+        Button {
+            updater.checkForUpdates()
+        } label: {
+            HStack(spacing: AetherVisual.s1) {
+                Text(verbatim: currentAppVersion)
+                    .font(.system(.subheadline, design: .monospaced, weight: .medium))
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                if updater.availability.availableVersion != nil {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: AetherVisual.sCompact, height: AetherVisual.sCompact)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, AetherVisual.s2)
+        .accessibilityLabel(
+            updater.availability.availableVersion != nil
+                ? AppLocalization.string("New version available. Click to update.")
+                : currentAppVersion
+        )
     }
 
     @ViewBuilder
@@ -582,38 +602,56 @@ struct ContentView: View {
 
     private var detail: some View {
         let section = selectedSection ?? .overview
-        return ZStack {
-            Group {
-                switch section {
-                case .overview:
-                    OverviewView {
-                        selectSection(.profiles)
+        return VStack(spacing: 0) {
+            if let availableVersion = updater.availability.availableVersion,
+               availableVersion != dismissedUpdateVersion {
+                UpdateAvailableBannerView(
+                    version: availableVersion,
+                    onUpdate: {
+                        updater.checkForUpdates()
+                    },
+                    onDismiss: {
+                        dismissedUpdateVersion = availableVersion
                     }
-                case .proxies:
-                    ProxiesView()
-                case .connections:
-                    ConnectionsView(telemetry: tunnel.telemetryViewModel)
-                case .profiles:
-                    ProfilesView()
-                case .rules:
-                    RulesView()
-                case .dns:
-                    DNSView()
-                }
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Each page is a new identity. It fades in on opacity alone: the
-            // 1.5.0 fade-up also moved the page, which laid it out again on
-            // every animation frame and doubled the slowest switches
-            // (Connections p95 377 ms with it, 171 ms without; 1.5.1).
-            // Opacity is composited, so the page is laid out once.
-            .id(section)
-            .transition(.asymmetric(insertion: .opacity, removal: .identity))
-            .animation(
-                effectiveReduceMotion ? nil : AetherVisual.pageFade,
-                value: section
-            )
+
+            ZStack {
+                Group {
+                    switch section {
+                    case .overview:
+                        OverviewView {
+                            selectSection(.profiles)
+                        }
+                    case .proxies:
+                        ProxiesView()
+                    case .connections:
+                        ConnectionsView(telemetry: tunnel.telemetryViewModel)
+                    case .profiles:
+                        ProfilesView()
+                    case .rules:
+                        RulesView()
+                    case .dns:
+                        DNSView()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Each page is a new identity. It fades in on opacity alone: the
+                // 1.5.0 fade-up also moved the page, which laid it out again on
+                // every animation frame and doubled the slowest switches
+                // (Connections p95 377 ms with it, 171 ms without; 1.5.1).
+                // Opacity is composited, so the page is laid out once.
+                .id(section)
+                .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                .animation(
+                    effectiveReduceMotion ? nil : AetherVisual.pageFade,
+                    value: section
+                )
+            }
         }
+        .animation(effectiveReduceMotion ? nil : AetherVisual.panelSpring, value: updater.availability.availableVersion)
+        .animation(effectiveReduceMotion ? nil : AetherVisual.panelSpring, value: dismissedUpdateVersion)
         .navigationTitle(section.title)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(section.subtitle)
@@ -2122,4 +2160,79 @@ extension NSSegmentedControl {
         image.isTemplate = false
         return image
     }()
+}
+
+struct UpdateAvailableBannerView: View {
+    let version: String
+    let onUpdate: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: AetherVisual.s3) {
+            leadingIcon
+            textContent
+            Spacer(minLength: AetherVisual.s2)
+            trailingActions
+        }
+        .padding(.horizontal, AetherVisual.s4)
+        .padding(.vertical, AetherVisual.s3)
+        .background(AetherVisual.cardFill)
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("update-available-banner")
+    }
+
+    private var leadingIcon: some View {
+        AetherIconTile(
+            symbol: "sparkles",
+            color: .accentColor,
+            size: AetherVisual.rowTileSize
+        )
+    }
+
+    private var textContent: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+            HStack(spacing: AetherVisual.s1) {
+                Text(String(format: AppLocalization.string("AetherRoute v%@ is available"), version))
+                    .font(.system(.subheadline, design: .default, weight: .semibold))
+
+                Text(AppLocalization.string("New"))
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, AetherVisual.sCompact)
+                    .padding(.vertical, AetherVisual.sMicro)
+                    .background(
+                        Capsule()
+                            .fill(AetherVisual.tintFill(.accentColor))
+                    )
+            }
+
+            Text(AppLocalization.string("A new version is ready with improvements and bug fixes."))
+                .font(.caption)
+                .foregroundStyle(AetherVisual.secondaryText)
+        }
+    }
+
+    private var trailingActions: some View {
+        HStack(spacing: AetherVisual.s2) {
+            Button(AppLocalization.string("Update Now")) {
+                onUpdate()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+
+            Button {
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AetherVisual.secondaryText)
+            }
+            .buttonStyle(.plain)
+            .help(AppLocalization.string("Dismiss for this version"))
+            .accessibilityLabel(AppLocalization.string("Dismiss for this version"))
+        }
+    }
 }
