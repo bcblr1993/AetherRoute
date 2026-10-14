@@ -3,6 +3,16 @@ import Foundation
 public enum ProfileImportValidator {
     public static let maximumProfileBytes = 10 * 1_024 * 1_024
 
+    /// Whitelist of safe, memory-only obfuscation and transport plugins natively
+    /// implemented in the protocol engine. Arbitrary executable plugins remain strictly rejected.
+    public static let safeBuiltinPlugins: Set<String> = [
+        "obfs",
+        "simple-obfs",
+        "v2ray-plugin",
+        "shadow-tls",
+        "shadowtls",
+    ]
+
     /// `allowsApplicationRules` is true only for the launch snapshot the host
     /// compiles itself, which carries the user's application rules as
     /// `AETHER-APP`; every profile from outside the app is refused one.
@@ -21,7 +31,7 @@ public enum ProfileImportValidator {
         }
 
         try cancellationCheck()
-        let keys = try mappingKeys(
+        let entries = try mappingEntries(
             in: text,
             cancellationCheck: cancellationCheck
         )
@@ -30,16 +40,26 @@ public enum ProfileImportValidator {
             "exec",
             "external-ui",
             "external-ui-url",
-            "plugin",
-            "plugin-opts",
             "script",
             "scripts",
         ]
-        if let key = keys.first(where: forbiddenKeys.contains) {
-            throw ProfileImportError.forbiddenExecutableKey(key)
+        var foundProxiesOrProviders = false
+        for entry in entries {
+            if forbiddenKeys.contains(entry.key) {
+                throw ProfileImportError.forbiddenExecutableKey(entry.key)
+            }
+            if entry.key == "plugin" {
+                guard let pluginValue = entry.value,
+                      safeBuiltinPlugins.contains(pluginValue) else {
+                    throw ProfileImportError.forbiddenExecutableKey("plugin")
+                }
+            }
+            if entry.key == "proxies" || entry.key == "proxy-providers" {
+                foundProxiesOrProviders = true
+            }
         }
 
-        guard keys.contains("proxies") || keys.contains("proxy-providers") else {
+        guard foundProxiesOrProviders else {
             throw ProfileImportError.missingProxyDefinition
         }
         // Application rules come only from the app's own rule list. Matched
@@ -53,29 +73,34 @@ public enum ProfileImportValidator {
         }
     }
 
+    private struct MappingEntry {
+        let key: String
+        let value: String?
+    }
+
     /// Extracts YAML mapping keys without treating comments, quoted values, URLs,
     /// or rule scalars as executable configuration. This is deliberately a
     /// security preflight; the protocol engine remains the authoritative parser.
-    private static func mappingKeys(
+    private static func mappingEntries(
         in text: String,
         cancellationCheck: () throws -> Void
-    ) throws -> [String] {
-        var result: [String] = []
+    ) throws -> [MappingEntry] {
+        var result: [MappingEntry] = []
         for (index, rawLine) in text.split(
             whereSeparator: \.isNewline
         ).enumerated() {
             if index.isMultiple(of: 64) {
                 try cancellationCheck()
             }
-            result.append(contentsOf: keys(in: String(rawLine)))
+            result.append(contentsOf: entries(in: String(rawLine)))
         }
         try cancellationCheck()
         return result
     }
 
-    private static func keys(in line: String) -> [String] {
+    private static func entries(in line: String) -> [MappingEntry] {
         let characters = Array(line)
-        var keys: [String] = []
+        var entries: [MappingEntry] = []
         var quote: Character?
         var escaped = false
         var braceDepth = 0
@@ -121,11 +146,82 @@ public enum ProfileImportValidator {
             let candidate = String(characters[segmentStart..<index])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if let key = normalizedKey(candidate), !key.isEmpty {
-                keys.append(key)
+                let rawValue = extractScalarValue(
+                    from: characters,
+                    startingAt: index + 1,
+                    inBrace: braceDepth > 0
+                )
+                let normalizedVal = normalizedPluginValue(rawValue)
+                entries.append(MappingEntry(key: key, value: normalizedVal))
             }
             if braceDepth == 0 { foundBlockKey = true }
         }
-        return keys
+        return entries
+    }
+
+    private static func extractScalarValue(
+        from characters: [Character],
+        startingAt start: Int,
+        inBrace: Bool
+    ) -> String {
+        var end = characters.count
+        var quote: Character?
+        var escaped = false
+        var nestedBraces = 0
+
+        for i in start..<characters.count {
+            let c = characters[i]
+            if escaped {
+                escaped = false
+                continue
+            }
+            if c == "\\", quote == "\"" {
+                escaped = true
+                continue
+            }
+            if let q = quote {
+                if c == q { quote = nil }
+                continue
+            }
+            if c == "\"" || c == "'" {
+                quote = c
+                continue
+            }
+            if c == "#" {
+                end = i
+                break
+            }
+            if inBrace {
+                if c == "{" || c == "[" {
+                    nestedBraces += 1
+                } else if c == "}" || c == "]" {
+                    if nestedBraces == 0 {
+                        end = i
+                        break
+                    }
+                    nestedBraces -= 1
+                } else if c == "," && nestedBraces == 0 {
+                    end = i
+                    break
+                }
+            }
+        }
+        guard start <= end else { return "" }
+        return String(characters[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func normalizedPluginValue(_ raw: String) -> String? {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if (value.hasPrefix("\"") && value.hasSuffix("\""))
+            || (value.hasPrefix("'") && value.hasSuffix("'")) {
+            value.removeFirst()
+            value.removeLast()
+            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard !value.isEmpty,
+              value.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
+        else { return nil }
+        return value.lowercased()
     }
 
     private static func normalizedKey(_ candidate: String) -> String? {

