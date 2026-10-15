@@ -4,6 +4,34 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.5] - 2026-10-15
+
+Customizable menu bar icons with 41 paired SF Symbols and live dual-state switching, reinforced transparent proxy release gates, and parallel release acceptance pipeline.
+
+### Added
+
+- **Customizable Menu Bar Icons (`AppMenuBarIconController`)**:
+  - Added support for 41 carefully selected and pre-validated native SF Symbols in Settings > General > Menu Bar Icon.
+  - Dual-state paired mapping: smooth transition between outline (disconnected) and solid fill (connected).
+  - Seamless integration with existing `MenuBarBadgedIcon`: automatically overlays a 6pt blue badge when an update is available.
+  - Zero-bundle-overhead design: leverages native system symbols with automatic light/dark template adaptation.
+  - Embedded release gate `Tests/MenuBarIcon/run.sh` in the standard test suite to guarantee symbol availability, badge rendering, and persistence fallback.
+- **Reinforced Transparent Proxy 5-Point Release Gates**:
+  - Implemented 5 mandatory gates for transparent proxy verification: UDP 53 datagram routing and synthetic port mapping, LAN/loopback bypass, ClientHello SNI recovery, raw HTTP/IP routing, and 60-burst concurrency stress testing.
+
+### Optimized
+
+- **Dual-Track Parallel Release Pipeline (`run_release_acceptance_parallel.sh`)**:
+  - Restructured release acceptance to run Tart VM matrix and remote physical Mac mini performance gates concurrently.
+  - Optimized remote Tailscale file transfer via single compressed package streaming.
+  - Compressed total acceptance time from >45 minutes down to ~7.5 minutes without compromising quality.
+
+### Verified
+
+- Local regression suite (`test_network_switch_gate.py`, `EngineReconnect`, `RuntimeEnvironment`, `test.sh`, and `Tests/MenuBarIcon/run.sh`) all passed cleanly.
+- Dual-track parallel release acceptance passed on Tart VM `macos27` (210 checks, 0 failures) and physical Apple Silicon Mac mini (`chenxu@100.64.0.3`).
+- UI performance and memory budget gate passed cleanly (page switch p95 ≤ 180 ms, memory ≤ 90 MB).
+
 ## [1.7.4] - 2026-10-14
 
 Outbound DNS multi-hop hosts alias chain resolution, transparent proxy upstream hosts-alias exclusion, and automated Clash Verge subscription compatibility verification gate.

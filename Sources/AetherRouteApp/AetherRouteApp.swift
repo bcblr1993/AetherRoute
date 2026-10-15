@@ -412,6 +412,7 @@ struct AetherRouteApp: App {
     @StateObject private var language: AppLanguageController
     @StateObject private var appearance: AppAppearanceController
     @StateObject private var dockVisibility: AppDockVisibilityController
+    @StateObject private var menuBarIconController: AppMenuBarIconController
     @StateObject private var startup: AppStartupController
     @StateObject private var tunnel: TunnelManager
     @StateObject private var automation: AppAutomationController
@@ -426,6 +427,7 @@ struct AetherRouteApp: App {
         _appearance = StateObject(wrappedValue: AppAppearanceController())
         let dockVisibility = AppDockVisibilityController.shared
         _dockVisibility = StateObject(wrappedValue: dockVisibility)
+        _menuBarIconController = StateObject(wrappedValue: AppMenuBarIconController.shared)
         _startup = StateObject(wrappedValue: AppStartupController.shared)
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
         if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] != nil {
@@ -493,6 +495,7 @@ struct AetherRouteApp: App {
             SettingsView()
                 .environmentObject(appearance)
                 .environmentObject(dockVisibility)
+                .environmentObject(menuBarIconController)
                 .environmentObject(startup)
                 .environmentObject(tunnel)
                 .environmentObject(automation)
@@ -659,7 +662,7 @@ struct AetherRouteApp: App {
     }
 
     private var menuBarIcon: String {
-        tunnel.isConnected ? "paperplane.fill" : "paperplane"
+        menuBarIconController.currentSymbol(isConnected: tunnel.isConnected)
     }
 
     /// The menu bar shows no text, so connection state has to reach VoiceOver
@@ -1468,35 +1471,6 @@ private struct MenuNodeListInline: View {
     }
 }
 
-/// The status-item glyph with a small blue "update available" dot.
-enum MenuBarBadgedIcon {
-    static func image(symbol: String) -> NSImage {
-        let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-        guard let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(configuration)
-        else { return NSImage() }
-        let dot: CGFloat = 6
-        let size = NSSize(width: glyph.size.width + dot / 2, height: glyph.size.height)
-        let image = NSImage(size: size, flipped: false) { _ in
-            // Resolved at draw time, so the glyph follows the menu bar's
-            // current appearance like a template image would.
-            let glyphRect = NSRect(origin: .zero, size: glyph.size)
-            glyph.draw(in: glyphRect)
-            NSColor.labelColor.set()
-            glyphRect.fill(using: .sourceAtop)
-            let dotRect = NSRect(x: size.width - dot, y: size.height - dot, width: dot, height: dot)
-            // Knock a thin gap out of the glyph around the dot.
-            NSGraphicsContext.current?.compositingOperation = .clear
-            NSBezierPath(ovalIn: dotRect.insetBy(dx: -1.5, dy: -1.5)).fill()
-            NSGraphicsContext.current?.compositingOperation = .sourceOver
-            NSColor.controlAccentColor.set()
-            NSBezierPath(ovalIn: dotRect).fill()
-            return true
-        }
-        image.isTemplate = false
-        return image
-    }
-}
 
 /// The current version beside the menu's "···" button. When Sparkle has
 /// found a newer release it becomes a tappable "New version" pill that stays
@@ -1805,6 +1779,7 @@ private struct SettingsView: View {
     @EnvironmentObject private var language: AppLanguageController
     @EnvironmentObject private var appearance: AppAppearanceController
     @EnvironmentObject private var dockVisibility: AppDockVisibilityController
+    @EnvironmentObject private var menuBarIconController: AppMenuBarIconController
     @EnvironmentObject private var startup: AppStartupController
     @State private var localProxyCopyMessage: String?
     @State private var selectedTab: SettingsTab?
@@ -1946,6 +1921,7 @@ private struct SettingsView: View {
             appearanceSettings
             languageSettings
             dockSettings
+            menuBarIconSettings
             startupSettings
             automationSettings
 
@@ -2118,11 +2094,28 @@ private struct SettingsView: View {
             )
             .accessibilityIdentifier("hide-dock-icon-toggle")
         } header: {
-            Text(AppLocalization.string("Dock & Menu Bar"))
+            Text(AppLocalization.string("Dock"))
         } footer: {
             Text(
                 AppLocalization.string(
                     "Keep AetherRoute in the menu bar only without a Dock icon. The main window can be reopened from the menu bar or by clicking the app icon."
+                )
+            )
+        }
+    }
+
+    private var menuBarIconSettings: some View {
+        Section {
+            MenuBarIconPickerView(
+                controller: menuBarIconController,
+                isConnected: tunnel.isConnected
+            )
+        } header: {
+            Text(AppLocalization.string("Menu Bar Icon"))
+        } footer: {
+            Text(
+                AppLocalization.string(
+                    "Select the icon to display in the macOS menu bar. Outline indicates disconnected, and solid fill indicates connected."
                 )
             )
         }
@@ -2635,3 +2628,108 @@ private struct InitialFocusAnchor: NSViewRepresentable {
     func makeNSView(context: Context) -> AnchorView { AnchorView() }
     func updateNSView(_ view: AnchorView, context: Context) {}
 }
+
+private struct MenuBarIconPickerView: View {
+    @ObservedObject var controller: AppMenuBarIconController
+    let isConnected: Bool
+
+    private let columns = [
+        GridItem(.adaptive(minimum: 38, maximum: 46), spacing: AetherVisual.s1)
+    ]
+
+    var body: some View {
+        HStack(alignment: .top, spacing: AetherVisual.s4) {
+            VStack(spacing: AetherVisual.s2) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                        .fill(AetherVisual.cardFill)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
+                                .strokeBorder(AetherVisual.tintBorder(Color.secondary), lineWidth: 1)
+                        )
+
+                    Image(systemName: controller.currentSymbol(isConnected: isConnected))
+                        .font(.largeTitle)
+                        .foregroundStyle(.primary)
+                }
+                .frame(width: 84, height: 84)
+
+                Text(controller.currentIcon.localizedTitle)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .lineLimit(1)
+
+                Text(isConnected ? AppLocalization.string("Connected") : AppLocalization.string("Disconnected"))
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(isConnected ? Color.accentColor : Color.secondary)
+                    .padding(.horizontal, AetherVisual.sCompact)
+                    .padding(.vertical, AetherVisual.sMicro)
+                    .background(isConnected ? AetherVisual.selectionFill : AetherVisual.neutralFill, in: Capsule())
+            }
+            .frame(width: 96)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(currentAccessibilityLabel)
+
+            LazyVGrid(columns: columns, spacing: AetherVisual.s1) {
+                ForEach(AppMenuBarIconOption.allCases) { option in
+                    MenuBarIconCell(
+                        option: option,
+                        isSelected: controller.currentIcon == option,
+                        action: {
+                            withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
+                                controller.select(option)
+                            }
+                        }
+                    )
+                }
+            }
+        }
+        .padding(.vertical, AetherVisual.s1)
+    }
+
+    private var currentAccessibilityLabel: String {
+        let prefix = AppLocalization.string("Current")
+        return "\(prefix): \(controller.currentIcon.localizedTitle)"
+    }
+}
+
+private struct MenuBarIconCell: View {
+    let option: AppMenuBarIconOption
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+                    .fill(backgroundFill)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+                            .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
+                    )
+
+                Image(systemName: option.unconnectedSymbol)
+                    .font(.callout)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+            }
+            .frame(height: 36)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .accessibilityLabel(option.localizedTitle)
+        .accessibilityIdentifier("menu-bar-icon-\(option.rawValue)")
+    }
+
+    private var backgroundFill: Color {
+        if isSelected {
+            return AetherVisual.selectionFill
+        }
+        if isHovered {
+            return AetherVisual.hoverFill
+        }
+        return AetherVisual.subtleFill
+    }
+}
+

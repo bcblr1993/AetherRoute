@@ -112,7 +112,7 @@ run_profile() {
   evidence="$OUTPUT/$profile"
   mkdir -p "$evidence"
   echo "==> $profile: switching pages for $SECONDS_PER_PROFILE s on $REMOTE"
-  $SSH "$REMOTE" "pkill -f '$REMOTE_DIR/AetherRoute.app' 2>/dev/null; rm -rf '$REMOTE_DIR/Home' '$REMOTE_DIR/footprint.txt' '$REMOTE_DIR/app.log'; mkdir -p '$REMOTE_DIR/Home/tmp'"
+  $SSH "$REMOTE" "pkill -f '$REMOTE_DIR/AetherRoute.app' 2>/dev/null; find '$REMOTE_DIR/Home' -depth -delete 2>/dev/null; rm -f '$REMOTE_DIR/footprint.txt' '$REMOTE_DIR/app.log'; mkdir -p '$REMOTE_DIR/Home/tmp'"
   # `open` starts the app in the logged-in GUI session; cfprefsd ignores
   # HOME, so the review bundle's defaults are cleared before and after.
   $SSH "$REMOTE" "defaults delete com.aetherroute.desktop.ui-review >/dev/null 2>&1; \
@@ -138,7 +138,7 @@ run_profile() {
   rsync -a -e "$SSH" "$REMOTE:$REMOTE_DIR/Home/samples.csv" \
     "$REMOTE:$REMOTE_DIR/footprint.txt" "$REMOTE:$REMOTE_DIR/app.log" \
     "$evidence/" 2>/dev/null || true
-  $SSH "$REMOTE" "rm -rf '$REMOTE_DIR/Home' '$REMOTE_DIR/footprint.txt' '$REMOTE_DIR/app.log'; defaults delete com.aetherroute.desktop.ui-review >/dev/null 2>&1; true"
+  $SSH "$REMOTE" "find '$REMOTE_DIR/Home' -depth -delete 2>/dev/null; rm -f '$REMOTE_DIR/footprint.txt' '$REMOTE_DIR/app.log'; defaults delete com.aetherroute.desktop.ui-review >/dev/null 2>&1; true"
 }
 
 for profile in $PROFILES; do

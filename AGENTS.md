@@ -23,6 +23,7 @@
   ./scripts/test.sh
   ```
   - 核心回归已内嵌并强制执行 Shadowsocks 插件与混淆配置门禁（`scripts/test_plugin_obfs_subscription_gate.sh`），验证 `plugin: obfs`、`v2ray-plugin`、`shadow-tls` 内置插件与真实 Clash Verge 订阅加载通过，并严防任意可执行命令/未知插件注入。
+  - 核心回归已内嵌并强制执行菜单栏自定义图标门禁（`Tests/MenuBarIcon/run.sh`），验证全量 41 款配对 SF Symbols 矢量图形有效性、未连接/已连接双态平滑切换、更新红点 Badge 渲染、以及配置持久化与未知非法值安全回退。
 - 运行 12 种协议的真实互通门禁（`test.sh` 只校验运行脚本文本，不会真正连接）。首次运行先下载并校验第三方服务端（sing-box、shadow-tls、Xray、Mihomo，均按固定 SHA-256 校验；WireGuard 服务端从源码编译），缓存在已被忽略的 `build/interop-tools`：
   ```bash
   ./scripts/fetch_interop_tools.sh
