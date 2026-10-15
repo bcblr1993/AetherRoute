@@ -12,6 +12,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
     case dnsRespectRules
     case dnsHosts
     case applicationRules
+    case allowLAN
 
     var id: String { rawValue }
 
@@ -31,6 +32,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
         case .dnsRespectRules: AppLocalization.string("Rule-aware queries")
         case .dnsHosts: AppLocalization.string("Hosts mapping")
         case .applicationRules: AppLocalization.string("How do application rules work?")
+        case .allowLAN: AppLocalization.string("How do I use LAN shared proxy?")
         }
     }
 
@@ -152,6 +154,33 @@ enum HelpTopic: String, CaseIterable, Identifiable {
                     heading: AppLocalization.string("Profiles"),
                     lines: [
                         AppLocalization.string("Profile rules of type PROCESS-NAME, PROCESS-PATH and PROCESS-PATH-REGEX work the same way."),
+                    ]
+                ),
+            ]
+        case .allowLAN:
+            [
+                Section(
+                    heading: AppLocalization.string("iPhone / iPad setup"),
+                    lines: [
+                        AppLocalization.string("1. Open Settings › Wi-Fi and tap the \u{201C}i\u{201D} icon beside your connected Wi-Fi."),
+                        AppLocalization.string("2. Scroll to the bottom and tap Configure Proxy › Manual."),
+                        AppLocalization.string("3. Enter this Mac's LAN IP for Server, and the port (7890) for Port. Tap Save."),
+                    ]
+                ),
+                Section(
+                    heading: AppLocalization.string("Android & other devices"),
+                    lines: [
+                        AppLocalization.string("Android: Open Wi-Fi details › Advanced / Proxy › set to Manual and enter this Mac's IP and port 7890."),
+                        AppLocalization.string("Smart TV / Apple TV / Switch: Enter the same IP and port in network proxy settings."),
+                    ]
+                ),
+                Section(
+                    heading: AppLocalization.string("Requirements & troubleshooting"),
+                    lines: [
+                        AppLocalization.string("Both devices must be connected to the same Wi-Fi router / local network."),
+                        AppLocalization.string("This Mac must stay awake while sharing the proxy connection."),
+                        AppLocalization.string("If macOS Firewall prompts for incoming connections, choose Allow."),
+                        AppLocalization.string("For security, keep LAN sharing disabled when connecting to public Wi-Fi."),
                     ]
                 ),
             ]

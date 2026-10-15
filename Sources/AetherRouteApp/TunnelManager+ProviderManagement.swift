@@ -300,12 +300,13 @@ extension TunnelManager {
             let validated = try updated.validated()
             if !isUIReviewMode {
                 try localProxySettingsStore.save(validated)
+                LANProxyServerController.shared.updateConfiguration(settings: validated)
             }
             localProxySettings = validated
             localProxySettingsMessage = validated.isEnabled
-                ? AppLocalization.string(
-                    "The loopback proxy will start with the next TUN connection."
-                )
+                ? (validated.allowLAN
+                    ? AppLocalization.string("LAN shared proxy is active.")
+                    : AppLocalization.string("The loopback proxy will start with the next TUN connection."))
                 : AppLocalization.string("The loopback proxy is off.")
         } catch {
             localProxySettingsMessage = error.localizedDescription

@@ -1021,9 +1021,67 @@ private struct MenuBarContent: View {
                 // trailing edges still line up with the routing control above.
                 .frame(width: 184)
             }
+            rowDivider
+            panelRow(
+                symbol: "network",
+                tint: .teal,
+                title: AppLocalization.string("Allow LAN"),
+                help: .allowLAN
+            ) {
+                Toggle(
+                    AppLocalization.string("Allow LAN"),
+                    isOn: Binding(
+                        get: { tunnel.localProxySettings.isEnabled && tunnel.localProxySettings.allowLAN },
+                        set: { enabled in
+                            withAnimation(AetherVisual.animation(AetherVisual.disclosure)) {
+                                tunnel.updateLocalProxySettings { settings in
+                                    if enabled {
+                                        settings.isEnabled = true
+                                        settings.allowLAN = true
+                                    } else {
+                                        settings.allowLAN = false
+                                    }
+                                }
+                            }
+                        }
+                    )
+                )
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .labelsHidden()
+                .accessibilityIdentifier("menu-allow-lan-toggle")
+            }
+            if tunnel.localProxySettings.isEnabled && tunnel.localProxySettings.allowLAN {
+                VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                    HStack(spacing: AetherVisual.s2) {
+                        Image(systemName: "iphone.and.arrow.forward")
+                            .foregroundStyle(.teal)
+                            .font(.callout)
+                        let lanIP = LANProxyServerController.shared.currentLANIP
+                        let port = tunnel.localProxySettings.httpPort
+                        Text(verbatim: "\(lanIP):\(port)")
+                            .font(.callout.monospaced().weight(.semibold))
+                        Spacer()
+                        LanCopyGuideButton(
+                            guideText: tunnel.localProxySettings.lanConfigurationGuide(lanIP: lanIP)
+                        )
+                    }
+                    Text(AppLocalization.string("Other devices on this Wi-Fi can connect to this proxy."))
+                        .font(.caption2)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                }
+                .padding(.horizontal, AetherVisual.s3)
+                .padding(.vertical, AetherVisual.s2)
+                .background(AetherVisual.tintWash(.teal), in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous))
+                .padding(.horizontal, AetherVisual.s2)
+                .padding(.bottom, AetherVisual.s2)
+                .transition(AetherVisual.insertion)
+                .clipped()
+            }
 #endif
         }
         .aetherGlass(in: RoundedRectangle(cornerRadius: Self.groupRadius, style: .continuous))
+        .animation(AetherVisual.animation(AetherVisual.disclosure), value: tunnel.localProxySettings.allowLAN)
     }
 
     private var rowDivider: some View {
@@ -1296,6 +1354,43 @@ private struct MenuBarContent: View {
 
     private func openMainWindow() {
         AppWindowManager.shared.showMainWindow()
+    }
+}
+
+private struct LanCopyGuideButton: View {
+    let guideText: String
+    @State private var didCopy = false
+    @State private var resetTask: Task<Void, Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(guideText, forType: .string)
+            withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
+                didCopy = true
+            }
+            resetTask?.cancel()
+            resetTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1.6))
+                guard !Task.isCancelled else { return }
+                withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
+                    didCopy = false
+                }
+            }
+        } label: {
+            HStack(spacing: AetherVisual.sMicro) {
+                Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                    .foregroundStyle(didCopy ? AnyShapeStyle(AetherReadableTint(color: .green)) : AnyShapeStyle(Color.primary))
+                Text(didCopy ? AppLocalization.string("Copied") : AppLocalization.string("Copy Guide"))
+                    .foregroundStyle(didCopy ? AnyShapeStyle(AetherReadableTint(color: .green)) : AnyShapeStyle(Color.primary))
+            }
+            .font(.caption.weight(.medium))
+        }
+        .buttonStyle(.aetherGlassCapsule)
+        .accessibilityIdentifier("menu-copy-lan-guide-button")
+        .onDisappear { resetTask?.cancel() }
     }
 }
 
@@ -2212,6 +2307,42 @@ private struct SettingsView: View {
                     || !tunnel.canModifyLocalProxySettings
             )
             .accessibilityIdentifier("local-proxy-toggle")
+
+            Toggle(
+                AppLocalization.string("Allow LAN connections"),
+                isOn: Binding(
+                    get: { tunnel.localProxySettings.allowLAN },
+                    set: { enabled in
+                        withAnimation(AetherVisual.animation(AetherVisual.disclosure)) {
+                            tunnel.setLocalProxyAllowLAN(enabled)
+                        }
+                    }
+                )
+            )
+            .disabled(
+                !tunnel.localProxySettings.isEnabled
+                    || !tunnel.canModifyLocalProxySettings
+            )
+            .accessibilityIdentifier("local-proxy-allow-lan-toggle")
+
+            if tunnel.localProxySettings.isEnabled && tunnel.localProxySettings.allowLAN {
+                let lanIP = LANProxyServerController.shared.currentLANIP
+                LabeledContent(AppLocalization.string("LAN proxy")) {
+                    HStack(spacing: AetherVisual.s2) {
+                        Text(verbatim: "\(lanIP):\(tunnel.localProxySettings.httpPort)")
+                            .font(.callout.monospaced())
+                        AetherCopyButton(
+                            title: Text(AppLocalization.string("Copy Guide")),
+                            systemImage: "doc.on.doc"
+                        ) {
+                            copyToPasteboard(tunnel.localProxySettings.lanConfigurationGuide(lanIP: lanIP))
+                            localProxyCopyMessage = AppLocalization.string("Guide copied to clipboard.")
+                            return true
+                        }
+                        .accessibilityIdentifier("copy-lan-guide-button")
+                    }
+                }
+            }
 
             LabeledContent(AppLocalization.string("Mixed proxy (HTTP and SOCKS5)")) {
                 LocalProxyPortField(

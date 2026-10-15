@@ -15132,6 +15132,226 @@
           }
         }
       }
+    },
+    "Allow LAN": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许局域网连接"
+          }
+        }
+      }
+    },
+    "Allow LAN connections": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许局域网连接"
+          }
+        }
+      }
+    },
+    "LAN shared proxy is active.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "局域网共享代理已就绪。"
+          }
+        }
+      }
+    },
+    "How do I use LAN shared proxy?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如何使用局域网共享代理？"
+          }
+        }
+      }
+    },
+    "iPhone / iPad setup": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone / iPad 设置"
+          }
+        }
+      }
+    },
+    "1. Open Settings › Wi-Fi and tap the “i” icon beside your connected Wi-Fi.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1. 打开【设置 > 无线局域网】，点击已连接 Wi-Fi 旁的“i”信息图标。"
+          }
+        }
+      }
+    },
+    "2. Scroll to the bottom and tap Configure Proxy › Manual.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2. 滑动到最底部，点击【配置代理】并选择【手动】。"
+          }
+        }
+      }
+    },
+    "3. Enter this Mac's LAN IP for Server, and the port (7890) for Port. Tap Save.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3. 服务器填写当前 Mac 的局域网 IP，端口填写 7890，点击右上角【存储】。"
+          }
+        }
+      }
+    },
+    "Android & other devices": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android 与其他设备"
+          }
+        }
+      }
+    },
+    "Android: Open Wi-Fi details › Advanced / Proxy › set to Manual and enter this Mac's IP and port 7890.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android：在 Wi-Fi 详情中找到【高级选项 / 代理】，设为手动并填写该 IP 与端口。"
+          }
+        }
+      }
+    },
+    "Smart TV / Apple TV / Switch: Enter the same IP and port in network proxy settings.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能电视 / Apple TV / Switch：在网络配置的高级代理中输入该 IP 与端口。"
+          }
+        }
+      }
+    },
+    "Requirements & troubleshooting": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用前提与排查指南"
+          }
+        }
+      }
+    },
+    "Both devices must be connected to the same Wi-Fi router / local network.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手机与 Mac 必须连接同一台路由器 / 局域网。"
+          }
+        }
+      }
+    },
+    "This Mac must stay awake while sharing the proxy connection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享代理期间 Mac 需保持唤醒，休眠或关机将中断代理。"
+          }
+        }
+      }
+    },
+    "If macOS Firewall prompts for incoming connections, choose Allow.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "若 macOS 防火墙弹出传入连接提示，请务必点击【允许】。"
+          }
+        }
+      }
+    },
+    "For security, keep LAN sharing disabled when connecting to public Wi-Fi.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在咖啡厅等公共场所请保持关闭，以保护网络安全。"
+          }
+        }
+      }
+    },
+    "Copy Guide": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制配置说明"
+          }
+        }
+      }
+    },
+    "Guide copied to clipboard.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置说明已复制到剪贴板。"
+          }
+        }
+      }
+    },
+    "LAN proxy address: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "局域网代理地址：%@"
+          }
+        }
+      }
+    },
+    "Other devices on this Wi-Fi can connect to this proxy.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同一局域网内的设备可通过此代理共享网络。"
+          }
+        }
+      }
+    },
+    "LAN proxy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "局域网代理"
+          }
+        }
+      }
+    },
+    "View Tutorial": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看多端教程"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

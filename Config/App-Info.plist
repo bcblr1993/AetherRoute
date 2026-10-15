@@ -40,6 +40,8 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>AetherRoute</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>AetherRoute 需要访问局域网以向同一局域网内的设备提供共享代理服务。</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

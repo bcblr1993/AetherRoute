@@ -415,9 +415,9 @@ if [ "$(plutil -extract 'com\.apple\.security\.network\.server' raw -o - \
 fi
 for bundle in "$app"; do
   entitlements="$temporary/$(basename "$bundle").entitlements.plist"
-  if plutil -extract 'com\.apple\.security\.network\.server' raw -o - \
-    "$entitlements" >/dev/null 2>&1; then
-    echo "network.server escaped the Network Extension boundary: $bundle" >&2
+  if [ "$(plutil -extract 'com\.apple\.security\.network\.server' raw -o - \
+    "$entitlements" 2>/dev/null || echo false)" != true ]; then
+    echo "host application is missing its LAN proxy listener entitlement: $bundle" >&2
     exit 1
   fi
 done

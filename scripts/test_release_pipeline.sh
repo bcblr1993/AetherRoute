@@ -102,7 +102,7 @@ for required in \
   'release bundle architecture inventory is unexpectedly small' \
   'packet tunnel is missing its loopback listener entitlement' \
   'transparent proxy is missing its UDP receive entitlement' \
-  'network.server escaped the Network Extension boundary' \
+  'host application is missing its LAN proxy listener entitlement' \
   'scripts/test.sh' \
   'scripts/test_sanitizers.sh' \
   'source tree changed during release validation'

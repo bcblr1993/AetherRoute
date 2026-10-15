@@ -52,6 +52,7 @@ sh "$ROOT/Tests/WindowVisibility/run.sh"
 sh "$ROOT/Tests/RuntimeEnvironment/run.sh"
 sh "$ROOT/Tests/SparkleAutoUpdateDebounce/run.sh"
 sh "$ROOT/Tests/MenuBarIcon/run.sh"
+sh "$ROOT/Tests/AllowLAN/run.sh"
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_lock_continuity_probe.py"
 "$ROOT/scripts/test_release_soak_evidence.sh"
 "$ROOT/scripts/test_remote_arm64_guards.sh"
@@ -158,17 +159,12 @@ test "$(/usr/libexec/PlistBuddy -c \
 test "$(/usr/libexec/PlistBuddy -c \
   'Print :com.apple.security.network.server' \
   "$ROOT/Config/AetherRouteTransparentProxy.DeveloperID.entitlements")" = true
-for ENTITLEMENTS in \
-  "$ROOT/Config/AetherRoute.entitlements" \
-  "$ROOT/Config/AetherRoute.DeveloperID.entitlements"
-do
-  if /usr/libexec/PlistBuddy -c \
-    'Print :com.apple.security.network.server' \
-    "$ENTITLEMENTS" >/dev/null 2>&1; then
-    echo "Only Network Extensions may request network.server" >&2
-    exit 1
-  fi
-done
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.security.network.server' \
+  "$ROOT/Config/AetherRoute.entitlements")" = true
+test "$(/usr/libexec/PlistBuddy -c \
+  'Print :com.apple.security.network.server' \
+  "$ROOT/Config/AetherRoute.DeveloperID.entitlements")" = true
 
 # Runs unit tests with -scheme AetherRouteUnitTests via test_product_build.sh
 # Gate assertion: Performance measurement fixture escaped into the standard app build

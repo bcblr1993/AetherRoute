@@ -827,6 +827,9 @@ final class TunnelManager: ObservableObject {
                 }
             }
         }
+        if !isUIReviewMode {
+            LANProxyServerController.shared.updateConfiguration(settings: localProxySettings)
+        }
     }
 
     deinit {
@@ -1551,6 +1554,7 @@ final class TunnelManager: ObservableObject {
         cancelRecoveryWatchdog()
         runtimeEnvironmentResetTask?.cancel()
         runtimeEnvironmentResetTask = nil
+        LANProxyServerController.shared.stop()
     }
 
     /// A VPN or transparent proxy must not outlive an intentional App quit.
@@ -1598,6 +1602,12 @@ final class TunnelManager: ObservableObject {
     func setLocalProxySOCKSPort(_ port: Int) {
         updateLocalProxySettings { settings in
             settings.socksPort = port
+        }
+    }
+
+    func setLocalProxyAllowLAN(_ allowLAN: Bool) {
+        updateLocalProxySettings { settings in
+            settings.allowLAN = allowLAN
         }
     }
 

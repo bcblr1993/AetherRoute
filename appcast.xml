@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.7.5 (Build 2026101501)</title>
-            <pubDate>Thu, 15 Oct 2026 12:08:28 +0800</pubDate>
-            <sparkle:version>2026101501</sparkle:version>
-            <sparkle:shortVersionString>1.7.5</sparkle:shortVersionString>
+            <title>Version 1.8.0 (Build 2026101505)</title>
+            <pubDate>Thu, 15 Oct 2026 17:02:31 +0800</pubDate>
+            <sparkle:version>2026101505</sparkle:version>
+            <sparkle:shortVersionString>1.8.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.7.5/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.8.0/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,8 +120,8 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.7.5 更新要点</span>
-  <span class="release-badge">Build 2026101501 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.8.0 更新要点</span>
+  <span class="release-badge">Build 2026101505 · 正式发布</span>
 </div>
 <div class="section">
   <span class="section-tag tag-feature">🚀 核心功能：全面兼容 Shadowsocks 混淆插件</span>
@@ -147,13 +147,13 @@
 </div>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.7.5/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.8.0/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.7.5/AetherRoute-1.7.5-build-2026101501-arm64.dmg"
-                sparkle:edSignature="g7lSdS8b0VSS+NnNSMUR29NZxBwnsnrK4f5qy4Ykj32kt149iKgbzqHMEhn7awqWGiARdYRUPJy7M1JdiU6xDg=="
-                length="27409044"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.8.0/AetherRoute-1.8.0-build-2026101505-arm64.dmg"
+                sparkle:edSignature="7g9PzzGtuwmcHe/NVXOAlKTgNnfEj3oxIHnTwDzzGnvhIcxCgKU5Ld2kVzn/JWJHJih05k5w4t6ZRojUQLSHBA=="
+                length="27468281"
                 type="application/octet-stream" />
         </item>
     </channel>

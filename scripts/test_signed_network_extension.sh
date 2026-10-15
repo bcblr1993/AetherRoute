@@ -495,9 +495,9 @@ if ! codesign -dv --verbose=4 "$APP" 2>&1 \
 fi
 HOST_ENTITLEMENTS="$AUDIT_DIR/host.plist"
 codesign -d --entitlements :- "$APP" >"$HOST_ENTITLEMENTS" 2>/dev/null
-if plutil -extract 'com\.apple\.security\.network\.server' raw -o - \
-  "$HOST_ENTITLEMENTS" >/dev/null 2>&1; then
-  echo "signed host must not carry network.server" >&2
+if [ "$(plutil -extract 'com\.apple\.security\.network\.server' raw -o - \
+  "$HOST_ENTITLEMENTS" 2>/dev/null || echo false)" != true ]; then
+  echo "signed host is missing its LAN proxy listener entitlement" >&2
   exit 1
 fi
 

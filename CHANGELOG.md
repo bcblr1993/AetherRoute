@@ -4,6 +4,41 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] - 2026-10-15
+
+Local area network proxy sharing (Allow LAN) with in-process high-concurrency gateway, intelligent physical IPv4 resolver, in-place button copy feedback, smooth spring animations, and comprehensive multi-platform connection guide.
+
+### Added
+
+- **LAN Proxy Sharing Gateway (`LANProxyServer`)**:
+  - Implemented high-concurrency in-process proxy gateway running within the main application to bypass the strict 15MB Network Extension Jetsam boundary.
+  - Dual-protocol concurrent listeners: Mixed/HTTP inbound on port `7890` (supporting HTTP CONNECT tunneling and absolute-URI HTTP GET) and SOCKS5 inbound on port `7891` (supporting standard handshake and TCP relay).
+  - Outbound proxy traffic initiated by the host server is seamlessly intercepted by active TUN or Transparent Proxy engines, enabling shared devices to automatically benefit from configured rule dispatch and node routing.
+  - Declared `com.apple.security.network.server` entitlement in sandbox configurations to allow compliant inbound network socket binding.
+  - Declared `NSLocalNetworkUsageDescription` in `App-Info.plist` for system privacy compliance.
+- **Physical IPv4 Address Resolver (`LANAddressResolver`)**:
+  - Dynamically scans active network interfaces and extracts primary physical LAN IPv4 addresses, automatically filtering out `lo0` loopback, `utun` virtual tunnels, `awdl`, and point-to-point links.
+- **In-Place Copy Feedback (`LanCopyGuideButton`)**:
+  - Replaced disruptive modal dialogs and alert banners with inline micro-animations: displays a smooth 1.6-second green checkmark indicator directly within the button upon clicking.
+- **Comprehensive Multi-Platform Connection Guide (`HelpTopics.allowLAN`)**:
+  - Built-in step-by-step connection guide covering iOS (Wi-Fi HTTP Proxy), Android (WLAN Proxy), macOS (System Proxy), Windows 11/10 (Proxy Settings), Linux (environment variables `http_proxy`/`all_proxy`), and command-line cURL/Git proxy configurations.
+- **Dedicated Release Test Gate (`Tests/AllowLAN/run.sh`)**:
+  - Embedded mandatory test gate into `./scripts/test.sh` to enforce default security boundaries (disabled by default, strict port binding), address resolution, and real Socket proxy handshakes (HTTP CONNECT, HTTP GET, and SOCKS5).
+
+### Optimized
+
+- **Settings & Menu Bar Expansion Animation**:
+  - Applied `AetherVisual.disclosure` spring animation tokens to Allow LAN detail cards in Settings and Menu Bar popover, eliminating layout jitter.
+
+### Verified
+
+- Local regression test suites (`test_network_switch_gate.py`, `EngineReconnect`, `RuntimeEnvironment`, `test.sh`, and `Tests/AllowLAN/run.sh`) passed 100%.
+- All 12 real protocol interop gates passed (matrix, reality, wireguard, shadowquic, ssh; 48 test cases, 26 certificate rejections).
+- Live Tart VM (`macos27`) verified with real cross-network traffic (HTTP 200, HTTPS CONNECT HTTP/2 200, SOCKS5 HTTP/2 200).
+- Dual-track parallel release acceptance (`run_release_acceptance_parallel.sh`) completed in 9m 45s:
+  - Tart VM 6-dimension matrix: 210 checks (158 PASS, 0 FAIL, 52 SKIP), all 5 transparent proxy enhanced gates passed.
+  - Remote physical Mac mini UI performance & memory budget: showcase page switch p95 146.7 ms (budget <=180 ms), footprint median 68 MB (budget <=90 MB); large profile page switch p95 145.5 ms, footprint median 68 MB.
+
 ## [1.7.5] - 2026-10-15
 
 Customizable menu bar icons with 41 paired SF Symbols and live dual-state switching, reinforced transparent proxy release gates, and parallel release acceptance pipeline.

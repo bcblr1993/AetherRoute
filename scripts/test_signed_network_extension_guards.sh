@@ -60,7 +60,7 @@ for required in \
   'packet-tunnel-provider' \
   'app-proxy-provider' \
   'Developer ID Application' \
-  'signed host must not carry network.server' \
+  'signed host is missing its LAN proxy listener entitlement' \
   'network.server escaped the signed Network Extension boundary'
 do
   grep -F -- "$required" "$SCRIPT" >/dev/null || {

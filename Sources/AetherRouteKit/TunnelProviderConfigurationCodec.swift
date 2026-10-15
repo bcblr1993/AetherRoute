@@ -207,6 +207,7 @@ public enum TunnelProviderConfigurationCodec {
     public static let localProxyEnabledKey = "localProxyEnabled"
     public static let localProxyHTTPPortKey = "localProxyHTTPPort"
     public static let localProxySOCKSPortKey = "localProxySOCKSPort"
+    public static let localProxyAllowLANKey = "localProxyAllowLAN"
     public static let ipv6EnabledKey = "ipv6Enabled"
 
     public static func setting(
@@ -222,6 +223,7 @@ public enum TunnelProviderConfigurationCodec {
         configuration[localProxyEnabledKey] = localProxy.isEnabled
         configuration[localProxyHTTPPortKey] = localProxy.httpPort
         configuration[localProxySOCKSPortKey] = localProxy.socksPort
+        configuration[localProxyAllowLANKey] = localProxy.allowLAN
         configuration[ipv6EnabledKey] = enableIPv6
         return configuration
     }
@@ -278,11 +280,13 @@ public enum TunnelProviderConfigurationCodec {
               ) else {
             throw TunnelProviderConfigurationError.invalidLocalProxy
         }
+        let allowLAN = configuration[localProxyAllowLANKey] as? Bool ?? false
         do {
             return try LocalProxySettings(
                 isEnabled: isEnabled,
                 httpPort: httpPort,
-                socksPort: socksPort
+                socksPort: socksPort,
+                allowLAN: allowLAN
             ).validated()
         } catch {
             throw TunnelProviderConfigurationError.invalidLocalProxy
