@@ -83,7 +83,7 @@ enum AppMenuBarIconOption: String, CaseIterable, Identifiable {
         case .command: "command"
         case .cpu: "cpu"
         case .memorychip: "memorychip"
-        case .gauge: "gauge.with.dots.needle.33percent"
+        case .gauge: "gauge.with.needle"
         case .fanblades: "fanblades"
         case .gearshape: "gearshape"
         case .terminal: "terminal"
@@ -98,7 +98,7 @@ enum AppMenuBarIconOption: String, CaseIterable, Identifiable {
         case .cat: "cat"
         case .hare: "hare"
         case .tortoise: "tortoise"
-        case .ellipsis: "ellipsis"
+        case .ellipsis: "ellipsis.circle"
         }
     }
 
@@ -129,7 +129,7 @@ enum AppMenuBarIconOption: String, CaseIterable, Identifiable {
         case .command: "command"
         case .cpu: "cpu.fill"
         case .memorychip: "memorychip.fill"
-        case .gauge: "gauge.with.dots.needle.67percent"
+        case .gauge: "gauge.with.needle.fill"
         case .fanblades: "fanblades.fill"
         case .gearshape: "gearshape.fill"
         case .terminal: "terminal.fill"
@@ -226,34 +226,74 @@ final class AppMenuBarIconController: ObservableObject {
     func currentSymbol(isConnected: Bool) -> String {
         currentIcon.symbol(isConnected: isConnected)
     }
+
+    func menuBarImage(isConnected: Bool, hasUpdate: Bool = false) -> NSImage {
+        let symbol = currentSymbol(isConnected: isConnected)
+        return MenuBarBadgedIcon.image(symbol: symbol, hasUpdate: hasUpdate)
+    }
 }
 
-/// The status-item glyph with a small blue "update available" dot.
+/// Generates standardized, uniform-sized, pixel-aligned crisp menu bar status item images.
 enum MenuBarBadgedIcon {
-    static func image(symbol: String) -> NSImage {
-        let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+    /// Standard canvas size for menu bar icon (width: 18, height: 18) ensuring identical footprint.
+    static let standardCanvasSize = NSSize(width: 18, height: 18)
+    /// Canvas with notification badge dot (width: 22, height: 18).
+    static let badgedCanvasSize = NSSize(width: 22, height: 18)
+
+    static func image(symbol: String, hasUpdate: Bool = true) -> NSImage {
+        let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
         guard let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(configuration)
-        else { return NSImage() }
-        let dot: CGFloat = 6
-        let size = NSSize(width: glyph.size.width + dot / 2, height: glyph.size.height)
-        let image = NSImage(size: size, flipped: false) { _ in
-            // Resolved at draw time, so the glyph follows the menu bar's
-            // current appearance like a template image would.
-            let glyphRect = NSRect(origin: .zero, size: glyph.size)
-            glyph.draw(in: glyphRect)
-            NSColor.labelColor.set()
-            glyphRect.fill(using: .sourceAtop)
-            let dotRect = NSRect(x: size.width - dot, y: size.height - dot, width: dot, height: dot)
-            // Knock a thin gap out of the glyph around the dot.
-            NSGraphicsContext.current?.compositingOperation = .clear
-            NSBezierPath(ovalIn: dotRect.insetBy(dx: -1.5, dy: -1.5)).fill()
-            NSGraphicsContext.current?.compositingOperation = .sourceOver
-            NSColor.controlAccentColor.set()
-            NSBezierPath(ovalIn: dotRect).fill()
+        else {
+            return NSImage(size: hasUpdate ? badgedCanvasSize : standardCanvasSize)
+        }
+
+        let canvas = hasUpdate ? badgedCanvasSize : standardCanvasSize
+        let maxGlyphWidth: CGFloat = hasUpdate ? 16.0 : 17.0
+        let maxGlyphHeight: CGFloat = 15.0
+
+        let widthRatio = maxGlyphWidth / glyph.size.width
+        let heightRatio = maxGlyphHeight / glyph.size.height
+        let scale = min(widthRatio, heightRatio, 1.0)
+
+        let drawWidth = round(glyph.size.width * scale)
+        let drawHeight = round(glyph.size.height * scale)
+
+        let iconAreaWidth: CGFloat = hasUpdate ? 17.0 : canvas.width
+        let drawX = round((iconAreaWidth - drawWidth) / 2.0)
+        let drawY = round((canvas.height - drawHeight) / 2.0)
+        let drawRect = NSRect(x: drawX, y: drawY, width: drawWidth, height: drawHeight)
+
+        let image = NSImage(size: canvas, flipped: false) { _ in
+            guard let context = NSGraphicsContext.current else { return false }
+            context.imageInterpolation = .high
+
+            if hasUpdate {
+                // With update dot: draw glyph with labelColor so it adapts to menu bar vibrancy
+                glyph.draw(in: drawRect)
+                NSColor.labelColor.set()
+                drawRect.fill(using: .sourceAtop)
+
+                // Accent color update dot with thin transparent gap around it
+                let dotSize: CGFloat = 5.0
+                let dotX = canvas.width - dotSize - 0.5
+                let dotY = canvas.height - dotSize - 1.0
+                let dotRect = NSRect(x: dotX, y: dotY, width: dotSize, height: dotSize)
+
+                context.compositingOperation = .clear
+                NSBezierPath(ovalIn: dotRect.insetBy(dx: -1.0, dy: -1.0)).fill()
+
+                context.compositingOperation = .sourceOver
+                NSColor.controlAccentColor.set()
+                NSBezierPath(ovalIn: dotRect).fill()
+            } else {
+                // Pure template: drawn directly, AppKit applies system vector template caching & vibrancy
+                glyph.draw(in: drawRect)
+            }
             return true
         }
-        image.isTemplate = false
+
+        image.isTemplate = !hasUpdate
         return image
     }
 }

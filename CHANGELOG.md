@@ -4,6 +4,33 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.1] - 2026-10-15
+
+Menu Bar custom icons sharpness and uniform optical canvas across 41 SF Symbols, industrial-grade Allow LAN proxy server hardening (Single-fire closure guard, lock-safe state management, 15s timeout defense, IPv6 target support, and 256-connection pool limit), and dual-track automated release verification.
+
+### Added & Optimized
+
+- **Menu Bar Icon Sharpness & Uniform Optical Alignment (`AppMenuBarIconController`)**:
+  - Eliminated blurriness and visual size discrepancy across all 41 customizable SF Symbols in the system menu bar and Settings picker.
+  - Standardized unified 18x18 pt optical canvas (`MenuBarBadgedIcon.image`) with scale-to-fit normalization (max 17x15 pt bounding box), `.medium` weight at 15pt, and strict integer-rounded pixel alignments to eliminate sub-pixel antialiasing blur.
+  - Fixed `isTemplate = true` on generated bitmap images for crisp native vector rendering across macOS light and dark menu bar modes.
+  - Optimized symbol pairings: `ellipsis` updated to `ellipsis.circle` / `ellipsis.circle.fill`; `gauge` updated to `gauge.with.needle` / `gauge.with.needle.fill`.
+  - Standardized Settings icon picker grid cells with fixed 40x38 pt frames and 22x22 pt symbol frames for pixel-perfect uniformity.
+- **Allow LAN Proxy Server Industrial-Grade Hardening (`LANProxyServer`)**:
+  - Enhanced thread safety with dedicated queue synchronization across listener and client connection state management.
+  - Single-fire closure guard (`closeOnce`) preventing duplicate socket closures and potential crash vectors.
+  - Comprehensive 15-second connection and handshake timeout defense against slow-loris attacks and zombie hanging sockets.
+  - Full IPv6 target support including SOCKS5 ATYP `0x04` address resolution and dual-stack outbound connections.
+  - Maximum concurrent connection limit (256-connection pool) to prevent local socket exhaustion and connection storms.
+  - Integrated `NWPathMonitor` dynamic interface observer for seamless listener rebinding when physical network interfaces switch.
+
+### Verified
+
+- Local regression test suites (`test_network_switch_gate.py`, `EngineReconnect`, `RuntimeEnvironment`, `test.sh`, `Tests/AllowLAN/run.sh`, `Tests/MenuBarIcon/run.sh`, `scripts/test_ui_design_token_guards.sh`, and `scripts/verify_ui_design_tokens.sh`) passed 100%.
+- Dual-track parallel release acceptance (`run_release_acceptance_parallel.sh 1.8.1 2026101506`) completed in 7m 56s:
+  - Tart VM (`macos27`) 6-dimensional acceptance matrix: 210 checks (158 PASS, 0 FAIL, 52 SKIP), all 5 transparent proxy enhanced gates passed.
+  - Remote physical Mac mini UI performance & memory budget: showcase page switch p95 145.3 ms (budget <=180 ms), footprint median 73 MB (budget <=90 MB); large profile page switch p95 145.5 ms, footprint median 70 MB.
+
 ## [1.8.0] - 2026-10-15
 
 Local area network proxy sharing (Allow LAN) with in-process high-concurrency gateway, intelligent physical IPv4 resolver, in-place button copy feedback, smooth spring animations, and comprehensive multi-platform connection guide.

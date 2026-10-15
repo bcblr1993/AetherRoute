@@ -1,7 +1,11 @@
-import AetherRouteKit
+import Darwin
 import Foundation
 import Network
 import OSLog
+
+#if canImport(AetherRouteKit)
+import AetherRouteKit
+#endif
 
 /// High-performance local area network (LAN) proxy gateway.
 ///
@@ -15,6 +19,7 @@ import OSLog
 @MainActor
 final class LANProxyServerController: ObservableObject {
     static let shared = LANProxyServerController()
+    nonisolated static let maxConcurrentSessions = 256
 
     @Published private(set) var isRunning = false
     @Published private(set) var activeHTTPPort: Int = 7_890
@@ -31,6 +36,11 @@ final class LANProxyServerController: ObservableObject {
     private var httpListener: NWListener?
     private var socksListener: NWListener?
     private var activeSessions: Set<LANProxySession> = []
+    private var pathMonitor: NWPathMonitor?
+    private let pathMonitorQueue = DispatchQueue(
+        label: "com.aetherroute.desktop.lan-proxy-monitor",
+        qos: .utility
+    )
     private let serverQueue = DispatchQueue(
         label: "com.aetherroute.desktop.lan-proxy-server",
         qos: .userInitiated
@@ -38,6 +48,28 @@ final class LANProxyServerController: ObservableObject {
 
     private init() {
         refreshLANIP()
+        startPathMonitor()
+    }
+
+    deinit {
+        pathMonitor?.cancel()
+    }
+
+    private func startPathMonitor() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let previousIP = self.currentLANIP
+                self.refreshLANIP()
+                if previousIP != self.currentLANIP {
+                    Self.logger.info("stage=pathUpdate lan_ip_changed from=\(previousIP, privacy: .public) to=\(self.currentLANIP, privacy: .public)")
+                }
+            }
+        }
+        monitor.start(queue: pathMonitorQueue)
+        self.pathMonitor = monitor
     }
 
     func refreshLANIP() {
@@ -158,6 +190,12 @@ final class LANProxyServerController: ObservableObject {
     }
 
     private func acceptConnection(_ connection: NWConnection, defaultMode: LANProxyInitialMode) {
+        guard activeSessions.count < Self.maxConcurrentSessions else {
+            Self.logger.warning("stage=connectionThrottled active=\(self.activeSessions.count) max=\(Self.maxConcurrentSessions)")
+            connection.cancel()
+            return
+        }
+
         let session = LANProxySession(
             clientConnection: connection,
             initialMode: defaultMode,
@@ -198,6 +236,61 @@ enum LANProxyError: LocalizedError, Sendable {
     }
 }
 
+/// Target parser supporting standard hostnames, IPv4, bracketed IPv6, and absolute URLs.
+enum LANTargetParser: Sendable {
+    static func parseHostAndPort(from target: String, defaultPort: Int) -> (host: String, port: Int)? {
+        let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let withoutScheme: String
+        if let schemeRange = trimmed.range(of: "://") {
+            withoutScheme = String(trimmed[schemeRange.upperBound...])
+        } else {
+            withoutScheme = trimmed
+        }
+
+        let authority = withoutScheme.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: true).first.map(String.init) ?? withoutScheme
+        guard !authority.isEmpty else { return nil }
+
+        // Bracketed IPv6: [2001:db8::1] or [2001:db8::1]:8080
+        if authority.hasPrefix("[") {
+            guard let closeBracketIndex = authority.firstIndex(of: "]") else {
+                return nil
+            }
+            let hostPart = String(authority[authority.index(after: authority.startIndex)..<closeBracketIndex])
+            guard !hostPart.isEmpty else { return nil }
+            let remainder = authority[authority.index(after: closeBracketIndex)...]
+            if remainder.hasPrefix(":") {
+                let portStr = String(remainder.dropFirst())
+                guard let port = Int(portStr), (1...65535).contains(port) else {
+                    return nil
+                }
+                return (hostPart, port)
+            } else if remainder.isEmpty {
+                return (hostPart, defaultPort)
+            } else {
+                return nil
+            }
+        }
+
+        // Standard host or IPv4: host:port or host
+        let parts = authority.split(separator: ":", omittingEmptySubsequences: false)
+        if parts.count == 2 {
+            let host = String(parts[0])
+            guard let port = Int(parts[1]), (1...65535).contains(port), !host.isEmpty else {
+                return nil
+            }
+            return (host, port)
+        } else if parts.count == 1 {
+            let host = String(parts[0])
+            guard !host.isEmpty else { return nil }
+            return (host, defaultPort)
+        } else {
+            return nil
+        }
+    }
+}
+
 /// Manages a single client proxy session from handshaking to bidirectional data relay.
 final class LANProxySession: Hashable, @unchecked Sendable {
     let id = UUID()
@@ -206,8 +299,18 @@ final class LANProxySession: Hashable, @unchecked Sendable {
     private let queue: DispatchQueue
     private let onTerminated: @Sendable (LANProxySession) -> Void
 
-    private var remoteConnection: NWConnection?
-    private var isCancelled = false
+    private var lock = os_unfair_lock_s()
+    private var isCancelledInternal = false
+    private var remoteConnectionInternal: NWConnection?
+    private var handshakeTimeoutItem: DispatchWorkItem?
+    private var connectCompletionFired = false
+    private var hasRelayStarted = false
+
+    var isCancelled: Bool {
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
+        return isCancelledInternal
+    }
 
     init(
         clientConnection: NWConnection,
@@ -230,6 +333,8 @@ final class LANProxySession: Hashable, @unchecked Sendable {
     }
 
     func start() {
+        armHandshakeTimeout()
+
         clientConnection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
@@ -244,14 +349,45 @@ final class LANProxySession: Hashable, @unchecked Sendable {
     }
 
     func cancel() {
-        guard !isCancelled else { return }
-        isCancelled = true
+        os_unfair_lock_lock(&lock)
+        if isCancelledInternal {
+            os_unfair_lock_unlock(&lock)
+            return
+        }
+        isCancelledInternal = true
+        let client = clientConnection
+        let remote = remoteConnectionInternal
+        remoteConnectionInternal = nil
+        let timeoutItem = handshakeTimeoutItem
+        handshakeTimeoutItem = nil
+        os_unfair_lock_unlock(&lock)
 
-        clientConnection.cancel()
-        remoteConnection?.cancel()
-        remoteConnection = nil
+        timeoutItem?.cancel()
+        client.cancel()
+        remote?.cancel()
 
         onTerminated(self)
+    }
+
+    private func armHandshakeTimeout() {
+        let item = DispatchWorkItem { [weak self] in
+            guard let self, !self.isCancelled else { return }
+            self.cancel()
+        }
+        os_unfair_lock_lock(&lock)
+        handshakeTimeoutItem = item
+        os_unfair_lock_unlock(&lock)
+
+        queue.asyncAfter(deadline: .now() + 15.0, execute: item)
+    }
+
+    private func disarmHandshakeTimeout() {
+        os_unfair_lock_lock(&lock)
+        let item = handshakeTimeoutItem
+        handshakeTimeoutItem = nil
+        os_unfair_lock_unlock(&lock)
+
+        item?.cancel()
     }
 
     private func readInitialRequest() {
@@ -298,10 +434,11 @@ final class LANProxySession: Hashable, @unchecked Sendable {
         let target = String(parts[1])
 
         if method == "CONNECT" {
-            // HTTPS Tunnel: CONNECT host:port HTTP/1.1
-            let hostAndPort = target.split(separator: ":")
-            let host = String(hostAndPort[0])
-            let port = hostAndPort.count > 1 ? Int(hostAndPort[1]) ?? 443 : 443
+            // HTTPS Tunnel: CONNECT host:port HTTP/1.1 or CONNECT [2001:db8::1]:443 HTTP/1.1
+            guard let (host, port) = LANTargetParser.parseHostAndPort(from: target, defaultPort: 443) else {
+                cancel()
+                return
+            }
 
             connectRemote(host: host, port: port) { [weak self] success in
                 guard let self, success else {
@@ -318,33 +455,21 @@ final class LANProxySession: Hashable, @unchecked Sendable {
                 })
             }
         } else {
-            // Standard HTTP: GET http://host:port/path HTTP/1.1
-            var host: String?
-            var port: Int = 80
+            // Standard HTTP: GET http://host:port/path HTTP/1.1 or relative with Host header
+            var resolvedTarget: (host: String, port: Int)? = LANTargetParser.parseHostAndPort(from: target, defaultPort: 80)
 
-            if target.lowercased().hasPrefix("http://") {
-                let withoutScheme = target.dropFirst(7)
-                let hostPortPart = withoutScheme.split(separator: "/").first ?? ""
-                let hp = hostPortPart.split(separator: ":")
-                host = String(hp[0])
-                if hp.count > 1 {
-                    port = Int(hp[1]) ?? 80
-                }
-            } else {
+            if resolvedTarget == nil {
+                // Check Host header
                 for line in lines.dropFirst() {
                     if line.lowercased().hasPrefix("host:") {
                         let h = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                        let hp = h.split(separator: ":")
-                        host = String(hp[0])
-                        if hp.count > 1 {
-                            port = Int(hp[1]) ?? 80
-                        }
+                        resolvedTarget = LANTargetParser.parseHostAndPort(from: h, defaultPort: 80)
                         break
                     }
                 }
             }
 
-            guard let finalHost = host, !finalHost.isEmpty else {
+            guard let (finalHost, port) = resolvedTarget else {
                 cancel()
                 return
             }
@@ -354,8 +479,18 @@ final class LANProxySession: Hashable, @unchecked Sendable {
                     self?.cancel()
                     return
                 }
+
+                os_unfair_lock_lock(&self.lock)
+                let remote = self.remoteConnectionInternal
+                os_unfair_lock_unlock(&self.lock)
+
+                guard let remote else {
+                    self.cancel()
+                    return
+                }
+
                 // Forward the initial HTTP request directly to target
-                self.remoteConnection?.send(content: data, completion: .contentProcessed { [weak self] sendErr in
+                remote.send(content: data, completion: .contentProcessed { [weak self] sendErr in
                     guard let self, sendErr == nil else {
                         self?.cancel()
                         return
@@ -419,6 +554,22 @@ final class LANProxySession: Hashable, @unchecked Sendable {
                 let domainData = data[offset..<(offset + domainLen)]
                 host = String(data: domainData, encoding: .utf8) ?? String(data: domainData, encoding: .ascii)
                 offset += domainLen
+            } else if atyp == 0x04 {
+                // IPv6: 16 bytes
+                guard data.count >= offset + 16 + 2 else { self.cancel(); return }
+                let ip6Slice = Array(data[offset..<(offset + 16)])
+                offset += 16
+                var in6 = in6_addr()
+                memcpy(&in6, ip6Slice, 16)
+                var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+                if inet_ntop(AF_INET6, &in6, &buffer, socklen_t(INET6_ADDRSTRLEN)) != nil {
+                    host = buffer.withUnsafeBufferPointer { ptr in
+                        ptr.baseAddress.map { String(cString: $0) }
+                    }
+                } else {
+                    self.sendSOCKS5Reply(status: 0x08) // Address type not supported
+                    return
+                }
             } else {
                 self.sendSOCKS5Reply(status: 0x08) // Address type not supported
                 return
@@ -462,32 +613,70 @@ final class LANProxySession: Hashable, @unchecked Sendable {
 
     private func connectRemote(host: String, port: Int, completion: @escaping @Sendable (Bool) -> Void) {
         guard let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else {
-            completion(false)
+            fireConnectCompletion(completion, result: false)
             return
         }
 
         let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: nwPort)
         let remote = NWConnection(to: endpoint, using: .tcp)
 
+        os_unfair_lock_lock(&lock)
+        if isCancelledInternal {
+            os_unfair_lock_unlock(&lock)
+            remote.cancel()
+            fireConnectCompletion(completion, result: false)
+            return
+        }
+        remoteConnectionInternal = remote
+        os_unfair_lock_unlock(&lock)
+
         remote.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
             switch state {
             case .ready:
-                completion(true)
+                self.fireConnectCompletion(completion, result: true)
             case .failed, .cancelled:
-                completion(false)
-                self?.cancel()
+                self.fireConnectCompletion(completion, result: false)
+                self.cancel()
             default:
                 break
             }
         }
 
-        self.remoteConnection = remote
         remote.start(queue: queue)
     }
 
+    private func fireConnectCompletion(_ completion: @escaping @Sendable (Bool) -> Void, result: Bool) {
+        os_unfair_lock_lock(&lock)
+        if connectCompletionFired || isCancelledInternal {
+            os_unfair_lock_unlock(&lock)
+            return
+        }
+        connectCompletionFired = true
+        os_unfair_lock_unlock(&lock)
+
+        completion(result)
+    }
+
     private func startBidirectionalRelay() {
-        relayStream(from: clientConnection, to: remoteConnection)
-        relayStream(from: remoteConnection, to: clientConnection)
+        disarmHandshakeTimeout()
+
+        os_unfair_lock_lock(&lock)
+        if isCancelledInternal || hasRelayStarted {
+            os_unfair_lock_unlock(&lock)
+            return
+        }
+        hasRelayStarted = true
+        let remote = remoteConnectionInternal
+        os_unfair_lock_unlock(&lock)
+
+        guard let remote else {
+            cancel()
+            return
+        }
+
+        relayStream(from: clientConnection, to: remote)
+        relayStream(from: remote, to: clientConnection)
     }
 
     private func relayStream(from source: NWConnection?, to destination: NWConnection?) {
@@ -503,9 +692,7 @@ final class LANProxySession: Hashable, @unchecked Sendable {
             if let data = content, !data.isEmpty, let dest = destConn {
                 dest.send(content: data, completion: .contentProcessed { [weak self, weak sourceConn, weak destConn] sendError in
                     guard let self, !self.isCancelled else { return }
-                    if sendError != nil {
-                        self.cancel()
-                    } else if isComplete {
+                    if sendError != nil || isComplete {
                         self.cancel()
                     } else {
                         self.relayStream(from: sourceConn, to: destConn)

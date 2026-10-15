@@ -477,16 +477,10 @@ struct AetherRouteApp: App {
                 .environmentObject(language)
                 .environment(\.locale, language.locale)
         } label: {
-            // Template artwork follows the menu bar's light/dark appearance.
-            // With an update waiting, a drawn copy adds a blue dot; it draws
-            // the glyph in the menu bar's label colour so it still adapts.
-            Group {
-                if updater.availability.availableVersion != nil {
-                    Image(nsImage: MenuBarBadgedIcon.image(symbol: menuBarIcon))
-                } else {
-                    Image(systemName: menuBarIcon)
-                }
-            }
+            Image(nsImage: menuBarIconController.menuBarImage(
+                isConnected: tunnel.isConnected,
+                hasUpdate: updater.availability.availableVersion != nil
+            ))
             .accessibilityLabel(menuBarAccessibilityLabel)
         }
         .menuBarExtraStyle(.window)
@@ -1359,6 +1353,7 @@ private struct MenuBarContent: View {
 
 private struct LanCopyGuideButton: View {
     let guideText: String
+    var accessibilityIdentifier: String = "menu-copy-lan-guide-button"
     @State private var didCopy = false
     @State private var resetTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1389,7 +1384,7 @@ private struct LanCopyGuideButton: View {
             .font(.caption.weight(.medium))
         }
         .buttonStyle(.aetherGlassCapsule)
-        .accessibilityIdentifier("menu-copy-lan-guide-button")
+        .accessibilityIdentifier(accessibilityIdentifier)
         .onDisappear { resetTask?.cancel() }
     }
 }
@@ -2331,15 +2326,10 @@ private struct SettingsView: View {
                     HStack(spacing: AetherVisual.s2) {
                         Text(verbatim: "\(lanIP):\(tunnel.localProxySettings.httpPort)")
                             .font(.callout.monospaced())
-                        AetherCopyButton(
-                            title: Text(AppLocalization.string("Copy Guide")),
-                            systemImage: "doc.on.doc"
-                        ) {
-                            copyToPasteboard(tunnel.localProxySettings.lanConfigurationGuide(lanIP: lanIP))
-                            localProxyCopyMessage = AppLocalization.string("Guide copied to clipboard.")
-                            return true
-                        }
-                        .accessibilityIdentifier("copy-lan-guide-button")
+                        LanCopyGuideButton(
+                            guideText: tunnel.localProxySettings.lanConfigurationGuide(lanIP: lanIP),
+                            accessibilityIdentifier: "copy-lan-guide-button"
+                        )
                     }
                 }
             }
@@ -2765,7 +2755,7 @@ private struct MenuBarIconPickerView: View {
     let isConnected: Bool
 
     private let columns = [
-        GridItem(.adaptive(minimum: 38, maximum: 46), spacing: AetherVisual.s1)
+        GridItem(.adaptive(minimum: 40, maximum: 44), spacing: AetherVisual.sCompact)
     ]
 
     var body: some View {
@@ -2780,7 +2770,9 @@ private struct MenuBarIconPickerView: View {
                         )
 
                     Image(systemName: controller.currentSymbol(isConnected: isConnected))
-                        .font(.largeTitle)
+                        .font(.largeTitle.weight(.medium))
+                        .symbolRenderingMode(.hierarchical)
+                        .frame(width: 44, height: 44)
                         .foregroundStyle(.primary)
                 }
                 .frame(width: 84, height: 84)
@@ -2801,11 +2793,12 @@ private struct MenuBarIconPickerView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(currentAccessibilityLabel)
 
-            LazyVGrid(columns: columns, spacing: AetherVisual.s1) {
+            LazyVGrid(columns: columns, spacing: AetherVisual.sCompact) {
                 ForEach(AppMenuBarIconOption.allCases) { option in
                     MenuBarIconCell(
                         option: option,
                         isSelected: controller.currentIcon == option,
+                        isConnected: isConnected,
                         action: {
                             withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
                                 controller.select(option)
@@ -2827,6 +2820,7 @@ private struct MenuBarIconPickerView: View {
 private struct MenuBarIconCell: View {
     let option: AppMenuBarIconOption
     let isSelected: Bool
+    let isConnected: Bool
     let action: () -> Void
     @State private var isHovered = false
 
@@ -2840,11 +2834,13 @@ private struct MenuBarIconCell: View {
                             .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
                     )
 
-                Image(systemName: option.unconnectedSymbol)
-                    .font(.callout)
+                Image(systemName: option.symbol(isConnected: isConnected))
+                    .font(.body.weight(.medium))
+                    .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                    .frame(width: 22, height: 22)
             }
-            .frame(height: 36)
+            .frame(height: 38)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

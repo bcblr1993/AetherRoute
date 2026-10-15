@@ -39,11 +39,16 @@ enum AppLocalization {
             precondition(!option.localizedTitle.isEmpty, "\(option.rawValue) localized title must not be empty")
         }
 
-        // 2. Verify MenuBarBadgedIcon generation with all symbols
+        // 2. Verify MenuBarBadgedIcon generation and uniform dimensions with all symbols
         for option in allCases {
             let symbol = option.connectedSymbol
-            let badgedImage = MenuBarBadgedIcon.image(symbol: symbol)
-            precondition(badgedImage.size.width > 0 && badgedImage.size.height > 0, "Badged image generation failed for \(symbol)")
+            let standardImage = MenuBarBadgedIcon.image(symbol: symbol, hasUpdate: false)
+            precondition(standardImage.size == MenuBarBadgedIcon.standardCanvasSize, "Standard image size must be \(MenuBarBadgedIcon.standardCanvasSize), got \(standardImage.size) for \(symbol)")
+            precondition(standardImage.isTemplate, "Standard image must be a template for vector sharpness")
+
+            let badgedImage = MenuBarBadgedIcon.image(symbol: symbol, hasUpdate: true)
+            precondition(badgedImage.size == MenuBarBadgedIcon.badgedCanvasSize, "Badged image size must be \(MenuBarBadgedIcon.badgedCanvasSize), got \(badgedImage.size) for \(symbol)")
+            precondition(!badgedImage.isTemplate, "Badged image must not be a template to display the colored update dot")
         }
 
         // 3. Verify AppMenuBarIconController persistence and fallback isolation
