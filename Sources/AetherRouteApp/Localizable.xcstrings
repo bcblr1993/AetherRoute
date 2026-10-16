@@ -14683,6 +14683,36 @@
         }
       }
     },
+    "Menu Bar": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "菜单栏"
+          }
+        }
+      }
+    },
+    "Show real-time traffic in menu bar": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在菜单栏显示实时网速"
+          }
+        }
+      }
+    },
+    "Display upload and download speeds next to the menu bar icon. Select an icon below.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 macOS 菜单栏图标旁实时显示上行与下行网速。可在下方选择自定图标。"
+          }
+        }
+      }
+    },
     "Menu Bar Icon": {
       "localizations": {
         "zh-Hans": {

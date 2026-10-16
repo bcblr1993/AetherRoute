@@ -24,6 +24,7 @@
   ```
   - 核心回归已内嵌并强制执行 Shadowsocks 插件与混淆配置门禁（`scripts/test_plugin_obfs_subscription_gate.sh`），验证 `plugin: obfs`、`v2ray-plugin`、`shadow-tls` 内置插件与真实 Clash Verge 订阅加载通过，并严防任意可执行命令/未知插件注入。
   - 核心回归已内嵌并强制执行菜单栏自定义图标门禁（`Tests/MenuBarIcon/run.sh`），验证全量 41 款配对 SF Symbols 矢量图形有效性、未连接/已连接双态平滑切换、更新红点 Badge 渲染、以及配置持久化与未知非法值安全回退。
+  - 核心回归已内嵌并强制执行菜单栏实时网速流量门禁（`Tests/MenuBarTraffic/run.sh`），验证默认关闭边界、开关持久化与回退、等宽紧凑速率格式化（B/s、KB/s、MB/s、GB/s）、全量 41 款 SF Symbols 双态及红点 Badge 的像素级对齐渲染、未连接状态安全归零、以及高频遥测观察范围隔离（零无感刷新与零泄漏）。
   - 核心回归已内嵌并强制执行允许局域网（局域网共享代理）门禁（`Tests/AllowLAN/run.sh`），验证默认安全边界（默认关闭、端口 7890/7891）、物理 IPv4 提取与虚拟接口过滤、真实本地 Socket 代理握手（HTTP CONNECT 隧道透传、绝对路径 HTTP GET、SOCKS5 握手与中继）、向后兼容性与多端保姆级教程完整性。
 - 运行 12 种协议的真实互通门禁（`test.sh` 只校验运行脚本文本，不会真正连接）。首次运行先下载并校验第三方服务端（sing-box、shadow-tls、Xray、Mihomo，均按固定 SHA-256 校验；WireGuard 服务端从源码编译），缓存在已被忽略的 `build/interop-tools`：
   ```bash

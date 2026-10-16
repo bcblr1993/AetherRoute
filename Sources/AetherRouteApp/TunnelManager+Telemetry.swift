@@ -112,6 +112,7 @@ extension TunnelManager {
         // loses nothing and an engine restart is detected from them; the
         // baseline is kept. Write what was counted so far.
         saveTrafficLedgerIfNeeded(force: true)
+        MenuBarTrafficController.shared.reset()
     }
 
     func handleRuntimeEnvironmentEvent(
@@ -637,6 +638,10 @@ extension TunnelManager {
     func publishTelemetry(_ snapshot: NetworkTelemetrySnapshot) {
         telemetryViewModel.update(snapshot)
         recordTrafficStatistics(snapshot)
+        MenuBarTrafficController.shared.updateTelemetry(
+            upload: snapshot.uploadBytesPerSecond,
+            download: snapshot.downloadBytesPerSecond
+        )
         let automaticGroups = (activeProfileSummary?.proxyGroups ?? [])
             .filter { $0.strategy.lowercased() != "select" }
             .map(\.name)

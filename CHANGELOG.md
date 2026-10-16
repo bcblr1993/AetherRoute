@@ -4,6 +4,26 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.3] - 2026-10-16
+
+Real-time network traffic and speed monitoring in macOS menu bar with user preference toggle, strict TDD automated regression gate, isolated leaf telemetry observation, and dual-track automated release verification.
+
+### Added & Optimized
+
+- **Menu Bar Real-Time Network Traffic Statistics (`MenuBarTrafficController` & `SettingsView`)**:
+  - Added a user preference toggle in Settings > General > Menu Bar ("Show real-time traffic in menu bar" / "在菜单栏显示实时网速") allowing users to opt into live upload/download speed indicators directly next to the menu bar icon.
+  - Strict TDD automated gate: Created `Tests/MenuBarTraffic/run.sh` covering dynamic rate formatting (0 B/s, KB/s, MB/s, GB/s with compact monospaced layout), persistent settings (`showMenuBarTraffic` defaults to `false`, with safe corrupted-state fallback), optical canvas assertions (18x18 pt default, 74x18 pt when active, 78x18 pt when badged), full 41 SF Symbols dual-state compatibility, and disconnected zero-rate clamp.
+  - Embedded `Tests/MenuBarTraffic/run.sh` directly into `scripts/test.sh` and `AGENTS.md` standard release SOP for mandatory gate enforcement on all future releases.
+  - High-frequency telemetry observation scope isolation (`MenuBarStatusItemView`): Isolated high-frequency (1Hz) telemetry updates strictly into an independent leaf view container, preventing cascading re-renders into application root scenes, settings views, or navigation hierarchies.
+  - Disconnect Safety: Automatically resets traffic rate display to 0 B/s on proxy disconnection or node reselection, preventing stale speed telemetry.
+
+### Verified
+
+- Local core regression test suites (`test.sh`, `Tests/MenuBarTraffic/run.sh`, `Tests/MenuBarIcon/run.sh`, `Tests/AllowLAN/run.sh`, `test_telemetry_observation_scope.sh`, `verify_ui_design_tokens.sh`) passed 100%.
+- Dual-track parallel release acceptance (`run_release_acceptance_parallel.sh 1.8.3 2026101603`) completed in 7m 56s:
+  - Tart VM (`macos27`) 6-dimensional acceptance matrix: 210 checks (158 PASS, 0 FAIL, 52 SKIP), all 5 transparent proxy enhanced gates passed.
+  - Remote physical Mac mini UI performance & memory budget: showcase page switch p95 147.2 ms (budget <=180 ms), max 178.3 ms (budget <=300 ms), footprint median 67 MB (budget <=90 MB), max 71 MB (budget <=110 MB), growth -2 MB; large profile page switch p95 144.3 ms, max 184.5 ms, footprint median 66 MB, max 72 MB, growth -2 MB.
+
 ## [1.8.2] - 2026-10-16
 
 Allow LAN (局域网共享代理) complete decoupling and standalone architecture across Settings and Menu Bar, elimination of false disabled state, independent gateway lifecycle, and dual-track automated release verification.

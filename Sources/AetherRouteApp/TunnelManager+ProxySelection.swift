@@ -603,6 +603,7 @@ extension TunnelManager {
         pendingLatencyFlush = []
         lastLatencyFlushAt = nil
         telemetryViewModel.reset()
+        MenuBarTrafficController.shared.reset()
         automaticGroupLeaves = [:]
     }
 

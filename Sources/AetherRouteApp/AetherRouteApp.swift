@@ -413,6 +413,7 @@ struct AetherRouteApp: App {
     @StateObject private var appearance: AppAppearanceController
     @StateObject private var dockVisibility: AppDockVisibilityController
     @StateObject private var menuBarIconController: AppMenuBarIconController
+    @StateObject private var menuBarTrafficController: MenuBarTrafficController
     @StateObject private var startup: AppStartupController
     @StateObject private var tunnel: TunnelManager
     @StateObject private var automation: AppAutomationController
@@ -428,6 +429,7 @@ struct AetherRouteApp: App {
         let dockVisibility = AppDockVisibilityController.shared
         _dockVisibility = StateObject(wrappedValue: dockVisibility)
         _menuBarIconController = StateObject(wrappedValue: AppMenuBarIconController.shared)
+        _menuBarTrafficController = StateObject(wrappedValue: MenuBarTrafficController.shared)
         _startup = StateObject(wrappedValue: AppStartupController.shared)
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
         if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] != nil {
@@ -477,10 +479,12 @@ struct AetherRouteApp: App {
                 .environmentObject(language)
                 .environment(\.locale, language.locale)
         } label: {
-            Image(nsImage: menuBarIconController.menuBarImage(
+            MenuBarStatusItemView(
+                iconController: menuBarIconController,
+                trafficController: menuBarTrafficController,
                 isConnected: tunnel.isConnected,
                 hasUpdate: updater.availability.availableVersion != nil
-            ))
+            )
             .accessibilityLabel(menuBarAccessibilityLabel)
         }
         .menuBarExtraStyle(.window)
@@ -490,6 +494,7 @@ struct AetherRouteApp: App {
                 .environmentObject(appearance)
                 .environmentObject(dockVisibility)
                 .environmentObject(menuBarIconController)
+                .environmentObject(menuBarTrafficController)
                 .environmentObject(startup)
                 .environmentObject(tunnel)
                 .environmentObject(automation)
@@ -1863,6 +1868,7 @@ private struct SettingsView: View {
     @EnvironmentObject private var appearance: AppAppearanceController
     @EnvironmentObject private var dockVisibility: AppDockVisibilityController
     @EnvironmentObject private var menuBarIconController: AppMenuBarIconController
+    @EnvironmentObject private var menuBarTrafficController: MenuBarTrafficController
     @EnvironmentObject private var startup: AppStartupController
     @State private var localProxyCopyMessage: String?
     @State private var selectedTab: SettingsTab?
@@ -2004,7 +2010,7 @@ private struct SettingsView: View {
             appearanceSettings
             languageSettings
             dockSettings
-            menuBarIconSettings
+            menuBarSettings
             startupSettings
             automationSettings
 
@@ -2187,18 +2193,27 @@ private struct SettingsView: View {
         }
     }
 
-    private var menuBarIconSettings: some View {
+    private var menuBarSettings: some View {
         Section {
+            Toggle(
+                AppLocalization.string("Show real-time traffic in menu bar"),
+                isOn: Binding(
+                    get: { menuBarTrafficController.isEnabled },
+                    set: { menuBarTrafficController.setEnabled($0) }
+                )
+            )
+            .accessibilityIdentifier("show-menubar-traffic-toggle")
+
             MenuBarIconPickerView(
                 controller: menuBarIconController,
                 isConnected: tunnel.isConnected
             )
         } header: {
-            Text(AppLocalization.string("Menu Bar Icon"))
+            Text(AppLocalization.string("Menu Bar"))
         } footer: {
             Text(
                 AppLocalization.string(
-                    "Select the icon to display in the macOS menu bar. Outline indicates disconnected, and solid fill indicates connected."
+                    "Display upload and download speeds next to the menu bar icon. Select an icon below."
                 )
             )
         }
@@ -2737,6 +2752,21 @@ private struct InitialFocusAnchor: NSViewRepresentable {
 
     func makeNSView(context: Context) -> AnchorView { AnchorView() }
     func updateNSView(_ view: AnchorView, context: Context) {}
+}
+
+private struct MenuBarStatusItemView: View {
+    @ObservedObject var iconController: AppMenuBarIconController
+    @ObservedObject var trafficController: MenuBarTrafficController
+    let isConnected: Bool
+    let hasUpdate: Bool
+
+    var body: some View {
+        Image(nsImage: trafficController.menuBarImage(
+            symbol: iconController.currentSymbol(isConnected: isConnected),
+            isConnected: isConnected,
+            hasUpdate: hasUpdate
+        ))
+    }
 }
 
 private struct MenuBarIconPickerView: View {
