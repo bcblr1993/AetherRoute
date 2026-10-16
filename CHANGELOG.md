@@ -4,6 +4,27 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.2] - 2026-10-16
+
+Allow LAN (局域网共享代理) complete decoupling and standalone architecture across Settings and Menu Bar, elimination of false disabled state, independent gateway lifecycle, and dual-track automated release verification.
+
+### Fixed & Optimized
+
+- **Allow LAN Complete Independence & Standalone Architecture (`LANProxyServer` & `SettingsView`)**:
+  - Completely decoupled LAN proxy sharing from the local loopback proxy (`isEnabled`) switch. LAN proxy sharing is now a first-class, standalone capability.
+  - Eliminated the `.disabled(!tunnel.localProxySettings.isEnabled)` constraint in Settings > Network, allowing users to directly toggle "Allow LAN connections" without prior activation of the local loopback proxy.
+  - Aligned Menu Bar and Settings behavior to 100% mutual consistency: toggling Allow LAN in either interface cleanly drives `allowLAN` without mutating `isEnabled`.
+  - Updated in-process `LANProxyServer` to run solely driven by `settings.allowLAN`, listening independently on HTTP (7890) and SOCKS5 (7891) across both TUN and Transparent Proxy modes.
+  - Decoupled `lanShellEnvironmentCommand` and `canEditLocalProxyPorts` to allow port customization and command generation whenever `allowLAN` is active.
+
+### Verified
+
+- Local core regression test suites (`test_network_switch_gate.py`, `EngineReconnect`, `RuntimeEnvironment`, `test.sh`, `Tests/AllowLAN/run.sh`, `Tests/MenuBarIcon/run.sh`, `scripts/test_ui_design_token_guards.sh`, and `scripts/verify_ui_design_tokens.sh`) passed 100%.
+- Dual-track parallel release acceptance (`run_release_acceptance_parallel.sh 1.8.2 2026101601`) completed in 8m 29s:
+  - Tart VM (`macos27`) 6-dimensional acceptance matrix: 210 checks (158 PASS, 0 FAIL, 52 SKIP), all 5 transparent proxy enhanced gates passed.
+  - Remote physical Mac mini UI performance & memory budget: showcase page switch p95 145.4 ms (budget <=180 ms), footprint median 68 MB (budget <=90 MB); large profile page switch p95 145.5 ms, footprint median 67 MB.
+- 3-hour continuous real-time telemetry soak test (`monitor_aetherroute_3h.py`): 181 samples, 0 crashes, 0 memory leaks, 100% DNS & HTTP probe success.
+
 ## [1.8.1] - 2026-10-15
 
 Menu Bar custom icons sharpness and uniform optical canvas across 41 SF Symbols, industrial-grade Allow LAN proxy server hardening (Single-fire closure guard, lock-safe state management, 15s timeout defense, IPv6 target support, and 256-connection pool limit), and dual-track automated release verification.

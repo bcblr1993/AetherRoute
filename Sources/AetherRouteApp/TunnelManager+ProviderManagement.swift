@@ -303,11 +303,11 @@ extension TunnelManager {
                 LANProxyServerController.shared.updateConfiguration(settings: validated)
             }
             localProxySettings = validated
-            localProxySettingsMessage = validated.isEnabled
-                ? (validated.allowLAN
-                    ? AppLocalization.string("LAN shared proxy is active.")
-                    : AppLocalization.string("The loopback proxy will start with the next TUN connection."))
-                : AppLocalization.string("The loopback proxy is off.")
+            localProxySettingsMessage = validated.allowLAN
+                ? AppLocalization.string("LAN shared proxy is active.")
+                : (validated.isEnabled
+                    ? AppLocalization.string("The loopback proxy will start with the next TUN connection.")
+                    : AppLocalization.string("The loopback proxy is off."))
         } catch {
             localProxySettingsMessage = error.localizedDescription
         }

@@ -1025,17 +1025,10 @@ private struct MenuBarContent: View {
                 Toggle(
                     AppLocalization.string("Allow LAN"),
                     isOn: Binding(
-                        get: { tunnel.localProxySettings.isEnabled && tunnel.localProxySettings.allowLAN },
+                        get: { tunnel.localProxySettings.allowLAN },
                         set: { enabled in
                             withAnimation(AetherVisual.animation(AetherVisual.disclosure)) {
-                                tunnel.updateLocalProxySettings { settings in
-                                    if enabled {
-                                        settings.isEnabled = true
-                                        settings.allowLAN = true
-                                    } else {
-                                        settings.allowLAN = false
-                                    }
-                                }
+                                tunnel.setLocalProxyAllowLAN(enabled)
                             }
                         }
                     )
@@ -1045,7 +1038,7 @@ private struct MenuBarContent: View {
                 .labelsHidden()
                 .accessibilityIdentifier("menu-allow-lan-toggle")
             }
-            if tunnel.localProxySettings.isEnabled && tunnel.localProxySettings.allowLAN {
+            if tunnel.localProxySettings.allowLAN {
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
                     HStack(spacing: AetherVisual.s2) {
                         Image(systemName: "iphone.and.arrow.forward")
@@ -2314,13 +2307,10 @@ private struct SettingsView: View {
                     }
                 )
             )
-            .disabled(
-                !tunnel.localProxySettings.isEnabled
-                    || !tunnel.canModifyLocalProxySettings
-            )
+            .disabled(!tunnel.canModifyLocalProxySettings)
             .accessibilityIdentifier("local-proxy-allow-lan-toggle")
 
-            if tunnel.localProxySettings.isEnabled && tunnel.localProxySettings.allowLAN {
+            if tunnel.localProxySettings.allowLAN {
                 let lanIP = LANProxyServerController.shared.currentLANIP
                 LabeledContent(AppLocalization.string("LAN proxy")) {
                     HStack(spacing: AetherVisual.s2) {
@@ -2398,8 +2388,7 @@ private struct SettingsView: View {
     }
 
     private var canEditLocalProxyPorts: Bool {
-        tunnel.networkEngineMode == .tun
-            && tunnel.localProxySettings.isEnabled
+        (tunnel.localProxySettings.isEnabled || tunnel.localProxySettings.allowLAN)
             && tunnel.canModifyLocalProxySettings
     }
 

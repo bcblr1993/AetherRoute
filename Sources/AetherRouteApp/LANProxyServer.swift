@@ -82,7 +82,7 @@ final class LANProxyServerController: ObservableObject {
 
     func updateConfiguration(settings: LocalProxySettings) {
         refreshLANIP()
-        let shouldRun = settings.isEnabled && settings.allowLAN
+        let shouldRun = settings.allowLAN
         if shouldRun {
             if isRunning && (activeHTTPPort != settings.httpPort || activeSOCKSPort != settings.socksPort) {
                 stop()

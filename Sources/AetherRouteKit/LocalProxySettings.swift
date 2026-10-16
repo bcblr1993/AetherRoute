@@ -100,7 +100,7 @@ public struct LocalProxySettings: Codable, Equatable, Sendable {
     /// Export shell environment for another machine on the same LAN.
     public func lanShellEnvironmentCommand(lanIP: String) throws -> String {
         let settings = try validated()
-        guard settings.isEnabled && settings.allowLAN else {
+        guard settings.allowLAN else {
             throw LocalProxySettingsError.disabled
         }
         return [

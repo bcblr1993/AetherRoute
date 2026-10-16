@@ -55,6 +55,11 @@ struct AllowLANTestMain {
         }
         assert(didThrow, "lanShellEnvironmentCommand must throw when allowLAN is false")
 
+        // Independent LAN mode (isEnabled false, allowLAN true)
+        let independentLAN = LocalProxySettings(isEnabled: false, httpPort: 17890, socksPort: 17891, allowLAN: true)
+        let indCmd = try! independentLAN.lanShellEnvironmentCommand(lanIP: "192.168.1.50")
+        assert(indCmd.contains("192.168.1.50:17890"), "Independent LAN mode must work even when isEnabled is false")
+
         // Test JSON Codable roundtrip & backward compatibility
         let encoder = JSONEncoder()
         let data = try! encoder.encode(enabledWithLAN)
