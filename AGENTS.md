@@ -45,6 +45,12 @@
 > 1. **Tart 虚拟机矩阵验收**（包含 6 维引擎与路由模式，集成透明代理 4 项强化门禁）；
 > 2. **物理真机环境与 UI 性能门禁**（包含 `test_remote_arm64.sh fast` 与 `test_ui_performance_gate.sh`）。
 > 优化后 direct 模式自动短路 50 秒空闲盲等，整体测试时长由过去近 45 分钟大幅压降至约 10~15 分钟，且绝不污染宿主机网络与配置。
+>
+> **物理机运行时证据（两轮同一候选包）**：脚本最后还会校验与候选包 SHA-256 绑定的物理机证据（TUN 与透明代理各自的空闲复用、大请求上传、切换网卡），缺失即判定 BLOCKED。每次构建签名时间戳不同，证据只能对应复用的包，因此流程固定为：
+> 1. 首轮运行（构建候选包并跑完全部门禁），以 BLOCKED 结束并打印后两步的完整命令；
+> 2. 首轮结束后（切换网卡会打断同一台 Mac mini 上的远程与性能门禁，不可并行）在物理机安装该 ZIP，分别以 TUN、透明代理连接后执行 `scripts/collect_physical_runtime_evidence.py`，默认写入 `outputs/physical-runtime-<VERSION>-<BUILD>`；
+> 3. 以 `AETHERROUTE_ACCEPTANCE_CANDIDATE_ZIP=<首轮 ZIP 绝对路径>` 重跑本脚本：复用同一包、不重新构建，构建号或可执行文件不符时在任何构建、SSH、VM 操作前拒绝。
+> 只有第 3 步输出 `ACCEPTANCE GATES PASSED` 才算第 2、3 步完成；它不替代协议互通、签名公证与发布门禁。详见 `Docs/LANProxyRegression.md`。
 
 ### 2. Tart 虚拟机矩阵自动化测试与清理 (VM Matrix Acceptance)
 - 虚拟机名称标准：`macos27`（本地 Tart VM，统一使用；不再使用 `aether-diag-1434`）。

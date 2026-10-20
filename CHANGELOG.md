@@ -4,6 +4,49 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- LAN HTTP/SOCKS5 proxy sessions now accumulate fragmented handshakes, retain
+  coalesced payloads, and decode only HTTP headers so binary uploads remain intact.
+  Unsupported SOCKS5 authentication methods and malformed requests fail closed.
+- LAN relays preserve TCP half-close semantics and let pending I/O complete
+  before terminal-state cleanup, preventing truncated responses after uploads.
+  A half-closed relay is reclaimed after 60 s without traffic in the remaining
+  direction, and a terminal connection state during relay after a 5 s grace, so
+  peers that never close can no longer exhaust the 256 session slots.
+- Plain HTTP requests through the LAN proxy are forwarded in origin-form without
+  `Proxy-Authorization`, `Proxy-Connection` or other hop-by-hop fields, with
+  `Connection: close`; the session ends with the origin's response, so a
+  keep-alive client no longer sends a later request for another host to the first
+  origin. Duplicate `Host`, header folding, conflicting `Content-Length`/`Transfer-Encoding`
+  and URL userinfo are rejected or dropped.
+- HTTP header scanning resumes where the previous read stopped instead of
+  rescanning the whole buffer, and SOCKS5 port 0 now answers general failure (0x01)
+  rather than "address type not supported".
+- Physical-evidence verification only treats `FAIL`/`INCONCLUSIVE`/`SKIP` at the
+  start of a line as a verdict, so diagnostics quoting those words no longer block.
+- The LAN socket gate now exercises the shipping `LANProxySession` on ephemeral
+  loopback ports, including real IPv6, fragmented/coalesced frames, binary bodies,
+  and repeated 2 MiB uploads with write-side EOF. The duplicate test proxy was removed.
+- Parallel acceptance now requires both 300-second UI profiles and the remote
+  ARM64 gate. Missing candidate-bound physical TUN/Transparent idle-reuse,
+  large-upload, or interface-switch evidence blocks acceptance instead of reporting
+  release readiness. Standalone diagnostic scripts retain their shorter-run options.
+  `AETHERROUTE_ACCEPTANCE_CANDIDATE_ZIP` reruns the gates on the archive the
+  evidence was collected for (validated before any side effect), and a blocked run
+  prints the exact collection and rerun commands.
+
+### Verification boundary
+
+- TDD regressions were reproduced against the pre-fix source and then run against
+  the corrected production implementation. Local tests use isolated processes;
+  no installed host app, system proxy, tunnel, or user configuration is changed.
+- No new version is published by this change. Fresh signed VM/physical acceptance
+  and the default 300-second performance measurements remain required before release;
+  previous 1.8.3 measurements are not evidence for this revision.
+
 ## [1.8.3] - 2026-10-16
 
 Real-time network traffic and speed monitoring in macOS menu bar with user preference toggle, strict TDD automated regression gate, isolated leaf telemetry observation, and dual-track automated release verification.

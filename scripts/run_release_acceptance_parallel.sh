@@ -20,12 +20,17 @@ OUTPUT_DIR=${3:-}
 SIGNING_CONFIG=${AETHERROUTE_SIGNING_CONFIG:-"$ROOT/Config/Signing.json"}
 VM_NAME=${AETHERROUTE_VM_NAME:-macos27}
 REMOTE_HOST=${AETHERROUTE_REMOTE_HOST:-chenxu@100.64.0.3}
-PERF_SECONDS=${AETHERROUTE_PERF_SECONDS:-120}
+PERF_SECONDS=${AETHERROUTE_PERF_SECONDS:-300}
 export AETHERROUTE_IDLE_REUSE_HOST=${AETHERROUTE_IDLE_REUSE_HOST:-httpbin.org}
+
+# Reject diagnostic shortcuts before any build, SSH, or VM operation. They
+# remain available on the individual diagnostic scripts, not this release gate.
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/verify_parallel_acceptance.py" settings
 
 usage() {
   echo "usage: $0 [version] [build-number] [/absolute/output-directory]" >&2
   echo "  Defaults: version and build parsed from project.yml, output into outputs/acceptance-<timestamp>" >&2
+  echo "  AETHERROUTE_ACCEPTANCE_CANDIDATE_ZIP=/abs/candidate.zip reuses that archive instead of building." >&2
 }
 
 if [ -z "$VERSION" ]; then
@@ -44,6 +49,17 @@ case "$OUTPUT_DIR" in
   /*) ;;
   *) OUTPUT_DIR="$ROOT/$OUTPUT_DIR" ;;
 esac
+
+# Physical evidence is bound to the candidate's SHA-256 and every build re-signs
+# with a new timestamp, so evidence is only ever satisfiable for a reused archive.
+# Validate it before any build, SSH, or VM operation.
+REUSED_CANDIDATE_ZIP=${AETHERROUTE_ACCEPTANCE_CANDIDATE_ZIP:-}
+if [ -n "$REUSED_CANDIDATE_ZIP" ]; then
+  PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/verify_parallel_acceptance.py" candidate \
+    "$REUSED_CANDIDATE_ZIP" "$BUILD_NUMBER"
+fi
+# Outside the per-run directory so a rerun with the reused candidate finds it.
+PHYSICAL_EVIDENCE=${AETHERROUTE_PHYSICAL_RUNTIME_EVIDENCE:-"$ROOT/outputs/physical-runtime-$VERSION-$BUILD_NUMBER"}
 
 if [ -e "$OUTPUT_DIR" ]; then
   echo "Refusing to overwrite existing output directory: $OUTPUT_DIR" >&2
@@ -118,18 +134,24 @@ log "[Preflight] Zero Host Mutation verified (no network pollution commands)"
 
 # ----------------------------------------------------------- Candidate Build ---
 QA_CANDIDATE_DIR="$OUTPUT_DIR/qa-candidate"
-log "[Candidate] Building QA candidate with QA automation and production normal core..."
-AETHERROUTE_QA_AUTOMATION=1 AETHERROUTE_TEST_CORE_VARIANT=normal \
-  "$ROOT/scripts/build_signed_local_test_candidate.sh" \
-  "$SIGNING_CONFIG" "$VERSION" "$BUILD_NUMBER" "$QA_CANDIDATE_DIR" \
-  >"$OUTPUT_DIR/candidate_build.log" 2>&1
+if [ -n "$REUSED_CANDIDATE_ZIP" ]; then
+  # Gates and evidence must describe the same bytes; never rebuild here.
+  CANDIDATE_ZIP=$REUSED_CANDIDATE_ZIP
+  log "[Candidate] Reusing QA candidate: $CANDIDATE_ZIP"
+else
+  log "[Candidate] Building QA candidate with QA automation and production normal core..."
+  AETHERROUTE_QA_AUTOMATION=1 AETHERROUTE_TEST_CORE_VARIANT=normal \
+    "$ROOT/scripts/build_signed_local_test_candidate.sh" \
+    "$SIGNING_CONFIG" "$VERSION" "$BUILD_NUMBER" "$QA_CANDIDATE_DIR" \
+    >"$OUTPUT_DIR/candidate_build.log" 2>&1
 
-CANDIDATE_ZIP=$(find "$QA_CANDIDATE_DIR" -maxdepth 1 -name "*.zip" | head -n 1)
-test -n "$CANDIDATE_ZIP" && test -f "$CANDIDATE_ZIP" || {
-  log "QA candidate archive not found in $QA_CANDIDATE_DIR" >&2
-  exit 1
-}
-log "[Candidate] QA candidate packaged: $(basename "$CANDIDATE_ZIP")"
+  CANDIDATE_ZIP=$(find "$QA_CANDIDATE_DIR" -maxdepth 1 -name "*.zip" | head -n 1)
+  test -n "$CANDIDATE_ZIP" && test -f "$CANDIDATE_ZIP" || {
+    log "QA candidate archive not found in $QA_CANDIDATE_DIR" >&2
+    exit 1
+  }
+  log "[Candidate] QA candidate packaged: $(basename "$CANDIDATE_ZIP")"
+fi
 
 # ----------------------------------------------------- Parallel Verification ---
 VM_REPORT_DIR="$OUTPUT_DIR/vm-acceptance"
@@ -137,7 +159,7 @@ REMOTE_LOG="$OUTPUT_DIR/remote_arm64.log"
 UI_PERF_DIR="$OUTPUT_DIR/ui-perf"
 UI_PERF_LOG="$OUTPUT_DIR/ui_perf.log"
 VM_LOG="$OUTPUT_DIR/vm_matrix.log"
-RUN_REMOTE_ARM64=${AETHERROUTE_RUN_REMOTE_ARM64:-NO}
+RUN_REMOTE_ARM64=${AETHERROUTE_RUN_REMOTE_ARM64:-YES}
 
 VM_PID=
 REMOTE_PID=
@@ -258,8 +280,27 @@ fi
 
 log ""
 log "================================================================================"
+# Hardware source tests and UI fixtures cannot stand in for a connected,
+# signed candidate. Require both engines' real runtime evidence separately.
+candidate_sha256=$(shasum -a 256 "$CANDIDATE_ZIP" | awk '{print $1}')
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/verify_parallel_acceptance.py" evidence \
+  "$PHYSICAL_EVIDENCE" "$BUILD_NUMBER" "$REMOTE_HOST" "$candidate_sha256" \
+  >"$OUTPUT_DIR/physical-runtime-verification.log" 2>&1; then
+  log "Physical TUN/Transparent idle reuse, upload, and interface-switch evidence is missing or invalid:"
+  sed 's/^/    /' "$OUTPUT_DIR/physical-runtime-verification.log" | tee -a "$LOG_MAIN"
+  log "Next steps (this run has finished, so the Mac mini is free; interface switching disrupts it):"
+  log "  1. Install $CANDIDATE_ZIP on $REMOTE_HOST and connect in TUN mode, then:"
+  log "     AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES python3 scripts/collect_physical_runtime_evidence.py \\"
+  log "       '$CANDIDATE_ZIP' $REMOTE_HOST tun '$PHYSICAL_EVIDENCE'"
+  log "  2. Reconnect in Transparent Proxy mode and repeat with engine 'transparent'."
+  log "  3. Rerun this gate on the same archive:"
+  log "     AETHERROUTE_ACCEPTANCE_CANDIDATE_ZIP='$CANDIDATE_ZIP' \\"
+  log "     AETHERROUTE_PHYSICAL_RUNTIME_EVIDENCE='$PHYSICAL_EVIDENCE' \\"
+  log "       $0 $VERSION $BUILD_NUMBER"
+  OVERALL_SUCCESS=0
+fi
 if [ "$OVERALL_SUCCESS" -eq 1 ]; then
-  log " Acceptance Decision: ALL GATES PASSED (Ready for Release)"
+  log " Acceptance Decision: ACCEPTANCE GATES PASSED (signing, interop and publication gates remain separate)"
   log "================================================================================"
   exit 0
 else

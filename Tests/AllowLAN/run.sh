@@ -9,6 +9,9 @@ swiftc -swift-version 6 -warnings-as-errors -parse-as-library \
   "$ROOT/Sources/AetherRouteKit/LANAddressResolver.swift" \
   "$ROOT/Sources/AetherRouteApp/LANProxyServer.swift" \
   "$ROOT/Tests/AllowLAN/main.swift" \
+  "$ROOT/Tests/AllowLAN/ProductionProxyFixture.swift" \
   -o "$TEST_TEMP/allow-lan-test"
 
 "$TEST_TEMP/allow-lan-test"
+
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/Tests/AllowLAN/test_production_proxy.py" "$TEST_TEMP/allow-lan-test"
