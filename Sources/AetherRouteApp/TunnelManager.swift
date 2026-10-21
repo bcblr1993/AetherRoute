@@ -456,6 +456,7 @@ final class TunnelManager: ObservableObject {
     var statusObserver: NSObjectProtocol?
     var configurationObserver: NSObjectProtocol?
     nonisolated(unsafe) var cloudSyncObserver: (any NSObjectProtocol)?
+    nonisolated(unsafe) var cloudSyncUserRulesObserver: (any NSObjectProtocol)?
     var isPreparing = false
     var isPersistingConfiguration = false
     var isReloadingConfiguration = false
@@ -827,6 +828,27 @@ final class TunnelManager: ObservableObject {
                 }
             }
         }
+        cloudSyncUserRulesObserver = NotificationCenter.default.addObserver(
+            forName: .aetherRouteCloudSyncDidUpdateUserRules,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let syncedSnapshot = notification.object as? CloudSyncUserRulesSnapshot
+            Task { @MainActor [weak self] in
+                guard let self, !self.isUIReviewMode else { return }
+                if let snapshot = syncedSnapshot {
+                    self.customRules = snapshot.customRules
+                    self.bypassPolicy = Self.sanitizeBypassPolicy(snapshot.bypassPolicy)
+                } else {
+                    if let loadedRules = try? CustomRuleStore.applicationGroup().load() {
+                        self.customRules = loadedRules
+                    }
+                    if let loadedBypass = try? BypassPolicyStore.applicationGroup().load() {
+                        self.bypassPolicy = Self.sanitizeBypassPolicy(loadedBypass)
+                    }
+                }
+            }
+        }
         if !isUIReviewMode {
             LANProxyServerController.shared.updateConfiguration(settings: localProxySettings)
         }
@@ -835,6 +857,9 @@ final class TunnelManager: ObservableObject {
     deinit {
         if let cloudSyncObserver {
             NotificationCenter.default.removeObserver(cloudSyncObserver)
+        }
+        if let cloudSyncUserRulesObserver {
+            NotificationCenter.default.removeObserver(cloudSyncUserRulesObserver)
         }
     }
 

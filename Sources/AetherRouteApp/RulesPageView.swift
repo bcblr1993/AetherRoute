@@ -1238,6 +1238,8 @@ struct CustomRuleEditorSheet: View {
         case .ipCIDR: AppLocalization.string("e.g. 100.64.0.0/10 or 192.168.1.0/24")
         case .ipCIDR6: AppLocalization.string("e.g. fd7a:115c:a1e0::/48")
         case .geoIP: AppLocalization.string("e.g. CN or US")
+        case .geoSite: AppLocalization.string("e.g. openai, apple, cn or netflix")
+        case .dstPort: AppLocalization.string("e.g. 443, 80 or 853")
         case .application: ""
         }
     }
@@ -1277,6 +1279,8 @@ struct CustomRuleEditorSheet: View {
             destination = ipPart
         case .geoIP:
             destination = "223.5.5.5"
+        case .geoSite, .dstPort:
+            destination = "example.com"
         case .application:
             // Matched by the connecting app, not a destination.
             testExplanation = AppLocalization.string("Application rules match the app that opens a connection, so they cannot be tested by destination.")

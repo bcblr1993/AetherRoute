@@ -216,6 +216,60 @@ final class AetherNodeTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(AetherNode.self, from: data), node)
     }
 
+    func testDialerProxyCompilesValidatesAndMaintainsBackwardCompatibility() throws {
+        var chainedNode = AetherNode(
+            name: "Landing-JP",
+            protocolID: .socks5,
+            server: "landing.example",
+            port: 1080,
+            username: "user",
+            password: "password",
+            dialerProxy: "Relay-HK-01"
+        )
+        let yaml = try AetherNodeProfileCompiler.compile(node: chainedNode)
+        XCTAssertTrue(yaml.contains("dialer-proxy: 'Relay-HK-01'"))
+        try ProfileImportValidator.validate(data: Data(yaml.utf8))
+
+        // Self-reference must be rejected
+        chainedNode.dialerProxy = "Landing-JP"
+        XCTAssertThrowsError(try chainedNode.validated()) { error in
+            XCTAssertEqual(
+                error as? AetherNodeValidationError,
+                .invalidField("Dialer proxy")
+            )
+        }
+
+        // Reserved target names must be rejected
+        for reserved in ["DIRECT", "direct", "REJECT", "GLOBAL"] {
+            chainedNode.dialerProxy = reserved
+            XCTAssertThrowsError(try chainedNode.validated()) { error in
+                XCTAssertEqual(
+                    error as? AetherNodeValidationError,
+                    .invalidField("Dialer proxy")
+                )
+            }
+        }
+
+        // Legacy JSON without dialerProxy key must decode cleanly with dialerProxy == nil
+        let legacyNode = AetherNode(
+            name: "Legacy-SS",
+            protocolID: .shadowsocks,
+            server: "ss.example",
+            port: 8388,
+            password: "secret",
+            cipher: "aes-128-gcm",
+            dialerProxy: nil
+        )
+        var jsonObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(legacyNode)) as? [String: Any]
+        )
+        jsonObject.removeValue(forKey: "dialerProxy")
+        let strippedData = try JSONSerialization.data(withJSONObject: jsonObject)
+        let decodedLegacy = try JSONDecoder().decode(AetherNode.self, from: strippedData)
+        XCTAssertNil(decodedLegacy.dialerProxy)
+        XCTAssertEqual(decodedLegacy.name, "Legacy-SS")
+    }
+
     private static func makeNodes() -> [AetherNode] {
         let uuid = "b831381d-6324-4d53-ad4f-8cda48b30811"
         return [

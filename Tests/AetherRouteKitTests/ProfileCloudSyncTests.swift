@@ -142,4 +142,59 @@ final class ProfileCloudSyncTests: XCTestCase {
         XCTAssertNotEqual(actualSHA, payload.sha256)
         XCTAssertEqual(actualSHA, correctSHA)
     }
+
+    func testUserRulesSnapshotEncryptionAndSmartMergeRoundTrip() throws {
+        let keyStore = InMemoryProfileKeyStore()
+        _ = try keyStore.loadOrCreateKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID)
+
+        let remoteCustomRules = [
+            CustomRule(kind: .geoSite, value: "openai", target: .proxy("AI-Group")),
+            CustomRule(kind: .dstPort, value: "443", target: .direct),
+            CustomRule(kind: .domainSuffix, value: "apple.com", target: .direct),
+        ]
+        let remoteBypassPolicy = try BypassPolicy(rules: [
+            BypassRule(kind: .domainSuffix, value: "corp.internal"),
+            BypassRule(kind: .ipv4CIDR, value: "10.20.0.0/16"),
+        ]).validated()
+
+        let remoteSnapshot = CloudSyncUserRulesSnapshot(
+            customRules: remoteCustomRules,
+            bypassPolicy: remoteBypassPolicy
+        )
+        let encryptedPayload = try ProfileCloudSyncManager.encryptUserRulesSnapshot(
+            remoteSnapshot,
+            deviceIdentifier: "iPad-Pro-M4",
+            keyStore: keyStore
+        )
+
+        let localCustomRules = [
+            CustomRule(kind: .domainSuffix, value: "apple.com", target: .direct),
+            CustomRule(kind: .ipCIDR, value: "100.64.0.0/10", target: .direct, noResolve: true),
+        ]
+        let localBypassPolicy = try BypassPolicy(rules: [
+            BypassRule(kind: .domainSuffix, value: "corp.internal"),
+            BypassRule(kind: .domainSuffix, value: "home.arpa"),
+        ]).validated()
+
+        let merged = try ProfileCloudSyncManager.decryptAndMergeUserRulesSnapshot(
+            encryptedPayload,
+            localRules: localCustomRules,
+            localBypassPolicy: localBypassPolicy,
+            keyStore: keyStore
+        )
+
+        // Deduplicated union of local (2) + remote (3, 1 overlapping) = 4 custom rules
+        XCTAssertEqual(merged.customRules.count, 4)
+        XCTAssertEqual(merged.customRules[0].value, "apple.com")
+        XCTAssertEqual(merged.customRules[1].value, "100.64.0.0/10")
+        XCTAssertEqual(merged.customRules[2].kind, .geoSite)
+        XCTAssertEqual(merged.customRules[2].value, "openai")
+        XCTAssertEqual(merged.customRules[3].kind, .dstPort)
+        XCTAssertEqual(merged.customRules[3].value, "443")
+
+        // Deduplicated union of local (2) + remote (2, 1 overlapping) = 3 bypass rules
+        XCTAssertEqual(merged.bypassPolicy.rules.count, 3)
+        XCTAssertEqual(merged.bypassPolicy.domains, ["corp.internal", "home.arpa"])
+        XCTAssertEqual(merged.bypassPolicy.ipv4CIDRs, ["10.20.0.0/16"])
+    }
 }

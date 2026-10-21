@@ -6,11 +6,30 @@ import OSLog
 public extension Notification.Name {
     static let aetherRouteCloudSyncDidUpdateProfiles = Notification.Name("com.aetherroute.cloudSyncDidUpdateProfiles")
     static let aetherRouteCloudSyncDidUpdateRuleProviders = Notification.Name("com.aetherroute.cloudSyncDidUpdateRuleProviders")
+    static let aetherRouteCloudSyncDidUpdateUserRules = Notification.Name("com.aetherroute.cloudSyncDidUpdateUserRules")
+}
+
+public struct CloudSyncUserRulesSnapshot: Codable, Sendable, Equatable {
+    public static let currentVersion = 1
+    public let version: Int
+    public var customRules: [CustomRule]
+    public var bypassPolicy: BypassPolicy
+
+    public init(
+        version: Int = Self.currentVersion,
+        customRules: [CustomRule] = [],
+        bypassPolicy: BypassPolicy = .empty
+    ) {
+        self.version = version
+        self.customRules = customRules
+        self.bypassPolicy = bypassPolicy
+    }
 }
 
 public struct CloudSyncPayload: Codable, Sendable, Equatable {
     public static let currentVersion = 1
     public static let storageKey = "aetherroute.profile_catalog.sync.v1"
+    public static let userRulesStorageKey = "aetherroute.user_rules.sync.v1"
 
     public let version: Int
     public let updatedAtUnixMilliseconds: UInt64
@@ -265,6 +284,7 @@ public final class ProfileCloudSyncManager: ObservableObject {
                 let updatedProviders = await RuleProviderEngine.shared.mergeCloudSyncPayload(remoteRuleData)
                 NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateRuleProviders, object: updatedProviders)
             }
+            syncUserRulesSnapshot()
             self.lastSyncedAt = Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0)
             self.statusMessage = "已强制从 iCloud 拉取配置 (\(applied.profiles.count) 个配置)"
             return true
@@ -296,6 +316,7 @@ public final class ProfileCloudSyncManager: ObservableObject {
             kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
             kvStore.synchronize()
         }
+        pushLocalUserRulesToCloudIfAvailable()
 
         let catalogStore = try ProfileCatalogStore.applicationGroup()
         let localCatalog = try catalogStore.loadOrMigrate()
@@ -324,6 +345,160 @@ public final class ProfileCloudSyncManager: ObservableObject {
             kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
             kvStore.synchronize()
         }
+        syncUserRulesSnapshot()
+    }
+
+    private func syncUserRulesSnapshot() {
+        guard let customStore = try? CustomRuleStore.applicationGroup(),
+              let bypassStore = try? BypassPolicyStore.applicationGroup() else {
+            return
+        }
+        let localRules = (try? customStore.load()) ?? []
+        let localBypass = (try? bypassStore.load()) ?? .empty
+
+        if let remoteData = kvStore.data(forKey: CloudSyncPayload.userRulesStorageKey),
+           let merged = try? Self.decryptAndMergeUserRulesSnapshot(
+               remoteData,
+               localRules: localRules,
+               localBypassPolicy: localBypass,
+               keyStore: keyStore
+           ) {
+            if merged.customRules != localRules {
+                try? customStore.save(merged.customRules)
+            }
+            if merged.bypassPolicy != localBypass {
+                try? bypassStore.save(merged.bypassPolicy)
+            }
+            NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateUserRules, object: merged)
+            if merged.customRules != localRules || merged.bypassPolicy != localBypass {
+                if let encoded = try? Self.encryptUserRulesSnapshot(
+                    merged,
+                    deviceIdentifier: deviceID,
+                    keyStore: keyStore
+                ) {
+                    kvStore.set(encoded, forKey: CloudSyncPayload.userRulesStorageKey)
+                    kvStore.synchronize()
+                }
+            }
+        } else if !localRules.isEmpty || !localBypass.rules.isEmpty {
+            pushLocalUserRulesToCloudIfAvailable()
+        }
+    }
+
+    private func pushLocalUserRulesToCloudIfAvailable() {
+        guard let customStore = try? CustomRuleStore.applicationGroup(),
+              let bypassStore = try? BypassPolicyStore.applicationGroup() else {
+            return
+        }
+        let localRules = (try? customStore.load()) ?? []
+        let localBypass = (try? bypassStore.load()) ?? .empty
+        guard !localRules.isEmpty || !localBypass.rules.isEmpty else { return }
+        let snapshot = CloudSyncUserRulesSnapshot(
+            customRules: localRules,
+            bypassPolicy: localBypass
+        )
+        if let encoded = try? Self.encryptUserRulesSnapshot(
+            snapshot,
+            deviceIdentifier: deviceID,
+            keyStore: keyStore
+        ) {
+            kvStore.set(encoded, forKey: CloudSyncPayload.userRulesStorageKey)
+            kvStore.synchronize()
+        }
+    }
+
+    nonisolated public static func encryptUserRulesSnapshot(
+        _ snapshot: CloudSyncUserRulesSnapshot,
+        deviceIdentifier: String,
+        keyStore: any ProfileKeyStoring
+    ) throws -> Data {
+        let plaintext = try JSONEncoder().encode(snapshot)
+        let key = try keyStore.loadOrCreateKey(keyID: Self.cloudSyncKeyID)
+        let symmetricKey = SymmetricKey(data: key)
+        let sealedBox = try AES.GCM.seal(plaintext, using: symmetricKey)
+        guard let encryptedCombined = sealedBox.combined else {
+            throw CloudSyncError.encryptionFailed
+        }
+        let sha256 = SHA256.hash(data: encryptedCombined).map { String(format: "%02x", $0) }.joined()
+        let payload = CloudSyncPayload(
+            deviceIdentifier: deviceIdentifier,
+            encryptedData: encryptedCombined,
+            sha256: sha256
+        )
+        let payloadData = try JSONEncoder().encode(payload)
+        guard payloadData.count <= 1_000_000 else {
+            throw CloudSyncError.payloadTooLarge
+        }
+        return payloadData
+    }
+
+    nonisolated public static func decryptAndMergeUserRulesSnapshot(
+        _ payloadData: Data,
+        localRules: [CustomRule],
+        localBypassPolicy: BypassPolicy,
+        keyStore: any ProfileKeyStoring
+    ) throws -> CloudSyncUserRulesSnapshot {
+        guard let payload = try? JSONDecoder().decode(CloudSyncPayload.self, from: payloadData) else {
+            throw CloudSyncError.catalogCorrupted
+        }
+        let actualSHA256 = SHA256.hash(data: payload.encryptedData).map { String(format: "%02x", $0) }.joined()
+        guard actualSHA256.caseInsensitiveCompare(payload.sha256) == .orderedSame else {
+            throw CloudSyncError.catalogCorrupted
+        }
+        let key: Data
+        do {
+            key = try keyStore.loadKey(keyID: Self.cloudSyncKeyID)
+        } catch {
+            throw CloudSyncError.keychainUnavailable
+        }
+        let symmetricKey = SymmetricKey(data: key)
+        guard let sealedBox = try? AES.GCM.SealedBox(combined: payload.encryptedData) else {
+            throw CloudSyncError.catalogCorrupted
+        }
+        guard let decryptedData = try? AES.GCM.open(sealedBox, using: symmetricKey) else {
+            throw CloudSyncError.decryptionFailed
+        }
+        guard let remoteSnapshot = try? JSONDecoder().decode(CloudSyncUserRulesSnapshot.self, from: decryptedData) else {
+            throw CloudSyncError.catalogCorrupted
+        }
+
+        // Merge custom rules preserving local order first, then appending distinct remote rules
+        var mergedCustomRules: [CustomRule] = []
+        var seenCustomKeys = Set<String>()
+        for rule in localRules + remoteSnapshot.customRules {
+            guard CustomRuleValidator.validate(kind: rule.kind, value: rule.value, target: rule.target).isValid else {
+                continue
+            }
+            let dedupKey = "\(rule.kind.rawValue)|\(rule.value.lowercased())|\(rule.target.rawString)"
+            if seenCustomKeys.insert(dedupKey).inserted {
+                mergedCustomRules.append(rule)
+                if mergedCustomRules.count >= CustomRuleCollection.maximumRules {
+                    break
+                }
+            }
+        }
+
+        // Merge bypass policy rules preserving local rules + distinct remote rules
+        var mergedBypassRules: [BypassRule] = []
+        var seenBypassKeys = Set<String>()
+        for rule in localBypassPolicy.rules + remoteSnapshot.bypassPolicy.rules {
+            guard let normalized = try? BypassRule(id: rule.id, kind: rule.kind, value: rule.value) else {
+                continue
+            }
+            let dedupKey = "\(normalized.kind.rawValue)|\(normalized.value)"
+            if seenBypassKeys.insert(dedupKey).inserted {
+                mergedBypassRules.append(normalized)
+                if mergedBypassRules.count >= BypassPolicy.maximumRules {
+                    break
+                }
+            }
+        }
+        let mergedBypassPolicy = (try? BypassPolicy(rules: mergedBypassRules).validated()) ?? localBypassPolicy
+
+        return CloudSyncUserRulesSnapshot(
+            customRules: mergedCustomRules,
+            bypassPolicy: mergedBypassPolicy
+        )
     }
 
     private func handleExternalChange() async throws {

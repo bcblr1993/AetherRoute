@@ -29,6 +29,20 @@ final class CustomRuleTests: XCTestCase {
         XCTAssertEqual(rule4.value, "CN")
         XCTAssertEqual(rule4.target, .direct)
         XCTAssertTrue(rule4.noResolve)
+
+        let rule5 = try CustomRule.parse("GEOSITE,category-ai-!cn,ProxyNode")
+        XCTAssertEqual(rule5.kind, .geoSite)
+        XCTAssertEqual(rule5.value, "category-ai-!cn")
+        XCTAssertEqual(rule5.target, .proxy("ProxyNode"))
+        XCTAssertFalse(rule5.noResolve)
+        XCTAssertEqual(rule5.toClashRuleString(), "GEOSITE,category-ai-!cn,ProxyNode")
+
+        let rule6 = try CustomRule.parse("DST-PORT,443,REJECT")
+        XCTAssertEqual(rule6.kind, .dstPort)
+        XCTAssertEqual(rule6.value, "443")
+        XCTAssertEqual(rule6.target, .reject)
+        XCTAssertFalse(rule6.noResolve)
+        XCTAssertEqual(rule6.toClashRuleString(), "DST-PORT,443,REJECT")
     }
 
     func testParseInvalidClashRules() {
@@ -46,12 +60,21 @@ final class CustomRuleTests: XCTestCase {
         XCTAssertTrue(CustomRuleValidator.validate(kind: .ipCIDR, value: "100.64.0.0/10", target: .direct).isValid)
         XCTAssertTrue(CustomRuleValidator.validate(kind: .ipCIDR6, value: "fd00::/8", target: .direct).isValid)
         XCTAssertTrue(CustomRuleValidator.validate(kind: .geoIP, value: "CN", target: .direct).isValid)
+        XCTAssertTrue(CustomRuleValidator.validate(kind: .geoSite, value: "youtube", target: .proxy("ProxyNode")).isValid)
+        XCTAssertTrue(CustomRuleValidator.validate(kind: .geoSite, value: "category-ai-!cn", target: .proxy("ProxyNode")).isValid)
+        XCTAssertTrue(CustomRuleValidator.validate(kind: .dstPort, value: "1", target: .direct).isValid)
+        XCTAssertTrue(CustomRuleValidator.validate(kind: .dstPort, value: "65535", target: .reject).isValid)
 
         // Invalid cases
         XCTAssertFalse(CustomRuleValidator.validate(kind: .domain, value: "invalid domain with space.com", target: .direct).isValid)
         XCTAssertFalse(CustomRuleValidator.validate(kind: .ipCIDR, value: "10.0.0.0", target: .direct).isValid)
         XCTAssertFalse(CustomRuleValidator.validate(kind: .ipCIDR, value: "999.0.0.0/24", target: .direct).isValid)
         XCTAssertFalse(CustomRuleValidator.validate(kind: .geoIP, value: "CHINA", target: .direct).isValid)
+        XCTAssertFalse(CustomRuleValidator.validate(kind: .geoSite, value: "-invalid-start", target: .direct).isValid)
+        XCTAssertFalse(CustomRuleValidator.validate(kind: .geoSite, value: "bad space", target: .direct).isValid)
+        XCTAssertFalse(CustomRuleValidator.validate(kind: .dstPort, value: "0", target: .direct).isValid)
+        XCTAssertFalse(CustomRuleValidator.validate(kind: .dstPort, value: "65536", target: .direct).isValid)
+        XCTAssertFalse(CustomRuleValidator.validate(kind: .dstPort, value: "80-443", target: .direct).isValid)
     }
 
     func testCustomRuleStoreCRUD() throws {

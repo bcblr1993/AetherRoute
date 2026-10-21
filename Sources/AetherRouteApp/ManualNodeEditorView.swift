@@ -439,6 +439,15 @@ struct ManualNodeEditorSheet: View {
                 )
                     .fieldRow("Congestion control (optional)")
             }
+            TextField(
+                AppLocalization.string("Dialer proxy (optional)"),
+                text: Binding(
+                    get: { node.dialerProxy ?? "" },
+                    set: { node.dialerProxy = $0.isEmpty ? nil : $0 }
+                )
+            )
+            .accessibilityIdentifier("manual-node-dialer-proxy")
+            .fieldRow("Dialer proxy (optional)")
         }
     }
 
@@ -513,7 +522,7 @@ struct ManualNodeEditorSheet: View {
     }
 
     private var showsProtocolOptionsSection: Bool {
-        node.protocolID != .ssh
+        true
     }
 
     private var usesTLSIdentity: Bool {

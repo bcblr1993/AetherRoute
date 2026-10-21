@@ -156,6 +156,7 @@ public struct AetherNode: Codable, Equatable, Identifiable, Sendable {
     public var allowedIPs: [String]
     public var mtu: UInt16?
     public var privateKeyPassphrase: String?
+    public var dialerProxy: String?
 
     public init(
         id: UUID = UUID(),
@@ -185,7 +186,8 @@ public struct AetherNode: Codable, Equatable, Identifiable, Sendable {
         localIPv6Address: String = "",
         allowedIPs: [String] = [],
         mtu: UInt16? = nil,
-        privateKeyPassphrase: String? = nil
+        privateKeyPassphrase: String? = nil,
+        dialerProxy: String? = nil
     ) {
         self.formatVersion = Self.currentFormatVersion
         self.id = id
@@ -216,6 +218,7 @@ public struct AetherNode: Codable, Equatable, Identifiable, Sendable {
         self.allowedIPs = allowedIPs
         self.mtu = mtu
         self.privateKeyPassphrase = privateKeyPassphrase
+        self.dialerProxy = dialerProxy
     }
 }
 
@@ -281,8 +284,23 @@ public extension AetherNode {
             ("Local address", localAddress),
             ("Local IPv6 address", localIPv6Address),
             ("Private key passphrase", privateKeyPassphrase ?? ""),
+            ("Dialer proxy", dialerProxy ?? ""),
         ] {
             try Self.validateScalar(value, field: field, maximumBytes: 4_096)
+        }
+        if let rawDialer = dialerProxy {
+            let trimmedDialer = rawDialer.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedDialer.isEmpty {
+                guard trimmedDialer.utf8.count <= 256 else {
+                    throw AetherNodeValidationError.valueTooLong("Dialer proxy")
+                }
+                let reservedDialers: Set<String> = ["DIRECT", "REJECT", "GLOBAL"]
+                guard trimmedDialer != name.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !reservedDialers.contains(trimmedDialer.uppercased())
+                else {
+                    throw AetherNodeValidationError.invalidField("Dialer proxy")
+                }
+            }
         }
         try Self.validatePrivateKey(privateKey)
         for value in allowedIPs {
@@ -570,6 +588,10 @@ public enum AetherNodeProfileCompiler {
             ])
             appendProtocolFields(node, to: &lines)
             appendTransport(node, to: &lines)
+            if let dialer = node.dialerProxy?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !dialer.isEmpty {
+                field("dialer-proxy", dialer, to: &lines)
+            }
         }
         lines.append(contentsOf: [
             "proxy-groups:",

@@ -133,6 +133,11 @@ public enum TransparentProxyUpstreamEndpointResolver {
         _ host: String,
         index: Int
     ) throws -> [(String, TransparentProxyUpstreamExclusion.AddressFamily)] {
+        let lowercasedHost = host.lowercased()
+        if lowercasedHost == "invalid" || lowercasedHost.hasSuffix(".invalid") {
+            throw TransparentProxyUpstreamEndpointResolutionError
+                .unresolvedEndpoint(index: index)
+        }
         var hints = addrinfo()
         hints.ai_flags = AI_ADDRCONFIG
         hints.ai_family = AF_UNSPEC
@@ -149,7 +154,10 @@ public enum TransparentProxyUpstreamEndpointResolver {
         var seen: Set<String> = []
         var cursor: UnsafeMutablePointer<addrinfo>? = first
         while let entry = cursor?.pointee {
-            if let value = numericAddress(entry), seen.insert(value.0).inserted {
+            if let value = numericAddress(entry),
+               !isSyntheticFakeIPv4(value.0, family: value.1),
+               seen.insert(value.0).inserted
+            {
                 addresses.append(value)
             }
             cursor = entry.ai_next
@@ -159,6 +167,16 @@ public enum TransparentProxyUpstreamEndpointResolver {
                 .unresolvedEndpoint(index: index)
         }
         return addresses
+    }
+
+    /// Filters out synthetic Fake-IP benchmark range (`198.18.0.0/15`) returned
+    /// by system DNS when an existing Fake-IP tunnel is active on the host.
+    private static func isSyntheticFakeIPv4(
+        _ address: String,
+        family: TransparentProxyUpstreamExclusion.AddressFamily
+    ) -> Bool {
+        guard family == .ipv4 else { return false }
+        return address.hasPrefix("198.18.") || address.hasPrefix("198.19.")
     }
 
     private static func numericAddress(

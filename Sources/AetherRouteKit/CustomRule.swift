@@ -7,6 +7,8 @@ public enum CustomRuleKind: String, Codable, CaseIterable, Sendable {
     case ipCIDR = "IP-CIDR"
     case ipCIDR6 = "IP-CIDR6"
     case geoIP = "GEOIP"
+    case geoSite = "GEOSITE"
+    case dstPort = "DST-PORT"
     /// An application rule (1.3.0). Created only from an app the user picks,
     /// never parsed from rule text or accepted from a profile; see
     /// `CustomRule.application(...)`.
@@ -197,7 +199,7 @@ public enum CustomRuleParseError: LocalizedError, Equatable {
         case .insufficientComponents:
             return "Rule requires at least 3 parts (e.g. DOMAIN-SUFFIX,example.com,DIRECT)"
         case let .unsupportedKind(kind):
-            return "Unsupported rule kind: \(kind). Supported: DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, IP-CIDR, IP-CIDR6, GEOIP"
+            return "Unsupported rule kind: \(kind). Supported: DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, IP-CIDR, IP-CIDR6, GEOIP, GEOSITE, DST-PORT"
         case .emptyValue:
             return "Rule criteria / destination cannot be empty"
         case let .validationFailed(reason):
@@ -240,6 +242,10 @@ public enum CustomRuleValidator {
             return validateIPv6CIDR(trimmedVal)
         case .geoIP:
             return validateGeoIP(trimmedVal)
+        case .geoSite:
+            return validateGeoSite(trimmedVal)
+        case .dstPort:
+            return validateDstPort(trimmedVal)
         case .application:
             return ApplicationRuleMatch(payload: trimmedVal) == nil
                 ? .invalid(reason: "应用规则需要合法的签名标识或 .app 路径")
@@ -347,6 +353,36 @@ public enum CustomRuleValidator {
         let code = input.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard code.count == 2, code.allSatisfy({ $0.isASCII && $0.isLetter }) else {
             return .invalid(reason: "GEOIP 必须是 2 位国家代码，例如 CN, US, HK")
+        }
+        return .valid
+    }
+
+    private static func validateGeoSite(_ input: String) -> RuleValidationResult {
+        let category = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !category.isEmpty, category.count <= 64 else {
+            return .invalid(reason: "GEOSITE 分类名长度必须在 1 到 64 个字符之间，例如 cn, apple, openai")
+        }
+        guard let first = category.first, first.isASCII && (first.isLetter || first.isNumber) else {
+            return .invalid(reason: "GEOSITE 分类名必须以英文字母或数字开头")
+        }
+        let allowedPunctuation: Set<Character> = ["-", "_", "!", "@", "."]
+        let isValidChars = category.allSatisfy { char in
+            char.isASCII && (char.isLetter || char.isNumber || allowedPunctuation.contains(char))
+        }
+        guard isValidChars else {
+            return .invalid(reason: "GEOSITE 分类名仅允许英文字母、数字及 '-', '_', '!', '@', '.'")
+        }
+        return .valid
+    }
+
+    private static func validateDstPort(_ input: String) -> RuleValidationResult {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.allSatisfy({ $0.isASCII && $0.isNumber }),
+              let port = Int(trimmed),
+              (1...65_535).contains(port),
+              String(port) == trimmed
+        else {
+            return .invalid(reason: "DST-PORT 必须是 1 到 65535 之间的有效端口号，例如 443 或 80")
         }
         return .valid
     }
