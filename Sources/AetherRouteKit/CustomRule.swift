@@ -429,3 +429,179 @@ public struct ApplicationRuleMatch: Equatable, Sendable {
         self.bundlePath = path.isEmpty ? nil : path
     }
 }
+
+public extension CustomRule {
+    static let maximumBatchRules = 500
+
+    /// Parses a multi-line Clash rule text block (such as `payload:` lists or newline-separated rules).
+    /// When `defaultTarget` is supplied, classical two-token lines (`DOMAIN-SUFFIX,example.com`)
+    /// automatically use `defaultTarget`.
+    static func parseBatch(
+        _ rawText: String,
+        defaultTarget: CustomRuleTarget? = nil
+    ) throws -> [CustomRule] {
+        var results: [CustomRule] = []
+        let lines = rawText.components(separatedBy: .newlines)
+        for rawLine in lines {
+            var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty || line.hasPrefix("#") || line.hasPrefix("//") {
+                continue
+            }
+            let lower = line.lowercased()
+            if lower == "payload:" || lower == "rules:" {
+                continue
+            }
+            if line.hasPrefix("-") {
+                line = line.dropFirst().trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if (line.hasPrefix("'") && line.hasSuffix("'")) || (line.hasPrefix("\"") && line.hasSuffix("\"")) {
+                line = String(line.dropFirst().dropLast())
+            }
+            let tokens = line.split(separator: ",", omittingEmptySubsequences: true)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            if tokens.count == 2, let fallback = defaultTarget {
+                var augmented = "\(tokens[0]),\(tokens[1]),\(fallback.rawString)"
+                let upperKind = tokens[0].uppercased()
+                if upperKind == "IP-CIDR" || upperKind == "IP-CIDR6" || upperKind == "GEOIP" {
+                    augmented += ",no-resolve"
+                }
+                results.append(try CustomRule.parse(augmented))
+            } else {
+                results.append(try CustomRule.parse(line))
+            }
+            if results.count >= Self.maximumBatchRules {
+                break
+            }
+        }
+        return results
+    }
+}
+
+public struct ConnectionDestinationRuleCandidate: Equatable, Hashable, Sendable {
+    public let kind: CustomRuleKind
+    public let value: String
+    public let noResolve: Bool
+
+    public init(kind: CustomRuleKind, value: String, noResolve: Bool) {
+        self.kind = kind
+        self.value = value
+        self.noResolve = noResolve
+    }
+}
+
+/// Derives safe, non-Fake-IP custom rule candidates from a live connection destination.
+public enum ConnectionDestinationRulePlanner {
+    private static let multiPartPublicSuffixes: Set<String> = [
+        "co.uk", "org.uk", "ac.uk", "gov.uk",
+        "com.cn", "net.cn", "org.cn", "gov.cn", "edu.cn",
+        "com.hk", "edu.hk", "org.hk", "gov.hk",
+        "com.tw", "org.tw", "edu.tw", "gov.tw",
+        "co.jp", "ne.jp", "or.jp", "ac.jp", "go.jp",
+        "co.kr", "or.kr", "ne.kr",
+        "com.au", "net.au", "org.au", "edu.au",
+        "com.sg", "edu.sg", "org.sg",
+        "com.br", "com.mx", "co.in", "co.nz", "co.za"
+    ]
+
+    public static func candidates(for rawDestination: String) -> [ConnectionDestinationRuleCandidate] {
+        let host = extractHost(from: rawDestination).lowercased()
+        guard !host.isEmpty else { return [] }
+
+        // Check IPv4
+        var addr4 = in_addr()
+        if inet_pton(AF_INET, host, &addr4) == 1 {
+            guard isRoutablePublicIPv4(addr4) else { return [] }
+            return [ConnectionDestinationRuleCandidate(kind: .ipCIDR, value: "\(host)/32", noResolve: true)]
+        }
+
+        // Check IPv6
+        var addr6 = in6_addr()
+        if inet_pton(AF_INET6, host, &addr6) == 1 {
+            guard isRoutablePublicIPv6(host) else { return [] }
+            return [ConnectionDestinationRuleCandidate(kind: .ipCIDR6, value: "\(host)/128", noResolve: true)]
+        }
+
+        // Domain validation & local/mDNS exclusion
+        guard host != "localhost",
+              !host.hasSuffix(".local"),
+              !host.hasSuffix(".internal"),
+              !host.hasSuffix(".invalid"),
+              !host.hasSuffix(".arpa"),
+              host.contains("."),
+              CustomRuleValidator.validate(kind: .domain, value: host, target: .direct).isValid
+        else {
+            return []
+        }
+
+        let root = registrableDomain(for: host)
+        if root == host {
+            return [
+                ConnectionDestinationRuleCandidate(kind: .domainSuffix, value: root, noResolve: false),
+            ]
+        } else {
+            return [
+                ConnectionDestinationRuleCandidate(kind: .domainSuffix, value: root, noResolve: false),
+                ConnectionDestinationRuleCandidate(kind: .domain, value: host, noResolve: false),
+            ]
+        }
+    }
+
+    private static func extractHost(from raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        if trimmed.hasPrefix("[") {
+            if let closeBracket = trimmed.firstIndex(of: "]") {
+                return String(trimmed[trimmed.index(after: trimmed.startIndex)..<closeBracket])
+            }
+            return trimmed
+        }
+        let colons = trimmed.filter { $0 == ":" }.count
+        if colons == 1, let colonIdx = trimmed.lastIndex(of: ":") {
+            let portPart = trimmed[trimmed.index(after: colonIdx)...]
+            if !portPart.isEmpty && portPart.allSatisfy({ $0.isASCII && $0.isNumber }) {
+                return String(trimmed[..<colonIdx])
+            }
+        }
+        return trimmed
+    }
+
+    private static func registrableDomain(for host: String) -> String {
+        let labels = host.split(separator: ".").map(String.init)
+        guard labels.count >= 2 else { return host }
+        let lastTwo = "\(labels[labels.count - 2]).\(labels[labels.count - 1])"
+        if labels.count >= 3 && multiPartPublicSuffixes.contains(lastTwo) {
+            return "\(labels[labels.count - 3]).\(lastTwo)"
+        }
+        return lastTwo
+    }
+
+    private static func isRoutablePublicIPv4(_ addr: in_addr) -> Bool {
+        let hostOrder = UInt32(bigEndian: addr.s_addr)
+        let a = UInt8((hostOrder >> 24) & 0xFF)
+        let b = UInt8((hostOrder >> 16) & 0xFF)
+        let c = UInt8((hostOrder >> 8) & 0xFF)
+
+        if a == 0 || a == 10 || a == 127 || a >= 224 { return false }
+        if a == 169 && b == 254 { return false }
+        if a == 172 && (16...31).contains(b) { return false }
+        if a == 192 && b == 168 { return false }
+        // CGNAT / Tailscale 100.64.0.0/10
+        if a == 100 && (64...127).contains(b) { return false }
+        // Synthetic Fake-IP benchmark range 198.18.0.0/15
+        if a == 198 && (b == 18 || b == 19) { return false }
+        // TEST-NET ranges
+        if a == 192 && b == 0 && c == 2 { return false }
+        if a == 198 && b == 51 && c == 100 { return false }
+        if a == 203 && b == 0 && c == 113 { return false }
+        return true
+    }
+
+    private static func isRoutablePublicIPv6(_ normalizedHost: String) -> Bool {
+        if normalizedHost == "::" || normalizedHost == "::1" { return false }
+        if normalizedHost.hasPrefix("fe80:") || normalizedHost.hasPrefix("fc") || normalizedHost.hasPrefix("fd") {
+            return false
+        }
+        if normalizedHost.hasPrefix("2001:db8:") { return false }
+        return true
+    }
+}

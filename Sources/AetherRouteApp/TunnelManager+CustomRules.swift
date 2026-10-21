@@ -75,6 +75,79 @@ extension TunnelManager {
         }
     }
 
+    @discardableResult
+    func moveCustomRule(id: UUID, direction: CustomRuleMoveDirection) async -> Bool {
+        isUpdatingCustomRules = true
+        defer { isUpdatingCustomRules = false }
+        do {
+            customRules = try CustomRuleStore.applicationGroup().move(id: id, direction: direction)
+            customRuleMessage = nil
+            customRuleMessageIsError = false
+            refreshActiveProfileSummary()
+            await reloadCustomRulesLive()
+            return true
+        } catch {
+            customRuleMessage = error.localizedDescription
+            customRuleMessageIsError = true
+            return false
+        }
+    }
+
+    @discardableResult
+    func importCustomRulesBatch(_ rules: [CustomRule]) async -> Bool {
+        isUpdatingCustomRules = true
+        defer { isUpdatingCustomRules = false }
+        do {
+            customRules = try CustomRuleStore.applicationGroup().importBatch(rules)
+            customRuleMessage = AppLocalization.format(
+                "Imported %lld custom rules at top priority",
+                Int64(rules.count)
+            )
+            customRuleMessageIsError = false
+            refreshActiveProfileSummary()
+            await reloadCustomRulesLive()
+            return true
+        } catch {
+            customRuleMessage = error.localizedDescription
+            customRuleMessageIsError = true
+            return false
+        }
+    }
+
+    /// Finds an existing destination custom rule matching `(kind, value)`.
+    func destinationRule(
+        kind: CustomRuleKind,
+        value: String
+    ) -> CustomRule? {
+        let normalized = CustomRule(kind: kind, value: value, target: .direct).value
+        return customRules.first { rule in
+            rule.kind == kind && rule.value == normalized
+        }
+    }
+
+    /// Creates or updates a destination custom rule for `(kind, value)` to route to `target`.
+    @discardableResult
+    func setDestinationRule(
+        kind: CustomRuleKind,
+        value: String,
+        noResolve: Bool,
+        target: CustomRuleTarget
+    ) async -> Bool {
+        let existing = destinationRule(kind: kind, value: value)
+        let rule = CustomRule(
+            id: existing?.id ?? UUID(),
+            kind: kind,
+            value: value,
+            target: target,
+            noResolve: noResolve,
+            isEnabled: true,
+            comment: existing?.comment
+        )
+        return existing == nil
+            ? await addCustomRule(rule)
+            : await updateCustomRule(rule)
+    }
+
     /// The application rule that names this app, if any.
     func applicationRule(
         bundleIdentifier: String?,

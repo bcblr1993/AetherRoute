@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.8.5 (Build 2026102102)</title>
-            <pubDate>Wed, 21 Oct 2026 14:22:29 +0800</pubDate>
-            <sparkle:version>2026102102</sparkle:version>
-            <sparkle:shortVersionString>1.8.5</sparkle:shortVersionString>
+            <title>Version 1.8.6 (Build 2026102103)</title>
+            <pubDate>Wed, 21 Oct 2026 17:42:17 +0800</pubDate>
+            <sparkle:version>2026102103</sparkle:version>
+            <sparkle:shortVersionString>1.8.6</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.8.5/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.8.6/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,33 +120,40 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.8.5 更新要点</span>
-  <span class="release-badge">Build 2026102102 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.8.6 更新要点</span>
+  <span class="release-badge">Build 2026102103 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">✨ 新增特性</span>
+  <span class="section-tag tag-feature">🚀 核心功能：全面兼容 Shadowsocks 混淆插件</span>
   <ul>
-    <li><strong>GEOSITE 与 DST-PORT 自定义规则</strong>：规则编辑器现支持直接添加 <code>GEOSITE</code>（如 <code>openai</code>、<code>youtube</code>、<code>category-ai-!cn</code>）与目标端口 <code>DST-PORT</code>（<code>1...65535</code>）分流规则。</li>
-    <li><strong>自建节点链式前置代理（dialer-proxy）</strong>：全量 12 种协议的自建节点均支持配置可选的前置代理节点或策略组，轻松构建中转与链式落地代理。</li>
-    <li><strong>iCloud 端到端加密同步扩展</strong>：支持将自定义分流规则与网络绕过策略通过 AES-256-GCM 端到端加密同步至多台设备并智能去重合并。</li>
+    <li><strong>内置混淆插件安全放行</strong>：全面支持 <code>plugin: obfs</code> / <code>plugin-opts</code>、<code>v2ray-plugin</code> 及 <code>shadow-tls</code>。升级预检白名单准入机制，彻底解决导入 Clash Verge 等主流客户端混淆订阅时触发的误报拦截。</li>
+    <li><strong>内存级协议转换防护</strong>：严格保持对外部可执行文件、未知命令及脚本注入的拦截，所有受支持插件均由纯 Rust 内存协议转换引擎安全驱动。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🛠 修复与真机验证</span>
+  <span class="section-tag tag-fix">🐞 稳定性与长稳加固</span>
   <ul>
-    <li><strong>透明代理防 Fake-IP 污染</strong>：过滤系统 DNS 在 Fake-IP 隧道下返回的 <code>198.18.0.0/15</code> 虚拟网段地址，确保 TUN 切换至透明代理时上游豁免规则准确无误。</li>
-    <li><strong>全量门禁与物理真机实测</strong>：虚拟机 6 维网络矩阵 210 项检查 0 失败通过；Apple Silicon Mac mini 真机通过 TUN 与透明代理双模式空闲复用、2 MiB 上传与有线/无线网卡切换自动恢复（1–2 秒）。</li>
+    <li><strong>控制面与系统扩展超时防护</strong>：优化宿主 App 与系统扩展通信超时机制及冷启动 DNS 边界，杜绝瞬时假死。</li>
+    <li><strong>短连接与 UDP 吞吐优化</strong>：增加短连接流关闭主动短路与 UDP 微批处理写机制，规避内核套接字写缓冲耗尽。</li>
+    <li><strong>流量图表重绘节流</strong>：流量波形刷新率优化至 12 FPS，显著减少堆内存分配与界面渲染开销。</li>
+  </ul>
+</div>
+<div class="section">
+  <span class="section-tag tag-improve">✨ 严苛真机与多环境验证</span>
+  <ul>
+    <li><strong>物理真机 Mac mini 全量通过</strong>：Apple Silicon 真机环境全量 182 项测试门禁、空闲长连接复用与网络切换自愈 100% 通过。</li>
+    <li><strong>UI 卡顿与内存预算双 Profile 达标</strong>：常规流与万条规则/500节点重载切页 p95 均保持在 132 ms 左右，内存占用平稳控制在 66-84 MB 预算内。</li>
   </ul>
 </div>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.8.5/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.8.6/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.8.5/AetherRoute-1.8.5-build-2026102102-arm64.dmg"
-                sparkle:edSignature="pmWIFvOVbJ6sToaL9LUexwWjQ0Kl+G9J0pfhkxFO7oUjMckOUNo4oh3CRCTrc+Pq8Ys8l8VFLQP9cmKt56VjBw=="
-                length="27530233"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.8.6/AetherRoute-1.8.6-build-2026102103-arm64.dmg"
+                sparkle:edSignature="guXf+IRN19I5BdD1vpaMAoxqWs9Rr4TRQCL6NU7Pq4yJYD2jjCCywCFQteSnfuLi4z9mijqozJq9/15QZgr3BQ=="
+                length="26674077"
                 type="application/octet-stream" />
         </item>
     </channel>

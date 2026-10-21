@@ -110,6 +110,70 @@ public struct CustomRuleStore: Sendable {
         try save(current, fileManager: fileManager)
         return current
     }
+
+    @discardableResult
+    public func move(
+        id: UUID,
+        direction: CustomRuleMoveDirection,
+        fileManager: FileManager = .default
+    ) throws -> [CustomRule] {
+        var current = try load(fileManager: fileManager)
+        guard let index = current.firstIndex(where: { $0.id == id }) else {
+            throw CustomRuleStoreError.ruleNotFound(id)
+        }
+        let targetIndex: Int
+        switch direction {
+        case .up:
+            targetIndex = index - 1
+        case .down:
+            targetIndex = index + 1
+        }
+        guard current.indices.contains(targetIndex) else {
+            return current
+        }
+        current.swapAt(index, targetIndex)
+        try save(current, fileManager: fileManager)
+        return current
+    }
+
+    @discardableResult
+    public func importBatch(
+        _ incomingRules: [CustomRule],
+        fileManager: FileManager = .default
+    ) throws -> [CustomRule] {
+        var current = try load(fileManager: fileManager)
+        var newlyAdded: [CustomRule] = []
+        var seenIncoming = Set<String>()
+
+        for incoming in incomingRules {
+            guard CustomRuleValidator.validate(incoming).isValid else { continue }
+            let matchKey = "\(incoming.kind.rawValue)|\(incoming.value.lowercased())"
+            guard seenIncoming.insert(matchKey).inserted else { continue }
+
+            if let existingIdx = current.firstIndex(where: {
+                $0.kind == incoming.kind && $0.value.caseInsensitiveCompare(incoming.value) == .orderedSame
+            }) {
+                current[existingIdx].target = incoming.target
+                current[existingIdx].noResolve = incoming.noResolve
+                current[existingIdx].isEnabled = true
+                if let comment = incoming.comment, !comment.isEmpty {
+                    current[existingIdx].comment = comment
+                }
+            } else {
+                newlyAdded.append(incoming)
+            }
+        }
+
+        let combined = newlyAdded + current
+        let bounded = Array(combined.prefix(CustomRuleCollection.maximumRules))
+        try save(bounded, fileManager: fileManager)
+        return bounded
+    }
+}
+
+public enum CustomRuleMoveDirection: String, Codable, Sendable {
+    case up
+    case down
 }
 
 public enum CustomRuleStoreError: LocalizedError, Equatable {

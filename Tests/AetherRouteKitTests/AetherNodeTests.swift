@@ -270,6 +270,96 @@ final class AetherNodeTests: XCTestCase {
         XCTAssertEqual(decodedLegacy.name, "Legacy-SS")
     }
 
+    func testNodeURIParserParsesAndFormatsMainstreamShareLinks() throws {
+        let vlessURI = "vless://b831381d-6324-4d53-ad4f-8cda48b30811@vless.example:443?security=reality&sni=www.cloudflare.com&pbk=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc&sid=0123456789abcdef&fp=chrome&type=tcp&flow=xtls-rprx-vision#Tokyo-Reality"
+        let vlessNode = try AetherNodeURIParser.parse(vlessURI)
+        XCTAssertEqual(vlessNode.name, "Tokyo-Reality")
+        XCTAssertEqual(vlessNode.protocolID, .vless)
+        XCTAssertEqual(vlessNode.server, "vless.example")
+        XCTAssertEqual(vlessNode.port, 443)
+        XCTAssertEqual(vlessNode.uuid, "b831381d-6324-4d53-ad4f-8cda48b30811")
+        XCTAssertEqual(vlessNode.flow, "xtls-rprx-vision")
+        XCTAssertTrue(vlessNode.tls.enabled)
+        XCTAssertEqual(vlessNode.tls.serverName, "www.cloudflare.com")
+        XCTAssertEqual(vlessNode.tls.realityPublicKey, "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc")
+        XCTAssertEqual(vlessNode.tls.realityShortID, "0123456789abcdef")
+        XCTAssertEqual(vlessNode.tls.clientFingerprint, "chrome")
+        try ProfileImportValidator.validate(data: Data(AetherNodeProfileCompiler.compile(node: vlessNode).utf8))
+
+        let trojanURI = "trojan://my-secret-pass@trojan.example:8443?sni=cdn.trojan.example&type=ws&host=ws.trojan.example&path=%2Fws-path&allowInsecure=1#SG-Trojan-WS"
+        let trojanNode = try AetherNodeURIParser.parse(trojanURI)
+        XCTAssertEqual(trojanNode.name, "SG-Trojan-WS")
+        XCTAssertEqual(trojanNode.protocolID, .trojan)
+        XCTAssertEqual(trojanNode.password, "my-secret-pass")
+        XCTAssertEqual(trojanNode.transport.kind, .webSocket)
+        XCTAssertEqual(trojanNode.transport.host, "ws.trojan.example")
+        XCTAssertEqual(trojanNode.transport.path, "/ws-path")
+        XCTAssertTrue(trojanNode.tls.skipCertificateVerification)
+        try ProfileImportValidator.validate(data: Data(AetherNodeProfileCompiler.compile(node: trojanNode).utf8))
+
+        let ssCreds = Data("2022-blake3-aes-128-gcm:ss-secret-key".utf8).base64EncodedString()
+        let ssURI = "ss://\(ssCreds)@ss.example:8388#HK-SS2022"
+        let ssNode = try AetherNodeURIParser.parse(ssURI)
+        XCTAssertEqual(ssNode.name, "HK-SS2022")
+        XCTAssertEqual(ssNode.protocolID, .shadowsocks)
+        XCTAssertEqual(ssNode.cipher, "2022-blake3-aes-128-gcm")
+        XCTAssertEqual(ssNode.password, "ss-secret-key")
+        try ProfileImportValidator.validate(data: Data(AetherNodeProfileCompiler.compile(node: ssNode).utf8))
+
+        let hy2URI = "hy2://hy2-pass@hy2.example:443?sni=hy2.example&obfs=salamander&obfs-password=obfs-secret&upmbps=50&downmbps=300#US-Hy2"
+        let hy2Node = try AetherNodeURIParser.parse(hy2URI)
+        XCTAssertEqual(hy2Node.name, "US-Hy2")
+        XCTAssertEqual(hy2Node.protocolID, .hysteria2)
+        XCTAssertEqual(hy2Node.password, "hy2-pass")
+        XCTAssertEqual(hy2Node.obfuscation, "salamander")
+        XCTAssertEqual(hy2Node.obfuscationPassword, "obfs-secret")
+        XCTAssertEqual(hy2Node.uploadMbps, 50)
+        XCTAssertEqual(hy2Node.downloadMbps, 300)
+        try ProfileImportValidator.validate(data: Data(AetherNodeProfileCompiler.compile(node: hy2Node).utf8))
+
+        let tuicURI = "tuic://b831381d-6324-4d53-ad4f-8cda48b30811:tuic-pass@tuic.example:443?sni=tuic.example&congestion_control=bbr&udp_relay_mode=native#JP-TUIC"
+        let tuicNode = try AetherNodeURIParser.parse(tuicURI)
+        XCTAssertEqual(tuicNode.name, "JP-TUIC")
+        XCTAssertEqual(tuicNode.protocolID, .tuic)
+        XCTAssertEqual(tuicNode.uuid, "b831381d-6324-4d53-ad4f-8cda48b30811")
+        XCTAssertEqual(tuicNode.password, "tuic-pass")
+        XCTAssertEqual(tuicNode.congestionController, "bbr")
+        XCTAssertEqual(tuicNode.udpRelayMode, "native")
+        try ProfileImportValidator.validate(data: Data(AetherNodeProfileCompiler.compile(node: tuicNode).utf8))
+
+        let vmessJSON = """
+        {"v":"2","ps":"KR-VMess","add":"vmess.example","port":"443","id":"b831381d-6324-4d53-ad4f-8cda48b30811","aid":"0","scy":"auto","net":"ws","type":"none","host":"cdn.vmess.example","path":"/vmess","tls":"tls","sni":"vmess.example"}
+        """
+        let vmessURI = "vmess://\(Data(vmessJSON.utf8).base64EncodedString())"
+        let vmessNode = try AetherNodeURIParser.parse(vmessURI)
+        XCTAssertEqual(vmessNode.name, "KR-VMess")
+        XCTAssertEqual(vmessNode.protocolID, .vmess)
+        XCTAssertEqual(vmessNode.server, "vmess.example")
+        XCTAssertEqual(vmessNode.port, 443)
+        XCTAssertEqual(vmessNode.transport.kind, .webSocket)
+        XCTAssertEqual(vmessNode.transport.host, "cdn.vmess.example")
+        XCTAssertEqual(vmessNode.transport.path, "/vmess")
+        XCTAssertTrue(vmessNode.tls.enabled)
+        try ProfileImportValidator.validate(data: Data(AetherNodeProfileCompiler.compile(node: vmessNode).utf8))
+
+        // Round-trip formatting and parsing
+        for node in [vlessNode, trojanNode, ssNode, hy2Node, tuicNode, vmessNode] {
+            let formatted = try AetherNodeURIParser.format(node)
+            let reparsed = try AetherNodeURIParser.parse(formatted)
+            XCTAssertEqual(reparsed.protocolID, node.protocolID)
+            XCTAssertEqual(reparsed.server, node.server)
+            XCTAssertEqual(reparsed.port, node.port)
+            XCTAssertEqual(reparsed.name, node.name)
+        }
+    }
+
+    func testNodeURIParserRejectsOversizedAndInjectedLinks() {
+        let oversized = "vless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443#" + String(repeating: "a", count: 5000)
+        XCTAssertThrowsError(try AetherNodeURIParser.parse(oversized))
+        XCTAssertThrowsError(try AetherNodeURIParser.parse("unknown://example.com:443"))
+        XCTAssertThrowsError(try AetherNodeURIParser.parse("trojan://pass@bad.example\nrules::443#Injected"))
+    }
+
     private static func makeNodes() -> [AetherNode] {
         let uuid = "b831381d-6324-4d53-ad4f-8cda48b30811"
         return [

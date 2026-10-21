@@ -81,9 +81,6 @@ struct ManualNodeEditorSheet: View {
         .aetherLargeSheetFrame()
         .disabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
-        .onChange(of: node.protocolID) { _, protocolID in
-            applyDefaults(for: protocolID)
-        }
         .fileImporter(
             isPresented: $isPrivateKeyImporterPresented,
             allowedContentTypes: [.plainText, .data],
@@ -121,7 +118,17 @@ struct ManualNodeEditorSheet: View {
 
     private var connectionSection: some View {
         Section(AppLocalization.string("Connection")) {
-            Picker(AppLocalization.string("Protocol"), selection: $node.protocolID) {
+            Picker(
+                AppLocalization.string("Protocol"),
+                selection: Binding(
+                    get: { node.protocolID },
+                    set: { newProtocol in
+                        guard node.protocolID != newProtocol else { return }
+                        node.protocolID = newProtocol
+                        applyDefaults(for: newProtocol)
+                    }
+                )
+            ) {
                 ForEach(AetherNodeProtocol.allCases, id: \.self) { protocolID in
                     Text(protocolID.displayName).tag(protocolID)
                 }
@@ -452,12 +459,30 @@ struct ManualNodeEditorSheet: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
             if let errorMessage {
                 AetherInlineMessage(text: errorMessage)
             }
-            HStack {
-                storageStatusLabel
+            storageStatusLabel
+            HStack(spacing: AetherVisual.s2) {
+                Button {
+                    pasteNodeLink()
+                } label: {
+                    Label(AppLocalization.string("Paste Node Link"), systemImage: "doc.on.clipboard")
+                }
+                .aetherButton()
+                .disabled(isSaving)
+                .accessibilityIdentifier("paste-manual-node-link")
+
+                if let shareURI = (try? candidateForSubmission()).flatMap({ try? AetherNodeURIParser.format($0) }) {
+                    AetherCopyButton(title: Text(AppLocalization.string("Copy Node Link"))) {
+                        NSPasteboard.general.clearContents()
+                        return NSPasteboard.general.setString(shareURI, forType: .string)
+                    }
+                    .aetherButton()
+                    .accessibilityIdentifier("copy-manual-node-link")
+                }
+
                 Spacer()
                 Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
                     .keyboardShortcut(.cancelAction)
@@ -483,6 +508,36 @@ struct ManualNodeEditorSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
+    }
+
+    private func pasteNodeLink() {
+        errorMessage = nil
+        guard let raw = NSPasteboard.general.string(forType: .string),
+              !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = AppLocalization.string("Clipboard does not contain a node share link.")
+            return
+        }
+        do {
+            var imported = try AetherNodeURIParser.parse(raw)
+            imported.id = node.id
+            node = imported
+            portText = String(imported.port)
+            uploadText = imported.uploadMbps.map(String.init) ?? ""
+            downloadText = imported.downloadMbps.map(String.init) ?? ""
+            allowedIPsText = imported.allowedIPs.isEmpty
+                ? "0.0.0.0/0, ::/0"
+                : imported.allowedIPs.joined(separator: ", ")
+            if imported.transport.kind != .tcp
+                || !imported.tls.serverName.isEmpty
+                || !imported.tls.realityPublicKey.isEmpty
+                || !imported.tls.certificateFingerprint.isEmpty
+                || !imported.tls.clientFingerprint.isEmpty
+                || !imported.flow.isEmpty {
+                showsAdvanced = true
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private var storageStatusLabel: some View {

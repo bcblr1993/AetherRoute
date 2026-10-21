@@ -382,9 +382,18 @@ struct RulesView: View {
                     .padding(AetherVisual.s4)
                 } else {
                     VStack(spacing: AetherVisual.sCompact) {
-                        ForEach(destinationRules) { rule in
+                        let rulesList = destinationRules
+                        ForEach(Array(rulesList.enumerated()), id: \.element.id) { index, rule in
                             CustomRuleRow(
                                 rule: rule,
+                                canMoveUp: index > 0,
+                                canMoveDown: index + 1 < rulesList.count,
+                                onMoveUp: {
+                                    Task { await tunnel.moveCustomRule(id: rule.id, direction: .up) }
+                                },
+                                onMoveDown: {
+                                    Task { await tunnel.moveCustomRule(id: rule.id, direction: .down) }
+                                },
                                 onToggle: {
                                     Task { await tunnel.toggleCustomRule(id: rule.id) }
                                 },
@@ -776,6 +785,10 @@ private struct RuleRow: View {
 
 struct CustomRuleRow: View {
     let rule: CustomRule
+    var canMoveUp: Bool = false
+    var canMoveDown: Bool = false
+    var onMoveUp: (() -> Void)? = nil
+    var onMoveDown: (() -> Void)? = nil
     let onToggle: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
@@ -835,6 +848,30 @@ struct CustomRuleRow: View {
                 .frame(maxWidth: 160, alignment: .trailing)
 
             HStack(spacing: AetherVisual.sMicro) {
+                if let onMoveUp {
+                    Button {
+                        onMoveUp()
+                    } label: {
+                        AetherRowIconLabel(symbol: "chevron.up")
+                    }
+                    .buttonStyle(.aetherPressable)
+                    .disabled(!canMoveUp)
+                    .help(AppLocalization.string("Move rule up"))
+                    .accessibilityLabel(AppLocalization.string("Move rule up"))
+                }
+
+                if let onMoveDown {
+                    Button {
+                        onMoveDown()
+                    } label: {
+                        AetherRowIconLabel(symbol: "chevron.down")
+                    }
+                    .buttonStyle(.aetherPressable)
+                    .disabled(!canMoveDown)
+                    .help(AppLocalization.string("Move rule down"))
+                    .accessibilityLabel(AppLocalization.string("Move rule down"))
+                }
+
                 Button {
                     onTest()
                 } label: {
@@ -873,6 +910,38 @@ struct CustomRuleRow: View {
         .onHover { hovering in
             withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
                 isHovered = hovering
+            }
+        }
+        .contextMenu {
+            if let onMoveUp, canMoveUp {
+                Button {
+                    onMoveUp()
+                } label: {
+                    Label(AppLocalization.string("Move rule up"), systemImage: "arrow.up")
+                }
+            }
+            if let onMoveDown, canMoveDown {
+                Button {
+                    onMoveDown()
+                } label: {
+                    Label(AppLocalization.string("Move rule down"), systemImage: "arrow.down")
+                }
+            }
+            Button {
+                onTest()
+            } label: {
+                Label(AppLocalization.string("Verify rule"), systemImage: "bolt.badge.clock")
+            }
+            Button {
+                onEdit()
+            } label: {
+                Label(AppLocalization.string("Edit rule"), systemImage: "pencil")
+            }
+            Divider()
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label(AppLocalization.string("Delete rule"), systemImage: "trash")
             }
         }
     }
@@ -963,6 +1032,13 @@ struct CustomRuleEditorSheet: View {
     private var validationResult: RuleValidationResult {
         if mode == .raw {
             do {
+                if initialRule == nil {
+                    let parsedBatch = try CustomRule.parseBatch(rawClashString, defaultTarget: currentRuleTarget)
+                    guard let first = parsedBatch.first else {
+                        return .invalid(reason: CustomRuleParseError.emptyValue.localizedDescription)
+                    }
+                    return CustomRuleValidator.validate(first)
+                }
                 let parsed = try CustomRule.parse(rawClashString)
                 return CustomRuleValidator.validate(parsed)
             } catch {
@@ -973,8 +1049,27 @@ struct CustomRuleEditorSheet: View {
         }
     }
 
+    private var candidateBatchRules: [CustomRule]? {
+        guard mode == .raw, initialRule == nil else { return nil }
+        guard let parsed = try? CustomRule.parseBatch(rawClashString, defaultTarget: currentRuleTarget) else {
+            return nil
+        }
+        let fallbackComment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fallbackComment.isEmpty else { return parsed }
+        return parsed.map { rule in
+            var copy = rule
+            if copy.comment == nil || copy.comment?.isEmpty == true {
+                copy.comment = fallbackComment
+            }
+            return copy
+        }
+    }
+
     private var candidateRule: CustomRule? {
         if mode == .raw {
+            if initialRule == nil {
+                return candidateBatchRules?.first
+            }
             return try? CustomRule.parse(
                 rawClashString,
                 id: initialRule?.id ?? UUID(),
@@ -1074,12 +1169,17 @@ struct CustomRuleEditorSheet: View {
                     }
                 } else {
                     ruleRow(AppLocalization.string("Rule")) {
-                        TextField(AppLocalization.string("e.g. DOMAIN-SUFFIX,baizhiedu.xin,DIRECT or IP-CIDR,100.64.0.0/10,DIRECT,no-resolve"), text: $rawClashString)
-                            .textFieldStyle(.plain)
-                            .font(.body.monospaced())
-                            // A whole rule line reads from its start.
-                            .multilineTextAlignment(.leading)
-                            .accessibilityIdentifier("custom-rule-raw-field")
+                        TextField(
+                            AppLocalization.string("e.g. DOMAIN-SUFFIX,baizhiedu.xin,DIRECT or IP-CIDR,100.64.0.0/10,DIRECT,no-resolve"),
+                            text: $rawClashString,
+                            axis: initialRule == nil ? .vertical : .horizontal
+                        )
+                        .lineLimit(initialRule == nil ? 1...5 : 1...1)
+                        .textFieldStyle(.plain)
+                        .font(.body.monospaced())
+                        // A whole rule line reads from its start.
+                        .multilineTextAlignment(.leading)
+                        .accessibilityIdentifier("custom-rule-raw-field")
                     }
                     ruleDivider
                     ruleRow(AppLocalization.string("Note")) {
@@ -1147,7 +1247,15 @@ struct CustomRuleEditorSheet: View {
                     .disabled(isSaving)
                     .keyboardShortcut(.cancelAction)
                 Button {
-                    if let rule = candidateRule {
+                    if let batch = candidateBatchRules, batch.count > 1 {
+                        isSaving = true
+                        saveFailed = false
+                        Task {
+                            let saved = await tunnel.importCustomRulesBatch(batch)
+                            isSaving = false
+                            if saved { dismiss() } else { saveFailed = true }
+                        }
+                    } else if let rule = candidateRule {
                         isSaving = true
                         saveFailed = false
                         Task {

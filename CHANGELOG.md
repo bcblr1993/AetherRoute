@@ -4,6 +4,32 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.6] - 2026-10-21
+
+Quick destination routing rules from the live Connections table, single-node share URI (`vless://`, `trojan://`, `ss://`, `vmess://`, `hysteria2://`, `tuic://`, `anytls://`, `socks5://`, `http://`) clipboard import and export, and custom rule priority reordering with multi-line Clash rule batch import.
+
+### Added
+
+- The live **Connections** table context menu now offers one-click destination routing rules (`Rule for <root domain / exact domain / IP>`) via `ConnectionDestinationRulePlanner`, allowing any domain or public IPv4/IPv6 destination to be sent directly (`DIRECT`), through any proxy group, or blocked (`REJECT`). Multi-part public suffixes (`co.uk`, `com.cn`, `com.hk`, `co.jp`, etc.) are preserved, Fake-IP/RFC1918/CGNAT/loopback addresses are excluded, and matching active connections are automatically closed after rule changes so apps immediately reconnect on the new route.
+- The manual node editor (`ManualNodeEditorSheet` / `AetherNodeURIParser`) now supports clipboard import (**Paste Node Link**) and export (**Copy Node Link**) for mainstream single-node share URIs (`vless://` including REALITY and WebSocket/gRPC/HTTP2, `trojan://`, `ss://` SIP002 and legacy Base64, `vmess://` v2rayN JSON Base64, `hysteria2://` / `hy2://`, `tuic://`, `anytls://`, `socks5://` and `http://` / `https://`) with strict length and control-character validation.
+- Custom routing rules (`CustomRuleStore` and `RulesView`) now support priority reordering (**Move rule up** / **Move rule down**) and multi-line Clash rule batch import (`CustomRule.parseBatch` / `CustomRuleStore.importBatch`), accepting raw Clash lines, `payload:` YAML lists, and two-token rules with a default target while automatically deduplicating existing `(kind, value)` rules.
+
+### Verified
+
+- Local: `verify_ui_design_tokens.sh`, `verify_localizations.sh` (1418 keys, `en` + `zh-Hans`), `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` passed with 6 new unit test suites in `CustomRuleTests` and `AetherNodeTests`.
+- Protocol interop (`outputs/interop-20261021T081030Z`): `matrix` (40 s), `reality` (32 s), `wireguard` (34 s), `shadowquic` (21 s) and `ssh` (11 s) all PASS; 48 case passes, 26 certificate rejections.
+- Tart VM `macos27` 6-way matrix (`outputs/acceptance-1.8.6-2026102103-20261021-161308/vm-acceptance`): 210 checks, 158 PASS, 0 FAIL, 52 SKIP (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct` all passed, including all 5 transparent proxy gates, idle keep-alive reuse and 2 MiB large upload).
+- Remote arm64 gate `test_remote_arm64.sh fast` on `chenxu@100.64.0.3` passed.
+- Physical Apple Silicon Mac mini (`chenxu@100.64.0.3`), notarized stable candidate `2026102103` with both system extensions at `1.8.6/2026102103` (`outputs/physical-runtime-1.8.6-2026102103`): TUN — idle keep-alive reuse passed, 2 MiB upload `5.6 s`, interface switch recovered in `1/1/1/1/2/1 s`; transparent proxy — idle keep-alive reuse passed, 2 MiB upload `3.6 s`, interface switch recovered in `2/2/2/3/2/2 s`.
+- UI performance and memory (`result.txt`, 300 s per profile on `chenxu@100.64.0.3`):
+
+| Profile | Page switch p95 / max (ms) | Footprint median / max (MB) | Growth |
+|---|---|---|---|
+| showcase 1.8.5 → 1.8.6 | 141.2 / 200.6 → 145.9 / 197.2 | 66 / 80 → 66 / 80 | +2 → +0 MB |
+| large 1.8.5 → 1.8.6 | 141.5 / 189.0 → 144.9 / 171.4 | 66 / 77 → 66 / 79 | +2 → +1 MB |
+
+All within budget (p95 ≤ 180 ms, max ≤ 300 ms, median ≤ 90 MB, max ≤ 110 MB, growth ≤ 8 MB).
+
 ## [1.8.5] - 2026-10-21
 
 Custom routing rules for `GEOSITE` and `DST-PORT`, chained proxy `dialer-proxy` support for manual nodes, end-to-end encrypted iCloud synchronization for custom rules and bypass policies, and Fake-IP poisoning protection for transparent proxy upstream exclusions.

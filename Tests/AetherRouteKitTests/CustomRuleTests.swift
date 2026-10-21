@@ -152,4 +152,114 @@ final class CustomRuleTests: XCTestCase {
             $0.destinationAddress == "172.16.0.0" && $0.subnetMask == "255.240.0.0"
         })
     }
+
+    func testDestinationRuleCandidatesForSubdomainRootAndMultiPartPublicSuffix() {
+        let subCandidates = ConnectionDestinationRulePlanner.candidates(for: "api.openai.com:443")
+        XCTAssertEqual(
+            subCandidates,
+            [
+                ConnectionDestinationRuleCandidate(kind: .domainSuffix, value: "openai.com", noResolve: false),
+                ConnectionDestinationRuleCandidate(kind: .domain, value: "api.openai.com", noResolve: false),
+            ]
+        )
+
+        let rootCandidates = ConnectionDestinationRulePlanner.candidates(for: "openai.com:443")
+        XCTAssertEqual(
+            rootCandidates,
+            [
+                ConnectionDestinationRuleCandidate(kind: .domainSuffix, value: "openai.com", noResolve: false),
+            ]
+        )
+
+        let ukCandidates = ConnectionDestinationRulePlanner.candidates(for: "news.bbc.co.uk:443")
+        XCTAssertEqual(
+            ukCandidates,
+            [
+                ConnectionDestinationRuleCandidate(kind: .domainSuffix, value: "bbc.co.uk", noResolve: false),
+                ConnectionDestinationRuleCandidate(kind: .domain, value: "news.bbc.co.uk", noResolve: false),
+            ]
+        )
+    }
+
+    func testDestinationRuleCandidatesForPublicIPv4AndIPv6AndRejectsFakeIPOrLAN() {
+        XCTAssertEqual(
+            ConnectionDestinationRulePlanner.candidates(for: "8.8.8.8:53"),
+            [ConnectionDestinationRuleCandidate(kind: .ipCIDR, value: "8.8.8.8/32", noResolve: true)]
+        )
+        XCTAssertEqual(
+            ConnectionDestinationRulePlanner.candidates(for: "[2606:4700:4700::1111]:443"),
+            [ConnectionDestinationRuleCandidate(kind: .ipCIDR6, value: "2606:4700:4700::1111/128", noResolve: true)]
+        )
+
+        // Synthetic Fake-IP, loopback, RFC1918 LAN, and local hostnames must never produce rules
+        XCTAssertTrue(ConnectionDestinationRulePlanner.candidates(for: "198.18.0.25:443").isEmpty)
+        XCTAssertTrue(ConnectionDestinationRulePlanner.candidates(for: "198.19.12.34:80").isEmpty)
+        XCTAssertTrue(ConnectionDestinationRulePlanner.candidates(for: "127.0.0.1:7890").isEmpty)
+        XCTAssertTrue(ConnectionDestinationRulePlanner.candidates(for: "[::1]:7890").isEmpty)
+        XCTAssertTrue(ConnectionDestinationRulePlanner.candidates(for: "192.168.1.1:80").isEmpty)
+        XCTAssertTrue(ConnectionDestinationRulePlanner.candidates(for: "10.0.0.1:80").isEmpty)
+        XCTAssertTrue(ConnectionDestinationRulePlanner.candidates(for: "172.16.5.4:443").isEmpty)
+        XCTAssertTrue(ConnectionDestinationRulePlanner.candidates(for: "localhost:8080").isEmpty)
+        XCTAssertTrue(ConnectionDestinationRulePlanner.candidates(for: "mac-mini.local:443").isEmpty)
+    }
+
+    func testCustomRuleStoreMoveUpAndDown() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let store = CustomRuleStore(directoryURL: tempDir)
+
+        let r1 = CustomRule(kind: .domainSuffix, value: "first.example.com", target: .direct)
+        let r2 = CustomRule(kind: .domainSuffix, value: "second.example.com", target: .proxy("Proxy"))
+        let r3 = CustomRule(kind: .domainSuffix, value: "third.example.com", target: .reject)
+        try store.save([r1, r2, r3])
+
+        let movedUp = try store.move(id: r2.id, direction: .up)
+        XCTAssertEqual(movedUp.map(\.id), [r2.id, r1.id, r3.id])
+
+        // Moving top item up is a safe no-op
+        let movedTopUp = try store.move(id: r2.id, direction: .up)
+        XCTAssertEqual(movedTopUp.map(\.id), [r2.id, r1.id, r3.id])
+
+        let movedDown = try store.move(id: r1.id, direction: .down)
+        XCTAssertEqual(movedDown.map(\.id), [r2.id, r3.id, r1.id])
+
+        // Moving bottom item down is a safe no-op
+        let movedBottomDown = try store.move(id: r1.id, direction: .down)
+        XCTAssertEqual(movedBottomDown.map(\.id), [r2.id, r3.id, r1.id])
+    }
+
+    func testCustomRuleBatchParseAndImportDeduplication() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let store = CustomRuleStore(directoryURL: tempDir)
+
+        let existing = CustomRule(kind: .domainSuffix, value: "openai.com", target: .direct)
+        try store.save([existing])
+
+        let batchText = """
+        # AI & Streaming rules
+        payload:
+          - DOMAIN-SUFFIX,openai.com,AI-Group
+          - DOMAIN-SUFFIX,anthropic.com,AI-Group
+          - GEOSITE,youtube,Media
+          - IP-CIDR,1.1.1.1/32,DIRECT,no-resolve
+          - DOMAIN-SUFFIX,internal.corp
+        """
+
+        let parsed = try CustomRule.parseBatch(batchText, defaultTarget: .direct)
+        XCTAssertEqual(parsed.count, 5)
+        XCTAssertEqual(parsed[0].kind, .domainSuffix)
+        XCTAssertEqual(parsed[0].value, "openai.com")
+        XCTAssertEqual(parsed[0].target, .proxy("AI-Group"))
+        XCTAssertEqual(parsed[4].value, "internal.corp")
+        XCTAssertEqual(parsed[4].target, .direct)
+
+        let merged = try store.importBatch(parsed)
+        XCTAssertEqual(merged.count, 5)
+        // Existing openai.com rule should have its target updated to AI-Group without duplicating
+        let openAIRules = merged.filter { $0.value == "openai.com" }
+        XCTAssertEqual(openAIRules.count, 1)
+        XCTAssertEqual(openAIRules.first?.id, existing.id)
+        XCTAssertEqual(openAIRules.first?.target, .proxy("AI-Group"))
+    }
 }

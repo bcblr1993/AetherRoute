@@ -15412,6 +15412,66 @@
           }
         }
       }
+    },
+    "Paste Node Link": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴节点链接"
+          }
+        }
+      }
+    },
+    "Copy Node Link": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制节点链接"
+          }
+        }
+      }
+    },
+    "Clipboard does not contain a node share link.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剪贴板中不包含有效的节点分享链接。"
+          }
+        }
+      }
+    },
+    "Move rule up": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上移规则"
+          }
+        }
+      }
+    },
+    "Move rule down": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下移规则"
+          }
+        }
+      }
+    },
+    "Imported %lld custom rules at top priority": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入 %lld 条最高优先级自定义规则"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

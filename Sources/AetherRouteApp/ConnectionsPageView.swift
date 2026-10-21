@@ -240,6 +240,7 @@ struct ConnectionsView: View {
                             }
                         }
                         Divider()
+                        destinationRuleMenu(for: row.connection)
                         appContextMenu(
                             SourceAppDirectory.shared.presentation(for: row.connection)
                         )
@@ -318,6 +319,51 @@ struct ConnectionsView: View {
         .accessibilityLabel(AppLocalization.string("Apps"))
         .accessibilityIdentifier("connections-app-table")
         .scrollIndicators(.hidden, axes: .horizontal)
+    }
+
+    @ViewBuilder
+    private func destinationRuleMenu(for connection: ConnectionTelemetry) -> some View {
+        let candidates = ConnectionDestinationRulePlanner.candidates(for: connection.destination)
+        if !candidates.isEmpty {
+            ForEach(candidates, id: \.self) { candidate in
+                let existing = tunnel.destinationRule(kind: candidate.kind, value: candidate.value)
+                Menu(AppLocalization.format("Rule for %@", candidate.value)) {
+                    ForEach(applicationRuleTargets, id: \.rawString) { target in
+                        Button {
+                            Task {
+                                let saved = await tunnel.setDestinationRule(
+                                    kind: candidate.kind,
+                                    value: candidate.value,
+                                    noResolve: candidate.noResolve,
+                                    target: target
+                                )
+                                if saved, tunnel.isConnected {
+                                    await tunnel.closeConnections(.init(row: connection))
+                                }
+                            }
+                        } label: {
+                            if existing?.target == target {
+                                Label(applicationTargetTitle(target), systemImage: "checkmark")
+                            } else {
+                                Text(applicationTargetTitle(target))
+                            }
+                        }
+                    }
+                    if let existing {
+                        Divider()
+                        Button(AppLocalization.string("Remove rule"), role: .destructive) {
+                            Task {
+                                let deleted = await tunnel.deleteCustomRule(id: existing.id)
+                                if deleted, tunnel.isConnected {
+                                    await tunnel.closeConnections(.init(row: connection))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Divider()
+        }
     }
 
     @ViewBuilder

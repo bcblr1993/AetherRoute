@@ -935,3 +935,604 @@ public enum AetherNodeProfileCompilerError: LocalizedError, Equatable,
         }
     }
 }
+
+public enum AetherNodeURIError: LocalizedError, Equatable, Sendable {
+    case emptyLink
+    case linkTooLong
+    case malformedLink
+    case unsupportedScheme(String)
+    case unsupportedProtocolForURI(AetherNodeProtocol)
+
+    public var errorDescription: String? {
+        switch self {
+        case .emptyLink:
+            "The proxy share link is empty."
+        case .linkTooLong:
+            "The proxy share link exceeds the 4096-byte safety limit."
+        case .malformedLink:
+            "The proxy share link is malformed or missing required fields."
+        case let .unsupportedScheme(scheme):
+            "Unsupported proxy link scheme: \(scheme)."
+        case let .unsupportedProtocolForURI(proto):
+            "\(proto.displayName) nodes cannot be exported as a single share URI."
+        }
+    }
+}
+
+/// Parses and formats standard proxy node share URIs (`vless://`, `trojan://`,
+/// `ss://`, `vmess://`, `hysteria2://` / `hy2://`, `tuic://`, `anytls://`,
+/// `socks5://`, `http://`, `https://`) with strict length and validation guards.
+public enum AetherNodeURIParser {
+    public static let maximumURIBytes = 4_096
+
+    public static func parse(_ rawURI: String) throws -> AetherNode {
+        let trimmed = rawURI.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw AetherNodeURIError.emptyLink
+        }
+        guard trimmed.utf8.count <= maximumURIBytes else {
+            throw AetherNodeURIError.linkTooLong
+        }
+        guard !trimmed.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
+            throw AetherNodeURIError.malformedLink
+        }
+
+        if trimmed.lowercased().hasPrefix("vmess://") {
+            return try parseVMess(trimmed)
+        }
+        if trimmed.lowercased().hasPrefix("ss://") {
+            return try parseShadowsocks(trimmed)
+        }
+
+        guard let components = URLComponents(string: trimmed),
+              let rawScheme = components.scheme?.lowercased()
+        else {
+            throw AetherNodeURIError.malformedLink
+        }
+
+        guard let host = components.host, !host.isEmpty,
+              let portInt = components.port,
+              let port = UInt16(exactly: portInt), port > 0
+        else {
+            throw AetherNodeURIError.malformedLink
+        }
+
+        let query = Dictionary(
+            (components.queryItems ?? []).compactMap { item -> (String, String)? in
+                guard let val = item.value else { return nil }
+                return (item.name.lowercased(), val)
+            },
+            uniquingKeysWith: { _, last in last }
+        )
+        let fragmentName = components.fragment?
+            .removingPercentEncoding?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let defaultName = (fragmentName?.isEmpty == false) ? fragmentName! : "\(rawScheme.uppercased())-\(host)"
+
+        let user = components.user ?? ""
+        let password = components.password ?? ""
+        let dialerProxy = query["dialer-proxy"] ?? query["detour"]
+
+        switch rawScheme {
+        case "vless":
+            let node = AetherNode(
+                name: defaultName,
+                protocolID: .vless,
+                server: host,
+                port: port,
+                uuid: user,
+                tls: parseTLS(from: query, defaultEnabled: true, fallbackSNI: host),
+                transport: parseTransport(from: query),
+                flow: query["flow"] ?? "",
+                dialerProxy: dialerProxy
+            )
+            return try node.validated()
+
+        case "trojan":
+            let secret = password.isEmpty ? user : "\(user):\(password)"
+            let node = AetherNode(
+                name: defaultName,
+                protocolID: .trojan,
+                server: host,
+                port: port,
+                password: secret,
+                tls: parseTLS(from: query, defaultEnabled: true, fallbackSNI: host),
+                transport: parseTransport(from: query),
+                dialerProxy: dialerProxy
+            )
+            return try node.validated()
+
+        case "hysteria2", "hy2":
+            let secret = password.isEmpty ? user : "\(user):\(password)"
+            let obfs = (query["obfs"]?.lowercased() == "salamander") ? "salamander" : ""
+            let obfsPassword = obfs.isEmpty ? "" : (query["obfs-password"] ?? "")
+            let upMbps = query["upmbps"].flatMap(UInt64.init)
+            let downMbps = query["downmbps"].flatMap(UInt64.init)
+            let node = AetherNode(
+                name: defaultName,
+                protocolID: .hysteria2,
+                server: host,
+                port: port,
+                password: secret,
+                tls: parseTLS(from: query, defaultEnabled: true, fallbackSNI: host),
+                obfuscation: obfs,
+                obfuscationPassword: obfsPassword,
+                uploadMbps: upMbps,
+                downloadMbps: downMbps,
+                dialerProxy: dialerProxy
+            )
+            return try node.validated()
+
+        case "tuic":
+            let parsedUUID: String
+            let parsedPass: String
+            if !password.isEmpty {
+                parsedUUID = user
+                parsedPass = password
+            } else if let colon = user.firstIndex(of: ":") {
+                parsedUUID = String(user[..<colon])
+                parsedPass = String(user[user.index(after: colon)...])
+            } else {
+                parsedUUID = user
+                parsedPass = query["password"] ?? ""
+            }
+            let node = AetherNode(
+                name: defaultName,
+                protocolID: .tuic,
+                server: host,
+                port: port,
+                password: parsedPass,
+                uuid: parsedUUID,
+                tls: parseTLS(from: query, defaultEnabled: true, fallbackSNI: host),
+                congestionController: query["congestion_control"] ?? query["cc"] ?? "bbr",
+                udpRelayMode: query["udp_relay_mode"] ?? "native",
+                dialerProxy: dialerProxy
+            )
+            return try node.validated()
+
+        case "anytls":
+            let secret = password.isEmpty ? user : "\(user):\(password)"
+            let node = AetherNode(
+                name: defaultName,
+                protocolID: .anyTLS,
+                server: host,
+                port: port,
+                password: secret,
+                tls: parseTLS(from: query, defaultEnabled: true, fallbackSNI: host),
+                dialerProxy: dialerProxy
+            )
+            return try node.validated()
+
+        case "socks5", "socks":
+            let node = AetherNode(
+                name: defaultName,
+                protocolID: .socks5,
+                server: host,
+                port: port,
+                username: user,
+                password: password,
+                tls: parseTLS(from: query, defaultEnabled: false, fallbackSNI: host),
+                dialerProxy: dialerProxy
+            )
+            return try node.validated()
+
+        case "http", "https":
+            let node = AetherNode(
+                name: defaultName,
+                protocolID: .http,
+                server: host,
+                port: port,
+                username: user,
+                password: password,
+                tls: parseTLS(from: query, defaultEnabled: rawScheme == "https", fallbackSNI: host),
+                dialerProxy: dialerProxy
+            )
+            return try node.validated()
+
+        default:
+            throw AetherNodeURIError.unsupportedScheme(rawScheme)
+        }
+    }
+
+    public static func format(_ rawNode: AetherNode) throws -> String {
+        let node = try rawNode.validated()
+        let encodedName = node.name.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? node.name
+        let hostPart = node.server.contains(":") && !node.server.hasPrefix("[") ? "[\(node.server)]" : node.server
+
+        switch node.protocolID {
+        case .vless:
+            var items: [URLQueryItem] = []
+            if !node.tls.realityPublicKey.isEmpty {
+                items.append(URLQueryItem(name: "security", value: "reality"))
+                items.append(URLQueryItem(name: "sni", value: node.tls.serverName))
+                items.append(URLQueryItem(name: "pbk", value: node.tls.realityPublicKey))
+                if !node.tls.realityShortID.isEmpty {
+                    items.append(URLQueryItem(name: "sid", value: node.tls.realityShortID))
+                }
+                items.append(URLQueryItem(name: "fp", value: node.tls.clientFingerprint))
+            } else if node.tls.enabled {
+                items.append(URLQueryItem(name: "security", value: "tls"))
+                if !node.tls.serverName.isEmpty {
+                    items.append(URLQueryItem(name: "sni", value: node.tls.serverName))
+                }
+            } else {
+                items.append(URLQueryItem(name: "security", value: "none"))
+            }
+            appendTransportQueryItems(node.transport, to: &items)
+            if !node.flow.isEmpty {
+                items.append(URLQueryItem(name: "flow", value: node.flow))
+            }
+            appendCommonQueryItems(node: node, to: &items)
+            return buildURI(scheme: "vless", userinfo: node.uuid, host: hostPart, port: node.port, queryItems: items, fragment: encodedName)
+
+        case .trojan:
+            var items: [URLQueryItem] = []
+            if !node.tls.serverName.isEmpty {
+                items.append(URLQueryItem(name: "sni", value: node.tls.serverName))
+            }
+            appendTransportQueryItems(node.transport, to: &items)
+            appendCommonQueryItems(node: node, to: &items)
+            let userinfo = node.password.addingPercentEncoding(withAllowedCharacters: .urlUserAllowed) ?? node.password
+            return buildURI(scheme: "trojan", userinfo: userinfo, host: hostPart, port: node.port, queryItems: items, fragment: encodedName)
+
+        case .shadowsocks:
+            let rawCreds = "\(node.cipher):\(node.password)"
+            let b64Creds = Data(rawCreds.utf8).base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+            var items: [URLQueryItem] = []
+            if let dialer = node.dialerProxy {
+                items.append(URLQueryItem(name: "dialer-proxy", value: dialer))
+            }
+            return buildURI(scheme: "ss", userinfo: b64Creds, host: hostPart, port: node.port, queryItems: items, fragment: encodedName)
+
+        case .hysteria2:
+            var items: [URLQueryItem] = []
+            if !node.tls.serverName.isEmpty {
+                items.append(URLQueryItem(name: "sni", value: node.tls.serverName))
+            }
+            if node.obfuscation == "salamander" {
+                items.append(URLQueryItem(name: "obfs", value: "salamander"))
+                items.append(URLQueryItem(name: "obfs-password", value: node.obfuscationPassword))
+            }
+            if let up = node.uploadMbps {
+                items.append(URLQueryItem(name: "upmbps", value: String(up)))
+            }
+            if let down = node.downloadMbps {
+                items.append(URLQueryItem(name: "downmbps", value: String(down)))
+            }
+            appendCommonQueryItems(node: node, to: &items)
+            let userinfo = node.password.addingPercentEncoding(withAllowedCharacters: .urlUserAllowed) ?? node.password
+            return buildURI(scheme: "hysteria2", userinfo: userinfo, host: hostPart, port: node.port, queryItems: items, fragment: encodedName)
+
+        case .tuic:
+            var items: [URLQueryItem] = []
+            if !node.tls.serverName.isEmpty {
+                items.append(URLQueryItem(name: "sni", value: node.tls.serverName))
+            }
+            if !node.congestionController.isEmpty {
+                items.append(URLQueryItem(name: "congestion_control", value: node.congestionController))
+            }
+            if !node.udpRelayMode.isEmpty {
+                items.append(URLQueryItem(name: "udp_relay_mode", value: node.udpRelayMode))
+            }
+            appendCommonQueryItems(node: node, to: &items)
+            let passEncoded = node.password.addingPercentEncoding(withAllowedCharacters: .urlPasswordAllowed) ?? node.password
+            return buildURI(scheme: "tuic", userinfo: "\(node.uuid):\(passEncoded)", host: hostPart, port: node.port, queryItems: items, fragment: encodedName)
+
+        case .vmess:
+            let netValue: String
+            switch node.transport.kind {
+            case .tcp: netValue = "tcp"
+            case .webSocket: netValue = "ws"
+            case .http2: netValue = "h2"
+            case .grpc: netValue = "grpc"
+            }
+            let payload: [String: String] = [
+                "v": "2",
+                "ps": node.name,
+                "add": node.server,
+                "port": String(node.port),
+                "id": node.uuid,
+                "aid": "0",
+                "scy": node.cipher.isEmpty ? "auto" : node.cipher,
+                "net": netValue,
+                "type": "none",
+                "host": node.transport.host,
+                "path": node.transport.kind == .grpc ? node.transport.grpcServiceName : node.transport.path,
+                "tls": node.tls.enabled ? "tls" : "",
+                "sni": node.tls.serverName,
+            ]
+            let jsonData = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+            return "vmess://\(jsonData.base64EncodedString())"
+
+        case .anyTLS:
+            var items: [URLQueryItem] = []
+            if !node.tls.serverName.isEmpty {
+                items.append(URLQueryItem(name: "sni", value: node.tls.serverName))
+            }
+            appendCommonQueryItems(node: node, to: &items)
+            let userinfo = node.password.addingPercentEncoding(withAllowedCharacters: .urlUserAllowed) ?? node.password
+            return buildURI(scheme: "anytls", userinfo: userinfo, host: hostPart, port: node.port, queryItems: items, fragment: encodedName)
+
+        case .socks5:
+            var userinfo = ""
+            if !node.username.isEmpty {
+                let u = node.username.addingPercentEncoding(withAllowedCharacters: .urlUserAllowed) ?? node.username
+                let p = node.password.addingPercentEncoding(withAllowedCharacters: .urlPasswordAllowed) ?? node.password
+                userinfo = node.password.isEmpty ? u : "\(u):\(p)"
+            }
+            var items: [URLQueryItem] = []
+            appendCommonQueryItems(node: node, to: &items)
+            return buildURI(scheme: "socks5", userinfo: userinfo, host: hostPart, port: node.port, queryItems: items, fragment: encodedName)
+
+        case .http:
+            var userinfo = ""
+            if !node.username.isEmpty {
+                let u = node.username.addingPercentEncoding(withAllowedCharacters: .urlUserAllowed) ?? node.username
+                let p = node.password.addingPercentEncoding(withAllowedCharacters: .urlPasswordAllowed) ?? node.password
+                userinfo = node.password.isEmpty ? u : "\(u):\(p)"
+            }
+            var items: [URLQueryItem] = []
+            appendCommonQueryItems(node: node, to: &items)
+            return buildURI(scheme: node.tls.enabled ? "https" : "http", userinfo: userinfo, host: hostPart, port: node.port, queryItems: items, fragment: encodedName)
+
+        case .wireGuard, .ssh, .shadowQUIC:
+            throw AetherNodeURIError.unsupportedProtocolForURI(node.protocolID)
+        }
+    }
+
+    private static func parseShadowsocks(_ uri: String) throws -> AetherNode {
+        let body = String(uri.dropFirst(5))
+        let parts = body.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+        let mainPart = String(parts[0])
+        let fragmentName = parts.count > 1
+            ? String(parts[1]).removingPercentEncoding?.trimmingCharacters(in: .whitespacesAndNewlines)
+            : nil
+
+        if mainPart.contains("@"), let components = URLComponents(string: uri),
+           let host = components.host, !host.isEmpty,
+           let portInt = components.port, let port = UInt16(exactly: portInt), port > 0
+        {
+            let userPart = components.user ?? ""
+            let passPart = components.password ?? ""
+            let cipher: String
+            let password: String
+            if !passPart.isEmpty {
+                cipher = userPart
+                password = passPart
+            } else if let decoded = decodeBase64Flexible(userPart),
+                      let colon = decoded.firstIndex(of: ":")
+            {
+                cipher = String(decoded[..<colon])
+                password = String(decoded[decoded.index(after: colon)...])
+            } else {
+                throw AetherNodeURIError.malformedLink
+            }
+            let query = Dictionary(
+                (components.queryItems ?? []).compactMap { item -> (String, String)? in
+                    guard let val = item.value else { return nil }
+                    return (item.name.lowercased(), val)
+                },
+                uniquingKeysWith: { _, last in last }
+            )
+            let name = (fragmentName?.isEmpty == false) ? fragmentName! : "SS-\(host)"
+            let node = AetherNode(
+                name: name,
+                protocolID: .shadowsocks,
+                server: host,
+                port: port,
+                password: password,
+                cipher: cipher,
+                dialerProxy: query["dialer-proxy"] ?? query["detour"]
+            )
+            return try node.validated()
+        } else if let decoded = decodeBase64Flexible(mainPart),
+                  let components = URLComponents(string: "ss://\(decoded)"),
+                  let host = components.host, !host.isEmpty,
+                  let portInt = components.port, let port = UInt16(exactly: portInt), port > 0,
+                  let cipher = components.user, !cipher.isEmpty,
+                  let password = components.password
+        {
+            let name = (fragmentName?.isEmpty == false) ? fragmentName! : "SS-\(host)"
+            let node = AetherNode(
+                name: name,
+                protocolID: .shadowsocks,
+                server: host,
+                port: port,
+                password: password,
+                cipher: cipher
+            )
+            return try node.validated()
+        }
+        throw AetherNodeURIError.malformedLink
+    }
+
+    private static func parseVMess(_ uri: String) throws -> AetherNode {
+        let encoded = String(uri.dropFirst(8)).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let decoded = decodeBase64Flexible(encoded),
+              let jsonData = decoded.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
+        else {
+            throw AetherNodeURIError.malformedLink
+        }
+
+        func str(_ key: String) -> String {
+            if let s = dict[key] as? String { return s.trimmingCharacters(in: .whitespacesAndNewlines) }
+            if let n = dict[key] as? NSNumber { return n.stringValue }
+            return ""
+        }
+
+        let host = str("add")
+        let portStr = str("port")
+        let uuid = str("id")
+        guard !host.isEmpty, let port = UInt16(portStr), port > 0, !uuid.isEmpty else {
+            throw AetherNodeURIError.malformedLink
+        }
+
+        let name = str("ps").isEmpty ? "VMess-\(host)" : str("ps")
+        let scy = str("scy")
+        let cipher = (scy.isEmpty || scy == "none") ? "auto" : scy
+        let net = str("net").lowercased()
+        let wsHost = str("host")
+        let wsPath = str("path")
+        let transport: AetherNodeTransportOptions
+        switch net {
+        case "ws", "websocket":
+            transport = AetherNodeTransportOptions(kind: .webSocket, path: wsPath, host: wsHost)
+        case "h2", "http":
+            transport = AetherNodeTransportOptions(kind: .http2, path: wsPath, host: wsHost)
+        case "grpc":
+            transport = AetherNodeTransportOptions(kind: .grpc, grpcServiceName: wsPath)
+        default:
+            transport = AetherNodeTransportOptions(kind: .tcp)
+        }
+
+        let tlsField = str("tls").lowercased()
+        let tlsEnabled = (tlsField == "tls" || tlsField == "true" || tlsField == "1")
+        let sni = str("sni").isEmpty ? (wsHost.isEmpty ? host : wsHost) : str("sni")
+        let tls = AetherNodeTLS(
+            enabled: tlsEnabled,
+            serverName: tlsEnabled ? sni : ""
+        )
+
+        let node = AetherNode(
+            name: name,
+            protocolID: .vmess,
+            server: host,
+            port: port,
+            uuid: uuid,
+            cipher: cipher,
+            tls: tls,
+            transport: transport
+        )
+        return try node.validated()
+    }
+
+    private static func parseTLS(
+        from query: [String: String],
+        defaultEnabled: Bool,
+        fallbackSNI: String
+    ) -> AetherNodeTLS {
+        let security = query["security"]?.lowercased()
+        let enabled: Bool
+        if let security {
+            enabled = (security == "tls" || security == "reality" || security == "xtls")
+        } else if let tlsParam = query["tls"]?.lowercased() {
+            enabled = (tlsParam == "1" || tlsParam == "true" || tlsParam == "tls")
+        } else {
+            enabled = defaultEnabled
+        }
+        let sni = query["sni"] ?? query["peer"] ?? (enabled ? fallbackSNI : "")
+        let insecureRaw = (query["allowinsecure"] ?? query["insecure"] ?? "0").lowercased()
+        let skipVerify = (insecureRaw == "1" || insecureRaw == "true")
+        let fingerprint = query["pinsha256"] ?? query["cert-sha256"] ?? ""
+        let pbk = query["pbk"] ?? ""
+        let sid = query["sid"] ?? ""
+        let fp = query["fp"] ?? "chrome"
+        return AetherNodeTLS(
+            enabled: enabled,
+            serverName: sni,
+            skipCertificateVerification: skipVerify,
+            realityPublicKey: pbk,
+            realityShortID: sid,
+            clientFingerprint: fp,
+            certificateFingerprint: fingerprint
+        )
+    }
+
+    private static func parseTransport(from query: [String: String]) -> AetherNodeTransportOptions {
+        let rawType = (query["type"] ?? query["network"] ?? "tcp").lowercased()
+        let host = query["host"] ?? ""
+        let path = query["path"] ?? ""
+        let serviceName = query["servicename"] ?? path
+        switch rawType {
+        case "ws", "websocket":
+            return AetherNodeTransportOptions(kind: .webSocket, path: path, host: host)
+        case "h2", "http":
+            return AetherNodeTransportOptions(kind: .http2, path: path, host: host)
+        case "grpc":
+            return AetherNodeTransportOptions(kind: .grpc, grpcServiceName: serviceName)
+        default:
+            return AetherNodeTransportOptions(kind: .tcp)
+        }
+    }
+
+    private static func appendTransportQueryItems(
+        _ transport: AetherNodeTransportOptions,
+        to items: inout [URLQueryItem]
+    ) {
+        switch transport.kind {
+        case .tcp:
+            items.append(URLQueryItem(name: "type", value: "tcp"))
+        case .webSocket:
+            items.append(URLQueryItem(name: "type", value: "ws"))
+            if !transport.host.isEmpty {
+                items.append(URLQueryItem(name: "host", value: transport.host))
+            }
+            if !transport.path.isEmpty {
+                items.append(URLQueryItem(name: "path", value: transport.path))
+            }
+        case .http2:
+            items.append(URLQueryItem(name: "type", value: "h2"))
+            if !transport.host.isEmpty {
+                items.append(URLQueryItem(name: "host", value: transport.host))
+            }
+            if !transport.path.isEmpty {
+                items.append(URLQueryItem(name: "path", value: transport.path))
+            }
+        case .grpc:
+            items.append(URLQueryItem(name: "type", value: "grpc"))
+            if !transport.grpcServiceName.isEmpty {
+                items.append(URLQueryItem(name: "serviceName", value: transport.grpcServiceName))
+            }
+        }
+    }
+
+    private static func appendCommonQueryItems(node: AetherNode, to items: inout [URLQueryItem]) {
+        if node.tls.skipCertificateVerification {
+            items.append(URLQueryItem(name: "allowInsecure", value: "1"))
+        }
+        if !node.tls.certificateFingerprint.isEmpty {
+            items.append(URLQueryItem(name: "pinSHA256", value: node.tls.certificateFingerprint))
+        }
+        if let dialer = node.dialerProxy {
+            items.append(URLQueryItem(name: "dialer-proxy", value: dialer))
+        }
+    }
+
+    private static func buildURI(
+        scheme: String,
+        userinfo: String,
+        host: String,
+        port: UInt16,
+        queryItems: [URLQueryItem],
+        fragment: String
+    ) -> String {
+        let auth = userinfo.isEmpty ? "" : "\(userinfo)@"
+        var queryPart = ""
+        if !queryItems.isEmpty {
+            var comp = URLComponents()
+            comp.queryItems = queryItems
+            if let q = comp.percentEncodedQuery, !q.isEmpty {
+                queryPart = "?\(q)"
+            }
+        }
+        let fragPart = fragment.isEmpty ? "" : "#\(fragment)"
+        return "\(scheme)://\(auth)\(host):\(port)\(queryPart)\(fragPart)"
+    }
+
+    private static func decodeBase64Flexible(_ input: String) -> String? {
+        var normalized = input
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = normalized.count % 4
+        if remainder > 0 {
+            normalized.append(String(repeating: "=", count: 4 - remainder))
+        }
+        guard let data = Data(base64Encoded: normalized) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+}
