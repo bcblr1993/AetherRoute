@@ -1,12 +1,18 @@
-"""Fail closed on shortened acceptance or missing physical runtime evidence."""
+"""Fail closed on shortened acceptance or missing physical runtime evidence.
+
+Physical evidence is bound to the notarized candidate DMG: the Mac mini's
+system extensions only load notarized builds, so the QA ZIP cannot run there.
+"""
+import contextlib
 import hashlib
 import json
 import os
 from pathlib import Path
 import plistlib
 import re
+import subprocess
 import sys
-import zipfile
+import tempfile
 
 CANDIDATE_BINARIES = [
     "AetherRoute.app/Contents/MacOS/AetherRoute",
@@ -34,24 +40,30 @@ def verify_settings():
         require(sorted(actual) == sorted(default.split()), f"{key} must include exactly {default}")
 
 
-def candidate_build(path):
-    """Return the archive's CFBundleVersion after checking its binaries exist."""
-    with zipfile.ZipFile(path) as archive:
-        info = plistlib.loads(archive.read("AetherRoute.app/Contents/Info.plist"))
-        names = set(archive.namelist())
+@contextlib.contextmanager
+def mounted_dmg(path):
+    """Attach a DMG read-only and unbrowsed; always detach afterwards."""
+    with tempfile.TemporaryDirectory(prefix="aether-candidate-") as mount:
+        subprocess.run(["hdiutil", "attach", str(path), "-readonly", "-nobrowse",
+                        "-mountpoint", mount, "-quiet"], check=True, capture_output=True, timeout=120)
+        try:
+            yield Path(mount)
+        finally:
+            subprocess.run(["hdiutil", "detach", mount, "-quiet"], capture_output=True, timeout=60)
+
+
+def read_candidate(path):
+    """Return the notarized candidate DMG's build and executable SHA-256s."""
+    path = Path(path)
+    require(path.suffix == ".dmg" and path.is_file(), f"notarized candidate DMG not found: {path}")
+    with mounted_dmg(path) as mount:
+        info = plistlib.loads((mount / "AetherRoute.app/Contents/Info.plist").read_bytes())
+        missing = [name for name in CANDIDATE_BINARIES if not (mount / name).is_file()]
+        require(not missing, f"candidate is missing {', '.join(missing)}")
+        hashes = {name: hashlib.sha256((mount / name).read_bytes()).hexdigest() for name in CANDIDATE_BINARIES}
     build = str(info["CFBundleVersion"])
     require(re.fullmatch(r"[0-9]+", build), "invalid candidate build")
-    missing = [name for name in CANDIDATE_BINARIES if name not in names]
-    require(not missing, f"candidate is missing {', '.join(missing)}")
-    return build
-
-
-def verify_candidate(path, build):
-    # A reused candidate must be the exact archive later bound into evidence.
-    require(path.startswith("/"), "reused candidate path must be absolute")
-    require(Path(path).is_file() and path.endswith(".zip"), f"reused candidate not found: {path}")
-    actual = candidate_build(path)
-    require(actual == build, f"reused candidate is build {actual}, expected {build}")
+    return build, hashes
 
 
 def verify_output(name, output):
@@ -101,14 +113,12 @@ def main():
     try:
         if sys.argv[1:] == ["settings"]:
             verify_settings()
-        elif len(sys.argv) == 4 and sys.argv[1] == "candidate":
-            verify_candidate(*sys.argv[2:])
         elif len(sys.argv) == 6 and sys.argv[1] == "evidence":
             verify_evidence(*sys.argv[2:])
         else:
-            raise ValueError("usage: verify_parallel_acceptance.py settings | candidate ZIP BUILD"
-                             " | evidence DIR BUILD HOST CANDIDATE_SHA256")
-    except (ValueError, OSError, KeyError, TypeError, zipfile.BadZipFile) as error:
+            raise ValueError("usage: verify_parallel_acceptance.py settings"
+                             " | evidence DIR BUILD HOST CANDIDATE_DMG_SHA256")
+    except (ValueError, OSError, KeyError, TypeError) as error:
         print(f"BLOCKED: {error}", file=sys.stderr)
         return 1
     print("Acceptance policy verified")

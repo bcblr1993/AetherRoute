@@ -35,53 +35,53 @@ candidate identity, modified logs, undersized transfers and incomplete switches.
 ## Physical runtime evidence
 
 The parallel runner's source tests and UI fixtures do not establish that the
-signed candidate transports real traffic on physical hardware. Acceptance now
-requires six successful runtime checks: idle reuse, upload and interface switch,
-each with TUN and Transparent Proxy. The runner writes the missing-evidence reason
-to `physical-runtime-verification.log` and exits nonzero until these are verified.
+signed candidate transports real traffic on physical hardware. Release packaging
+therefore requires six successful runtime checks on the dedicated Mac mini: idle
+reuse, 2 MiB upload and interface switch, each with TUN and Transparent Proxy.
 
-Every candidate build re-signs with a new timestamp, so evidence can only match a
-reused archive. The workflow is therefore two runs on one ZIP:
+The evidence is bound to the **notarized candidate DMG** (AGENTS.md step 5), not
+the QA ZIP: the Mac mini's system extensions only load notarized builds, and the
+QA ZIP only runs in the VM's developer mode. `package_release_dmg.sh` copies the
+app out of that DMG unchanged, so the published app is the one tested on hardware.
 
-1. Run the parallel runner. It builds the candidate, runs all gates, and ends
-   BLOCKED on missing evidence, printing the exact commands for steps 2 and 3.
-   Collect only after it finishes: interface switching disrupts the Mac mini that
-   the remote ARM64 and UI performance gates use.
-2. Collect TUN and Transparent Proxy evidence for that ZIP (commands below). The
-   default evidence directory is `outputs/physical-runtime-<VERSION>-<BUILD>`.
-3. Rerun the runner with `AETHERROUTE_ACCEPTANCE_CANDIDATE_ZIP=/absolute/zip`.
-   It checks the archive's build number and executables before any build, SSH or
-   VM operation, never rebuilds, reruns every gate and then verifies the evidence.
+1. Run the parallel runner (VM matrix, remote ARM64 gate, UI performance). It no
+   longer checks physical evidence and says so when it passes.
+2. Build the stable notarized candidate. Do not start or stop the Tart VM while it
+   builds: the candidate's network-state check fails when the VM's interfaces change.
+3. After the remote ARM64 and UI performance gates have finished (interface
+   switching disrupts the same Mac mini), install the candidate DMG's app on the
+   Mac mini, connect in TUN mode and collect, then reconnect in Transparent Proxy
+   mode and collect again (commands below). The default evidence directory is
+   `outputs/physical-runtime-<VERSION>-<BUILD>`.
+4. Run `package_release_dmg.sh` on that same DMG. It accepts only a `.dmg` source
+   and verifies the evidence against the DMG's SHA-256, build and host before any
+   signing or notarization; `AETHERROUTE_PHYSICAL_RUNTIME_EVIDENCE` overrides the
+   directory.
 
-Install the exact QA ZIP produced by the runner on the dedicated Mac mini and
-connect it in the engine being tested. The collector checks the installed app and
-both embedded extension executable hashes against the ZIP and checks active
-provider readiness before and after each test. It never installs, launches,
-disconnects, or changes the selected engine. Interface-switch testing deliberately
-interrupts the remote test Mac's uplinks; explicit opt-in is required, and the
-collector refuses the local hardware UUID or a host other than the SOP Mac mini.
-
-For each engine, after connecting the candidate on that dedicated Mac:
+The collector mounts the DMG read-only, checks the installed app's executable and
+both embedded extension executables against it, and checks active provider
+readiness before and after each test. It never installs, launches, disconnects,
+or changes the selected engine. Interface-switch testing deliberately interrupts
+the remote test Mac's uplinks; explicit opt-in is required, and the collector
+refuses the local hardware UUID or a host other than the SOP Mac mini.
 
 ```sh
 AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES python3 scripts/collect_physical_runtime_evidence.py \
-  /absolute/path/to/candidate.zip chenxu@100.64.0.3 tun /absolute/path/to/physical-runtime
+  /absolute/path/to/notarized-candidate.dmg chenxu@100.64.0.3 tun /absolute/path/to/physical-runtime
 # Connect the candidate in Transparent Proxy mode before the second invocation.
 AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES python3 scripts/collect_physical_runtime_evidence.py \
-  /absolute/path/to/candidate.zip chenxu@100.64.0.3 transparent /absolute/path/to/physical-runtime
+  /absolute/path/to/notarized-candidate.dmg chenxu@100.64.0.3 transparent /absolute/path/to/physical-runtime
 ```
 
-Receipts are bound to the ZIP SHA-256, build, host and engine. Each records the
+Receipts are bound to the DMG SHA-256, build, host and engine. Each records the
 exit status and hash of its full test output. A failed attempt retains its logs;
 use a fresh directory for a new attempt. Skipped and inconclusive results fail.
-With the candidate unchanged, verify the collected evidence independently:
+To check the evidence on its own:
 
 ```sh
 python3 scripts/verify_parallel_acceptance.py evidence \
-  /absolute/path/to/physical-runtime BUILD chenxu@100.64.0.3 CANDIDATE_SHA256
+  /absolute/path/to/physical-runtime BUILD chenxu@100.64.0.3 DMG_SHA256
 ```
 
-This command verifies only the physical runtime evidence. It does not retroactively
-turn a failed parallel run into a pass or substitute for VM, protocol interoperability,
-signing, notarization or publication checks. Set `AETHERROUTE_PHYSICAL_RUNTIME_EVIDENCE`
-to point the parallel runner at a non-default evidence directory.
+This verifies only the physical runtime evidence. It does not substitute for the
+VM matrix, protocol interoperability, signing, notarization or publication checks.

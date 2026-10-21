@@ -11,9 +11,11 @@ OUTPUT_DIRECTORY=${6:-}
 
 usage() {
   cat << 'EOF' >&2
-usage: package_release_dmg.sh /path/to/AetherRoute.app-or-candidate.dmg /absolute/path/to/Signing.json notary-profile version build-number /absolute/output-dir
+usage: package_release_dmg.sh /path/to/notarized-candidate.dmg /absolute/path/to/Signing.json notary-profile version build-number /absolute/output-dir
 
 Packages a clean, production-grade DMG without test markers or test explanation files.
+Requires physical runtime evidence for that exact DMG in
+AETHERROUTE_PHYSICAL_RUNTIME_EVIDENCE (default outputs/physical-runtime-<VERSION>-<BUILD>).
 EOF
 }
 
@@ -26,6 +28,25 @@ fi
 case "$SIGNING_CONFIG" in /*) ;; *) usage; exit 64 ;; esac
 case "$OUTPUT_DIRECTORY" in /*) ;; *) usage; exit 64 ;; esac
 test -f "$SIGNING_CONFIG" || { echo "Signing config missing: $SIGNING_CONFIG" >&2; exit 66; }
+
+# The released app must be the one exercised on physical hardware: TUN and
+# Transparent Proxy idle reuse, 2 MiB upload and interface switching, recorded
+# against this DMG's SHA-256 by collect_physical_runtime_evidence.py. Checked
+# before any signing or notarization work.
+case "$SOURCE" in
+  *.dmg) test -f "$SOURCE" || { echo "Source not found: $SOURCE" >&2; exit 66; } ;;
+  *) echo "Source must be the notarized candidate DMG that physical evidence was collected for: $SOURCE" >&2; exit 64 ;;
+esac
+PHYSICAL_EVIDENCE=${AETHERROUTE_PHYSICAL_RUNTIME_EVIDENCE:-"$ROOT/outputs/physical-runtime-$VERSION-$BUILD_NUMBER"}
+EVIDENCE_HOST=${AETHERROUTE_REMOTE_HOST:-chenxu@100.64.0.3}
+SOURCE_SHA256=$(shasum -a 256 "$SOURCE" | awk '{print $1}')
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/verify_parallel_acceptance.py" evidence \
+  "$PHYSICAL_EVIDENCE" "$BUILD_NUMBER" "$EVIDENCE_HOST" "$SOURCE_SHA256" || {
+  echo "Physical runtime evidence for this DMG is missing or invalid: $PHYSICAL_EVIDENCE" >&2
+  echo "Install the DMG on $EVIDENCE_HOST, connect in each engine and run:" >&2
+  echo "  AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES python3 scripts/collect_physical_runtime_evidence.py '$SOURCE' $EVIDENCE_HOST tun|transparent '$PHYSICAL_EVIDENCE'" >&2
+  exit 1
+}
 
 for cmd in codesign ditto hdiutil jq plutil realpath security shasum spctl syspolicy_check xcrun; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Missing required command: $cmd" >&2; exit 1; }
@@ -51,30 +72,15 @@ trap cleanup EXIT HUP INT TERM
 mkdir -p "$STAGE" "$MOUNT_POINT"
 
 echo "==> Resolving AetherRoute.app from source: $SOURCE"
-if [ -d "$SOURCE" ] && [ -f "$SOURCE/Contents/Info.plist" ]; then
-  ditto "$SOURCE" "$STAGE/AetherRoute.app"
-elif [ -f "$SOURCE" ]; then
-  case "$SOURCE" in
-    *.dmg)
-      hdiutil attach "$SOURCE" -readonly -nobrowse -mountpoint "$MOUNT_POINT" -quiet
-      IS_MOUNTED=1
-      test -d "$MOUNT_POINT/AetherRoute.app" || {
-        echo "Source DMG does not contain AetherRoute.app" >&2
-        exit 1
-      }
-      ditto "$MOUNT_POINT/AetherRoute.app" "$STAGE/AetherRoute.app"
-      hdiutil detach "$MOUNT_POINT" -quiet
-      IS_MOUNTED=0
-      ;;
-    *)
-      echo "Source must be .app directory or .dmg file: $SOURCE" >&2
-      exit 64
-      ;;
-  esac
-else
-  echo "Source not found: $SOURCE" >&2
-  exit 66
-fi
+hdiutil attach "$SOURCE" -readonly -nobrowse -mountpoint "$MOUNT_POINT" -quiet
+IS_MOUNTED=1
+test -d "$MOUNT_POINT/AetherRoute.app" || {
+  echo "Source DMG does not contain AetherRoute.app" >&2
+  exit 1
+}
+ditto "$MOUNT_POINT/AetherRoute.app" "$STAGE/AetherRoute.app"
+hdiutil detach "$MOUNT_POINT" -quiet
+IS_MOUNTED=0
 
 APP="$STAGE/AetherRoute.app"
 

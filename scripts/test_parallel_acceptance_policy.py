@@ -6,9 +6,9 @@ import os
 from pathlib import Path
 import plistlib
 import subprocess
+import sys
 import tempfile
 import unittest
-import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICY = ROOT / "scripts/verify_parallel_acceptance.py"
@@ -87,53 +87,73 @@ class AcceptancePolicyTests(unittest.TestCase):
         self.assertIn("BLOCKED", result.stderr)
         self.assertFalse(output.exists())
 
-    def fake_candidate(self, build="2026101701", binaries=BINARIES):
-        path = self.base / f"candidate-{build}-{len(binaries)}.zip"
-        with zipfile.ZipFile(path, "w") as archive:
-            archive.writestr(f"{APP}/Info.plist", plistlib.dumps({"CFBundleVersion": build}))
-            for name in binaries:
-                archive.writestr(name, b"binary")
+    def fake_dmg(self, build="2026101701", binaries=BINARIES):
+        """A real (tiny) DMG laid out like the notarized candidate."""
+        source = self.base / f"dmg-src-{build}-{len(binaries)}"
+        info = source / APP / "Info.plist"
+        info.parent.mkdir(parents=True)
+        info.write_bytes(plistlib.dumps({"CFBundleVersion": build}))
+        for name in binaries:
+            (source / name).parent.mkdir(parents=True, exist_ok=True)
+            (source / name).write_bytes(name.encode())
+        path = self.base / f"candidate-{build}-{len(binaries)}.dmg"
+        subprocess.run(["hdiutil", "create", "-quiet", "-fs", "HFS+", "-format", "UDZO",
+                        "-srcfolder", str(source), str(path)], check=True)
         return path
 
-    def run_candidate(self, path, build="2026101701"):
-        return subprocess.run(["python3", str(POLICY), "candidate", str(path), build],
-                              capture_output=True, text=True)
+    def test_candidate_dmg_identity(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        self.addCleanup(sys.path.remove, str(ROOT / "scripts"))
+        from verify_parallel_acceptance import read_candidate
+        build, hashes = read_candidate(self.fake_dmg())
+        self.assertEqual(build, "2026101701")
+        self.assertEqual(hashes, {name: hashlib.sha256(name.encode()).hexdigest() for name in BINARIES})
+        for path in (self.fake_dmg(binaries=BINARIES[:2]), self.base / "missing.dmg"):
+            with self.subTest(path=path.name), self.assertRaises(ValueError):
+                read_candidate(path)
+        # The QA ZIP never runs on the Mac mini; it cannot stand in.
+        (self.base / "qa.zip").write_bytes(b"zip")
+        with self.assertRaises(ValueError):
+            read_candidate(self.base / "qa.zip")
 
-    def test_matching_reused_candidate_passes(self):
-        result = self.run_candidate(self.fake_candidate())
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_unusable_reused_candidate_rejected(self):
-        bad_zip = self.base / "corrupt.zip"
-        bad_zip.write_bytes(b"not a zip")
-        for name, path in [("relative", "candidate.zip"),
-                           ("missing", self.base / "missing.zip"),
-                           ("corrupt", bad_zip),
-                           ("other build", self.fake_candidate(build="2026101601")),
-                           ("no extension", self.fake_candidate(binaries=BINARIES[:2]))]:
-            with self.subTest(name=name):
-                result = self.run_candidate(path)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("BLOCKED", result.stderr)
-
-    def test_orchestrator_rejects_bad_reused_candidate_before_any_side_effect(self):
-        # The archive is the one bound into physical evidence; a mismatch
-        # must stop before building, VM start, or SSH preflight.
+    def run_package(self, source, evidence=None):
+        signing = self.base / "Signing.json"
+        signing.write_text("{}")
         output = self.base / "must-not-be-created"
         env = {k: v for k, v in os.environ.items() if not k.startswith("AETHERROUTE_")}
-        env.update(AETHERROUTE_ACCEPTANCE_CANDIDATE_ZIP=str(self.fake_candidate(build="2026101601")),
-                   AETHERROUTE_SIGNING_CONFIG=str(self.base / "missing-signing.json"))
-        result = subprocess.run(["sh", str(ROOT / "scripts/run_release_acceptance_parallel.sh"),
-                                 "1.8.4", "2026101701", str(output)],
+        env["AETHERROUTE_PHYSICAL_RUNTIME_EVIDENCE"] = str(evidence or self.base / "no-evidence")
+        result = subprocess.run(["sh", str(ROOT / "scripts/package_release_dmg.sh"), str(source),
+                                 str(signing), "profile", "1.8.4", self.identity["build"], str(output)],
                                 env=env, capture_output=True, text=True)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("expected 2026101701", result.stderr)
         self.assertFalse(output.exists())
+        return result
+
+    def test_packaging_requires_evidence_for_this_dmg(self):
+        dmg = self.base / "candidate.dmg"
+        dmg.write_bytes(b"notarized candidate")
+        missing = self.run_package(dmg)
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn("BLOCKED", missing.stderr)
+        # Complete evidence for another candidate SHA-256 must not qualify.
+        other = self.run_package(dmg, self.evidence)
+        self.assertEqual(other.returncode, 1)
+        self.assertIn("another candidate", other.stderr)
+        app = self.base / "AetherRoute.app"
+        app.mkdir()
+        self.assertEqual(self.run_package(app).returncode, 64)
+        # Matching evidence passes the gate; the empty signing config then stops
+        # the script before any signing or notarization.
+        for record in self.records.values():
+            record["candidate_sha256"] = hashlib.sha256(dmg.read_bytes()).hexdigest()
+        self.save()
+        bound = self.run_package(dmg, self.evidence)
+        self.assertNotIn("BLOCKED", bound.stderr)
+        self.assertIn("developerIDIdentitySHA1", bound.stderr)
 
     def test_collector_requires_explicit_dedicated_hardware_opt_in(self):
         env = {k: v for k, v in os.environ.items() if not k.startswith("AETHERROUTE_")}
         result = subprocess.run(["python3", str(ROOT / "scripts/collect_physical_runtime_evidence.py"),
-                                 "candidate.zip", "chenxu@100.64.0.3", "tun", str(self.evidence)],
+                                 "candidate.dmg", "chenxu@100.64.0.3", "tun", str(self.evidence)],
                                 env=env, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES", result.stderr)

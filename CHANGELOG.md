@@ -25,27 +25,23 @@ All notable changes to AetherRoute are recorded here. The format follows
 - HTTP header scanning resumes where the previous read stopped instead of
   rescanning the whole buffer, and SOCKS5 port 0 now answers general failure (0x01)
   rather than "address type not supported".
-- Physical-evidence verification only treats `FAIL`/`INCONCLUSIVE`/`SKIP` at the
-  start of a line as a verdict, so diagnostics quoting those words no longer block.
 - The LAN socket gate now exercises the shipping `LANProxySession` on ephemeral
   loopback ports, including real IPv6, fragmented/coalesced frames, binary bodies,
-  and repeated 2 MiB uploads with write-side EOF. The duplicate test proxy was removed.
+  repeated 2 MiB uploads with write-side EOF, session reclamation and HTTP
+  rewriting. The duplicate test proxy was removed.
+
+### Release process
+
 - Parallel acceptance now requires both 300-second UI profiles and the remote
-  ARM64 gate. Missing candidate-bound physical TUN/Transparent idle-reuse,
-  large-upload, or interface-switch evidence blocks acceptance instead of reporting
-  release readiness. Standalone diagnostic scripts retain their shorter-run options.
-  `AETHERROUTE_ACCEPTANCE_CANDIDATE_ZIP` reruns the gates on the archive the
-  evidence was collected for (validated before any side effect), and a blocked run
-  prints the exact collection and rerun commands.
-
-### Verification boundary
-
-- TDD regressions were reproduced against the pre-fix source and then run against
-  the corrected production implementation. Local tests use isolated processes;
-  no installed host app, system proxy, tunnel, or user configuration is changed.
-- No new version is published by this change. Fresh signed VM/physical acceptance
-  and the default 300-second performance measurements remain required before release;
-  previous 1.8.3 measurements are not evidence for this revision.
+  ARM64 gate; shortened profiles or skipped gates are rejected before any build,
+  SSH or VM operation. Standalone diagnostic scripts retain their shorter-run options.
+- `package_release_dmg.sh` accepts only the notarized candidate DMG and, before any
+  signing or notarization, requires physical TUN/Transparent idle-reuse, 2 MiB
+  upload and interface-switch evidence bound to that DMG's SHA-256, build and host.
+  Evidence is collected on the notarized candidate because the Mac mini's system
+  extensions only load notarized builds (the QA ZIP runs only in the VM).
+- Physical-evidence verification only treats `FAIL`/`INCONCLUSIVE`/`SKIP` at the
+  start of a line as a verdict, so diagnostics quoting those words no longer block.
 
 ## [1.8.3] - 2026-10-16
 

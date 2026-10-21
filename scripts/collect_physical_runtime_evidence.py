@@ -1,5 +1,8 @@
 """Collect one engine's runtime receipts on the dedicated, already connected Mac.
 
+The candidate is the notarized candidate DMG installed on that Mac; the same
+DMG is later packaged, and package_release_dmg.sh refuses it without receipts.
+
 Never installs, launches, or changes the candidate's mode. Interface switching
 does disrupt the designated remote Mac, hence the explicit hardware opt-in.
 """
@@ -11,9 +14,8 @@ import re
 import shlex
 import subprocess
 import sys
-import zipfile
 
-from verify_parallel_acceptance import CANDIDATE_BINARIES, candidate_build, require, verify_output
+from verify_parallel_acceptance import read_candidate, require, verify_output
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -27,10 +29,8 @@ def collect(candidate, host, engine, directory):
     require(host == "chenxu@100.64.0.3", "physical gate only supports the designated Mac mini")
     require(engine in ("tun", "transparent"), "engine must be tun or transparent")
     candidate = Path(candidate)
+    build, hashes = read_candidate(candidate)
     digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
-    build = candidate_build(candidate)
-    with zipfile.ZipFile(candidate) as archive:
-        hashes = {name: hashlib.sha256(archive.read(name)).hexdigest() for name in CANDIDATE_BINARIES}
 
     def remote(command, script=None, timeout=30):
         return subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host, command],
@@ -47,7 +47,7 @@ def collect(candidate, host, engine, directory):
         for name, expected in hashes.items():
             result = remote("shasum -a 256 " + shlex.quote("/Applications/" + name))
             require(result.returncode == 0 and result.stdout.split()[0] == expected,
-                    "installed candidate binary differs from the supplied archive")
+                    "installed candidate binary differs from the supplied DMG")
         result = remote(f"sh -s -- ready {build} {engine}",
                         (SCRIPTS / "vm_matrix_lifecycle.sh").read_text())
         require(result.returncode == 0, "candidate is not connected in the requested engine")
@@ -85,8 +85,8 @@ def collect(candidate, host, engine, directory):
 
 if __name__ == "__main__":
     try:
-        require(len(sys.argv) == 5, "usage: collect_physical_runtime_evidence.py CANDIDATE_ZIP HOST ENGINE OUTPUT_DIR")
+        require(len(sys.argv) == 5, "usage: collect_physical_runtime_evidence.py CANDIDATE_DMG HOST ENGINE OUTPUT_DIR")
         collect(*sys.argv[1:])
-    except (ValueError, OSError, KeyError, IndexError, zipfile.BadZipFile, subprocess.SubprocessError) as error:
+    except (ValueError, OSError, KeyError, IndexError, subprocess.SubprocessError) as error:
         print(f"BLOCKED: {error}", file=sys.stderr)
         sys.exit(1)
