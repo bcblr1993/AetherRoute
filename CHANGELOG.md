@@ -4,7 +4,9 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.4] - 2026-10-21
+
+LAN sharing proxy fixes for fragmented handshakes, half-closed uploads and plain HTTP forwarding, plus release gates that bind physical-hardware evidence to the notarized candidate.
 
 ### Fixed
 
@@ -42,6 +44,23 @@ All notable changes to AetherRoute are recorded here. The format follows
   extensions only load notarized builds (the QA ZIP runs only in the VM).
 - Physical-evidence verification only treats `FAIL`/`INCONCLUSIVE`/`SKIP` at the
   start of a line as a verdict, so diagnostics quoting those words no longer block.
+
+### Verified
+
+- Local: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` passed; `Tests/AllowLAN/run.sh` passed with 18 loopback socket tests.
+- Protocol interop (`outputs/interop-20261021T012816Z`): matrix, reality, wireguard, shadowquic and ssh PASS; 48 case passes, 26 certificate rejections. The first run's REALITY cycle 2 hit `tls handshake eof` with an unchanged core and test binary; the SOP rerun passed.
+- Tart VM `macos27` 6-way matrix: 210 checks, 157 PASS, 1 FAIL, 52 SKIP. The failure was transparent/direct large upload: all 2 MiB sent with HTTP 200, but the httpbin echo download hit the 120 s limit (tun/direct took 111.9 s; proxied combinations 8–10 s). Rerunning that combination on the same candidate passed (26 PASS, 0 FAIL, 8 SKIP; upload 64.4 s). Accepted by the maintainer; see `Docs/ReleaseExceptions/1.8.4.md`.
+- Remote arm64 gate `test_remote_arm64.sh fast` passed. The Mac mini has no Xcode installed, so five Xcode-dependent checks were skipped there (they pass locally); recorded in the release exception.
+- Physical Apple Silicon Mac mini, notarized stable candidate 2026102101 with both system extensions at 1.8.4/2026102101 (`outputs/physical-runtime-1.8.4-2026102101`): TUN — idle keep-alive reuse passed, 2 MiB upload 6.3 s, interface switch recovered in 2/1/1/2/1/1 s; transparent proxy — idle reuse passed, 2 MiB upload 4.2 s, interface switch recovered in 2/2/3/2/2/1 s.
+- LAN sharing proxy on the Mac mini from another Mac: HTTP CONNECT 204, rewritten plain HTTP 200, two hosts in one invocation 200, SOCKS5 204, 2 MiB upload echoed byte-identical.
+- UI performance and memory (`result.txt`, 300 s per profile):
+
+| Profile | Page switch p95 / max (ms) | Footprint median / max (MB) | Growth |
+|---|---|---|---|
+| showcase 1.8.3 → 1.8.4 | 147.2 / 178.3 → 143.0 / 172.4 | 67 / 71 → 68 / 80 | −2 → +2 MB |
+| large 1.8.3 → 1.8.4 | 144.3 / 184.5 → 138.0 / 185.6 | 66 / 72 → 67 / 78 | −2 → +1 MB |
+
+All within budget (p95 ≤ 180 ms, max ≤ 300 ms, median ≤ 90 MB, max ≤ 110 MB, growth ≤ 8 MB).
 
 ## [1.8.3] - 2026-10-16
 
