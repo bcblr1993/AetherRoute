@@ -504,6 +504,9 @@ final class TunnelManager: ObservableObject {
     var automaticReconnectAttempt = 0
     var automaticReconnectTask: Task<Void, Never>?
     var startupRestoreTask: Task<Void, Never>?
+    /// The previous connection is restored at most once per launch; see
+    /// `restorePreviousConnectionIfRequested`.
+    var hasBegunStartupRestore = false
     /// The user's standing intent to be connected.
     ///
     /// Distinct from `isEnabled`, which is derived from the current provider
@@ -973,6 +976,18 @@ final class TunnelManager: ObservableObject {
             )
             return
         }
+        // prepare() runs again when a window opens and inside setEnabled
+        // after a failure dropped the manager. Restarting the restore there
+        // reset its attempt count, so a failure before launch (1.8.7: an
+        // unknown GEOSITE category) retried twice a second at ~70% CPU
+        // forever. One restore per launch keeps its 6-attempt, 120 s limits.
+        guard !hasBegunStartupRestore else {
+            Self.runtimeLogger.info(
+                "stage=startup autoReconnect skipped reason=alreadyRestoredThisLaunch"
+            )
+            return
+        }
+        hasBegunStartupRestore = true
 
         cancelStartupRestore(reason: "newStartupCycle")
         startupRestoreTask = Task { @MainActor [weak self] in
