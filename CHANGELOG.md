@@ -4,6 +4,43 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.7] - 2026-10-22
+
+Fixes for custom rule imports that dropped existing rules, dialer proxies and GEOSITE categories that stopped a profile from connecting, iCloud-synced rule deletions that came back, and a startup reconnect loop after a pre-connect failure.
+
+### Fixed
+
+- Batch rule imports that would exceed the 512-rule limit are refused with the projected total instead of silently deleting the oldest existing rules. Pasted lists are read line by line: unsupported lines (`MATCH`, `RULE-SET`, `PROCESS-NAME`) and unknown GEOSITE categories are skipped and listed by line number; more than 500 rules in one paste is reported.
+- A dialer proxy must name another node of the same profile; the core otherwise refused the whole profile ("connector … not found"). The node editor offers the profile's other nodes in a menu, saving validates the profile, share-link imports drop dialers that name nodes outside the import, and existing profiles get a readable error at connect time. Stored profiles still load: the check is not part of profile compilation.
+- GEOSITE categories are checked against the routing database (new `GeoSiteCategoryIndex`): in the rule editor against the bundled database and at connect against the database that launch carries, naming the rule instead of letting one typo stop every rule.
+- iCloud rule sync records change and deletion times in sidecar files (`custom-rules-sync.v1.json`, `bypass-policy-sync.v1.json`; rule formats unchanged): a rule deleted on one Mac no longer returns from another, a target changed on one Mac no longer leaves both versions, and synced rules are applied to the running engine at once. Sync status and errors follow the app language instead of fixed Chinese text.
+- When the previous session ended connected and the next start failed before the provider launched (routing resources, keychain or configuration errors), the startup reconnect restarted itself through `prepare()` and retried twice a second at ~70% CPU indefinitely. The previous connection is now restored at most once per launch, within its 6-attempt, 120-second limits.
+- Share links with an IPv6 server kept the brackets in the stored address and could not connect; names containing `%` were replaced by a default name.
+- Moving a custom rule up or down skips application rules hidden from that list, so every move is visible.
+- Custom rule rows show the full rule value (middle-truncated when narrow) without a duplicated arrow; the Connections table gives the Matched rule column room for its value; the menu bar panel's engine control no longer overruns its row.
+
+### Release process
+
+- Candidate builds compare host network state through `scripts/network_state_snapshot.sh`, which ignores the utun tunnels Xcode's CoreDevice opens to network-paired devices every 20–40 seconds; proxies, DNS, IPv4 default routes and other IPv6 routes still compare.
+- The UI review capture selects the Settings window by creation order; settings captures previously all showed the main window.
+
+### Verified
+
+- Local: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` passed; 519 unit tests passed, including new `GeoSiteCategoryIndexTests` and regressions in `CustomRuleTests`, `AetherNodeTests`, `ProfileCatalogStoreTests` and `ProfileCloudSyncTests`. Removing each of four key fixes made its tests fail.
+- Protocol interop (`outputs/interop-20261022T004438Z`): matrix, reality, wireguard, shadowquic and ssh PASS; 48 case passes, 26 certificate rejections.
+- Tart VM `macos27` 6-way matrix (`outputs/acceptance-1.8.7-2026102202`): 210 checks, 158 PASS, 0 FAIL, 52 SKIP.
+- Remote arm64 gate `test_remote_arm64.sh fast` passed (`outputs/test-evidence/remote-arm64-20261022T060410Z-fast`), now with Xcode on the Mac mini: the product build, 519 unit tests, DMG upgrade/rollback, large-import performance, SignedNEProbe and Sparkle debounce (11 scenarios) ran on the device instead of being skipped.
+- Physical Apple Silicon Mac mini, notarized stable candidate 2026102202 with both system extensions at 1.8.7/2026102202 (`outputs/physical-runtime-1.8.7-2026102202`): TUN — idle keep-alive reuse passed, 2 MiB upload 4.2 s, interface switch recovered in 1/2/1/1/2/1 s; transparent proxy — idle reuse passed, 2 MiB upload 3.5 s, interface switch recovered in 2/2/3/2/2/2 s.
+- Custom rules on the Mac mini in both engines: `GEOSITE,openai,REJECT` and `DST-PORT,80,REJECT` blocked api.openai.com and HTTP port 80 while other sites answered (204/200); without the rules the same requests returned 401/200. `GEOSITE,youtub` stopped the connection with `unknownCategory("youtub")`; the startup restore then finished after its attempts with the app at 0% CPU (the 2026102201 build looped at ~73%).
+- UI performance and memory (`result.txt`, 300 s per profile):
+
+| Profile | Page switch p95 / max (ms) | Footprint median / max (MB) | Growth |
+|---|---|---|---|
+| showcase 1.8.6 → 1.8.7 | 145.9 / 197.2 → 144.4 / 212.5 | 66 / 80 → 66 / 77 | +0 → +1 MB |
+| large 1.8.6 → 1.8.7 | 144.9 / 171.4 → 146.3 / 199.6 | 66 / 79 → 66 / 77 | +1 → +2 MB |
+
+All within budget (p95 ≤ 180 ms, max ≤ 300 ms, median ≤ 90 MB, max ≤ 110 MB, growth ≤ 8 MB).
+
 ## [1.8.6] - 2026-10-21
 
 Quick destination routing rules from the live Connections table, single-node share URI (`vless://`, `trojan://`, `ss://`, `vmess://`, `hysteria2://`, `tuic://`, `anytls://`, `socks5://`, `http://`) clipboard import and export, and custom rule priority reordering with multi-line Clash rule batch import.
