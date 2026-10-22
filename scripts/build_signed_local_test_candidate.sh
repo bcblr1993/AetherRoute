@@ -78,14 +78,12 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+# Shared with the other candidate builder; it ignores the utun tunnels
+# Xcode's CoreDevice opens to network-paired devices.
+# shellcheck source=scripts/network_state_snapshot.sh
+. "$ROOT/scripts/network_state_snapshot.sh"
 network_snapshot() {
-  {
-    /usr/sbin/scutil --proxy
-    /usr/sbin/scutil --dns
-    /usr/sbin/netstat -rn -f inet | awk '$1 == "default" {print}'
-    /usr/sbin/netstat -rn -f inet6 | awk '$1 == "default" {print}'
-    /sbin/ifconfig -l
-  }
+  network_state_snapshot
 }
 
 SOURCE_BEFORE="$TEMPORARY/source-before.txt"
