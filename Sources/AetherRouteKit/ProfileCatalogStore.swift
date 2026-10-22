@@ -171,6 +171,7 @@ public struct ProfileCatalogStore: Sendable {
         makeActive: Bool = true,
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
+        try AetherNodeProfileCompiler.validateDialerProxies(in: nodes)
         let yaml = try AetherNodeProfileCompiler.compile(nodes: nodes)
         let cleanName = suggestedName
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -311,6 +312,7 @@ public struct ProfileCatalogStore: Sendable {
               existing.profile.subscription == nil else {
             throw ProfileCatalogStoreError.notNativeProfile
         }
+        try AetherNodeProfileCompiler.validateDialerProxies(in: nodes)
         let yaml = try AetherNodeProfileCompiler.compile(nodes: nodes)
         let profile = ActiveProfile(
             name: existing.profile.name,

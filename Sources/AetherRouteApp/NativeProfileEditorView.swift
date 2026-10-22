@@ -30,12 +30,16 @@ struct NativeProfileEditorSheet: View {
         .disabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: nodes != (profile.profile.nativeNodes ?? []), isSaving: isSaving, requested: $requestsCancel))
         .sheet(isPresented: $isAddingNode) {
-            ManualNodeEditorSheet(save: append)
+            ManualNodeEditorSheet(save: append, dialerCandidates: nodes.map(\.name))
                 .environmentObject(tunnel)
         }
         .sheet(item: $nodeToEdit) { node in
-            ManualNodeEditorSheet(initialNode: node, save: replace)
-                .environmentObject(tunnel)
+            ManualNodeEditorSheet(
+                initialNode: node,
+                save: replace,
+                dialerCandidates: nodes.filter { $0.id != node.id }.map(\.name)
+            )
+            .environmentObject(tunnel)
         }
     }
 
@@ -197,6 +201,9 @@ struct NativeProfileEditorSheet: View {
     private var validationMessage: String? {
         do {
             _ = try AetherNodeProfileCompiler.compile(nodes: nodes)
+            // Nodes may be added in any order, so a dialer can name a node
+            // added later; the profile as a whole must resolve before Save.
+            try AetherNodeProfileCompiler.validateDialerProxies(in: nodes)
             return nil
         } catch let error as AetherNodeProfileCompilerError {
             return error.localizedAppDescription
@@ -244,6 +251,12 @@ extension AetherNodeProfileCompilerError {
             AppLocalization.string("Node names must be unique.")
         case .reservedName:
             AppLocalization.string("A node name conflicts with a reserved routing name.")
+        case let .unknownDialerProxy(node, dialer):
+            AppLocalization.format(
+                "%@ dials through %@, which is not another node of this profile.",
+                node,
+                dialer
+            )
         }
     }
 }

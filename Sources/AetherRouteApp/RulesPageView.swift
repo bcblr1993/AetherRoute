@@ -816,10 +816,14 @@ struct CustomRuleRow: View {
 
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 HStack(spacing: AetherVisual.s1) {
+                    // Middle truncation keeps the registrable end of a long
+                    // domain readable, as in the profile rules table.
                     Text(rule.value)
                         .font(.system(.callout, design: .monospaced, weight: .semibold))
                         .foregroundStyle(rule.isEnabled ? AnyShapeStyle(Color.primary) : AnyShapeStyle(AetherVisual.secondaryText))
                         .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(rule.value)
 
                     if rule.noResolve {
                         Text(verbatim: "no-resolve")
@@ -837,15 +841,20 @@ struct CustomRuleRow: View {
                         .lineLimit(1)
                 }
             }
+            // The value is what the row is about; the target label and the
+            // five buttons gave it up first, leaving "signup…" beside a gap.
+            // The minimum keeps a fragment visible in the narrowest window.
+            .frame(minWidth: 72, alignment: .leading)
+            .layoutPriority(1)
 
             Spacer(minLength: AetherVisual.s2)
 
-            Image(systemName: "arrow.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(AetherVisual.tertiaryText)
-
+            // RuleTargetLabel draws its own arrow; a second one stood here.
+            // At its natural width (a long proxy name capped at 160 pt), so
+            // "Direct" stays whole without reserving a 160-pt gap.
             RuleTargetLabel(target: rule.target.rawString)
                 .frame(maxWidth: 160, alignment: .trailing)
+                .fixedSize(horizontal: true, vertical: false)
 
             HStack(spacing: AetherVisual.sMicro) {
                 if let onMoveUp {
@@ -1032,26 +1041,64 @@ struct CustomRuleEditorSheet: View {
     private var validationResult: RuleValidationResult {
         if mode == .raw {
             do {
-                if initialRule == nil {
-                    let parsedBatch = try CustomRule.parseBatch(rawClashString, defaultTarget: currentRuleTarget)
-                    guard let first = parsedBatch.first else {
-                        return .invalid(reason: CustomRuleParseError.emptyValue.localizedDescription)
+                if let report = batchReport {
+                    // Valid as soon as one line imports; skipped lines are
+                    // listed by `batchSummary`, not treated as a failure.
+                    guard let first = report.rules.first else {
+                        return .invalid(
+                            reason: report.skipped.first?.reason
+                                ?? CustomRuleParseError.emptyValue.localizedDescription
+                        )
                     }
-                    return CustomRuleValidator.validate(first)
+                    return checkingGeoSiteCategory(CustomRuleValidator.validate(first), of: first)
                 }
                 let parsed = try CustomRule.parse(rawClashString)
-                return CustomRuleValidator.validate(parsed)
+                return checkingGeoSiteCategory(CustomRuleValidator.validate(parsed), of: parsed)
             } catch {
                 return .invalid(reason: error.localizedDescription)
             }
         } else {
-            return CustomRuleValidator.validate(kind: selectedKind, value: ruleValue, target: currentRuleTarget)
+            return checkingGeoSiteCategory(
+                CustomRuleValidator.validate(kind: selectedKind, value: ruleValue, target: currentRuleTarget),
+                of: CustomRule(kind: selectedKind, value: ruleValue, target: currentRuleTarget)
+            )
         }
     }
 
-    private var candidateBatchRules: [CustomRule]? {
+    /// A GEOSITE category missing from the routing database makes the core
+    /// refuse every rule, so a typo is caught here rather than at connect.
+    private func checkingGeoSiteCategory(
+        _ result: RuleValidationResult,
+        of rule: CustomRule
+    ) -> RuleValidationResult {
+        guard result.isValid, rule.kind == .geoSite,
+              let index = tunnel.bundledGeoSiteCategories,
+              !index.contains(ruleValue: rule.value) else { return result }
+        return .invalid(reason: AppLocalization.format(
+            "GEOSITE category %@ is not in the routing database. Check the spelling, for example cn, apple or openai.",
+            GeoSiteCategoryIndex.categoryCode(of: rule.value)
+        ))
+    }
+
+    /// The pasted text read line by line; nil unless adding in raw mode.
+    private var batchReport: CustomRuleBatchReport? {
         guard mode == .raw, initialRule == nil else { return nil }
-        guard let parsed = try? CustomRule.parseBatch(rawClashString, defaultTarget: currentRuleTarget) else {
+        // One unknown GEOSITE category would stop the core from loading any
+        // rule; skip it with the other unsupported lines.
+        return CustomRule.parseBatchReport(
+            rawClashString,
+            defaultTarget: currentRuleTarget,
+            rejection: { rule in
+                guard case let .invalid(reason) = checkingGeoSiteCategory(.valid, of: rule) else {
+                    return nil
+                }
+                return reason
+            }
+        )
+    }
+
+    private var candidateBatchRules: [CustomRule]? {
+        guard let parsed = batchReport?.rules, !parsed.isEmpty else {
             return nil
         }
         let fallbackComment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1197,6 +1244,8 @@ struct CustomRuleEditorSheet: View {
                 validationLine
                     .padding(.horizontal, AetherVisual.sectionHeaderInset)
                     .transition(.opacity.combined(with: .move(edge: .top)))
+                batchSummary
+                    .padding(.horizontal, AetherVisual.sectionHeaderInset)
             }
 
             // 规则验证结果 (Dry-run Result)
@@ -1316,6 +1365,43 @@ struct CustomRuleEditorSheet: View {
             .foregroundStyle(AetherVisual.secondaryText)
         case let .invalid(reason):
             AetherInlineMessage(text: reason, kind: .warning)
+        }
+    }
+
+    /// Says what a pasted list will actually import before Save, so lines
+    /// this app cannot import are never dropped without a word.
+    @ViewBuilder
+    private var batchSummary: some View {
+        if let report = batchReport, !report.rules.isEmpty,
+           !report.skipped.isEmpty || report.wasTruncated {
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                Text(AppLocalization.format(
+                    "%lld rules will be imported.",
+                    Int64(report.rules.count)
+                ))
+                if !report.skipped.isEmpty {
+                    let lines = report.skipped.prefix(8).map { String($0.lineNumber) }
+                        .joined(separator: ", ")
+                    Text(AppLocalization.format(
+                        "%lld unsupported lines will be skipped (line %@).",
+                        Int64(report.skipped.count),
+                        report.skipped.count > 8 ? lines + ", …" : lines
+                    ))
+                    .help(report.skipped.prefix(20)
+                        .map { "\($0.lineNumber): \($0.line) — \($0.reason)" }
+                        .joined(separator: "\n"))
+                }
+                if report.wasTruncated {
+                    Text(AppLocalization.format(
+                        "Only the first %lld rules are read from one paste.",
+                        Int64(CustomRule.maximumBatchRules)
+                    ))
+                }
+            }
+            .font(.callout)
+            .foregroundStyle(AetherVisual.secondaryText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("custom-rule-batch-summary")
         }
     }
 

@@ -1056,6 +1056,9 @@ extension TunnelManager {
     }
 
     func localizedProfileOperationError(_ error: Error) -> String {
+        if let compilerError = error as? AetherNodeProfileCompilerError {
+            return compilerError.localizedAppDescription
+        }
         guard let issue = ProfileOperationIssue(error) else {
             return AppLocalization.string(
                 "The profile operation could not be completed."

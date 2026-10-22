@@ -22,6 +22,27 @@ public struct CustomRuleStore: Sendable {
         directoryURL.appendingPathComponent(Self.filename)
     }
 
+    private var syncMetadataFile: RuleSyncMetadataFile {
+        RuleSyncMetadataFile(url: directoryURL.appendingPathComponent("custom-rules-sync.v1.json"))
+    }
+
+    /// When rules changed and were deleted, for iCloud sync.
+    public func loadSyncMetadata() -> RuleSyncMetadata {
+        syncMetadataFile.load()
+    }
+
+    /// Writes rules merged from iCloud with their merged metadata. Unlike
+    /// `save`, it does not stamp the merge as a local change: re-stamping
+    /// on every sync would outdate other devices' deletions.
+    public func saveSynchronized(
+        _ rules: [CustomRule],
+        metadata: RuleSyncMetadata,
+        fileManager: FileManager = .default
+    ) throws {
+        try save(rules, recordingChanges: false, fileManager: fileManager)
+        try syncMetadataFile.save(metadata)
+    }
+
     public init(directoryURL: URL) {
         self.directoryURL = directoryURL
     }
@@ -52,10 +73,17 @@ public struct CustomRuleStore: Sendable {
         return collection.rules
     }
 
-    public func save(_ rules: [CustomRule], fileManager: FileManager = .default) throws {
+    /// Saves `rules` and, unless syncing, records which rules changed or
+    /// were removed so a deletion is not undone by another device's copy.
+    public func save(
+        _ rules: [CustomRule],
+        recordingChanges: Bool = true,
+        fileManager: FileManager = .default
+    ) throws {
         guard rules.count <= CustomRuleCollection.maximumRules else {
             throw CustomRuleStoreError.tooManyRules(rules.count)
         }
+        let previous = recordingChanges ? ((try? load(fileManager: fileManager)) ?? []) : []
         let collection = CustomRuleCollection(rules: rules)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -71,6 +99,13 @@ public struct CustomRuleStore: Sendable {
         )
         try data.write(to: fileURL, options: [.atomic])
         try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+        if recordingChanges {
+            // Bookkeeping for iCloud sync only; the rules are already saved,
+            // so failing here would report a successful edit as failed.
+            var metadata = loadSyncMetadata()
+            metadata.recordChanges(from: previous, to: rules)
+            try? syncMetadataFile.save(metadata)
+        }
     }
 
     @discardableResult
@@ -111,24 +146,29 @@ public struct CustomRuleStore: Sendable {
         return current
     }
 
+    /// Swaps the rule with its nearest neighbour in `direction` among the
+    /// rules `within` accepts. The Rules page lists destination rules only,
+    /// so a hidden application rule between two of them must be skipped, or
+    /// "move up" changes nothing the user can see.
     @discardableResult
     public func move(
         id: UUID,
         direction: CustomRuleMoveDirection,
+        within isInScope: (CustomRule) -> Bool = { _ in true },
         fileManager: FileManager = .default
     ) throws -> [CustomRule] {
         var current = try load(fileManager: fileManager)
         guard let index = current.firstIndex(where: { $0.id == id }) else {
             throw CustomRuleStoreError.ruleNotFound(id)
         }
-        let targetIndex: Int
+        let candidates: [Int]
         switch direction {
         case .up:
-            targetIndex = index - 1
+            candidates = Array(current.indices[..<index].reversed())
         case .down:
-            targetIndex = index + 1
+            candidates = Array(current.indices[(index + 1)...])
         }
-        guard current.indices.contains(targetIndex) else {
+        guard let targetIndex = candidates.first(where: { isInScope(current[$0]) }) else {
             return current
         }
         current.swapAt(index, targetIndex)
@@ -164,10 +204,14 @@ public struct CustomRuleStore: Sendable {
             }
         }
 
+        // Refuse an import that does not fit rather than truncating: cutting
+        // the combined list silently deleted the user's oldest rules.
         let combined = newlyAdded + current
-        let bounded = Array(combined.prefix(CustomRuleCollection.maximumRules))
-        try save(bounded, fileManager: fileManager)
-        return bounded
+        guard combined.count <= CustomRuleCollection.maximumRules else {
+            throw CustomRuleStoreError.tooManyRules(combined.count)
+        }
+        try save(combined, fileManager: fileManager)
+        return combined
     }
 }
 
@@ -183,7 +227,7 @@ public enum CustomRuleStoreError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case let .tooManyRules(count):
-            return "Custom rules count exceeds limit: \(count)"
+            return "Custom rules would total \(count), above the limit of \(CustomRuleCollection.maximumRules). Remove some rules or import fewer."
         case let .ruleNotFound(id):
             return "Custom rule with ID \(id) not found"
         }

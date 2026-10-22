@@ -430,19 +430,43 @@ public struct ApplicationRuleMatch: Equatable, Sendable {
     }
 }
 
+/// The outcome of parsing a pasted block of Clash rules: every rule that
+/// could be imported, and every line that could not, with its reason.
+public struct CustomRuleBatchReport: Equatable, Sendable {
+    public struct SkippedLine: Equatable, Sendable {
+        /// 1-based line number in the pasted text.
+        public let lineNumber: Int
+        public let line: String
+        public let reason: String
+    }
+
+    public var rules: [CustomRule]
+    public var skipped: [SkippedLine]
+    /// More than `CustomRule.maximumBatchRules` rules were pasted; the rest
+    /// were not read.
+    public var wasTruncated: Bool
+}
+
 public extension CustomRule {
     static let maximumBatchRules = 500
 
-    /// Parses a multi-line Clash rule text block (such as `payload:` lists or newline-separated rules).
-    /// When `defaultTarget` is supplied, classical two-token lines (`DOMAIN-SUFFIX,example.com`)
-    /// automatically use `defaultTarget`.
-    static func parseBatch(
+    /// Parses a multi-line Clash rule text block (such as `payload:` lists or
+    /// newline-separated rules). When `defaultTarget` is supplied, classical
+    /// two-token lines (`DOMAIN-SUFFIX,example.com`) use `defaultTarget`.
+    ///
+    /// Rule lists copied from other clients routinely contain kinds this
+    /// app does not import (`MATCH`, `RULE-SET`, `PROCESS-NAME`). Such lines
+    /// are reported and skipped so one of them cannot discard the rest.
+    /// - Parameter rejection: An extra check that returns the reason a parsed
+    ///   rule cannot be imported (for example an unknown GEOSITE category).
+    static func parseBatchReport(
         _ rawText: String,
-        defaultTarget: CustomRuleTarget? = nil
-    ) throws -> [CustomRule] {
-        var results: [CustomRule] = []
+        defaultTarget: CustomRuleTarget? = nil,
+        rejection: ((CustomRule) -> String?)? = nil
+    ) -> CustomRuleBatchReport {
+        var report = CustomRuleBatchReport(rules: [], skipped: [], wasTruncated: false)
         let lines = rawText.components(separatedBy: .newlines)
-        for rawLine in lines {
+        for (offset, rawLine) in lines.enumerated() {
             var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             if line.isEmpty || line.hasPrefix("#") || line.hasPrefix("//") {
                 continue
@@ -457,23 +481,36 @@ public extension CustomRule {
             if (line.hasPrefix("'") && line.hasSuffix("'")) || (line.hasPrefix("\"") && line.hasSuffix("\"")) {
                 line = String(line.dropFirst().dropLast())
             }
-            let tokens = line.split(separator: ",", omittingEmptySubsequences: true)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            if tokens.count == 2, let fallback = defaultTarget {
-                var augmented = "\(tokens[0]),\(tokens[1]),\(fallback.rawString)"
-                let upperKind = tokens[0].uppercased()
-                if upperKind == "IP-CIDR" || upperKind == "IP-CIDR6" || upperKind == "GEOIP" {
-                    augmented += ",no-resolve"
-                }
-                results.append(try CustomRule.parse(augmented))
-            } else {
-                results.append(try CustomRule.parse(line))
-            }
-            if results.count >= Self.maximumBatchRules {
+            guard report.rules.count < Self.maximumBatchRules else {
+                report.wasTruncated = true
                 break
             }
+            let tokens = line.split(separator: ",", omittingEmptySubsequences: true)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            var candidate = line
+            if tokens.count == 2, let fallback = defaultTarget {
+                candidate = "\(tokens[0]),\(tokens[1]),\(fallback.rawString)"
+                let upperKind = tokens[0].uppercased()
+                if upperKind == "IP-CIDR" || upperKind == "IP-CIDR6" || upperKind == "GEOIP" {
+                    candidate += ",no-resolve"
+                }
+            }
+            do {
+                let rule = try CustomRule.parse(candidate)
+                if let reason = rejection?(rule) {
+                    report.skipped.append(.init(lineNumber: offset + 1, line: line, reason: reason))
+                } else {
+                    report.rules.append(rule)
+                }
+            } catch {
+                report.skipped.append(.init(
+                    lineNumber: offset + 1,
+                    line: line,
+                    reason: error.localizedDescription
+                ))
+            }
         }
-        return results
+        return report
     }
 }
 

@@ -1767,7 +1767,10 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
         // Equal segments, like the routing-mode control beside it, so the two
         // controls read as a pair. When a translation no longer fits, the bar
         // above stacks the controls vertically instead of squeezing them.
-        control.segmentDistribution = .fillEqually
+        // In the panel, equal segments sized to "● Transparent" came to about
+        // 202 pt and overran its 184-pt slot and the card edge; segments sized
+        // in proportion to their labels fill exactly the slot instead.
+        control.segmentDistribution = marksSelection ? .fillProportionally : .fillEqually
         control.setContentHuggingPriority(.defaultLow, for: .horizontal)
         control.setAccessibilityIdentifier("network-engine-picker")
         control.setAccessibilityLabel(AppLocalization.string("Network engine"))

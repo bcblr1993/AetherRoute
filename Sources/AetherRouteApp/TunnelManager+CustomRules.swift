@@ -80,7 +80,12 @@ extension TunnelManager {
         isUpdatingCustomRules = true
         defer { isUpdatingCustomRules = false }
         do {
-            customRules = try CustomRuleStore.applicationGroup().move(id: id, direction: direction)
+            // The Rules page lists destination rules only; move among those.
+            customRules = try CustomRuleStore.applicationGroup().move(
+                id: id,
+                direction: direction,
+                within: { $0.kind != .application }
+            )
             customRuleMessage = nil
             customRuleMessageIsError = false
             refreshActiveProfileSummary()
@@ -107,6 +112,14 @@ extension TunnelManager {
             refreshActiveProfileSummary()
             await reloadCustomRulesLive()
             return true
+        } catch let CustomRuleStoreError.tooManyRules(total) {
+            customRuleMessage = AppLocalization.format(
+                "These rules would bring the total to %lld, above the limit of %lld. Nothing was imported; remove some rules or paste fewer.",
+                Int64(total),
+                Int64(CustomRuleCollection.maximumRules)
+            )
+            customRuleMessageIsError = true
+            return false
         } catch {
             customRuleMessage = error.localizedDescription
             customRuleMessageIsError = true

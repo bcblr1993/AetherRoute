@@ -246,7 +246,7 @@ final class CustomRuleTests: XCTestCase {
           - DOMAIN-SUFFIX,internal.corp
         """
 
-        let parsed = try CustomRule.parseBatch(batchText, defaultTarget: .direct)
+        let parsed = CustomRule.parseBatchReport(batchText, defaultTarget: .direct).rules
         XCTAssertEqual(parsed.count, 5)
         XCTAssertEqual(parsed[0].kind, .domainSuffix)
         XCTAssertEqual(parsed[0].value, "openai.com")
@@ -261,5 +261,92 @@ final class CustomRuleTests: XCTestCase {
         XCTAssertEqual(openAIRules.count, 1)
         XCTAssertEqual(openAIRules.first?.id, existing.id)
         XCTAssertEqual(openAIRules.first?.target, .proxy("AI-Group"))
+    }
+
+    func testImportBatchOverLimitKeepsEveryExistingRule() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let store = CustomRuleStore(directoryURL: tempDir)
+        let existing = (0..<100).map {
+            CustomRule(kind: .domainSuffix, value: "kept\($0).example.com", target: .direct)
+        }
+        try store.save(existing)
+        let incoming = (0..<450).map {
+            CustomRule(kind: .domainSuffix, value: "new\($0).example.com", target: .direct)
+        }
+
+        // 100 + 450 exceeds 512: refuse the whole batch instead of silently
+        // truncating the oldest existing rules.
+        XCTAssertThrowsError(try store.importBatch(incoming)) { error in
+            XCTAssertEqual(error as? CustomRuleStoreError, .tooManyRules(550))
+        }
+        XCTAssertEqual(try store.load().map(\.id), existing.map(\.id))
+
+        let fitting = Array(incoming.prefix(412))
+        let merged = try store.importBatch(fitting)
+        XCTAssertEqual(merged.count, 512)
+        XCTAssertEqual(Set(existing.map(\.id)).subtracting(merged.map(\.id)), [])
+    }
+
+    func testMoveWithinScopeSkipsHiddenApplicationRules() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let store = CustomRuleStore(directoryURL: tempDir)
+        let first = CustomRule(kind: .domainSuffix, value: "first.example.com", target: .direct)
+        let app = try XCTUnwrap(CustomRule.application(
+            bundleIdentifier: "com.example.app",
+            bundlePath: "/Applications/Example.app",
+            displayName: "Example",
+            target: .direct
+        ))
+        let second = CustomRule(kind: .domainSuffix, value: "second.example.com", target: .reject)
+        try store.save([first, app, second])
+
+        let isDestination: @Sendable (CustomRule) -> Bool = { $0.kind != .application }
+        // The Rules page lists destination rules only; "up" must reach the
+        // previous visible rule, not the hidden application rule between them.
+        let movedUp = try store.move(id: second.id, direction: .up, within: isDestination)
+        XCTAssertEqual(movedUp.map(\.id), [second.id, app.id, first.id])
+
+        let noOp = try store.move(id: second.id, direction: .up, within: isDestination)
+        XCTAssertEqual(noOp.map(\.id), [second.id, app.id, first.id])
+
+        let movedDown = try store.move(id: second.id, direction: .down, within: isDestination)
+        XCTAssertEqual(movedDown.map(\.id), [first.id, app.id, second.id])
+    }
+
+    func testBatchReportSkipsUnsupportedLinesInsteadOfFailing() throws {
+        let text = """
+        payload:
+          - DOMAIN-SUFFIX,openai.com,DIRECT
+          - RULE-SET,streaming,Proxy
+          - PROCESS-NAME,curl,DIRECT
+          - MATCH,DIRECT
+          - DOMAIN-SUFFIX,anthropic.com
+          - not a rule
+        """
+        let report = CustomRule.parseBatchReport(text, defaultTarget: .proxy("AI"))
+        XCTAssertEqual(report.rules.map(\.value), ["openai.com", "anthropic.com"])
+        XCTAssertEqual(report.rules.last?.target, .proxy("AI"))
+        XCTAssertEqual(report.skipped.map(\.lineNumber), [3, 4, 5, 7])
+        XCTAssertEqual(report.skipped.first?.line, "RULE-SET,streaming,Proxy")
+        XCTAssertFalse(report.wasTruncated)
+
+        let oversized = (0..<(CustomRule.maximumBatchRules + 5))
+            .map { "DOMAIN-SUFFIX,host\($0).example.com,DIRECT" }
+            .joined(separator: "\n")
+        let truncated = CustomRule.parseBatchReport(oversized)
+        XCTAssertEqual(truncated.rules.count, CustomRule.maximumBatchRules)
+        XCTAssertTrue(truncated.wasTruncated)
+
+        // An extra check (the editor's GEOSITE lookup) skips with its reason
+        // and keeps the line number of the pasted text.
+        let checked = CustomRule.parseBatchReport(
+            "GEOSITE,cn,DIRECT\nGEOSITE,youtub,DIRECT",
+            rejection: { $0.value == "youtub" ? "unknown category" : nil }
+        )
+        XCTAssertEqual(checked.rules.map(\.value), ["cn"])
+        XCTAssertEqual(checked.skipped.map(\.lineNumber), [2])
+        XCTAssertEqual(checked.skipped.first?.reason, "unknown category")
     }
 }

@@ -996,6 +996,20 @@ extension TunnelManager {
     }
 
     func localizedConnectionError(_ error: Error) -> Error {
+        if let compilerError = error as? AetherNodeProfileCompilerError {
+            return LocalizedConnectionError(
+                message: compilerError.localizedAppDescription + " "
+                    + AppLocalization.string("Edit the profile and choose a dialer from its own nodes.")
+            )
+        }
+        if case let CustomRuleGeoSiteError.unknownCategory(category) = error {
+            return LocalizedConnectionError(
+                message: AppLocalization.format(
+                    "The custom rule GEOSITE,%@ names a category that is not in the routing database. Edit or turn off that rule on the Rules page.",
+                    category
+                )
+            )
+        }
         if error is BundledRoutingResourceError {
             return LocalizedConnectionError(
                 message: AppLocalization.string(

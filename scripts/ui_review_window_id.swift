@@ -51,42 +51,35 @@ else {
 
 let candidates = windows.compactMap { window -> (
     id: Int,
-    area: Double,
-    settingsDistance: Double
+    area: Double
 )? in
     guard let ownerPID = window[kCGWindowOwnerPID as String] as? Int,
           ownerPID == requestedPID,
           let layer = window[kCGWindowLayer as String] as? Int,
           layer == 0,
           let number = window[kCGWindowNumber as String] as? Int,
-          let name = window[kCGWindowName as String] as? String,
           let bounds = window[kCGWindowBounds as String] as? [String: Any],
           let width = bounds["Width"] as? Double,
           let height = bounds["Height"] as? Double,
-          width >= (panelOnly ? 300 : (settingsOnly ? 900 : 780)),
-          height >= (panelOnly ? 300 : (settingsOnly ? 620 : 560))
+          width >= (panelOnly || settingsOnly ? 300 : 780),
+          height >= (panelOnly || settingsOnly ? 300 : 560)
     else {
         return nil
     }
-    if settingsOnly {
-        // Settings titles itself after the open pane ("Network", "网络"),
-        // so any titled window other than the main one ("AetherRoute") is a
-        // Settings candidate; the size check below picks the right one.
-        let isSettingsWindow =
-            name.localizedCaseInsensitiveContains("settings")
-            || name.contains("设置")
-            || (!name.isEmpty && name != "AetherRoute")
-        guard isSettingsWindow else {
-            return nil
-        }
-    }
-    let settingsDistance = abs(width - 960) + abs(height - 640)
-    return (number, width * height, settingsDistance)
+    return (number, width * height)
 }
 
-let window = settingsOnly
-    ? candidates.min(by: { $0.settingsDistance < $1.settingsDistance })
-    : candidates.max(by: { $0.area < $1.area })
+let window: (id: Int, area: Double)?
+if settingsOnly {
+    // Settings opens after the main window, so it carries the higher window
+    // number. Matching by title or by a 960x640 size picked the main window
+    // (titled after its page and sized 960x640 by the settings cases) for
+    // every settings capture until 1.8.7. Wait until both windows exist.
+    let settingsCandidates = candidates.sorted { $0.id < $1.id }
+    window = settingsCandidates.count >= 2 ? settingsCandidates.max(by: { $0.id < $1.id }) : nil
+} else {
+    window = candidates.max(by: { $0.area < $1.area })
+}
 guard let window else {
     exit(1)
 }

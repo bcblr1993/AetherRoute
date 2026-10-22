@@ -226,9 +226,40 @@ final class AetherNodeTests: XCTestCase {
             password: "password",
             dialerProxy: "Relay-HK-01"
         )
-        let yaml = try AetherNodeProfileCompiler.compile(node: chainedNode)
+        let relay = AetherNode(
+            name: "Relay-HK-01",
+            protocolID: .socks5,
+            server: "relay.example",
+            port: 1080
+        )
+        let yaml = try AetherNodeProfileCompiler.compile(nodes: [chainedNode, relay])
         XCTAssertTrue(yaml.contains("dialer-proxy: 'Relay-HK-01'"))
         try ProfileImportValidator.validate(data: Data(yaml.utf8))
+        XCTAssertNoThrow(try AetherNodeProfileCompiler.validateDialerProxies(in: [chainedNode, relay]))
+
+        // The core fails the whole profile ("connector … not found") when a
+        // dialer names nothing in it, so saving such a node must be refused.
+        XCTAssertThrowsError(try AetherNodeProfileCompiler.validateDialerProxies(in: [chainedNode])) { error in
+            XCTAssertEqual(
+                error as? AetherNodeProfileCompilerError,
+                .unknownDialerProxy(node: "Landing-JP", dialer: "Relay-HK-01")
+            )
+        }
+        var viaGroup = chainedNode
+        viaGroup.dialerProxy = AetherNodeProfileCompiler.groupName
+        XCTAssertThrowsError(try AetherNodeProfileCompiler.validateDialerProxies(in: [viaGroup, relay]))
+        // Stored profiles still compile unchanged, so loading old data never fails.
+        XCTAssertNoThrow(try AetherNodeProfileCompiler.compile(node: chainedNode))
+
+        // Imported links keep their nodes; only dangling dialers are dropped.
+        var foreign = relay
+        foreign.dialerProxy = "Only-In-Another-Client"
+        let imported = AetherNodeProfileCompiler.removingUnresolvedDialerProxies(
+            from: [chainedNode, foreign]
+        )
+        XCTAssertEqual(imported.removed, 1)
+        XCTAssertEqual(imported.nodes.map(\.dialerProxy), ["Relay-HK-01", nil])
+        XCTAssertNoThrow(try AetherNodeProfileCompiler.validateDialerProxies(in: imported.nodes))
 
         // Self-reference must be rejected
         chainedNode.dialerProxy = "Landing-JP"
@@ -358,6 +389,35 @@ final class AetherNodeTests: XCTestCase {
         XCTAssertThrowsError(try AetherNodeURIParser.parse(oversized))
         XCTAssertThrowsError(try AetherNodeURIParser.parse("unknown://example.com:443"))
         XCTAssertThrowsError(try AetherNodeURIParser.parse("trojan://pass@bad.example\nrules::443#Injected"))
+    }
+
+    func testNodeURIParserStripsIPv6BracketsAndRoundTrips() throws {
+        let uuid = "b831381d-6324-4d53-ad4f-8cda48b30811"
+        // URLComponents keeps the brackets in `host`; a bracketed server is
+        // resolved as a hostname by the core and never connects.
+        for uri in [
+            "vless://\(uuid)@[2001:db8::1]:443?security=tls&sni=example.com#v6",
+            "trojan://secret@[2001:db8::1]:443#v6",
+            "ss://YWVzLTEyOC1nY206c2VjcmV0@[2001:db8::1]:8388#v6",
+        ] {
+            let node = try AetherNodeURIParser.parse(uri)
+            XCTAssertEqual(node.server, "2001:db8::1", uri)
+            let exported = try AetherNodeURIParser.format(node)
+            XCTAssertTrue(exported.contains("@[2001:db8::1]:"), exported)
+            XCTAssertEqual(try AetherNodeURIParser.parse(exported).server, "2001:db8::1")
+        }
+    }
+
+    func testNodeURIParserDecodesNameOnce() throws {
+        let uuid = "b831381d-6324-4d53-ad4f-8cda48b30811"
+        // URLComponents.fragment is already decoded; decoding again turned
+        // "50% off" into nil and replaced the name with "VLESS-example.com".
+        let node = try AetherNodeURIParser.parse(
+            "vless://\(uuid)@example.com:443?security=tls#50%25%20off"
+        )
+        XCTAssertEqual(node.name, "50% off")
+        let roundTripped = try AetherNodeURIParser.parse(AetherNodeURIParser.format(node))
+        XCTAssertEqual(roundTripped.name, "50% off")
     }
 
     private static func makeNodes() -> [AetherNode] {

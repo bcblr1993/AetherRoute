@@ -139,6 +139,40 @@ final class ProfileCatalogStoreTests: XCTestCase {
         }
     }
 
+    func testNativeProfileRefusesDialerProxyOutsideTheProfile() throws {
+        try withStores { _, _, catalogStore in
+            let landing = AetherNode(
+                name: "Landing",
+                protocolID: .socks5,
+                server: "landing.example",
+                port: 1080,
+                dialerProxy: "Relay"
+            )
+            // A single-node profile has nothing to dial through; the core
+            // would refuse the whole profile at connect time.
+            XCTAssertThrowsError(
+                try catalogStore.addNative(nodes: [landing], suggestedName: "Chain")
+            ) { error in
+                XCTAssertEqual(
+                    error as? AetherNodeProfileCompilerError,
+                    .unknownDialerProxy(node: "Landing", dialer: "Relay")
+                )
+            }
+            let relay = AetherNode(
+                name: "Relay",
+                protocolID: .socks5,
+                server: "relay.example",
+                port: 1080
+            )
+            let catalog = try catalogStore.addNative(
+                nodes: [landing, relay],
+                suggestedName: "Chain"
+            )
+            let id = try XCTUnwrap(catalog.activeProfileID)
+            XCTAssertThrowsError(try catalogStore.updateNative(id: id, nodes: [landing]))
+        }
+    }
+
     func testSSHPrivateKeyAndPassphraseNeverAppearInCatalogCiphertext() throws {
         try withStores { directory, _, catalogStore in
             let privateKey = """

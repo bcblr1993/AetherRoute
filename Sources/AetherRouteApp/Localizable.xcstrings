@@ -15472,6 +15472,380 @@
           }
         }
       }
+    },
+    "%@ (not in this profile)": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（不在此配置中）"
+          }
+        }
+      }
+    },
+    "%@ dials through %@, which is not another node of this profile.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 的前置代理 %2$@ 不是此配置中的其他节点。"
+          }
+        }
+      }
+    },
+    "%lld dialer proxies named nodes outside this import and were removed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有 %lld 个前置代理指向本次导入之外的节点，已移除。"
+          }
+        }
+      }
+    },
+    "%lld rules will be imported.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将导入 %lld 条规则。"
+          }
+        }
+      }
+    },
+    "%lld unsupported lines will be skipped (line %@).": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将跳过 %1$lld 行不支持的规则（第 %2$@ 行）。"
+          }
+        }
+      }
+    },
+    "Decryption failed. Make sure this Mac uses the same Apple ID with iCloud Keychain turned on.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解密失败：请确认这台 Mac 登录了同一 Apple ID 并开启了 iCloud 钥匙串。"
+          }
+        }
+      }
+    },
+    "Edit the profile and choose a dialer from its own nodes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请编辑该配置，从它自己的节点中选择前置代理。"
+          }
+        }
+      }
+    },
+    "Encrypted and uploaded this Mac's profiles to iCloud (%lld profiles).": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已将本机配置加密上传至 iCloud（%lld 个配置）。"
+          }
+        }
+      }
+    },
+    "GEOSITE category %@ is not in the routing database. Check the spelling, for example cn, apple or openai.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路由数据库中没有 GEOSITE 分类 %@，请检查拼写，例如 cn、apple 或 openai。"
+          }
+        }
+      }
+    },
+    "Merged and synced both ways with iCloud (%lld profiles).": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已与 iCloud 合并并双向同步（%lld 个配置）。"
+          }
+        }
+      }
+    },
+    "No profile archive in iCloud yet, or it has not reached this Mac. Try again shortly.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iCloud 中还没有配置归档，或尚未同步到这台 Mac，请稍后再试。"
+          }
+        }
+      }
+    },
+    "Only the first %lld rules are read from one paste.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一次粘贴只读取前 %lld 条规则。"
+          }
+        }
+      }
+    },
+    "Pull failed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拉取失败：%@"
+          }
+        }
+      }
+    },
+    "Pulled profiles from iCloud (%lld profiles).": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已从 iCloud 拉取配置（%lld 个配置）。"
+          }
+        }
+      }
+    },
+    "Pulling profiles from iCloud…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在从 iCloud 拉取配置…"
+          }
+        }
+      }
+    },
+    "Push failed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送失败：%@"
+          }
+        }
+      }
+    },
+    "Pushed profiles to iCloud (%lld profiles).": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已推送配置至 iCloud（%lld 个配置）。"
+          }
+        }
+      }
+    },
+    "Sync failed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步失败：%@"
+          }
+        }
+      }
+    },
+    "Synced the latest profiles from iCloud (%lld profiles).": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已从 iCloud 同步最新配置（%lld 个配置）。"
+          }
+        }
+      }
+    },
+    "Syncing with iCloud…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在与 iCloud 同步…"
+          }
+        }
+      }
+    },
+    "The custom rule GEOSITE,%@ names a category that is not in the routing database. Edit or turn off that rule on the Rules page.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义规则 GEOSITE,%@ 使用的分类不在路由数据库中。请在“规则”页面修改或停用这条规则。"
+          }
+        }
+      }
+    },
+    "The encryption key is not available in the keychain.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钥匙串中没有可用的加密密钥。"
+          }
+        }
+      }
+    },
+    "The encryption key is unavailable. Turn on iCloud Passwords & Keychain in System Settings and wait a moment.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未获取到加密密钥：请在系统设置中开启“iCloud 密码与钥匙串”，然后稍候。"
+          }
+        }
+      }
+    },
+    "The profiles could not be encrypted for iCloud.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法为 iCloud 加密配置。"
+          }
+        }
+      }
+    },
+    "The profiles exceed the 1 MB iCloud limit.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置超出 iCloud 的 1 MB 容量限制。"
+          }
+        }
+      }
+    },
+    "The profiles from iCloud could not be decrypted with this Mac's key.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法用这台 Mac 的密钥解密 iCloud 中的配置。"
+          }
+        }
+      }
+    },
+    "The profiles in iCloud are damaged or failed their checksum.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iCloud 中的配置已损坏或校验失败。"
+          }
+        }
+      }
+    },
+    "There are no local profiles to upload.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机没有可上传的配置。"
+          }
+        }
+      }
+    },
+    "These rules would bring the total to %lld, above the limit of %lld. Nothing was imported; remove some rules or paste fewer.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入后规则总数将达到 %1$lld 条，超过 %2$lld 条的上限。未导入任何规则，请先删除部分规则或减少粘贴数量。"
+          }
+        }
+      }
+    },
+    "Turn on end-to-end encrypted iCloud sync first.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先开启 iCloud 端到端加密同步。"
+          }
+        }
+      }
+    },
+    "Uploading profiles to iCloud…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在上传配置至 iCloud…"
+          }
+        }
+      }
+    },
+    "Uploading to iCloud failed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上传至 iCloud 失败：%@"
+          }
+        }
+      }
+    },
+    "iCloud has no profiles yet. Turn on sync and upload on a Mac that has them.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iCloud 中还没有配置，请在有配置的 Mac 上开启同步并上传。"
+          }
+        }
+      }
+    },
+    "iCloud storage is unavailable. Sign in to iCloud and try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iCloud 存储不可用，请登录 iCloud 后重试。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

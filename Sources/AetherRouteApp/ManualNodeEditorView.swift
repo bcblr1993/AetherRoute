@@ -7,6 +7,10 @@ struct ManualNodeEditorSheet: View {
     @EnvironmentObject private var tunnel: TunnelManager
 
     private let save: ((AetherNode) -> Bool)?
+    /// Names a dialer proxy may use: the other nodes of the same native
+    /// profile. Nil for a node saved as its own profile, which has nothing
+    /// to dial through.
+    private let dialerCandidates: [String]?
     private let isEditing: Bool
     private let initialNode: AetherNode
     @State private var node: AetherNode
@@ -23,7 +27,8 @@ struct ManualNodeEditorSheet: View {
 
     init(
         initialNode: AetherNode? = nil,
-        save: ((AetherNode) -> Bool)? = nil
+        save: ((AetherNode) -> Bool)? = nil,
+        dialerCandidates: [String]? = nil
     ) {
         let seed = initialNode ?? AetherNode(
             name: "",
@@ -34,6 +39,7 @@ struct ManualNodeEditorSheet: View {
         )
         self.initialNode = seed
         self.save = save
+        self.dialerCandidates = dialerCandidates
         self.isEditing = initialNode != nil
         _node = State(initialValue: seed)
         _portText = State(initialValue: String(seed.port))
@@ -446,15 +452,29 @@ struct ManualNodeEditorSheet: View {
                 )
                     .fieldRow("Congestion control (optional)")
             }
-            TextField(
-                AppLocalization.string("Dialer proxy (optional)"),
-                text: Binding(
-                    get: { node.dialerProxy ?? "" },
-                    set: { node.dialerProxy = $0.isEmpty ? nil : $0 }
-                )
-            )
-            .accessibilityIdentifier("manual-node-dialer-proxy")
-            .fieldRow("Dialer proxy (optional)")
+            // A free-text dialer let any name through; one the profile does
+            // not contain made the core refuse the whole profile.
+            if dialerCandidates != nil {
+                Picker(
+                    AppLocalization.string("Dialer proxy (optional)"),
+                    selection: Binding(
+                        get: { node.dialerProxy ?? "" },
+                        set: { node.dialerProxy = $0.isEmpty ? nil : $0 }
+                    )
+                ) {
+                    Text(AppLocalization.string("None")).tag("")
+                    ForEach(dialerOptions, id: \.self) { name in
+                        Text(verbatim: name).tag(name)
+                    }
+                    if let current = node.dialerProxy, !current.isEmpty,
+                       !dialerOptions.contains(current) {
+                        Text(AppLocalization.format("%@ (not in this profile)", current))
+                            .tag(current)
+                    }
+                }
+                .accessibilityIdentifier("manual-node-dialer-proxy")
+                .fieldRow("Dialer proxy (optional)")
+            }
         }
     }
 
@@ -510,6 +530,13 @@ struct ManualNodeEditorSheet: View {
         .padding(AetherVisual.dialogPadding)
     }
 
+    private var dialerOptions: [String] {
+        var seen = Set<String>()
+        return (dialerCandidates ?? []).filter { name in
+            !name.isEmpty && name != node.name && seen.insert(name).inserted
+        }
+    }
+
     private func pasteNodeLink() {
         errorMessage = nil
         guard let raw = NSPasteboard.general.string(forType: .string),
@@ -520,6 +547,10 @@ struct ManualNodeEditorSheet: View {
         do {
             var imported = try AetherNodeURIParser.parse(raw)
             imported.id = node.id
+            if dialerCandidates == nil {
+                // Saved as its own profile, the node has nothing to dial through.
+                imported.dialerProxy = nil
+            }
             node = imported
             portText = String(imported.port)
             uploadText = imported.uploadMbps.map(String.init) ?? ""

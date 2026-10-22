@@ -475,6 +475,12 @@ final class TunnelManager: ObservableObject {
     var nextAutomaticResourceRefreshAttempt: Date?
     let bundledResourceDirectoryURL = Bundle.main.resourceURL?
         .appendingPathComponent("RoutingResources", isDirectory: true)
+    /// GEOSITE categories of the bundled database, read once for the rule
+    /// editor (it validates on every keystroke); nil when unreadable, in
+    /// which case the launch-time check still applies.
+    lazy var bundledGeoSiteCategories: GeoSiteCategoryIndex? = bundledResourceDirectoryURL
+        .flatMap { try? Data(contentsOf: $0.appendingPathComponent(RoutingResourceKind.geoSite.fileName)) }
+        .flatMap { try? GeoSiteCategoryIndex(data: $0) }
     var connectionWatchdogTask: Task<Void, Never>?
     var disconnectionWatchdogTask: Task<Void, Never>?
     var recoveryWatchdogTask: Task<Void, Never>?
@@ -836,6 +842,7 @@ final class TunnelManager: ObservableObject {
             let syncedSnapshot = notification.object as? CloudSyncUserRulesSnapshot
             Task { @MainActor [weak self] in
                 guard let self, !self.isUIReviewMode else { return }
+                let previousRules = self.customRules
                 if let snapshot = syncedSnapshot {
                     self.customRules = snapshot.customRules
                     self.bypassPolicy = Self.sanitizeBypassPolicy(snapshot.bypassPolicy)
@@ -846,6 +853,12 @@ final class TunnelManager: ObservableObject {
                     if let loadedBypass = try? BypassPolicyStore.applicationGroup().load() {
                         self.bypassPolicy = Self.sanitizeBypassPolicy(loadedBypass)
                     }
+                }
+                // Synced rules used to show on the Rules page but route
+                // nothing until the next connect; apply them like a local edit.
+                if self.customRules != previousRules {
+                    self.refreshActiveProfileSummary()
+                    await self.reloadCustomRulesLive()
                 }
             }
         }
@@ -1421,7 +1434,9 @@ final class TunnelManager: ObservableObject {
                         || (error as? ActiveProfileStoreError)
                             == .appGroupUnavailable
                         || error is ProfileKeyStoreError
-                        || error is KeychainAccessGroupResolutionError {
+                        || error is KeychainAccessGroupResolutionError
+                        || error is AetherNodeProfileCompilerError
+                        || error is CustomRuleGeoSiteError {
                 context = .configuration
             } else {
                 context = .provider
@@ -1435,6 +1450,11 @@ final class TunnelManager: ObservableObject {
     ) async throws -> (ProviderLaunchSnapshot, Data) {
         guard let activeProfile else {
             throw ActiveProfileStoreError.noActiveProfile
+        }
+        if let nativeNodes = activeProfile.nativeNodes {
+            // Profiles saved before 1.8.7 could name a dialer outside the
+            // profile; the core then refuses it with an opaque error.
+            try AetherNodeProfileCompiler.validateDialerProxies(in: nativeNodes)
         }
         Self.runtimeLogger.info("stage=prepareRuntimeResources begin")
         isUpdatingRoutingResources = true
@@ -1485,13 +1505,23 @@ final class TunnelManager: ObservableObject {
                     persisted: persistedSelections,
                     summary: profileSummary
                 )
+            let routingResources = try store.launchResourceSnapshot(for: profileYAML)
+            // The core refuses the whole rule set for one unknown GEOSITE
+            // category; name the custom rule instead. Checked against the
+            // database this launch actually carries, which may be newer
+            // than the one bundled with the app.
+            if let geoSiteData = routingResources[.geoSite],
+               let unknown = try GeoSiteCategoryIndex(data: geoSiteData)
+                .unknownCategories(in: currentCustomRules).first {
+                throw CustomRuleGeoSiteError.unknownCategory(unknown)
+            }
             let snapshot = try ProviderLaunchSnapshot(
                 profileYAML: profileYAML,
                 routingMode: requestedMode,
                 bypassPolicy: requestedBypassPolicy,
                 dnsPolicy: requestedDNSPolicy,
                 proxySelections: initialSelections,
-                routingResources: try store.launchResourceSnapshot(for: profileYAML),
+                routingResources: routingResources,
                 fakeIPCacheKey: requestedEngine == .tun
                     ? try DataProtectionProfileKeyStore(
                         service: "com.aetherroute.fake-ip-cache"

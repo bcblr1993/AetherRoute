@@ -197,4 +197,128 @@ final class ProfileCloudSyncTests: XCTestCase {
         XCTAssertEqual(merged.bypassPolicy.domains, ["corp.internal", "home.arpa"])
         XCTAssertEqual(merged.bypassPolicy.ipv4CIDRs, ["10.20.0.0/16"])
     }
+
+    // MARK: - Deletions and edits across devices (1.8.7)
+
+    private func roundTrip(
+        _ snapshot: CloudSyncUserRulesSnapshot,
+        intoLocal rules: [CustomRule],
+        metadata: RuleSyncMetadata,
+        bypass: BypassPolicy = .empty,
+        bypassSync: RuleSyncMetadata = .empty,
+        keyStore: InMemoryProfileKeyStore
+    ) throws -> CloudSyncUserRulesSnapshot {
+        let payload = try ProfileCloudSyncManager.encryptUserRulesSnapshot(
+            snapshot, deviceIdentifier: "other-mac", keyStore: keyStore
+        )
+        return try ProfileCloudSyncManager.decryptAndMergeUserRulesSnapshot(
+            payload,
+            localRules: rules,
+            localBypassPolicy: bypass,
+            localCustomRuleSync: metadata,
+            localBypassSync: bypassSync,
+            keyStore: keyStore
+        )
+    }
+
+    func testDeletedRuleStaysDeletedOnBothDevices() throws {
+        let keyStore = InMemoryProfileKeyStore()
+        _ = try keyStore.loadOrCreateKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID)
+        let kept = CustomRule(kind: .domainSuffix, value: "kept.example", target: .direct)
+        let removed = CustomRule(kind: .domainSuffix, value: "removed.example", target: .direct)
+
+        // Mac A deletes `removed`; Mac B still has both, with no metadata
+        // (as written by 1.8.6).
+        var macA = RuleSyncMetadata.empty
+        macA.recordChanges(from: [kept, removed], to: [kept])
+        let onA = try roundTrip(
+            CloudSyncUserRulesSnapshot(customRules: [kept, removed]),
+            intoLocal: [kept], metadata: macA, keyStore: keyStore
+        )
+        XCTAssertEqual(onA.customRules.map(\.id), [kept.id])
+
+        // B merges what A published: the deletion reaches B too.
+        let onB = try roundTrip(onA, intoLocal: [kept, removed], metadata: .empty, keyStore: keyStore)
+        XCTAssertEqual(onB.customRules.map(\.id), [kept.id])
+        // And A, merging B's result again, still does not restore it.
+        let again = try roundTrip(onB, intoLocal: [kept], metadata: onA.customRuleSync ?? .empty, keyStore: keyStore)
+        XCTAssertEqual(again.customRules.map(\.id), [kept.id])
+    }
+
+    func testNewerEditOfTheSameRuleWins() throws {
+        let keyStore = InMemoryProfileKeyStore()
+        _ = try keyStore.loadOrCreateKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID)
+        let original = CustomRule(kind: .domainSuffix, value: "edited.example", target: .direct)
+        var proxied = original
+        proxied.target = .proxy("Proxy")
+        let older = Date(timeIntervalSince1970: 1_000)
+        let newer = Date(timeIntervalSince1970: 2_000)
+
+        var local = RuleSyncMetadata.empty
+        local.recordChanges(from: [], to: [original], at: older)
+        var remote = RuleSyncMetadata.empty
+        remote.recordChanges(from: [], to: [proxied], at: newer)
+        let merged = try roundTrip(
+            CloudSyncUserRulesSnapshot(customRules: [proxied], customRuleSync: remote),
+            intoLocal: [original], metadata: local, keyStore: keyStore
+        )
+        XCTAssertEqual(merged.customRules, [proxied])
+
+        // The local edit wins when it is the newer one.
+        let mergedBack = try roundTrip(
+            CloudSyncUserRulesSnapshot(customRules: [original], customRuleSync: local),
+            intoLocal: [proxied], metadata: remote, keyStore: keyStore
+        )
+        XCTAssertEqual(mergedBack.customRules, [proxied])
+    }
+
+    func testSameMatchWithAnotherTargetIsNotDuplicated() throws {
+        let keyStore = InMemoryProfileKeyStore()
+        _ = try keyStore.loadOrCreateKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID)
+        let local = CustomRule(kind: .domainSuffix, value: "Example.com", target: .direct)
+        let remote = CustomRule(kind: .domainSuffix, value: "example.com", target: .reject)
+        let merged = try roundTrip(
+            CloudSyncUserRulesSnapshot(customRules: [remote]),
+            intoLocal: [local], metadata: .empty, keyStore: keyStore
+        )
+        XCTAssertEqual(merged.customRules.map(\.id), [local.id])
+    }
+
+    func testBypassRuleDeletionSurvivesSync() throws {
+        let keyStore = InMemoryProfileKeyStore()
+        _ = try keyStore.loadOrCreateKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID)
+        let kept = try BypassRule(kind: .domainSuffix, value: "kept.internal")
+        let removed = try BypassRule(kind: .domainSuffix, value: "removed.internal")
+        var sync = RuleSyncMetadata.empty
+        sync.recordChanges(from: [kept, removed], to: [kept])
+        let merged = try roundTrip(
+            CloudSyncUserRulesSnapshot(bypassPolicy: try BypassPolicy(rules: [kept, removed]).validated()),
+            intoLocal: [], metadata: .empty,
+            bypass: try BypassPolicy(rules: [kept]).validated(), bypassSync: sync,
+            keyStore: keyStore
+        )
+        XCTAssertEqual(merged.bypassPolicy.rules.map(\.id), [kept.id])
+    }
+
+    func testStoreRecordsDeletionsButNotSynchronizedWrites() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = CustomRuleStore(directoryURL: directory)
+        let first = CustomRule(kind: .domainSuffix, value: "a.example", target: .direct)
+        let second = CustomRule(kind: .domainSuffix, value: "b.example", target: .direct)
+        try store.save([first, second])
+        try store.delete(id: second.id)
+        let metadata = store.loadSyncMetadata()
+        XCTAssertNotNil(metadata.deletedAt[second.id.uuidString])
+        XCTAssertNotNil(metadata.modifiedAt[first.id.uuidString])
+
+        // A synchronized write keeps exactly the metadata it was given.
+        try store.saveSynchronized([first], metadata: .empty)
+        XCTAssertEqual(store.loadSyncMetadata(), .empty)
+        // Reordering is not an edit.
+        try store.save([first, second])
+        let stamped = store.loadSyncMetadata().modifiedAt[first.id.uuidString]
+        try store.save([second, first])
+        XCTAssertEqual(store.loadSyncMetadata().modifiedAt[first.id.uuidString], stamped)
+    }
 }

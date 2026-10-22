@@ -298,6 +298,26 @@ public struct BypassPolicyStore: Sendable {
         self.keyStore = keyStore
     }
 
+    private var syncMetadataFile: RuleSyncMetadataFile {
+        RuleSyncMetadataFile(url: directoryURL.appendingPathComponent("bypass-policy-sync.v1.json"))
+    }
+
+    /// When bypass rules were added and deleted, for iCloud sync.
+    public func loadSyncMetadata() -> RuleSyncMetadata {
+        syncMetadataFile.load()
+    }
+
+    /// Writes a policy merged from iCloud without stamping it as a local
+    /// change, so other devices' deletions stay authoritative.
+    public func saveSynchronized(
+        _ policy: BypassPolicy,
+        metadata: RuleSyncMetadata,
+        fileManager: FileManager = .default
+    ) throws {
+        try save(policy, recordingChanges: false, fileManager: fileManager)
+        try syncMetadataFile.save(metadata)
+    }
+
     public static func applicationGroup(
         fileManager: FileManager = .default
     ) throws -> Self {
@@ -333,9 +353,11 @@ public struct BypassPolicyStore: Sendable {
 
     public func save(
         _ policy: BypassPolicy,
+        recordingChanges: Bool = true,
         fileManager: FileManager = .default
     ) throws {
         let policy = try policy.validated()
+        let previous = recordingChanges ? ((try? load(fileManager: fileManager))?.rules ?? []) : []
         let key: Data
         if fileManager.fileExists(atPath: policyURL.path) {
             let current = try Data(contentsOf: policyURL, options: [.mappedIfSafe])
@@ -377,6 +399,13 @@ public struct BypassPolicyStore: Sendable {
             ofItemAtPath: policyURL.path
         )
         try excludeFromBackup(policyURL)
+        if recordingChanges {
+            // Bookkeeping for iCloud sync only; the rules are already saved,
+            // so failing here would report a successful edit as failed.
+            var metadata = loadSyncMetadata()
+            metadata.recordChanges(from: previous, to: policy.rules)
+            try? syncMetadataFile.save(metadata)
+        }
     }
 
     private func excludeFromBackup(_ url: URL) throws {

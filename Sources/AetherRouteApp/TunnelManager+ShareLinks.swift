@@ -36,18 +36,22 @@ extension TunnelManager {
             return false
         }
 
-        let name = parsed.nodes.count == 1
+        // A link may name a dialer that exists only in the client it came
+        // from; keep the node, drop the dangling dialer, and say so.
+        let resolved = AetherNodeProfileCompiler.removingUnresolvedDialerProxies(from: parsed.nodes)
+        let importedNodes = resolved.nodes
+        let name = importedNodes.count == 1
             ? String.localizedStringWithFormat(
                 AppLocalization.string("%@ · Manual"),
-                parsed.nodes[0].name
+                importedNodes[0].name
             )
-            : AppLocalization.format("Imported links · %lld nodes", Int64(parsed.nodes.count))
+            : AppLocalization.format("Imported links · %lld nodes", Int64(importedNodes.count))
         do {
             let shouldActivate = !isEnabled || activeProfileID == nil
             if isUIReviewMode {
-                let yaml = try AetherNodeProfileCompiler.compile(nodes: parsed.nodes)
+                let yaml = try AetherNodeProfileCompiler.compile(nodes: importedNodes)
                 let managed = ManagedProfile(
-                    profile: ActiveProfile(name: name, yaml: yaml, nativeNodes: parsed.nodes)
+                    profile: ActiveProfile(name: name, yaml: yaml, nativeNodes: importedNodes)
                 )
                 installReviewProfileCatalog(
                     ProfileCatalog(
@@ -56,7 +60,7 @@ extension TunnelManager {
                     )
                 )
             } else {
-                let nodes = parsed.nodes
+                let nodes = importedNodes
                 try await performProductionProfileCatalogOperation {
                     try ProfileCatalogStore.applicationGroup().addNative(
                         nodes: nodes,
@@ -66,13 +70,20 @@ extension TunnelManager {
                 }
             }
             diagnosticEvents.record(.profileImported)
-            profileMessage = parsed.skippedCount == 0
-                ? AppLocalization.format("Imported %lld nodes.", Int64(parsed.nodes.count))
+            var message = parsed.skippedCount == 0
+                ? AppLocalization.format("Imported %lld nodes.", Int64(importedNodes.count))
                 : AppLocalization.format(
                     "Imported %lld nodes; %lld lines were not valid links and were skipped.",
-                    Int64(parsed.nodes.count),
+                    Int64(importedNodes.count),
                     Int64(parsed.skippedCount)
                 )
+            if resolved.removed > 0 {
+                message += " " + AppLocalization.format(
+                    "%lld dialer proxies named nodes outside this import and were removed.",
+                    Int64(resolved.removed)
+                )
+            }
+            profileMessage = message
             profileMessageIsError = false
             return true
         } catch {

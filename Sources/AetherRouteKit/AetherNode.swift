@@ -546,6 +546,62 @@ public enum AetherNodeProfileCompiler {
         try compile(nodes: nodes, groupName: groupName)
     }
 
+    /// Every dialer must name another node of the same profile. The core
+    /// fails the whole profile ("connector … not found") otherwise, and the
+    /// group would route a node through itself.
+    ///
+    /// Checked when a native profile is saved, not in `compile`: stored
+    /// profiles are recompiled on every catalog load, and refusing one there
+    /// would hide all of a user's profiles.
+    public static func validateDialerProxies(
+        in nodes: [AetherNode],
+        groupName: String = groupName
+    ) throws {
+        for node in nodes {
+            if let dialer = unresolvedDialer(of: node, in: nodes, groupName: groupName) {
+                throw AetherNodeProfileCompilerError.unknownDialerProxy(
+                    node: node.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                    dialer: dialer
+                )
+            }
+        }
+    }
+
+    /// Share links from other clients may name a dialer that exists only
+    /// there. Importing keeps such nodes and drops the dangling dialer, so
+    /// one foreign reference cannot refuse the whole import.
+    public static func removingUnresolvedDialerProxies(
+        from nodes: [AetherNode]
+    ) -> (nodes: [AetherNode], removed: Int) {
+        var removed = 0
+        let resolved = nodes.map { node -> AetherNode in
+            guard unresolvedDialer(of: node, in: nodes, groupName: groupName) != nil else {
+                return node
+            }
+            var copy = node
+            copy.dialerProxy = nil
+            removed += 1
+            return copy
+        }
+        return (resolved, removed)
+    }
+
+    /// The node's dialer when it is set but does not name another node.
+    private static func unresolvedDialer(
+        of node: AetherNode,
+        in nodes: [AetherNode],
+        groupName: String
+    ) -> String? {
+        guard let dialer = node.dialerProxy?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !dialer.isEmpty else { return nil }
+        let name = node.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let names = Set(nodes.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) })
+        guard dialer != name, dialer != groupName, names.contains(dialer) else {
+            return dialer
+        }
+        return nil
+    }
+
     public static func compile(
         nodes: [AetherNode],
         groupName: String
@@ -921,9 +977,12 @@ public enum AetherNodeProfileCompilerError: LocalizedError, Equatable,
     case tooManyNodes(Int)
     case duplicateName
     case reservedName
+    case unknownDialerProxy(node: String, dialer: String)
 
     public var errorDescription: String? {
         switch self {
+        case let .unknownDialerProxy(node, dialer):
+            "\(node) dials through \(dialer), which is not another node of this profile."
         case .emptyProfile:
             "Add at least one node."
         case let .tooManyNodes(limit):
@@ -990,7 +1049,7 @@ public enum AetherNodeURIParser {
             throw AetherNodeURIError.malformedLink
         }
 
-        guard let host = components.host, !host.isEmpty,
+        guard let host = components.host.map(unbracketedHost), !host.isEmpty,
               let portInt = components.port,
               let port = UInt16(exactly: portInt), port > 0
         else {
@@ -1004,8 +1063,9 @@ public enum AetherNodeURIParser {
             },
             uniquingKeysWith: { _, last in last }
         )
+        // `fragment` is already percent-decoded; decoding it again turns a
+        // literal "%" into nil and loses the name.
         let fragmentName = components.fragment?
-            .removingPercentEncoding?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let defaultName = (fragmentName?.isEmpty == false) ? fragmentName! : "\(rawScheme.uppercased())-\(host)"
 
@@ -1283,6 +1343,13 @@ public enum AetherNodeURIParser {
         }
     }
 
+    /// `URLComponents.host` keeps the brackets of an IPv6 literal; the core
+    /// expects the bare address in `server`.
+    private static func unbracketedHost(_ host: String) -> String {
+        guard host.hasPrefix("["), host.hasSuffix("]") else { return host }
+        return String(host.dropFirst().dropLast())
+    }
+
     private static func parseShadowsocks(_ uri: String) throws -> AetherNode {
         let body = String(uri.dropFirst(5))
         let parts = body.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
@@ -1292,7 +1359,7 @@ public enum AetherNodeURIParser {
             : nil
 
         if mainPart.contains("@"), let components = URLComponents(string: uri),
-           let host = components.host, !host.isEmpty,
+           let host = components.host.map(unbracketedHost), !host.isEmpty,
            let portInt = components.port, let port = UInt16(exactly: portInt), port > 0
         {
             let userPart = components.user ?? ""
@@ -1330,7 +1397,7 @@ public enum AetherNodeURIParser {
             return try node.validated()
         } else if let decoded = decodeBase64Flexible(mainPart),
                   let components = URLComponents(string: "ss://\(decoded)"),
-                  let host = components.host, !host.isEmpty,
+                  let host = components.host.map(unbracketedHost), !host.isEmpty,
                   let portInt = components.port, let port = UInt16(exactly: portInt), port > 0,
                   let cipher = components.user, !cipher.isEmpty,
                   let password = components.password

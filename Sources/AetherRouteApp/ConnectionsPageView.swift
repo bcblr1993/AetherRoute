@@ -247,11 +247,14 @@ struct ConnectionsView: View {
                     }
                     .onTapGesture(count: 2) { inspectedConnection = row }
             }
-            .width(min: 80, ideal: 92, max: 520)
+            .width(min: 80, ideal: 100, max: 520)
+            // Table shares extra width in proportion to `ideal`. At 72 the
+            // fixed-size kind badge ("DOMAIN-SUFFIX") left the value one
+            // letter while Traffic and Duration took ~200 pt each.
             TableColumn(AppLocalization.string("Matched rule")) { row in
                 ConnectionRuleCell(connection: row.connection)
             }
-            .width(min: 60, ideal: 72, max: 400)
+            .width(min: 60, ideal: 124, max: 400)
             TableColumn(AppLocalization.string("Outlet")) { row in
                 ConnectionOutletCell(connection: row.connection)
             }
@@ -259,7 +262,7 @@ struct ConnectionsView: View {
             TableColumn(AppLocalization.string("Traffic")) { row in
                 ConnectionTrafficCell(connection: row.connection)
             }
-            .width(min: 52, ideal: 60, max: 120)
+            .width(min: 52, ideal: 52, max: 120)
             // Numbers sit on the right; the title follows them.
             .alignment(.numeric)
             TableColumn(AppLocalization.string("Duration")) { row in

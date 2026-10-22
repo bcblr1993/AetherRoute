@@ -14,15 +14,23 @@ public struct CloudSyncUserRulesSnapshot: Codable, Sendable, Equatable {
     public let version: Int
     public var customRules: [CustomRule]
     public var bypassPolicy: BypassPolicy
+    /// Change and deletion times (1.8.7). Absent in snapshots from 1.8.5
+    /// and 1.8.6, which merged by union and so could not delete.
+    public var customRuleSync: RuleSyncMetadata?
+    public var bypassSync: RuleSyncMetadata?
 
     public init(
         version: Int = Self.currentVersion,
         customRules: [CustomRule] = [],
-        bypassPolicy: BypassPolicy = .empty
+        bypassPolicy: BypassPolicy = .empty,
+        customRuleSync: RuleSyncMetadata? = nil,
+        bypassSync: RuleSyncMetadata? = nil
     ) {
         self.version = version
         self.customRules = customRules
         self.bypassPolicy = bypassPolicy
+        self.customRuleSync = customRuleSync
+        self.bypassSync = bypassSync
     }
 }
 
@@ -52,7 +60,7 @@ public struct CloudSyncPayload: Codable, Sendable, Equatable {
     }
 }
 
-public enum CloudSyncError: LocalizedError, Equatable {
+public enum CloudSyncError: LocalizedError, Equatable, Sendable {
     case cloudUnavailable
     case encryptionFailed
     case decryptionFailed
@@ -63,17 +71,50 @@ public enum CloudSyncError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .cloudUnavailable:
-            "iCloud 存储不可用，请登录 Apple ID / iCloud storage unavailable"
+            "iCloud storage is unavailable. Sign in to iCloud and try again."
         case .encryptionFailed:
-            "配置加密失败 / Failed to encrypt profile for iCloud"
+            "The profiles could not be encrypted for iCloud."
         case .decryptionFailed:
-            "配置解密失败，密钥不匹配 / Failed to decrypt profile from iCloud"
+            "The profiles from iCloud could not be decrypted with this Mac's key."
         case .catalogCorrupted:
-            "云端配置损坏或校验和不匹配 / Cloud profile catalog corrupted or checksum mismatch"
+            "The profiles in iCloud are damaged or failed their checksum."
         case .keychainUnavailable:
-            "安全密钥不可用 / Security keychain key unavailable"
+            "The encryption key is not available in the keychain."
         case .payloadTooLarge:
-            "云端配置超出容量限制 (1MB) / Cloud profile catalog exceeds 1MB limit"
+            "The profiles exceed the 1 MB iCloud limit."
+        }
+    }
+}
+
+/// What the last sync step did. The kit keeps no user-facing text; the app
+/// localizes these (1.8.7: the status used to be hard-coded Chinese).
+public enum CloudSyncStatus: Equatable, Sendable {
+    public enum Operation: Equatable, Sendable {
+        case sync, upload, pull, push
+    }
+
+    case enableSyncFirst
+    case syncing
+    case pulling
+    case pushing
+    case merged(profileCount: Int)
+    case pulledLatest(profileCount: Int)
+    case uploaded(profileCount: Int)
+    case forcePulled(profileCount: Int)
+    case forcePushed(profileCount: Int)
+    case noCloudData
+    case noCloudArchive
+    case nothingToUpload
+    case keychainUnavailable
+    case decryptionFailed
+    /// `cloudError` lets the app localize the cause; `detail` describes
+    /// any other error.
+    case failed(Operation, cloudError: CloudSyncError?, detail: String)
+
+    public var isFailure: Bool {
+        switch self {
+        case .keychainUnavailable, .decryptionFailed, .failed: true
+        default: false
         }
     }
 }
@@ -115,7 +156,7 @@ public final class ProfileCloudSyncManager: ObservableObject {
             }
         }
     }
-    @Published public var statusMessage: String?
+    @Published public var status: CloudSyncStatus?
 
     public init(
         kvStore: NSUbiquitousKeyValueStore = .default,
@@ -184,14 +225,14 @@ public final class ProfileCloudSyncManager: ObservableObject {
     @discardableResult
     public func sync() async throws -> Bool {
         guard isCloudSyncEnabled else {
-            self.statusMessage = "请先开启 iCloud 端到端加密同步"
+            self.status = .enableSyncFirst
             return false
         }
         guard !isSyncing else { return false }
 
         isSyncing = true
         defer { isSyncing = false }
-        self.statusMessage = "正在同步 iCloud 配置..."
+        self.status = .syncing
 
         let catalogStore = try ProfileCatalogStore.applicationGroup()
         let localCatalog = try catalogStore.loadOrMigrate()
@@ -223,19 +264,19 @@ public final class ProfileCloudSyncManager: ObservableObject {
                         Self.logger.info("Local profiles merged into cloud catalog; pushing merged union back to iCloud...")
                         try await pushLocalToCloud(appliedCatalog)
                         self.lastSyncedAt = Date()
-                        self.statusMessage = "已合并并双向同步至 iCloud (\(appliedCatalog.profiles.count) 个配置)"
+                        self.status = .merged(profileCount: appliedCatalog.profiles.count)
                     } else {
-                        self.statusMessage = "已从 iCloud 同步最新配置 (\(appliedCatalog.profiles.count) 个配置)"
+                        self.status = .pulledLatest(profileCount: appliedCatalog.profiles.count)
                     }
                     return true
                 } catch CloudSyncError.keychainUnavailable {
-                    self.statusMessage = "未获取到加密密钥：请在系统设置中开启「iCloud 密码与钥匙串」并稍候"
+                    self.status = .keychainUnavailable
                     throw CloudSyncError.keychainUnavailable
                 } catch CloudSyncError.decryptionFailed {
-                    self.statusMessage = "解密失败：请确保设备登录同一 Apple ID 并开启 iCloud 钥匙串"
+                    self.status = .decryptionFailed
                     throw CloudSyncError.decryptionFailed
                 } catch {
-                    self.statusMessage = "同步失败: \(error.localizedDescription)"
+                    self.status = .failed(.sync, cloudError: error as? CloudSyncError, detail: error.localizedDescription)
                     throw error
                 }
             }
@@ -246,16 +287,16 @@ public final class ProfileCloudSyncManager: ObservableObject {
             do {
                 try await pushLocalToCloud(localCatalog)
                 self.lastSyncedAt = Date()
-                self.statusMessage = "本地配置已加密同步至 iCloud (\(localCatalog.profiles.count) 个配置)"
+                self.status = .uploaded(profileCount: localCatalog.profiles.count)
                 return true
             } catch {
-                self.statusMessage = "上传至 iCloud 失败: \(error.localizedDescription)"
+                self.status = .failed(.upload, cloudError: error as? CloudSyncError, detail: error.localizedDescription)
                 throw error
             }
         }
 
         // 3. Both local and remote are empty or no remote data yet
-        self.statusMessage = "iCloud 云端暂无配置数据 (请在已配置设备上开启同步并上传)"
+        self.status = .noCloudData
         return false
     }
 
@@ -263,18 +304,18 @@ public final class ProfileCloudSyncManager: ObservableObject {
     @discardableResult
     public func forcePullFromCloud() async throws -> Bool {
         guard isCloudSyncEnabled else {
-            self.statusMessage = "请先开启 iCloud 端到端加密同步"
+            self.status = .enableSyncFirst
             return false
         }
         guard !isSyncing else { return false }
         isSyncing = true
         defer { isSyncing = false }
-        self.statusMessage = "正在从 iCloud 拉取配置..."
+        self.status = .pulling
 
         kvStore.synchronize()
         guard let remoteData = kvStore.data(forKey: CloudSyncPayload.storageKey),
               let remotePayload = try? JSONDecoder().decode(CloudSyncPayload.self, from: remoteData) else {
-            self.statusMessage = "iCloud 云端暂无配置归档 (或云端数据尚未同步到本机缓存，请稍候再试)"
+            self.status = .noCloudArchive
             return false
         }
         do {
@@ -286,16 +327,16 @@ public final class ProfileCloudSyncManager: ObservableObject {
             }
             syncUserRulesSnapshot()
             self.lastSyncedAt = Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0)
-            self.statusMessage = "已强制从 iCloud 拉取配置 (\(applied.profiles.count) 个配置)"
+            self.status = .forcePulled(profileCount: applied.profiles.count)
             return true
         } catch CloudSyncError.keychainUnavailable {
-            self.statusMessage = "未获取到加密密钥：请在系统设置中开启「iCloud 密码与钥匙串」并稍候"
+            self.status = .keychainUnavailable
             throw CloudSyncError.keychainUnavailable
         } catch CloudSyncError.decryptionFailed {
-            self.statusMessage = "解密失败：请确保设备登录同一 Apple ID 并开启 iCloud 钥匙串"
+            self.status = .decryptionFailed
             throw CloudSyncError.decryptionFailed
         } catch {
-            self.statusMessage = "拉取失败: \(error.localizedDescription)"
+            self.status = .failed(.pull, cloudError: error as? CloudSyncError, detail: error.localizedDescription)
             throw error
         }
     }
@@ -304,13 +345,13 @@ public final class ProfileCloudSyncManager: ObservableObject {
     @discardableResult
     public func forcePushToCloud() async throws -> Bool {
         guard isCloudSyncEnabled else {
-            self.statusMessage = "请先开启 iCloud 端到端加密同步"
+            self.status = .enableSyncFirst
             return false
         }
         guard !isSyncing else { return false }
         isSyncing = true
         defer { isSyncing = false }
-        self.statusMessage = "正在上传配置至 iCloud..."
+        self.status = .pushing
 
         if let localRulePayload = await RuleProviderEngine.shared.exportCloudSyncPayload(deviceIdentifier: deviceID) {
             kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
@@ -321,17 +362,17 @@ public final class ProfileCloudSyncManager: ObservableObject {
         let catalogStore = try ProfileCatalogStore.applicationGroup()
         let localCatalog = try catalogStore.loadOrMigrate()
         guard !localCatalog.profiles.isEmpty else {
-            self.statusMessage = "本地配置为空，无需上传"
+            self.status = .nothingToUpload
             return false
         }
 
         do {
             try await pushLocalToCloud(localCatalog)
             self.lastSyncedAt = Date()
-            self.statusMessage = "已强制推送至 iCloud (\(localCatalog.profiles.count) 个配置)"
+            self.status = .forcePushed(profileCount: localCatalog.profiles.count)
             return true
         } catch {
-            self.statusMessage = "上传失败: \(error.localizedDescription)"
+            self.status = .failed(.push, cloudError: error as? CloudSyncError, detail: error.localizedDescription)
             throw error
         }
     }
@@ -355,32 +396,39 @@ public final class ProfileCloudSyncManager: ObservableObject {
         }
         let localRules = (try? customStore.load()) ?? []
         let localBypass = (try? bypassStore.load()) ?? .empty
+        let localRuleSync = customStore.loadSyncMetadata()
+        let localBypassSync = bypassStore.loadSyncMetadata()
 
         if let remoteData = kvStore.data(forKey: CloudSyncPayload.userRulesStorageKey),
            let merged = try? Self.decryptAndMergeUserRulesSnapshot(
                remoteData,
                localRules: localRules,
                localBypassPolicy: localBypass,
+               localCustomRuleSync: localRuleSync,
+               localBypassSync: localBypassSync,
                keyStore: keyStore
            ) {
-            if merged.customRules != localRules {
-                try? customStore.save(merged.customRules)
+            let mergedRuleSync = merged.customRuleSync ?? localRuleSync
+            let mergedBypassSync = merged.bypassSync ?? localBypassSync
+            if merged.customRules != localRules || mergedRuleSync != localRuleSync {
+                try? customStore.saveSynchronized(merged.customRules, metadata: mergedRuleSync)
             }
-            if merged.bypassPolicy != localBypass {
-                try? bypassStore.save(merged.bypassPolicy)
+            if merged.bypassPolicy != localBypass || mergedBypassSync != localBypassSync {
+                try? bypassStore.saveSynchronized(merged.bypassPolicy, metadata: mergedBypassSync)
             }
             NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateUserRules, object: merged)
-            if merged.customRules != localRules || merged.bypassPolicy != localBypass {
-                if let encoded = try? Self.encryptUserRulesSnapshot(
-                    merged,
-                    deviceIdentifier: deviceID,
-                    keyStore: keyStore
-                ) {
-                    kvStore.set(encoded, forKey: CloudSyncPayload.userRulesStorageKey)
-                    kvStore.synchronize()
-                }
+            // Always publish the merge: the remote copy may lack this
+            // device's deletions even when the merge changed nothing here.
+            if let encoded = try? Self.encryptUserRulesSnapshot(
+                merged,
+                deviceIdentifier: deviceID,
+                keyStore: keyStore
+            ), encoded != remoteData {
+                kvStore.set(encoded, forKey: CloudSyncPayload.userRulesStorageKey)
+                kvStore.synchronize()
             }
-        } else if !localRules.isEmpty || !localBypass.rules.isEmpty {
+        } else if !localRules.isEmpty || !localBypass.rules.isEmpty
+                    || !localRuleSync.deletedAt.isEmpty || !localBypassSync.deletedAt.isEmpty {
             pushLocalUserRulesToCloudIfAvailable()
         }
     }
@@ -392,10 +440,17 @@ public final class ProfileCloudSyncManager: ObservableObject {
         }
         let localRules = (try? customStore.load()) ?? []
         let localBypass = (try? bypassStore.load()) ?? .empty
-        guard !localRules.isEmpty || !localBypass.rules.isEmpty else { return }
+        let ruleSync = customStore.loadSyncMetadata()
+        let bypassSync = bypassStore.loadSyncMetadata()
+        // An empty list with deletions is still news: it removes the rules
+        // other devices hold.
+        guard !localRules.isEmpty || !localBypass.rules.isEmpty
+                || !ruleSync.deletedAt.isEmpty || !bypassSync.deletedAt.isEmpty else { return }
         let snapshot = CloudSyncUserRulesSnapshot(
             customRules: localRules,
-            bypassPolicy: localBypass
+            bypassPolicy: localBypass,
+            customRuleSync: ruleSync,
+            bypassSync: bypassSync
         )
         if let encoded = try? Self.encryptUserRulesSnapshot(
             snapshot,
@@ -436,6 +491,8 @@ public final class ProfileCloudSyncManager: ObservableObject {
         _ payloadData: Data,
         localRules: [CustomRule],
         localBypassPolicy: BypassPolicy,
+        localCustomRuleSync: RuleSyncMetadata = .empty,
+        localBypassSync: RuleSyncMetadata = .empty,
         keyStore: any ProfileKeyStoring
     ) throws -> CloudSyncUserRulesSnapshot {
         guard let payload = try? JSONDecoder().decode(CloudSyncPayload.self, from: payloadData) else {
@@ -462,42 +519,33 @@ public final class ProfileCloudSyncManager: ObservableObject {
             throw CloudSyncError.catalogCorrupted
         }
 
-        // Merge custom rules preserving local order first, then appending distinct remote rules
-        var mergedCustomRules: [CustomRule] = []
-        var seenCustomKeys = Set<String>()
-        for rule in localRules + remoteSnapshot.customRules {
-            guard CustomRuleValidator.validate(kind: rule.kind, value: rule.value, target: rule.target).isValid else {
-                continue
-            }
-            let dedupKey = "\(rule.kind.rawValue)|\(rule.value.lowercased())|\(rule.target.rawString)"
-            if seenCustomKeys.insert(dedupKey).inserted {
-                mergedCustomRules.append(rule)
-                if mergedCustomRules.count >= CustomRuleCollection.maximumRules {
-                    break
-                }
-            }
-        }
-
-        // Merge bypass policy rules preserving local rules + distinct remote rules
-        var mergedBypassRules: [BypassRule] = []
-        var seenBypassKeys = Set<String>()
-        for rule in localBypassPolicy.rules + remoteSnapshot.bypassPolicy.rules {
-            guard let normalized = try? BypassRule(id: rule.id, kind: rule.kind, value: rule.value) else {
-                continue
-            }
-            let dedupKey = "\(normalized.kind.rawValue)|\(normalized.value)"
-            if seenBypassKeys.insert(dedupKey).inserted {
-                mergedBypassRules.append(normalized)
-                if mergedBypassRules.count >= BypassPolicy.maximumRules {
-                    break
-                }
-            }
-        }
-        let mergedBypassPolicy = (try? BypassPolicy(rules: mergedBypassRules).validated()) ?? localBypassPolicy
+        // Merge by rule ID with change and deletion times, so a rule deleted
+        // on one device is not restored by another device's older copy.
+        let customMerge = UserRuleSyncMerge.merge(
+            local: localRules,
+            localMetadata: localCustomRuleSync,
+            remote: remoteSnapshot.customRules,
+            remoteMetadata: remoteSnapshot.customRuleSync ?? .empty,
+            dedupKey: { "\($0.kind.rawValue)|\($0.value.lowercased())" },
+            isValid: { CustomRuleValidator.validate(kind: $0.kind, value: $0.value, target: $0.target).isValid },
+            limit: CustomRuleCollection.maximumRules
+        )
+        let bypassMerge = UserRuleSyncMerge.merge(
+            local: localBypassPolicy.rules,
+            localMetadata: localBypassSync,
+            remote: remoteSnapshot.bypassPolicy.rules,
+            remoteMetadata: remoteSnapshot.bypassSync ?? .empty,
+            dedupKey: { "\($0.kind.rawValue)|\($0.value)" },
+            isValid: { (try? BypassRule(id: $0.id, kind: $0.kind, value: $0.value)) != nil },
+            limit: BypassPolicy.maximumRules
+        )
+        let mergedBypassPolicy = (try? BypassPolicy(rules: bypassMerge.rules).validated()) ?? localBypassPolicy
 
         return CloudSyncUserRulesSnapshot(
-            customRules: mergedCustomRules,
-            bypassPolicy: mergedBypassPolicy
+            customRules: customMerge.rules,
+            bypassPolicy: mergedBypassPolicy,
+            customRuleSync: customMerge.metadata,
+            bypassSync: bypassMerge.metadata
         )
     }
 

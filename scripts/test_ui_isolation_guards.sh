@@ -269,13 +269,10 @@ grep -Fq 'test "$log_count" -eq "$CAPTURE_COUNT"' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'AETHERROUTE_UI_REVIEW_CASE_FILTER' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'connections-en-dark-expanded' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'connections-zh-light-expanded' "$UI_CAPTURE_SCRIPT"
-grep -Fq 'abs(width - 960) + abs(height - 640)' \
+# Settings is the later window; never fall back to the main window.
+grep -Fq 'settingsCandidates.count >= 2' \
   "$ROOT/scripts/ui_review_window_id.swift"
-grep -Fq 'candidates.min(by: { $0.settingsDistance < $1.settingsDistance })' \
-  "$ROOT/scripts/ui_review_window_id.swift"
-grep -Fq 'name.localizedCaseInsensitiveContains("settings")' \
-  "$ROOT/scripts/ui_review_window_id.swift"
-grep -Fq 'name.contains("设置")' \
+grep -Fq 'settingsCandidates.max(by: { $0.id < $1.id })' \
   "$ROOT/scripts/ui_review_window_id.swift"
 grep -Fq -- "-name '*.png' -o -name '*.log' -o -name 'source-manifest.txt'" \
   "$UI_CAPTURE_SCRIPT"
@@ -286,13 +283,12 @@ grep -Fq 'Application performed a reentrant operation' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'UI review rejected a runtime warning' "$UI_CAPTURE_SCRIPT"
 grep -Fq -- '--settings' "$UI_CAPTURE_SCRIPT"
 grep -Fq -- '--panel' "$UI_CAPTURE_SCRIPT"
-grep -Fq 'panelOnly ? 300' "$UI_WINDOW_SELECTOR"
 grep -Fq 'AETHERROUTE_UI_REVIEW_PANEL="$panel_review"' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'panel-zh-dark-connected' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'narrow-dns-en-light' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'scripts/ui_review_report.swift' "$UI_CAPTURE_SCRIPT"
 grep -Fq 'AETHERROUTE_UI_REVIEW_BASELINE' "$UI_CAPTURE_SCRIPT"
-grep -Fq 'settingsOnly ? 900 : 780' "$UI_WINDOW_SELECTOR"
+grep -Fq 'panelOnly || settingsOnly ? 300 : 780' "$UI_WINDOW_SELECTOR"
 grep -Fq 'UI review capture always rebuilds inside its isolated temporary workspace.' \
   "$UI_CAPTURE_SCRIPT"
 grep -Fq 'assertNoBroadDocumentsPrompt' "$UI_TEST_SOURCE"
