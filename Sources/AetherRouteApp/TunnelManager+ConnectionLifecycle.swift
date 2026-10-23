@@ -1039,7 +1039,8 @@ extension TunnelManager {
                 message = AppLocalization.string(
                     "A profile encryption key could not be created. Quit and reopen AetherRoute, then try again. If the problem continues, export diagnostics."
                 )
-            case .securityError:
+            case .securityError, .synchronizableDeletionRefused:
+                // The refusal is raised only by uninstall, never on connect.
                 message = AppLocalization.string(
                     "AetherRoute could not access the profile encryption key in Keychain. Quit and reopen the app, then try again. If the problem continues, export diagnostics."
                 )

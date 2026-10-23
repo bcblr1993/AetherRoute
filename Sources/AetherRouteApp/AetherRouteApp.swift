@@ -548,6 +548,9 @@ struct AetherRouteApp: App {
         .commands {
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesCommandButton()
+#if AETHERROUTE_INDEPENDENT
+                UninstallCommandButton()
+#endif
             }
             CommandMenu(AppLocalization.string("Tunnel")) {
                 Button(tunnel.primaryActionTitle) {
@@ -1988,6 +1991,7 @@ private struct SettingsView: View {
         case .about:
             AboutAetherRouteView()
                 .environmentObject(distribution)
+                .environmentObject(tunnel)
         }
     }
 

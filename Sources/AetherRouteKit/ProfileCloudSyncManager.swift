@@ -169,7 +169,7 @@ public final class ProfileCloudSyncManager: ObservableObject {
             let sharedGroup = try? AppConstants.sharedKeychainAccessGroup()
             self.keyStore = DataProtectionProfileKeyStore(
                 accessGroup: sharedGroup,
-                service: "com.aetherroute.profile-encryption.cloud-sync",
+                service: Self.cloudSyncService,
                 isSynchronizable: true
             )
         }
@@ -556,6 +556,8 @@ public final class ProfileCloudSyncManager: ObservableObject {
     }
 
     nonisolated public static let cloudSyncKeyID = "cloud-sync-master-key.v1"
+    /// Synchronizable through iCloud Keychain: shared by the user's devices.
+    nonisolated public static let cloudSyncService = "com.aetherroute.profile-encryption.cloud-sync"
 
     // MARK: - Encryption & Cloud Push/Pull
     private func pushLocalToCloud(_ catalog: ProfileCatalog) async throws {

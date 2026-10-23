@@ -1539,7 +1539,7 @@ final class TunnelManager: ObservableObject {
                 routingResources: routingResources,
                 fakeIPCacheKey: requestedEngine == .tun
                     ? try DataProtectionProfileKeyStore(
-                        service: "com.aetherroute.fake-ip-cache"
+                        service: DataProtectionProfileKeyStore.fakeIPCacheService
                     ).loadOrCreateKey(keyID: "fake-ip-cache.v1")
                     : nil,
                 diagnosticLogLevel: (try? DiagnosticLogLevelStore

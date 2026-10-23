@@ -58,6 +58,12 @@ struct AboutAetherRouteView: View {
                 Text(AppLocalization.string("Learn More"))
             }
 
+#if AETHERROUTE_INDEPENDENT
+            // System extensions outlive a deleted app; the App Store build's
+            // app extensions are removed with it.
+            AppUninstallSection()
+#endif
+
             Section {
                 licensesRow
             } footer: {

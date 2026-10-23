@@ -207,4 +207,60 @@ final class ProfileKeyStoreTests: XCTestCase {
         }
         XCTAssertEqual(copyCount, 0)
     }
+
+    func testDeleteAllKeysRemovesOnlyThisMacsItems() throws {
+        var deleteQuery: [String: Any]?
+        var operations = ProfileKeyStoreOperations(
+            copyMatching: { _ in (errSecItemNotFound, nil) },
+            add: { _ in errSecSuccess },
+            randomData: { _ in Data(repeating: 1, count: 32) }
+        )
+        operations.delete = { query in
+            deleteQuery = query
+            return errSecItemNotFound
+        }
+        let store = DataProtectionProfileKeyStore(
+            accessGroup: sharedAccessGroup,
+            service: DataProtectionProfileKeyStore.fakeIPCacheService,
+            operations: operations
+        )
+        // Nothing stored is not an error for uninstall.
+        XCTAssertNoThrow(try store.deleteAllKeys())
+        let query = try XCTUnwrap(deleteQuery)
+        XCTAssertEqual(query[kSecAttrService as String] as? String, DataProtectionProfileKeyStore.fakeIPCacheService)
+        XCTAssertNil(query[kSecAttrAccount as String], "every key of the service")
+        XCTAssertEqual(query[kSecAttrSynchronizable as String] as? Bool, false)
+        XCTAssertEqual(query[kSecUseDataProtectionKeychain as String] as? Bool, true)
+
+        operations.delete = { _ in errSecInteractionNotAllowed }
+        let failing = DataProtectionProfileKeyStore(
+            accessGroup: sharedAccessGroup,
+            service: DataProtectionProfileKeyStore.defaultService,
+            operations: operations
+        )
+        XCTAssertThrowsError(try failing.deleteAllKeys())
+    }
+
+    func testSynchronizableStoreRefusesDeletion() {
+        var deleted = false
+        var operations = ProfileKeyStoreOperations(
+            copyMatching: { _ in (errSecItemNotFound, nil) },
+            add: { _ in errSecSuccess },
+            randomData: { _ in Data(repeating: 1, count: 32) }
+        )
+        operations.delete = { _ in
+            deleted = true
+            return errSecSuccess
+        }
+        let cloudStore = DataProtectionProfileKeyStore(
+            accessGroupResolver: { "TEAMID.group.test" },
+            service: ProfileCloudSyncManager.cloudSyncService,
+            isSynchronizable: true,
+            operations: operations
+        )
+        XCTAssertThrowsError(try cloudStore.deleteAllKeys()) { error in
+            XCTAssertEqual(error as? ProfileKeyStoreError, .synchronizableDeletionRefused)
+        }
+        XCTAssertFalse(deleted)
+    }
 }

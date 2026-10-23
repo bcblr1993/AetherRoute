@@ -15846,6 +15846,182 @@
           }
         }
       }
+    },
+    "AetherRoute was removed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute 已卸载。"
+          }
+        }
+      }
+    },
+    "AetherRoute was removed. Restart your Mac to finish removing its network extensions.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute 已卸载。请重新启动 Mac 以完成网络扩展的移除。"
+          }
+        }
+      }
+    },
+    "Also delete profiles, rules and settings on this Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同时删除这台 Mac 上的配置、规则和设置"
+          }
+        }
+      }
+    },
+    "Disconnects, removes both network extensions and their configurations, then moves AetherRoute to the Trash.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "断开连接，移除两个网络扩展及其配置，然后将 AetherRoute 移到废纸篓。"
+          }
+        }
+      }
+    },
+    "Login item": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录项"
+          }
+        }
+      }
+    },
+    "Move to Trash": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移到废纸篓"
+          }
+        }
+      }
+    },
+    "Network configurations": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络配置"
+          }
+        }
+      }
+    },
+    "Profiles and settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置与设置"
+          }
+        }
+      }
+    },
+    "Removes the network extensions and their configurations, which moving the app to the Trash leaves behind.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除网络扩展及其配置——直接把应用拖到废纸篓不会清除它们。"
+          }
+        }
+      }
+    },
+    "Some network components could not be removed, so AetherRoute was kept. Uninstall again; if it keeps failing, restart your Mac and retry.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分网络组件未能移除，因此保留了 AetherRoute。请再次卸载；如果仍然失败，请重新启动 Mac 后重试。"
+          }
+        }
+      }
+    },
+    "TUN extension": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TUN 扩展"
+          }
+        }
+      }
+    },
+    "Transparent proxy extension": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "透明代理扩展"
+          }
+        }
+      }
+    },
+    "Uninstall": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卸载"
+          }
+        }
+      }
+    },
+    "Uninstall AetherRoute": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卸载 AetherRoute"
+          }
+        }
+      }
+    },
+    "Uninstall AetherRoute…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卸载 AetherRoute…"
+          }
+        }
+      }
+    },
+    "macOS may ask for an administrator password to remove the extensions. Profiles synced through iCloud stay in iCloud.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除扩展时 macOS 可能会要求输入管理员密码。通过 iCloud 同步的配置会保留在 iCloud 中。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

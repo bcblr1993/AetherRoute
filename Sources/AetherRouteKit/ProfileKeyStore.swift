@@ -12,9 +12,13 @@ public enum ProfileKeyStoreError: LocalizedError, Equatable {
     case invalidKeyLength(Int)
     case randomGenerationFailed(OSStatus)
     case securityError(OSStatus)
+    /// Uninstall never deletes an iCloud Keychain (synchronizable) item.
+    case synchronizableDeletionRefused
 
     public var errorDescription: String? {
         switch self {
+        case .synchronizableDeletionRefused:
+            "A key shared through iCloud Keychain is never deleted from this Mac."
         case .keyNotFound:
             "The profile encryption key is unavailable. Reimport the profile instead of overwriting the encrypted data."
         case let .invalidKeyLength(length):
@@ -29,6 +33,7 @@ public enum ProfileKeyStoreError: LocalizedError, Equatable {
 
 public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Sendable {
     public static let defaultService = "com.aetherroute.profile-encryption"
+    public static let fakeIPCacheService = "com.aetherroute.fake-ip-cache"
     public static let keySizeBytes = 32
     private static let runtimeLogger = AppLog.logger(category: AppLog.Category.profileKeys)
 
@@ -168,6 +173,26 @@ public struct DataProtectionProfileKeyStore: ProfileKeyStoring, @unchecked Senda
         }
     }
 
+    /// Deletes every key this store holds under its service, for uninstall.
+    /// Refuses a synchronizable store: deleting an iCloud Keychain item here
+    /// would delete it on the user's other devices as well.
+    public func deleteAllKeys() throws {
+        guard !isSynchronizable else {
+            throw ProfileKeyStoreError.synchronizableDeletionRefused
+        }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccessGroup as String: try accessGroupResolver(),
+            kSecAttrSynchronizable as String: kCFBooleanFalse as Any,
+            kSecUseDataProtectionKeychain as String: true,
+        ]
+        let status = operations.delete(query)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw ProfileKeyStoreError.securityError(status)
+        }
+    }
+
     private func baseQuery(keyID: String) throws -> [String: Any] {
         Self.runtimeLogger.info("stage=resolveKeychainAccessGroup begin")
         let accessGroup: String
@@ -258,6 +283,7 @@ struct ProfileKeyStoreOperations: @unchecked Sendable {
     let copyMatching: ([String: Any]) -> (OSStatus, Data?)
     let add: ([String: Any]) -> OSStatus
     let randomData: (Int) throws -> Data
+    var delete: ([String: Any]) -> OSStatus = { SecItemDelete($0 as CFDictionary) }
 
     static let system = Self(
         copyMatching: { query in
