@@ -2412,8 +2412,8 @@ private struct SettingsView: View {
     }
 
     private var canCopyLocalProxyEnvironment: Bool {
-        tunnel.networkEngineMode == .tun
-            && tunnel.localProxySettings.isEnabled
+        (tunnel.networkEngineMode == .tun && tunnel.localProxySettings.isEnabled)
+            || tunnel.localProxySettings.allowLAN
     }
 
     private var localProxyDetail: String {

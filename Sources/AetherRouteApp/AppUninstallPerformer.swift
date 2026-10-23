@@ -171,46 +171,37 @@ final class AppUninstallPerformer: UninstallStepPerforming {
 
         Self.logger.info("stage=uninstall removeAppAndTerminate begin path=\(appPath, privacy: .public)")
 
-        // 1. Attempt standard Cocoa trash
-        var removed = false
-        do {
-            try FileManager.default.trashItem(at: appURL, resultingItemURL: nil)
-            removed = true
-            Self.logger.info("stage=uninstall removeAppAndTerminate trashItem succeeded")
-        } catch {
-            Self.logger.notice("stage=uninstall trashItem fallback reason=\(error.localizedDescription, privacy: .public)")
-        }
-
-        // 1b. Attempt AppleScript Finder trash
+        // 1. If moveAppToTrash() already relocated the bundle out of its launch
+        // path, or if trashing it now succeeds, we do not need Finder AppleScript.
+        var removed = !FileManager.default.fileExists(atPath: appPath)
         if !removed {
-            let scriptText = "tell application \"Finder\" to delete POSIX file \"\(appPath)\""
-            if let appleScript = NSAppleScript(source: scriptText) {
-                var errorDict: NSDictionary?
-                appleScript.executeAndReturnError(&errorDict)
-                if errorDict == nil {
-                    removed = true
-                    Self.logger.info("stage=uninstall removeAppAndTerminate Finder AppleScript succeeded")
-                } else {
-                    Self.logger.notice("stage=uninstall Finder AppleScript error: \(String(describing: errorDict), privacy: .public)")
-                }
+            do {
+                try FileManager.default.trashItem(at: appURL, resultingItemURL: nil)
+                removed = true
+                Self.logger.info("stage=uninstall removeAppAndTerminate trashItem succeeded")
+            } catch {
+                Self.logger.notice("stage=uninstall trashItem fallback reason=\(error.localizedDescription, privacy: .public)")
             }
         }
 
-        // 2. Launch a detached background process that waits for this process to exit
-        // and guarantees the app bundle is completely removed from /Applications.
-        let script = "while kill -0 \(pid) 2>/dev/null; do sleep 0.05; done; rm -rf \"\(appPath)\""
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", script]
-        do {
-            try task.run()
-            removed = true
-            Self.logger.info("stage=uninstall spawned detached cleanup process")
-        } catch {
-            Self.logger.notice("stage=uninstall detached process launch skipped: \(error.localizedDescription, privacy: .public)")
+        // 2. If the bundle still exists at its original path (e.g. Trash failed
+        // due to permissions), spawn a detached process using positional shell
+        // parameters to remove it once this process exits.
+        if !removed || FileManager.default.fileExists(atPath: appPath) {
+            let script = "while kill -0 \"$1\" 2>/dev/null; do sleep 0.05; done; rm -rf -- \"$2\""
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/bin/sh")
+            task.arguments = ["-c", script, "sh", String(pid), appPath]
+            do {
+                try task.run()
+                removed = true
+                Self.logger.info("stage=uninstall spawned detached cleanup process")
+            } catch {
+                Self.logger.notice("stage=uninstall detached process launch skipped: \(error.localizedDescription, privacy: .public)")
+            }
         }
 
-        // 3. Fallback: activate Finder if process launch is blocked
+        // 3. Fallback: reveal in Finder only if every removal path was blocked.
         if !removed {
             NSWorkspace.shared.activateFileViewerSelecting([appURL])
         }

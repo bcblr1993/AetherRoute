@@ -34,7 +34,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     )
     private let probeMessageQueue = DispatchQueue(
         label: "com.aetherroute.desktop.transparent-proxy.probe-message",
-        qos: .userInitiated
+        qos: .userInitiated,
+        attributes: .concurrent,
+        autoreleaseFrequency: .workItem
     )
     /// Short enough that the whole schedule still fits inside the recovery
     /// window, long enough not to fail a link that has just come up.
@@ -661,11 +663,12 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             ? probeMessageQueue
             : providerMessageQueue
 
+        let watchdogSeconds = Self.watchdogTimeoutSeconds(for: request)
         let watchdog = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
-        watchdog.schedule(deadline: .now() + .seconds(15))
+        watchdog.schedule(deadline: .now() + .seconds(watchdogSeconds))
         watchdog.setEventHandler { [completion, request] in
             Self.runtimeLog.failure(
-                "stage=providerMessage stalled request=\(Self.messageKind(request)) elapsed=15s"
+                "stage=providerMessage stalled request=\(Self.messageKind(request)) elapsed=\(watchdogSeconds)s"
             )
             completion.call(ProviderMessageRouting.encodedFailure(.unavailable))
             watchdog.cancel()
@@ -793,6 +796,21 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     )
                 )
             }
+        }
+    }
+
+    private static func watchdogTimeoutSeconds(
+        for request: ProxySelectionProviderRequest
+    ) -> Int {
+        switch request {
+        case let .latency(_, _, timeoutMilliseconds):
+            let perBatchSeconds = max(1, Int((timeoutMilliseconds + 999) / 1_000))
+            return max(15, perBatchSeconds * 8 + 5)
+        case let .activeLatency(_, _, timeoutMilliseconds):
+            let probeSeconds = max(1, Int((timeoutMilliseconds + 999) / 1_000))
+            return max(15, probeSeconds + 5)
+        default:
+            return 15
         }
     }
 

@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.8.8 (Build 2026102302)</title>
-            <pubDate>Fri, 23 Oct 2026 14:32:24 +0800</pubDate>
-            <sparkle:version>2026102302</sparkle:version>
-            <sparkle:shortVersionString>1.8.8</sparkle:shortVersionString>
+            <title>Version 1.8.9 (Build 2026102303)</title>
+            <pubDate>Fri, 23 Oct 2026 19:51:29 +0800</pubDate>
+            <sparkle:version>2026102303</sparkle:version>
+            <sparkle:shortVersionString>1.8.9</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.8.8/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.8.9/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,40 +120,40 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.8.8 更新要点</span>
-  <span class="release-badge">Build 2026102302 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.8.9 更新要点</span>
+  <span class="release-badge">Build 2026102303 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🚀 核心功能：全面兼容 Shadowsocks 混淆插件</span>
+  <span class="section-tag tag-feature">🚀 核心优化：已连接流式逐节点延迟测速</span>
   <ul>
-    <li><strong>内置混淆插件安全放行</strong>：全面支持 <code>plugin: obfs</code> / <code>plugin-opts</code>、<code>v2ray-plugin</code> 及 <code>shadow-tls</code>。升级预检白名单准入机制，彻底解决导入 Clash Verge 等主流客户端混淆订阅时触发的误报拦截。</li>
-    <li><strong>内存级协议转换防护</strong>：严格保持对外部可执行文件、未知命令及脚本注入的拦截，所有受支持插件均由纯 Rust 内存协议转换引擎安全驱动。</li>
+    <li><strong>消除慢节点整组阻塞</strong>：重构已连接状态下的延迟测速管线为 8 并发滑动窗口逐节点流式探测，当前选中节点优先测速，健康节点在 <code>~100 ms</code> 内即刻刷新真实延迟，不再被同组超时节点拖慢 6–24 秒。</li>
+    <li><strong>解除 64 节点上限与单点精准重测</strong>：全面支持超过 64 节点的大型代理组（含 Hysteria2、TUIC、ShadowQUIC、WireGuard 等 UDP 协议）全程走真实协议验证；点击单节点重测仅探测目标节点，不再触发整组扫描。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 稳定性与长稳加固</span>
+  <span class="section-tag tag-fix">🐞 系统扩展与局域网代理协同加固</span>
   <ul>
-    <li><strong>控制面与系统扩展超时防护</strong>：优化宿主 App 与系统扩展通信超时机制及冷启动 DNS 边界，杜绝瞬时假死。</li>
-    <li><strong>短连接与 UDP 吞吐优化</strong>：增加短连接流关闭主动短路与 UDP 微批处理写机制，规避内核套接字写缓冲耗尽。</li>
-    <li><strong>流量图表重绘节流</strong>：流量波形刷新率优化至 12 FPS，显著减少堆内存分配与界面渲染开销。</li>
+    <li><strong>并发探测队列与动态超时</strong>：将 Packet Tunnel 与透明代理扩展的探测队列升级为并发执行，彻底消除后台自动故障转移巡检对手动测速的队头阻塞。</li>
+    <li><strong>局域网共享与卸载体验细节打磨</strong>：优化「允许局域网连接」模式下的本机回环监听收敛与终端代理命令导出，并移除卸载完成自清理时冗余的 Finder 自动化授权弹窗。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">✨ 严苛真机与多环境验证</span>
   <ul>
-    <li><strong>物理真机 Mac mini 全量通过</strong>：Apple Silicon 真机环境全量 182 项测试门禁、空闲长连接复用与网络切换自愈 100% 通过。</li>
-    <li><strong>UI 卡顿与内存预算双 Profile 达标</strong>：常规流与万条规则/500节点重载切页 p95 均保持在 132 ms 左右，内存占用平稳控制在 66-84 MB 预算内。</li>
+    <li><strong>12 协议互通与 6 维矩阵全绿</strong>：12 种协议真实服务端互通、Tart 虚拟机 6 维网络矩阵与 Apple Silicon Mac mini 真机门禁 100% 通过。</li>
+    <li><strong>UI 卡顿与内存预算优异</strong>：常规与万条规则/500 节点重载切页 p95 分别降至 <code>126.2 ms</code> 与 <code>125.6 ms</code>，内存中位数稳定在 <code>67 MB</code>。</li>
   </ul>
 </div>
+
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.8.8/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.8.9/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.8.8/AetherRoute-1.8.8-build-2026102302-arm64.dmg"
-                sparkle:edSignature="dMIyOzozz2Hi43lPSCtY8cLHP8Z9Ln4rElvoh1Aq6NVm+szRPaJ7EVsyrqXQI0NkyA32wTFey4n4oCqz3ipSAw=="
-                length="27328729"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.8.9/AetherRoute-1.8.9-build-2026102303-arm64.dmg"
+                sparkle:edSignature="p77mg/gL6qpgnafl9A2CeDge2GxekPtUcqtEuUFdf+WlozoZMpuH9aLbEX7kZJMaEVcsvo70eEJ+tPXpTb9gAA=="
+                length="27819211"
                 type="application/octet-stream" />
         </item>
     </channel>

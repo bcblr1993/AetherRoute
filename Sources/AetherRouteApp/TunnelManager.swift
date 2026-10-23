@@ -1588,12 +1588,13 @@ final class TunnelManager: ObservableObject {
         Task { await setEnabled(false) }
     }
 
-    /// Nothing listens on 127.0.0.1 unless TUN is the engine and the local
-    /// proxy is on, so a copied command would only break the terminal's
+    /// Nothing listens on 127.0.0.1 unless TUN's loopback proxy or the LAN
+    /// proxy gateway is on, so a copied command would only break the terminal's
     /// traffic. The menu bar panel and the main menu share this rule.
     var canCopyTerminalProxyCommand: Bool {
 #if AETHERROUTE_INDEPENDENT
-        networkEngineMode == .tun && localProxySettings.isEnabled
+        (networkEngineMode == .tun && localProxySettings.isEnabled)
+            || localProxySettings.allowLAN
 #else
         false
 #endif

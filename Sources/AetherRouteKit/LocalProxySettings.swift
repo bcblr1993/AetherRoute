@@ -70,7 +70,7 @@ public struct LocalProxySettings: Codable, Equatable, Sendable {
     /// host and validated integer ports make shell escaping unnecessary.
     public func shellEnvironmentCommand() throws -> String {
         let settings = try validated()
-        guard settings.isEnabled else {
+        guard settings.isEnabled || settings.allowLAN else {
             throw LocalProxySettingsError.disabled
         }
         return [

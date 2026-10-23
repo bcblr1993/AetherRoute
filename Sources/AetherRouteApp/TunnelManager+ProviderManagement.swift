@@ -271,7 +271,16 @@ extension TunnelManager {
 
     var providerLocalProxySettings: LocalProxySettings {
 #if AETHERROUTE_INDEPENDENT
-        networkEngineMode == .tun ? localProxySettings : LocalProxySettings()
+        guard networkEngineMode == .tun else { return LocalProxySettings() }
+        var settings = localProxySettings
+        if settings.allowLAN {
+            // LANProxyServerController in the host app binds 0.0.0.0 on the
+            // configured HTTP and SOCKS5 ports, which already serves both
+            // 127.0.0.1 and LAN peers. Disabling the provider's duplicate
+            // 127.0.0.1 listener avoids a port collision on the same ports.
+            settings.isEnabled = false
+        }
+        return settings
 #else
         LocalProxySettings()
 #endif

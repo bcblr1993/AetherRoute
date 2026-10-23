@@ -15,6 +15,8 @@ struct ProxyLatencyMeasurementTests {
 
         stateMachine()
         streamingDuringGroupSweep()
+        streamingVerifiedSweepAbove64Members()
+        singleMemberProbeIsolation()
         crossGroupFanOut()
         strategyGroupsAreNotProbed()
         nestedGroupAggregation()
@@ -117,6 +119,99 @@ struct ProxyLatencyMeasurementTests {
         expect(
             reading(nodeB, index, group: group, isTesting: false) == .timedOut,
             "node B must report timedOut"
+        )
+    }
+
+    /// Connected sweeps stream per-member `.verified` results and are not
+    /// capped at the 64-member readiness limit.
+    private static func streamingVerifiedSweepAbove64Members() {
+        let group = "PROXY"
+        let members = ["DIRECT", "REJECT"] + (1...120).map { "Node-\($0)" }
+        var index = ProxyLatencyIndex()
+        index.beginRun(groups: [(name: group, members: members)])
+        index.clear(group: group)
+
+        // DIRECT and REJECT resolve immediately before remote probes finish.
+        index.merge(member: "DIRECT", measurement: .verified(1))
+        index.merge(member: "REJECT", measurement: .timedOut)
+        expect(
+            reading("DIRECT", index, group: group, isTesting: true) == .responded(1),
+            "DIRECT must report 1 ms while remote nodes are still testing"
+        )
+        expect(
+            index.isVerified(member: "DIRECT", in: group),
+            "DIRECT must be marked verified during a connected sweep"
+        )
+        expect(
+            reading("REJECT", index, group: group, isTesting: true) == .timedOut,
+            "REJECT must report timedOut immediately"
+        )
+        expect(
+            reading("Node-1", index, group: group, isTesting: true) == .testing,
+            "unprobed remote node must remain in testing state"
+        )
+
+        // Stream all 120 remote nodes (well above the old 64-member batch cap).
+        for i in 1...120 {
+            let node = "Node-\(i)"
+            let measurement: ProxyLatencyMeasurement = (i % 15 == 0)
+                ? .timedOut
+                : .verified(UInt32(30 + (i % 50)))
+            index.merge(member: node, measurement: measurement)
+        }
+
+        let state = index.state(for: group)
+        expect(
+            state.results.count == 122,
+            "all 122 members (>64 ceiling) must have recorded results, got \(state.results.count)"
+        )
+        expect(
+            index.isVerified(member: "Node-119", in: group),
+            "members beyond index 64 must still be recorded as verified"
+        )
+        expect(
+            reading("Node-15", index, group: group, isTesting: false) == .timedOut,
+            "dead node must record timedOut without blocking earlier nodes"
+        )
+    }
+
+    /// Testing a single member while connected must only clear and update that
+    /// one member, leaving sibling measurements intact.
+    private static func singleMemberProbeIsolation() {
+        let group = "PROXY"
+        let nodeA = "HK Node 01"
+        let nodeB = "SG Node 02"
+        let nodeC = "JP Node 03"
+        var index = ProxyLatencyIndex()
+        index.beginRun(groups: [(name: group, members: [nodeA, nodeB, nodeC])])
+
+        index.merge(member: nodeA, measurement: .verified(28))
+        index.merge(member: nodeB, measurement: .verified(45))
+        index.merge(member: nodeC, measurement: .verified(62))
+
+        // Start a single-member probe on nodeB (a non-selected member).
+        index.clear(member: nodeB, in: group)
+        expect(
+            reading(nodeB, index, group: group, isTesting: true) == .testing,
+            "the target member must enter testing state"
+        )
+        expect(
+            reading(nodeA, index, group: group, isTesting: false) == .responded(28),
+            "sibling node A must keep its existing verified measurement"
+        )
+        expect(
+            reading(nodeC, index, group: group, isTesting: false) == .responded(62),
+            "sibling node C must keep its existing verified measurement"
+        )
+
+        index.merge(member: nodeB, measurement: .verified(39))
+        expect(
+            reading(nodeB, index, group: group, isTesting: false) == .responded(39),
+            "the single-member probe must update node B to its new verified latency"
+        )
+        expect(
+            index.isVerified(member: nodeB, in: group),
+            "node B must remain verified after single-member probe"
         )
     }
 

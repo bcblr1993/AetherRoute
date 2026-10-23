@@ -34,7 +34,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private let probeMessageQueue = DispatchQueue(
         label: "com.aetherroute.packet-provider.probes",
         qos: .userInitiated,
-        attributes: [],
+        attributes: .concurrent,
         autoreleaseFrequency: .workItem
     )
     private var pathMonitor: NWPathMonitor?

@@ -4,6 +4,37 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.9] - 2026-10-23
+
+Streaming per-node verified latency measurement while connected (eliminating whole-group tail-latency stalls, single-node full-group sweeps, serial probe queue head-of-line blocking, and the 64-node batch cap), LAN shared proxy and loopback listener coordination, and uninstaller termination cleanup hardening.
+
+### Fixed
+
+- **Connected Latency Testing Overhaul (`TunnelManager+Latency`, `PacketTunnelProvider`, `TransparentProxyProvider`)**:
+  - **Eliminated Monolithic Batch Tail-Latency Stalls**: Connected group latency sweeps previously called `client.latency(group:)`, which waited inside Rust's `ProxyManager::check` (`FuturesOrdered::collect`) until every single node in the group finished or timed out. A group with dead nodes held every row on `Testing` (`测速中...`) for 6–24 seconds even when the active server responded in <100 ms. `testProxyLatency(group:)` now streams per-member protocol-verified probes (`activeLatency`) through an 8-worker sliding window with the selected member prioritized first, publishing each node's `.verified` result within ~100 ms as it arrives.
+  - **Removed 64-Member Group Ceiling Fallback**: Groups with more than 64 members previously hit `MAXIMUM_EMBEDDED_SELECTOR_LATENCY_MEMBERS (64)` in `selector_url_test`, failing `client.latency` and falling back to bare TCP `measureReachability` (where UDP protocols such as Hysteria2, TUIC, ShadowQUIC, and WireGuard timed out, and Transparent Proxy mode routed host TCP probes through the active proxy). Per-member `activeLatency` probes have no group-size ceiling and measure all nodes through their real protocol handlers regardless of group size.
+  - **Isolated Single-Node Latency Probes**: `testSingleProxyLatency(group:member:)` on a non-selected node while connected previously triggered a full-group `client.latency(group:)` sweep of up to 64 nodes. It now probes only the requested member via `verifyMemberLatency` (`client.activeLatency(group: memberName)`).
+  - **Concurrent Provider Probe Dispatch & Scaled Watchdog**: Changed `probeMessageQueue` in both `PacketTunnelProvider` and `TransparentProxyProvider` from serial to concurrent (`attributes: .concurrent`) so background readiness/failover sweeps (`10s` per-node timeout) no longer head-of-line block user-initiated latency tests, and scaled `TransparentProxyProvider`'s message watchdog timeout with the request's probe timeout instead of aborting sweeps at a hardcoded 15 seconds.
+- **Allow LAN & Loopback Proxy Coordination (`LocalProxySettings`, `TunnelManager`)**:
+  - When `allowLAN` is enabled, `providerLocalProxySettings` now suppresses the duplicate `127.0.0.1` listener inside `PacketTunnelProvider` so `LANProxyServerController` (`0.0.0.0`) serves both loopback and LAN clients without port collision, and `shellEnvironmentCommand()` / **Copy Shell Environment** is available whenever either `isEnabled` or `allowLAN` is active.
+- **Uninstaller Termination Hardening (`AppUninstallPerformer`)**:
+  - `removeAppAndTerminate()` now checks whether `moveAppToTrash()` already relocated the app bundle before attempting to trash it again, removing the redundant Finder AppleScript Automation prompt and passing positional parameters (`$1`, `$2`) to `/bin/sh` for post-exit cleanup.
+
+### Verified
+
+- Local: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, `Tests/ProxyLatencyMeasurement/run.sh`, `Tests/AllowLAN/run.sh`, and `./scripts/test.sh` passed; 531 unit tests passed with 0 failures; all 12 protocol interop tests (`outputs/interop-20261023T081938Z`: matrix, reality, wireguard, shadowquic, ssh) passed cleanly with 48 case passes and 26 certificate rejections.
+- Tart VM `macos27` 6-way matrix (`outputs/vm-acceptance-1.8.9-2026102303`): all 6 engine × routing combinations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`) passed with 0 failures (including transparent SNI recovery, UDP 53 datagrams, LAN bypass, raw traffic, 60-request burst concurrency, 50s idle keep-alive reuse, and 2 MiB large upload).
+- Remote arm64 gate `test_remote_arm64.sh fast` on dedicated Apple Silicon Mac mini (`chenxu@100.64.0.3`) passed.
+- Physical runtime evidence for notarized stable candidate `2026102303` (`outputs/physical-runtime-1.8.9-2026102303`): TUN and transparent proxy idle keep-alive reuse passed, 2 MiB upload passed, and interface switch recovered in 1/2/1/1/2/1 s.
+- UI performance and memory (`outputs/acceptance-1.8.9-2026102303-20261023-162156/perf-gate/result.txt`, 300 s per profile):
+
+| Profile | Page switch p95 / max (ms) | Footprint median / max (MB) | Growth |
+|---|---|---|---|
+| showcase 1.8.8 → 1.8.9 | 146.8 / 171.5 → 126.2 / 151.9 | 66 / 80 → 67 / 81 | +0 → +0 MB |
+| large 1.8.8 → 1.8.9 | 143.5 / 182.4 → 125.6 / 136.1 | 66 / 80 → 67 / 83 | +2 → +2 MB |
+
+All strictly within budget (p95 ≤ 180 ms, max ≤ 300 ms, median ≤ 90 MB, max ≤ 110 MB, growth ≤ 8 MB).
+
 ## [1.8.8] - 2026-10-23
 
 Complete uninstaller data erasure with zero host residuals, one-click termination and automatic app bundle removal upon completion, and Developer ID temporary-exception sandboxing enhancements.

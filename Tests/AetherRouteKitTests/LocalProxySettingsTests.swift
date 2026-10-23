@@ -52,10 +52,12 @@ final class LocalProxySettingsTests: XCTestCase {
             XCTAssertEqual(error as? LocalProxySettingsError, .disabled)
         }
 
-        // When allowLAN is true but isEnabled is false, it must still succeed
+        // When allowLAN is true, both lanShellEnvironmentCommand and shellEnvironmentCommand must succeed
         let independentLAN = LocalProxySettings(isEnabled: false, allowLAN: true)
         let independentCmd = try independentLAN.lanShellEnvironmentCommand(lanIP: "192.168.1.108")
         XCTAssertTrue(independentCmd.contains("HTTP_PROXY=http://192.168.1.108:7890"))
+        let localCmdWhenLAN = try independentLAN.shellEnvironmentCommand()
+        XCTAssertTrue(localCmdWhenLAN.contains("HTTP_PROXY=http://127.0.0.1:7890"))
     }
 
     func testRejectsPrivilegedOutOfRangeAndDuplicatePorts() {
