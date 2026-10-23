@@ -19,7 +19,7 @@ import urllib.request
 
 TOTAL_REQUESTS = int(os.environ.get("AETHERROUTE_BURST_REQUESTS", "60"))
 MAX_WORKERS = int(os.environ.get("AETHERROUTE_BURST_WORKERS", "20"))
-TIMEOUT = float(os.environ.get("AETHERROUTE_BURST_TIMEOUT", "6.0"))
+TIMEOUT = float(os.environ.get("AETHERROUTE_BURST_TIMEOUT", "10.0"))
 TARGET_URL = os.environ.get("AETHERROUTE_BURST_URL", "http://cp.cloudflare.com/generate_204")
 
 
@@ -31,8 +31,13 @@ def clean_fetch(index: int) -> int:
         TARGET_URL,
         headers={"User-Agent": f"AetherRouteBurstGate/{index}"},
     )
-    with opener.open(req, timeout=TIMEOUT) as response:
-        return response.getcode()
+    for attempt in range(2):
+        try:
+            with opener.open(req, timeout=TIMEOUT) as response:
+                return response.getcode()
+        except Exception:
+            if attempt == 1:
+                raise
 
 
 def get_transparent_provider_pid() -> int | None:

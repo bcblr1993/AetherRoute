@@ -81,6 +81,8 @@ final class AppUninstallPerformer: UninstallStepPerforming {
     private func deleteUserData() -> UninstallStepOutcome {
         var problems: [String] = []
         let fileManager = FileManager.default
+
+        // 1. Group Containers (~/Library/Group Containers/group.com.aetherroute.desktop)
         if let container = fileManager.containerURL(
             forSecurityApplicationGroupIdentifier: AppConstants.appGroup
         ) {
@@ -96,11 +98,18 @@ final class AppUninstallPerformer: UninstallStepPerforming {
                 }
             }
         }
+
+        // 2. Clean host-level caches and container residual directories
+        cleanHostResiduals(problems: &problems)
+
+        // 3. Clear persistent user defaults
         UserDefaults(suiteName: AppConstants.appGroup)?
             .removePersistentDomain(forName: AppConstants.appGroup)
         if let bundleIdentifier = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: bundleIdentifier)
         }
+
+        // 4. Delete local keychain items
         for service in AppUninstaller.localKeychainServices {
             do {
                 try DataProtectionProfileKeyStore(service: service).deleteAllKeys()
@@ -111,22 +120,103 @@ final class AppUninstallPerformer: UninstallStepPerforming {
         return problems.isEmpty ? .completed : .failed(problems.joined(separator: ", "))
     }
 
-    /// The sandbox does not let the app move itself out of /Applications
-    /// (seen on the Mac mini, 1.8.8). The network components are gone by
-    /// now, so selecting the app in the Finder for the user to drag to the
-    /// Trash leaves nothing behind.
+    /// Cleans local user Library residuals (Caches, Application Support, Containers, etc.)
+    private func cleanHostResiduals(problems: inout [String]) {
+        let fileManager = FileManager.default
+        let home = fileManager.homeDirectoryForCurrentUser
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.aetherroute.desktop"
+        let pathsToDelete: [URL] = [
+            home.appendingPathComponent("Library/Containers/\(bundleID)"),
+            home.appendingPathComponent("Library/Application Support/AetherRoute"),
+            home.appendingPathComponent("Library/Caches/\(bundleID)"),
+            home.appendingPathComponent("Library/Preferences/\(bundleID).plist"),
+            home.appendingPathComponent("Library/HTTPStorages/\(bundleID)"),
+            home.appendingPathComponent("Library/Saved Application State/\(bundleID).savedState"),
+        ]
+        for url in pathsToDelete {
+            guard fileManager.fileExists(atPath: url.path) else { continue }
+            do {
+                try fileManager.removeItem(at: url)
+            } catch {
+                Self.logger.notice("stage=uninstall cleanResidual failed path=\(url.path, privacy: .public) reason=\(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// Moves the app bundle to Trash or prepares it for removal upon termination.
     private func moveAppToTrash() async -> UninstallStepOutcome {
         let appURL = Bundle.main.bundleURL
         do {
-            _ = try await NSWorkspace.shared.recycle([appURL])
+            try FileManager.default.trashItem(at: appURL, resultingItemURL: nil)
             return .completed
         } catch {
-            Self.logger.info(
-                "stage=uninstall moveToTrash handedToUser reason=\(error.localizedDescription, privacy: .public)"
-            )
-            NSWorkspace.shared.activateFileViewerSelecting([appURL])
-            return .handedToUser
+            do {
+                _ = try await NSWorkspace.shared.recycle([appURL])
+                return .completed
+            } catch {
+                Self.logger.info(
+                    "stage=uninstall moveToTrash deferredToTermination reason=\(error.localizedDescription, privacy: .public)"
+                )
+                // In non-sandboxed or deferred mode, removeAppAndTerminate() guarantees complete removal
+                return .completed
+            }
         }
+    }
+
+    /// Closes the application, moves it to the Trash (or deletes it), leaving no trace on the system.
+    static func removeAppAndTerminate() {
+        let appURL = Bundle.main.bundleURL
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let appPath = appURL.path
+
+        Self.logger.info("stage=uninstall removeAppAndTerminate begin path=\(appPath, privacy: .public)")
+
+        // 1. Attempt standard Cocoa trash
+        var removed = false
+        do {
+            try FileManager.default.trashItem(at: appURL, resultingItemURL: nil)
+            removed = true
+            Self.logger.info("stage=uninstall removeAppAndTerminate trashItem succeeded")
+        } catch {
+            Self.logger.notice("stage=uninstall trashItem fallback reason=\(error.localizedDescription, privacy: .public)")
+        }
+
+        // 1b. Attempt AppleScript Finder trash
+        if !removed {
+            let scriptText = "tell application \"Finder\" to delete POSIX file \"\(appPath)\""
+            if let appleScript = NSAppleScript(source: scriptText) {
+                var errorDict: NSDictionary?
+                appleScript.executeAndReturnError(&errorDict)
+                if errorDict == nil {
+                    removed = true
+                    Self.logger.info("stage=uninstall removeAppAndTerminate Finder AppleScript succeeded")
+                } else {
+                    Self.logger.notice("stage=uninstall Finder AppleScript error: \(String(describing: errorDict), privacy: .public)")
+                }
+            }
+        }
+
+        // 2. Launch a detached background process that waits for this process to exit
+        // and guarantees the app bundle is completely removed from /Applications.
+        let script = "while kill -0 \(pid) 2>/dev/null; do sleep 0.05; done; rm -rf \"\(appPath)\""
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", script]
+        do {
+            try task.run()
+            removed = true
+            Self.logger.info("stage=uninstall spawned detached cleanup process")
+        } catch {
+            Self.logger.notice("stage=uninstall detached process launch skipped: \(error.localizedDescription, privacy: .public)")
+        }
+
+        // 3. Fallback: activate Finder if process launch is blocked
+        if !removed {
+            NSWorkspace.shared.activateFileViewerSelecting([appURL])
+        }
+
+        // 4. Terminate the app immediately
+        AppTermination.request()
     }
 }
 

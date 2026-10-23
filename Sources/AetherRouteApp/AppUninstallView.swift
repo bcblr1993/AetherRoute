@@ -31,7 +31,7 @@ struct AppUninstallSection: View {
 struct AppUninstallSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var tunnel: TunnelManager
-    @State private var deletesUserData = false
+    @State private var deletesUserData = true
     @State private var isRunning = false
     @State private var report: UninstallReport?
 
@@ -40,7 +40,7 @@ struct AppUninstallSheet: View {
             AetherSheetHeader(
                 symbol: "trash",
                 title: AppLocalization.string("Uninstall AetherRoute"),
-                subtitle: AppLocalization.string("Disconnects, removes both network extensions and their configurations, then helps you move AetherRoute to the Trash."),
+                subtitle: AppLocalization.string("Disconnects, removes network extensions and configurations, and cleans up all data on this Mac."),
                 tint: .red
             )
             if let report {
@@ -60,11 +60,11 @@ struct AppUninstallSheet: View {
             HStack(spacing: AetherVisual.s2) {
                 Spacer()
                 if let report {
-                    Button(Self.finishesWithQuit(report)
-                           ? AppLocalization.string("Quit")
-                           : AppLocalization.string("Close")) {
-                        if Self.finishesWithQuit(report) {
-                            AppTermination.request()
+                    Button(report.networkRemovalFailed
+                           ? AppLocalization.string("Close")
+                           : AppLocalization.string("Done")) {
+                        if !report.networkRemovalFailed {
+                            AppUninstallPerformer.removeAppAndTerminate()
                         } else {
                             dismiss()
                         }
@@ -91,11 +91,6 @@ struct AppUninstallSheet: View {
         .padding(AetherVisual.dialogPadding)
         .aetherSheetFrame()
         .interactiveDismissDisabled(isRunning)
-    }
-
-    /// The network part is done; the app is in the Trash or waiting there.
-    private static func finishesWithQuit(_ report: UninstallReport) -> Bool {
-        !report.networkRemovalFailed && (report.movedAppToTrash || report.appHandedToUser)
     }
 
     @ViewBuilder
@@ -129,9 +124,7 @@ struct AppUninstallSheet: View {
     }
 
     private static func successText(_ report: UninstallReport) -> String {
-        var text = report.appHandedToUser
-            ? AppLocalization.string("The network extensions and their configurations were removed. Quit AetherRoute, then drag it from the Finder window to the Trash.")
-            : AppLocalization.string("AetherRoute was removed.")
+        var text = AppLocalization.string("AetherRoute has been uninstalled. Click Done to close and remove the app.")
         if report.needsRestart {
             text += " " + AppLocalization.string("Restart your Mac to finish removing its network extensions.")
         }

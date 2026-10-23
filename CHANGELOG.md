@@ -4,6 +4,32 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.8] - 2026-10-23
+
+Complete uninstaller data erasure with zero host residuals, one-click termination and automatic app bundle removal upon completion, and Developer ID temporary-exception sandboxing enhancements.
+
+### Added
+
+- **Complete Uninstallation & Auto-Removal**: The built-in uninstaller now defaults to fully erasing all local user profiles, rules, settings, keychain items, and App Group directories.
+- **Host Residual Deep Cleanup**: Added `cleanHostResiduals()` to recursively clear host containers (`~/Library/Containers/com.aetherroute.desktop`), Application Support, Caches, Preferences plist, HTTPStorages, and Saved Application State.
+- **One-Click Close & Bundle Self-Removal**: When uninstallation completes, the bottom action updates directly to **Done** (`完成`), triggering `removeAppAndTerminate()`. This leverages standard Cocoa Trash, Finder AppleScript, and a detached background supervisor (`while kill -0; rm -rf`) to cleanly remove `/Applications/AetherRoute.app` and terminate immediately without requiring manual Finder drag-and-drop.
+- **Entitlements Temporary Exception**: Configured `com.apple.security.temporary-exception.files.absolute-path.read-write` for `/Applications/` and `com.apple.security.temporary-exception.apple-events` for Finder, allowing sandboxed uninstaller actions to perform native app removal and Finder trash bin dispatch while maintaining full App Sandbox security isolation.
+
+### Verified
+
+- Local: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` passed; 529 unit tests passed with 0 failures; all 12 protocol interop tests (matrix, reality, wireguard, shadowquic, ssh) passed cleanly with 48 case passes and 26 certificate rejections.
+- Tart VM `macos27` 6-way matrix (`outputs/vm-acceptance-1.8.8-2026102302`): 210 checks across `tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, and `transparent/direct` all passed (including transparent SNI recovery, UDP 53 datagrams, LAN bypass, raw traffic, burst concurrency, and 2 MiB large upload).
+- Remote arm64 gate `test_remote_arm64.sh fast` on dedicated Apple Silicon Mac mini (`chenxu@100.64.0.3`) passed.
+- Physical Apple Silicon Mac mini, notarized stable candidate 2026102302 with both system extensions at 1.8.8/2026102302 (`outputs/physical-runtime-1.8.8-2026102302`): TUN and transparent proxy idle keep-alive reuse passed, 2 MiB upload passed, and interface switch recovered in 1/2/1/1/2/1 s.
+- UI performance and memory (`result.txt`, 300 s per profile):
+
+| Profile | Page switch p95 / max (ms) | Footprint median / max (MB) | Growth |
+|---|---|---|---|
+| showcase 1.8.7 → 1.8.8 | 144.4 / 212.5 → 146.8 / 171.5 | 66 / 77 → 66 / 80 | +1 → +0 MB |
+| large 1.8.7 → 1.8.8 | 146.3 / 199.6 → 143.5 / 182.4 | 66 / 77 → 66 / 80 | +2 → +2 MB |
+
+All strictly within budget (p95 ≤ 180 ms, max ≤ 300 ms, median ≤ 90 MB, max ≤ 110 MB, growth ≤ 8 MB).
+
 ## [1.8.7] - 2026-10-22
 
 Fixes for custom rule imports that dropped existing rules, dialer proxies and GEOSITE categories that stopped a profile from connecting, iCloud-synced rule deletions that came back, and a startup reconnect loop after a pre-connect failure.

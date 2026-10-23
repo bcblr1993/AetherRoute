@@ -16001,24 +16001,24 @@
         }
       }
     },
-    "Disconnects, removes both network extensions and their configurations, then helps you move AetherRoute to the Trash.": {
+    "Disconnects, removes network extensions and configurations, and cleans up all data on this Mac.": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "断开连接，移除两个网络扩展及其配置，然后帮你将 AetherRoute 移到废纸篓。"
+            "value": "断开连接，移除网络扩展及其配置，并清理本机的全部数据与规则。"
           }
         }
       }
     },
-    "The network extensions and their configurations were removed. Quit AetherRoute, then drag it from the Finder window to the Trash.": {
+    "AetherRoute has been uninstalled. Click Done to close and remove the app.": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "网络扩展及其配置已移除。请退出 AetherRoute，然后在访达窗口中将它拖到废纸篓。"
+            "value": "AetherRoute 卸载完成。点击“完成”将关闭并删除软件。"
           }
         }
       }
