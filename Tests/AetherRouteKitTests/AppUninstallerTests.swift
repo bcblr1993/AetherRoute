@@ -87,4 +87,37 @@ final class AppUninstallerTests: XCTestCase {
         XCTAssertFalse(AppUninstaller.localKeychainServices.contains(ProfileCloudSyncManager.cloudSyncService))
         XCTAssertTrue(AppUninstaller.localKeychainServices.contains(DataProtectionProfileKeyStore.defaultService))
     }
+
+    func testSandboxedAppIsHandedToTheUserAfterTheNetworkIsClean() async {
+        // Seen on the Mac mini: a sandboxed app may not move itself to the
+        // Trash. With every network component gone that is a hand-off, not a
+        // network failure.
+        let performer = RecordingPerformer()
+        performer.outcomes[.moveAppToTrash] = .handedToUser
+        let report = await AppUninstaller.run(
+            AppUninstaller.plan(deletingUserData: false, extensionIdentifiers: extensions),
+            performer: performer
+        )
+        XCTAssertTrue(report.isComplete)
+        XCTAssertTrue(report.appHandedToUser)
+        XCTAssertFalse(report.movedAppToTrash)
+        XCTAssertFalse(report.networkRemovalFailed)
+    }
+
+    func testNetworkFailureIsToldApartFromOtherFailures() async {
+        let performer = RecordingPerformer()
+        performer.outcomes[.unregisterLoginItem] = .failed("denied")
+        let other = await AppUninstaller.run(
+            AppUninstaller.plan(deletingUserData: false, extensionIdentifiers: extensions),
+            performer: performer
+        )
+        XCTAssertFalse(other.networkRemovalFailed)
+
+        performer.outcomes[.removeNetworkConfigurations] = .failed("denied")
+        let network = await AppUninstaller.run(
+            AppUninstaller.plan(deletingUserData: false, extensionIdentifiers: extensions),
+            performer: performer
+        )
+        XCTAssertTrue(network.networkRemovalFailed)
+    }
 }

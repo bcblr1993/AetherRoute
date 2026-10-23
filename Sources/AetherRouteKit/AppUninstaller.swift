@@ -17,6 +17,9 @@ public enum UninstallStepOutcome: Equatable, Sendable {
     /// macOS finishes removing a system extension at the next restart.
     case completesAfterRestart
     case failed(String)
+    /// Left for the user to finish: a sandboxed app may not move itself to
+    /// the Trash, so it is selected in the Finder instead.
+    case handedToUser
     /// Not attempted because an earlier step failed.
     case skipped
 }
@@ -41,9 +44,21 @@ public struct UninstallReport: Equatable, Sendable {
         entries.contains { $0.step == .moveAppToTrash && $0.outcome == .completed }
     }
 
-    /// Every step done (a pending restart still counts as done).
+    /// The app is selected in the Finder for the user to drag to the Trash.
+    public var appHandedToUser: Bool {
+        entries.contains { $0.step == .moveAppToTrash && $0.outcome == .handedToUser }
+    }
+
+    /// A configuration or extension is still there; the app was kept.
+    public var networkRemovalFailed: Bool {
+        failures.contains { AppUninstaller.removesSomethingThatRuns($0.step) }
+    }
+
+    /// Every step done (a pending restart or a hand-off still counts).
     public var isComplete: Bool {
-        entries.allSatisfy { $0.outcome == .completed || $0.outcome == .completesAfterRestart }
+        entries.allSatisfy {
+            $0.outcome == .completed || $0.outcome == .completesAfterRestart || $0.outcome == .handedToUser
+        }
     }
 }
 
@@ -105,7 +120,7 @@ public enum AppUninstaller {
         return UninstallReport(entries: entries)
     }
 
-    private static func removesSomethingThatRuns(_ step: UninstallStep) -> Bool {
+    static func removesSomethingThatRuns(_ step: UninstallStep) -> Bool {
         switch step {
         case .removeNetworkConfigurations, .deactivateExtension: true
         case .disconnect, .unregisterLoginItem, .deleteUserData, .moveAppToTrash: false

@@ -15858,17 +15858,6 @@
         }
       }
     },
-    "AetherRoute was removed. Restart your Mac to finish removing its network extensions.": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AetherRoute 已卸载。请重新启动 Mac 以完成网络扩展的移除。"
-          }
-        }
-      }
-    },
     "Also delete profiles, rules and settings on this Mac": {
       "extractionState": "manual",
       "localizations": {
@@ -15876,17 +15865,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "同时删除这台 Mac 上的配置、规则和设置"
-          }
-        }
-      }
-    },
-    "Disconnects, removes both network extensions and their configurations, then moves AetherRoute to the Trash.": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "断开连接，移除两个网络扩展及其配置，然后将 AetherRoute 移到废纸篓。"
           }
         }
       }
@@ -16019,6 +15997,39 @@
           "stringUnit": {
             "state": "translated",
             "value": "移除扩展时 macOS 可能会要求输入管理员密码。通过 iCloud 同步的配置会保留在 iCloud 中。"
+          }
+        }
+      }
+    },
+    "Disconnects, removes both network extensions and their configurations, then helps you move AetherRoute to the Trash.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "断开连接，移除两个网络扩展及其配置，然后帮你将 AetherRoute 移到废纸篓。"
+          }
+        }
+      }
+    },
+    "The network extensions and their configurations were removed. Quit AetherRoute, then drag it from the Finder window to the Trash.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络扩展及其配置已移除。请退出 AetherRoute，然后在访达窗口中将它拖到废纸篓。"
+          }
+        }
+      }
+    },
+    "Restart your Mac to finish removing its network extensions.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请重新启动 Mac 以完成网络扩展的移除。"
           }
         }
       }

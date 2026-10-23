@@ -40,7 +40,7 @@ struct AppUninstallSheet: View {
             AetherSheetHeader(
                 symbol: "trash",
                 title: AppLocalization.string("Uninstall AetherRoute"),
-                subtitle: AppLocalization.string("Disconnects, removes both network extensions and their configurations, then moves AetherRoute to the Trash."),
+                subtitle: AppLocalization.string("Disconnects, removes both network extensions and their configurations, then helps you move AetherRoute to the Trash."),
                 tint: .red
             )
             if let report {
@@ -60,10 +60,10 @@ struct AppUninstallSheet: View {
             HStack(spacing: AetherVisual.s2) {
                 Spacer()
                 if let report {
-                    Button(report.movedAppToTrash
+                    Button(Self.finishesWithQuit(report)
                            ? AppLocalization.string("Quit")
                            : AppLocalization.string("Close")) {
-                        if report.movedAppToTrash {
+                        if Self.finishesWithQuit(report) {
                             AppTermination.request()
                         } else {
                             dismiss()
@@ -93,25 +93,28 @@ struct AppUninstallSheet: View {
         .interactiveDismissDisabled(isRunning)
     }
 
+    /// The network part is done; the app is in the Trash or waiting there.
+    private static func finishesWithQuit(_ report: UninstallReport) -> Bool {
+        !report.networkRemovalFailed && (report.movedAppToTrash || report.appHandedToUser)
+    }
+
     @ViewBuilder
     private func resultView(_ report: UninstallReport) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            if report.movedAppToTrash {
+            if report.networkRemovalFailed {
+                AetherInlineMessage(
+                    text: AppLocalization.string("Some network components could not be removed, so AetherRoute was kept. Uninstall again; if it keeps failing, restart your Mac and retry."),
+                    kind: .warning
+                )
+            } else {
                 Label {
-                    Text(report.needsRestart
-                         ? AppLocalization.string("AetherRoute was removed. Restart your Mac to finish removing its network extensions.")
-                         : AppLocalization.string("AetherRoute was removed."))
+                    Text(Self.successText(report))
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(AetherReadableTint(color: .green))
                 }
                 .font(.callout)
-            } else {
-                AetherInlineMessage(
-                    text: AppLocalization.string("Some network components could not be removed, so AetherRoute was kept. Uninstall again; if it keeps failing, restart your Mac and retry."),
-                    kind: .warning
-                )
             }
             ForEach(Array(report.failures.enumerated()), id: \.offset) { _, entry in
                 if case let .failed(reason) = entry.outcome {
@@ -123,6 +126,16 @@ struct AppUninstallSheet: View {
             }
         }
         .accessibilityIdentifier("uninstall-result")
+    }
+
+    private static func successText(_ report: UninstallReport) -> String {
+        var text = report.appHandedToUser
+            ? AppLocalization.string("The network extensions and their configurations were removed. Quit AetherRoute, then drag it from the Finder window to the Trash.")
+            : AppLocalization.string("AetherRoute was removed.")
+        if report.needsRestart {
+            text += " " + AppLocalization.string("Restart your Mac to finish removing its network extensions.")
+        }
+        return text
     }
 
     private func uninstall() {

@@ -111,12 +111,21 @@ final class AppUninstallPerformer: UninstallStepPerforming {
         return problems.isEmpty ? .completed : .failed(problems.joined(separator: ", "))
     }
 
+    /// The sandbox does not let the app move itself out of /Applications
+    /// (seen on the Mac mini, 1.8.8). The network components are gone by
+    /// now, so selecting the app in the Finder for the user to drag to the
+    /// Trash leaves nothing behind.
     private func moveAppToTrash() async -> UninstallStepOutcome {
+        let appURL = Bundle.main.bundleURL
         do {
-            _ = try await NSWorkspace.shared.recycle([Bundle.main.bundleURL])
+            _ = try await NSWorkspace.shared.recycle([appURL])
             return .completed
         } catch {
-            return .failed(error.localizedDescription)
+            Self.logger.info(
+                "stage=uninstall moveToTrash handedToUser reason=\(error.localizedDescription, privacy: .public)"
+            )
+            NSWorkspace.shared.activateFileViewerSelecting([appURL])
+            return .handedToUser
         }
     }
 }
