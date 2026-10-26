@@ -14,6 +14,9 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
     public let proxyProviderCount: Int
     public let ruleCount: Int
     public let ruleProviderCount: Int
+    public let directRuleCount: Int
+    public let proxyRuleCount: Int
+    public let rejectRuleCount: Int
     public let requiresCountryMMDB: Bool
     public let requiresGeoSiteDatabase: Bool
     /// Mirrors the profile's top-level `ipv6` switch, which defaults to `false`
@@ -34,6 +37,9 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
         proxyProviderCount: Int,
         ruleCount: Int,
         ruleProviderCount: Int,
+        directRuleCount: Int? = nil,
+        proxyRuleCount: Int? = nil,
+        rejectRuleCount: Int? = nil,
         requiresCountryMMDB: Bool = false,
         requiresGeoSiteDatabase: Bool = false,
         allowsIPv6: Bool = false
@@ -49,6 +55,15 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
         self.proxyProviderCount = proxyProviderCount
         self.ruleCount = ruleCount
         self.ruleProviderCount = ruleProviderCount
+        self.directRuleCount = directRuleCount ?? rules.filter { $0.target.uppercased() == "DIRECT" }.count
+        self.rejectRuleCount = rejectRuleCount ?? rules.filter {
+            let upper = $0.target.uppercased()
+            return upper == "REJECT" || upper == "REJECT-DROP"
+        }.count
+        self.proxyRuleCount = proxyRuleCount ?? rules.filter {
+            let upper = $0.target.uppercased()
+            return upper != "DIRECT" && upper != "REJECT" && upper != "REJECT-DROP"
+        }.count
         self.requiresCountryMMDB = requiresCountryMMDB
         self.requiresGeoSiteDatabase = requiresGeoSiteDatabase
         self.allowsIPv6 = allowsIPv6
@@ -263,6 +278,7 @@ public struct RuleConfigurationSummary: Identifiable, Equatable, Sendable {
     public let criteria: String?
     public let target: String
     public let isCustom: Bool
+    public let noResolve: Bool
 
     public init(
         id: Int,
@@ -270,7 +286,8 @@ public struct RuleConfigurationSummary: Identifiable, Equatable, Sendable {
         kind: String,
         criteria: String?,
         target: String,
-        isCustom: Bool = false
+        isCustom: Bool = false,
+        noResolve: Bool = false
     ) {
         self.id = id
         self.order = order
@@ -278,6 +295,7 @@ public struct RuleConfigurationSummary: Identifiable, Equatable, Sendable {
         self.criteria = criteria
         self.target = target
         self.isCustom = isCustom
+        self.noResolve = noResolve
     }
 }
 
@@ -317,8 +335,16 @@ public enum RouteMatchAssessment: Equatable, Sendable {
 }
 
 public enum RouteMatchEngine {
-    public static func evaluate(destination: String, against rules: [RuleConfigurationSummary]) -> RouteMatchResult? {
-        if case let .matched(result) = assess(destination: destination, against: rules) {
+    public static func evaluate(
+        destination: String,
+        against rules: [RuleConfigurationSummary],
+        geoSiteData: Data? = nil
+    ) -> RouteMatchResult? {
+        if case let .matched(result) = assess(
+            destination: destination,
+            against: rules,
+            geoSiteData: geoSiteData
+        ) {
             return result
         }
         return nil
@@ -327,9 +353,12 @@ public enum RouteMatchEngine {
     public static func assess(
         destination: String,
         against rules: [RuleConfigurationSummary],
-        totalRuleCount: Int? = nil
+        totalRuleCount: Int? = nil,
+        geoSiteData: Data? = nil
     ) -> RouteMatchAssessment {
-        guard let host = destinationHost(destination) else { return .invalidDestination }
+        guard let parsed = destinationHostAndPort(destination) else { return .invalidDestination }
+        let host = parsed.host
+        let port = parsed.port
         let address = addressBytes(host)
         for rule in rules {
             let kind = rule.kind.uppercased()
@@ -352,13 +381,60 @@ public enum RouteMatchEngine {
                     matches = host == criteria || host.hasSuffix("." + criteria)
                 } else { matches = host.contains(criteria) }
             case "IP-CIDR", "IP-CIDR6":
-                // A hostname may resolve into this subnet. Never skip it and
-                // claim a later MATCH is authoritative without DNS evidence.
-                guard let address, let criteria,
-                      let result = matchesCIDR(address: address, cidr: criteria) else {
+                guard let criteria, isValidCIDR(criteria) else {
                     return .indeterminate(ruleOrder: rule.order)
                 }
-                matches = result
+                if let address {
+                    guard let result = matchesCIDR(address: address, cidr: criteria) else {
+                        return .indeterminate(ruleOrder: rule.order)
+                    }
+                    matches = result
+                } else if rule.noResolve {
+                    // A `no-resolve` IP rule never triggers DNS resolution in
+                    // the core and therefore never matches a domain name.
+                    matches = false
+                } else {
+                    // Without `no-resolve`, a hostname may resolve into this
+                    // subnet at runtime.
+                    return .indeterminate(ruleOrder: rule.order)
+                }
+            case "GEOIP":
+                guard let criteria, !criteria.isEmpty else {
+                    return .indeterminate(ruleOrder: rule.order)
+                }
+                if let address {
+                    if criteria == "private" || criteria == "lan" {
+                        matches = isPrivateAddress(address)
+                    } else {
+                        return .indeterminate(ruleOrder: rule.order)
+                    }
+                } else if rule.noResolve {
+                    matches = false
+                } else {
+                    return .indeterminate(ruleOrder: rule.order)
+                }
+            case "DST-PORT":
+                guard let criteria, let rulePort = UInt16(criteria), rulePort > 0,
+                      let destinationPort = port else {
+                    return .indeterminate(ruleOrder: rule.order)
+                }
+                matches = destinationPort == rulePort
+            case "GEOSITE":
+                guard let criteria, !criteria.isEmpty else {
+                    return .indeterminate(ruleOrder: rule.order)
+                }
+                if address != nil {
+                    matches = false
+                } else if let geoSiteData,
+                          let result = GeoSiteCategoryIndex.matches(
+                            domain: host,
+                            ruleValue: criteria,
+                            in: geoSiteData
+                          ) {
+                    matches = result
+                } else {
+                    return .indeterminate(ruleOrder: rule.order)
+                }
             default:
                 // An earlier unsupported rule could win in the real core.
                 return .indeterminate(ruleOrder: rule.order)
@@ -381,11 +457,12 @@ public enum RouteMatchEngine {
         return .noMatch
     }
 
-    private static func destinationHost(_ destination: String) -> String? {
+    private static func destinationHostAndPort(_ destination: String) -> (host: String, port: UInt16?)? {
         let raw = destination.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !raw.isEmpty, !raw.contains(where: { $0.isWhitespace }) else { return nil }
-        if addressBytes(raw) != nil { return raw }
-        let value = raw.contains("://") ? raw : "https://" + raw
+        if addressBytes(raw) != nil { return (raw, nil) }
+        let hasExplicitScheme = raw.contains("://")
+        let value = hasExplicitScheme ? raw : "https://" + raw
         guard let url = URLComponents(string: value),
               url.user == nil, url.password == nil,
               var host = url.host, !host.isEmpty else { return nil }
@@ -394,8 +471,22 @@ public enum RouteMatchEngine {
             guard addressBytes(host) != nil else { return nil }
         }
         if host.hasSuffix(".") { host.removeLast() }
-        guard !host.isEmpty, !host.contains(":" ) || addressBytes(host) != nil else { return nil }
-        return host
+        guard !host.isEmpty, !host.contains(":") || addressBytes(host) != nil else { return nil }
+
+        let port: UInt16?
+        if let explicitPort = url.port {
+            guard (1...65_535).contains(explicitPort) else { return nil }
+            port = UInt16(explicitPort)
+        } else if hasExplicitScheme {
+            switch url.scheme?.lowercased() {
+            case "https", "wss": port = 443
+            case "http", "ws": port = 80
+            default: port = nil
+            }
+        } else {
+            port = nil
+        }
+        return (host, port)
     }
 
     private static func addressBytes(_ text: String) -> [UInt8]? {
@@ -410,6 +501,13 @@ public enum RouteMatchEngine {
         return nil
     }
 
+    private static func isValidCIDR(_ cidr: String) -> Bool {
+        let parts = cidr.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2, let network = addressBytes(String(parts[0])),
+              let prefix = Int(parts[1]), (0...network.count * 8).contains(prefix) else { return false }
+        return true
+    }
+
     private static func matchesCIDR(address: [UInt8], cidr: String) -> Bool? {
         let parts = cidr.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count == 2, let network = addressBytes(String(parts[0])),
@@ -421,6 +519,25 @@ public enum RouteMatchEngine {
             if address[index] & mask != network[index] & mask { return false }
         }
         return true
+    }
+
+    private static func isPrivateAddress(_ address: [UInt8]) -> Bool {
+        if address.count == 4 {
+            return address[0] == 10
+                || address[0] == 127
+                || address[0] == 0
+                || (address[0] == 169 && address[1] == 254)
+                || (address[0] == 172 && (16...31).contains(address[1]))
+                || (address[0] == 192 && address[1] == 168)
+        }
+        if address.count == 16 {
+            let isLoopbackOrUnspecified = address.dropLast().allSatisfy({ $0 == 0 })
+                && (address[15] == 0 || address[15] == 1)
+            let isUniqueLocal = (address[0] & 0xfe) == 0xfc
+            let isLinkLocal = address[0] == 0xfe && (address[1] & 0xc0) == 0x80
+            return isLoopbackOrUnspecified || isUniqueLocal || isLinkLocal
+        }
+        return false
     }
 }
 
@@ -533,6 +650,9 @@ private struct Parser {
     private var proxyProviderCount = 0
     private var ruleCount = 0
     private var ruleProviderCount = 0
+    private var directRuleCount = 0
+    private var proxyRuleCount = 0
+    private var rejectRuleCount = 0
     private var requiresCountryMMDB = false
     private var requiresGeoSiteDatabase = false
     private var allowsIPv6 = false
@@ -794,6 +914,9 @@ private struct Parser {
             proxyProviderCount: proxyProviderCount,
             ruleCount: ruleCount,
             ruleProviderCount: ruleProviderCount,
+            directRuleCount: directRuleCount,
+            proxyRuleCount: proxyRuleCount,
+            rejectRuleCount: rejectRuleCount,
             requiresCountryMMDB: requiresCountryMMDB,
             requiresGeoSiteDatabase: requiresGeoSiteDatabase,
             allowsIPv6: allowsIPv6
@@ -1214,15 +1337,23 @@ private struct Parser {
         guard let kind = fields.first, !kind.isEmpty else { return }
         recordResourceRequirements(kind: kind, rawValue: rawValue)
         ruleCount += 1
-        guard rules.count < ProfileConfigurationInspector.maximumDisplayedItemsPerSection else {
-            return
-        }
         let hasNoResolve = fields.count >= 3
             && fields.last?.lowercased() == "no-resolve"
         let targetIndex = fields.count > 1
             ? fields.count - (hasNoResolve ? 2 : 1)
             : nil
         let target = targetIndex.map { fields[$0] } ?? "Unknown"
+        switch target.uppercased() {
+        case "DIRECT":
+            directRuleCount += 1
+        case "REJECT", "REJECT-DROP":
+            rejectRuleCount += 1
+        default:
+            proxyRuleCount += 1
+        }
+        guard rules.count < ProfileConfigurationInspector.maximumDisplayedItemsPerSection else {
+            return
+        }
         let criteriaFields = targetIndex.map { fields[1..<$0] } ?? []
         let criteria = criteriaFields.isEmpty ? nil : criteriaFields.joined(separator: ", ")
         let order = rules.count + 1
@@ -1237,7 +1368,8 @@ private struct Parser {
                 criteria: kind.uppercased() == "AETHER-APP"
                     ? criteria.map(Self.applicationName) : criteria,
                 target: target,
-                isCustom: isCustom
+                isCustom: isCustom,
+                noResolve: hasNoResolve
             )
         )
     }

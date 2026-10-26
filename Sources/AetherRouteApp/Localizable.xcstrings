@@ -16033,6 +16033,83 @@
           }
         }
       }
+    },
+    "Recently closed": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近关闭"
+          }
+        }
+      }
+    },
+    "No recently closed connections": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无最近关闭的连接"
+          }
+        }
+      }
+    },
+    "Connections that finish while the tunnel is running appear here so you can inspect them or create rules.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隧道运行期间已结束的连接会显示在此处，便于您查看详情或创建分流规则。"
+          }
+        }
+      }
+    },
+    "By newest": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按最新连接"
+          }
+        }
+      }
+    },
+    "Hide timed-out nodes": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏超时节点"
+          }
+        }
+      }
+    },
+    "Move to Top": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移至顶部"
+          }
+        }
+      }
+    },
+    "Move to Bottom": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移至底部"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

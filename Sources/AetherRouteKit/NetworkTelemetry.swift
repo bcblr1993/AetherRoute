@@ -131,6 +131,81 @@ public struct NetworkTelemetrySnapshot: Sendable, Equatable {
     )
 }
 
+/// Bounded ring buffer of connections that closed between consecutive telemetry
+/// snapshots during an active session, preserving their latest byte counters so
+/// short-lived or rejected flows can still be inspected and turned into rules.
+public struct RecentlyClosedConnectionBuffer: Sendable, Equatable {
+    public static let defaultCapacity = 50
+
+    private struct IdentityKey: Hashable, Sendable {
+        let transport: UInt8
+        let destination: String
+        let destinationPort: UInt16
+        let startedAtUnixMilliseconds: UInt64
+        let rule: String
+        let rulePayload: String
+        let proxyChain: String
+        let sourceAppIdentifier: String
+        let sourceAppPath: String
+
+        init(_ connection: ConnectionTelemetry) {
+            self.transport = connection.transport.rawValue
+            self.destination = connection.destination
+            self.destinationPort = connection.destinationPort
+            self.startedAtUnixMilliseconds = connection.startedAtUnixMilliseconds
+            self.rule = connection.rule
+            self.rulePayload = connection.rulePayload
+            self.proxyChain = connection.proxyChain
+            self.sourceAppIdentifier = connection.sourceAppIdentifier
+            self.sourceAppPath = connection.sourceAppPath
+        }
+    }
+
+    public let capacity: Int
+    public private(set) var connections: [ConnectionTelemetry] = []
+    private var previousActive: [ConnectionTelemetry] = []
+
+    public init(capacity: Int = Self.defaultCapacity) {
+        self.capacity = max(1, capacity)
+    }
+
+    public mutating func record(active: [ConnectionTelemetry]) {
+        let boundedActive = active.count > NetworkTelemetryCodec.maximumConnections
+            ? Array(active.prefix(NetworkTelemetryCodec.maximumConnections))
+            : active
+        var remainingActiveCounts: [IdentityKey: Int] = [:]
+        var activeKeys: Set<IdentityKey> = []
+        for connection in boundedActive {
+            let key = IdentityKey(connection)
+            remainingActiveCounts[key, default: 0] += 1
+            activeKeys.insert(key)
+        }
+
+        var newlyClosed: [ConnectionTelemetry] = []
+        for previous in previousActive {
+            let key = IdentityKey(previous)
+            if let count = remainingActiveCounts[key], count > 0 {
+                remainingActiveCounts[key] = count - 1
+            } else {
+                newlyClosed.append(previous)
+            }
+        }
+
+        previousActive = boundedActive
+        guard !newlyClosed.isEmpty || !activeKeys.isEmpty else { return }
+
+        var closedKeys = Set(newlyClosed.map(IdentityKey.init))
+        closedKeys.formUnion(activeKeys)
+        let retained = connections.filter { !closedKeys.contains(IdentityKey($0)) }
+        connections = Array((newlyClosed + retained).prefix(capacity))
+    }
+
+    public mutating func reset() {
+        connections.removeAll()
+        previousActive.removeAll()
+    }
+}
+
 public enum NetworkTelemetryCodecError: Error, Sendable, Equatable {
     case malformed
     case tooLarge

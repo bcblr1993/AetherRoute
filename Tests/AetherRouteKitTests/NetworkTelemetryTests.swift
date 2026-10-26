@@ -209,6 +209,82 @@ final class NetworkTelemetryTests: XCTestCase {
         XCTAssertThrowsError(try NetworkTelemetryCodec.encode(snapshot))
     }
 
+    func testRecentlyClosedConnectionBufferCapturesDisappearedFlowsWithLatestTrafficAndBoundsCapacity() {
+        var buffer = RecentlyClosedConnectionBuffer(capacity: 3)
+
+        let flow1Initial = ConnectionTelemetry(
+            transport: .tcp,
+            destination: "api.openai.com",
+            destinationPort: 443,
+            uploadTotal: 100,
+            downloadTotal: 200,
+            startedAtUnixMilliseconds: 1_000,
+            rule: "DomainSuffix",
+            rulePayload: "openai.com",
+            proxyChain: "AI → US-01"
+        )
+        let flow2 = ConnectionTelemetry(
+            transport: .tcp,
+            destination: "github.com",
+            destinationPort: 443,
+            uploadTotal: 500,
+            downloadTotal: 1_500,
+            startedAtUnixMilliseconds: 2_000,
+            rule: "DomainSuffix",
+            rulePayload: "github.com",
+            proxyChain: "Proxy → SG-01"
+        )
+        buffer.record(active: [flow1Initial, flow2])
+        XCTAssertTrue(buffer.connections.isEmpty)
+
+        // Flow 1 grows in traffic while Flow 2 closes
+        let flow1Updated = ConnectionTelemetry(
+            transport: .tcp,
+            destination: "api.openai.com",
+            destinationPort: 443,
+            uploadTotal: 900,
+            downloadTotal: 4_200,
+            startedAtUnixMilliseconds: 1_000,
+            rule: "DomainSuffix",
+            rulePayload: "openai.com",
+            proxyChain: "AI → US-01"
+        )
+        buffer.record(active: [flow1Updated])
+        XCTAssertEqual(buffer.connections, [flow2])
+
+        // Flow 1 now closes: its latest traffic (900 / 4200) must be recorded at the front
+        buffer.record(active: [])
+        XCTAssertEqual(buffer.connections, [flow1Updated, flow2])
+
+        // Exceeding capacity evicts the oldest closed connections
+        let extraFlows = (0..<4).map { idx in
+            ConnectionTelemetry(
+                transport: .udp,
+                destination: "dns\(idx).example.com",
+                destinationPort: 53,
+                uploadTotal: 64,
+                downloadTotal: 128,
+                startedAtUnixMilliseconds: UInt64(3_000 + idx),
+                rule: "Match",
+                rulePayload: "",
+                proxyChain: "DIRECT"
+            )
+        }
+        buffer.record(active: extraFlows)
+        buffer.record(active: [])
+        XCTAssertEqual(buffer.connections.count, 3)
+        XCTAssertEqual(
+            buffer.connections.map(\.destination),
+            ["dns0.example.com", "dns1.example.com", "dns2.example.com"]
+        )
+
+        // Reset on disconnect clears both active baseline and closed history
+        buffer.reset()
+        XCTAssertTrue(buffer.connections.isEmpty)
+        buffer.record(active: [])
+        XCTAssertTrue(buffer.connections.isEmpty)
+    }
+
     private func sampleTelemetry(
         sourceAppIdentifier: String = "",
         sourceAppPath: String = ""

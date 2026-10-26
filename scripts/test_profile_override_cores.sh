@@ -19,6 +19,7 @@ swiftc -parse-as-library \
   "$KIT/ProfileOverride.swift" \
   "$KIT/ProfileOverrideCompiler.swift" \
   "$KIT/NodeRegion.swift" \
+  "$KIT/GeoSiteCategoryIndex.swift" \
   "$KIT/ProfileConfigurationSummary.swift" \
   "$KIT/ProxySelectionMode.swift" \
   "$KIT/CustomRule.swift" \

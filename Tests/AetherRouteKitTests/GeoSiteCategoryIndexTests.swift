@@ -57,4 +57,68 @@ final class GeoSiteCategoryIndexTests: XCTestCase {
             XCTAssertTrue(index.contains(ruleValue: example), example)
         }
     }
+
+    func testMatchesDomainAgainstPlainRegexSuffixFullAttributeAndNegation() {
+        let data = Self.syntheticGeoSiteDatabase()
+
+        // Domain (type 2: root/suffix) "baidu.com" with attribute "ads" on "ad.baidu.com"
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "baidu.com", ruleValue: "cn", in: data), true)
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "www.baidu.com", ruleValue: "cn", in: data), true)
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "notbaidu.com", ruleValue: "cn", in: data), false)
+
+        // Full (type 3: exact) "exact.cn.example"
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "exact.cn.example", ruleValue: "cn", in: data), true)
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "sub.exact.cn.example", ruleValue: "cn", in: data), false)
+
+        // Plain (type 0: keyword) "cn-keyword"
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "my-cn-keyword-host.org", ruleValue: "cn", in: data), true)
+
+        // Regex (type 1: regex) "^api-[0-9]+\\.example\\.com$"
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "api-42.example.com", ruleValue: "cn", in: data), true)
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "api-abc.example.com", ruleValue: "cn", in: data), false)
+
+        // Attribute filter (@ads)
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "ad.baidu.com", ruleValue: "cn@ads", in: data), true)
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "www.baidu.com", ruleValue: "cn@ads", in: data), false)
+
+        // Negation (!cn)
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "www.baidu.com", ruleValue: "!cn", in: data), false)
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "openai.com", ruleValue: "!cn", in: data), true)
+
+        // Unknown category returns nil (indeterminate)
+        XCTAssertNil(GeoSiteCategoryIndex.matches(domain: "example.com", ruleValue: "nonexistent-category", in: data))
+    }
+
+    func testMatchesDomainInBundledGeoSiteDatabase() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Config/RoutingResources/GeoSite.dat")
+        let data = try Data(contentsOf: url)
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "www.apple.com", ruleValue: "apple", in: data), true)
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "www.baidu.com", ruleValue: "cn", in: data), true)
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "api.openai.com", ruleValue: "openai", in: data), true)
+        XCTAssertEqual(GeoSiteCategoryIndex.matches(domain: "www.baidu.com", ruleValue: "openai", in: data), false)
+    }
+
+    private static func syntheticGeoSiteDatabase() -> Data {
+        func protoString(field: UInt8, _ text: String) -> [UInt8] {
+            let utf8 = Array(text.utf8)
+            return [(field << 3) | 2, UInt8(utf8.count)] + utf8
+        }
+        func protoDomain(type: UInt8, value: String, attribute: String? = nil) -> [UInt8] {
+            var body: [UInt8] = [0x08, type] + protoString(field: 2, value)
+            if let attribute {
+                let attrBody = protoString(field: 1, attribute)
+                body += [0x1A, UInt8(attrBody.count)] + attrBody
+            }
+            return [0x12, UInt8(body.count)] + body
+        }
+        let entryBody: [UInt8] = protoString(field: 1, "CN")
+            + protoDomain(type: 2, value: "baidu.com")
+            + protoDomain(type: 2, value: "ad.baidu.com", attribute: "ads")
+            + protoDomain(type: 3, value: "exact.cn.example")
+            + protoDomain(type: 0, value: "cn-keyword")
+            + protoDomain(type: 1, value: "^api-[0-9]+\\.example\\.com$")
+        return Data([0x0A, UInt8(entryBody.count)] + entryBody)
+    }
 }

@@ -381,38 +381,54 @@ struct RulesView: View {
                     }
                     .padding(AetherVisual.s4)
                 } else {
-                    VStack(spacing: AetherVisual.sCompact) {
-                        let rulesList = destinationRules
-                        ForEach(Array(rulesList.enumerated()), id: \.element.id) { index, rule in
-                            CustomRuleRow(
-                                rule: rule,
-                                canMoveUp: index > 0,
-                                canMoveDown: index + 1 < rulesList.count,
-                                onMoveUp: {
-                                    Task { await tunnel.moveCustomRule(id: rule.id, direction: .up) }
-                                },
-                                onMoveDown: {
-                                    Task { await tunnel.moveCustomRule(id: rule.id, direction: .down) }
-                                },
-                                onToggle: {
-                                    Task { await tunnel.toggleCustomRule(id: rule.id) }
-                                },
-                                onEdit: {
-                                    editingRule = rule
-                                    showAddRuleSheet = true
-                                },
-                                onDelete: {
-                                    Task { await tunnel.deleteCustomRule(id: rule.id) }
-                                },
-                                onTest: {
-                                    testQuery = rule.value
-                                    performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
-                                }
-                            )
-                            .transition(AetherVisual.insertion)
+                    let allRulesList = destinationRules
+                    let visibleRules = filteredDestinationRules
+                    if visibleRules.isEmpty {
+                        Text(AppLocalization.string("No rules match. Try another filter or clear the search."))
+                            .font(.subheadline)
+                            .foregroundStyle(AetherVisual.secondaryText)
+                            .frame(maxWidth: .infinity)
+                            .padding(AetherVisual.s4)
+                    } else {
+                        LazyVStack(spacing: AetherVisual.sCompact) {
+                            ForEach(visibleRules) { rule in
+                                let fullIndex = allRulesList.firstIndex(where: { $0.id == rule.id }) ?? 0
+                                CustomRuleRow(
+                                    rule: rule,
+                                    canMoveUp: fullIndex > 0,
+                                    canMoveDown: fullIndex + 1 < allRulesList.count,
+                                    onMoveUp: {
+                                        Task { await tunnel.moveCustomRule(id: rule.id, direction: .up) }
+                                    },
+                                    onMoveDown: {
+                                        Task { await tunnel.moveCustomRule(id: rule.id, direction: .down) }
+                                    },
+                                    onMoveToTop: {
+                                        Task { await tunnel.moveCustomRule(id: rule.id, direction: .top) }
+                                    },
+                                    onMoveToBottom: {
+                                        Task { await tunnel.moveCustomRule(id: rule.id, direction: .bottom) }
+                                    },
+                                    onToggle: {
+                                        Task { await tunnel.toggleCustomRule(id: rule.id) }
+                                    },
+                                    onEdit: {
+                                        editingRule = rule
+                                        showAddRuleSheet = true
+                                    },
+                                    onDelete: {
+                                        Task { await tunnel.deleteCustomRule(id: rule.id) }
+                                    },
+                                    onTest: {
+                                        testQuery = rule.kind == .dstPort ? "example.com:\(rule.value)" : rule.value
+                                        performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
+                                    }
+                                )
+                                .transition(AetherVisual.insertion)
+                            }
                         }
+                        .padding(AetherVisual.listCardInset)
                     }
-                    .padding(AetherVisual.listCardInset)
                 }
             }
             .aetherPanel()
@@ -426,15 +442,28 @@ struct RulesView: View {
         tunnel.customRules.filter { $0.kind != .application }
     }
 
+    private var filteredDestinationRules: [CustomRule] {
+        destinationRules.filter { rule in
+            guard selectedAction.accepts(rule.target.rawString) else { return false }
+            guard !searchText.isEmpty else { return true }
+            let query = searchText.lowercased()
+            return rule.kind.rawValue.lowercased().contains(query)
+                || rule.value.lowercased().contains(query)
+                || rule.target.rawString.lowercased().contains(query)
+                || (rule.comment?.lowercased().contains(query) ?? false)
+        }
+    }
+
     // MARK: Profile rules
 
     private func profileRulesSection(
         summary: ProfileConfigurationSummary,
         displayedRules: [RuleConfigurationSummary]
     ) -> some View {
-        let directCount = summary.rules.filter { $0.target.uppercased() == "DIRECT" }.count
-        let rejectCount = summary.rules.filter { $0.target.uppercased() == "REJECT" }.count
-        let proxyCount = max(0, summary.rules.count - directCount - rejectCount)
+        let directCount = summary.directRuleCount
+        let rejectCount = summary.rejectRuleCount
+        let proxyCount = summary.proxyRuleCount
+        let totalCount = summary.ruleCount
         return section(
             title: AppLocalization.string("Profile rules"),
             note: AppLocalization.string("Matched top to bottom; the first match wins")
@@ -453,7 +482,7 @@ struct RulesView: View {
                             actionFilter(summary: summary)
                             RuleDistributionBar(
                                 directCount: directCount, proxyCount: proxyCount,
-                                rejectCount: rejectCount, totalCount: summary.rules.count,
+                                rejectCount: rejectCount, totalCount: totalCount,
                                 routingMode: tunnel.routingMode
                             )
                             // Decorative: the filter's segments carry the counts.
@@ -468,7 +497,7 @@ struct RulesView: View {
                             }
                             RuleDistributionBar(
                                 directCount: directCount, proxyCount: proxyCount,
-                                rejectCount: rejectCount, totalCount: summary.rules.count,
+                                rejectCount: rejectCount, totalCount: totalCount,
                                 routingMode: tunnel.routingMode
                             )
                             .accessibilityHidden(true)
@@ -548,9 +577,15 @@ struct RulesView: View {
         AetherSegmentedPicker(
             selection: $selectedAction,
             options: RuleActionFilter.allCases.map { action in
-                .init(
+                let count: Int = switch action {
+                case .all: summary.ruleCount
+                case .direct: summary.directRuleCount
+                case .proxy: summary.proxyRuleCount
+                case .reject: summary.rejectRuleCount
+                }
+                return .init(
                     value: action,
-                    title: "\(action.shortTitle) \(summary.rules.filter { action.accepts($0.target) }.count)"
+                    title: "\(action.shortTitle) \(count)"
                 )
             },
             accessibilityLabel: AppLocalization.string("Filter by target"),
@@ -570,7 +605,12 @@ struct RulesView: View {
     private func performMatch(rules: [RuleConfigurationSummary], totalRuleCount: Int) {
         hasAttemptedMatch = true
         testResult = nil
-        switch RouteMatchEngine.assess(destination: testQuery, against: rules, totalRuleCount: totalRuleCount) {
+        switch RouteMatchEngine.assess(
+            destination: testQuery,
+            against: rules,
+            totalRuleCount: totalRuleCount,
+            geoSiteData: tunnel.bundledGeoSiteData
+        ) {
         case let .matched(result): testResult = result
         case let .indeterminate(ruleOrder?):
             // A GEOSITE/GEOIP or similar rule needs the core's databases; say
@@ -789,6 +829,8 @@ struct CustomRuleRow: View {
     var canMoveDown: Bool = false
     var onMoveUp: (() -> Void)? = nil
     var onMoveDown: (() -> Void)? = nil
+    var onMoveToTop: (() -> Void)? = nil
+    var onMoveToBottom: (() -> Void)? = nil
     let onToggle: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
@@ -922,6 +964,13 @@ struct CustomRuleRow: View {
             }
         }
         .contextMenu {
+            if let onMoveToTop, canMoveUp {
+                Button {
+                    onMoveToTop()
+                } label: {
+                    Label(AppLocalization.string("Move to Top"), systemImage: "arrow.up.to.line")
+                }
+            }
             if let onMoveUp, canMoveUp {
                 Button {
                     onMoveUp()
@@ -934,6 +983,13 @@ struct CustomRuleRow: View {
                     onMoveDown()
                 } label: {
                     Label(AppLocalization.string("Move rule down"), systemImage: "arrow.down")
+                }
+            }
+            if let onMoveToBottom, canMoveDown {
+                Button {
+                    onMoveToBottom()
+                } label: {
+                    Label(AppLocalization.string("Move to Bottom"), systemImage: "arrow.down.to.line")
                 }
             }
             Button {
@@ -1453,7 +1509,8 @@ struct CustomRuleEditorSheet: View {
             kind: rule.kind.rawValue,
             criteria: rule.value,
             target: rule.target.rawString,
-            isCustom: true
+            isCustom: true,
+            noResolve: rule.noResolve
         )
 
         let existingRules = tunnel.activeProfileSummary?.rules ?? []
@@ -1472,16 +1529,23 @@ struct CustomRuleEditorSheet: View {
             let ipPart = rule.value.split(separator: "/").first.map(String.init) ?? rule.value
             destination = ipPart
         case .geoIP:
-            destination = "223.5.5.5"
-        case .geoSite, .dstPort:
+            destination = rule.value.lowercased() == "private" ? "192.168.1.1" : "223.5.5.5"
+        case .geoSite:
             destination = "example.com"
+        case .dstPort:
+            destination = "example.com:\(rule.value)"
         case .application:
             // Matched by the connecting app, not a destination.
             testExplanation = AppLocalization.string("Application rules match the app that opens a connection, so they cannot be tested by destination.")
             return
         }
 
-        switch RouteMatchEngine.assess(destination: destination, against: simulatedList, totalRuleCount: simulatedList.count) {
+        switch RouteMatchEngine.assess(
+            destination: destination,
+            against: simulatedList,
+            totalRuleCount: simulatedList.count,
+            geoSiteData: tunnel.bundledGeoSiteData
+        ) {
         case let .matched(res):
             testResult = res
         case .indeterminate:

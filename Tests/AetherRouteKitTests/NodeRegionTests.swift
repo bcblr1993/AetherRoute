@@ -61,4 +61,24 @@ struct NodeRegionTests {
         #expect(region?.code == "NL")
         #expect(region?.flag == "🇳🇱")
     }
+
+    @Test("node search matches name, protocol, and resolved region aliases across languages")
+    func nodeSearchMatchesAcrossLanguagesAndProtocols() {
+        // Empty query always matches
+        #expect(NodeRegion.matchesSearch(member: "HK-01", protocolName: "vless", query: "  "))
+
+        // English node matched by Chinese region name or flag or protocol
+        #expect(NodeRegion.matchesSearch(member: "HK-01", protocolName: "vless", query: "香港"))
+        #expect(NodeRegion.matchesSearch(member: "HK-01", protocolName: "vless", query: "🇭🇰"))
+        #expect(NodeRegion.matchesSearch(member: "HK-01", protocolName: "vless", query: "vless"))
+        #expect(NodeRegion.matchesSearch(member: "Tokyo Direct", protocolName: "hysteria2", query: "日本"))
+
+        // Chinese node matched by English code or city name
+        #expect(NodeRegion.matchesSearch(member: "日本 01", protocolName: "trojan", query: "jp"))
+        #expect(NodeRegion.matchesSearch(member: "狮城 BGP", protocolName: "ss", query: "singapore"))
+
+        // Partial word ("AUTO") does not falsely match Australia ("澳洲")
+        #expect(!NodeRegion.matchesSearch(member: "SS-Proxy-AUTO", protocolName: "ss", query: "澳洲"))
+        #expect(!NodeRegion.matchesSearch(member: "HK-01", protocolName: "vless", query: "新加坡"))
+    }
 }

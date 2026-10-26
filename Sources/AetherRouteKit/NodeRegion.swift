@@ -30,6 +30,42 @@ public struct NodeRegion: Equatable, Sendable {
         return nil
     }
 
+    /// Evaluates whether a proxy group member matches a user search query by
+    /// node name, protocol name, or resolved region aliases (flag, ISO code,
+    /// Latin/CJK place names), without false-positive partial word matches.
+    public static func matchesSearch(
+        member: String,
+        protocolName: String? = nil,
+        query: String
+    ) -> Bool {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        if member.localizedCaseInsensitiveContains(trimmed) {
+            return true
+        }
+        if let protocolName, protocolName.localizedCaseInsensitiveContains(trimmed) {
+            return true
+        }
+        guard let region = resolve(from: member) else { return false }
+        if region.code.localizedCaseInsensitiveContains(trimmed) || region.flag.contains(trimmed) {
+            return true
+        }
+        if let entry = catalog.first(where: { $0.region.code == region.code }) {
+            if entry.cjkNames.contains(where: { $0.localizedCaseInsensitiveContains(trimmed) }) {
+                return true
+            }
+            if entry.aliasCodes.contains(where: { $0.localizedCaseInsensitiveContains(trimmed) }) {
+                return true
+            }
+            if entry.latinNames.contains(where: {
+                $0.joined(separator: " ").localizedCaseInsensitiveContains(trimmed)
+            }) {
+                return true
+            }
+        }
+        return false
+    }
+
     // MARK: - Matching
 
     /// A flag emoji written into the name is the author's own statement and

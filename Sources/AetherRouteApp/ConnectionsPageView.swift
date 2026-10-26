@@ -16,6 +16,7 @@ struct ConnectionsView: View {
     @State private var pausedConnections: [ConnectionTelemetry]?
     @State private var inspectedConnection: ConnectionTableItem?
     @State private var groupsByApp = false
+    @State private var showsRecentlyClosed = false
     /// Limits the list to one app (`SourceAppPresentation.groupingKey`).
     @State private var appFilter: AppFilter?
 
@@ -25,7 +26,12 @@ struct ConnectionsView: View {
     }
 
     private var displayedConnections: [ConnectionTelemetry] {
-        pausedConnections ?? telemetry.snapshot.connections
+        if let pausedConnections {
+            return pausedConnections
+        }
+        return showsRecentlyClosed
+            ? telemetry.recentlyClosed.connections
+            : telemetry.snapshot.connections
     }
 
     var body: some View {
@@ -97,6 +103,7 @@ struct ConnectionsView: View {
         .onChange(of: tunnel.isConnected) { _, connected in
             if !connected {
                 pausedConnections = nil
+                showsRecentlyClosed = false
                 appFilter = nil
             }
         }
@@ -104,7 +111,13 @@ struct ConnectionsView: View {
 
     @ViewBuilder
     private func footerContents(visibleCount: Int) -> some View {
-        if pausedConnections != nil {
+        if showsRecentlyClosed {
+            Label(AppLocalization.string("Recently closed"), systemImage: "clock.arrow.circlepath")
+                .foregroundStyle(AetherReadableTint(color: .indigo))
+                .lineLimit(1)
+                .fixedSize()
+                .transition(AetherVisual.insertion)
+        } else if pausedConnections != nil {
             Label(AppLocalization.string("List paused · session counters are live"), systemImage: "pause.circle.fill")
                 .foregroundStyle(AetherReadableTint(color: .orange))
                 .lineLimit(1)
@@ -130,13 +143,17 @@ struct ConnectionsView: View {
     private var emptyState: some View {
         // The same empty-state card as Proxies, Rules and DNS.
         FeatureEmptyState(
-            symbol: "arrow.left.arrow.right",
-            title: tunnel.isConnected
-                ? AppLocalization.string("No active connections")
-                : AppLocalization.string("No connections yet"),
-            detail: tunnel.isConnected
-                ? AppLocalization.string("Each live connection shows its destination, matched rule, outlet and traffic.")
-                : AppLocalization.string("Connect to see each connection's destination, matched rule, outlet and traffic.")
+            symbol: showsRecentlyClosed ? "clock.arrow.circlepath" : "arrow.left.arrow.right",
+            title: showsRecentlyClosed
+                ? AppLocalization.string("No recently closed connections")
+                : (tunnel.isConnected
+                    ? AppLocalization.string("No active connections")
+                    : AppLocalization.string("No connections yet")),
+            detail: showsRecentlyClosed
+                ? AppLocalization.string("Connections that finish while the tunnel is running appear here so you can inspect them or create rules.")
+                : (tunnel.isConnected
+                    ? AppLocalization.string("Each live connection shows its destination, matched rule, outlet and traffic.")
+                    : AppLocalization.string("Connect to see each connection's destination, matched rule, outlet and traffic."))
         )
         .padding(.horizontal, AetherVisual.pageHorizontalPadding)
         .padding(.top, AetherVisual.s2)
@@ -234,7 +251,7 @@ struct ConnectionsView: View {
                     .contextMenu {
                         Button(AppLocalization.string("Copy destination")) { copyDestination(row.connection) }
                         Button(AppLocalization.string("Connection details")) { inspectedConnection = row }
-                        if tunnel.isConnected {
+                        if tunnel.isConnected, !showsRecentlyClosed {
                             Button(AppLocalization.string("Close Connection")) {
                                 close(.init(row: row.connection))
                             }
@@ -480,6 +497,8 @@ struct ConnectionsView: View {
             case .traffic:
                 return lhs.downloadTotal + lhs.uploadTotal
                     > rhs.downloadTotal + rhs.uploadTotal
+            case .newest:
+                return lhs.latestStartedAtUnixMilliseconds > rhs.latestStartedAtUnixMilliseconds
             case .destination:
                 return lhs.app.displayName.localizedStandardCompare(
                     rhs.app.displayName
@@ -530,6 +549,18 @@ struct ConnectionsView: View {
                 Label(AppLocalization.string("Group by app"), systemImage: "square.stack.3d.up")
             }
             .accessibilityIdentifier("connections-group-by-app")
+            Toggle(isOn: Binding(
+                get: { showsRecentlyClosed },
+                set: { value in
+                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                        showsRecentlyClosed = value
+                        pausedConnections = nil
+                    }
+                }
+            )) {
+                Label(AppLocalization.string("Recently closed"), systemImage: "clock.arrow.circlepath")
+            }
+            .accessibilityIdentifier("connections-recently-closed-toggle")
             Divider()
             Picker(AppLocalization.string("Sort"), selection: $sort) {
                 ForEach(ConnectionSort.allCases) { option in
@@ -541,7 +572,7 @@ struct ConnectionsView: View {
         } label: {
             Label(
                 AppLocalization.string("View"),
-                systemImage: groupsByApp
+                systemImage: (groupsByApp || showsRecentlyClosed)
                     ? "line.3.horizontal.decrease.circle.fill"
                     : "line.3.horizontal.decrease.circle"
             )
@@ -635,6 +666,12 @@ struct ConnectionsView: View {
                 case .traffic:
                     return lhs.connection.downloadTotal + lhs.connection.uploadTotal
                         > rhs.connection.downloadTotal + rhs.connection.uploadTotal
+                case .newest:
+                    if lhs.connection.startedAtUnixMilliseconds != rhs.connection.startedAtUnixMilliseconds {
+                        return lhs.connection.startedAtUnixMilliseconds > rhs.connection.startedAtUnixMilliseconds
+                    }
+                    return lhs.connection.downloadTotal + lhs.connection.uploadTotal
+                        > rhs.connection.downloadTotal + rhs.connection.uploadTotal
                 case .destination:
                     return lhs.connection.destination.localizedStandardCompare(
                         rhs.connection.destination
@@ -659,6 +696,7 @@ struct ConnectionsView: View {
 
     private enum ConnectionSort: String, CaseIterable, Identifiable {
         case traffic
+        case newest
         case destination
 
         var id: Self { self }
@@ -666,6 +704,7 @@ struct ConnectionsView: View {
         var localizedTitle: String {
             switch self {
             case .traffic: AppLocalization.string("By traffic")
+            case .newest: AppLocalization.string("By newest")
             case .destination: AppLocalization.string("By destination")
             }
         }
@@ -846,6 +885,7 @@ private struct ConnectionAppRow: Identifiable {
     private(set) var connectionCount = 0
     private(set) var uploadTotal: UInt64 = 0
     private(set) var downloadTotal: UInt64 = 0
+    private(set) var latestStartedAtUnixMilliseconds: UInt64 = 0
     private var outlets: [String] = []
 
     init(app: SourceAppPresentation) {
@@ -867,6 +907,7 @@ private struct ConnectionAppRow: Identifiable {
         connectionCount += 1
         uploadTotal &+= connection.uploadTotal
         downloadTotal &+= connection.downloadTotal
+        latestStartedAtUnixMilliseconds = max(latestStartedAtUnixMilliseconds, connection.startedAtUnixMilliseconds)
         outlets.append(ConnectionOutlet(proxyChain: connection.proxyChain).localizedTitle)
     }
 }

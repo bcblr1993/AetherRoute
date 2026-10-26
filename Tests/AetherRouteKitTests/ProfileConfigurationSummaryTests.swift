@@ -482,7 +482,7 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
             [
                 .init(id: 0, order: 1, kind: "DOMAIN-SUFFIX", criteria: "example.com", target: "Automatic"),
                 .init(id: 1, order: 2, kind: "RULE-SET", criteria: "Privacy", target: "Manual"),
-                .init(id: 2, order: 3, kind: "IP-CIDR", criteria: "198.51.100.0/24", target: "DIRECT"),
+                .init(id: 2, order: 3, kind: "IP-CIDR", criteria: "198.51.100.0/24", target: "DIRECT", noResolve: true),
                 .init(id: 3, order: 4, kind: "MATCH", criteria: nil, target: "DIRECT"),
             ]
         )
@@ -780,6 +780,109 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
             XCTAssertEqual(RouteMatchEngine.assess(destination: input, against: []), .invalidDestination)
         }
         XCTAssertEqual(RouteMatchEngine.assess(destination: "example.com", against: []), .noMatch)
+    }
+
+    func testRoutePreviewSkipsNoResolveIPAndGeoIPRulesForDomainDestinations() {
+        let yaml = """
+        rules:
+          - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+          - IP-CIDR6,fc00::/7,DIRECT,no-resolve
+          - GEOIP,CN,DIRECT,no-resolve
+          - DOMAIN-SUFFIX,openai.com,AI-Proxy
+          - MATCH,Fallback
+        """
+        let summary = ProfileConfigurationInspector.inspect(yaml: yaml)
+        XCTAssertTrue(summary.rules[0].noResolve)
+        XCTAssertTrue(summary.rules[1].noResolve)
+        XCTAssertTrue(summary.rules[2].noResolve)
+        XCTAssertFalse(summary.rules[3].noResolve)
+
+        // Domain destinations skip no-resolve IP/GEOIP rules and match downstream domain/catch-all rules
+        XCTAssertEqual(
+            RouteMatchEngine.evaluate(destination: "api.openai.com", against: summary.rules)?.target,
+            "AI-Proxy"
+        )
+        XCTAssertEqual(
+            RouteMatchEngine.evaluate(destination: "github.com", against: summary.rules)?.target,
+            "Fallback"
+        )
+        // IP destinations still match IP-CIDR even when no-resolve is set
+        XCTAssertEqual(
+            RouteMatchEngine.evaluate(destination: "127.0.0.1", against: summary.rules)?.target,
+            "DIRECT"
+        )
+        XCTAssertEqual(
+            RouteMatchEngine.evaluate(destination: "fd00::1", against: summary.rules)?.target,
+            "DIRECT"
+        )
+    }
+
+    func testRoutePreviewEvaluatesGeoIPPrivateAndDstPortAndGeoSite() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Config/RoutingResources/GeoSite.dat")
+        let geoSiteData = try Data(contentsOf: url)
+
+        let rules = [
+            RuleConfigurationSummary(id: 0, order: 1, kind: "GEOIP", criteria: "private", target: "DIRECT", noResolve: true),
+            RuleConfigurationSummary(id: 1, order: 2, kind: "DST-PORT", criteria: "8443", target: "PORT-8443"),
+            RuleConfigurationSummary(id: 2, order: 3, kind: "GEOSITE", criteria: "apple", target: "DIRECT"),
+            RuleConfigurationSummary(id: 3, order: 4, kind: "GEOSITE", criteria: "openai", target: "AI-Proxy"),
+            RuleConfigurationSummary(id: 4, order: 5, kind: "MATCH", criteria: nil, target: "Fallback"),
+        ]
+
+        // Private IPs match GEOIP,private
+        for privateIP in ["127.0.0.1:443", "10.0.0.1:443", "172.16.0.1:443", "192.168.1.1:443", "169.254.1.1:443", "[::1]:443", "[fd00::1]:443", "[fe80::1]:443"] {
+            let match = RouteMatchEngine.evaluate(destination: privateIP, against: rules, geoSiteData: geoSiteData)
+            XCTAssertEqual(match?.order, 1, privateIP)
+            XCTAssertEqual(match?.target, "DIRECT", privateIP)
+        }
+
+        // Public IP with port 443 skips GEOIP,private, skips DST-PORT 8443, skips GEOSITE, and hits MATCH
+        let publicIPMatch = RouteMatchEngine.evaluate(destination: "8.8.8.8:443", against: rules, geoSiteData: geoSiteData)
+        XCTAssertEqual(publicIPMatch?.order, 5)
+        XCTAssertEqual(publicIPMatch?.target, "Fallback")
+
+        // Explicit port 8443 matches DST-PORT,8443
+        let portMatch = RouteMatchEngine.evaluate(destination: "example.com:8443", against: rules, geoSiteData: geoSiteData)
+        XCTAssertEqual(portMatch?.order, 2)
+        XCTAssertEqual(portMatch?.target, "PORT-8443")
+
+        // HTTPS URL implies port 443, so it skips DST-PORT,8443 and evaluates GEOSITE
+        let appleMatch = RouteMatchEngine.evaluate(destination: "https://www.apple.com/mac", against: rules, geoSiteData: geoSiteData)
+        XCTAssertEqual(appleMatch?.order, 3)
+        XCTAssertEqual(appleMatch?.target, "DIRECT")
+
+        let openAIMatch = RouteMatchEngine.evaluate(destination: "https://api.openai.com/v1", against: rules, geoSiteData: geoSiteData)
+        XCTAssertEqual(openAIMatch?.order, 4)
+        XCTAssertEqual(openAIMatch?.target, "AI-Proxy")
+
+        // Bare domain without port stops at DST-PORT,8443 as indeterminate
+        XCTAssertEqual(
+            RouteMatchEngine.assess(destination: "www.apple.com", against: rules, geoSiteData: geoSiteData),
+            .indeterminate(ruleOrder: 2)
+        )
+    }
+
+    func testFullProfileRuleActionCountsBeyondDisplayLimit() throws {
+        let directLines = (0..<300).map { "DOMAIN,d\($0).invalid,DIRECT" }
+        let proxyLines = (0..<250).map { "DOMAIN,p\($0).invalid,ProxyGroup" }
+        let rejectLines = (0..<100).map { "DOMAIN,r\($0).invalid,REJECT" }
+        let allRules = directLines + proxyLines + rejectLines
+
+        let yaml = "rules:\n" + allRules.map { "  - \($0)" }.joined(separator: "\n")
+        let jsonData = try JSONSerialization.data(withJSONObject: ["rules": allRules])
+        let json = try XCTUnwrap(String(data: jsonData, encoding: .utf8))
+
+        let yamlSummary = ProfileConfigurationInspector.inspect(yaml: yaml)
+        let jsonSummary = ProfileConfigurationInspector.inspect(yaml: json)
+
+        XCTAssertEqual(yamlSummary, jsonSummary)
+        XCTAssertEqual(yamlSummary.rules.count, ProfileConfigurationInspector.maximumDisplayedItemsPerSection)
+        XCTAssertEqual(yamlSummary.ruleCount, 650)
+        XCTAssertEqual(yamlSummary.directRuleCount, 300)
+        XCTAssertEqual(yamlSummary.proxyRuleCount, 250)
+        XCTAssertEqual(yamlSummary.rejectRuleCount, 100)
     }
 
 }

@@ -161,17 +161,32 @@ public struct CustomRuleStore: Sendable {
         guard let index = current.firstIndex(where: { $0.id == id }) else {
             throw CustomRuleStoreError.ruleNotFound(id)
         }
-        let candidates: [Int]
-        switch direction {
-        case .up:
-            candidates = Array(current.indices[..<index].reversed())
-        case .down:
-            candidates = Array(current.indices[(index + 1)...])
-        }
-        guard let targetIndex = candidates.first(where: { isInScope(current[$0]) }) else {
+        let scopedIndices = current.indices.filter { index == $0 || isInScope(current[$0]) }
+        guard let pos = scopedIndices.firstIndex(of: index) else {
             return current
         }
-        current.swapAt(index, targetIndex)
+        switch direction {
+        case .up:
+            guard pos > 0 else { return current }
+            current.swapAt(scopedIndices[pos], scopedIndices[pos - 1])
+        case .down:
+            guard pos + 1 < scopedIndices.count else { return current }
+            current.swapAt(scopedIndices[pos], scopedIndices[pos + 1])
+        case .top:
+            guard pos > 0 else { return current }
+            let moved = current[scopedIndices[pos]]
+            for step in (1...pos).reversed() {
+                current[scopedIndices[step]] = current[scopedIndices[step - 1]]
+            }
+            current[scopedIndices[0]] = moved
+        case .bottom:
+            guard pos + 1 < scopedIndices.count else { return current }
+            let moved = current[scopedIndices[pos]]
+            for step in pos..<(scopedIndices.count - 1) {
+                current[scopedIndices[step]] = current[scopedIndices[step + 1]]
+            }
+            current[scopedIndices[scopedIndices.count - 1]] = moved
+        }
         try save(current, fileManager: fileManager)
         return current
     }
@@ -218,6 +233,8 @@ public struct CustomRuleStore: Sendable {
 public enum CustomRuleMoveDirection: String, Codable, Sendable {
     case up
     case down
+    case top
+    case bottom
 }
 
 public enum CustomRuleStoreError: LocalizedError, Equatable {

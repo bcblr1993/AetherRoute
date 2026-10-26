@@ -4,6 +4,39 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] - 2026-10-26
+
+Route tester overhaul (`no-resolve` preservation and skipping on domain targets, offline `GEOSITE` matching via memory-mapped `geosite.dat`, `GEOIP,PRIVATE` private IP matching, and `DST-PORT` port evaluation), full-profile rule action counts across large subscriptions, proxy group node search and timed-out node filtering, custom rule search/action filtering with move to top/bottom, and Connections sort by newest with a recently closed connections ring buffer.
+
+### Added
+
+- **Route Tester Overhaul & Full-Profile Rule Counts (`ProfileConfigurationSummary`, `GeoSiteCategoryIndex`, `RulesPageView`, `TunnelManager`)**:
+  - **Preserved and Honored `no-resolve`**: `ProfileConfigurationInspector` now parses and preserves `noResolve: Bool` (`no-resolve`) on `RuleConfigurationSummary` across both YAML and JSON profiles. `RouteMatchEngine.assess` skips `IP-CIDR`, `IP-CIDR6`, and `GEOIP` rules when `noResolve == true` for domain targets instead of halting with `.indeterminate(ruleOrder:)` on the first IP rule.
+  - **Offline `GEOSITE` Evaluation**: Added `GeoSiteCategoryIndex.matches(domain:ruleValue:in:)` supporting `Plain` substring, `Regex`, `Domain` root/suffix, `Full` exact domain, `@attr` attribute filtering, and `!` attribute negation against memory-mapped `geosite.dat` (`tunnel.bundledGeoSiteData`), wired directly into `RouteMatchEngine.assess`.
+  - **`GEOIP,PRIVATE` & `DST-PORT` Evaluation**: Added `GEOIP,PRIVATE` matching for RFC 1918, loopback, link-local, and IPv6 unique-local addresses, and `DST-PORT` matching when an explicit port (`example.com:8443`, `[2001:db8::1]:8443`) or HTTP/HTTPS scheme (`http://` → 80, `https://` → 443) is supplied. Updated `CustomRuleEditorSheet.verifyRule()` and `CustomRuleRow.onTest` to pass `example.com:\(rule.value)` when testing `.dstPort` rules.
+  - **Full-Profile Rule Action Counts**: Added `directRuleCount`, `proxyRuleCount`, and `rejectRuleCount` on `ProfileConfigurationSummary` computed across all profile rules before the 500-rule UI display cap, and wired them into `RuleDistributionBar` and the `RulesView` action filter pills.
+- **Proxy Group Node Search & Timeout Filtering + Custom Rule Scalability (`NodeRegion`, `ProxiesPageView`, `CustomRuleStore`, `RulesPageView`)**:
+  - **Cross-Language Node Search & Timeout Filter**: Added `NodeRegion.matchesSearch(member:protocolName:query:)` supporting English/Chinese region names, flag emojis, ISO codes, place names, node names, and protocol names with strict word-boundary token matching to prevent substring false positives. Added an inline `AetherSearchField` (for groups with >8 members) and a **Hide timed-out nodes** (`隐藏超时节点`) toggle to `ActiveProxyGroupView`.
+  - **Custom Rules Filtering, Lazy Rendering & Move to Top/Bottom**: Added `.top` and `.bottom` to `CustomRuleMoveDirection` and `CustomRuleStore.move(id:direction:within:)`, added **Move to Top** (`移至顶部`) and **Move to Bottom** (`移至底部`) to `CustomRuleRow`'s context menu, switched `customRulesSection` from `VStack` to `LazyVStack`, and filtered displayed custom rules by the active search query and action filter pill.
+- **Connections Sort by Newest & Recently Closed Ring Buffer (`NetworkTelemetry`, `TunnelManager`, `ConnectionsPageView`)**:
+  - Added `RecentlyClosedConnectionBuffer` (bounded to 50 recently closed connections and 128 tracked active connections) and wired it into `NetworkTelemetryViewModel`.
+  - Added **By newest** (`按最新连接`, `ConnectionSort.newest`) and a **Recently closed** (`最近关闭`) toggle to `ConnectionsView` so short-lived or rejected (`REJECT`) connections remain inspectable and actionable via the right-click routing rule menu.
+
+### Verified
+
+- Local: `verify_ui_design_tokens.sh`, `verify_localizations.sh` (1476 catalog keys, `en` + `zh-Hans`), `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, and `./scripts/test.sh` passed; 538 unit tests passed with 0 failures; all 12 protocol interop tests (`outputs/interop-20261026T065744Z`: matrix, reality, wireguard, shadowquic, ssh) passed cleanly with 48 case passes and 26 certificate rejections.
+- Tart VM `macos27` 6-way matrix (`outputs/acceptance-1.9.0-2026102601-20261026-153304/vm-acceptance`): all 6 engine × routing combinations (`tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`) passed (210 checks, 158 PASS, 0 FAIL, 52 SKIP, including transparent SNI recovery, UDP 53 datagrams, LAN bypass, raw traffic, 60-request burst concurrency, 50s idle keep-alive reuse, and 2 MiB large upload).
+- Remote arm64 gate `test_remote_arm64.sh fast` on dedicated Apple Silicon Mac mini (`chenxu@100.64.0.3`) passed.
+- Physical runtime evidence for notarized stable candidate `2026102601` (`outputs/physical-runtime-1.9.0-2026102601`): TUN — idle keep-alive reuse passed, 2 MiB upload passed, and interface switch recovered in 2/1/1/1/2/2 s; transparent proxy — idle keep-alive reuse passed, 2 MiB upload passed, and interface switch recovered in 2/2/2/2/2/3 s.
+- UI performance and memory (`outputs/acceptance-1.9.0-2026102601-20261026-153304/perf-gate/result.txt`, 300 s per profile):
+
+| Profile | Page switch p95 / max (ms) | Footprint median / max (MB) | Growth |
+|---|---|---|---|
+| showcase 1.8.9 → 1.9.0 | 126.2 / 151.9 → 143.0 / 226.8 | 67 / 81 → 66 / 73 | +0 → -2 MB |
+| large 1.8.9 → 1.9.0 | 125.6 / 136.1 → 143.7 / 206.0 | 67 / 83 → 65 / 72 | +2 → +1 MB |
+
+All strictly within budget (p95 ≤ 180 ms, max ≤ 300 ms, median ≤ 90 MB, max ≤ 110 MB, growth ≤ 8 MB).
+
 ## [1.8.9] - 2026-10-23
 
 Streaming per-node verified latency measurement while connected (eliminating whole-group tail-latency stalls, single-node full-group sweeps, serial probe queue head-of-line blocking, and the 64-node batch cap), LAN shared proxy and loopback listener coordination, and uninstaller termination cleanup hardening.

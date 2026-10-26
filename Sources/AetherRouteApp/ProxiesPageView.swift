@@ -345,6 +345,8 @@ private struct ProxyGroupTabButton: View {
 private struct ActiveProxyGroupView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var sort: ProxyNodeSort = .default
+    @State private var searchText = ""
+    @State private var hidesTimedOutNodes = false
     /// A choice made while disconnected takes effect later; say so for a
     /// moment instead of keeping a permanent caption on the card.
     @State private var showsNextConnectionNote = false
@@ -389,8 +391,25 @@ private struct ActiveProxyGroupView: View {
                     .foregroundStyle(AetherVisual.secondaryText)
                     .padding(AetherVisual.s4)
             } else {
-                nodeList
-                    .padding(AetherVisual.listCardInset)
+                if members.count > 8 {
+                    AetherSearchField(
+                        text: $searchText,
+                        prompt: AppLocalization.string("Search nodes"),
+                        accessibilityIdentifier: "proxy-node-search-field"
+                    )
+                    .padding(.horizontal, AetherVisual.s4)
+                    .padding(.top, AetherVisual.s3)
+                }
+                if memberRows.isEmpty {
+                    Text(AppLocalization.string("No matching nodes"))
+                        .font(.subheadline)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .frame(maxWidth: .infinity)
+                        .padding(AetherVisual.s4)
+                } else {
+                    nodeList
+                        .padding(AetherVisual.listCardInset)
+                }
             }
         }
         .aetherPanel()
@@ -528,6 +547,8 @@ private struct ActiveProxyGroupView: View {
                 }
             }
             .pickerStyle(.inline)
+            Divider()
+            Toggle(AppLocalization.string("Hide timed-out nodes"), isOn: $hidesTimedOutNodes)
         } label: {
             Image(systemName: "arrow.up.arrow.down")
         }
@@ -661,6 +682,15 @@ private struct ActiveProxyGroupView: View {
     private var memberRows: [ProxyMemberTableItem] {
         let ordered = ProxyPageNodeOrder.sorted(members: members, by: sort) {
             latencyRank(status(for: $0))
+        }.filter { member in
+            if hidesTimedOutNodes, status(for: member) == .timedOut, member != selectedMember {
+                return false
+            }
+            return NodeRegion.matchesSearch(
+                member: member,
+                protocolName: memberType(member),
+                query: searchText
+            )
         }
         let isBusy = tunnel.proxySelectionRequests.contains(group.name)
         return ordered.map { member in

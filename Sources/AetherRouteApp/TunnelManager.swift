@@ -183,6 +183,7 @@ final class TrafficStatisticsModel: ObservableObject {
 final class NetworkTelemetryViewModel: ObservableObject {
     @Published var snapshot: NetworkTelemetrySnapshot = .empty
     private(set) var history = TrafficHistory()
+    private(set) var recentlyClosed = RecentlyClosedConnectionBuffer()
 
 #if DEBUG
     /// Review mode only: a fixed 30-second history, so screenshots show the
@@ -205,13 +206,21 @@ final class NetworkTelemetryViewModel: ObservableObject {
             upload: Double(snapshot.uploadBytesPerSecond),
             at: Date()
         )
+        recentlyClosed.record(active: snapshot.connections)
         // One publication for both current values and the timestamped history.
         self.snapshot = snapshot
     }
 
     func reset() {
         history = TrafficHistory()
+        recentlyClosed.reset()
         snapshot = .empty
+    }
+
+    func clearRecentlyClosed() {
+        recentlyClosed.reset()
+        recentlyClosed.record(active: snapshot.connections)
+        objectWillChange.send()
     }
 
 }
@@ -475,11 +484,14 @@ final class TunnelManager: ObservableObject {
     var nextAutomaticResourceRefreshAttempt: Date?
     let bundledResourceDirectoryURL = Bundle.main.resourceURL?
         .appendingPathComponent("RoutingResources", isDirectory: true)
+    var bundledGeoSiteData: Data? {
+        bundledResourceDirectoryURL
+            .flatMap { try? Data(contentsOf: $0.appendingPathComponent(RoutingResourceKind.geoSite.fileName), options: .mappedIfSafe) }
+    }
     /// GEOSITE categories of the bundled database, read once for the rule
     /// editor (it validates on every keystroke); nil when unreadable, in
     /// which case the launch-time check still applies.
-    lazy var bundledGeoSiteCategories: GeoSiteCategoryIndex? = bundledResourceDirectoryURL
-        .flatMap { try? Data(contentsOf: $0.appendingPathComponent(RoutingResourceKind.geoSite.fileName)) }
+    lazy var bundledGeoSiteCategories: GeoSiteCategoryIndex? = bundledGeoSiteData
         .flatMap { try? GeoSiteCategoryIndex(data: $0) }
     var connectionWatchdogTask: Task<Void, Never>?
     var disconnectionWatchdogTask: Task<Void, Never>?

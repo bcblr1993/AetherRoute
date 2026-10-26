@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.8.9 (Build 2026102303)</title>
-            <pubDate>Fri, 23 Oct 2026 19:51:29 +0800</pubDate>
-            <sparkle:version>2026102303</sparkle:version>
-            <sparkle:shortVersionString>1.8.9</sparkle:shortVersionString>
+            <title>Version 1.9.0 (Build 2026102601)</title>
+            <pubDate>Mon, 26 Oct 2026 17:12:19 +0800</pubDate>
+            <sparkle:version>2026102601</sparkle:version>
+            <sparkle:shortVersionString>1.9.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.8.9/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.9.0/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,40 +120,40 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.8.9 更新要点</span>
-  <span class="release-badge">Build 2026102303 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.9.0 更新要点</span>
+  <span class="release-badge">Build 2026102601 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🚀 核心优化：已连接流式逐节点延迟测速</span>
+  <span class="section-tag tag-feature">🚀 核心新特性：路由测试器全协议演进与真实全量规则计数</span>
   <ul>
-    <li><strong>消除慢节点整组阻塞</strong>：重构已连接状态下的延迟测速管线为 8 并发滑动窗口逐节点流式探测，当前选中节点优先测速，健康节点在 <code>~100 ms</code> 内即刻刷新真实延迟，不再被同组超时节点拖慢 6–24 秒。</li>
-    <li><strong>解除 64 节点上限与单点精准重测</strong>：全面支持超过 64 节点的大型代理组（含 Hysteria2、TUIC、ShadowQUIC、WireGuard 等 UDP 协议）全程走真实协议验证；点击单节点重测仅探测目标节点，不再触发整组扫描。</li>
+    <li><strong>路由测试器全面对齐内核引擎</strong>：支持保留并识别订阅规则中的 <code>no-resolve</code> 标记（域名探测自动跳过 <code>no-resolve</code> 的 IP/GEOIP 规则，不再误报需 DNS 解析）；支持通过内存映射 <code>geosite.dat</code> 离线匹配 <code>GEOSITE</code> 规则（含 <code>Plain</code>、<code>Regex</code>、<code>Domain</code>、<code>Full</code>、<code>@attr</code> 与 <code>!</code> 取反）；支持 <code>GEOIP,PRIVATE</code> 私有地址段与 <code>DST-PORT</code> 显式端口及 HTTP/HTTPS 协议端口匹配。</li>
+    <li><strong>大体积订阅全量规则统计</strong>：超过 500 条规则的订阅现已在解析阶段完整统计全量直连、代理与拦截规则数，顶部规则分布条与过滤胶囊展示真实全量占比。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 系统扩展与局域网代理协同加固</span>
+  <span class="section-tag tag-improve">✨ 节点与规则工作台、连接可观测性体验升级</span>
   <ul>
-    <li><strong>并发探测队列与动态超时</strong>：将 Packet Tunnel 与透明代理扩展的探测队列升级为并发执行，彻底消除后台自动故障转移巡检对手动测速的队头阻塞。</li>
-    <li><strong>局域网共享与卸载体验细节打磨</strong>：优化「允许局域网连接」模式下的本机回环监听收敛与终端代理命令导出，并移除卸载完成自清理时冗余的 Finder 自动化授权弹窗。</li>
+    <li><strong>节点组搜索与隐藏超时节点</strong>：当代理组超过 8 个节点时提供即时搜索框（支持中英文国家/地区名、国旗 Emoji、二字码、节点名与协议检索，且严格避免子串误匹配）与「隐藏超时节点」一键过滤开关。</li>
+    <li><strong>自定义规则搜索过滤与一键置顶/置底</strong>：自定义规则列表升级为按需惰性渲染（<code>LazyVStack</code>），完整接入顶部搜索框与动作类型过滤胶囊，右键菜单新增「移至顶部」与「移至底部」。</li>
+    <li><strong>连接页「按最新连接」排序与「最近关闭」环形缓冲</strong>：新增按最新连接建立时间排序，并内置最多 50 条最近关闭连接环形缓冲，轻松捕获短生命周期或被 <code>REJECT</code> 的瞬时请求并一键生成分流规则。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">✨ 严苛真机与多环境验证</span>
+  <span class="section-tag tag-fix">🛡️ 严苛真机与多环境验证</span>
   <ul>
-    <li><strong>12 协议互通与 6 维矩阵全绿</strong>：12 种协议真实服务端互通、Tart 虚拟机 6 维网络矩阵与 Apple Silicon Mac mini 真机门禁 100% 通过。</li>
-    <li><strong>UI 卡顿与内存预算优异</strong>：常规与万条规则/500 节点重载切页 p95 分别降至 <code>126.2 ms</code> 与 <code>125.6 ms</code>，内存中位数稳定在 <code>67 MB</code>。</li>
+    <li><strong>12 协议互通与 6 维矩阵全绿</strong>：538 项单元测试、12 种协议真实服务端互通、Tart 虚拟机 6 维网络矩阵与 Apple Silicon Mac mini 真机门禁 100% 通过。</li>
+    <li><strong>UI 卡顿与内存预算优异</strong>：常规与万条规则/500 节点重载切页 p95 分别为 <code>143.0 ms</code> 与 <code>143.7 ms</code>，内存中位数低至 <code>66 MB</code> 与 <code>65 MB</code>。</li>
   </ul>
 </div>
-
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.8.9/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.9.0/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.8.9/AetherRoute-1.8.9-build-2026102303-arm64.dmg"
-                sparkle:edSignature="p77mg/gL6qpgnafl9A2CeDge2GxekPtUcqtEuUFdf+WlozoZMpuH9aLbEX7kZJMaEVcsvo70eEJ+tPXpTb9gAA=="
-                length="27819211"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.9.0/AetherRoute-1.9.0-build-2026102601-arm64.dmg"
+                sparkle:edSignature="lXk/cgWbP8iEWxv+TQvIlMUFDrMRQS2IhkrUw8Kj7FgHT4gLQ+9c5ryWvqNlLHgIKF2GZbczXC7LwRdRyOUUDA=="
+                length="27883173"
                 type="application/octet-stream" />
         </item>
     </channel>

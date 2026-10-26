@@ -313,6 +313,25 @@ final class CustomRuleTests: XCTestCase {
 
         let movedDown = try store.move(id: second.id, direction: .down, within: isDestination)
         XCTAssertEqual(movedDown.map(\.id), [first.id, app.id, second.id])
+
+        let third = CustomRule(kind: .domainSuffix, value: "third.example.com", target: .proxy("Proxy"))
+        try store.save([first, app, second, third])
+
+        // Move third to top within destination scope: third becomes first destination rule, app stays in its slot
+        let movedToTop = try store.move(id: third.id, direction: .top, within: isDestination)
+        XCTAssertEqual(movedToTop.map(\.id), [third.id, app.id, first.id, second.id])
+
+        // Moving top item to top is a safe no-op
+        let topNoOp = try store.move(id: third.id, direction: .top, within: isDestination)
+        XCTAssertEqual(topNoOp.map(\.id), [third.id, app.id, first.id, second.id])
+
+        // Move third to bottom within destination scope
+        let movedToBottom = try store.move(id: third.id, direction: .bottom, within: isDestination)
+        XCTAssertEqual(movedToBottom.map(\.id), [first.id, app.id, second.id, third.id])
+
+        // Moving bottom item to bottom is a safe no-op
+        let bottomNoOp = try store.move(id: third.id, direction: .bottom, within: isDestination)
+        XCTAssertEqual(bottomNoOp.map(\.id), [first.id, app.id, second.id, third.id])
     }
 
     func testBatchReportSkipsUnsupportedLinesInsteadOfFailing() throws {
