@@ -4,6 +4,48 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.1] - 2026-10-29
+
+Airport subscriptions whose AnyTLS nodes ask for a browser TLS fingerprint now connect. A user reported that such a subscription left the app stuck at "正在恢复网络" from 1.8.3 on; 1.10.0 only skipped the nodes. Comparing both cores node by node against a real server running 28 protocol variants found two more nodes that Mihomo loads and we did not.
+
+### Fixed
+
+- **AnyTLS nodes with `client-fingerprint` or `idle-session-*` load (engine `0ffa3ab`, `converters/anytls.rs`)**: airport subscriptions set `client-fingerprint: chrome` on every AnyTLS node. The engine refused the option, so each such node failed to load; a subscription of only those nodes failed to start, and the app kept reconnecting. The option is now ignored with a warning, as VLESS already did. The AnyTLS server does not check the ClientHello, so the node connects. The connection does not imitate a browser's TLS fingerprint (uTLS is not implemented), unlike Mihomo. The three `idle-session-*` options tune a pool of idle sessions that this handler does not keep, and are ignored the same way.
+- **The standard SS2022 ChaCha cipher name (engine `0ffa3ab`, `proxy/shadowsocks`)**: SIP022, Mihomo and sing-box call it `2022-blake3-chacha20-poly1305`; the engine only knew `2022-blake3-chacha20-ietf-poly1305`, so such nodes failed with "unsupported cipher". Both names now work.
+- **WireGuard addresses without a prefix (engine `0ffa3ab`, `converters/wireguard.rs`)**: `ip: 172.16.0.2`, as Mihomo documents it and WARP exports write it, made the node fail to load; only `172.16.0.2/32` worked. A bare `ipv6` address was dropped without a message. Both forms now work for both fields.
+
+### Added
+
+- **`scripts/protocol_lab.py`**: builds a throwaway multi-protocol server on a VPS for real-network comparisons. One sing-box process (SHA-256 pinned) runs under its own `aether-lab` systemd unit from `/opt/aether-lab`, on 40 consecutive ports, with memory and CPU limits, and touches nothing else on the host. It generates fresh credentials, a Clash profile and share links into the git-ignored `outputs/protocol-lab/`; `remove` deletes it in one step. The 28 nodes cover Shadowsocks AEAD and 2022, shadow-tls v3, VMess, VLESS and Trojan over TCP, WebSocket, gRPC and HTTP/2, VLESS REALITY with Vision, Hysteria2 with and without Salamander, TUIC v5, three AnyTLS variants, SOCKS5, HTTP, HTTPS and WireGuard.
+
+### Changed
+
+- **The Mihomo differential counts a 0 ms answer as working (`subscription_differential.py`)**: our engine reports the HTTP round trip after the handshake, which rounds to 0 ms on loopback. The tool counted only positive delays, so working nodes were reported as failing in about half of the end-to-end runs. The decision is now `delay_result`, with its own unit test. The app does not use this value.
+
+### Tests
+
+- Engine: `loads_a_node_that_asks_for_a_browser_fingerprint` (chrome, firefox, safari, random), `loads_a_node_with_idle_session_tuning`, `maps_the_sip022_chacha_name_used_by_mihomo_and_sing_box`, `accepts_a_bare_interface_address_like_mihomo` and `accepts_the_cidr_form`. Each new test failed on the 1.10.0 code. The two AnyTLS tests replace the ones that required refusal.
+- `test_subscription_differential.py`: the end-to-end run adds an AnyTLS node written as airports write it, served by sing-box over TLS on loopback. On the 1.10.0 engine it reproduced the report (Mihomo connected in 6 ms, ours did not load it); it must now work in both. Plus a unit test for `delay_result`.
+
+### Verified
+
+- Local: `./scripts/test.sh` passed with zero code warnings: XCTest 549 + 98 + 24, 0 failures (`outputs/test-sh-1.10.1.console.log`). `test_fast_lane.sh` passed in 375 s on the final engine code (`outputs/fast-lane-20261028T202124Z`), including protocol interop (matrix, reality, wireguard, shadowquic and ssh all passed) and the Mihomo differential end-to-end run. Engine library tests with the app's feature set: 422 passed.
+- Mihomo differential on a real server (`scripts/protocol_lab.py`, 28 nodes, probed from the Mac mini): 24 nodes worked in both engines before the fixes; after them 27 did. The remaining `vless-httpupgrade-tls` node uses a transport this release does not implement. The first run's REALITY and httpupgrade failures in both engines were lab mistakes (a REALITY handshake target that fails with sing-box, and the wrong Mihomo spelling for httpupgrade), fixed in the lab script. The `delay: 0` false failure in the end-to-end run was reproduced 5 times in 8 runs, then 0 times in 42 runs after the fix; one earlier run raised an error whose output was not kept and did not recur.
+- Both shipped cores (`libclashrs.a` for the transparent proxy, `libclashrs-direct.a` for TUN) start with the 28-node lab profile and with a profile of only the three AnyTLS nodes, through `Tests/CoreSmoke/external_profile_smoke.c`.
+- Three-track acceptance (`outputs/acceptance-1.10.1-2026102901-20261029-044727`, 33 min 45 s):
+  - Track 1: the Tart VM `macos27` 6-way matrix passed (210 checks: 160 PASS, 0 FAIL, 50 SKIP), then the remote arm64 gate passed on the same VM.
+  - Track 2: the UI performance gate passed on the Mac mini.
+  - Track 3: the notarized stable candidate built and was stapled. App submission `f3ddfb1c-f2f1-4de6-bfb0-d9e2737f5176`, DMG submission `607f6fd7-c36c-40f6-88b6-05ef8ee3dbba`.
+- Physical runtime evidence for notarized stable candidate `2026102901` (DMG SHA-256 `593c37f536ad2a6fc236ee0b1c8559e9bc28e055b9223323267d71844c8fe756`): TUN passed idle keep-alive reuse, uploaded 2 MiB in 0.98 s, and recovered from interface switches in 1/2/2/2/1/1 s; the transparent proxy passed idle keep-alive reuse, uploaded 2 MiB in 0.84 s, and recovered in 1/1/2/2/1/1 s. See `Docs/ReleaseExceptions/1.10.1.md` for a differential run that overlapped the TUN collection.
+- UI performance and memory (`ui-perf/result.txt`, 300 s per profile):
+
+| Profile | Page switch p95 / max (ms) | Footprint median / max (MB) | Growth |
+|---|---|---|---|
+| showcase 1.10.0 → 1.10.1 | 147.4 / 185.7 → 147.8 / 179.5 | 72 / 84 → 71 / 82 | -0 → +0 MB |
+| large 1.10.0 → 1.10.1 | 147.1 / 187.9 → 148.2 / 157.4 | 72 / 87 → 71 / 89 | +1 → +1 MB |
+
+All within budget (p95 ≤ 180 ms, max ≤ 300 ms, median ≤ 90 MB, max ≤ 110 MB, growth ≤ 8 MB). This release changes no app UI code.
+
 ## [1.10.0] - 2026-10-29
 
 Subscriptions that mix in a node our engine cannot load now work: the node is skipped instead of failing the whole profile. Protocol compatibility is now checked against Mihomo, the reference implementation, with a differential tool that also handles user reports. From this release every feature and fix is developed test-first, and the release pipeline runs in three parallel tracks.
