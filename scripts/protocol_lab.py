@@ -14,9 +14,7 @@ nothing else on the host. Every inbound gets fresh random credentials.
 and share links (uris.txt). They hold the server address and credentials:
 outputs/ is git-ignored and nothing here may enter the app bundle.
 
-Each node's `expect` says what both cores should do: `ok` (both connect) or
-`ours_missing` (a transport our engine does not implement yet; it must be
-skipped while the rest of the profile loads).
+Each node's `expect` says what both cores should do: `ok` (both connect).
 """
 import base64
 import hashlib
@@ -181,7 +179,7 @@ def generate(host):
     p, uid = next(port), str(uuid.uuid4())
     inbounds.append({"type": "vless", "listen": "::", "listen_port": p, "users": [{"uuid": uid}],
                      "tls": tls(), "transport": {"type": "httpupgrade", "path": "/vlup"}})
-    node("vless-httpupgrade-tls", "ours_missing", {"type": "vless", "port": p, "uuid": uid, **tls_client,
+    node("vless-httpupgrade-tls", "ok", {"type": "vless", "port": p, "uuid": uid, **tls_client,
                                                    "network": "ws",
                                                    "ws-opts": {"path": "/vlup", "v2ray-http-upgrade": True}})
 

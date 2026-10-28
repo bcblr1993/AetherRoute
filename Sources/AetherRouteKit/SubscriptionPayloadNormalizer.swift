@@ -695,9 +695,13 @@ public enum SubscriptionPayloadNormalizer {
         index: Int
     ) throws -> AetherNodeTransportOptions {
         let transport: AetherNodeTransport
+        var httpUpgrade = false
         switch kind.lowercased() {
-        case "", "none", "tcp": transport = .tcp
+        case "", "none", "tcp", "raw": transport = .tcp
         case "ws", "websocket": transport = .webSocket
+        case "httpupgrade":
+            transport = .webSocket
+            httpUpgrade = true
         case "h2", "http": transport = .http2
         case "grpc": transport = .grpc
         default: throw SubscriptionPayloadError.invalidShareLink(index)
@@ -706,7 +710,8 @@ public enum SubscriptionPayloadNormalizer {
             kind: transport,
             path: path,
             host: host,
-            grpcServiceName: serviceName
+            grpcServiceName: serviceName,
+            httpUpgrade: httpUpgrade
         )
     }
 

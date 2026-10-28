@@ -107,17 +107,36 @@ public struct AetherNodeTransportOptions: Codable, Equatable, Sendable {
     public var path: String
     public var host: String
     public var grpcServiceName: String
+    /// V2Ray `httpupgrade` on a WebSocket transport: one HTTP upgrade, then
+    /// raw bytes. Compiled to Mihomo's `ws-opts.v2ray-http-upgrade`.
+    public var httpUpgrade: Bool
 
     public init(
         kind: AetherNodeTransport = .tcp,
         path: String = "",
         host: String = "",
-        grpcServiceName: String = ""
+        grpcServiceName: String = "",
+        httpUpgrade: Bool = false
     ) {
         self.kind = kind
         self.path = path
         self.host = host
         self.grpcServiceName = grpcServiceName
+        self.httpUpgrade = httpUpgrade
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, path, host, grpcServiceName, httpUpgrade
+    }
+
+    /// Nodes saved before `httpUpgrade` existed have no such key.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(AetherNodeTransport.self, forKey: .kind)
+        path = try container.decode(String.self, forKey: .path)
+        host = try container.decode(String.self, forKey: .host)
+        grpcServiceName = try container.decode(String.self, forKey: .grpcServiceName)
+        httpUpgrade = try container.decodeIfPresent(Bool.self, forKey: .httpUpgrade) ?? false
     }
 }
 
@@ -805,6 +824,9 @@ public enum AetherNodeProfileCompiler {
                 lines.append("      headers:")
                 lines.append("        Host: \(scalar(node.transport.host))")
             }
+            if node.transport.httpUpgrade {
+                lines.append("      v2ray-http-upgrade: true")
+            }
         case .http2:
             lines.append("    h2-opts:")
             nestedFieldIfPresent("path", node.transport.path, to: &lines)
@@ -1001,6 +1023,7 @@ public enum AetherNodeURIError: LocalizedError, Equatable, Sendable {
     case malformedLink
     case unsupportedScheme(String)
     case unsupportedProtocolForURI(AetherNodeProtocol)
+    case unsupportedTransport(String)
 
     public var errorDescription: String? {
         switch self {
@@ -1014,6 +1037,8 @@ public enum AetherNodeURIError: LocalizedError, Equatable, Sendable {
             "Unsupported proxy link scheme: \(scheme)."
         case let .unsupportedProtocolForURI(proto):
             "\(proto.displayName) nodes cannot be exported as a single share URI."
+        case let .unsupportedTransport(transport):
+            "Unsupported proxy transport: \(transport)."
         }
     }
 }
@@ -1082,7 +1107,7 @@ public enum AetherNodeURIParser {
                 port: port,
                 uuid: user,
                 tls: parseTLS(from: query, defaultEnabled: true, fallbackSNI: host),
-                transport: parseTransport(from: query),
+                transport: try parseTransport(from: query),
                 flow: query["flow"] ?? "",
                 dialerProxy: dialerProxy
             )
@@ -1097,7 +1122,7 @@ public enum AetherNodeURIParser {
                 port: port,
                 password: secret,
                 tls: parseTLS(from: query, defaultEnabled: true, fallbackSNI: host),
-                transport: parseTransport(from: query),
+                transport: try parseTransport(from: query),
                 dialerProxy: dialerProxy
             )
             return try node.validated()
@@ -1285,7 +1310,7 @@ public enum AetherNodeURIParser {
             let netValue: String
             switch node.transport.kind {
             case .tcp: netValue = "tcp"
-            case .webSocket: netValue = "ws"
+            case .webSocket: netValue = node.transport.httpUpgrade ? "httpupgrade" : "ws"
             case .http2: netValue = "h2"
             case .grpc: netValue = "grpc"
             }
@@ -1446,14 +1471,20 @@ public enum AetherNodeURIParser {
         let wsPath = str("path")
         let transport: AetherNodeTransportOptions
         switch net {
+        case "", "tcp", "raw", "none":
+            transport = AetherNodeTransportOptions(kind: .tcp)
         case "ws", "websocket":
             transport = AetherNodeTransportOptions(kind: .webSocket, path: wsPath, host: wsHost)
+        case "httpupgrade":
+            transport = AetherNodeTransportOptions(
+                kind: .webSocket, path: wsPath, host: wsHost, httpUpgrade: true
+            )
         case "h2", "http":
             transport = AetherNodeTransportOptions(kind: .http2, path: wsPath, host: wsHost)
         case "grpc":
             transport = AetherNodeTransportOptions(kind: .grpc, grpcServiceName: wsPath)
         default:
-            transport = AetherNodeTransportOptions(kind: .tcp)
+            throw AetherNodeURIError.unsupportedTransport(net)
         }
 
         let tlsField = str("tls").lowercased()
@@ -1509,20 +1540,25 @@ public enum AetherNodeURIParser {
         )
     }
 
-    private static func parseTransport(from query: [String: String]) -> AetherNodeTransportOptions {
+    private static func parseTransport(from query: [String: String]) throws -> AetherNodeTransportOptions {
         let rawType = (query["type"] ?? query["network"] ?? "tcp").lowercased()
         let host = query["host"] ?? ""
         let path = query["path"] ?? ""
         let serviceName = query["servicename"] ?? path
         switch rawType {
+        case "", "tcp", "raw", "none":
+            return AetherNodeTransportOptions(kind: .tcp)
         case "ws", "websocket":
             return AetherNodeTransportOptions(kind: .webSocket, path: path, host: host)
+        case "httpupgrade":
+            return AetherNodeTransportOptions(kind: .webSocket, path: path, host: host, httpUpgrade: true)
         case "h2", "http":
             return AetherNodeTransportOptions(kind: .http2, path: path, host: host)
         case "grpc":
             return AetherNodeTransportOptions(kind: .grpc, grpcServiceName: serviceName)
         default:
-            return AetherNodeTransportOptions(kind: .tcp)
+            // A node silently turned into TCP could never connect.
+            throw AetherNodeURIError.unsupportedTransport(rawType)
         }
     }
 
@@ -1534,7 +1570,10 @@ public enum AetherNodeURIParser {
         case .tcp:
             items.append(URLQueryItem(name: "type", value: "tcp"))
         case .webSocket:
-            items.append(URLQueryItem(name: "type", value: "ws"))
+            items.append(URLQueryItem(
+                name: "type",
+                value: transport.httpUpgrade ? "httpupgrade" : "ws"
+            ))
             if !transport.host.isEmpty {
                 items.append(URLQueryItem(name: "host", value: transport.host))
             }

@@ -222,7 +222,8 @@ class EndToEndTests(unittest.TestCase):
             threading.Thread(target=http.serve_forever, daemon=True).start()
             probe_url = f"http://127.0.0.1:{http.server_port}/generate_204"
 
-            ss_port, dead_port, anytls_port = free_port(), free_port(), free_port()
+            ss_port, dead_port, anytls_port, upgrade_port = (
+                free_port(), free_port(), free_port(), free_port())
             password = "e2e-password"
             subprocess.run(
                 ["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt",
@@ -242,6 +243,9 @@ class EndToEndTests(unittest.TestCase):
                      "tls": {"enabled": True,
                              "certificate_path": str(work / "cert.pem"),
                              "key_path": str(work / "key.pem")}},
+                    {"type": "vless", "listen": "127.0.0.1",
+                     "listen_port": upgrade_port, "users": [{"uuid": SECRET_UUID}],
+                     "transport": {"type": "httpupgrade", "path": "/up"}},
                 ],
                 "outbounds": [{"type": "direct"}],
             }))
@@ -251,6 +255,7 @@ class EndToEndTests(unittest.TestCase):
             try:
                 diff.wait_for_port(ss_port, timeout=10)
                 diff.wait_for_port(anytls_port, timeout=10)
+                diff.wait_for_port(upgrade_port, timeout=10)
                 profile = {
                     "mode": "global",
                     "proxies": [
@@ -271,10 +276,17 @@ class EndToEndTests(unittest.TestCase):
                          "client-fingerprint": "chrome",
                          "idle-session-check-interval": 30,
                          "idle-session-timeout": 30, "min-idle-session": 0},
+                        # Mihomo's spelling of httpupgrade. Up to 1.10.1 our
+                        # engine spoke WebSocket here and got a 404.
+                        {"name": "mihomo-httpupgrade", "type": "vless",
+                         "server": "127.0.0.1", "port": upgrade_port,
+                         "uuid": SECRET_UUID, "network": "ws",
+                         "ws-opts": {"path": "/up", "v2ray-http-upgrade": True}},
                     ],
                     "proxy-groups": [{"name": "PROXY", "type": "select",
                                       "proxies": ["live", "dead", "unsupported",
-                                                  "airport-anytls"]}],
+                                                  "airport-anytls",
+                                                  "mihomo-httpupgrade"]}],
                     "rules": ["MATCH,PROXY"],
                 }
                 report = diff.compare(
@@ -300,6 +312,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(by_name["dead"], "both_fail", report)
         self.assertEqual(by_name["unsupported"], "ours_missing", report)
         self.assertEqual(by_name["airport-anytls"], "both_ok", report)
+        self.assertEqual(by_name["mihomo-httpupgrade"], "both_ok", report)
         self.assertNotIn(password, json.dumps(report))
 
 

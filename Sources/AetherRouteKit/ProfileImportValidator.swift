@@ -212,6 +212,11 @@ public enum ProfileImportValidator {
 
     private static func normalizedPluginValue(_ raw: String) -> String? {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // JSON profiles end a value with a comma: `"plugin": "shadow-tls",`.
+        if value.hasSuffix(",") {
+            value.removeLast()
+            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         if (value.hasPrefix("\"") && value.hasSuffix("\""))
             || (value.hasPrefix("'") && value.hasSuffix("'")) {
             value.removeFirst()
