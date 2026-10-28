@@ -20,11 +20,28 @@ Fixes the app staying on "Recovering" forever after the provider stopped unexpec
 ### Changed
 
 - `AGENTS.md`: every new or fixed core feature must ship with a regression test that fails on the old code, wired into the core regression or interop gates.
+- The large upload gate now posts to `speed.cloudflare.com/__up` and checks the server-side `cf-meta-upload-bytes` count, because httpbin.org rejects request bodies over 64 KiB; the httpbin echo compare remains available through `AETHERROUTE_LARGE_UPLOAD_URL`.
 
 ### Tests
 
 - Engine: 5 new `trojan::datagram` tests drive the codec through a stream that delivers and accepts one byte per poll with `Pending` in between (IPv4, IPv6, domain, empty and 65535-byte payloads, CRLF inside payloads, truncated frame, bad CRLF, oversized packet). Run against the 1.9.0 code they fail.
 - App: recovery state machine, block-style `nameserver-policy`, >512 KB reload payloads, 1,200-node upstream exclusions and all-unresolvable endpoints are covered in `AetherRouteKitTests` / `AetherRouteTransparentProxyTests` and in `scripts/test_recovery_and_subscription_compat_gate.sh`, which `test.sh` now runs.
+
+### Verified
+
+- Local: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` passed with zero code warnings (XCTest 548 + 96 + 24, 0 failures; engine `clash-lib` 378 passed). Large upload gate: 13 delivery and negative controls passed.
+- Protocol interop (`outputs/interop-20261027T232425Z`, engine `ad7bac5`, clean tree): matrix, reality, wireguard, shadowquic and ssh all passed, 48 case passes and 26 certificate rejections. Before the fix the matrix failed on Trojan UDP in 1 of 5 runs on the 1.9.0 engine and 2 of 3 on `caf0b7f`; after it, 6 consecutive matrix runs showed no `payload changed`.
+- Tart VM `macos27` 6-way matrix (`outputs/vm-acceptance-1.9.1-2026102803`, QA build 2026102803, see `Docs/ReleaseExceptions/1.9.1.md`): all 6 engine × routing combinations passed (160 PASS, 0 FAIL, 50 SKIP), including transparent SNI recovery, UDP 53, LAN bypass, raw traffic, 60-request burst, 50 s idle keep-alive reuse and 2 MiB upload.
+- Remote arm64 gate `test_remote_arm64.sh fast` on the Mac mini (`chenxu@100.64.0.3`) passed (`outputs/test-evidence/remote-arm64-20261028T020516Z-fast`).
+- Physical runtime evidence for notarized stable candidate `2026102801` (`outputs/physical-runtime-1.9.1-2026102801`): TUN — idle keep-alive reuse passed, 2 MiB upload in 0.75 s, interface switch recovered in 1/1/1/2/2/1 s; transparent proxy — idle keep-alive reuse passed, 2 MiB upload in 0.76 s, interface switch recovered in 2/2/3/2/2/2 s.
+- UI performance and memory (`outputs/acceptance-1.9.1-2026102801-r2/ui-perf/result.txt`, 300 s per profile):
+
+| Profile | Page switch p95 / max (ms) | Footprint median / max (MB) | Growth |
+|---|---|---|---|
+| showcase 1.9.0 → 1.9.1 | 143.0 / 226.8 → 148.4 / 181.8 | 66 / 73 → 67 / 73 | -2 → +2 MB |
+| large 1.9.0 → 1.9.1 | 143.7 / 206.0 → 146.2 / 179.6 | 65 / 72 → 65 / 73 | +1 → +1 MB |
+
+All within budget (p95 ≤ 180 ms, max ≤ 300 ms, median ≤ 90 MB, max ≤ 110 MB, growth ≤ 8 MB).
 
 ## [1.9.0] - 2026-10-26
 
