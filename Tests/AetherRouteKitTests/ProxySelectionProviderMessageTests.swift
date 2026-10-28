@@ -338,4 +338,37 @@ final class ProxySelectionProviderMessageTests: XCTestCase {
             try ProxySelectionProviderMessageCodec.decodeResponse(invalidIndex)
         )
     }
+
+    /// Probes of dead nodes miss their reply deadline by design; only a
+    /// control message going unanswered may count toward restarting the
+    /// provider (1.9.1: an all-dead subscription restarted the extension and
+    /// dropped direct connections too).
+    func testOnlyControlMessagesCountTowardUnresponsiveProvider() throws {
+        let probes: [ProxySelectionProviderRequest] = [
+            .latency(group: "Route", url: "https://www.gstatic.com/generate_204", timeoutMilliseconds: 5_000),
+            .activeLatency(group: "Route", url: "https://www.gstatic.com/generate_204", timeoutMilliseconds: 5_000),
+        ]
+        for request in probes {
+            let data = try ProxySelectionProviderMessageCodec.encode(request: request)
+            XCTAssertEqual(ProviderMessageClass.of(messageData: data), .probe)
+            XCTAssertFalse(
+                ProviderMessageClass.of(messageData: data).countsTowardUnresponsiveProvider
+            )
+        }
+        let controls: [ProxySelectionProviderRequest] = [
+            .snapshot(group: "Route"),
+            .telemetry(maximumConnections: 50),
+            .select(group: "Route", member: "Tokyo"),
+        ]
+        for request in controls {
+            let data = try ProxySelectionProviderMessageCodec.encode(request: request)
+            XCTAssertTrue(
+                ProviderMessageClass.of(messageData: data).countsTowardUnresponsiveProvider
+            )
+        }
+        // An undecodable message is treated as control, the conservative side.
+        XCTAssertTrue(
+            ProviderMessageClass.of(messageData: Data([0xFF])).countsTowardUnresponsiveProvider
+        )
+    }
 }

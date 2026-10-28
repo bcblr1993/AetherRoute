@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.9.1 (Build 2026102801)</title>
-            <pubDate>Wed, 28 Oct 2026 13:09:03 +0800</pubDate>
-            <sparkle:version>2026102801</sparkle:version>
-            <sparkle:shortVersionString>1.9.1</sparkle:shortVersionString>
+            <title>Version 1.9.2 (Build 2026102804)</title>
+            <pubDate>Wed, 28 Oct 2026 17:39:12 +0800</pubDate>
+            <sparkle:version>2026102804</sparkle:version>
+            <sparkle:shortVersionString>1.9.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.9.1/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.9.2/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,47 +120,32 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.9.1 更新要点</span>
-  <span class="release-badge">Build 2026102801 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.9.2 更新要点</span>
+  <span class="release-badge">Build 2026102804 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐛 修复：自动恢复不再卡在「正在恢复」</span>
+  <span class="section-tag tag-fix">🐛 修复：节点全部失效时不再整体断网</span>
   <ul>
-    <li><strong>意外断开后能自动重连</strong>：网络扩展意外终止后，App 不再一直停在「正在恢复，隧道保持启用，正在等待网络恢复」，会按退避节奏自动重连；每条恢复路径都设有看门狗，超时会明确报错，不会空转。</li>
-    <li><strong>首次连接失败立即提示</strong>：从未连上过的会话启动失败时，直接显示错误，不再进入恢复等待。</li>
-  </ul>
-</div>
-<div class="section">
-  <span class="section-tag tag-fix">🌐 修复：切换订阅后微信等国内应用短暂无法使用</span>
-  <ul>
-    <li><strong>国内 DNS 改写更可靠</strong>：正确解析订阅中无缩进的列表与行内 <code>#</code> 注释，<code>nameserver-policy</code> 保留全部解析器，不再只留第一个。</li>
-    <li><strong>大订阅原地重载</strong>：超过 512 KB 的配置改为压缩传输，切换大订阅时原地重载，不再整条隧道断开重连。</li>
-    <li><strong>透明代理大订阅不再启动失败</strong>：节点地址超过排除上限时保留已解析的部分，只有全部解析失败才报错。</li>
-  </ul>
-</div>
-<div class="section">
-  <span class="section-tag tag-fix">🔧 修复：Trojan 节点 UDP 偶发丢包、数据错乱</span>
-  <ul>
-    <li>修复内核 Trojan UDP 在 TLS 分段到达时丢失或重复发送字节的问题，经 Trojan 节点的 QUIC、语音通话与 DNS 更稳定。</li>
+    <li><strong>透明代理测速不再阻塞控制通道</strong>：订阅里的节点全部失效时，每次测速都要等到超时。过去这些测速和节点快照、实时遥测排在同一把锁后面，App 会误判网络扩展卡死并把它重启，连直连的微信等国内应用也一起断开。现在测速与控制请求互不阻塞，和 TUN 模式一致。</li>
+    <li><strong>测速超时不再触发重启</strong>：只有节点快照、遥测这类控制请求没有响应，才会被当作扩展无响应；坏节点测速超时只影响该节点的延迟显示。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">🛡️ 验证</span>
   <ul>
-    <li>12 协议真实互通、Tart 虚拟机 6 维网络矩阵、Mac mini 真机 TUN 与透明代理（空闲复用、2 MiB 上传、有线/无线切换 1–3 秒恢复）全部通过。</li>
-    <li>切页 p95 <code>148.4 ms</code> / <code>146.2 ms</code>，内存中位数 <code>65–67 MB</code>，全部在预算内。</li>
+    <li>新增回归测试在 1.9.1 的代码上失败、在新代码上通过；12 协议真实互通、Tart 虚拟机 6 维网络矩阵与 Mac mini 真机门禁全部通过。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.9.1/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.9.2/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.9.1/AetherRoute-1.9.1-build-2026102801-arm64.dmg"
-                sparkle:edSignature="ClbS2qkJtSYmvVM+/ipO2grylMJk21G+1/IRQ8sFsNZrn/Im7AQVy7tFLayCI0J8Kw66656h8vAdIgEQip00BA=="
-                length="27950246"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.9.2/AetherRoute-1.9.2-build-2026102804-arm64.dmg"
+                sparkle:edSignature="2iaB+6SaxYpFBoKcQp4ZZ3Vb3A5vR5Jd8esjUsmam+6xWEwVzOOHJLNcHR68dlPbdpJhui2tP9RdYPztF8qABA=="
+                length="27529019"
                 type="application/octet-stream" />
         </item>
     </channel>

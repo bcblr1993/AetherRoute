@@ -759,28 +759,20 @@ final class TransparentProxyProviderRuntimeTests: XCTestCase,
     /// stop has begun.
     func testQueuedControlCallIsRejectedAfterStopBegins() throws {
         let engine = RuntimeFakeEngine()
-        engine.holdsLatencyTests = true
+        engine.holdsSelectorSnapshots = true
         let runtime = try makeRuntime(engine: engine)
-        let first = expectation(description: "first latency test finished")
+        let first = expectation(description: "first snapshot finished")
         DispatchQueue.global().async {
-            _ = try? runtime.testActiveProxyLatency(
-                group: "Route",
-                url: "https://www.gstatic.com/generate_204",
-                timeoutMilliseconds: 10_000
-            )
+            _ = try? runtime.selectorSnapshot(group: "Route")
             first.fulfill()
         }
-        XCTAssertTrue(engine.waitForLatencyTest(timeout: 2))
+        XCTAssertTrue(engine.waitForSelectorSnapshot(timeout: 2))
 
         let queued = expectation(description: "queued call returned")
         let queuedError = RuntimeLockedBox<Error?>(nil)
         DispatchQueue.global().async {
             do {
-                _ = try runtime.testActiveProxyLatency(
-                    group: "Route",
-                    url: "https://www.gstatic.com/generate_204",
-                    timeoutMilliseconds: 10_000
-                )
+                _ = try runtime.selectorSnapshot(group: "Route")
             } catch {
                 queuedError.mutate { $0 = error }
             }
@@ -791,14 +783,77 @@ final class TransparentProxyProviderRuntimeTests: XCTestCase,
         let stopped = expectation(description: "runtime stopped")
         runtime.stop { stopped.fulfill() }
 
-        engine.releaseLatencyTest()
+        engine.releaseSelectorSnapshot()
         wait(for: [first, queued, stopped], timeout: 2)
         XCTAssertEqual(
             queuedError.value as? TransparentProxySelectionError,
             .runtimeStopping
         )
-        XCTAssertEqual(engine.latencyCallCount, 1)
+        XCTAssertEqual(engine.selectorSnapshotCallCount, 1)
         XCTAssertEqual(engine.shutdownCallCount, 1)
+    }
+
+    /// Probes of dead nodes run to their timeout. Selector snapshots and the
+    /// once-a-second telemetry poll must not wait behind them, or the host
+    /// takes the extension for hung and restarts it (1.9.1: a subscription
+    /// whose seven nodes were all down dropped every connection this way).
+    func testSlowLatencyTestDoesNotBlockSelectorOrTelemetry() throws {
+        let engine = RuntimeFakeEngine()
+        engine.holdsLatencyTests = true
+        let runtime = try makeRuntime(engine: engine)
+        let latencyDone = expectation(description: "latency test finished")
+        DispatchQueue.global().async {
+            _ = try? runtime.testActiveProxyLatency(
+                group: "Route",
+                url: "https://www.gstatic.com/generate_204",
+                timeoutMilliseconds: 10_000
+            )
+            latencyDone.fulfill()
+        }
+        XCTAssertTrue(engine.waitForLatencyTest(timeout: 2))
+
+        let controlDone = expectation(description: "control calls answered")
+        let answered = RuntimeLockedBox(false)
+        DispatchQueue.global().async {
+            let snapshot = try? runtime.selectorSnapshot(group: "Route")
+            let telemetry = try? runtime.telemetrySnapshot(maximumConnections: 50)
+            answered.mutate { $0 = snapshot != nil && telemetry != nil }
+            controlDone.fulfill()
+        }
+        wait(for: [controlDone], timeout: 1)
+        XCTAssertTrue(answered.value)
+
+        engine.releaseLatencyTest()
+        wait(for: [latencyDone], timeout: 2)
+        runtime.stop {}
+    }
+
+    /// The probe queue is concurrent; a second probe must not wait for the
+    /// first one's timeout.
+    func testLatencyTestsRunConcurrently() throws {
+        let engine = RuntimeFakeEngine()
+        engine.holdsLatencyTests = true
+        let runtime = try makeRuntime(engine: engine)
+        let done = expectation(description: "latency tests finished")
+        done.expectedFulfillmentCount = 2
+        for _ in 0..<2 {
+            DispatchQueue.global().async {
+                _ = try? runtime.testActiveProxyLatency(
+                    group: "Route",
+                    url: "https://www.gstatic.com/generate_204",
+                    timeoutMilliseconds: 10_000
+                )
+                done.fulfill()
+            }
+        }
+        XCTAssertTrue(engine.waitForLatencyTest(timeout: 2))
+        XCTAssertTrue(engine.waitForLatencyTest(timeout: 1))
+        XCTAssertEqual(engine.latencyCallCount, 2)
+
+        engine.releaseLatencyTest()
+        engine.releaseLatencyTest()
+        wait(for: [done], timeout: 2)
+        runtime.stop {}
     }
 
     // MARK: Network reset and in-place rebuild (1.7.1)
@@ -1049,6 +1104,11 @@ private final class RuntimeFakeEngine:
     private let latencyStarted = DispatchSemaphore(value: 0)
     private let latencyRelease = DispatchSemaphore(value: 0)
     private var latencyCalls = 0
+    /// Holds selector snapshots open until released, like a slow control call.
+    var holdsSelectorSnapshots = false
+    private let snapshotStarted = DispatchSemaphore(value: 0)
+    private let snapshotRelease = DispatchSemaphore(value: 0)
+    private var snapshotCalls = 0
 
     init(
         events: RuntimeEventRecorder? = nil,
@@ -1088,6 +1148,16 @@ private final class RuntimeFakeEngine:
         latencyRelease.signal()
     }
 
+    var selectorSnapshotCallCount: Int { lock.withLock { snapshotCalls } }
+
+    func waitForSelectorSnapshot(timeout: TimeInterval) -> Bool {
+        snapshotStarted.wait(timeout: .now() + timeout) == .success
+    }
+
+    func releaseSelectorSnapshot() {
+        snapshotRelease.signal()
+    }
+
     func testActiveProxyLatency(
         group: String,
         url: String,
@@ -1120,7 +1190,12 @@ private final class RuntimeFakeEngine:
     }
 
     func selectorSnapshot(group: String) throws -> ProxySelectionState {
-        try lock.withLock {
+        lock.withLock { snapshotCalls += 1 }
+        if holdsSelectorSnapshots {
+            snapshotStarted.signal()
+            snapshotRelease.wait()
+        }
+        return try lock.withLock {
             guard group == "Route" else {
                 throw TransparentProxySelectionError.unsupported
             }

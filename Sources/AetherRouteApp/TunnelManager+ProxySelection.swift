@@ -570,7 +570,8 @@ extension TunnelManager {
             return response
         } catch {
             if let tunnelError = error as? TunnelManagerError,
-               tunnelError == .providerReplyMissing || tunnelError == .providerMessageTimedOut {
+               tunnelError == .providerReplyMissing || tunnelError == .providerMessageTimedOut,
+               ProviderMessageClass.of(messageData: data).countsTowardUnresponsiveProvider {
                 consecutiveProviderUnresponsiveCount += 1
             }
             Self.runtimeLogger.error(

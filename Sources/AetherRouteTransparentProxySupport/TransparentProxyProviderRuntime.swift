@@ -169,10 +169,11 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
     private let registry: TransparentProxySessionRegistry
     private let coordinator: TransparentProxyIngressCoordinator
     private let admissionLock = NSLock()
-    /// Serializes engine control calls among themselves, as the packet
-    /// tunnel's control lock does. A latency test can take its full timeout
-    /// (10 s for an unreachable member); holding `admissionLock` for it
-    /// stalled every new TCP and UDP flow on the Mac for that long.
+    /// Serializes the short engine control calls among themselves, as the
+    /// packet tunnel's control lock does. Latency tests stay outside it (see
+    /// `withProbeCall`): one can take its full timeout (10 s for an
+    /// unreachable member), and holding `admissionLock` for it once stalled
+    /// every new TCP and UDP flow on the Mac for that long.
     private let controlLock = NSLock()
     private var acceptingFlows = true
     /// Control calls admitted before stop. The engine hands its native handle
@@ -355,6 +356,29 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         }
     }
 
+    /// Runs a latency test outside `controlLock`, as the packet tunnel does.
+    ///
+    /// Probes of a subscription whose nodes are all down each run to their
+    /// timeout. Serialized behind `controlLock`, the concurrent probe queue
+    /// became one long line, and every selector snapshot and telemetry poll
+    /// waited behind it past the 15 s watchdog. The host then took the
+    /// extension for hung and restarted it, dropping every connection,
+    /// including direct ones. The engine runs a latency test outside its own
+    /// lock too; admission is still counted, so stop waits for the test to
+    /// return before shutting the engine down.
+    private func withProbeCall<Result>(
+        _ operation: () throws -> Result
+    ) throws -> Result {
+        try admissionLock.withLock {
+            guard acceptingFlows else {
+                throw TransparentProxySelectionError.runtimeStopping
+            }
+            activeControlCalls += 1
+        }
+        defer { controlCallFinished() }
+        return try operation()
+    }
+
     private func controlCallFinished() {
         let drain = admissionLock.withLock { () -> Bool in
             activeControlCalls -= 1
@@ -438,8 +462,8 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         url: String,
         timeoutMilliseconds: UInt32
     ) throws -> ProxyLatencyState {
-        try withControlCall {
-            return try engine.testProxyLatency(
+        try withProbeCall {
+            try engine.testProxyLatency(
                 group: group,
                 url: url,
                 timeoutMilliseconds: timeoutMilliseconds
@@ -452,8 +476,8 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         url: String,
         timeoutMilliseconds: UInt32
     ) throws -> ProxyLatencyState {
-        try withControlCall {
-            return try engine.testActiveProxyLatency(
+        try withProbeCall {
+            try engine.testActiveProxyLatency(
                 group: group,
                 url: url,
                 timeoutMilliseconds: timeoutMilliseconds

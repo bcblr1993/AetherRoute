@@ -4,6 +4,38 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.2] - 2026-10-28
+
+Keeps the transparent proxy usable when every node in a subscription is down: latency probes no longer block the control plane, and probe timeouts no longer make the app restart the extension and drop direct connections such as WeChat.
+
+### Fixed
+
+- **Probes no longer stall the transparent proxy's control plane (`TransparentProxyProviderRuntime`)**: latency tests ran under the same `controlLock` as selector snapshots, selections and the once-a-second telemetry poll. A probe of a dead node holds that lock until its timeout, so the concurrent probe queue became a single line and every control request waited behind it past the 15 s watchdog. Probes now run outside the lock, as they already did in the packet tunnel; they are still counted as admitted control calls, so stop waits for them before shutting the engine down.
+- **Probe timeouts no longer restart the extension (`ProviderMessageClass`, `TunnelManager+ProxySelection`)**: the host counted every missed reply toward the unresponsive-provider threshold, including probes of dead nodes that are expected to time out. After three it reconnected the provider, dropping every connection, direct ones included, without bringing a node back. Only control messages (snapshot, telemetry, selection) count now; an undecodable message still counts.
+
+Found on a subscription whose seven vmess nodes were all unreachable from mainland China (six timed out at TCP, one failed the handshake; Mihomo, the reference implementation, could not use any of them either). The app logged `noResponsiveProxy`, then `reconnectProvider reason=unresponsiveProvider`, and WeChat lost its connection with the restart.
+
+### Tests
+
+- `TransparentProxyProviderRuntimeTests`: `testSlowLatencyTestDoesNotBlockSelectorOrTelemetry` and `testLatencyTestsRunConcurrently` fail on the 1.9.1 runtime (snapshot and telemetry time out behind the probe; the second probe never starts) and pass now. `testQueuedControlCallIsRejectedAfterStopBegins` now queues behind a slow selector snapshot, since probes no longer queue.
+- `ProxySelectionProviderMessageTests.testOnlyControlMessagesCountTowardUnresponsiveProvider`.
+
+### Verified
+
+- Local: `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh` and `./scripts/test.sh` passed with zero code warnings (XCTest 549 + 98 + 24, 0 failures).
+- Protocol interop (`outputs/interop-20261028T072529Z`, engine `ad7bac5` unchanged from 1.9.1): matrix, reality, wireguard, shadowquic and ssh all passed, 48 case passes and 26 certificate rejections.
+- Tart VM `macos27` 6-way matrix (`outputs/acceptance-1.9.2-2026102804/vm-acceptance`): all 6 engine × routing combinations passed (210 checks: 160 PASS, 0 FAIL, 50 SKIP), including the five transparent-proxy gates, 50 s idle keep-alive reuse and 2 MiB upload.
+- Remote arm64 gate `test_remote_arm64.sh fast` on the Mac mini passed (`outputs/test-evidence/remote-arm64-20261028T082707Z-fast`; see `Docs/ReleaseExceptions/1.9.2.md`).
+- Physical runtime evidence for notarized stable candidate `2026102804` (`outputs/physical-runtime-1.9.2-2026102804`, both system extensions confirmed at 1.9.2/2026102804): TUN — idle keep-alive reuse passed, 2 MiB upload in 2.42 s, interface switch recovered in 2/2/1/1/2/2 s; transparent proxy — idle keep-alive reuse passed, 2 MiB upload in 1.03 s, interface switch recovered in 2/2/3/2/2/2 s.
+- UI performance and memory (`outputs/perf-gate-1.9.2-2026102804/result.txt`, 300 s per profile):
+
+| Profile | Page switch p95 / max (ms) | Footprint median / max (MB) | Growth |
+|---|---|---|---|
+| showcase 1.9.1 → 1.9.2 | 148.4 / 181.8 → 147.6 / 178.3 | 67 / 73 → 67 / 79 | +2 → -0 MB |
+| large 1.9.1 → 1.9.2 | 146.2 / 179.6 → 145.4 / 157.0 | 65 / 73 → 67 / 82 | +1 → +0 MB |
+
+All within budget (p95 ≤ 180 ms, max ≤ 300 ms, median ≤ 90 MB, max ≤ 110 MB, growth ≤ 8 MB).
+
 ## [1.9.1] - 2026-10-28
 
 Fixes the app staying on "Recovering" forever after the provider stopped unexpectedly, keeps WeChat and other domestic apps reachable after switching subscriptions, and fixes Trojan UDP frames getting corrupted when they straddle TLS records.
