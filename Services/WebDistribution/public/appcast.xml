@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.9.2 (Build 2026102804)</title>
-            <pubDate>Wed, 28 Oct 2026 17:39:12 +0800</pubDate>
-            <sparkle:version>2026102804</sparkle:version>
-            <sparkle:shortVersionString>1.9.2</sparkle:shortVersionString>
+            <title>Version 1.10.0 (Build 2026102805)</title>
+            <pubDate>Thu, 29 Oct 2026 03:09:16 +0800</pubDate>
+            <sparkle:version>2026102805</sparkle:version>
+            <sparkle:shortVersionString>1.10.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.9.2/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.10.0/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,32 +120,33 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.9.2 更新要点</span>
-  <span class="release-badge">Build 2026102804 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.10.0 更新要点</span>
+  <span class="release-badge">Build 2026102805 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐛 修复：节点全部失效时不再整体断网</span>
+  <span class="section-tag tag-fix">🐛 修复：订阅混入个别不支持的节点时不再整体失效</span>
   <ul>
-    <li><strong>透明代理测速不再阻塞控制通道</strong>：订阅里的节点全部失效时，每次测速都要等到超时。过去这些测速和节点快照、实时遥测排在同一把锁后面，App 会误判网络扩展卡死并把它重启，连直连的微信等国内应用也一起断开。现在测速与控制请求互不阻塞，和 TUN 模式一致。</li>
-    <li><strong>测速超时不再触发重启</strong>：只有节点快照、遥测这类控制请求没有响应，才会被当作扩展无响应；坏节点测速超时只影响该节点的延迟显示。</li>
+    <li><strong>只跳过加载不了的节点</strong>：过去订阅里只要有一个 xhttp 或 httpupgrade 传输的节点，整份订阅都无法连接。现在这类节点会被跳过，并从各个策略组里移除，其余节点照常可用；只有所有节点都加载不了时才会报错。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">🛡️ 验证</span>
+  <span class="section-tag tag-improve">🛡️ 质量保证</span>
   <ul>
-    <li>新增回归测试在 1.9.1 的代码上失败、在新代码上通过；12 协议真实互通、Tart 虚拟机 6 维网络矩阵与 Mac mini 真机门禁全部通过。</li>
+    <li>新增与参考实现 Mihomo 的逐节点对照测试：同一份订阅同时交给两个引擎测速，找出 Mihomo 能用而我们用不了的节点。报告不包含服务器地址和凭据。</li>
+    <li>从本版起，所有功能和修复都先写测试再写实现。验收流水线改为三轨并行，总耗时从约 70 分钟降到 25 分钟，门禁一项未减。</li>
+    <li>12 协议真实互通、Tart 虚拟机 6 维网络矩阵、Mac mini 真机门禁（TUN 与透明代理的空闲复用、2 MiB 上传、切换网卡在 1–3 秒内恢复）全部通过。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.9.2/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.10.0/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.9.2/AetherRoute-1.9.2-build-2026102804-arm64.dmg"
-                sparkle:edSignature="2iaB+6SaxYpFBoKcQp4ZZ3Vb3A5vR5Jd8esjUsmam+6xWEwVzOOHJLNcHR68dlPbdpJhui2tP9RdYPztF8qABA=="
-                length="27529019"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.10.0/AetherRoute-1.10.0-build-2026102805-arm64.dmg"
+                sparkle:edSignature="OSKt+X4iN7YQ86XIR+dZWvjebAVn2uF7jSV9DPHJ3VmMARqvlXV/WG9wBjOYJha7esRbR8gSCFWEj4jp1OsoAQ=="
+                length="27954489"
                 type="application/octet-stream" />
         </item>
     </channel>

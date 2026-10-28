@@ -4,6 +4,60 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.0] - 2026-10-29
+
+Subscriptions that mix in a node our engine cannot load now work: the node is skipped instead of failing the whole profile. Protocol compatibility is now checked against Mihomo, the reference implementation, with a differential tool that also handles user reports. From this release every feature and fix is developed test-first, and the release pipeline runs in three parallel tracks.
+
+### Fixed
+
+- **One unsupported node no longer breaks the whole subscription (engine `f1a746e`, `create_core_components` and the new `app/outbound/prune.rs`)**: a single `xhttp` or `httpupgrade` VLESS node made both shipped cores refuse the profile. The flow core reported "outbound could not be initialized" and the full runtime reported "proxy X not found". The engine now skips nodes that fail to load and removes them from every group. A group left empty with no provider is removed too, repeated until nothing changes, and rules that point at a removed name are dropped. The profile fails only when none of its plain nodes loads. Groups keep their order and their other members.
+
+### Added
+
+- **Mihomo differential testing (`scripts/subscription_differential.py`, `scripts/compare_subscription_with_mihomo.sh`)**: the same subscription runs through the app's profile pipeline and both engines, and each node is probed through the Clash-compatible delay API. Each node is classed as working in both, failing in both, failing only in ours, failing only in Mihomo, or not loaded on one side. Findings are nodes Mihomo can use but we cannot. The report groups them by protocol and options and contains no server addresses or credentials. Subscriptions and configs stay in temporary directories. When this Mac runs a tunnel, the tool refuses to run locally; set `AETHER_DIFFERENTIAL_HOST` to run it on the Mac mini instead. This tool found the bug above.
+- **`scripts/test_fast_lane.sh`**: a pre-commit gate that runs only on this Mac and never touches its network, tunnel or system extensions. It covers the quick parts of the core regression, the upload and subscription-compatibility gates, the differential unit tests, and an incremental differential engine build with its end-to-end run. The 12-protocol interop gate runs as well when the engine has unrecorded changes. Each step prints PASS or FAIL with its duration.
+- **`scripts/collect_physical_runtime_pair.sh`**: installs a notarized candidate DMG on the Mac mini and collects the TUN and transparent-proxy receipts in one run. It restores the Mac mini's preferences on exit.
+
+### Changed
+
+- **Release acceptance runs three tracks (`run_release_acceptance_parallel.sh`)**:
+  - Track 1 runs the VM matrix and then the remote arm64 source gate on the same VM.
+  - Track 2 runs the UI performance gate on the Mac mini.
+  - Track 3 builds the notarized stable candidate.
+
+  Once all three pass, the physical receipts are collected and verified against the DMG. `AETHERROUTE_ACCEPTANCE_PLAN_ONLY=1` prints the plan without side effects. `AETHERROUTE_REMOTE_GATE_HOST` moves the source gate back to the Mac mini.
+- **The network-state snapshot ignores the Tart VM (`network_state_snapshot.sh`)**: it skips the `vmenet*` and `bridge1xx` interfaces and the scoped default route on the bridge. Starting or stopping the VM no longer fails a candidate build with "system network state changed", so the notarized candidate can build while the VM matrix runs.
+- **Remote gate payload hashing is batched (`scripts/payload_manifest.sh`)**: the roughly 45,000-file manifest used to start one `shasum` per file on both ends. It now runs one `shasum` per batch, with identical output.
+- **Source manifests are hashed in batches and reject missing files (`source_manifest.sh`)**: about 23 scripts and every evidence check call it. It started a `shasum` and an `awk` for each of roughly 1,400 files, which took 24 s on this Mac and most of an hour across `test.sh` on the VM. It now takes 0.5 s, and the output is byte-for-byte the same on this repository. A tracked engine file missing from the checkout used to produce a line with an empty hash, because the exit status came from `awk`. It now fails the manifest, as the script's comment always said it should.
+- **The remote gate worker checks its tools before starting**: it now checks `go gofmt jq python3 rg`, finds Go in `~/sdk/go` and a static ripgrep in `~/sdk/bin` on the VM, which has no Homebrew. Previously a missing `rg` failed `test.sh` only after an hour of other suites.
+- **AGENTS.md**: test-first development (TDD) and the Mihomo differential gate are mandatory from 1.10.0. Also documents the fast lane, the three-track pipeline and the VM gate environment.
+
+### Tests
+
+- `test_recovery_and_subscription_compat_gate.sh` step 5: a profile with `ss`, `xhttp` and `httpupgrade` nodes, an `AUTO` group and rules must start on both shipped cores. It fails on the 1.9.2 cores and passes on `f1a746e`. The gate now compiles in Swift 6 mode.
+- Engine `prune.rs` adds 4 unit tests: removed members, cascading empty groups, groups backed by a provider, and pruned proxy names. Partial-IO tests for AnyTLS and VLESS datagrams use the new `TrickleStream`, which moves one byte per poll, and `RecordingStream`.
+- `test_subscription_differential.py`: 8 unit tests and an end-to-end run against a sing-box Shadowsocks server on loopback. The expected results are a live node working in both, a dead node failing in both, and an `xhttp` node reported as not loaded by ours.
+- `test_payload_manifest.sh` compares the batched payload manifest with the old per-file output on 306 fixture files. `test_source_manifest.sh` checks 305 fixture files, including a path with spaces, against per-file `shasum`. It also checks that a deleted tracked engine file fails the manifest. The old script fails that check. `test_network_state_snapshot.sh` adds VM bridge cases. `test_parallel_acceptance_policy.py` checks the plan for both remote gate placements and that plan-only mode still rejects shortened runs. `test_remote_arm64_guards.sh` requires the new PATH and the `rg` check. Each new test failed before its change.
+
+### Verified
+
+- Local: `test_fast_lane.sh` passed in 338 s (`outputs/fast-lane-1.10.0`). It covered the network-switch gate, EngineReconnect, RuntimeEnvironment, the network snapshot, the upload gate, recovery and subscription compatibility, the differential unit and end-to-end runs, and protocol interop. `./scripts/test.sh` passed in 828 s with zero code warnings: XCTest 549 + 98 + 24, 0 failures.
+- Protocol interop on engine `f1a746e` (`outputs/interop-20261028T123451Z` and `outputs/fast-lane-1.10.0/interop`): matrix, reality, wireguard, shadowquic and ssh all passed, with 48 case passes and 26 certificate rejections. Engine library tests: 386 passed.
+- Mihomo differential end-to-end: the live node worked in both engines, the dead node failed in both, and `xhttp` was skipped by ours (`ours_missing`). On the Mac mini's subscription, Mihomo and our engine agreed on every node: 1 working in both, 2 failing in both, no findings (`outputs/subscription-diff-macmini-1.10.0`).
+- Three-track acceptance (`outputs/acceptance-1.10.0-2026102805`) took 25 min 13 s, compared with about 70 min for serialized 1.9.2:
+  - Track 1: the Tart VM `macos27` 6-way matrix passed all 6 engine × routing combinations in 7 min (210 checks: 160 PASS, 0 FAIL, 50 SKIP), including the five transparent-proxy gates, 50 s idle keep-alive reuse and 2 MiB upload. The remote arm64 gate then passed on the same VM in 13.4 min (`outputs/test-evidence/remote-arm64-20261028T152937Z-fast`), against about 40 min on the Mac mini over the relay.
+  - Track 2: the UI performance gate passed on the Mac mini.
+  - Track 3: the notarized stable candidate built in 9 min while the VM ran. App submission `2da3617e-99bc-4566-9af2-abcde0f7bc81`, DMG submission `3c4fbf26-19af-4968-a9df-4ba4ef6cebcf`, both stapled.
+- Physical runtime evidence for notarized stable candidate `2026102805` (`outputs/physical-runtime-1.10.0-2026102805`, DMG SHA-256 `5857909362777895fb4f9472b82573922be2ac480c6c1c5f7e4b314d6f5777f7`, both system extensions confirmed at 1.10.0/2026102805): TUN passed idle keep-alive reuse, uploaded 2 MiB in 0.85 s, and recovered from interface switches in 1/2/3/1/2/2 s; the transparent proxy passed idle keep-alive reuse, uploaded 2 MiB in 0.85 s, and recovered in 2/1/2/2/1/1 s. The first attempt in the pipeline was inconclusive because the Mac mini's manually selected node was down (Mihomo could not use it either); it passed after switching to a working node. See `Docs/ReleaseExceptions/1.10.0.md`.
+- UI performance and memory (`outputs/acceptance-1.10.0-2026102805/ui-perf/result.txt`, 300 s per profile):
+
+| Profile | Page switch p95 / max (ms) | Footprint median / max (MB) | Growth |
+|---|---|---|---|
+| showcase 1.9.2 → 1.10.0 | 147.6 / 178.3 → 147.4 / 185.7 | 67 / 79 → 72 / 84 | -0 → -0 MB |
+| large 1.9.2 → 1.10.0 | 145.4 / 157.0 → 147.1 / 187.9 | 67 / 82 → 72 / 87 | +0 → +1 MB |
+
+All within budget (p95 ≤ 180 ms, max ≤ 300 ms, median ≤ 90 MB, max ≤ 110 MB, growth ≤ 8 MB). Median memory rose by 5 MB in both profiles. This release changes no app UI code, so the rise is probably run-to-run variation on the Mac mini.
+
 ## [1.9.2] - 2026-10-28
 
 Keeps the transparent proxy usable when every node in a subscription is down: latency probes no longer block the control plane, and probe timeouts no longer make the app restart the extension and drop direct connections such as WeChat.
