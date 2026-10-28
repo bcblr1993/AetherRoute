@@ -211,6 +211,34 @@ final class SubscriptionPayloadNormalizerTests: XCTestCase {
         XCTAssertEqual(report.skippedNodeCount, 0)
     }
 
+    func testNormalizerStripsHarmlessExternalUIDirectivesFromSubscriptionYAML() throws {
+        let input = """
+        mixed-port: 7890
+        external-controller: 127.0.0.1:9090
+        external-ui: ui
+        external-ui-name: xd
+        external-ui-url: "https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip"
+        proxies:
+          - name: Edge
+            type: trojan
+            server: edge.example.com
+            port: 443
+            password: secret
+        proxy-groups:
+          - name: PROXY
+            type: select
+            proxies:
+              - Edge
+        rules:
+          - MATCH,PROXY
+        """
+        let result = try SubscriptionPayloadNormalizer.normalizeWithReport(Data(input.utf8))
+        let normalizedYAML = try XCTUnwrap(String(data: result.data, encoding: .utf8))
+        XCTAssertFalse(normalizedYAML.contains("external-ui"))
+        XCTAssertTrue(normalizedYAML.contains("name: Edge"))
+        try ProfileImportValidator.validate(data: result.data)
+    }
+
     private func vmessLink(uuid: String) throws -> String {
         let object: [String: Any] = [
             "v": "2",

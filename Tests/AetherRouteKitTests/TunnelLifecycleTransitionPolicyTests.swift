@@ -49,6 +49,55 @@ struct TunnelLifecycleTransitionPolicyTests {
         )
     }
 
+    @Test("automatic reconnect is permitted while host is recovering and provider is inactive")
+    func automaticReconnectPermittedDuringRecovery() {
+        #expect(
+            TunnelLifecycleTransitionPolicy.canBeginConnection(
+                hostIsTransitioning: true,
+                providerPermitsStart: true,
+                isAutomaticReconnect: true,
+                hostIsRecovering: true
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.canBeginConnection(
+                hostIsTransitioning: true,
+                providerPermitsStart: false,
+                isAutomaticReconnect: true,
+                hostIsRecovering: true
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.canBeginConnection(
+                hostIsTransitioning: true,
+                providerPermitsStart: true,
+                isAutomaticReconnect: true,
+                hostIsRecovering: false
+            )
+        )
+        #expect(
+            TunnelLifecycleTransitionPolicy.canProceedWithAutomaticReconnect(
+                isEnabled: true,
+                hostIsRecovering: true,
+                providerPermitsStart: true
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.canProceedWithAutomaticReconnect(
+                isEnabled: true,
+                hostIsRecovering: false,
+                providerPermitsStart: true
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.canProceedWithAutomaticReconnect(
+                isEnabled: true,
+                hostIsRecovering: true,
+                providerPermitsStart: false
+            )
+        )
+    }
+
     @Test("stale or cancelled connection preparation cannot continue")
     func staleConnectionPreparationStops() {
         #expect(

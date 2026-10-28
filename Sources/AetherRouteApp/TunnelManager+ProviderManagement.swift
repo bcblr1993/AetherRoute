@@ -596,7 +596,10 @@ extension TunnelManager {
             Self.runtimeLogger.error(
                 "stage=updateState unexpectedTerminal status=\(status.rawValue, privacy: .public) previous=\(previousProviderStatus?.rawValue ?? -1, privacy: .public)"
             )
-            handleUnexpectedProviderTermination(connection)
+            handleUnexpectedProviderTermination(
+                connection,
+                previousProviderStatus: previousProviderStatus
+            )
             return
         }
         // Once the provider reports connected its network settings are

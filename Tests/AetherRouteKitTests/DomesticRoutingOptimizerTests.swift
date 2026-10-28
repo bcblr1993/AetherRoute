@@ -264,4 +264,131 @@ final class DomesticRoutingOptimizerTests: XCTestCase {
 
         try ProfileImportValidator.validate(data: Data(output.utf8))
     }
+
+    func testOptimizeProfileStripsInlineCommentsInDNSListsAndNormalizesPolicyArrays() throws {
+        let input = """
+        mode: rule
+        dns:
+          enable: true
+          enhanced-mode: fake-ip
+          nameserver:
+            - 223.5.5.5 # 阿里DNS
+            - 'https://dns.alidns.com/dns-query' # DoH
+          fallback:
+            - 8.8.8.8 # Google DNS
+          fake-ip-filter:
+            - '*.lan' # 局域网域名
+            - '+.msftconnecttest.com' # Windows 连通性检查
+          nameserver-policy:
+            '+.internal.corp': [223.5.5.5, 119.29.29.29]
+            'geosite:cn': [223.5.5.5, 119.29.29.29]
+        proxies:
+          - name: S1
+            type: socks5
+            server: 127.0.0.1
+            port: 1080
+        proxy-groups:
+          - name: G1
+            type: select
+            proxies:
+              - S1
+        rules:
+          - MATCH,G1
+        """
+
+        let output = DomesticRoutingOptimizer.optimizedProfile(for: input)
+        XCTAssertFalse(output.contains("# 阿里DNS"))
+        XCTAssertFalse(output.contains("# 局域网域名"))
+        XCTAssertFalse(output.contains("''*.lan'"))
+        XCTAssertTrue(output.contains("- '*.lan'"))
+        XCTAssertTrue(output.contains("'+.internal.corp': ['223.5.5.5', '119.29.29.29']"))
+        XCTAssertFalse(output.contains("geosite:cn"))
+
+        try ProfileImportValidator.validate(data: Data(output.utf8))
+    }
+
+    func testOptimizeProfileKeepsEveryResolverInBlockStyleNameserverPolicy() throws {
+        let input = """
+        mode: rule
+        dns:
+          enable: true
+          nameserver:
+          - https://doh.pub/dns-query
+          nameserver-policy:
+            '+.internal.corp':
+              - 223.5.5.5 # 阿里
+              - https://dns.alidns.com/dns-query#DIRECT
+            '+.single.corp': 119.29.29.29
+        proxies:
+          - name: S1
+            type: socks5
+            server: 127.0.0.1
+            port: 1080
+        proxy-groups:
+          - name: G1
+            type: select
+            proxies:
+              - S1
+        rules:
+          - MATCH,G1
+        """
+
+        let output = DomesticRoutingOptimizer.optimizedProfile(for: input)
+
+        XCTAssertTrue(output.contains(
+            "'+.internal.corp': ['223.5.5.5', 'https://dns.alidns.com/dns-query#DIRECT']"
+        ))
+        XCTAssertTrue(output.contains("'+.single.corp': 119.29.29.29"))
+        // An indentless list item must stay a nameserver, not become a key.
+        XCTAssertTrue(output.contains("- https://doh.pub/dns-query"))
+        XCTAssertFalse(output.contains("# 阿里"))
+
+        try ProfileImportValidator.validate(data: Data(output.utf8))
+    }
+
+    func testOptimizeProfileInjectsWeChatAndTencentDomesticDNSAndDirectRules() throws {
+        let input = """
+        mode: rule
+        dns:
+          enable: true
+          nameserver:
+            - 8.8.8.8
+          nameserver-policy:
+            '+.qq.com': 8.8.8.8
+            '+.weixin.com': 1.1.1.1
+        proxies:
+          - name: S1
+            type: socks5
+            server: 127.0.0.1
+            port: 1080
+        proxy-groups:
+          - name: G1
+            type: select
+            proxies:
+              - S1
+        rules:
+          - MATCH,G1
+        """
+
+        let output = DomesticRoutingOptimizer.optimizedProfile(for: input)
+
+        // Tencent / WeChat domains must be pinned to domestic DNS in nameserver-policy
+        XCTAssertTrue(output.contains("'+.qq.com': 119.29.29.29"))
+        XCTAssertTrue(output.contains("'+.weixin.com': 119.29.29.29"))
+        XCTAssertTrue(output.contains("'+.wechat.com': 119.29.29.29"))
+        XCTAssertTrue(output.contains("'+.tencent.com': 119.29.29.29"))
+        XCTAssertTrue(output.contains("'+.qcloud.com': 119.29.29.29"))
+        XCTAssertFalse(output.contains("'+.qq.com': 8.8.8.8"))
+        XCTAssertFalse(output.contains("'+.weixin.com': 1.1.1.1"))
+
+        // Fake-IP filter and high-priority bypass rules must cover WeChat mini-program, bridge, and payment domains
+        XCTAssertTrue(output.contains("- '*.servicewechat.com'"))
+        XCTAssertTrue(output.contains("- '*.weixinbridge.com'"))
+        XCTAssertTrue(output.contains("- '*.tenpay.com'"))
+        XCTAssertTrue(output.contains("- DOMAIN-SUFFIX,servicewechat.com,DIRECT"))
+        XCTAssertTrue(output.contains("- DOMAIN-SUFFIX,weixinbridge.com,DIRECT"))
+        XCTAssertTrue(output.contains("- DOMAIN-SUFFIX,tenpay.com,DIRECT"))
+
+        try ProfileImportValidator.validate(data: Data(output.utf8))
+    }
 }

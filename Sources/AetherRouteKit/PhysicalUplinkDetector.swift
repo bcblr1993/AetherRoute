@@ -148,7 +148,36 @@ public enum PhysicalUplinkDetector {
             }
         }
 
+        // 6. Fallback for interfaces (such as USB hotspot `pdp_ip*` or virtualized
+        // bridges) that publish routable IPv4/IPv6 state in SCDynamicStore without
+        // a separate `Link` dictionary, provided `Link.Active` is not explicitly false.
+        for name in candidateNames {
+            let link = SCDynamicStoreCopyValue(
+                store,
+                "State:/Network/Interface/\(name)/Link" as CFString
+            ) as? [String: Any]
+            let explicitActive = link?["Active"] as? Bool
+            let addrs = physicalAddresses(store: store, interfaceName: name)
+            guard isCandidateLinkEligible(
+                explicitLinkActive: explicitActive,
+                hasRoutablePhysicalAddresses: !addrs.isEmpty
+            ) else { continue }
+            if let index = nameToIndex[name] {
+                return PhysicalUplink(name: name, index: index)
+            }
+        }
+
         return nil
+    }
+
+    /// Returns whether a candidate interface is eligible when considering its
+    /// optional `Link.Active` state and whether it has routable IP addresses.
+    public static func isCandidateLinkEligible(
+        explicitLinkActive: Bool?,
+        hasRoutablePhysicalAddresses: Bool
+    ) -> Bool {
+        guard hasRoutablePhysicalAddresses else { return false }
+        return explicitLinkActive != false
     }
 
     /// Computes a deterministic identity signature for the current physical uplink state.

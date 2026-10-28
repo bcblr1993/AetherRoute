@@ -16110,6 +16110,39 @@
           }
         }
       }
+    },
+    "Show first %lld rules": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅显示前 %lld 条规则"
+          }
+        }
+      }
+    },
+    "Show all %lld rules": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示全部 %lld 条规则"
+          }
+        }
+      }
+    },
+    "Override with Custom Rule": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用自定义规则覆盖"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

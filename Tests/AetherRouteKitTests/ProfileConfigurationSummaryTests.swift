@@ -879,10 +879,75 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
 
         XCTAssertEqual(yamlSummary, jsonSummary)
         XCTAssertEqual(yamlSummary.rules.count, ProfileConfigurationInspector.maximumDisplayedItemsPerSection)
+        XCTAssertEqual(yamlSummary.allRules.count, 650)
         XCTAssertEqual(yamlSummary.ruleCount, 650)
         XCTAssertEqual(yamlSummary.directRuleCount, 300)
         XCTAssertEqual(yamlSummary.proxyRuleCount, 250)
         XCTAssertEqual(yamlSummary.rejectRuleCount, 100)
+    }
+
+    func testAllRulesRetainedBeyondDisplayLimitAndEvaluatedByRouteMatchEngine() throws {
+        var ruleLines = (0..<600).map { "DOMAIN,d\($0).invalid,DIRECT" }
+        ruleLines.append("DOMAIN-SUFFIX,late-rule.example,LateProxy")
+        ruleLines.append("MATCH,FinalFallback")
+
+        let yaml = "rules:\n" + ruleLines.map { "  - \($0)" }.joined(separator: "\n")
+        let summary = ProfileConfigurationInspector.inspect(yaml: yaml)
+
+        XCTAssertEqual(summary.rules.count, ProfileConfigurationInspector.maximumDisplayedItemsPerSection)
+        XCTAssertEqual(summary.allRules.count, 602)
+        XCTAssertEqual(summary.ruleCount, 602)
+
+        let lateMatch = RouteMatchEngine.evaluate(
+            destination: "sub.late-rule.example",
+            against: summary.allRules,
+            totalRuleCount: summary.ruleCount
+        )
+        XCTAssertEqual(lateMatch?.order, 601)
+        XCTAssertEqual(lateMatch?.target, "LateProxy")
+
+        let fallbackMatch = RouteMatchEngine.evaluate(
+            destination: "unmatched.example",
+            against: summary.allRules,
+            totalRuleCount: summary.ruleCount
+        )
+        XCTAssertEqual(fallbackMatch?.order, 602)
+        XCTAssertEqual(fallbackMatch?.target, "FinalFallback")
+    }
+
+    func testRuleConfigurationSummaryCustomRuleOverrideMapping() {
+        let suffixRule = RuleConfigurationSummary(
+            id: 0,
+            order: 1,
+            kind: "DOMAIN-SUFFIX",
+            criteria: "github.com",
+            target: "DIRECT"
+        )
+        XCTAssertEqual(suffixRule.overrideCustomRuleKind, .domainSuffix)
+        let customOverride = suffixRule.makeCustomRuleOverride(target: .proxy("AI-Group"))
+        XCTAssertEqual(customOverride?.kind, .domainSuffix)
+        XCTAssertEqual(customOverride?.value, "github.com")
+        XCTAssertEqual(customOverride?.target, .proxy("AI-Group"))
+
+        let portRule = RuleConfigurationSummary(
+            id: 1,
+            order: 2,
+            kind: "DST-PORT",
+            criteria: "8443",
+            target: "DIRECT"
+        )
+        XCTAssertEqual(portRule.overrideCustomRuleKind, .dstPort)
+        XCTAssertEqual(portRule.makeCustomRuleOverride(target: .reject)?.kind, .dstPort)
+
+        let matchRule = RuleConfigurationSummary(
+            id: 2,
+            order: 3,
+            kind: "MATCH",
+            criteria: nil,
+            target: "Proxy"
+        )
+        XCTAssertNil(matchRule.overrideCustomRuleKind)
+        XCTAssertNil(matchRule.makeCustomRuleOverride(target: .direct))
     }
 
 }

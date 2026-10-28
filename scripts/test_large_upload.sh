@@ -12,8 +12,16 @@ set -eu
 #
 # Exit status: 0 delivered, 1 the upload was cut off, 2 inconclusive (even a
 # small request did not get through, so the path under test was not reached).
+#
+# Delivery is proved by the server, never by curl's own write counter: the
+# default Cloudflare endpoint reports the bytes it read in
+# `cf-meta-upload-bytes`, and an httpbin-compatible URL echoes the body back
+# for a byte-for-byte compare. Either way the request is end-to-end HTTPS, so
+# a relay that corrupts or drops bytes fails the TLS record check rather than
+# reaching a 200. httpbin.org stopped accepting bodies over 64 KiB in October
+# 2026, which is why it is no longer the default.
 
-URL=${AETHERROUTE_LARGE_UPLOAD_URL:-https://httpbin.org/post}
+URL=${AETHERROUTE_LARGE_UPLOAD_URL:-https://speed.cloudflare.com/__up}
 BYTES=${AETHERROUTE_LARGE_UPLOAD_BYTES:-2097152}
 
 case "$BYTES" in
@@ -32,7 +40,7 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-large-upload.XXXXXX")
 trap 'find "$WORK" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 
 post() {
-  curl --proxy '' -sS -o "$WORK/response" \
+  curl --proxy '' -sS -o "$WORK/response" -D "$WORK/headers" \
     -w '%{http_code} %{size_upload} %{time_total}' \
     -H 'content-type: application/octet-stream' \
     -X POST --data-binary "@$1" --max-time 120 "$URL" 2>/dev/null
@@ -60,21 +68,30 @@ sent=${2:-0}
 seconds=${3:-0}
 if [ "$transfer_completed" -eq 1 ] && [ "$code" = 200 ] && [ "$sent" = "$BYTES" ]; then
   # The upload counter measures client writes, not bytes received by the peer.
-  # httpbin echoes binary request bodies as a base64 data URL; compare that
-  # echo with the original payload before accepting delivery.
-  if ! echoed=$(/usr/bin/plutil -extract data raw -o - "$WORK/response" 2>/dev/null); then
-    echo "large upload: response did not contain a request-body echo"
-    exit 1
-  fi
-  case "$echoed" in
-    data:application/octet-stream\;base64,*)
-      encoded=${echoed#data:application/octet-stream;base64,} ;;
-    *) echo "large upload: unexpected request-body echo encoding"; exit 1 ;;
-  esac
-  if ! printf '%s' "$encoded" | /usr/bin/base64 -D >"$WORK/echoed" \
-    || ! cmp -s "$WORK/payload" "$WORK/echoed"; then
-    echo "large upload: echoed bytes differ from the uploaded payload"
-    exit 1
+  received=$(tr -d '\r' <"$WORK/headers" 2>/dev/null \
+    | awk -F': *' 'tolower($1) == "cf-meta-upload-bytes" { value = $2 } END { print value }')
+  if [ -n "$received" ]; then
+    if [ "$received" != "$BYTES" ]; then
+      echo "large upload: server received $received of $BYTES bytes"
+      exit 1
+    fi
+  else
+    # httpbin echoes binary request bodies as a base64 data URL; compare that
+    # echo with the original payload before accepting delivery.
+    if ! echoed=$(/usr/bin/plutil -extract data raw -o - "$WORK/response" 2>/dev/null); then
+      echo "large upload: response did not report or echo the request body"
+      exit 1
+    fi
+    case "$echoed" in
+      data:application/octet-stream\;base64,*)
+        encoded=${echoed#data:application/octet-stream;base64,} ;;
+      *) echo "large upload: unexpected request-body echo encoding"; exit 1 ;;
+    esac
+    if ! printf '%s' "$encoded" | /usr/bin/base64 -D >"$WORK/echoed" \
+      || ! cmp -s "$WORK/payload" "$WORK/echoed"; then
+      echo "large upload: echoed bytes differ from the uploaded payload"
+      exit 1
+    fi
   fi
   echo "large upload: $BYTES bytes delivered in ${seconds}s"
   exit 0

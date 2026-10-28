@@ -81,4 +81,49 @@ struct NodeRegionTests {
         #expect(!NodeRegion.matchesSearch(member: "SS-Proxy-AUTO", protocolName: "ss", query: "澳洲"))
         #expect(!NodeRegion.matchesSearch(member: "HK-01", protocolName: "vless", query: "新加坡"))
     }
+
+    @Test("filterMembers combines cross-language search and timed-out hiding while preserving selected member")
+    func filterMembersCombinesSearchAndTimedOutHiding() {
+        let members = ["HK-01", "Tokyo Direct", "日本 02", "SG-Dead"]
+        let protocols = [
+            "HK-01": "vless",
+            "Tokyo Direct": "hysteria2",
+            "日本 02": "trojan",
+            "SG-Dead": "ss",
+        ]
+        let timedOut: Set<String> = ["Tokyo Direct", "SG-Dead"]
+
+        // Search by Chinese region "日本" finds both "Tokyo Direct" and "日本 02"
+        let jpAll = NodeRegion.filterMembers(
+            members,
+            protocolByName: protocols,
+            query: "日本",
+            hideTimedOut: false,
+            isTimedOut: { timedOut.contains($0) },
+            selectedMember: nil
+        )
+        #expect(jpAll == ["Tokyo Direct", "日本 02"])
+
+        // Hiding timed-out removes "Tokyo Direct" when not selected
+        let jpHealthy = NodeRegion.filterMembers(
+            members,
+            protocolByName: protocols,
+            query: "日本",
+            hideTimedOut: true,
+            isTimedOut: { timedOut.contains($0) },
+            selectedMember: "HK-01"
+        )
+        #expect(jpHealthy == ["日本 02"])
+
+        // Selected member is preserved even if timed out
+        let jpSelectedTimedOut = NodeRegion.filterMembers(
+            members,
+            protocolByName: protocols,
+            query: "日本",
+            hideTimedOut: true,
+            isTimedOut: { timedOut.contains($0) },
+            selectedMember: "Tokyo Direct"
+        )
+        #expect(jpSelectedTimedOut == ["Tokyo Direct", "日本 02"])
+    }
 }

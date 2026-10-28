@@ -8,6 +8,7 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
     public let proxyGroups: [ProxyGroupConfigurationSummary]
     public let proxyProviders: [ProviderConfigurationSummary]
     public let rules: [RuleConfigurationSummary]
+    public let allRules: [RuleConfigurationSummary]
     public let ruleProviders: [ProviderConfigurationSummary]
     public let proxyCount: Int
     public let proxyGroupCount: Int
@@ -31,6 +32,7 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
         proxyGroups: [ProxyGroupConfigurationSummary],
         proxyProviders: [ProviderConfigurationSummary],
         rules: [RuleConfigurationSummary],
+        allRules: [RuleConfigurationSummary]? = nil,
         ruleProviders: [ProviderConfigurationSummary],
         proxyCount: Int,
         proxyGroupCount: Int,
@@ -49,18 +51,20 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
         self.proxyGroups = proxyGroups
         self.proxyProviders = proxyProviders
         self.rules = rules
+        let fullRules = allRules ?? rules
+        self.allRules = fullRules
         self.ruleProviders = ruleProviders
         self.proxyCount = proxyCount
         self.proxyGroupCount = proxyGroupCount
         self.proxyProviderCount = proxyProviderCount
         self.ruleCount = ruleCount
         self.ruleProviderCount = ruleProviderCount
-        self.directRuleCount = directRuleCount ?? rules.filter { $0.target.uppercased() == "DIRECT" }.count
-        self.rejectRuleCount = rejectRuleCount ?? rules.filter {
+        self.directRuleCount = directRuleCount ?? fullRules.filter { $0.target.uppercased() == "DIRECT" }.count
+        self.rejectRuleCount = rejectRuleCount ?? fullRules.filter {
             let upper = $0.target.uppercased()
             return upper == "REJECT" || upper == "REJECT-DROP"
         }.count
-        self.proxyRuleCount = proxyRuleCount ?? rules.filter {
+        self.proxyRuleCount = proxyRuleCount ?? fullRules.filter {
             let upper = $0.target.uppercased()
             return upper != "DIRECT" && upper != "REJECT" && upper != "REJECT-DROP"
         }.count
@@ -297,6 +301,38 @@ public struct RuleConfigurationSummary: Identifiable, Equatable, Sendable {
         self.isCustom = isCustom
         self.noResolve = noResolve
     }
+
+    public var overrideCustomRuleKind: CustomRuleKind? {
+        guard let criteria, !criteria.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        switch kind.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
+        case "DOMAIN": return .domain
+        case "DOMAIN-SUFFIX": return .domainSuffix
+        case "DOMAIN-KEYWORD": return .domainKeyword
+        case "IP-CIDR": return .ipCIDR
+        case "IP-CIDR6": return .ipCIDR6
+        case "GEOIP": return .geoIP
+        case "GEOSITE": return .geoSite
+        case "DST-PORT": return .dstPort
+        default: return nil
+        }
+    }
+
+    public func makeCustomRuleOverride(target: CustomRuleTarget) -> CustomRule? {
+        guard let customKind = overrideCustomRuleKind,
+              let criteria = criteria?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !criteria.isEmpty else {
+            return nil
+        }
+        return CustomRule(
+            kind: customKind,
+            value: criteria,
+            target: target,
+            noResolve: noResolve,
+            isEnabled: true
+        )
+    }
 }
 
 public struct RouteMatchResult: Identifiable, Equatable, Sendable {
@@ -338,11 +374,13 @@ public enum RouteMatchEngine {
     public static func evaluate(
         destination: String,
         against rules: [RuleConfigurationSummary],
+        totalRuleCount: Int? = nil,
         geoSiteData: Data? = nil
     ) -> RouteMatchResult? {
         if case let .matched(result) = assess(
             destination: destination,
             against: rules,
+            totalRuleCount: totalRuleCount,
             geoSiteData: geoSiteData
         ) {
             return result
@@ -545,6 +583,7 @@ public enum RouteMatchEngine {
 /// The protocol core remains authoritative for semantic validation.
 public enum ProfileConfigurationInspector {
     public static let maximumDisplayedItemsPerSection = 500
+    public static let maximumEvaluatedRules = 16_384
 
     public static func inspect(yaml: String, customRules: [CustomRule] = []) -> ProfileConfigurationSummary {
         var parser = Parser(yaml: yaml, customRules: customRules)
@@ -569,6 +608,17 @@ private struct Parser {
         var server = ""
         var port = ""
         var members: [String] = []
+        var includeAll = false
+        var filterPattern: String?
+        var excludeFilterPattern: String?
+    }
+
+    private struct GroupFilterSpec {
+        let groupIndex: Int
+        let includeAll: Bool
+        let filterPattern: String?
+        let excludeFilterPattern: String?
+        let explicitMembers: [String]
     }
 
     private struct PendingRule {
@@ -638,12 +688,15 @@ private struct Parser {
     private var pendingRule: PendingRule?
 
     private var proxies: [ProxyConfigurationSummary] = []
+    private var allProxyNames: [String] = []
+    private var deferredGroupFilters: [GroupFilterSpec] = []
     private var upstreamEndpoints: [ProfileUpstreamEndpoint] = []
     private var namedEndpoints: [String: ProfileUpstreamEndpoint] = [:]
     private var hosts: [String: String] = [:]
     private var groups: [ProxyGroupConfigurationSummary] = []
     private var proxyProviders: [ProviderConfigurationSummary] = []
     private var rules: [RuleConfigurationSummary] = []
+    private var allRules: [RuleConfigurationSummary] = []
     private var ruleProviders: [ProviderConfigurationSummary] = []
     private var proxyCount = 0
     private var proxyGroupCount = 0
@@ -791,6 +844,7 @@ private struct Parser {
         finishPendingRule()
         finishPendingItem()
         finishPendingProvider()
+        resolveDeferredGroupFilters()
     }
 
     private mutating func parseJSONDocument(_ object: [String: Any]) {
@@ -840,10 +894,25 @@ private struct Parser {
                 } else {
                     item?.members = Self.jsonStrings(fields["proxies"])
                         + Self.jsonStrings(fields["use"])
+                    if let inc = Self.jsonScalar(fields["include-all"]).flatMap(Self.boolean), inc {
+                        item?.includeAll = true
+                    }
+                    if let incProxies = Self.jsonScalar(fields["include-all-proxies"]).flatMap(Self.boolean), incProxies {
+                        item?.includeAll = true
+                    }
+                    let filterStr = Self.jsonString(fields["filter"])
+                    if !filterStr.isEmpty {
+                        item?.filterPattern = filterStr
+                    }
+                    let excludeStr = Self.jsonString(fields["exclude-filter"])
+                    if !excludeStr.isEmpty {
+                        item?.excludeFilterPattern = excludeStr
+                    }
                 }
                 finishPendingItem()
             }
         }
+        resolveDeferredGroupFilters()
         for destination in [Section.proxyProviders, .ruleProviders] {
             section = destination
             let fields = object[destination.rawValue] as? [String: Any] ?? [:]
@@ -908,6 +977,7 @@ private struct Parser {
             proxyGroups: groups,
             proxyProviders: proxyProviders,
             rules: rules,
+            allRules: allRules,
             ruleProviders: ruleProviders,
             proxyCount: proxyCount,
             proxyGroupCount: proxyGroupCount,
@@ -1145,6 +1215,24 @@ private struct Parser {
             if !value.isEmpty {
                 item?.members.append(contentsOf: Self.splitFlowSequence(value))
             }
+        case let key where section == .proxyGroups
+            && (key == "include-all" || key == "include-all-proxies"):
+            readingMembers = false
+            if Self.boolean(value) == true {
+                item?.includeAll = true
+            }
+        case "filter" where section == .proxyGroups:
+            readingMembers = false
+            let pattern = Self.scalar(value)
+            if !pattern.isEmpty {
+                item?.filterPattern = pattern
+            }
+        case "exclude-filter" where section == .proxyGroups:
+            readingMembers = false
+            let pattern = Self.scalar(value)
+            if !pattern.isEmpty {
+                item?.excludeFilterPattern = pattern
+            }
         default:
             readingMembers = false
         }
@@ -1167,6 +1255,21 @@ private struct Parser {
             case let key where section == .proxyGroups
                 && (key == "proxies" || key == "use"):
                 item?.members.append(contentsOf: Self.splitFlowSequence(value))
+            case let key where section == .proxyGroups
+                && (key == "include-all" || key == "include-all-proxies"):
+                if Self.boolean(value) == true {
+                    item?.includeAll = true
+                }
+            case "filter" where section == .proxyGroups:
+                let pattern = Self.scalar(value)
+                if !pattern.isEmpty {
+                    item?.filterPattern = pattern
+                }
+            case "exclude-filter" where section == .proxyGroups:
+                let pattern = Self.scalar(value)
+                if !pattern.isEmpty {
+                    item?.excludeFilterPattern = pattern
+                }
             default: continue
             }
         }
@@ -1182,6 +1285,9 @@ private struct Parser {
         switch section {
         case .proxies:
             proxyCount += 1
+            if !item.name.isEmpty {
+                allProxyNames.append(item.name)
+            }
             if !item.server.isEmpty,
                let port = UInt16(item.port),
                port > 0 {
@@ -1211,9 +1317,21 @@ private struct Parser {
             guard groups.count < ProfileConfigurationInspector.maximumDisplayedItemsPerSection else {
                 return
             }
+            let groupIndex = groups.count
+            if item.includeAll || item.filterPattern != nil || item.excludeFilterPattern != nil {
+                deferredGroupFilters.append(
+                    GroupFilterSpec(
+                        groupIndex: groupIndex,
+                        includeAll: item.includeAll,
+                        filterPattern: item.filterPattern,
+                        excludeFilterPattern: item.excludeFilterPattern,
+                        explicitMembers: item.members
+                    )
+                )
+            }
             groups.append(
                 ProxyGroupConfigurationSummary(
-                    id: groups.count,
+                    id: groupIndex,
                     name: item.name.isEmpty ? "Unnamed group" : item.name,
                     strategy: item.type.isEmpty ? "Unknown" : item.type,
                     memberCount: item.members.count,
@@ -1228,6 +1346,54 @@ private struct Parser {
         default:
             break
         }
+    }
+
+    private mutating func resolveDeferredGroupFilters() {
+        guard !deferredGroupFilters.isEmpty else { return }
+        for spec in deferredGroupFilters {
+            guard spec.groupIndex < groups.count else { continue }
+            var candidates: [String] = spec.explicitMembers
+            if spec.includeAll || candidates.isEmpty {
+                for proxyName in allProxyNames where !candidates.contains(proxyName) {
+                    candidates.append(proxyName)
+                }
+            }
+            if let pattern = spec.filterPattern,
+               let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                let explicitSet = Set(spec.explicitMembers)
+                candidates = candidates.filter { name in
+                    if explicitSet.contains(name) && spec.includeAll {
+                        return true
+                    }
+                    let range = NSRange(name.startIndex..<name.endIndex, in: name)
+                    return regex.firstMatch(in: name, options: [], range: range) != nil
+                }
+            }
+            if let excludePattern = spec.excludeFilterPattern,
+               let excludeRegex = try? NSRegularExpression(pattern: excludePattern, options: []) {
+                let explicitSet = Set(spec.explicitMembers)
+                candidates = candidates.filter { name in
+                    if explicitSet.contains(name) && spec.includeAll {
+                        return true
+                    }
+                    let range = NSRange(name.startIndex..<name.endIndex, in: name)
+                    return excludeRegex.firstMatch(in: name, options: [], range: range) == nil
+                }
+            }
+            let existing = groups[spec.groupIndex]
+            groups[spec.groupIndex] = ProxyGroupConfigurationSummary(
+                id: existing.id,
+                name: existing.name,
+                strategy: existing.strategy,
+                memberCount: candidates.count,
+                members: Array(
+                    candidates.prefix(
+                        ProfileConfigurationInspector.maximumDisplayedItemsPerSection
+                    )
+                )
+            )
+        }
+        deferredGroupFilters.removeAll()
     }
 
     private mutating func parseProvider(line: String, indent: Int) {
@@ -1351,27 +1517,29 @@ private struct Parser {
         default:
             proxyRuleCount += 1
         }
-        guard rules.count < ProfileConfigurationInspector.maximumDisplayedItemsPerSection else {
+        guard allRules.count < ProfileConfigurationInspector.maximumEvaluatedRules else {
             return
         }
         let criteriaFields = targetIndex.map { fields[1..<$0] } ?? []
         let criteria = criteriaFields.isEmpty ? nil : criteriaFields.joined(separator: ", ")
-        let order = rules.count + 1
+        let order = allRules.count + 1
         let compactValue = value.filter { !$0.isWhitespace }.uppercased()
         let synthesizedKey = [kind, criteria ?? "", target].filter { !$0.isEmpty }.joined(separator: ",").filter { !$0.isWhitespace }.uppercased()
         let isCustom = customRuleSignatures.contains(compactValue) || customRuleSignatures.contains(synthesizedKey)
-        rules.append(
-            RuleConfigurationSummary(
-                id: rules.count,
-                order: order,
-                kind: kind,
-                criteria: kind.uppercased() == "AETHER-APP"
-                    ? criteria.map(Self.applicationName) : criteria,
-                target: target,
-                isCustom: isCustom,
-                noResolve: hasNoResolve
-            )
+        let ruleSummary = RuleConfigurationSummary(
+            id: allRules.count,
+            order: order,
+            kind: kind,
+            criteria: kind.uppercased() == "AETHER-APP"
+                ? criteria.map(Self.applicationName) : criteria,
+            target: target,
+            isCustom: isCustom,
+            noResolve: hasNoResolve
         )
+        allRules.append(ruleSummary)
+        if rules.count < ProfileConfigurationInspector.maximumDisplayedItemsPerSection {
+            rules.append(ruleSummary)
+        }
     }
 
     private mutating func recordResourceRequirements(

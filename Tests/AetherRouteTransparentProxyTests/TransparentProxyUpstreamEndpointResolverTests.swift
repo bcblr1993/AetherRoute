@@ -1,3 +1,4 @@
+import AetherRouteKit
 import AetherRouteTransparentProxySupport
 import XCTest
 
@@ -95,5 +96,36 @@ final class TransparentProxyUpstreamEndpointResolverTests: XCTestCase {
                 )
             ]
         )
+    }
+
+    func testLargeSubscriptionKeepsExclusionsInsteadOfFailing() throws {
+        let nodes = (0..<1_200).map { index in
+            "  - {name: N\(index), type: trojan, server: 10.0.\(index / 256).\(index % 256), port: 443}"
+        }
+        let yaml = "proxies:\n" + nodes.joined(separator: "\n")
+
+        let exclusions = try TransparentProxyUpstreamEndpointResolver.resolve(profileYAML: yaml)
+        let expected = min(
+            ProfileUpstreamEndpointInspector.maximumEndpoints,
+            TransparentProxyUpstreamEndpointResolver.maximumResolvedAddresses
+        )
+        XCTAssertEqual(exclusions.count, expected)
+        XCTAssertEqual(exclusions.first?.address, "10.0.0.0")
+    }
+
+    func testAllUnresolvableEndpointsStillThrow() {
+        let yaml = """
+        proxies:
+          - {name: Dead, type: trojan, server: dead.example.invalid, port: 443}
+        """
+
+        XCTAssertThrowsError(
+            try TransparentProxyUpstreamEndpointResolver.resolve(profileYAML: yaml)
+        ) { error in
+            XCTAssertEqual(
+                error as? TransparentProxyUpstreamEndpointResolutionError,
+                .unresolvedEndpoint(index: 0)
+            )
+        }
     }
 }

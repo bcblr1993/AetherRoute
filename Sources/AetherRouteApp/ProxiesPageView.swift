@@ -680,18 +680,19 @@ private struct ActiveProxyGroupView: View {
     }
 
     private var memberRows: [ProxyMemberTableItem] {
-        let ordered = ProxyPageNodeOrder.sorted(members: members, by: sort) {
+        let sorted = ProxyPageNodeOrder.sorted(members: members, by: sort) {
             latencyRank(status(for: $0))
-        }.filter { member in
-            if hidesTimedOutNodes, status(for: member) == .timedOut, member != selectedMember {
-                return false
-            }
-            return NodeRegion.matchesSearch(
-                member: member,
-                protocolName: memberType(member),
-                query: searchText
-            )
         }
+        let ordered = NodeRegion.filterMembers(
+            sorted,
+            protocolByName: Dictionary(
+                uniqueKeysWithValues: sorted.map { ($0, memberType($0)) }
+            ),
+            query: searchText,
+            hideTimedOut: hidesTimedOutNodes,
+            isTimedOut: { status(for: $0) == .timedOut },
+            selectedMember: selectedMember
+        )
         let isBusy = tunnel.proxySelectionRequests.contains(group.name)
         return ordered.map { member in
             ProxyMemberTableItem(

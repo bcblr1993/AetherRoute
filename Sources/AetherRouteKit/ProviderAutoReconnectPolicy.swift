@@ -38,14 +38,20 @@ public enum ProviderAutoReconnectPolicy {
     ///     asking it to. A stop the host requested is never retried.
     ///   - userWantsConnection: the user's standing intent is to be connected.
     ///     False as soon as they disconnect, which cancels the schedule.
+    ///   - hadEstablishedSession: whether the session had previously reached
+    ///     `.connected` (or is already mid-reconnect from an established
+    ///     session). An initial startup failure before any session was
+    ///     established is surfaced immediately instead of looping in recovery.
     ///   - attempt: zero-based index of the reconnect about to be scheduled.
     public static func shouldReconnect(
         terminationWasUnexpected: Bool,
         userWantsConnection: Bool,
+        hadEstablishedSession: Bool = true,
         attempt: Int
     ) -> Bool {
         terminationWasUnexpected
             && userWantsConnection
+            && hadEstablishedSession
             && attempt >= 0
             && attempt < maximumAttempts
     }

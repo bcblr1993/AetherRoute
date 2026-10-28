@@ -16,9 +16,24 @@ public enum TunnelLifecycleTransitionPolicy {
 
     public static func canBeginConnection(
         hostIsTransitioning: Bool,
+        providerPermitsStart: Bool,
+        isAutomaticReconnect: Bool = false,
+        hostIsRecovering: Bool = false
+    ) -> Bool {
+        guard providerPermitsStart else { return false }
+        if isAutomaticReconnect && hostIsRecovering {
+            return true
+        }
+        return !hostIsTransitioning
+    }
+
+    public static func canProceedWithAutomaticReconnect(
+        isEnabled: Bool,
+        hostIsRecovering: Bool,
         providerPermitsStart: Bool
     ) -> Bool {
-        !hostIsTransitioning && providerPermitsStart
+        guard providerPermitsStart else { return false }
+        return !isEnabled || hostIsRecovering
     }
 
     public static func shouldContinueConnectionPreparation(

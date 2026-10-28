@@ -194,4 +194,34 @@ final class SubscriptionUsageTests: XCTestCase {
         XCTAssertEqual(kept.providerProfileName, "Edge")
         XCTAssertEqual(kept.lastCheckedAt, later)
     }
+
+    func testAlertWarningBadgeMetadata() {
+        XCTAssertFalse(SubscriptionUsageAlert.none.hasWarning)
+        XCTAssertNil(SubscriptionUsageAlert.none.badgeTitleKey)
+        XCTAssertNil(SubscriptionUsageAlert.none.symbolName)
+
+        let low = SubscriptionUsageAlert.low(remainingBytes: 1_024)
+        XCTAssertTrue(low.hasWarning)
+        XCTAssertFalse(low.isSevere)
+        XCTAssertEqual(low.badgeTitleKey, "Low traffic")
+        XCTAssertEqual(low.symbolName, "exclamationmark.triangle.fill")
+
+        let expiring = SubscriptionUsageAlert.expiring(daysLeft: 2)
+        XCTAssertTrue(expiring.hasWarning)
+        XCTAssertFalse(expiring.isSevere)
+        XCTAssertEqual(expiring.badgeTitleKey, "Expiring soon")
+        XCTAssertEqual(expiring.symbolName, "clock.badge.exclamationmark")
+
+        let exhausted = SubscriptionUsageAlert.exhausted
+        XCTAssertTrue(exhausted.hasWarning)
+        XCTAssertTrue(exhausted.isSevere)
+        XCTAssertEqual(exhausted.badgeTitleKey, "Traffic used up")
+        XCTAssertEqual(exhausted.symbolName, "xmark.octagon.fill")
+
+        let expired = SubscriptionUsageAlert.expired
+        XCTAssertTrue(expired.hasWarning)
+        XCTAssertTrue(expired.isSevere)
+        XCTAssertEqual(expired.badgeTitleKey, "Expired")
+        XCTAssertEqual(expired.symbolName, "xmark.octagon.fill")
+    }
 }

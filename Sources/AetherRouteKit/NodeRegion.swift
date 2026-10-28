@@ -66,6 +66,26 @@ public struct NodeRegion: Equatable, Sendable {
         return false
     }
 
+    public static func filterMembers(
+        _ members: [String],
+        protocolByName: [String: String] = [:],
+        query: String,
+        hideTimedOut: Bool,
+        isTimedOut: (String) -> Bool,
+        selectedMember: String?
+    ) -> [String] {
+        members.filter { member in
+            if hideTimedOut && member != selectedMember && isTimedOut(member) {
+                return false
+            }
+            return matchesSearch(
+                member: member,
+                protocolName: protocolByName[member],
+                query: query
+            )
+        }
+    }
+
     // MARK: - Matching
 
     /// A flag emoji written into the name is the author's own statement and

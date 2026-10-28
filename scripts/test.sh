@@ -180,3 +180,4 @@ AETHERROUTE_DERIVED_DATA_PATH="$DERIVED_DATA_PATH" "$ROOT/scripts/test_product_b
 "$ROOT/scripts/test_profile_override_cores.sh"
 "$ROOT/scripts/test_protocol_input_compatibility.sh"
 "$ROOT/scripts/test_plugin_obfs_subscription_gate.sh"
+"$ROOT/scripts/test_recovery_and_subscription_compat_gate.sh"

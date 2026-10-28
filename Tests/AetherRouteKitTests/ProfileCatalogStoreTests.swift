@@ -604,6 +604,38 @@ final class ProfileCatalogStoreTests: XCTestCase {
         XCTAssertNil(ActiveProfile(name: "C", yaml: "proxies: []", overrides: ProfileOverride()).overrides)
     }
 
+    func testDuplicateProfileClonesContentAndOverridesWithoutChangingActiveProfile() throws {
+        try withStores { _, activeStore, catalogStore in
+            let url = try XCTUnwrap(URL(string: "https://profiles.example/sub.yaml"))
+            let subscription = try ProfileSubscription(url: url)
+            let initial = try catalogStore.addValidated(
+                data: profileData(name: "hk-node", secret: "one"),
+                suggestedName: "Main Airport",
+                importedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                subscription: subscription
+            )
+            let originalID = try XCTUnwrap(initial.activeProfileID)
+            let override = ProfileOverride(hiddenNodeKeywords: ["Expired"])
+            try catalogStore.setOverrides(id: originalID, overrides: override)
+
+            let cloneTime = Date(timeIntervalSince1970: 1_800_003_600)
+            let duplicatedCatalog = try catalogStore.duplicate(
+                id: originalID,
+                suggestedName: "Main Airport Copy",
+                importedAt: cloneTime
+            )
+
+            XCTAssertEqual(duplicatedCatalog.activeProfileID, originalID)
+            XCTAssertEqual(duplicatedCatalog.profiles.count, 2)
+            let cloned = try XCTUnwrap(duplicatedCatalog.profiles.first { $0.id != originalID })
+            XCTAssertEqual(cloned.profile.name, "Main Airport Copy")
+            XCTAssertEqual(cloned.profile.importedAt, cloneTime)
+            XCTAssertEqual(cloned.profile.overrides, override)
+            XCTAssertNil(cloned.profile.subscription, "a duplicated profile is an independent local snapshot")
+            XCTAssertEqual(try activeStore.loadValidated().name, "Main Airport")
+        }
+    }
+
     private func profileData(name: String, secret: String) -> Data {
         Data(
             """

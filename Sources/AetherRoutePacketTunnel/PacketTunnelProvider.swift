@@ -88,6 +88,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     self.resetSucceeded = false
                     self.lastResetInterface = nil
                     self.lastResetSignature = nil
+                    // Only enter `.reasserting` immediately if there is no
+                    // physical uplink. When a physical uplink is already
+                    // present, keep the tunnel state connected during the first
+                    // fast health probe so transient path echoes do not flash
+                    // "Recovering..." in the host UI.
+                    self.reasserting = self.currentPhysicalUplink() == nil
+                case .attemptFailed:
                     self.reasserting = true
                 case .recovered:
                     self.reasserting = false
@@ -653,7 +660,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     from: provider?.providerConfiguration
                 )) ?? recoveryRoutingMode
                 let resourceStore = RoutingResourceStore(applicationSupportDirectory: store.directoryURL)
-                let resources = (try? resourceStore.launchResourceSnapshot(for: activeProfile.yaml)) ?? [:]
+                let resources = (try? resourceStore.launchResourceSnapshot(for: activeProfile.runtimeYAML)) ?? [:]
                 snapshot = try ProviderLaunchSnapshot(
                     profileYAML: activeProfile.runtimeYAML,
                     routingMode: routingMode,

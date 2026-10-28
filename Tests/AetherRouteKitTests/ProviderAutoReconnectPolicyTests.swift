@@ -36,6 +36,26 @@ struct ProviderAutoReconnectPolicyTests {
         )
     }
 
+    @Test("an initial startup failure before any established session surfaces immediately instead of looping in recovery")
+    func initialStartupFailureDoesNotAutoReconnect() {
+        #expect(
+            !ProviderAutoReconnectPolicy.shouldReconnect(
+                terminationWasUnexpected: true,
+                userWantsConnection: true,
+                hadEstablishedSession: false,
+                attempt: 0
+            )
+        )
+        #expect(
+            ProviderAutoReconnectPolicy.shouldReconnect(
+                terminationWasUnexpected: true,
+                userWantsConnection: true,
+                hadEstablishedSession: true,
+                attempt: 0
+            )
+        )
+    }
+
     @Test("the retry budget is finite, so a dead node cannot pin a loop")
     func budgetIsExhausted() {
         let last = ProviderAutoReconnectPolicy.maximumAttempts - 1

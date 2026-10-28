@@ -26,12 +26,14 @@
   - 核心回归已内嵌并强制执行菜单栏自定义图标门禁（`Tests/MenuBarIcon/run.sh`），验证全量 41 款配对 SF Symbols 矢量图形有效性、未连接/已连接双态平滑切换、更新红点 Badge 渲染、以及配置持久化与未知非法值安全回退。
   - 核心回归已内嵌并强制执行菜单栏实时网速流量门禁（`Tests/MenuBarTraffic/run.sh`），验证默认关闭边界、开关持久化与回退、等宽紧凑速率格式化（B/s、KB/s、MB/s、GB/s）、全量 41 款 SF Symbols 双态及红点 Badge 的像素级对齐渲染、未连接状态安全归零、以及高频遥测观察范围隔离（零无感刷新与零泄漏）。
   - 核心回归已内嵌并强制执行允许局域网（局域网共享代理）门禁（`Tests/AllowLAN/run.sh`），验证默认安全边界（默认关闭、端口 7890/7891）、物理 IPv4 提取与虚拟接口过滤、真实本地 Socket 代理握手（HTTP CONNECT 隧道透传、绝对路径 HTTP GET、SOCKS5 握手与中继）、向后兼容性与多端保姆级教程完整性。
+  - 核心回归已内嵌并强制执行网络恢复状态机与第三方订阅协议兼容门禁（`scripts/test_recovery_and_subscription_compat_gate.sh`），验证 `.recovering` 自动重连状态转换无死锁、首次启动失败立即报错不空转、国内直连健康探测优先 Apple 节点、DNS 行内注释与数组策略规范化、Mihomo `include-all`/`filter` 策略组展开、以及 Rust 双引擎容错跳过混合订阅中不支持的旧协议节点（如 `ssr`/`snell`）与缺失字段默认值兼容。
+- **核心功能必须带回归测试（Mandatory，1.9.1 起）**：凡是新增或修复核心功能（连接生命周期与自动恢复、订阅解析与配置重写、DNS 与路由、透明代理与 TUN、`Core/Engine` 协议收发），同一次提交必须附带能复现原问题的单元测试或门禁用例，并接入上面的核心回归或互通门禁，使其随每次发布自动运行。修复必须先确认测试在旧代码上失败、在新代码上通过；无法自动化的场景要在 CHANGELOG 写明原因和手工验证步骤。没有测试的核心改动不得进入发布。
 - 运行 12 种协议的真实互通门禁（`test.sh` 只校验运行脚本文本，不会真正连接）。首次运行先下载并校验第三方服务端（sing-box、shadow-tls、Xray、Mihomo，均按固定 SHA-256 校验；WireGuard 服务端从源码编译），缓存在已被忽略的 `build/interop-tools`：
   ```bash
   ./scripts/fetch_interop_tools.sh
   ./scripts/test_protocol_interop_all.sh
   ```
-  门禁编译与发布一致的 release 引擎，在本机回环上逐一对接 sing-box 矩阵（24 个用例）、VLESS REALITY、WireGuard、ShadowQUIC 与 OpenSSH；每个用例都检查 2 MiB 双向传输、空闲后复用、8 包 UDP（重复送达即失败），TLS 用例还必须通过证书指纹固定（Hysteria2、TUIC 另测 `ca-str` 自定义 CA）、拒绝错误指纹，并在开启证书校验时拒绝不受信任的证书（服务端证书由 `Tests/Interop/make-test-pki.sh` 生成的临时 CA 签发）。五项必须全部 PASS，日志与汇总在 `outputs/interop-<时间>/`。该门禁曾发现 Shadowsocks UDP 重复发包与 SSH 空闲 5 秒断开（1.1.7 修复）。
+  门禁编译与发布一致的 release 引擎，在本机回环上逐一对接 sing-box 矩阵（24 个用例）、VLESS REALITY、WireGuard、ShadowQUIC 与 OpenSSH；每个用例都检查 2 MiB 双向传输、空闲后复用、8 包 UDP（重复送达即失败），TLS 用例还必须通过证书指纹固定（Hysteria2、TUIC 另测 `ca-str` 自定义 CA）、拒绝错误指纹，并在开启证书校验时拒绝不受信任的证书（服务端证书由 `Tests/Interop/make-test-pki.sh` 生成的临时 CA 签发）。五项必须全部 PASS，日志与汇总在 `outputs/interop-<时间>/`。该门禁曾发现 Shadowsocks UDP 重复发包与 SSH 空闲 5 秒断开（1.1.7 修复），以及 Trojan UDP 帧跨 TLS 记录时读写错位导致的 `payload changed`（1.9.1 修复；偶发失败也必须查明，不得当作抖动重跑放行）。
   - 每次发布都必须运行；`Core/Engine` 有任何改动时必须在提交前运行。
   - 修改 `interop_tests.rs` 后同步 `Config/ProtocolCoreEvidence.json`（`coreCommit`、`interopTestsSHA256`、`interopCases`）与 `Config/ProtocolReleaseMatrix.json`，并以 `./scripts/verify_protocol_matrix.sh` 校验。
   - REALITY 用例的 Xray 服务端每次握手都会访问真实的 www.cloudflare.com，本机网络繁忙时单轮会慢 5–10 秒；单项超时先单独重跑该项确认，不要放宽其他用例。
@@ -69,7 +71,7 @@
   3. **LAN/Loopback 直连穿透**（`scripts/test_transparent_lan_bypass.sh`）：验证本机回环（127.0.0.1）与私有局域网直连流量直接绕过代理扩展，零延迟穿透。
   4. **明文 HTTP 与裸 IP 目标处理**（`scripts/test_transparent_raw_traffic.sh`）：验证纯明文 HTTP 80 与无 SNI 裸 IP 目的地的透明代理安全转发。
   5. **瞬时突发高并发压测**（`scripts/test_transparent_burst_concurrency.py`）：以 60 并发短连接瞬时冲击透明代理流表，验证无连接重置、并发稳定承载且 Session 正常释放。
-- 矩阵的每个组合还包含 **大请求上传检查**（`scripts/test_large_upload.sh`）：经代理向 `httpbin.org/post` 上传 2 MiB 随机数据，必须 HTTP 200 且完整送达。该检查防止出站协议在客户端写入快于节点上行时破坏分帧（曾因 VLESS Vision 帧长 u16 溢出，导致 Claude Code 等大上下文请求 `ECONNRESET`）。`tun` 与 `transparent` 都必须 PASS；`direct` 路由下若连小请求都不通记为 SKIP。
+- 矩阵的每个组合还包含 **大请求上传检查**（`scripts/test_large_upload.sh`）：经代理向 `speed.cloudflare.com/__up` 上传 2 MiB 随机数据，必须 HTTP 200 且服务端回报的 `cf-meta-upload-bytes` 等于发送字节数（`AETHERROUTE_LARGE_UPLOAD_URL` 可换回 httpbin 兼容的回显端点逐字节比对；httpbin.org 自 2026 年 10 月起拒收超过 64 KiB 的请求体，曾使 1.9.1 矩阵六项全部误报失败）。该检查防止出站协议在客户端写入快于节点上行时破坏分帧（曾因 VLESS Vision 帧长 u16 溢出，导致 Claude Code 等大上下文请求 `ECONNRESET`）。`tun` 与 `transparent` 都必须 PASS；`direct` 路由下若连小请求都不通记为 SKIP。
 - **清理规范（Mandatory）**：
   - 测试完成后必须立即清理虚拟机内的安装包、解压临时目录及相关日志记录，保持 VM 干净。
 

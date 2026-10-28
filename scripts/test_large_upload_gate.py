@@ -27,7 +27,15 @@ if large:
     if mode == 'wrong-encoding': echo = 'unexpected body'
     if mode == 'invalid-base64': echo = 'data:application/octet-stream;base64,?'
 response = {} if large and mode == 'missing-echo' else {'data': echo}
+headers = 'HTTP/1.1 200 OK\r\n'
+if mode.startswith('counted'):
+    # Cloudflare's endpoint reports what it read and echoes nothing.
+    response = {}
+    received = {'counted': len(payload), 'counted-short': len(payload) - 1}.get(mode)
+    if received is not None:
+        headers += f'CF-Meta-Upload-Bytes: {received}\r\n'
 pathlib.Path(args[args.index('-o') + 1]).write_text(json.dumps(response))
+pathlib.Path(args[args.index('-D') + 1]).write_text(headers + '\r\n')
 print(code, sent, '120.01' if status else '0.01', end='')
 sys.exit(status)
 '''
@@ -37,7 +45,8 @@ def main():
     cases = {'success': 0, 'small-timeout': 2, 'small-http-error': 2,
              'large-timeout': 1, 'large-http-error': 1, 'short-send': 1,
              'wrong-bytes': 1, 'wrong-encoding': 1, 'invalid-base64': 1,
-             'missing-echo': 1}
+             'missing-echo': 1, 'counted': 0, 'counted-short': 1,
+             'counted-missing': 1}
     with tempfile.TemporaryDirectory(prefix='aetherroute-upload-gate-') as directory:
         mock = Path(directory) / 'curl'
         mock.write_text(f'#!{sys.executable}\n' + MOCK)

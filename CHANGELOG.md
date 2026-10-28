@@ -4,6 +4,28 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.1] - 2026-10-28
+
+Fixes the app staying on "Recovering" forever after the provider stopped unexpectedly, keeps WeChat and other domestic apps reachable after switching subscriptions, and fixes Trojan UDP frames getting corrupted when they straddle TLS records.
+
+### Fixed
+
+- **Stuck on "Recovering" (`TunnelManager+ConnectionLifecycle`, `ProviderAutoReconnectPolicy`, `TunnelLifecycleTransitionPolicy`, `NetworkRecoveryCoordinator`)**: after an unexpected provider stop the app entered `.recovering`, then abandoned every automatic reconnect as `alreadyActive` because the tunnel was still enabled, and no watchdog was armed, so the banner "隧道保持启用，正在等待网络恢复" never cleared. Automatic reconnect now proceeds from `.recovering`, the recovery watchdog is armed on every recovery path, and a provider that fails before it ever connected reports the error at once instead of spinning. The termination handler now receives the status observed before the terminal one, so a session that had connected is recognised correctly.
+- **Domestic apps unreachable after switching subscriptions (`DomesticRoutingOptimizer`, `SubscriptionPayloadNormalizer`, `ReloadProfilePayloadCodec`)**: the DNS rewrite mis-parsed indentless lists and inline `#` comments and kept only the first resolver of a `nameserver-policy` entry. Block-style and flow-style policies now keep every resolver, and comments are stripped without touching `#` inside URLs. Profile reload payloads over 512 KB are compressed (ARZ1 zlib framing) so large subscriptions reload in place instead of forcing a full reconnect.
+- **Transparent proxy upstream exclusions on large subscriptions (`TransparentProxyUpstreamEndpointResolver`, `TransparentProxyProvider`)**: subscriptions with more server addresses than the exclusion ceiling no longer fail the start or drop every exclusion; the resolved ones are kept and the rest fall to the self-identity guard. Only "no endpoint resolved at all" is treated as an error.
+- **Trojan UDP frame corruption (`Core/Engine` `proxy/trojan/datagram.rs`)**: the UDP-over-stream reader created a fresh `read_u16`/`read_exact` future on every poll, so bytes already consumed were lost whenever the TLS stream returned `Pending` mid-frame; the writer re-encoded the whole frame after a partial write and sent its head twice. Either desynchronised every later packet on the connection (QUIC, voice calls and DNS over Trojan nodes dropped or garbled packets). Reading now accumulates into a buffer and parses only complete frames; writing keeps the encoded frame and resumes where the stream stopped; packets above 65535 bytes are rejected instead of truncating the length field. The protocol interop gate had been failing intermittently on this (`Trojan: UDP echo 0 payload changed`, also reproducible on the 1.9.0 engine).
+- Mihomo `include-all` / `filter` proxy groups expand, and the Rust engines skip unsupported legacy nodes (`ssr`, `snell`) in mixed subscriptions instead of refusing the whole profile.
+- Rules page "Show first / all N rules" and "Override with Custom Rule" are localised.
+
+### Changed
+
+- `AGENTS.md`: every new or fixed core feature must ship with a regression test that fails on the old code, wired into the core regression or interop gates.
+
+### Tests
+
+- Engine: 5 new `trojan::datagram` tests drive the codec through a stream that delivers and accepts one byte per poll with `Pending` in between (IPv4, IPv6, domain, empty and 65535-byte payloads, CRLF inside payloads, truncated frame, bad CRLF, oversized packet). Run against the 1.9.0 code they fail.
+- App: recovery state machine, block-style `nameserver-policy`, >512 KB reload payloads, 1,200-node upstream exclusions and all-unresolvable endpoints are covered in `AetherRouteKitTests` / `AetherRouteTransparentProxyTests` and in `scripts/test_recovery_and_subscription_compat_gate.sh`, which `test.sh` now runs.
+
 ## [1.9.0] - 2026-10-26
 
 Route tester overhaul (`no-resolve` preservation and skipping on domain targets, offline `GEOSITE` matching via memory-mapped `geosite.dat`, `GEOIP,PRIVATE` private IP matching, and `DST-PORT` port evaluation), full-profile rule action counts across large subscriptions, proxy group node search and timed-out node filtering, custom rule search/action filtering with move to top/bottom, and Connections sort by newest with a recently closed connections ring buffer.

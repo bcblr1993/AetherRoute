@@ -89,6 +89,7 @@ struct RulesView: View {
     @State private var hasAttemptedMatch: Bool = false
     @State private var matchExplanation = ""
     @State private var highlightedRuleID: Int? = nil
+    @State private var showsAllProfileRules: Bool = false
     @State private var showAddRuleSheet: Bool = false
     @State private var editingRule: CustomRule? = nil
     @State private var routingResourceImportKind: RoutingResourceKind?
@@ -97,7 +98,13 @@ struct RulesView: View {
     var body: some View {
         Group {
             if let summary = tunnel.activeProfileSummary {
-                let displayedRules = filteredRules(from: summary.rules)
+                let useFullRules = !searchText.isEmpty
+                    || selectedAction != .all
+                    || showsAllProfileRules
+                    || (highlightedRuleID.map { $0 >= summary.rules.count } ?? false)
+                let displayedRules = filteredRules(
+                    from: useFullRules ? summary.allRules : summary.rules
+                )
 
                 ScrollViewReader { scrollProxy in
                     ScrollView {
@@ -251,7 +258,7 @@ struct RulesView: View {
                     )
                     .textFieldStyle(.plain)
                     .font(.body)
-                    .onSubmit { performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount) }
+                    .onSubmit { performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount) }
                     .accessibilityIdentifier("rule-test-field")
                     if !testQuery.isEmpty {
                         Button {
@@ -271,7 +278,7 @@ struct RulesView: View {
                 .background(AetherVisual.neutralFill, in: Capsule())
 
                 Button(AppLocalization.string("Test")) {
-                    performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
+                    performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
                 }
                 .aetherButton(prominent: true)
                 .controlSize(.large)
@@ -328,7 +335,7 @@ struct RulesView: View {
                     ForEach(["google.com", "apple.com", "github.com", "bilibili.com"], id: \.self) { domain in
                         Button(domain) {
                             testQuery = domain
-                            performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
+                            performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
                         }
                         .buttonStyle(.aetherPressable)
                         .font(.caption)
@@ -421,7 +428,7 @@ struct RulesView: View {
                                     },
                                     onTest: {
                                         testQuery = rule.kind == .dstPort ? "example.com:\(rule.value)" : rule.value
-                                        performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
+                                        performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
                                     }
                                 )
                                 .transition(AetherVisual.insertion)
@@ -456,6 +463,12 @@ struct RulesView: View {
 
     // MARK: Profile rules
 
+    private func ruleOverrideTargets(summary: ProfileConfigurationSummary) -> [CustomRuleTarget] {
+        let groups = summary.proxyGroups.prefix(8).map { CustomRuleTarget.proxy($0.name) }
+        let proxyTargets = groups.isEmpty ? [CustomRuleTarget.proxy("Proxy")] : Array(groups)
+        return [.direct] + proxyTargets + [.reject]
+    }
+
     private func profileRulesSection(
         summary: ProfileConfigurationSummary,
         displayedRules: [RuleConfigurationSummary]
@@ -464,6 +477,7 @@ struct RulesView: View {
         let rejectCount = summary.rejectRuleCount
         let proxyCount = summary.proxyRuleCount
         let totalCount = summary.ruleCount
+        let overrideTargets = ruleOverrideTargets(summary: summary)
         return section(
             title: AppLocalization.string("Profile rules"),
             note: AppLocalization.string("Matched top to bottom; the first match wins")
@@ -528,12 +542,29 @@ struct RulesView: View {
                         LazyVStack(spacing: 0) {
                             ForEach(displayedRules) { rule in
                                 Divider().padding(.leading, AetherVisual.s4)
+                                let existingOverrideTarget = rule.overrideCustomRuleKind.flatMap { kind -> CustomRuleTarget? in
+                                    guard let criteria = rule.criteria else { return nil }
+                                    return tunnel.destinationRule(kind: kind, value: criteria)?.target
+                                }
                                 RuleRow(
                                     rule: rule,
                                     isHighlighted: highlightedRuleID == rule.id,
+                                    overrideTargets: rule.overrideCustomRuleKind == nil ? [] : overrideTargets,
+                                    existingOverrideTarget: existingOverrideTarget,
                                     onTest: { destination in
                                         testQuery = destination
-                                        performMatch(rules: summary.rules, totalRuleCount: summary.ruleCount)
+                                        performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
+                                    },
+                                    onOverride: { target in
+                                        guard let customRule = rule.makeCustomRuleOverride(target: target) else { return }
+                                        Task {
+                                            await tunnel.setDestinationRule(
+                                                kind: customRule.kind,
+                                                value: customRule.value,
+                                                noResolve: customRule.noResolve,
+                                                target: customRule.target
+                                            )
+                                        }
                                     }
                                 )
                                 .id(rule.id)
@@ -543,6 +574,37 @@ struct RulesView: View {
                         .accessibilityElement(children: .contain)
                         .accessibilityLabel(AppLocalization.string("Ordered routing rules"))
                         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: displayedRules.count)
+
+                        if summary.allRules.count > summary.rules.count,
+                           searchText.isEmpty,
+                           selectedAction == .all {
+                            Divider().padding(.leading, AetherVisual.s4)
+                            HStack {
+                                Spacer()
+                                Button {
+                                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                                        showsAllProfileRules.toggle()
+                                    }
+                                } label: {
+                                    Text(
+                                        showsAllProfileRules
+                                            ? String.localizedStringWithFormat(
+                                                AppLocalization.string("Show first %lld rules"),
+                                                Int64(summary.rules.count)
+                                            )
+                                            : String.localizedStringWithFormat(
+                                                AppLocalization.string("Show all %lld rules"),
+                                                Int64(summary.allRules.count)
+                                            )
+                                    )
+                                    .font(.caption.weight(.medium))
+                                }
+                                .buttonStyle(.link)
+                                .accessibilityIdentifier("rules-toggle-show-all")
+                                Spacer()
+                            }
+                            .padding(.vertical, AetherVisual.s2)
+                        }
                     }
                 }
             }
@@ -720,7 +782,10 @@ struct RuleTargetLabel: View {
 private struct RuleRow: View {
     let rule: RuleConfigurationSummary
     let isHighlighted: Bool
+    var overrideTargets: [CustomRuleTarget] = []
+    var existingOverrideTarget: CustomRuleTarget? = nil
     let onTest: (String) -> Void
+    var onOverride: ((CustomRuleTarget) -> Void)? = nil
 
     @State private var isHovered = false
 
@@ -811,8 +876,35 @@ private struct RuleRow: View {
             } label: {
                 Label(AppLocalization.string("Copy Target Name"), systemImage: "arrow.right.circle")
             }
+
+            if !overrideTargets.isEmpty, onOverride != nil {
+                Divider()
+                Menu {
+                    ForEach(overrideTargets, id: \.rawString) { target in
+                        Button {
+                            onOverride?(target)
+                        } label: {
+                            if existingOverrideTarget == target {
+                                Label(overrideTargetTitle(target), systemImage: "checkmark")
+                            } else {
+                                Text(overrideTargetTitle(target))
+                            }
+                        }
+                    }
+                } label: {
+                    Label(AppLocalization.string("Override with Custom Rule"), systemImage: "arrow.triangle.branch")
+                }
+            }
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private func overrideTargetTitle(_ target: CustomRuleTarget) -> String {
+        switch target {
+        case .direct: AppLocalization.string("Always connect directly")
+        case .reject: AppLocalization.string("Always block")
+        case let .proxy(group): AppLocalization.format("Always use %@", group)
+        }
     }
 
     @discardableResult
@@ -1513,7 +1605,7 @@ struct CustomRuleEditorSheet: View {
             noResolve: rule.noResolve
         )
 
-        let existingRules = tunnel.activeProfileSummary?.rules ?? []
+        let existingRules = tunnel.activeProfileSummary?.allRules ?? []
         let simulatedList = [ruleSummary] + existingRules
 
         let destination: String

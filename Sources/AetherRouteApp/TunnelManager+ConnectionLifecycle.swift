@@ -564,11 +564,18 @@ extension TunnelManager {
         )
     }
 
+    /// `previousProviderStatus` is the status observed before this terminal
+    /// one. `lastObservedProviderStatus` already holds the terminal status by
+    /// the time this runs, so the caller must pass the earlier value.
     func handleUnexpectedProviderTermination(
-        _ connection: NEVPNConnection
+        _ connection: NEVPNConnection,
+        previousProviderStatus: NEVPNStatus?
     ) {
         let lookupID = UUID()
         disconnectErrorLookupID = lookupID
+        let hadEstablishedSession = connectedSince != nil
+            || previousProviderStatus == .connected
+            || automaticReconnectAttempt > 0
         cancelConnectionReadiness()
         connectedSince = nil
         sessionRoutingMode = nil
@@ -577,12 +584,16 @@ extension TunnelManager {
         let willAttemptAutoReconnect = ProviderAutoReconnectPolicy.shouldReconnect(
             terminationWasUnexpected: true,
             userWantsConnection: userIntendsToConnect,
+            hadEstablishedSession: hadEstablishedSession,
             attempt: automaticReconnectAttempt
         )
 
         if willAttemptAutoReconnect {
             state = .recovering
+            beginRecoveryWatchdogIfNeeded()
         } else {
+            cancelRecoveryWatchdog()
+            automaticReconnectAttempt = 0
             recordFailure(
                 LocalizedConnectionError(
                     message: AppLocalization.string(
@@ -606,7 +617,9 @@ extension TunnelManager {
                 )
             }
         }
-        scheduleAutomaticReconnect()
+        if willAttemptAutoReconnect {
+            scheduleAutomaticReconnect()
+        }
     }
 
     /// Brings the tunnel back after the provider went down on its own.
@@ -620,12 +633,25 @@ extension TunnelManager {
         guard ProviderAutoReconnectPolicy.shouldReconnect(
             terminationWasUnexpected: true,
             userWantsConnection: userIntendsToConnect,
+            hadEstablishedSession: true,
             attempt: attempt
         ), let delay = ProviderAutoReconnectPolicy.delay(forAttempt: attempt)
         else {
             Self.runtimeLogger.info(
                 "stage=automaticReconnect declined attempt=\(attempt, privacy: .public) userIntendsToConnect=\(self.userIntendsToConnect, privacy: .public)"
             )
+            if state == .recovering {
+                cancelRecoveryWatchdog()
+                automaticReconnectAttempt = 0
+                recordFailure(
+                    LocalizedConnectionError(
+                        message: AppLocalization.string(
+                            "The network extension stopped before it became ready. Another active proxy or VPN may be using the required network channel, or the active profile may have failed. Turn off conflicting network extensions, then retry."
+                        )
+                    ),
+                    context: .provider
+                )
+            }
             return
         }
         automaticReconnectAttempt = attempt + 1
@@ -657,7 +683,11 @@ extension TunnelManager {
             )
             return
         }
-        guard !isEnabled else {
+        guard TunnelLifecycleTransitionPolicy.canProceedWithAutomaticReconnect(
+            isEnabled: isEnabled,
+            hostIsRecovering: state == .recovering,
+            providerPermitsStart: managerConnectionPermitsStart
+        ) else {
             Self.runtimeLogger.info(
                 "stage=automaticReconnect abandoned attempt=\(attempt, privacy: .public) reason=alreadyActive"
             )
@@ -673,7 +703,7 @@ extension TunnelManager {
         // the tunnel connecting, and a later failure re-enters through
         // `handleUnexpectedProviderTermination`, so only re-arm when neither
         // happened.
-        if !isEnabled {
+        if !isEnabled || state == .recovering {
             scheduleAutomaticReconnect()
         }
     }
@@ -990,7 +1020,8 @@ extension TunnelManager {
         Task { [weak self] in
             guard let self else { return }
             await self.setEnabled(false)
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            _ = await self.waitForProviderToBecomeInactive()
+            guard self.state != .connected, self.state != .connecting else { return }
             await self.setEnabled(true)
         }
     }

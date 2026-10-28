@@ -15,6 +15,23 @@ public enum NetworkRecoveryHealthPolicy {
         "https://www.apple.com/library/test/success.html",
     ]
 
+    public static let directProbeURLs = [
+        "https://www.apple.com/library/test/success.html",
+        "https://cp.cloudflare.com/generate_204",
+        "https://www.google.com/generate_204",
+    ]
+
+    public static func probeURLStrings(forTargetGroup group: String) -> [String] {
+        if group.caseInsensitiveCompare("DIRECT") == .orderedSame {
+            return directProbeURLs
+        }
+        return probeURLs
+    }
+
+    public static func probeURLs(forTargetGroup group: String) -> [URL] {
+        probeURLStrings(forTargetGroup: group).compactMap(URL.init(string:))
+    }
+
     public static func isReachable(
         probe: (String) throws -> Bool
     ) -> Bool {
@@ -44,7 +61,10 @@ public enum NetworkRecoveryHealthPolicy {
         probe: (_ group: String, _ url: String) throws -> Bool
     ) -> Bool {
         groups.contains { group in
-            isReachable { url in try probe(group, url) }
+            for url in probeURLStrings(forTargetGroup: group) {
+                if (try? probe(group, url)) == true { return true }
+            }
+            return false
         }
     }
 }

@@ -356,6 +356,49 @@ public struct ProfileCatalogStore: Sendable {
     }
 
     @discardableResult
+    public func duplicate(
+        id: UUID,
+        suggestedName: String? = nil,
+        importedAt: Date = .now,
+        fileManager: FileManager = .default
+    ) throws -> ProfileCatalog {
+        let current = try loadOrMigrate(fileManager: fileManager)
+        guard let existing = current.profiles.first(where: { $0.id == id }) else {
+            throw ProfileCatalogStoreError.profileNotFound
+        }
+        guard current.profiles.count < Self.maximumProfiles else {
+            throw ProfileCatalogStoreError.profileLimitReached(
+                Self.maximumProfiles
+            )
+        }
+        let defaultName = "\(existing.profile.name) Copy"
+        let cleanName = (suggestedName ?? defaultName)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let clonedProfile = ActiveProfile(
+            name: cleanName.isEmpty ? defaultName : cleanName,
+            yaml: existing.profile.yaml,
+            importedAt: importedAt,
+            subscription: nil,
+            nativeNodes: existing.profile.nativeNodes,
+            overrides: existing.profile.overrides
+        )
+        try clonedProfile.validateForStorage()
+        var profiles = current.profiles
+        profiles.append(ManagedProfile(profile: clonedProfile))
+        let updated = ProfileCatalog(
+            activeProfileID: current.activeProfileID,
+            profiles: profiles
+        )
+        try commit(
+            updated,
+            previous: current,
+            mirrorProfile: nil,
+            fileManager: fileManager
+        )
+        return updated
+    }
+
+    @discardableResult
     public func remove(
         id: UUID,
         fileManager: FileManager = .default

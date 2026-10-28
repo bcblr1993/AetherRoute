@@ -104,14 +104,15 @@ public enum TransparentProxyUpstreamEndpointResolver {
                     port: endpoint.port,
                     addressFamily: family
                 )
+                // Past the ceiling the rest are left to the self-identity
+                // guard. Keeping the exclusions already resolved is safer than
+                // failing the start or discarding every one of them.
+                guard results.count < maximumResolvedAddresses else { break }
                 if seen.insert(result).inserted {
                     results.append(result)
-                    guard results.count <= maximumResolvedAddresses else {
-                        throw TransparentProxyUpstreamEndpointResolutionError
-                            .tooManyResolvedAddresses
-                    }
                 }
             }
+            if results.count >= maximumResolvedAddresses { break }
         }
 
         if results.isEmpty, let firstResolutionError {

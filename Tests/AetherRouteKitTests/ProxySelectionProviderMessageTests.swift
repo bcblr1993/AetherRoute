@@ -78,6 +78,45 @@ final class ProxySelectionProviderMessageTests: XCTestCase {
         XCTAssertEqual(decoded, payload)
     }
 
+    func testReloadProfilePayloadCodecCompressesLargeSubscriptionPayloadsWithoutThrowingTooLarge() throws {
+        var lines: [String] = ["proxies:"]
+        for idx in 1...400 {
+            lines.append("  - {name: 'Node-\(idx)', type: vless, server: node\(idx).example.com, port: 443, uuid: 00000000-0000-0000-0000-000000000000, tls: true}")
+        }
+        lines.append("rules:")
+        for idx in 1...12_000 {
+            lines.append("  - DOMAIN-SUFFIX,service-\(idx)-corporate-cdn.example.com,DIRECT")
+        }
+        lines.append("  - MATCH,DIRECT")
+        let largeYAML = lines.joined(separator: "\n") + "\n"
+        XCTAssertGreaterThan(
+            largeYAML.utf8.count,
+            ReloadProfilePayloadCodec.maximumPayloadBytes,
+            "Fixture YAML must exceed raw 512 KiB limit to exercise live-reload compression"
+        )
+
+        let payload = ReloadProfilePayload(
+            profileYAML: largeYAML,
+            routingMode: .rule,
+            bypassPolicy: BypassPolicy(rules: []),
+            dnsPolicy: .inherited,
+            proxySelections: ["GLOBAL": "Node-1"]
+        )
+        let encoded = try ReloadProfilePayloadCodec.encode(payload)
+        XCTAssertLessThanOrEqual(encoded.count, ReloadProfilePayloadCodec.maximumPayloadBytes)
+
+        let wireMessage = try ProxySelectionProviderMessageCodec.encode(
+            request: .reloadProfile(encoded)
+        )
+        let decodedRequest = try ProxySelectionProviderMessageCodec.decodeRequest(wireMessage)
+        guard case let .reloadProfile(decodedPayloadData) = decodedRequest else {
+            XCTFail("Expected .reloadProfile request")
+            return
+        }
+        let decoded = try ReloadProfilePayloadCodec.decode(decodedPayloadData)
+        XCTAssertEqual(decoded, payload)
+    }
+
     func testProfileReloadedResponseRoundTrips() throws {
         let encoded = try ProxySelectionProviderMessageCodec.encode(
             response: .profileReloaded

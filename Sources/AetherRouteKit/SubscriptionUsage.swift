@@ -117,6 +117,29 @@ public enum SubscriptionUsageAlert: Equatable, Sendable {
         }
     }
 
+    public var hasWarning: Bool {
+        self != .none
+    }
+
+    public var badgeTitleKey: String? {
+        switch self {
+        case .none: nil
+        case .low: "Low traffic"
+        case .expiring: "Expiring soon"
+        case .exhausted: "Traffic used up"
+        case .expired: "Expired"
+        }
+    }
+
+    public var symbolName: String? {
+        switch self {
+        case .none: nil
+        case .low: "exclamationmark.triangle.fill"
+        case .expiring: "clock.badge.exclamationmark"
+        case .exhausted, .expired: "xmark.octagon.fill"
+        }
+    }
+
     /// The most urgent alert: an ended subscription before a running-out one,
     /// and an expired date before used-up traffic.
     public static func evaluate(_ usage: SubscriptionUsage?, now: Date) -> Self {

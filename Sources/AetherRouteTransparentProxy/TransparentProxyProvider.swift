@@ -203,6 +203,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         completionHandler: @escaping (Error?) -> Void
     ) {
         Self.runtimeLog.lifecycle("stage=startProxy requested")
+        uplinkLock.withLock {
+            providerStopping = false
+        }
         let completion = ProxyStartCompletion(completionHandler)
         let snapshot: ProviderLaunchSnapshot
         let bypassPlan: BypassNetworkSettingsPlan
@@ -222,11 +225,22 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             )
             Self.runtimeLog.aggregate("stage=loadBypassPolicy success")
             Self.runtimeLog.aggregate("stage=resolveUpstreamEndpoints begin")
-            upstreamExclusions = try TransparentProxyUpstreamEndpointResolver
-                .resolve(profileYAML: snapshot.profileYAML)
-            Self.runtimeLog.aggregate(
-                "stage=resolveUpstreamEndpoints success count=\(upstreamExclusions.count)"
-            )
+            do {
+                upstreamExclusions = try TransparentProxyUpstreamEndpointResolver
+                    .resolve(profileYAML: snapshot.profileYAML)
+                Self.runtimeLog.aggregate(
+                    "stage=resolveUpstreamEndpoints success count=\(upstreamExclusions.count)"
+                )
+            } catch TransparentProxyUpstreamEndpointResolutionError.unresolvedEndpoint {
+                // The resolver already keeps every endpoint it could resolve
+                // and only throws this when none resolved, typically because
+                // system DNS is not up yet. Self-originated extension egress
+                // is still bypassed by TransparentProxySelfIdentityGuard.
+                upstreamExclusions = []
+                Self.runtimeLog.aggregate(
+                    "stage=resolveUpstreamEndpoints fallbackEmpty reason=relyingOnSelfIdentityGuard"
+                )
+            }
         } catch {
             diagnostics.record(.startupFailure)
             Self.runtimeLog.failure(
@@ -884,7 +898,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 let activeProfile = try store.loadValidated()
                 let routingMode: RoutingMode = .rule
                 let resourceStore = RoutingResourceStore(applicationSupportDirectory: store.directoryURL)
-                let resources = (try? resourceStore.launchResourceSnapshot(for: activeProfile.yaml)) ?? [:]
+                let resources = (try? resourceStore.launchResourceSnapshot(for: activeProfile.runtimeYAML)) ?? [:]
                 snapshot = try ProviderLaunchSnapshot(
                     profileYAML: activeProfile.runtimeYAML,
                     routingMode: routingMode,
@@ -896,7 +910,12 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             }
 
             let bypassPlan = try BypassNetworkSettingsPlan(policy: snapshot.bypassPolicy)
-            let upstreamExclusions = try TransparentProxyUpstreamEndpointResolver.resolve(profileYAML: snapshot.profileYAML)
+            let upstreamExclusions: [TransparentProxyUpstreamExclusion]
+            do {
+                upstreamExclusions = try TransparentProxyUpstreamEndpointResolver.resolve(profileYAML: snapshot.profileYAML)
+            } catch TransparentProxyUpstreamEndpointResolutionError.unresolvedEndpoint {
+                upstreamExclusions = []
+            }
 
             runtimeController.stop { [weak self, identityGuard, diagnostics] in
                 guard let self else {

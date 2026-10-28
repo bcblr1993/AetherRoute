@@ -81,6 +81,9 @@ public enum DomesticRoutingOptimizer {
         "DOMAIN-SUFFIX,qq.com,DIRECT",
         "DOMAIN-SUFFIX,wechat.com,DIRECT",
         "DOMAIN-SUFFIX,weixin.com,DIRECT",
+        "DOMAIN-SUFFIX,weixinbridge.com,DIRECT",
+        "DOMAIN-SUFFIX,servicewechat.com,DIRECT",
+        "DOMAIN-SUFFIX,tenpay.com,DIRECT",
         "DOMAIN-SUFFIX,baidu.com,DIRECT",
         "DOMAIN-SUFFIX,bdimg.com,DIRECT",
         "DOMAIN-SUFFIX,baidupcs.com,DIRECT",
@@ -170,6 +173,9 @@ public enum DomesticRoutingOptimizer {
         "*.tencent.com",
         "*.wechat.com",
         "*.weixin.com",
+        "*.weixinbridge.com",
+        "*.servicewechat.com",
+        "*.tenpay.com",
         "*.baidu.com",
         "*.bdimg.com",
         "*.baidupcs.com",
@@ -220,6 +226,11 @@ public enum DomesticRoutingOptimizer {
         ("'+.mzstatic.com'", "223.5.5.5"),
         ("'+.windowsupdate.com'", "223.5.5.5"),
         ("'+.alicdn.com'", "223.5.5.5"),
+        ("'+.qq.com'", "119.29.29.29"),
+        ("'+.weixin.com'", "119.29.29.29"),
+        ("'+.wechat.com'", "119.29.29.29"),
+        ("'+.tencent.com'", "119.29.29.29"),
+        ("'+.qcloud.com'", "119.29.29.29"),
         ("'+.myqcloud.com'", "119.29.29.29"),
         ("'+.bdimg.com'", "119.29.29.29"),
         ("'+.bilivideo.com'", "119.29.29.29"),
@@ -381,23 +392,27 @@ public enum DomesticRoutingOptimizer {
         var existingNameservers: [String] = []
         var existingFallbacks: [String] = []
         var existingFakeIPFilters: [String] = []
-        var existingPolicies: [(String, String)] = []
+        // Every resolver the profile lists for a key, in order. Block-style
+        // lists arrive one item per line after a bare `key:`.
+        var existingPolicies: [(String, [String])] = []
         var otherDNSProps: [String] = []
 
         var currentField: String?
+        var pendingPolicyIndex: Int?
 
         for line in lines.dropFirst() { // Skip "dns:"
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let trimmed = stripInlineComment(line.trimmingCharacters(in: .whitespaces))
             if trimmed.isEmpty || trimmed.hasPrefix("#") {
                 continue
             }
 
             let leadingSpaces = line.prefix(while: { $0 == " " }).count
 
-            if leadingSpaces <= 2 {
+            if leadingSpaces <= 2 && !trimmed.hasPrefix("-") {
                 if let (key, val) = parseKeyAndValue(trimmed) {
                     let lowerKey = key.lowercased()
                     currentField = lowerKey
+                    pendingPolicyIndex = nil
 
                     switch lowerKey {
                     case "enable", "enhanced-mode", "fake-ip-range":
@@ -419,7 +434,9 @@ public enum DomesticRoutingOptimizer {
                         continue
                     case "nameserver-policy":
                         if !val.isEmpty {
-                            existingPolicies.append(contentsOf: parseFlowPolicy(val))
+                            existingPolicies.append(contentsOf: parseFlowPolicy(val).map {
+                                ($0.0, normalizePolicyResolverValues($0.1))
+                            })
                         }
                         continue
                     case "fallback-filter":
@@ -442,7 +459,8 @@ public enum DomesticRoutingOptimizer {
             if let field = currentField {
                 if trimmed.hasPrefix("-") {
                     let item = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-                    let cleanItem = unquote(item)
+                    let cleanItem = unquote(stripInlineComment(item))
+                    guard !cleanItem.isEmpty else { continue }
                     switch field {
                     case "nameserver":
                         existingNameservers.append(cleanItem)
@@ -450,13 +468,23 @@ public enum DomesticRoutingOptimizer {
                         existingFallbacks.append(cleanItem)
                     case "fake-ip-filter":
                         existingFakeIPFilters.append(cleanItem)
+                    case "nameserver-policy":
+                        if let index = pendingPolicyIndex {
+                            existingPolicies[index].1.append(cleanItem)
+                        }
                     default:
                         break
                     }
                     continue
                 } else if field == "nameserver-policy" {
                     if let (k, v) = parsePolicyLine(trimmed) {
-                        existingPolicies.append((k, v))
+                        if v.isEmpty {
+                            existingPolicies.append((k, []))
+                            pendingPolicyIndex = existingPolicies.count - 1
+                        } else {
+                            pendingPolicyIndex = nil
+                            existingPolicies.append((k, normalizePolicyResolverValues(v)))
+                        }
                     }
                     continue
                 }
@@ -527,23 +555,32 @@ public enum DomesticRoutingOptimizer {
             output.append("    - '\(domain)'")
         }
 
-        var mergedPolicies: [(String, String)] = domesticNameserverPolicies
+        var mergedPolicies: [(String, [String])] = domesticNameserverPolicies.map {
+            ($0.0, [$0.1])
+        }
         var policyKeys = Set(mergedPolicies.map { unquote($0.0) })
-        for (k, v) in existingPolicies {
+        for (k, values) in existingPolicies {
             let cleanK = unquote(k)
             guard !cleanK.lowercased().hasPrefix("geosite:"), !cleanK.isEmpty else { continue }
             if !policyKeys.contains(cleanK) {
                 policyKeys.insert(cleanK)
-                mergedPolicies.append((cleanK, unquote(v)))
+                mergedPolicies.append((cleanK, values))
             }
         }
         output.append("  nameserver-policy:")
-        for (k, v) in mergedPolicies {
+        for (k, values) in mergedPolicies {
             let cleanK = unquote(k)
-            let cleanV = unquote(v)
-            guard !cleanK.isEmpty, !cleanV.isEmpty else { continue }
+            let cleanValues = values.map(unquote).filter { !$0.isEmpty }
+            guard !cleanK.isEmpty, !cleanValues.isEmpty else { continue }
             let formattedKey = cleanK.contains(":") || cleanK.hasPrefix("+.") || cleanK.contains("*") ? "'\(cleanK)'" : cleanK
-            output.append("    \(formattedKey): \(cleanV)")
+            // One resolver stays a plain scalar so the common case reads the
+            // same as before; several become a flow list, quoted so a `#` or
+            // `,` inside a resolver URL survives.
+            let formattedValue = cleanValues.count == 1
+                ? cleanValues[0]
+                : "[" + cleanValues.map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" }
+                    .joined(separator: ", ") + "]"
+            output.append("    \(formattedKey): \(formattedValue)")
         }
 
         output.append("  fallback-filter:")
@@ -737,6 +774,33 @@ public enum DomesticRoutingOptimizer {
         return s.trimmingCharacters(in: .whitespaces)
     }
 
+    private static func stripInlineComment(_ line: String) -> String {
+        var inSingleQuote = false
+        var inDoubleQuote = false
+        var previousWasWhitespace = true
+        for idx in line.indices {
+            let ch = line[idx]
+            if ch == "'" && !inDoubleQuote {
+                inSingleQuote.toggle()
+            } else if ch == "\"" && !inSingleQuote {
+                inDoubleQuote.toggle()
+            } else if ch == "#" && !inSingleQuote && !inDoubleQuote && previousWasWhitespace {
+                return String(line[..<idx]).trimmingCharacters(in: .whitespaces)
+            }
+            previousWasWhitespace = ch.isWhitespace
+        }
+        return line.trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func normalizePolicyResolverValues(_ rawValue: String) -> [String] {
+        let stripped = stripInlineComment(rawValue)
+        if stripped.hasPrefix("[") && stripped.hasSuffix("]") {
+            return parseFlowList(stripped)
+        }
+        let value = unquote(stripped)
+        return value.isEmpty ? [] : [value]
+    }
+
     private static func parseKeyAndValue(_ line: String) -> (String, String)? {
         guard let colonIdx = line.firstIndex(of: ":") else { return nil }
         let key = String(line[..<colonIdx]).trimmingCharacters(in: .whitespaces)
@@ -763,6 +827,9 @@ public enum DomesticRoutingOptimizer {
             let key = String(trimmed[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
             let value = String(trimmed[range.upperBound...]).trimmingCharacters(in: .whitespaces)
             return (key, value)
+        } else if trimmed.hasSuffix(":") {
+            let key = String(trimmed.dropLast()).trimmingCharacters(in: .whitespaces)
+            return (key, "")
         }
         return nil
     }

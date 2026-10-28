@@ -1292,7 +1292,9 @@ final class TunnelManager: ObservableObject {
         if enabled {
             guard TunnelLifecycleTransitionPolicy.canBeginConnection(
                 hostIsTransitioning: isTransitioning,
-                providerPermitsStart: managerConnectionPermitsStart
+                providerPermitsStart: managerConnectionPermitsStart,
+                isAutomaticReconnect: isAutomaticReconnect,
+                hostIsRecovering: state == .recovering
             ) else {
                 Self.runtimeLogger.info(
                     "stage=setEnabled ignored reason=hostOrProviderTransitioning"
@@ -1301,6 +1303,7 @@ final class TunnelManager: ObservableObject {
             }
             disconnectErrorLookupID = nil
             cancelDisconnectionWatchdog()
+            cancelRecoveryWatchdog()
             // An explicit connect supersedes any reconnect still waiting out
             // its delay, and restores the full retry budget for the next drop.
             userIntendsToConnect = true
@@ -1334,7 +1337,9 @@ final class TunnelManager: ObservableObject {
                 }
                 guard TunnelLifecycleTransitionPolicy.canBeginConnection(
                     hostIsTransitioning: isTransitioning,
-                    providerPermitsStart: managerConnectionPermitsStart
+                    providerPermitsStart: managerConnectionPermitsStart,
+                    isAutomaticReconnect: isAutomaticReconnect,
+                    hostIsRecovering: state == .recovering
                 ) else {
                     Self.runtimeLogger.info(
                         "stage=setEnabled stopped reason=transitioningAfterPrepare"

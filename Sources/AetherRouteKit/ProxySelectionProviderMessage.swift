@@ -872,24 +872,46 @@ public struct ReloadProfilePayload: Codable, Equatable, Sendable {
 
 public enum ReloadProfilePayloadCodec {
     public static let maximumPayloadBytes = 512 * 1_024
+    public static let maximumDecodedBytes = 16 * 1_024 * 1_024
+    private static let compressedMagic = Data([0x41, 0x52, 0x5A, 0x31]) // "ARZ1"
 
     public static func encode(_ payload: ReloadProfilePayload) throws -> Data {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         let data = try encoder.encode(payload)
-        guard data.count <= maximumPayloadBytes else {
+        guard data.count <= maximumDecodedBytes else {
             throw ProxySelectionProviderMessageError.tooLarge
         }
-        return data
+        if data.count <= maximumPayloadBytes {
+            return data
+        }
+        let compressed = try (data as NSData).compressed(using: .zlib) as Data
+        var framed = compressedMagic
+        framed.append(compressed)
+        guard framed.count <= maximumPayloadBytes else {
+            throw ProxySelectionProviderMessageError.tooLarge
+        }
+        return framed
     }
 
     public static func decode(_ data: Data) throws -> ReloadProfilePayload {
         guard data.count <= maximumPayloadBytes else {
             throw ProxySelectionProviderMessageError.tooLarge
         }
+        let plistData: Data
+        if data.starts(with: compressedMagic) {
+            let compressedBody = Data(data.dropFirst(compressedMagic.count))
+            let decompressed = try (compressedBody as NSData).decompressed(using: .zlib) as Data
+            guard decompressed.count <= maximumDecodedBytes else {
+                throw ProxySelectionProviderMessageError.tooLarge
+            }
+            plistData = decompressed
+        } else {
+            plistData = data
+        }
         return try PropertyListDecoder().decode(
             ReloadProfilePayload.self,
-            from: data
+            from: plistData
         )
     }
 }

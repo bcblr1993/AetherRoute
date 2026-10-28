@@ -70,10 +70,12 @@ public enum SubscriptionPayloadNormalizer {
             throw ProfileImportError.notUTF8
         }
 
+        let candidateData = stripHarmlessSubscriptionDirectivesIfPresent(in: text) ?? data
+
         do {
-            try ProfileImportValidator.validate(data: data)
+            try ProfileImportValidator.validate(data: candidateData)
             return SubscriptionPayloadNormalization(
-                data: data,
+                data: candidateData,
                 report: .init(usableNodeCount: nil, skippedNodeCount: 0)
             )
         } catch let error as ProfileImportError {
@@ -92,10 +94,11 @@ public enum SubscriptionPayloadNormalizer {
             guard let decodedText = String(data: decoded, encoding: .utf8) else {
                 throw SubscriptionPayloadError.invalidBase64
             }
+            let sanitizedDecoded = stripHarmlessSubscriptionDirectivesIfPresent(in: decodedText) ?? decoded
             do {
-                try ProfileImportValidator.validate(data: decoded)
+                try ProfileImportValidator.validate(data: sanitizedDecoded)
                 return SubscriptionPayloadNormalization(
-                    data: decoded,
+                    data: sanitizedDecoded,
                     report: .init(usableNodeCount: nil, skippedNodeCount: 0)
                 )
             } catch let decodedError as ProfileImportError {
@@ -109,6 +112,40 @@ public enum SubscriptionPayloadNormalizer {
                 return try compile(lines: lines)
             }
         }
+    }
+
+    private static let harmlessExternalUIDirectiveKeys: Set<String> = [
+        "external-ui",
+        "external-ui-name",
+        "external-ui-url",
+    ]
+
+    /// Third-party Clash/Mihomo subscriptions frequently include web dashboard UI
+    /// download hints (`external-ui`, `external-ui-name`, `external-ui-url`).
+    /// AetherRoute does not run an external web UI, so stripping those top-level
+    /// directives lets standard subscriptions import while keeping
+    /// `ProfileImportValidator` strict against direct file imports.
+    private static func stripHarmlessSubscriptionDirectivesIfPresent(in text: String) -> Data? {
+        guard text.contains("external-ui") else { return nil }
+        let lines = text.components(separatedBy: "\n")
+        var filtered: [String] = []
+        filtered.reserveCapacity(lines.count)
+        var removedAny = false
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let colonIdx = trimmed.firstIndex(of: ":") {
+                let key = String(trimmed[..<colonIdx])
+                    .trimmingCharacters(in: .whitespaces)
+                    .lowercased()
+                if harmlessExternalUIDirectiveKeys.contains(key) {
+                    removedAny = true
+                    continue
+                }
+            }
+            filtered.append(line)
+        }
+        guard removedAny else { return nil }
+        return Data(filtered.joined(separator: "\n").utf8)
     }
 
     private static func shareLines(in text: String) -> [String]? {
