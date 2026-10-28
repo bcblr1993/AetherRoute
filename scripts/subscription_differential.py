@@ -49,6 +49,16 @@ LISTENER_KEYS = ("port", "socks-port", "redir-port", "tproxy-port",
                  "interface-name")
 
 
+def delay_result(answer):
+    """Reads a successful `/delay` answer. Both engines report failures as
+    HTTP errors; our engine's `delay` is the round trip after the handshake,
+    which is 0 ms on loopback, so 0 is still an answer."""
+    delay = answer.get("delay")
+    if isinstance(delay, int) and not isinstance(delay, bool) and delay >= 0:
+        return {"ok": True, "delay": delay}
+    return {"ok": False, "error": json.dumps(answer)[:120]}
+
+
 def classify(mihomo, ours):
     """Outcome of one node; each argument is a result dict or None (absent)."""
     if ours is None:
@@ -317,9 +327,9 @@ def measure(binary, kind, profile, work, probe_url, timeout_ms, attempts, parall
                 path = f"/proxies/{urllib.parse.quote(name, safe='')}/delay?{query}"
                 try:
                     answer = _api(api_port, path, timeout=timeout_ms / 1000 + 5)
-                    if isinstance(answer.get("delay"), int) and answer["delay"] > 0:
-                        return name, {"ok": True, "delay": answer["delay"]}
-                    last = {"ok": False, "error": json.dumps(answer)[:120]}
+                    last = delay_result(answer)
+                    if last["ok"]:
+                        return name, last
                 except urllib.error.HTTPError as error:
                     body = error.read().decode(errors="replace")[:80]
                     last = {"ok": False, "error": f"HTTP {error.code} {body}"}

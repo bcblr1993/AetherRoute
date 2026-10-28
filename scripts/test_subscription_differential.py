@@ -47,6 +47,16 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(diff.classify(failed(), None), "ours_missing")
         self.assertEqual(diff.classify(None, ok()), "mihomo_missing")
 
+    def test_a_sub_millisecond_answer_is_a_success(self):
+        # Our engine reports the HTTP round trip after the handshake, which
+        # rounds to 0 ms on loopback; that is an answer, not a failure.
+        self.assertEqual(diff.delay_result({"delay": 0, "overall": 1}),
+                         {"ok": True, "delay": 0})
+        self.assertEqual(diff.delay_result({"delay": 12}), {"ok": True, "delay": 12})
+        self.assertFalse(diff.delay_result({"message": "timeout"})["ok"])
+        self.assertFalse(diff.delay_result({"delay": -1})["ok"])
+        self.assertFalse(diff.delay_result({"delay": True})["ok"])
+
     def test_only_our_regressions_are_findings(self):
         self.assertTrue(diff.is_finding("ours_fail"))
         self.assertTrue(diff.is_finding("ours_missing"))
@@ -203,7 +213,7 @@ class EndToEndTests(unittest.TestCase):
             if not needed.exists():
                 raise unittest.SkipTest(f"missing {needed}")
 
-    def test_engines_agree_on_live_dead_and_unsupported_nodes(self):
+    def test_engines_agree_on_live_dead_unsupported_and_airport_nodes(self):
         with tempfile.TemporaryDirectory(prefix="aetherroute-diff-e2e-") as directory:
             work = Path(directory)
             mihomo = diff.unpack_mihomo(self.tools / "mihomo-darwin-arm64-v1.19.29.gz", work)
@@ -212,13 +222,27 @@ class EndToEndTests(unittest.TestCase):
             threading.Thread(target=http.serve_forever, daemon=True).start()
             probe_url = f"http://127.0.0.1:{http.server_port}/generate_204"
 
-            ss_port, dead_port = free_port(), free_port()
+            ss_port, dead_port, anytls_port = free_port(), free_port(), free_port()
             password = "e2e-password"
+            subprocess.run(
+                ["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt",
+                 "ec_paramgen_curve:prime256v1", "-nodes", "-days", "1",
+                 "-subj", "/CN=localhost", "-keyout", str(work / "key.pem"),
+                 "-out", str(work / "cert.pem")],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             (work / "sing-box.json").write_text(json.dumps({
                 "log": {"level": "error"},
-                "inbounds": [{"type": "shadowsocks", "listen": "127.0.0.1",
-                              "listen_port": ss_port, "method": "aes-128-gcm",
-                              "password": password}],
+                "inbounds": [
+                    {"type": "shadowsocks", "listen": "127.0.0.1",
+                     "listen_port": ss_port, "method": "aes-128-gcm",
+                     "password": password},
+                    {"type": "anytls", "listen": "127.0.0.1",
+                     "listen_port": anytls_port,
+                     "users": [{"name": "e2e", "password": password}],
+                     "tls": {"enabled": True,
+                             "certificate_path": str(work / "cert.pem"),
+                             "key_path": str(work / "key.pem")}},
+                ],
                 "outbounds": [{"type": "direct"}],
             }))
             server = subprocess.Popen(
@@ -226,6 +250,7 @@ class EndToEndTests(unittest.TestCase):
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             try:
                 diff.wait_for_port(ss_port, timeout=10)
+                diff.wait_for_port(anytls_port, timeout=10)
                 profile = {
                     "mode": "global",
                     "proxies": [
@@ -236,9 +261,20 @@ class EndToEndTests(unittest.TestCase):
                         {"name": "unsupported", "type": "vless", "server": "127.0.0.1",
                          "port": ss_port, "uuid": SECRET_UUID, "network": "xhttp",
                          "tls": True},
+                        # As airport subscriptions write AnyTLS nodes. Up to
+                        # 1.10.0 our engine refused these options, so every
+                        # such node was skipped (or the profile failed).
+                        {"name": "airport-anytls", "type": "anytls",
+                         "server": "127.0.0.1", "port": anytls_port,
+                         "password": password, "sni": "localhost",
+                         "skip-cert-verify": True, "udp": True,
+                         "client-fingerprint": "chrome",
+                         "idle-session-check-interval": 30,
+                         "idle-session-timeout": 30, "min-idle-session": 0},
                     ],
                     "proxy-groups": [{"name": "PROXY", "type": "select",
-                                      "proxies": ["live", "dead", "unsupported"]}],
+                                      "proxies": ["live", "dead", "unsupported",
+                                                  "airport-anytls"]}],
                     "rules": ["MATCH,PROXY"],
                 }
                 report = diff.compare(
@@ -263,6 +299,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(by_name["live"], "both_ok", report)
         self.assertEqual(by_name["dead"], "both_fail", report)
         self.assertEqual(by_name["unsupported"], "ours_missing", report)
+        self.assertEqual(by_name["airport-anytls"], "both_ok", report)
         self.assertNotIn(password, json.dumps(report))
 
 
