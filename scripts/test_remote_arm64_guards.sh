@@ -59,8 +59,8 @@ grep -F 'refuses a local endpoint' "$WORK/local.log" >/dev/null
 for required in \
   'uname -m' \
   'AETHERROUTE_DERIVED_DATA_PATH' \
-  'export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"' \
-  'for command in go gofmt jq python3' \
+  'export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/sdk/go/bin:$HOME/sdk/bin:$PATH"' \
+  'for command in go gofmt jq python3 rg' \
   'scripts/test.sh' \
   'scripts/test_sanitizers.sh' \
   'System proxy/DNS/default-route/interface state changed' \

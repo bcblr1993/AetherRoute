@@ -153,18 +153,8 @@ cmp -s "$EXPECTED_SOURCE" "$WORK/source-manifest-staged.txt" || {
   exit 1
 }
 
-create_payload_manifest() {
-  manifest_root=$1
-  manifest_output=$2
-  (
-    cd "$manifest_root"
-    find . -type f -print | LC_ALL=C sort | while IFS= read -r file
-    do
-      hash=$(shasum -a 256 "$file" | awk '{print $1}')
-      printf '%s  %s\n' "$hash" "$file"
-    done
-  ) > "$manifest_output"
-}
+# shellcheck source=scripts/payload_manifest.sh
+. "$ROOT/scripts/payload_manifest.sh"
 create_payload_manifest "$PAYLOAD" "$EXPECTED_PAYLOAD"
 
 local_uuid=$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice \

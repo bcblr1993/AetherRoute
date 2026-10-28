@@ -87,6 +87,52 @@ class AcceptancePolicyTests(unittest.TestCase):
         self.assertIn("BLOCKED", result.stderr)
         self.assertFalse(output.exists())
 
+    def plan(self, overrides=None):
+        output = self.base / "plan-must-not-be-created"
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AETHERROUTE_")}
+        # A missing signing config stops a run that ignored plan-only mode in
+        # preflight, before it can touch the VM, the Mac mini or a build.
+        env.update({"AETHERROUTE_ACCEPTANCE_PLAN_ONLY": "1",
+                    "AETHERROUTE_SIGNING_CONFIG": str(self.base / "missing-signing.json"),
+                    **(overrides or {})})
+        result = subprocess.run(["sh", str(ROOT / "scripts/run_release_acceptance_parallel.sh"),
+                                 "1.10.0", "2026102901", str(output)],
+                                env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(output.exists())
+        return [line for line in result.stdout.splitlines() if line.startswith("plan ")]
+
+    def test_default_plan_moves_remote_gate_to_the_vm(self):
+        # The Mac mini keeps only what needs its GUI session or notarized
+        # system extensions; the source gate follows the matrix on the VM and
+        # the notarized candidate builds alongside both.
+        self.assertEqual(self.plan(), [
+            "plan track1: vm-matrix macos27 -> remote-arm64 vm fast",
+            "plan track2: ui-perf chenxu@100.64.0.3 300s",
+            "plan track3: notarized-candidate stable AetherRoute-Notary",
+            "plan then: physical-runtime chenxu@100.64.0.3 tun transparent",
+            "plan then: verify-physical-evidence",
+        ])
+
+    def test_plan_can_keep_remote_gate_on_the_mac_mini(self):
+        plan = self.plan({"AETHERROUTE_REMOTE_GATE_HOST": "chenxu@100.64.0.3",
+                          "AETHERROUTE_NOTARY_PROFILE": "Other-Profile"})
+        self.assertEqual(plan[:3], [
+            "plan track1: vm-matrix macos27",
+            "plan track2: remote-arm64 chenxu@100.64.0.3 fast -> ui-perf chenxu@100.64.0.3 300s",
+            "plan track3: notarized-candidate stable Other-Profile",
+        ])
+
+    def test_plan_only_still_rejects_shortened_runs(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AETHERROUTE_")}
+        env.update(AETHERROUTE_ACCEPTANCE_PLAN_ONLY="1", AETHERROUTE_PERF_SECONDS="60",
+                   AETHERROUTE_SIGNING_CONFIG=str(self.base / "missing-signing.json"))
+        result = subprocess.run(["sh", str(ROOT / "scripts/run_release_acceptance_parallel.sh"),
+                                 "1.10.0", "2026102901", str(self.base / "x")],
+                                env=env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("BLOCKED", result.stderr)
+
     def fake_dmg(self, build="2026101701", binaries=BINARIES):
         """A real (tiny) DMG laid out like the notarized candidate."""
         source = self.base / f"dmg-src-{build}-{len(binaries)}"

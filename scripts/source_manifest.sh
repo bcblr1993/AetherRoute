@@ -62,13 +62,15 @@ MANIFEST="$WORK/manifest.txt"
   fi
 ) | LC_ALL=C sort -u > "$LIST"
 
+# One shasum per batch, not per file: spawning two processes for each of the
+# thousands of files took most of an hour on the Tart VM. The output is the
+# same "hash  path" line shasum prints for a single file, in list order, and a
+# missing file now fails the run instead of leaving an empty hash.
 (
   cd "$ROOT"
-  while IFS= read -r manifest_path
-  do
-    hash=$(shasum -a 256 "$manifest_path" | awk '{print $1}')
-    printf '%s  %s\n' "$hash" "$manifest_path"
-  done < "$LIST"
+  if [ -s "$LIST" ]; then
+    tr '\n' '\0' < "$LIST" | xargs -0 shasum -a 256 --
+  fi
 ) > "$MANIFEST"
 
 cat "$MANIFEST"

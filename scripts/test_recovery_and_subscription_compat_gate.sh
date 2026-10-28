@@ -335,4 +335,37 @@ done
 "$TEMP_DIR/packet_compat_smoke" "$COMPAT_PROFILE" "$TEMP_DIR/runtime-packet" >/dev/null
 
 echo "PASS: Both Flow and Packet Rust cores initialized and validated mixed third-party subscription cleanly"
+
+# 5. A node that parses but cannot load (a transport the engine does not
+# implement) must not take the profile down. Until 1.10.0 one such node made
+# both cores refuse the whole subscription ("proxy ... not found" / "outbound
+# could not be initialized"), while Mihomo loads the rest.
+UNSUPPORTED_PROFILE="$TEMP_DIR/unsupported_transport.yaml"
+cat >"$UNSUPPORTED_PROFILE" <<'YAML'
+mode: rule
+proxies:
+  - {name: live, type: ss, server: 127.0.0.1, port: 1080, cipher: aes-128-gcm, password: fixture}
+  - {name: xhttp-node, type: vless, server: 127.0.0.1, port: 1081, uuid: 11111111-2222-3333-4444-555555555555, network: xhttp, tls: true}
+  - {name: upgrade-node, type: vmess, server: 127.0.0.1, port: 1082, uuid: 11111111-2222-3333-4444-555555555555, cipher: auto, alterId: 0, network: httpupgrade}
+proxy-groups:
+  - {name: PROXY, type: select, proxies: [AUTO, live, xhttp-node, upgrade-node]}
+  - {name: AUTO, type: url-test, proxies: [xhttp-node, upgrade-node], url: 'http://www.gstatic.com/generate_204', interval: 300}
+rules:
+  - DOMAIN-SUFFIX,example.com,AUTO
+  - MATCH,PROXY
+YAML
+mkdir -m 700 "$TEMP_DIR/runtime-flow-unsupported" "$TEMP_DIR/runtime-packet-unsupported"
+for ASSET in Country.mmdb GeoSite.dat; do
+  cp "$ROOT/Config/RoutingResources/$ASSET" "$TEMP_DIR/runtime-flow-unsupported/$ASSET"
+  cp "$ROOT/Config/RoutingResources/$ASSET" "$TEMP_DIR/runtime-packet-unsupported/$ASSET"
+done
+"$TEMP_DIR/flow_compat_smoke" "$UNSUPPORTED_PROFILE" "$TEMP_DIR/runtime-flow-unsupported" >/dev/null || {
+  echo "FAIL: Flow core refused a subscription with one unsupported-transport node" >&2
+  exit 1
+}
+"$TEMP_DIR/packet_compat_smoke" "$UNSUPPORTED_PROFILE" "$TEMP_DIR/runtime-packet-unsupported" >/dev/null || {
+  echo "FAIL: Packet core refused a subscription with one unsupported-transport node" >&2
+  exit 1
+}
+echo "PASS: Both Rust cores skip unsupported-transport nodes and keep the rest of the subscription"
 echo "==> [Gate] Recovery state-machine & third-party subscription compatibility gate passed successfully."

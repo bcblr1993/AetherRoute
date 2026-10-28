@@ -36,10 +36,13 @@ GATE_STATUS=failed
 
 # Homebrew is intentionally absent from the default non-interactive SSH PATH
 # on the validation Mac. Keep the remote gate deterministic without requiring
-# shell profile files to be sourced.
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+# shell profile files to be sourced. The macos27 VM has no Homebrew and no
+# passwordless sudo; its Go toolchain (same version as the Mac mini's) lives
+# in ~/sdk/go and the official static ripgrep release in ~/sdk/bin. Check every
+# tool up front: test.sh needs rg only after an hour of other suites.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/sdk/go/bin:$HOME/sdk/bin:$PATH"
 
-for command in go gofmt jq python3; do
+for command in go gofmt jq python3 rg; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "Remote validation requires $command" >&2
     exit 1
@@ -83,18 +86,8 @@ test "$available_kb" -ge "$required_kb" || {
   exit 1
 }
 
-create_payload_manifest() {
-  manifest_root=$1
-  manifest_output=$2
-  (
-    cd "$manifest_root"
-    find . -type f -print | LC_ALL=C sort | while IFS= read -r file
-    do
-      hash=$(shasum -a 256 "$file" | awk '{print $1}')
-      printf '%s  %s\n' "$hash" "$file"
-    done
-  ) > "$manifest_output"
-}
+# shellcheck source=scripts/payload_manifest.sh
+. "$ROOT/scripts/payload_manifest.sh"
 
 create_payload_manifest "$BASE/payload" "$ACTUAL_PAYLOAD"
 cmp -s "$EXPECTED_PAYLOAD" "$ACTUAL_PAYLOAD" || {
