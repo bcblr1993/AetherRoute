@@ -4,6 +4,45 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.11.0] - 2026-10-29
+
+Adds the V2Ray `httpupgrade` transport, the last node type in the real-server comparison that Mihomo could use and we could not: all 28 protocol variants now behave the same in both engines. Share links with a transport the app cannot carry are now refused with a message instead of becoming a TCP node that never connects.
+
+### Added
+
+- **`httpupgrade` transport for VMess, VLESS and Trojan (engine `d12ed6a`, `proxy/transport/ws`)**: Mihomo writes it as `network: ws` with `ws-opts.v2ray-http-upgrade: true`. The flag was not parsed, so the engine performed a WebSocket handshake against an httpupgrade server and got "404 Not Found". With the flag, the client sends one HTTP/1.1 upgrade request (path, `Host` and custom headers, no `Sec-WebSocket-Key`), waits for `101` and then carries raw bytes with no WebSocket framing. The response head is read one byte at a time and bounded to 8 KiB, so bytes the server sends right behind it stay in the stream; header names and values with CR or LF are refused. `v2ray-http-upgrade-fast-open` is accepted and ignored, which costs one round trip. `network: httpupgrade` stays unsupported, as in Mihomo.
+- **httpupgrade share links (`SubscriptionPayloadNormalizer`, `AetherNodeURIParser`)**: `type=httpupgrade` on VLESS and Trojan links and `"net": "httpupgrade"` in VMess links compile to Mihomo's spelling. Subscriptions used to skip these as invalid links. "Paste node link" keeps the transport and "Copy node link" writes it back. The node model gains `httpUpgrade`; nodes saved by earlier versions decode with `false`.
+
+### Fixed
+
+- **A pasted link with an unsupported transport no longer becomes a TCP node (`AetherNodeURIParser`)**: `type=xhttp` and any other unknown value turned into a plain TCP node that could never connect, with no message. The link is now refused with "Unsupported proxy transport: xhttp". Xray's `raw` is read as TCP.
+- **JSON profiles with a built-in plugin are accepted (`ProfileImportValidator`)**: in a profile served as JSON, `"plugin": "shadow-tls",` kept its trailing comma, so the built-in plugin was not recognised and the whole profile was refused as executable. The comma is now removed before the check; unknown plugins and `command` keys are still refused.
+
+### Tests
+
+- Engine: `http_upgrade_carries_raw_bytes_after_the_101`, `http_upgrade_rejects_a_non_101_answer`, `http_upgrade_bounds_the_response_head` and `mihomo_http_upgrade_flag_selects_the_raw_upgrade`, each failing before the change. Engine library tests with the app's feature set: 426 passed.
+- `HTTPUpgradeTransportTests` (4) and `ProfileImportValidatorJSONTests` (2), each failing on the 1.10.1 code.
+- `test_subscription_differential.py`: the end-to-end run adds a Mihomo-style httpupgrade VLESS node served by sing-box on loopback. On the 1.10.1 engine it reported `ours_fail`; it now passes 10 runs out of 10.
+- `scripts/protocol_lab.py` expects the httpupgrade node to work in both engines.
+
+### Verified
+
+- Local: `./scripts/test.sh` passed with zero code warnings: XCTest 555 + 98 + 24, 0 failures (`outputs/test-sh-1.11.0.console.log`). `test_fast_lane.sh` with the interop gate passed in 409 s (`outputs/fast-lane-20261028T214840Z`): matrix, reality, wireguard, shadowquic and ssh all passed, and so did the Mihomo differential end-to-end run.
+- Mihomo differential on the real lab server (28 nodes, probed from the Mac mini, `outputs/protocol-lab/diff-1.10.2`): all 28 worked in both engines, including `vless-httpupgrade-tls`. WireGuard worked in Mihomo again, confirming that its failure during the 1.10.1 evidence overlap came from that overlap.
+- Three-track acceptance (`outputs/acceptance-1.11.0-2026102902-20261029-060935`, 34 min 20 s):
+  - Track 1: the Tart VM `macos27` 6-way matrix passed (210 checks: 160 PASS, 0 FAIL, 50 SKIP), then the remote arm64 gate passed on the same VM.
+  - Track 2: the UI performance gate passed on the Mac mini.
+  - Track 3: the notarized stable candidate built and was stapled. App submission `a3cc3da2-2362-4462-8119-4094d83b07d5`, DMG submission `d3297ecb-e121-4402-aa51-ee60bfc95220`.
+- Physical runtime evidence for notarized stable candidate `2026102902` (DMG SHA-256 `b821537da4f4e2420ee0367e99eb655678f5b3aaa08ddb5d238faf3a15315ec8`), with nothing else using the Mac mini: TUN passed idle keep-alive reuse, uploaded 2 MiB in 0.95 s, and recovered from interface switches in 2/1/1/2/3/2 s; the transparent proxy passed idle keep-alive reuse, uploaded 2 MiB in 0.91 s, and recovered in 2/1/1/1/2/2 s.
+- UI performance and memory (`ui-perf/result.txt`, 300 s per profile):
+
+| Profile | Page switch p95 / max (ms) | Footprint median / max (MB) | Growth |
+|---|---|---|---|
+| showcase 1.10.1 → 1.11.0 | 147.8 / 179.5 → 149.2 / 193.1 | 71 / 82 → 72 / 82 | +0 → +1 MB |
+| large 1.10.1 → 1.11.0 | 148.2 / 157.4 → 145.6 / 195.9 | 71 / 89 → 66 / 77 | +1 → +0 MB |
+
+All within budget (p95 ≤ 180 ms, max ≤ 300 ms, median ≤ 90 MB, max ≤ 110 MB, growth ≤ 8 MB). This release changes no app UI code; the higher maxima are single page switches.
+
 ## [1.10.1] - 2026-10-29
 
 Airport subscriptions whose AnyTLS nodes ask for a browser TLS fingerprint now connect. A user reported that such a subscription left the app stuck at "正在恢复网络" from 1.8.3 on; 1.10.0 only skipped the nodes. Comparing both cores node by node against a real server running 28 protocol variants found two more nodes that Mihomo loads and we did not.

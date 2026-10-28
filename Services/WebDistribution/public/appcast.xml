@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.10.1 (Build 2026102901)</title>
-            <pubDate>Thu, 29 Oct 2026 05:30:28 +0800</pubDate>
-            <sparkle:version>2026102901</sparkle:version>
-            <sparkle:shortVersionString>1.10.1</sparkle:shortVersionString>
+            <title>Version 1.11.0 (Build 2026102902)</title>
+            <pubDate>Thu, 29 Oct 2026 06:52:19 +0800</pubDate>
+            <sparkle:version>2026102902</sparkle:version>
+            <sparkle:shortVersionString>1.11.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.10.1/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.11.0/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,34 +120,39 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.10.1 更新要点</span>
-  <span class="release-badge">Build 2026102901 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.11.0 更新要点</span>
+  <span class="release-badge">Build 2026102902 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐛 修复：机场订阅导入后更多节点能直接用</span>
+  <span class="section-tag tag-feature">✨ 新增：支持 httpupgrade 传输</span>
   <ul>
-    <li><strong>AnyTLS 节点带 client-fingerprint 时照常连接</strong>：很多机场给每个 AnyTLS 节点都写了 <code>client-fingerprint: chrome</code>，过去这些节点加载不了，全是此类节点的订阅会一直停在“正在恢复网络”。现在节点可以正常连接（连接时不模拟浏览器的 TLS 指纹）。</li>
-    <li><strong>SS2022 ChaCha 加密的标准名称</strong>：<code>2022-blake3-chacha20-poly1305</code> 过去被当成不支持的加密方式，现在可以使用。</li>
-    <li><strong>WireGuard 地址不带前缀</strong>：<code>ip: 172.16.0.2</code> 这种写法（Mihomo 文档和 WARP 导出都这样写）过去会让节点加载失败，IPv6 地址还会被悄悄丢掉。现在两种写法都支持。</li>
+    <li><strong>httpupgrade 节点可以直接使用</strong>：VMess、VLESS、Trojan 都支持。无论订阅是 Clash/Mihomo 配置（<code>v2ray-http-upgrade: true</code>）还是分享链接（<code>type=httpupgrade</code>），导入即可连接。过去这类节点会连接失败或被跳过。</li>
+  </ul>
+</div>
+<div class="section">
+  <span class="section-tag tag-fix">🐛 修复</span>
+  <ul>
+    <li><strong>粘贴节点链接时不再悄悄变成 TCP</strong>：遇到 xhttp 等暂不支持的传输会明确提示，过去会生成一个永远连不上的节点。</li>
+    <li><strong>JSON 格式的订阅配置</strong>：带 shadow-tls 等内置插件时不再被误判为不安全而整份拒绝。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">🛡️ 质量保证</span>
   <ul>
-    <li>在真实服务器上搭建 28 种协议变体，与参考实现 Mihomo 逐节点对照：修复后 27 种表现一致，剩下的 httpupgrade 将在下个版本支持。</li>
-    <li>Tart 虚拟机 6 维网络矩阵、远程源码门禁、UI 性能门禁、Mac mini 真机门禁（TUN 与透明代理的空闲复用、2 MiB 上传、切换网卡在 1–2 秒内恢复）全部通过。</li>
+    <li>真实服务器上 28 种协议变体与参考实现 Mihomo 逐节点对照，全部表现一致。</li>
+    <li>Tart 虚拟机 6 维网络矩阵、远程源码门禁、UI 性能门禁、Mac mini 真机门禁（TUN 与透明代理的空闲复用、2 MiB 上传、切换网卡在 1–3 秒内恢复）全部通过。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.10.1/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.11.0/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.10.1/AetherRoute-1.10.1-build-2026102901-arm64.dmg"
-                sparkle:edSignature="vwXUxzScEqCrVa/Yci0Ghs/9N4YDbb3hRIBBBlV56m+L1SQAQUt6madTkqXissMi9bMW3h1eSkLLg+rsdudBDQ=="
-                length="27955421"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.11.0/AetherRoute-1.11.0-build-2026102902-arm64.dmg"
+                sparkle:edSignature="wqCjQ52hEjUhwEPLr+GsLYrPIdAUQO+S0f5UA9roPfmPDMil41UzC0j/C1E19fuQHEIvW3LeWeQaxo8r+cOwAg=="
+                length="27742514"
                 type="application/octet-stream" />
         </item>
     </channel>
