@@ -61,6 +61,18 @@
       "version": "1.1.4"
     },
     {
+      "license": "BSD-3-Clause",
+      "name": "alloc-no-stdlib",
+      "repository": "https://github.com/dropbox/rust-alloc-no-stdlib",
+      "version": "2.0.4"
+    },
+    {
+      "license": "BSD-3-Clause",
+      "name": "alloc-stdlib",
+      "repository": "https://github.com/dropbox/rust-alloc-no-stdlib",
+      "version": "0.2.4"
+    },
+    {
       "license": "MIT OR Apache-2.0",
       "name": "annotate-snippets",
       "repository": "https://github.com/rust-lang/annotate-snippets-rs",
@@ -269,6 +281,12 @@
       "name": "boring-noise",
       "repository": "https://github.com/watfaq/boring-noise",
       "version": "0.1.0"
+    },
+    {
+      "license": "BSD-3-Clause OR MIT",
+      "name": "brotli-decompressor",
+      "repository": "https://github.com/dropbox/rust-brotli-decompressor",
+      "version": "5.0.3"
     },
     {
       "license": "MIT",
@@ -2636,8 +2654,8 @@
     }
   ],
   "coreArtifacts": {
-    "packetTunnel": "76d485c1b9ba14b4295925c5db2bc170afc0837e2aea92bb03e8cd9cbcd2f31e",
-    "transparentProxy": "c27e1e70c421c6d7f45ea1fc702bcbf47879869079adce774f4401c153d809e0"
+    "packetTunnel": "13f63eb142c315e5ced569de9ee0f395bbfebc682bb303e1b4c2b08657b2037e",
+    "transparentProxy": "b0d8b5c60833529c9f40f4e3e4f329708ecc6dddc086798c141a72142e887283"
   },
   "licenses": [
     {
@@ -3291,6 +3309,14 @@
     },
     {
       "components": [
+        "alloc-no-stdlib@2.0.4"
+      ],
+      "id": "BSD-3-Clause",
+      "name": "BSD 3-Clause \"New\" or \"Revised\" License",
+      "text": "Copyright (c) 2016 Dropbox, Inc.\nAll rights reserved.\n\nRedistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:\n\n1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.\n\n2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.\n\n3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n"
+    },
+    {
+      "components": [
         "subtle@2.6.1"
       ],
       "id": "BSD-3-Clause",
@@ -3323,6 +3349,7 @@
     },
     {
       "components": [
+        "alloc-stdlib@0.2.4",
         "aws-lc-sys@0.41.0",
         "boring-noise@0.1.0",
         "curve25519-dalek@4.1.3",
@@ -3707,6 +3734,7 @@
     },
     {
       "components": [
+        "brotli-decompressor@5.0.3",
         "brutal-core@0.1.0",
         "dhcproto-macros@0.2.0",
         "shadowquic-macros@0.3.11",

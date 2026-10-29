@@ -4,6 +4,7 @@
     "anytls",
     "direct",
     "http",
+    "hysteria",
     "hysteria2",
     "reject",
     "shadowquic",

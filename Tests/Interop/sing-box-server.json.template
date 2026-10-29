@@ -133,6 +133,21 @@
       "users": [{"name": "interop", "password": "trojan-password"}],
       "tls": {"enabled": true, "certificate_path": "__CERT__", "key_path": "__KEY__"},
       "transport": {"type": "ws", "path": "/trojan-ws"}
+    },
+    {
+      "type": "hysteria", "tag": "hy1-in",
+      "listen": "127.0.0.1", "listen_port": 59051,
+      "up_mbps": 1000, "down_mbps": 1000,
+      "users": [{"name": "interop", "auth_str": "hy1-password"}],
+      "tls": {"enabled": true, "alpn": ["hysteria"], "certificate_path": "__CERT__", "key_path": "__KEY__"}
+    },
+    {
+      "type": "hysteria", "tag": "hy1-obfs-in",
+      "listen": "127.0.0.1", "listen_port": 59052,
+      "up_mbps": 1000, "down_mbps": 1000,
+      "obfs": "xplus-password",
+      "users": [{"name": "interop", "auth_str": "hy1-password"}],
+      "tls": {"enabled": true, "alpn": ["hysteria"], "certificate_path": "__CERT__", "key_path": "__KEY__"}
     }
   ],
   "outbounds": [{"type": "direct", "tag": "direct"}],
