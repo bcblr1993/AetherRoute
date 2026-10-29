@@ -1,0 +1,59 @@
+{
+  "log": {"loglevel": "warning"},
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "port": 59080,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{"id": "b831381d-6324-4d53-ad4f-8cda48b30811"}],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "tls",
+        "tlsSettings": {
+          "alpn": ["h2", "http/1.1"],
+          "certificates": [{"certificateFile": "__CERT__", "keyFile": "__KEY__"}]
+        },
+        "xhttpSettings": {"path": "/xh", "mode": "auto"}
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 59081,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{"id": "b831381d-6324-4d53-ad4f-8cda48b30811"}],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "target": "www.cloudflare.com:443",
+          "serverNames": ["www.cloudflare.com"],
+          "privateKey": "wLts0LPcc1yKPZsVN-BNtLrsP9vbAKlkraJaGEim0lA",
+          "shortIds": ["6ba85179e30d4fc2"]
+        },
+        "xhttpSettings": {"path": "/xr", "mode": "auto"}
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 59082,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{"id": "b831381d-6324-4d53-ad4f-8cda48b30811"}],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {"path": "/xp?ed=2048", "host": "cdn.example", "mode": "auto"}
+      }
+    }
+  ],
+  "outbounds": [{"protocol": "freedom", "tag": "direct"}]
+}

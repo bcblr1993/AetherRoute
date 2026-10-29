@@ -51,7 +51,8 @@
       "grpc",
       "h2",
       "tcp",
-      "ws"
+      "ws",
+      "xhttp"
     ],
     "vmess": [
       "grpc",

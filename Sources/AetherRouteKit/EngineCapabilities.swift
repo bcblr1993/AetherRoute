@@ -9,7 +9,7 @@ public enum EngineCapabilities {
     public static let ruleTypes: Set<String> = ["AETHER-APP", "AND", "DOMAIN", "DOMAIN-KEYWORD", "DOMAIN-REGEX", "DOMAIN-SUFFIX", "DST-PORT", "GEOIP", "GEOSITE", "IP-CIDR", "IP-CIDR6", "MATCH", "NETWORK", "NOT", "OR", "PROCESS-NAME", "PROCESS-PATH", "PROCESS-PATH-REGEX", "RULE-SET", "SRC-IP-CIDR", "SRC-PORT"]
     public static let networks: [String: Set<String>] = [
         "trojan": ["grpc", "tcp", "ws"],
-        "vless": ["grpc", "h2", "tcp", "ws"],
+        "vless": ["grpc", "h2", "tcp", "ws", "xhttp"],
         "vmess": ["grpc", "h2", "tcp", "ws"],
     ]
     public static let shadowsocksPlugins: Set<String> = ["obfs", "shadow-tls", "v2ray-plugin"]

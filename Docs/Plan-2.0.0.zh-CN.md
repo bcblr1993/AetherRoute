@@ -131,7 +131,7 @@
 | ✅ | M1 Chrome 指纹 + ALPS | JA4 对比真机、各协议抓包、真实站点握手 | sing-box、Xray、9 个真实站点 | 完成 |
 | ✅ | M2-1 Hysteria v1 | 编解码、分片重组、配置 | sing-box | 完成 |
 | ✅ | M2-2 SSR（TCP：6 种 protocol × 5 种 obfs × 流加密；UDP 见 3B） | 加密已知答案、帧往返、ticket 握手 | Python ShadowsocksR（Apache-2.0，固定提交） | 完成 |
-| 2 | M2-3 xhttp（packet-up / stream-up / stream-one，含 TLS 与 REALITY） | 请求分帧、多路分包顺序 | Xray（已有） | 1 天 |
+| ✅ | M2-3 xhttp（packet-up / stream-up / stream-one / auto，TLS · REALITY · 明文） | 配置加载与拒绝、路径与填充、Xray 互通 8 例 | Xray 26.3.27 | 完成 |
 | 3 | M2-4 VLESS encryption（mlkem768x25519plus） | 握手与密钥派生对照 Xray | Xray | 0.5 天 |
 | 4 | M2-5 TUIC v4（token） | 帧格式 | 官方 tuic-server v0.8 | 0.5 天 |
 | 5 | M2-6 Snell v1–v5 | 帧格式与加密 | 官方 snell-server（固定版本） | 0.5 天 |
@@ -186,6 +186,13 @@
   - 互通：Xray（已固定版本）开 3 种模式 × {TLS, REALITY} 共 6 个用例，与现有矩阵同一套检查（2 MiB、空闲复用、证书固定 / 拒绝）；
   - 对照：Mihomo 加载同一 xhttp 节点，两边都能连通。
 - **风险**：xhttp 仍在演进。锁定 Xray 版本，字段以 Mihomo 1.19.29 为准；遇到不认识的 `extra` 字段时，跳过该字段并报告。
+
+- **完成情况（2026-10-29）**：引擎 `5a9fc33`。所有请求走 HTTP/2：TLS 用 ALPN h2，REALITY 与明文用 h2c（Xray 服务端支持）。同一代理连接的所有请求共用一条 HTTP/2 连接。
+- **已知限制**：
+  - 明文 xhttp 经只支持 HTTP/1.1 的 CDN（80 端口）暂不支持；
+  - `download-settings`、`x-padding-obfs-mode`、header / query / cookie 位置、非 POST 上行会让节点加载失败，并在日志中写明选项名；
+  - App 兼容性提示只解析节点的顶层键，看不到这些嵌套选项；
+  - 以上列入"2.0 之后"，视用户反馈处理。
 
 ### M2-4 VLESS encryption（`encryption: mlkem768x25519plus...`）
 - **背景**：现在这类节点能加载但连不上，比不支持更糟。实现之前，先改为明确报告"暂不支持"，这一步先做（先写测试）。
@@ -283,7 +290,7 @@
 
 ### 2.0 之后（不阻塞发布）
 - Firefox / Safari / iOS 指纹（M1b）；`edge`、`360`、`qq` 专属指纹。
-- xhttp 走 HTTP/3；smux 的 `brutal-opts`。
+- xhttp 走 HTTP/3 与 HTTP/1.1（明文 CDN）、`download-settings`、填充混淆与非 path 位置；smux 的 `brutal-opts`。
 - 少见 SS 插件（kcptun、restls、gost-plugin）视用户反馈再评估。
 
 ### 5.5 每次发布必跑的核心测试（2.0 起）
@@ -336,7 +343,7 @@
 | 盘点 | 完成（2026-10-29） | 本文第 2 节 |
 | M0 | 进行中：引擎能力清单（引擎 `22f8322`）、App 兼容性报告与提示、fast lane 加入引擎单测与能力一致性检查；热修复 VMess/Trojan `network: tcp`（1.11.1） | `ProfileCompatibilityReportTests`、`config::capabilities` 测试 |
 | M1 | 完成（引擎 `83ab7ce`）：Chrome 152 指纹 JA4 与真机逐字一致；VMess / VLESS / Trojan / AnyTLS / REALITY 与 `global-client-fingerprint` 生效；ALPS 客户端；12 协议互通门禁带指纹与不带指纹均通过；9 个真实站点（含 Google）握手并交换数据通过。已知：REALITY 不发送 MLKEM 密钥份额（会触发服务端 HRR） | `tls_fingerprint` 测试、`AETHER_INTEROP_CLIENT_FINGERPRINT=chrome` 互通 |
-| M2 | 进行中：Hysteria v1 完成（引擎 `3ee5b23`，含 xplus、端口跳跃、UDP 分片；互通门禁对 sing-box 通过）；SSR TCP 完成（引擎 `b28f37f`，13 种组合对 Python 服务端连续 5 轮通过）。待做：SSR UDP、xhttp、VLESS encryption、TUIC v4、Snell、smux、Mieru / AmneziaWG / ECH；App 协议目录与分享链接随 M4 | 互通用例 "Hysteria"、"Hysteria xplus"、`ssr` 门禁 |
+| M2 | 进行中：Hysteria v1 完成（引擎 `3ee5b23`）；SSR TCP 完成（引擎 `b28f37f`，13 种组合连续 5 轮通过）；xhttp 完成（引擎 `5a9fc33`，对 Xray 8 例 × 2 轮通过，变异检查：去掉填充得 HTTP 400、包序号从 1 起即卡死）。待做：SSR UDP、VLESS encryption、TUIC v4、Snell、smux、Mieru / AmneziaWG / ECH；App 协议目录与分享链接随 M4 | 互通门禁 `ssr`、`xhttp` |
 | M3 | 未开始 | |
 | M4 | 未开始 | |
 | M5 | 未开始 | |

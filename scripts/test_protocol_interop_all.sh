@@ -121,6 +121,9 @@ run_gate shadowquic \
   sh "$ROOT/Tests/Interop/run-prebuilt-shadowquic.sh"
 run_gate ssh \
   sh "$ROOT/Tests/Interop/test-openssh.sh"
+run_gate xhttp \
+  XRAY_BIN="$TOOLS/xray" \
+  sh "$ROOT/Tests/Interop/run-prebuilt-xhttp.sh"
 run_gate ssr \
   SSR_ARCHIVE="$TOOLS/shadowsocksr-b365980a82d7309f4ed368c6bd958ee080cdd37b.tar.gz" \
   sh "$ROOT/Tests/Interop/run-prebuilt-ssr.sh"
