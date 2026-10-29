@@ -28,7 +28,7 @@ case $OUTPUT in
     ;;
 esac
 for tool in sing-box shadow-tls xray wireguard-go-loopback-server \
-  mihomo-darwin-arm64-v1.19.29.gz; do
+  mihomo-darwin-arm64-v1.19.29.gz tuic-server-v4; do
   if [ ! -f "$TOOLS/$tool" ]; then
     echo "missing $TOOLS/$tool; run scripts/fetch_interop_tools.sh first" >&2
     exit 1
@@ -130,6 +130,9 @@ run_gate vless-enc \
 run_gate ssr \
   SSR_ARCHIVE="$TOOLS/shadowsocksr-b365980a82d7309f4ed368c6bd958ee080cdd37b.tar.gz" \
   sh "$ROOT/Tests/Interop/run-prebuilt-ssr.sh"
+run_gate tuic-v4 \
+  TUIC_V4_BIN="$TOOLS/tuic-server-v4" \
+  sh "$ROOT/Tests/Interop/run-prebuilt-tuic-v4.sh"
 
 passed_cases=$(grep -c "interoperability and network reset passed" \
   "$OUTPUT/matrix.log" || true)

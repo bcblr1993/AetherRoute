@@ -1,11 +1,11 @@
 {
   "artifacts": {
-    "flowCoreSHA256": "a7a4cd8c75bef5fd52a15a6a1b1caf1326721ba05f232e4b59919f48e5cede49",
+    "flowCoreSHA256": "cca1ec9226c32bf454e91d7e43fcea4dbebfa5e16c3d172074a5005131bcac27",
     "headerSHA256": "bf25e15ff3eeecec9d140fc7190cea240f7d5878af51f017f50faf09dc1c5dee",
-    "interopTestBinarySHA256": "65859d87d94f4b6cf082874e478882e91d73609a15c60ba27950b0f71a466d59",
-    "packetFlowCoreSHA256": "9449d9d93a23a70bb7209b7a21799978e03812aae5dfe0ac0ca9b9275601f09e"
+    "interopTestBinarySHA256": "24912641437ca174c08a834af5d1bf3bb5ab92484df2fc14a86196b2343553b2",
+    "packetFlowCoreSHA256": "c9945b2abbdb69bae82e547f59b7c9138e19b7ca47ee291ac201ad7281feaad9"
   },
-  "coreCommit": "ec8343c95f2ed2ac3ee8a9e6117b04cea9de185e",
+  "coreCommit": "b594c646b77fee1c3c527c73f655c0dd89f7f138",
   "coreFeatures": [
     "aether-tuic",
     "shadowquic",
@@ -51,6 +51,7 @@
   ],
   "interopTests": [
     "interoperates_shadowquic_with_mihomo_and_recovers_after_restart",
+    "interoperates_tuic_v4_with_tuic_server",
     "interoperates_vless_encryption_with_xray",
     "interoperates_vless_reality_with_xray",
     "interoperates_vless_xhttp_with_xray",
@@ -67,7 +68,7 @@
     "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
     "ffiSourceSHA256": "c76a6e9acf2825c9c246fbac78a387c931bcb23000ca4c29ecea8059ba3cb141",
     "flowFFISourceSHA256": "63cf2ebcdeeee46867d5cd0a24c61b065cd54ef27a81a21d4410bef45697f833",
-    "interopTestsSHA256": "5d5f295d8f91af737d0c805ebe9d613dd3632481f11ae1f19a15c720734261e8",
+    "interopTestsSHA256": "ed49e060b144821bada03c7fa229d84363c6849a0315d7fb4ea5be4b4cea2e23",
     "outboundManagerSHA256": "b86ac3ddd066d80a0494e8ba8eec924058a5291832805cb1907582d581aa7716",
     "proxyManagerSHA256": "560fc42d699f21cf5a3801f587f6c76ddb1fce90bbe7a7b0a2eb69cf00ad9548",
     "selectorSourceSHA256": "b1092a6558910c5ab19e62eb613cdde72fe692a284d2b50f269b582fa25fc332"

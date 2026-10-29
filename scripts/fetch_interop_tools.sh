@@ -18,6 +18,8 @@ XRAY_VERSION=26.3.27
 XRAY_SHA256=5d9dd24c0aba4b6cfcc6a33a5d67f854816ee17f392bf932ec8176da46f7e404
 MIHOMO_VERSION=1.19.29
 MIHOMO_SHA256=4dc25df9e899f14161911302a8ee5fc9e202ed9c976fc405bf82c50ff27466ca
+TUIC_V4_VERSION=0.8.5
+TUIC_V4_SHA256=34db3ad8470245de4c69a7ded438c96b263a1338443634cf4b0cdeeea8a9106a
 
 case $TOOLS in
   /*) ;;
@@ -117,5 +119,13 @@ fi
 sh "$ROOT/Tests/Interop/WireGuardGoServer/build.sh" \
   "$TOOLS/wireguard-go-loopback-server" >/dev/null
 echo "built wireguard-go-loopback-server"
+
+if is_current "$TOOLS/tuic-server-v4" "$TUIC_V4_SHA256"; then
+  echo "tuic-server-v4 $TUIC_V4_VERSION already present"
+else
+  download "https://github.com/EAimty/tuic/releases/download/$TUIC_V4_VERSION/tuic-server-$TUIC_V4_VERSION-aarch64-macos" \
+    "$WORK_DIR/tuic-server-v4"
+  install_verified "$WORK_DIR/tuic-server-v4" "$TOOLS/tuic-server-v4" "$TUIC_V4_SHA256"
+fi
 
 echo "Interop tools ready in $TOOLS"

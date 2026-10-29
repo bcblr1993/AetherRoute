@@ -216,6 +216,7 @@
   - 帧编解码对照 v4 协议文档；
   - 配置测试：`version: 4` 加 `token` 能加载；缺少 token 时报错并写明字段名。
 - **互通服务端**：官方 tuic-server 0.8.x，从固定提交的源码编译（与 WireGuard 服务端相同做法），用例与 v5 一致（TCP、UDP、证书固定）。
+- **完成情况（2026-10-29）**：引擎 `b594c64`。在 `aether_tuic` 中与 TUIC v5 共用 QUIC 层实现 TUIC v4（`VER = 0x04`）：`token` 的 32 字节 BLAKE3 摘要单向流认证、`Connect`（`0x01`）双向流首读剥离并校验 3 字节 `[0x04, 0xff, REP]` 响应、`Packet`（`0x02`，32 位 `ASSOC_ID`）与 `Dissociate`（`0x03`）支持 `native`（QUIC datagram）与 `quic`（单向流）双模式、`Heartbeat`（`0x04`）走单向流、`reduce-rtt` 支持 `into_0rtt()` 并在未命中时回退 1-RTT；配置加载兼容 `version: 4` + `token` 与省略 `version` 仅填 `token`（含数字标量 token），对空/缺 `token`、v4/v5 凭证混用及未知 `version` 明确拒绝并点名字段。对官方预编译 `tuic-server 0.8.5`（`tuic-server-0.8.5-aarch64-macos`，SHA-256 `34db3ad8...`）跑通 `native` 与 `quic`（含 `reduce-rtt: true`）TCP 2 MiB + 5s 空闲复用 + 8 包 UDP 回显、证书固定、`ca-str`、错误指纹拒绝及未授信证书拒绝 × 2 轮；变异检查：把 BLAKE3 摘要改为原始 token 字节得服务端 `authentication failed`，跳过剥离 3 字节 `Response` 得 `TCP echo payload changed`。
 
 ### M2-6 Snell
 - **范围**：与 Mihomo 一致，支持 v1–v3（`psk`、`version`、`obfs-opts` 的 http / tls，v3 支持 UDP）。Surge 的 v4 / v5 与 v3 不兼容，Mihomo 也不支持，导入时报告"暂不支持的 Snell 版本"。
