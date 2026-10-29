@@ -444,7 +444,9 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
             [
                 .init(id: 0, name: "Singapore", protocolName: "vmess", recognition: .recognized),
                 .init(id: 1, name: "Tokyo, Edge", protocolName: "ss", recognition: .recognized),
-                .init(id: 2, name: "Custom", protocolName: "future-protocol", recognition: .requiresCoreValidation),
+                // The summary knows the engine's own type list, so an unknown
+                // type is unsupported rather than left for the core to decide.
+                .init(id: 2, name: "Custom", protocolName: "future-protocol", recognition: .unsupported(.protocolType("future-protocol"))),
             ]
         )
         XCTAssertEqual(

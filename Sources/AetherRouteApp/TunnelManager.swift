@@ -695,6 +695,23 @@ final class TunnelManager: ObservableObject {
                   - {name: Streaming, type: fallback, proxies: [Singapore Edge, Tokyo Direct], url: 'https://www.gstatic.com/generate_204', interval: 300}
                 """
                 : ""
+            // "compat" adds nodes and rules the engine cannot use, for the
+            // compatibility notice on the Proxies and Rules pages.
+            let isCompatReview = environment["AETHERROUTE_UI_REVIEW_PROFILE"] == "compat"
+            let reviewCompatProxies = isCompatReview
+                ? """
+                  - {name: Hong Kong SSR 01, type: ssr}
+                  - {name: Hong Kong SSR 02, type: ssr}
+                  - {name: Seoul KCP, type: vmess, network: kcp}
+                  - {name: Osaka AnyTLS, type: anytls, client-fingerprint: chrome}
+                """
+                : ""
+            let reviewCompatRules = isCompatReview
+                ? """
+                  - IP-ASN,13335,Balanced
+                  - DOMAIN-WILDCARD,*.cdn.example,Balanced
+                """
+                : ""
             // "large" stresses the lists: 500 nodes and 10,000 rules.
             let isLargeReview = environment["AETHERROUTE_UI_REVIEW_PROFILE"] == "large"
             // "showcase" is the website's screenshot set: a realistic mix of
@@ -725,10 +742,12 @@ final class TunnelManager: ObservableObject {
                 proxies:
                   - {name: Singapore Edge, type: vmess}
                   - {name: Tokyo Direct, type: direct}
+                \(reviewCompatProxies)
                 proxy-groups:
                   - {name: Balanced, type: select, proxies: [Singapore Edge, Tokyo Direct]}
                 \(reviewExtraGroups)
                 rules:
+                \(reviewCompatRules)
                   - GEOSITE,github,Balanced
                   - GEOIP,CN,DIRECT,no-resolve
                   - DOMAIN-SUFFIX,example.com,Balanced

@@ -132,6 +132,7 @@ extension ProxyConfigurationSummary.Recognition {
         case .recognized: AppLocalization.string("Recognized")
         case .requiresCoreValidation: AppLocalization.string("Pending core check")
         case .incomplete: AppLocalization.string("Unsupported")
+        case let .unsupported(reason): reason.localizedTitle
         }
     }
 
@@ -139,13 +140,13 @@ extension ProxyConfigurationSummary.Recognition {
         switch self {
         case .recognized: "checkmark.circle.fill"
         case .requiresCoreValidation: "clock.badge.questionmark"
-        case .incomplete: "xmark.circle"
+        case .incomplete, .unsupported: "xmark.circle"
         }
     }
 
     /// An unsupported node is not selectable, so the list strikes it through
     /// rather than offering an action that cannot succeed.
-    var isSelectable: Bool { self != .incomplete }
+    var isSelectable: Bool { isUsable }
 }
 
 /// The filter chips above the connection table.
@@ -209,6 +210,22 @@ enum ConnectionOutlet: Equatable {
         case .proxied: if case .proxied = self { true } else { false }
         case .direct: self == .direct
         case .rejected: self == .rejected
+        }
+    }
+}
+
+extension ProxyUnsupportedReason {
+    /// Short, user-facing reason the engine cannot use a node.
+    var localizedTitle: String {
+        switch self {
+        case let .protocolType(type):
+            AppLocalization.format("Protocol %@ is not supported yet", type.uppercased())
+        case let .network(network):
+            AppLocalization.format("Transport %@ is not supported yet", network)
+        case let .plugin(plugin):
+            AppLocalization.format("Plugin %@ is not supported yet", plugin)
+        case let .option(option):
+            AppLocalization.format("Option %@ is not supported yet", option)
         }
     }
 }

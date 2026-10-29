@@ -25,6 +25,9 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
     /// default route unless the profile states that its outbounds can carry
     /// IPv6; otherwise every IPv6 flow the system prefers is black-holed.
     public let allowsIPv6: Bool
+    /// Nodes, rules and options the engine cannot use, counted over the
+    /// whole profile (not only the displayed items).
+    public let compatibility: ProfileCompatibilityReport
 
     public init(
         dns: DNSConfigurationSummary,
@@ -44,7 +47,8 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
         rejectRuleCount: Int? = nil,
         requiresCountryMMDB: Bool = false,
         requiresGeoSiteDatabase: Bool = false,
-        allowsIPv6: Bool = false
+        allowsIPv6: Bool = false,
+        compatibility: ProfileCompatibilityReport = .fullySupported
     ) {
         self.dns = dns
         self.proxies = proxies
@@ -71,7 +75,79 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
         self.requiresCountryMMDB = requiresCountryMMDB
         self.requiresGeoSiteDatabase = requiresGeoSiteDatabase
         self.allowsIPv6 = allowsIPv6
+        self.compatibility = compatibility
     }
+}
+
+/// Why the engine cannot use a node. Each comes from the engine's own
+/// capability list (`EngineCapabilities`).
+public enum ProxyUnsupportedReason: Hashable, Sendable {
+    case protocolType(String)
+    case network(String)
+    case plugin(String)
+    /// A node option the engine does not implement and cannot connect without.
+    case option(String)
+}
+
+/// What the engine would drop or ignore when loading a profile.
+public struct ProfileCompatibilityReport: Equatable, Sendable {
+    public struct UnsupportedProxies: Equatable, Sendable {
+        public let reason: ProxyUnsupportedReason
+        public let count: Int
+        /// The first few node names, for display.
+        public let examples: [String]
+
+        public init(reason: ProxyUnsupportedReason, count: Int, examples: [String]) {
+            self.reason = reason
+            self.count = count
+            self.examples = examples
+        }
+    }
+
+    public struct UnsupportedRules: Equatable, Sendable {
+        public let kind: String
+        public let count: Int
+
+        public init(kind: String, count: Int) {
+            self.kind = kind
+            self.count = count
+        }
+    }
+
+    /// An option the engine ignores; the node still connects without it.
+    public struct LimitedOption: Equatable, Sendable {
+        public let option: String
+        public let count: Int
+
+        public init(option: String, count: Int) {
+            self.option = option
+            self.count = count
+        }
+    }
+
+    public static let maximumExamples = 3
+    public static let fullySupported = ProfileCompatibilityReport(
+        unsupportedProxies: [], unsupportedRules: [], limitedOptions: []
+    )
+
+    /// In order of first appearance.
+    public let unsupportedProxies: [UnsupportedProxies]
+    public let unsupportedRules: [UnsupportedRules]
+    public let limitedOptions: [LimitedOption]
+
+    public init(
+        unsupportedProxies: [UnsupportedProxies],
+        unsupportedRules: [UnsupportedRules],
+        limitedOptions: [LimitedOption]
+    ) {
+        self.unsupportedProxies = unsupportedProxies
+        self.unsupportedRules = unsupportedRules
+        self.limitedOptions = limitedOptions
+    }
+
+    public var unsupportedProxyCount: Int { unsupportedProxies.reduce(0) { $0 + $1.count } }
+    public var unsupportedRuleCount: Int { unsupportedRules.reduce(0) { $0 + $1.count } }
+    public var isFullySupported: Bool { unsupportedProxies.isEmpty && unsupportedRules.isEmpty }
 }
 
 public enum DNSResolutionMode: String, Equatable, Sendable {
@@ -159,6 +235,16 @@ public struct ProxyConfigurationSummary: Identifiable, Equatable, Sendable {
         case recognized
         case requiresCoreValidation
         case incomplete
+        /// The engine cannot load or connect this node.
+        case unsupported(ProxyUnsupportedReason)
+
+        /// Whether selecting the node can work at all.
+        public var isUsable: Bool {
+            switch self {
+            case .recognized, .requiresCoreValidation: true
+            case .incomplete, .unsupported: false
+            }
+        }
     }
 
     public let id: Int
@@ -591,7 +677,64 @@ public enum ProfileConfigurationInspector {
     }
 }
 
+/// Accumulates the compatibility report over every node and rule.
+private struct CompatibilityBuilder {
+    private var proxies: [ProxyUnsupportedReason: (order: Int, count: Int, examples: [String])] = [:]
+    private var rules: [String: (order: Int, count: Int)] = [:]
+    private var options: [String: (order: Int, count: Int)] = [:]
+    private var order = 0
+
+    mutating func record(item: Parser.CompatibilityItem, recognition: ProxyConfigurationSummary.Recognition) {
+        order += 1
+        if case let .unsupported(reason) = recognition {
+            var entry = proxies[reason] ?? (order, 0, [])
+            entry.count += 1
+            if entry.examples.count < ProfileCompatibilityReport.maximumExamples, !item.name.isEmpty {
+                entry.examples.append(item.name)
+            }
+            proxies[reason] = entry
+            return
+        }
+        guard recognition.isUsable else { return }
+        if item.clientFingerprint { count(option: "client-fingerprint") }
+        if item.smux { count(option: "smux") }
+    }
+
+    mutating func record(ruleKind: String) {
+        let kind = ruleKind.uppercased()
+        guard !EngineCapabilities.ruleTypes.contains(kind) else { return }
+        order += 1
+        var entry = rules[kind] ?? (order, 0)
+        entry.count += 1
+        rules[kind] = entry
+    }
+
+    private mutating func count(option: String) {
+        order += 1
+        var entry = options[option] ?? (order, 0)
+        entry.count += 1
+        options[option] = entry
+    }
+
+    var report: ProfileCompatibilityReport {
+        ProfileCompatibilityReport(
+            unsupportedProxies: proxies.sorted { $0.value.order < $1.value.order }.map {
+                .init(reason: $0.key, count: $0.value.count, examples: $0.value.examples)
+            },
+            unsupportedRules: rules.sorted { $0.value.order < $1.value.order }.map {
+                .init(kind: $0.key, count: $0.value.count)
+            },
+            limitedOptions: options.sorted { $0.value.order < $1.value.order }.map {
+                .init(option: $0.key, count: $0.value.count)
+            }
+        )
+    }
+}
+
 private struct Parser {
+    /// The fields of a node the compatibility report reads.
+    fileprivate typealias CompatibilityItem = Item
+
     private enum Section: String {
         case dns
         case proxies
@@ -602,11 +745,16 @@ private struct Parser {
         case hosts
     }
 
-    private struct Item {
+    fileprivate struct Item {
         var name = ""
         var type = ""
         var server = ""
         var port = ""
+        var network = ""
+        var plugin = ""
+        var encryption = ""
+        var clientFingerprint = false
+        var smux = false
         var members: [String] = []
         var includeAll = false
         var filterPattern: String?
@@ -709,6 +857,7 @@ private struct Parser {
     private var requiresCountryMMDB = false
     private var requiresGeoSiteDatabase = false
     private var allowsIPv6 = false
+    private var compatibility = CompatibilityBuilder()
     private let customRuleSignatures: Set<String>
 
     init(yaml: String, customRules: [CustomRule] = []) {
@@ -891,6 +1040,15 @@ private struct Parser {
                 if destination == .proxies {
                     item?.server = Self.jsonString(fields["server"])
                     item?.port = Self.jsonPort(fields["port"])
+                    for key in Self.compatibilityKeys {
+                        guard let value = fields[key] else { continue }
+                        if let options = value as? [String: Any] {
+                            let enabled = Self.jsonScalar(options["enabled"]).flatMap(Self.boolean)
+                            recordCompatibilityField(key, value: enabled == false ? "false" : "true")
+                        } else if let scalar = Self.jsonScalar(value) {
+                            recordCompatibilityField(key, value: scalar)
+                        }
+                    }
                 } else {
                     item?.members = Self.jsonStrings(fields["proxies"])
                         + Self.jsonStrings(fields["use"])
@@ -989,7 +1147,8 @@ private struct Parser {
             rejectRuleCount: rejectRuleCount,
             requiresCountryMMDB: requiresCountryMMDB,
             requiresGeoSiteDatabase: requiresGeoSiteDatabase,
-            allowsIPv6: allowsIPv6
+            allowsIPv6: allowsIPv6,
+            compatibility: compatibility.report
         )
     }
 
@@ -1209,6 +1368,9 @@ private struct Parser {
         case "port" where section == .proxies:
             item?.port = Self.scalar(value)
             readingMembers = false
+        case let key where section == .proxies && Self.compatibilityKeys.contains(key):
+            recordCompatibilityField(key, value: value)
+            readingMembers = false
         case let key where section == .proxyGroups
             && (key == "proxies" || key == "use"):
             readingMembers = value.isEmpty
@@ -1252,6 +1414,8 @@ private struct Parser {
                 item?.server = Self.scalar(value)
             case "port" where section == .proxies:
                 item?.port = Self.scalar(value)
+            case let key where section == .proxies && Self.compatibilityKeys.contains(key):
+                recordCompatibilityField(key, value: value)
             case let key where section == .proxyGroups
                 && (key == "proxies" || key == "use"):
                 item?.members.append(contentsOf: Self.splitFlowSequence(value))
@@ -1288,6 +1452,8 @@ private struct Parser {
             if !item.name.isEmpty {
                 allProxyNames.append(item.name)
             }
+            let recognition = Self.recognition(of: item)
+            compatibility.record(item: item, recognition: recognition)
             if !item.server.isEmpty,
                let port = UInt16(item.port),
                port > 0 {
@@ -1309,7 +1475,7 @@ private struct Parser {
                     id: proxies.count,
                     name: name,
                     protocolName: type,
-                    recognition: Self.recognition(name: item.name, type: item.type)
+                    recognition: recognition
                 )
             )
         case .proxyGroups:
@@ -1503,6 +1669,7 @@ private struct Parser {
         guard let kind = fields.first, !kind.isEmpty else { return }
         recordResourceRequirements(kind: kind, rawValue: rawValue)
         ruleCount += 1
+        compatibility.record(ruleKind: kind)
         let hasNoResolve = fields.count >= 3
             && fields.last?.lowercased() == "no-resolve"
         let targetIndex = fields.count > 1
@@ -1560,18 +1727,48 @@ private struct Parser {
         }
     }
 
-    private static func recognition(
-        name: String,
-        type: String
-    ) -> ProxyConfigurationSummary.Recognition {
-        guard !name.isEmpty, !type.isEmpty else { return .incomplete }
-        let normalized = type.lowercased().replacingOccurrences(of: "_", with: "-")
-        let aliases: Set<String> = [
-            "anytls", "direct", "http", "hysteria2", "hy2", "reject",
-            "shadowquic", "shadowsocks", "ss", "ssh", "socks", "socks5",
-            "trojan", "tuic", "vless", "vmess", "wireguard",
-        ]
-        return aliases.contains(normalized) ? .recognized : .requiresCoreValidation
+    /// Node keys that decide whether the engine can use a node.
+    static let compatibilityKeys: Set<String> = [
+        "network", "plugin", "encryption", "client-fingerprint", "smux",
+    ]
+
+    private mutating func recordCompatibilityField(_ key: String, value: String) {
+        let scalar = Self.scalar(value)
+        switch key {
+        case "network": item?.network = scalar.lowercased()
+        case "plugin": item?.plugin = scalar.lowercased()
+        case "encryption": item?.encryption = scalar.lowercased()
+        case "client-fingerprint": item?.clientFingerprint = !scalar.isEmpty
+        case "smux":
+            // A block mapping arrives empty here; nodes carry `smux` only to
+            // turn it on, so treat that as enabled.
+            let compact = value.lowercased().filter { !$0.isWhitespace }
+            item?.smux = !compact.contains("enabled:false")
+        default: break
+        }
+    }
+
+    /// The type names match the engine exactly: it has no aliases such as
+    /// `hy2` or `shadowsocks` for `type`.
+    private static func recognition(of item: Item) -> ProxyConfigurationSummary.Recognition {
+        guard !item.name.isEmpty, !item.type.isEmpty else { return .incomplete }
+        let type = item.type.lowercased()
+        guard EngineCapabilities.outboundTypes.contains(type) else {
+            return .unsupported(.protocolType(type))
+        }
+        if let networks = EngineCapabilities.networks[type],
+           !item.network.isEmpty,
+           !networks.contains(item.network) {
+            return .unsupported(.network(item.network))
+        }
+        if type == "ss", !item.plugin.isEmpty,
+           !EngineCapabilities.shadowsocksPlugins.contains(item.plugin) {
+            return .unsupported(.plugin(item.plugin))
+        }
+        if type == "vless", !item.encryption.isEmpty, item.encryption != "none" {
+            return .unsupported(.option("encryption"))
+        }
+        return .recognized
     }
 
     private static func leadingSpaceCount(in line: String) -> Int {

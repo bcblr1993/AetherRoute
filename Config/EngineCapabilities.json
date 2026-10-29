@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "outboundTypes": [
+    "anytls",
+    "direct",
+    "http",
+    "hysteria2",
+    "reject",
+    "shadowquic",
+    "socks5",
+    "ss",
+    "ssh",
+    "trojan",
+    "tuic",
+    "vless",
+    "vmess",
+    "wireguard"
+  ],
+  "ruleTypes": [
+    "AETHER-APP",
+    "AND",
+    "DOMAIN",
+    "DOMAIN-KEYWORD",
+    "DOMAIN-REGEX",
+    "DOMAIN-SUFFIX",
+    "DST-PORT",
+    "GEOIP",
+    "GEOSITE",
+    "IP-CIDR",
+    "IP-CIDR6",
+    "MATCH",
+    "NETWORK",
+    "NOT",
+    "OR",
+    "PROCESS-NAME",
+    "PROCESS-PATH",
+    "PROCESS-PATH-REGEX",
+    "RULE-SET",
+    "SRC-IP-CIDR",
+    "SRC-PORT"
+  ],
+  "networks": {
+    "trojan": [
+      "grpc",
+      "tcp",
+      "ws"
+    ],
+    "vless": [
+      "grpc",
+      "h2",
+      "tcp",
+      "ws"
+    ],
+    "vmess": [
+      "grpc",
+      "h2",
+      "tcp",
+      "ws"
+    ]
+  },
+  "shadowsocksPlugins": [
+    "obfs",
+    "shadow-tls",
+    "v2ray-plugin"
+  ]
+}

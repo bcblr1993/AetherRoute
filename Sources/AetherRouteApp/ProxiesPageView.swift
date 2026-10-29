@@ -62,6 +62,7 @@ struct ProxiesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
                 AetherPageHeader(.proxies) { overrideActions(summary: summary) }
+                ProfileCompatibilityNotice(report: summary.compatibility)
 
                 if !summary.proxyGroups.isEmpty {
                     if summary.proxyGroups.count > 1, isWideGroupLayout {
@@ -1242,19 +1243,12 @@ private struct ProxyNodeInventory: View {
     }
 
     private var inventorySummary: String {
-        let recognized = proxies.filter { $0.recognition == .recognized }.count
-        let pending = proxies.filter {
-            $0.recognition == .requiresCoreValidation
-        }.count
-        let unsupported = proxies.filter { $0.recognition == .incomplete }.count
+        let usable = proxies.filter { $0.recognition.isUsable }.count
         return String.localizedStringWithFormat(
-            AppLocalization.string(
-                "%lld total · %lld recognized · %lld pending core check · %lld unsupported"
-            ),
+            AppLocalization.string("%lld total · %lld usable · %lld unsupported"),
             Int64(proxies.count),
-            Int64(recognized),
-            Int64(pending),
-            Int64(unsupported)
+            Int64(usable),
+            Int64(proxies.count - usable)
         )
     }
 

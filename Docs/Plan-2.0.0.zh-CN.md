@@ -142,7 +142,7 @@
 | 阶段 | 状态 | 证据 |
 |---|---|---|
 | 盘点 | 完成（2026-10-29） | 本文第 2 节 |
-| M0 | 未开始 | |
+| M0 | 进行中：引擎能力清单（引擎 `22f8322`）、App 兼容性报告与提示、fast lane 加入引擎单测与能力一致性检查；热修复 VMess/Trojan `network: tcp`（1.11.1） | `ProfileCompatibilityReportTests`、`config::capabilities` 测试 |
 | M1 | 未开始 | |
 | M2 | 未开始 | |
 | M3 | 未开始 | |

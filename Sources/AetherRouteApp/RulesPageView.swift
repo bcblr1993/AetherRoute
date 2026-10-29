@@ -128,6 +128,13 @@ struct RulesView: View {
                                 .accessibilityIdentifier("add-custom-rule")
                             }
 
+                            // Only the rules: the nodes have their own page.
+                            ProfileCompatibilityNotice(report: ProfileCompatibilityReport(
+                                unsupportedProxies: [],
+                                unsupportedRules: summary.compatibility.unsupportedRules,
+                                limitedOptions: []
+                            ))
+
                             routeTester(summary: summary, scrollProxy: scrollProxy)
 
                             ApplicationRulesSection()

@@ -44,6 +44,10 @@ step differential-unit env PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test
 # keeps the differential end-to-end run on the engine as it is now.
 step differential-engine-build sh -c "cd '$ROOT/Core/Engine' && CARGO_TARGET_DIR='$ROOT/build/differential-target' cargo build --locked -p clash-rs --release --no-default-features --features shadowsocks,ssh,shadowquic,wireguard,aws-lc-rs,clash-lib/aether-tuic,clash-lib/zero_copy"
 step differential-e2e env PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_subscription_differential.py" --e2e
+# The engine's own unit tests, with the app's feature set (no other gate
+# ran them before 2.0), and the app's copy of the engine capability list.
+step engine-unit sh -c "cd '$ROOT/Core/Engine' && CARGO_TARGET_DIR='$ROOT/build/engine-unit-target' cargo test --locked -p clash-lib --lib --no-default-features --features shadowsocks,ssh,shadowquic,wireguard,aws-lc-rs,aether-tuic,zero_copy"
+step engine-capabilities env PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/engine_capabilities.py" check
 if [ "$engine_changed" = 1 ] || [ "${AETHER_FAST_LANE_INTEROP:-0}" = 1 ]; then
   step protocol-interop "$ROOT/scripts/test_protocol_interop_all.sh" "$LOGS/interop"
 fi

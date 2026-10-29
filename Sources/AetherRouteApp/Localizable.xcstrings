@@ -16143,6 +16143,126 @@
           }
         }
       }
+    },
+    "%@ (%lld): %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@（%2$lld 个）：%3$@"
+          }
+        }
+      }
+    },
+    "%@ rules (%lld) are skipped; traffic they matched goes to later rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已跳过 %1$@ 规则 %2$lld 条，原本命中的流量会交给后面的规则"
+          }
+        }
+      }
+    },
+    "%lld nodes request a browser TLS fingerprint; they connect without it": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个节点要求模拟浏览器 TLS 指纹：可以连接，但暂不模拟"
+          }
+        }
+      }
+    },
+    "%lld nodes request multiplexing (smux); they connect without it": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个节点要求多路复用（smux）：可以连接，但暂不复用"
+          }
+        }
+      }
+    },
+    "%lld nodes use option %@, which is not applied yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld 个节点使用了选项 %2$@，暂未生效"
+          }
+        }
+      }
+    },
+    "%lld total · %lld usable · %lld unsupported": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共 %1$lld 个 · %2$lld 个可用 · %3$lld 个暂不支持"
+          }
+        }
+      }
+    },
+    "Option %@ is not supported yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选项 %@ 暂不支持"
+          }
+        }
+      }
+    },
+    "Plugin %@ is not supported yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "插件 %@ 暂不支持"
+          }
+        }
+      }
+    },
+    "Protocol %@ is not supported yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "协议 %@ 暂不支持"
+          }
+        }
+      }
+    },
+    "Some of this subscription cannot be used yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此订阅有部分内容暂不支持"
+          }
+        }
+      }
+    },
+    "Some options in this subscription are not applied yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此订阅有部分选项暂未生效"
+          }
+        }
+      }
+    },
+    "Transport %@ is not supported yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "传输方式 %@ 暂不支持"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
