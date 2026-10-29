@@ -132,7 +132,7 @@
 | ✅ | M2-1 Hysteria v1 | 编解码、分片重组、配置 | sing-box | 完成 |
 | ✅ | M2-2 SSR（TCP：6 种 protocol × 5 种 obfs × 流加密；UDP 见 3B） | 加密已知答案、帧往返、ticket 握手 | Python ShadowsocksR（Apache-2.0，固定提交） | 完成 |
 | ✅ | M2-3 xhttp（packet-up / stream-up / stream-one / auto，TLS · REALITY · 明文） | 配置加载与拒绝、路径与填充、Xray 互通 8 例 | Xray 26.3.27 | 完成 |
-| 3 | M2-4 VLESS encryption（mlkem768x25519plus） | 握手与密钥派生对照 Xray | Xray | 0.5 天 |
+| ✅ | M2-4 VLESS encryption（mlkem768x25519plus） | 配置加载与拒绝、密钥派生与分帧、Xray 互通 8 例 | Xray 26.3.27 | 完成 |
 | 4 | M2-5 TUIC v4（token） | 帧格式 | 官方 tuic-server v0.8 | 0.5 天 |
 | 5 | M2-6 Snell v1–v5 | 帧格式与加密 | 官方 snell-server（固定版本） | 0.5 天 |
 | 6 | M2-7 smux / sing-mux（h2mux、smux、yamux） | 多路复用帧 | sing-box | 0.5 天 |
@@ -205,6 +205,7 @@
   - 用 Xray 生成的密钥对和握手记录做已知答案测试；
   - 互通：Xray 服务端，native / xorpub / random × 1rtt / 0rtt；
   - 叠加 Vision 与 REALITY 的组合各一例。
+- **完成情况（2026-10-29）**：引擎 `ec8343c`。支持 `mlkem768x25519plus.<native|xorpub|random>.<1rtt|0rtt>.[padding.]<keys...>`（X25519 与 ML-KEM-768 链式认证、1-RTT 混合前向安全握手与分片随机填充、0-RTT 票据缓存与恢复、`XorStream` 记录头掩码、与 `xtls-rprx-vision` 直通拼接及 TLS / REALITY 叠加）；未知或格式错误的 `encryption` 节点在加载时直接拒绝并写明 `encryption`，App 兼容性报告同步识别合法的 `mlkem768x25519plus` 配置。对 Xray 26.3.27 8 例 × 2 轮通过；变异检查：去掉 `random` 模式 5 字节记录头 XOR 得连接重置，去掉 0-RTT `united_key` 中的 `pfs_key` 得第 2 条连接立即失败。
 
 ### M2-5 TUIC v4（`version: 4`，token）
 - **范围**：
@@ -343,7 +344,7 @@
 | 盘点 | 完成（2026-10-29） | 本文第 2 节 |
 | M0 | 进行中：引擎能力清单（引擎 `22f8322`）、App 兼容性报告与提示、fast lane 加入引擎单测与能力一致性检查；热修复 VMess/Trojan `network: tcp`（1.11.1） | `ProfileCompatibilityReportTests`、`config::capabilities` 测试 |
 | M1 | 完成（引擎 `83ab7ce`）：Chrome 152 指纹 JA4 与真机逐字一致；VMess / VLESS / Trojan / AnyTLS / REALITY 与 `global-client-fingerprint` 生效；ALPS 客户端；12 协议互通门禁带指纹与不带指纹均通过；9 个真实站点（含 Google）握手并交换数据通过。已知：REALITY 不发送 MLKEM 密钥份额（会触发服务端 HRR） | `tls_fingerprint` 测试、`AETHER_INTEROP_CLIENT_FINGERPRINT=chrome` 互通 |
-| M2 | 进行中：Hysteria v1 完成（引擎 `3ee5b23`）；SSR TCP 完成（引擎 `b28f37f`，13 种组合连续 5 轮通过）；xhttp 完成（引擎 `5a9fc33`，对 Xray 8 例 × 2 轮通过，变异检查：去掉填充得 HTTP 400、包序号从 1 起即卡死）。待做：SSR UDP、VLESS encryption、TUIC v4、Snell、smux、Mieru / AmneziaWG / ECH；App 协议目录与分享链接随 M4 | 互通门禁 `ssr`、`xhttp` |
+| M2 | 进行中：Hysteria v1 完成（引擎 `3ee5b23`）；SSR TCP 完成（引擎 `b28f37f`，13 种组合连续 5 轮通过）；xhttp 完成（引擎 `5a9fc33`，对 Xray 8 例 × 2 轮通过，变异检查：去掉填充得 HTTP 400、包序号从 1 起即卡死）；VLESS encryption 完成（引擎 `ec8343c`，对 Xray 8 例 × 2 轮通过，变异检查：去掉 random 记录头 XOR 得连接重置、去掉 0-RTT PFS 密钥得复用失败）。待做：SSR UDP、TUIC v4、Snell、smux、Mieru / AmneziaWG / ECH；App 协议目录与分享链接随 M4 | 互通门禁 `ssr`、`xhttp`、`vless-enc` |
 | M3 | 未开始 | |
 | M4 | 未开始 | |
 | M5 | 未开始 | |

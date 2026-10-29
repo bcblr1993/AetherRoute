@@ -17,6 +17,7 @@ final class ProfileCompatibilityReportTests: XCTestCase {
           - {name: vm-kcp, type: vmess, server: a.example, port: 1, uuid: \(uuid), network: kcp}
           - {name: ss-kcptun, type: ss, server: a.example, port: 1, cipher: aes-128-gcm, password: x, plugin: kcptun}
           - {name: vl-enc, type: vless, server: a.example, port: 1, uuid: \(uuid), encryption: mlkem768x25519plus.native.0rtt.abc}
+          - {name: vl-enc-ok, type: vless, server: a.example, port: 1, uuid: \(uuid), encryption: mlkem768x25519plus.native.0rtt.6nZ2lmyau-KImiEm9nOtwdltnv2hX_gC2EFrAXDrjTk}
           - {name: vl-none, type: vless, server: a.example, port: 1, uuid: \(uuid), encryption: none}
           - {name: any-fp, type: anytls, server: a.example, port: 1, password: x, client-fingerprint: chrome}
           - name: block-smux
@@ -46,6 +47,7 @@ final class ProfileCompatibilityReportTests: XCTestCase {
 
     private func assertReport(_ summary: ProfileConfigurationSummary, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(recognition(summary, "ok-vmess"), .recognized, file: file, line: line)
+        XCTAssertEqual(recognition(summary, "vl-enc-ok"), .recognized, file: file, line: line)
         XCTAssertEqual(recognition(summary, "vl-none"), .recognized, file: file, line: line)
         XCTAssertEqual(recognition(summary, "future-1"), .unsupported(.protocolType("future-protocol")), file: file, line: line)
         XCTAssertEqual(recognition(summary, "vm-kcp"), .unsupported(.network("kcp")), file: file, line: line)
@@ -91,6 +93,7 @@ final class ProfileCompatibilityReportTests: XCTestCase {
             ["name": "vm-kcp", "type": "vmess", "server": "a.example", "port": 1, "uuid": uuid, "network": "kcp"],
             ["name": "ss-kcptun", "type": "ss", "server": "a.example", "port": 1, "cipher": "aes-128-gcm", "password": "x", "plugin": "kcptun"],
             ["name": "vl-enc", "type": "vless", "server": "a.example", "port": 1, "uuid": uuid, "encryption": "mlkem768x25519plus.native.0rtt.abc"],
+            ["name": "vl-enc-ok", "type": "vless", "server": "a.example", "port": 1, "uuid": uuid, "encryption": "mlkem768x25519plus.native.0rtt.6nZ2lmyau-KImiEm9nOtwdltnv2hX_gC2EFrAXDrjTk"],
             ["name": "vl-none", "type": "vless", "server": "a.example", "port": 1, "uuid": uuid, "encryption": "none"],
             ["name": "any-fp", "type": "anytls", "server": "a.example", "port": 1, "password": "x", "client-fingerprint": "chrome"],
             ["name": "block-smux", "type": "ss", "server": "a.example", "port": 1, "cipher": "aes-128-gcm", "password": "x", "smux": ["enabled": true]],

@@ -1,0 +1,100 @@
+{
+  "log": {"loglevel": "warning"},
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "port": 59085,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{"id": "b831381d-6324-4d53-ad4f-8cda48b30811"}],
+        "decryption": "mlkem768x25519plus.native.600s.kIiXcPpkuYjOTeLTBEyOIuPxDmtUC8VexSzuINO3kXc.YRO8NwsDVVzGYCApnlSoohsW0tEdith_ZzS46FEsSmAOEALVSC_fIJOJ5neEK4ZaYjoN1CbWbQbw4zKdt5kkOg"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "none"
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 59086,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "b831381d-6324-4d53-ad4f-8cda48b30811",
+            "flow": "xtls-rprx-vision"
+          }
+        ],
+        "decryption": "mlkem768x25519plus.xorpub.600s.kIiXcPpkuYjOTeLTBEyOIuPxDmtUC8VexSzuINO3kXc"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "none"
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 59087,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {"id": "b831381d-6324-4d53-ad4f-8cda48b30811"},
+          {
+            "id": "c942492e-7435-4e64-be50-9deb59c41922",
+            "flow": "xtls-rprx-vision"
+          }
+        ],
+        "decryption": "mlkem768x25519plus.random.600s.100-120-240.50-0-10.100-50-100.YRO8NwsDVVzGYCApnlSoohsW0tEdith_ZzS46FEsSmAOEALVSC_fIJOJ5neEK4ZaYjoN1CbWbQbw4zKdt5kkOg"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "none"
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 59088,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{"id": "b831381d-6324-4d53-ad4f-8cda48b30811"}],
+        "decryption": "mlkem768x25519plus.native.600s.kIiXcPpkuYjOTeLTBEyOIuPxDmtUC8VexSzuINO3kXc"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "alpn": ["h2", "http/1.1"],
+          "certificates": [
+            {"certificateFile": "__CERT__", "keyFile": "__KEY__"}
+          ]
+        }
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 59089,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "b831381d-6324-4d53-ad4f-8cda48b30811",
+            "flow": "xtls-rprx-vision"
+          }
+        ],
+        "decryption": "mlkem768x25519plus.xorpub.600s.kIiXcPpkuYjOTeLTBEyOIuPxDmtUC8VexSzuINO3kXc"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "target": "www.cloudflare.com:443",
+          "serverNames": ["www.cloudflare.com"],
+          "privateKey": "wLts0LPcc1yKPZsVN-BNtLrsP9vbAKlkraJaGEim0lA",
+          "shortIds": ["6ba85179e30d4fc2"]
+        }
+      }
+    }
+  ],
+  "outbounds": [{"protocol": "freedom", "tag": "direct"}]
+}

@@ -1736,7 +1736,7 @@ private struct Parser {
         switch key {
         case "network": item?.network = scalar.lowercased()
         case "plugin": item?.plugin = scalar.lowercased()
-        case "encryption": item?.encryption = scalar.lowercased()
+        case "encryption": item?.encryption = Self.unquoted(value)
         case "smux":
             // A block mapping arrives empty here; nodes carry `smux` only to
             // turn it on, so treat that as enabled.
@@ -1763,10 +1763,77 @@ private struct Parser {
            !EngineCapabilities.shadowsocksPlugins.contains(item.plugin) {
             return .unsupported(.plugin(item.plugin))
         }
-        if type == "vless", !item.encryption.isEmpty, item.encryption != "none" {
+        if type == "vless", !Self.isSupportedVlessEncryption(item.encryption) {
             return .unsupported(.option("encryption"))
         }
         return .recognized
+    }
+
+    private static func isSupportedVlessEncryption(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.lowercased() == "none" {
+            return true
+        }
+        let parts = trimmed.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 4,
+              parts[0] == "mlkem768x25519plus",
+              ["native", "xorpub", "random"].contains(parts[1]),
+              ["1rtt", "0rtt"].contains(parts[2])
+        else {
+            return false
+        }
+        var keyTokens: [String] = []
+        var paddingIndex = 0
+        var maxPaddingLen = 0
+        for token in parts.dropFirst(3) {
+            let dashParts = token.split(separator: "-", omittingEmptySubsequences: false)
+            if keyTokens.isEmpty,
+               dashParts.count == 3,
+               let prob = Int(dashParts[0]),
+               let minVal = Int(dashParts[1]),
+               let maxVal = Int(dashParts[2]),
+               prob >= 0, minVal >= 0, maxVal >= minVal
+            {
+                if paddingIndex == 0 && (prob < 100 || minVal < 35 || maxVal < 35) {
+                    return false
+                }
+                if paddingIndex.isMultiple(of: 2) {
+                    maxPaddingLen += max(minVal, maxVal)
+                }
+                paddingIndex += 1
+                continue
+            }
+            keyTokens.append(token)
+        }
+        guard !keyTokens.isEmpty, maxPaddingLen <= 18 + 65535 else {
+            return false
+        }
+        for token in keyTokens {
+            guard let decoded = decodeBase64URL(token),
+                  decoded.count == 32 || decoded.count == 1184
+            else {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func decodeBase64URL(_ value: String) -> Data? {
+        guard !value.isEmpty, !value.contains("="),
+              !value.contains("+"), !value.contains("/")
+        else {
+            return nil
+        }
+        var base64 = value
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = base64.count % 4
+        if remainder == 1 {
+            return nil
+        } else if remainder > 1 {
+            base64 += String(repeating: "=", count: 4 - remainder)
+        }
+        return Data(base64Encoded: base64)
     }
 
     private static func leadingSpaceCount(in line: String) -> Int {
@@ -1865,7 +1932,7 @@ private struct Parser {
         return values
     }
 
-    private static func scalar(_ value: String) -> String {
+    private static func unquoted(_ value: String) -> String {
         var value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.count >= 2,
            (value.first == "\"" && value.last == "\"")
@@ -1873,7 +1940,11 @@ private struct Parser {
             value.removeFirst()
             value.removeLast()
         }
-        return String(value.prefix(160))
+        return value
+    }
+
+    private static func scalar(_ value: String) -> String {
+        String(unquoted(value).prefix(160))
     }
 
     private static func boolean(_ value: String) -> Bool? {

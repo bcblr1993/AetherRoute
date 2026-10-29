@@ -124,6 +124,9 @@ run_gate ssh \
 run_gate xhttp \
   XRAY_BIN="$TOOLS/xray" \
   sh "$ROOT/Tests/Interop/run-prebuilt-xhttp.sh"
+run_gate vless-enc \
+  XRAY_BIN="$TOOLS/xray" \
+  sh "$ROOT/Tests/Interop/run-prebuilt-vless-enc.sh"
 run_gate ssr \
   SSR_ARCHIVE="$TOOLS/shadowsocksr-b365980a82d7309f4ed368c6bd958ee080cdd37b.tar.gz" \
   sh "$ROOT/Tests/Interop/run-prebuilt-ssr.sh"
