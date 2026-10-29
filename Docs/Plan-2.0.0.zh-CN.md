@@ -115,6 +115,38 @@
 - 完整 `test.sh`、互通门禁、Mihomo 对照、三轨验收、物理机证据、UI 性能预算。
 - CHANGELOG、发布说明、官网兼容性矩阵；确认旧配置与手动节点无需迁移。
 
+## 3A. 排期与任务清单（2026-10-29 更新）
+
+按"连续推进、不被外部条件阻塞"估算，剩余约 4–6 个工作日；发布流程本身约 2 小时。每一项都按"先写测试并确认在旧代码上失败 → 实现 → 互通 / 对照通过 → 接入门禁"完成，完成后在第 8 节记录证据。
+
+| 顺序 | 任务 | 测试先行的内容 | 互通服务端 | 估算 |
+|---|---|---|---|---|
+| ✅ | M0 不再静默丢弃 | 兼容性报告单测、能力清单双向一致 | — | 完成 |
+| ✅ | M1 Chrome 指纹 + ALPS | JA4 对比真机、各协议抓包、真实站点握手 | sing-box、Xray、9 个真实站点 | 完成 |
+| ✅ | M2-1 Hysteria v1 | 编解码、分片重组、配置 | sing-box | 完成 |
+| 1 | M2-2 SSR（stream 加密 + origin / auth_aes128_md5 / auth_aes128_sha1 / auth_chain_a/b + plain / http_simple / http_post / tls1.2_ticket_auth / random_head） | 各插件编码对照参考实现的测试向量 | shadowsocksr-libev（源码编译，固定版本） | 0.5–1 天 |
+| 2 | M2-3 xhttp（packet-up / stream-up / stream-one，含 TLS 与 REALITY） | 请求分帧、多路分包顺序 | Xray（已有） | 1 天 |
+| 3 | M2-4 VLESS encryption（mlkem768x25519plus） | 握手与密钥派生对照 Xray | Xray | 0.5 天 |
+| 4 | M2-5 TUIC v4（token） | 帧格式 | 官方 tuic-server v0.8 | 0.5 天 |
+| 5 | M2-6 Snell v1–v5 | 帧格式与加密 | 官方 snell-server（固定版本） | 0.5 天 |
+| 6 | M2-7 smux / sing-mux（h2mux、smux、yamux） | 多路复用帧 | sing-box | 0.5 天 |
+| 7 | M2-8 Mieru、AmneziaWG 参数、ECH（`ech-opts`） | 各自协议 | mita、amneziawg、sing-box | 0.5–1 天 |
+| 8 | M3 规则与 DNS 补齐 | 每种规则的匹配单测，与 Mihomo 命中同一出口 | Mihomo | 0.5–1 天 |
+| 9 | M4 分享链接、SIP008、App 协议目录与手动节点编辑器 | 每种链接往返、旧数据解码 | — | 0.5 天 |
+| 10 | M5 实验室扩充到全部协议、订阅语料库、App 端到端、Shadowrocket / Surge 手工清单 | 每协议真实网络与 Mihomo 一致 | 腾讯云实验室 | 0.5–1 天 |
+| 11 | M6 发布 2.0.0 | 第 5.5 节全部门禁 | VM、Mac mini | 0.5 天 |
+
+"支持所有协议"指 Mihomo 1.19.29 能加载的出站全部支持，以下除外并在导入时明确提示：Hysteria v1 的 `faketcp`（需要原始套接字，macOS 网络扩展不允许）、Clash Premium `script` 与 Surge 模块 / MITM（见第 6 节）。若某个服务端无法取得（如闭源服务端没有对应版本），该协议仍实现，但在发布说明中注明只做了单测与对照测试。
+
+### 5.5 每次发布必跑的核心测试（2.0 起）
+1. `./scripts/test_fast_lane.sh`（含引擎单元测试与能力清单一致性检查）；
+2. `./scripts/test.sh`（零警告）；
+3. 12 协议互通门禁跑两遍：默认与 `AETHER_INTEROP_CLIENT_FINGERPRINT=chrome`；
+4. Mihomo 对照端到端 + 实验室真实网络对照（全部节点一致，差异须解释）；
+5. Chrome 指纹真实站点测试（`real_site_tests`，需联网）；
+6. 三轨并行验收与物理机证据（TUN、透明代理）；
+7. UI 性能与内存预算。
+
 ## 4. 版本号说明
 
 2.0.0 作为"订阅兼容性"里程碑。会改变已有行为的地方：带 `client-fingerprint` 的节点改用浏览器指纹握手；原先静默丢弃的规则改为执行或明确报告。旧数据格式保持兼容。

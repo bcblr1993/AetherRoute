@@ -32,6 +32,13 @@
   - 每次发布与 `Core/Engine` 改动都必须运行 `PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_subscription_differential.py --e2e`。它在本机回环上用 sing-box 当服务端，同时驱动 Mihomo 和我们的引擎（`build/differential-target/release/clash-rs`，与 App 相同的特性集），必须得出：能用的节点两边都通、死节点两边都失败、不支持的传输层节点被我们跳过（`ours_missing`），而且其余节点照常可用。单元部分已接入 `test.sh`。
   - 用户反馈"某订阅有问题"时，先运行 `scripts/compare_subscription_with_mihomo.sh <订阅 URL 或文件>`。本机有隧道或透明代理时，设置 `AETHER_DIFFERENTIAL_HOST=chenxu@100.64.0.3`，改在 Mac mini 上测。报告列出 Mihomo 能用、而我们不能用或没加载的节点，并按协议和选项汇总。订阅和配置只存在于临时目录，报告不含服务器地址和凭据。该工具在 1.10.0 开发中发现：订阅里只要有一个 `xhttp` 或 `httpupgrade` 节点，两个核心都会拒绝整份配置。
 - **日常快速门禁（fast lane，1.10.0 起）**：每次提交前运行 `./scripts/test_fast_lane.sh`。它只在本机运行，不碰本机网络、隧道和系统扩展，依次执行上面四项核心回归里的快速部分（网络切换、引擎重连、运行环境、网络快照）、大上传门禁、恢复与订阅兼容门禁、Mihomo 对照单元测试，以及差分引擎增量构建加端到端对照。`Core/Engine` 有未记录的改动时自动加跑 12 协议互通门禁，也可用 `AETHER_FAST_LANE_INTEROP=1` 强制加跑。每步输出 PASS/FAIL 和耗时，日志在 `outputs/fast-lane-<时间>/`。它不能代替发布前的完整 `test.sh` 和下面的验收流水线。
+- **2.0 起每次发布必跑的核心测试（Mandatory，不得跳过或缩短）**：
+  1. `./scripts/test_fast_lane.sh`：已包含引擎单元测试（App 特性集，`engine-unit`）与引擎能力清单一致性检查（`engine-capabilities`，`scripts/engine_capabilities.py check`）；
+  2. 12 协议互通门禁跑两遍：默认一遍，`AETHER_INTEROP_CLIENT_FINGERPRINT=chrome` 一遍（所有 TLS 用例改用 Chrome 指纹握手，验证服务端接受）；
+  3. Chrome 指纹真实站点测试：`cargo test -p clash-lib --lib <App 特性集> real_site_tests -- --ignored`，9 个站点（含 Google、YouTube 的 ALPS）必须握手并交换数据；
+  4. 实验室真实网络对照：`scripts/protocol_lab.py` 节点经 Mac mini 与 Mihomo 逐节点对照，结果须一致，差异写入发布例外说明；
+  5. 以及下文的 `test.sh`、三轨并行验收、物理机证据与 UI 性能门禁。
+  新增协议必须同时加入互通门禁用例、实验室节点和能力清单（`Config/EngineCapabilities.json` 由 `scripts/engine_capabilities.py write` 生成）。
 - **核心功能必须带回归测试（Mandatory，1.9.1 起）**：凡是新增或修复核心功能（连接生命周期与自动恢复、订阅解析与配置重写、DNS 与路由、透明代理与 TUN、`Core/Engine` 协议收发），同一次提交必须附带能复现原问题的单元测试或门禁用例，并接入上面的核心回归或互通门禁，使其随每次发布自动运行。修复必须先确认测试在旧代码上失败、在新代码上通过；无法自动化的场景要在 CHANGELOG 写明原因和手工验证步骤。没有测试的核心改动不得进入发布。
 - 运行 12 种协议的真实互通门禁（`test.sh` 只校验运行脚本文本，不会真正连接）。首次运行先下载并校验第三方服务端（sing-box、shadow-tls、Xray、Mihomo，均按固定 SHA-256 校验；WireGuard 服务端从源码编译），缓存在已被忽略的 `build/interop-tools`：
   ```bash
