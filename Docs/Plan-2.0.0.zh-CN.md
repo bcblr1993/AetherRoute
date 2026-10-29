@@ -96,6 +96,12 @@
 
 每项：引擎实现 + 单测 → 互通门禁用例（服务端二进制固定 SHA-256）→ 实验室节点 → 分享链接解析与导出 → Mihomo 对照通过。
 
+#### M2-2 SSR 实现决定（2026-10-29）
+- **许可证**：Mihomo 为 GPL-3.0，只作行为参考与互通客户端，不移植其代码；依据 Apache-2.0 的 Python 版 ShadowsocksR（shadowsocksrr/shadowsocksr，akkariiin/dev 分支，提交 `b365980`，源码包 SHA-256 `63f1578f…3a3f`）实现，并在 NOTICE 中致谢。
+- **互通服务端**：同一 Python 服务端（python3 + Homebrew OpenSSL 3 的 libcrypto），每种组合一个进程，端口 59060 起；已用 Mihomo 作客户端验证（aes-128-cfb + auth_aes128_md5 + http_simple，HTTP 200）。
+- **分层**：TCP → obfs（plain / http_simple / http_post / random_head / tls1.2_ticket_auth）→ 流加密（IV + 流密码，EVP_BytesToKey 派生）→ protocol（origin / auth_sha1_v4 / auth_aes128_md5 / auth_aes128_sha1 / auth_chain_a / auth_chain_b）→ 地址头与数据。
+- **顺序**：先流加密 + origin + plain，再各 obfs，再各 protocol；每加一种都先加互通用例（先失败），最后做 UDP。
+
 ### M3 规则与 DNS 补齐
 - 规则：第 2.2 节缺失的全部类型，含 `sub-rules` 段与 `no-resolve` / `src` 参数。
 - DNS：`direct-nameserver`、`fake-ip-filter-mode`、DoQ / DoH3、`sniffer`、hosts 通配。
