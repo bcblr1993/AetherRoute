@@ -71,6 +71,18 @@
 - 接入：VMess / VLESS / Trojan 的 TLS、WS、gRPC、H2，AnyTLS、HTTPS、SOCKS-TLS、REALITY、shadow-tls；支持 `global-client-fingerprint`。
 - 测试：分支单测核对 ClientHello 内容；新增指纹门禁（本地服务端抓取 ClientHello 计算 JA4，与内置浏览器访问 tls.peet.ws 取得的真实 Chrome 值比对）；12 协议互通全部带指纹重跑；REALITY 对 Xray 服务端。
 
+#### M1 设计细节（2026-10-29 确定）
+- **参考指纹**：`Tests/Fingerprint/chrome-152.json`（内置浏览器访问 tls.peet.ws 取得），JA4 `t13d1516h2_8daaf6152771_806a8c22fdea`。
+- **rustls 已随引擎内置**：`Core/Engine/vendor/rustls-0.23.40`（引擎 `7dd44c4`，与 Watfaq 分支源码逐字节一致）。
+- **改动点**（`ClientConfig.client_hello_profile`，为空时行为不变）：
+  1. 线上密码套件列表按配置发送（含 GREASE；CBC / RSA 套件只宣告不实现，服务端选中即握手失败）；
+  2. supported_groups、supported_versions、signature_algorithms 按配置发送并插入 GREASE；key_share 增加 1 字节 GREASE 项；
+  3. `ClientExtensions` 编码支持额外原始扩展：首尾 GREASE、SCT(18)、session_ticket(35)、renegotiation_info(65281)、ALPS(17613, h2)；
+  4. 开启 rustls `brotli` 特性并只用 brotli 解压证书（compress_certificate 27）；
+  5. ECH GREASE 用 rustls 自带的 `EchMode::Grease`；
+  6. 服务端协商 ALPS 时，在客户端 Finished 之前发送带空设置的 EncryptedExtensions（BoringSSL 行为）；未实现前先明确报错。
+- **验证**：本机抓取 ClientHello 计算 JA4，与参考一致（扩展顺序本就随机，JA4 已排序）；对 www.google.com、www.cloudflare.com 真实握手；12 协议互通全部带指纹重跑；REALITY 对 Xray。
+
 ### M2 协议补齐（按机场常见程度排序）
 1. Hysteria v1（含端口跳跃、obfs、up/down）
 2. SSR（常见 protocol / obfs 组合）

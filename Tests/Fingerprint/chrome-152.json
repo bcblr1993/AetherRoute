@@ -1,0 +1,14 @@
+{
+  "source": "tls.peet.ws/api/all from the Claude desktop browser pane (Chrome/152.0.7977.167, macOS), 2026-10-29",
+  "ja4": "t13d1516h2_8daaf6152771_806a8c22fdea",
+  "ja4_r": "t13d1516h2_002f,0035,009c,009d,1301,1302,1303,c013,c014,c02b,c02c,c02f,c030,cca8,cca9_0005,000a,000b,000d,0012,0017,001b,0023,002b,002d,0033,44cd,fe0d,ff01_0904,0905,0906,0403,0804,0401,0503,0805,0501,0806,0601",
+  "cipher_suites": ["0x1301", "0x1302", "0x1303", "0xc02b", "0xc02f", "0xc02c", "0xc030", "0xcca9", "0xcca8", "0xc013", "0xc014", "0x009c", "0x009d", "0x002f", "0x0035"],
+  "extensions": [5, 43, 0, 13, 10, 45, 65037, 11, 51, 18, 23, 16, 27, 35, 17613, 65281],
+  "supported_groups": ["X25519MLKEM768", "X25519", "P-256", "P-384"],
+  "key_shares": ["GREASE", "X25519MLKEM768", "X25519"],
+  "signature_algorithms": ["0x0904", "0x0905", "0x0906", "0x0403", "0x0804", "0x0401", "0x0503", "0x0805", "0x0501", "0x0806", "0x0601"],
+  "grease": ["cipher_suites", "extensions (first and last)", "supported_versions", "supported_groups", "key_share", "signature_algorithms"],
+  "alpn": ["h2", "http/1.1"],
+  "alps": ["h2"],
+  "compress_certificate": ["brotli"]
+}
