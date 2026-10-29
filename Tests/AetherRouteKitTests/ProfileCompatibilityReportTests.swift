@@ -74,11 +74,9 @@ final class ProfileCompatibilityReportTests: XCTestCase {
             [.init(kind: "IP-ASN", count: 2), .init(kind: "DOMAIN-WILDCARD", count: 1)],
             file: file, line: line
         )
-        XCTAssertEqual(
-            report.limitedOptions,
-            [.init(option: "client-fingerprint", count: 1), .init(option: "smux", count: 1)],
-            file: file, line: line
-        )
+        // The engine sends a browser-like ClientHello since 2.0, so
+        // client-fingerprint is no longer a limitation.
+        XCTAssertEqual(report.limitedOptions, [.init(option: "smux", count: 1)], file: file, line: line)
     }
 
     func testYAMLProfileReportsWhatTheEngineCannotLoad() {

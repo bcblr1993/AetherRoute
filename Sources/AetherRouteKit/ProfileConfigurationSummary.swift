@@ -696,7 +696,7 @@ private struct CompatibilityBuilder {
             return
         }
         guard recognition.isUsable else { return }
-        if item.clientFingerprint { count(option: "client-fingerprint") }
+        // client-fingerprint is applied by the engine (Chrome ClientHello).
         if item.smux { count(option: "smux") }
     }
 
@@ -753,7 +753,6 @@ private struct Parser {
         var network = ""
         var plugin = ""
         var encryption = ""
-        var clientFingerprint = false
         var smux = false
         var members: [String] = []
         var includeAll = false
@@ -1729,7 +1728,7 @@ private struct Parser {
 
     /// Node keys that decide whether the engine can use a node.
     static let compatibilityKeys: Set<String> = [
-        "network", "plugin", "encryption", "client-fingerprint", "smux",
+        "network", "plugin", "encryption", "smux",
     ]
 
     private mutating func recordCompatibilityField(_ key: String, value: String) {
@@ -1738,7 +1737,6 @@ private struct Parser {
         case "network": item?.network = scalar.lowercased()
         case "plugin": item?.plugin = scalar.lowercased()
         case "encryption": item?.encryption = scalar.lowercased()
-        case "client-fingerprint": item?.clientFingerprint = !scalar.isEmpty
         case "smux":
             // A block mapping arrives empty here; nodes carry `smux` only to
             // turn it on, so treat that as enabled.

@@ -63,11 +63,6 @@ struct ProfileCompatibilityNotice: View {
         }
         for entry in report.limitedOptions {
             switch entry.option {
-            case "client-fingerprint":
-                lines.append(AppLocalization.format(
-                    "%lld nodes request a browser TLS fingerprint; they connect without it",
-                    Int64(entry.count)
-                ))
             case "smux":
                 lines.append(AppLocalization.format(
                     "%lld nodes request multiplexing (smux); they connect without it",

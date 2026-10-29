@@ -703,7 +703,7 @@ final class TunnelManager: ObservableObject {
                   - {name: Hong Kong SSR 01, type: ssr}
                   - {name: Hong Kong SSR 02, type: ssr}
                   - {name: Seoul KCP, type: vmess, network: kcp}
-                  - {name: Osaka AnyTLS, type: anytls, client-fingerprint: chrome}
+                  - {name: Osaka AnyTLS, type: anytls, smux: {enabled: true}}
                 """
                 : ""
             let reviewCompatRules = isCompatReview

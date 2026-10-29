@@ -16164,16 +16164,6 @@
         }
       }
     },
-    "%lld nodes request a browser TLS fingerprint; they connect without it": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 个节点要求模拟浏览器 TLS 指纹：可以连接，但暂不模拟"
-          }
-        }
-      }
-    },
     "%lld nodes request multiplexing (smux); they connect without it": {
       "localizations": {
         "zh-Hans": {
