@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 1.11.0 (Build 2026102902)</title>
-            <pubDate>Thu, 29 Oct 2026 06:52:19 +0800</pubDate>
-            <sparkle:version>2026102902</sparkle:version>
-            <sparkle:shortVersionString>1.11.0</sparkle:shortVersionString>
+            <title>Version 1.11.1 (Build 2026102903)</title>
+            <pubDate>Thu, 29 Oct 2026 10:57:32 +0800</pubDate>
+            <sparkle:version>2026102903</sparkle:version>
+            <sparkle:shortVersionString>1.11.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.11.0/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/1.11.1/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,39 +120,32 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 1.11.0 更新要点</span>
-  <span class="release-badge">Build 2026102902 · 正式发布</span>
+  <span class="release-title">AetherRoute 1.11.1 更新要点</span>
+  <span class="release-badge">Build 2026102903 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">✨ 新增：支持 httpupgrade 传输</span>
+  <span class="section-tag tag-fix">🐛 修复：VMess 与 Trojan 节点</span>
   <ul>
-    <li><strong>httpupgrade 节点可以直接使用</strong>：VMess、VLESS、Trojan 都支持。无论订阅是 Clash/Mihomo 配置（<code>v2ray-http-upgrade: true</code>）还是分享链接（<code>type=httpupgrade</code>），导入即可连接。过去这类节点会连接失败或被跳过。</li>
-  </ul>
-</div>
-<div class="section">
-  <span class="section-tag tag-fix">🐛 修复</span>
-  <ul>
-    <li><strong>粘贴节点链接时不再悄悄变成 TCP</strong>：遇到 xhttp 等暂不支持的传输会明确提示，过去会生成一个永远连不上的节点。</li>
-    <li><strong>JSON 格式的订阅配置</strong>：带 shadow-tls 等内置插件时不再被误判为不安全而整份拒绝。</li>
+    <li><strong>写明 network: tcp 的节点照常可用</strong>：Xboard 等面板生成的订阅会给 VMess、Trojan 节点写上 <code>network: tcp</code>。过去这些节点无法加载（1.10.0 之前会让整份订阅无法连接），现在可以正常使用。</li>
   </ul>
 </div>
 <div class="section">
   <span class="section-tag tag-improve">🛡️ 质量保证</span>
   <ul>
-    <li>真实服务器上 28 种协议变体与参考实现 Mihomo 逐节点对照，全部表现一致。</li>
+    <li>真实服务器上 28 种协议变体与参考实现 Mihomo 逐节点对照全部一致。</li>
     <li>Tart 虚拟机 6 维网络矩阵、远程源码门禁、UI 性能门禁、Mac mini 真机门禁（TUN 与透明代理的空闲复用、2 MiB 上传、切换网卡在 1–3 秒内恢复）全部通过。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.11.0/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/1.11.1/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.11.0/AetherRoute-1.11.0-build-2026102902-arm64.dmg"
-                sparkle:edSignature="wqCjQ52hEjUhwEPLr+GsLYrPIdAUQO+S0f5UA9roPfmPDMil41UzC0j/C1E19fuQHEIvW3LeWeQaxo8r+cOwAg=="
-                length="27742514"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v1.11.1/AetherRoute-1.11.1-build-2026102903-arm64.dmg"
+                sparkle:edSignature="Y3sW5x1btWYblhb33h0PqJ+k7d0il3/7NcTbekRgFnWB27qNTKIGucydTZHdW6JOM/Vo1y7sF2WcyYJ+a4uFBg=="
+                length="27959612"
                 type="application/octet-stream" />
         </item>
     </channel>

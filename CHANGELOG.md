@@ -4,6 +4,35 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.11.1] - 2026-10-29
+
+VMess and Trojan nodes that write `network: tcp` load again. Subscription panels such as Xboard write it explicitly; since 1.10.0 these nodes were skipped, and before that they made the whole subscription fail.
+
+### Fixed
+
+- **VMess and Trojan accept `network: tcp` (engine `9935e68`, `converters/vmess.rs`, `converters/trojan.rs`)**: both converters matched only the extra transports (ws, h2, grpc) and refused anything else with "unsupported network: tcp". VMess over TLS hit the same error when choosing ALPN. Mihomo and our VLESS treat `tcp` as the plain stream, as an absent `network`; now so do VMess and Trojan. Unknown networks are still refused. Found while checking a list of the engine's capabilities against its converters.
+
+### Tests
+
+- Engine: `explicit_tcp_network_loads_like_mihomo` and `unknown_network_is_still_refused` for VMess and Trojan, failing on 1.11.0 (the VMess TLS case was confirmed by reverting only its ALPN fix). Engine library tests: 430 passed.
+- `test_subscription_differential.py`: the end-to-end run adds VMess and Trojan nodes written as panels write them, served by sing-box on loopback. On the 1.11.0 engine they were `ours_missing`; they now pass 10 runs out of 10.
+- `scripts/protocol_lab.py` writes `network: tcp` on its `vmess-tcp` and `trojan-tcp` nodes.
+
+### Verified
+
+- Local: `test_fast_lane.sh` with the interop gate passed (`outputs/gates-1.11.1.console.log`): matrix, reality, wireguard, shadowquic and ssh all passed, and so did the Mihomo differential end-to-end run. `./scripts/test.sh` passed with zero code warnings: XCTest 555 + 98 + 24, 0 failures.
+- Mihomo differential on the real lab server (28 nodes, probed from the Mac mini, `outputs/protocol-lab/diff-1.11.1`): all 28 worked in both engines, including the explicit-tcp VMess and Trojan nodes.
+- Three-track acceptance (`outputs/acceptance-1.11.1-2026102903-20261029-101215`, 35 min 45 s): the Tart VM 6-way matrix passed (210 checks: 160 PASS, 0 FAIL, 50 SKIP) and then the remote arm64 gate on the same VM; the UI performance gate passed on the Mac mini; the notarized stable candidate built and was stapled (app `cc8af259-8309-4910-a26d-9e34f8c26ba6`, DMG `c4afad80-ebf6-454f-8f18-a544988257d9`).
+- Physical runtime evidence for notarized candidate `2026102903` (DMG SHA-256 `47d96bf81d5bbc60132fd280e512748a7e977618ef9a37303dbf3c419090dfd8`): TUN passed idle keep-alive reuse, uploaded 2 MiB in 0.87 s and recovered from interface switches in 2/1/1/2/2/3 s; the transparent proxy passed idle keep-alive reuse, uploaded 2 MiB in 0.86 s and recovered in 2/2/1/2/2/2 s.
+- UI performance and memory (300 s per profile):
+
+| Profile | Page switch p95 / max (ms) | Footprint median / max (MB) | Growth |
+|---|---|---|---|
+| showcase 1.11.0 → 1.11.1 | 149.2 / 193.1 → 147.1 / 193.5 | 72 / 82 → 67 / 81 | +1 → +0 MB |
+| large 1.11.0 → 1.11.1 | 145.6 / 195.9 → 145.9 / 192.7 | 66 / 77 → 69 / 84 | +0 → +2 MB |
+
+All within budget (p95 ≤ 180 ms, max ≤ 300 ms, median ≤ 90 MB, max ≤ 110 MB, growth ≤ 8 MB). This release changes no app UI code.
+
 ## [1.11.0] - 2026-10-29
 
 Adds the V2Ray `httpupgrade` transport, the last node type in the real-server comparison that Mihomo could use and we could not: all 28 protocol variants now behave the same in both engines. Share links with a transport the app cannot carry are now refused with a message instead of becoming a TCP node that never connects.
