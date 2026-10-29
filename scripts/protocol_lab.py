@@ -113,7 +113,8 @@ def generate(host):
 
     # VMess.
     vmess_variants = (
-        ("vmess-tcp", None, None, {}),
+        # Written as panels such as Xboard do: `network: tcp` explicitly.
+        ("vmess-tcp", None, None, {"network": "tcp"}),
         ("vmess-ws-tls", tls(), {"type": "ws", "path": "/vmws"},
          {**tls_client, "network": "ws", "ws-opts": {"path": "/vmws", "headers": {"Host": SNI}},
           "client-fingerprint": "chrome"}),
@@ -185,7 +186,7 @@ def generate(host):
 
     # Trojan.
     trojan_variants = (
-        ("trojan-tcp", None, {}),
+        ("trojan-tcp", None, {"network": "tcp"}),
         ("trojan-tcp-pinned", None, {"skip-cert-verify": False, "fingerprint": None}),
         ("trojan-ws", {"type": "ws", "path": "/trws"}, {"network": "ws", "ws-opts": {"path": "/trws"},
                                                          "client-fingerprint": "chrome"}),

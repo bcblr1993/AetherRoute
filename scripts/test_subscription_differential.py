@@ -224,6 +224,7 @@ class EndToEndTests(unittest.TestCase):
 
             ss_port, dead_port, anytls_port, upgrade_port = (
                 free_port(), free_port(), free_port(), free_port())
+            vmess_port, trojan_port = free_port(), free_port()
             password = "e2e-password"
             subprocess.run(
                 ["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt",
@@ -246,6 +247,13 @@ class EndToEndTests(unittest.TestCase):
                     {"type": "vless", "listen": "127.0.0.1",
                      "listen_port": upgrade_port, "users": [{"uuid": SECRET_UUID}],
                      "transport": {"type": "httpupgrade", "path": "/up"}},
+                    {"type": "vmess", "listen": "127.0.0.1", "listen_port": vmess_port,
+                     "users": [{"uuid": SECRET_UUID, "alterId": 0}]},
+                    {"type": "trojan", "listen": "127.0.0.1", "listen_port": trojan_port,
+                     "users": [{"password": password}],
+                     "tls": {"enabled": True,
+                             "certificate_path": str(work / "cert.pem"),
+                             "key_path": str(work / "key.pem")}},
                 ],
                 "outbounds": [{"type": "direct"}],
             }))
@@ -256,6 +264,8 @@ class EndToEndTests(unittest.TestCase):
                 diff.wait_for_port(ss_port, timeout=10)
                 diff.wait_for_port(anytls_port, timeout=10)
                 diff.wait_for_port(upgrade_port, timeout=10)
+                diff.wait_for_port(vmess_port, timeout=10)
+                diff.wait_for_port(trojan_port, timeout=10)
                 profile = {
                     "mode": "global",
                     "proxies": [
@@ -282,11 +292,23 @@ class EndToEndTests(unittest.TestCase):
                          "server": "127.0.0.1", "port": upgrade_port,
                          "uuid": SECRET_UUID, "network": "ws",
                          "ws-opts": {"path": "/up", "v2ray-http-upgrade": True}},
+                        # Panels such as Xboard write `network: tcp`
+                        # explicitly; up to 1.11.0 our engine refused it.
+                        {"name": "panel-vmess-tcp", "type": "vmess",
+                         "server": "127.0.0.1", "port": vmess_port,
+                         "uuid": SECRET_UUID, "alterId": 0, "cipher": "auto",
+                         "network": "tcp"},
+                        {"name": "panel-trojan-tcp", "type": "trojan",
+                         "server": "127.0.0.1", "port": trojan_port,
+                         "password": password, "sni": "localhost",
+                         "skip-cert-verify": True, "network": "tcp"},
                     ],
                     "proxy-groups": [{"name": "PROXY", "type": "select",
                                       "proxies": ["live", "dead", "unsupported",
                                                   "airport-anytls",
-                                                  "mihomo-httpupgrade"]}],
+                                                  "mihomo-httpupgrade",
+                                                  "panel-vmess-tcp",
+                                                  "panel-trojan-tcp"]}],
                     "rules": ["MATCH,PROXY"],
                 }
                 report = diff.compare(
@@ -313,6 +335,8 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(by_name["unsupported"], "ours_missing", report)
         self.assertEqual(by_name["airport-anytls"], "both_ok", report)
         self.assertEqual(by_name["mihomo-httpupgrade"], "both_ok", report)
+        self.assertEqual(by_name["panel-vmess-tcp"], "both_ok", report)
+        self.assertEqual(by_name["panel-trojan-tcp"], "both_ok", report)
         self.assertNotIn(password, json.dumps(report))
 
 
