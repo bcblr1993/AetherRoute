@@ -99,6 +99,19 @@ else
   install_verified "$WORK_DIR/$MIHOMO_ARCHIVE" "$TOOLS/$MIHOMO_ARCHIVE" "$MIHOMO_SHA256"
 fi
 
+# ShadowsocksR server (Apache-2.0 Python, akkariiin/dev); the SSR runner
+# pins and unpacks the source archive itself.
+SSR_COMMIT=b365980a82d7309f4ed368c6bd958ee080cdd37b
+SSR_SHA256=63f1578f0efbfccc3f82d684bbf0ada276d5c04c6b8aad33f0e9d9e4d8573a3f
+SSR_ARCHIVE="shadowsocksr-$SSR_COMMIT.tar.gz"
+if is_current "$TOOLS/$SSR_ARCHIVE" "$SSR_SHA256"; then
+  echo "ShadowsocksR server source already present"
+else
+  download "https://github.com/shadowsocksrr/shadowsocksr/archive/$SSR_COMMIT.tar.gz" \
+    "$WORK_DIR/$SSR_ARCHIVE"
+  install_verified "$WORK_DIR/$SSR_ARCHIVE" "$TOOLS/$SSR_ARCHIVE" "$SSR_SHA256"
+fi
+
 # Built from the pinned module in Tests/Interop/WireGuardGoServer; build.sh
 # verifies the module and prints the helper's checksum.
 sh "$ROOT/Tests/Interop/WireGuardGoServer/build.sh" \

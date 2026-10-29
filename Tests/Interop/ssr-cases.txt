@@ -1,0 +1,17 @@
+# ShadowsocksR interop cases: port cipher protocol obfs.
+# Read by Tests/Interop/run-prebuilt-ssr.sh (one Python server per line) and
+# by proxy::interop_tests::interoperates_with_ssr_python_server.
+# rc4-md5 and chacha20-ietf are absent: the server needs OpenSSL's legacy
+# provider or libsodium for them.
+59060 aes-256-cfb origin plain
+59061 aes-128-ctr origin http_simple
+59062 aes-192-cfb origin http_post
+59063 aes-256-cfb origin random_head
+59064 aes-256-cfb origin tls1.2_ticket_auth
+59065 aes-256-cfb auth_sha1_v4 plain
+59066 aes-256-cfb auth_aes128_md5 http_simple
+59067 aes-128-ctr auth_aes128_sha1 tls1.2_ticket_auth
+59068 none auth_chain_a plain
+59069 aes-256-cfb auth_chain_a http_simple
+59070 none auth_chain_b tls1.2_ticket_auth
+59071 aes-256-cfb auth_chain_b http_post
