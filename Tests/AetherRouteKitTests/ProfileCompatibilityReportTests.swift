@@ -12,8 +12,8 @@ final class ProfileCompatibilityReportTests: XCTestCase {
         """
         proxies:
           - {name: ok-vmess, type: vmess, server: a.example, port: 443, uuid: \(uuid), network: tcp}
-          - {name: ssr-1, type: ssr, server: b.example, port: 1, cipher: aes-128-cfb, password: x}
-          - {name: ssr-2, type: ssr, server: b.example, port: 2, cipher: aes-128-cfb, password: x}
+          - {name: future-1, type: future-protocol, server: b.example, port: 1, cipher: aes-128-cfb, password: x}
+          - {name: future-2, type: future-protocol, server: b.example, port: 2, cipher: aes-128-cfb, password: x}
           - {name: vm-kcp, type: vmess, server: a.example, port: 1, uuid: \(uuid), network: kcp}
           - {name: ss-kcptun, type: ss, server: a.example, port: 1, cipher: aes-128-gcm, password: x, plugin: kcptun}
           - {name: vl-enc, type: vless, server: a.example, port: 1, uuid: \(uuid), encryption: mlkem768x25519plus.native.0rtt.abc}
@@ -28,7 +28,7 @@ final class ProfileCompatibilityReportTests: XCTestCase {
             smux:
               enabled: true
         proxy-groups:
-          - {name: P, type: select, proxies: [ok-vmess, ssr-1]}
+          - {name: P, type: select, proxies: [ok-vmess, future-1]}
         rules:
           - DOMAIN-SUFFIX,example.com,DIRECT
           - IP-ASN,13335,P
@@ -47,14 +47,14 @@ final class ProfileCompatibilityReportTests: XCTestCase {
     private func assertReport(_ summary: ProfileConfigurationSummary, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(recognition(summary, "ok-vmess"), .recognized, file: file, line: line)
         XCTAssertEqual(recognition(summary, "vl-none"), .recognized, file: file, line: line)
-        XCTAssertEqual(recognition(summary, "ssr-1"), .unsupported(.protocolType("ssr")), file: file, line: line)
+        XCTAssertEqual(recognition(summary, "future-1"), .unsupported(.protocolType("future-protocol")), file: file, line: line)
         XCTAssertEqual(recognition(summary, "vm-kcp"), .unsupported(.network("kcp")), file: file, line: line)
         XCTAssertEqual(recognition(summary, "ss-kcptun"), .unsupported(.plugin("kcptun")), file: file, line: line)
         XCTAssertEqual(recognition(summary, "vl-enc"), .unsupported(.option("encryption")), file: file, line: line)
         // Limited options still connect, so the node stays usable.
         XCTAssertEqual(recognition(summary, "any-fp"), .recognized, file: file, line: line)
         XCTAssertEqual(recognition(summary, "block-smux"), .recognized, file: file, line: line)
-        XCTAssertFalse(ProxyConfigurationSummary.Recognition.unsupported(.protocolType("ssr")).isUsable)
+        XCTAssertFalse(ProxyConfigurationSummary.Recognition.unsupported(.protocolType("future-protocol")).isUsable)
 
         let report = summary.compatibility
         XCTAssertFalse(report.isFullySupported, file: file, line: line)
@@ -62,7 +62,7 @@ final class ProfileCompatibilityReportTests: XCTestCase {
         XCTAssertEqual(
             report.unsupportedProxies,
             [
-                .init(reason: .protocolType("ssr"), count: 2, examples: ["ssr-1", "ssr-2"]),
+                .init(reason: .protocolType("future-protocol"), count: 2, examples: ["future-1", "future-2"]),
                 .init(reason: .network("kcp"), count: 1, examples: ["vm-kcp"]),
                 .init(reason: .plugin("kcptun"), count: 1, examples: ["ss-kcptun"]),
                 .init(reason: .option("encryption"), count: 1, examples: ["vl-enc"]),
@@ -86,8 +86,8 @@ final class ProfileCompatibilityReportTests: XCTestCase {
     func testJSONProfileReportsTheSame() throws {
         let proxies: [[String: Any]] = [
             ["name": "ok-vmess", "type": "vmess", "server": "a.example", "port": 443, "uuid": uuid, "network": "tcp"],
-            ["name": "ssr-1", "type": "ssr", "server": "b.example", "port": 1],
-            ["name": "ssr-2", "type": "ssr", "server": "b.example", "port": 2],
+            ["name": "future-1", "type": "future-protocol", "server": "b.example", "port": 1],
+            ["name": "future-2", "type": "future-protocol", "server": "b.example", "port": 2],
             ["name": "vm-kcp", "type": "vmess", "server": "a.example", "port": 1, "uuid": uuid, "network": "kcp"],
             ["name": "ss-kcptun", "type": "ss", "server": "a.example", "port": 1, "cipher": "aes-128-gcm", "password": "x", "plugin": "kcptun"],
             ["name": "vl-enc", "type": "vless", "server": "a.example", "port": 1, "uuid": uuid, "encryption": "mlkem768x25519plus.native.0rtt.abc"],
@@ -97,7 +97,7 @@ final class ProfileCompatibilityReportTests: XCTestCase {
         ]
         let object: [String: Any] = [
             "proxies": proxies,
-            "proxy-groups": [["name": "P", "type": "select", "proxies": ["ok-vmess", "ssr-1"]]],
+            "proxy-groups": [["name": "P", "type": "select", "proxies": ["ok-vmess", "future-1"]]],
             "rules": [
                 "DOMAIN-SUFFIX,example.com,DIRECT", "IP-ASN,13335,P", "IP-ASN,15169,P",
                 "DOMAIN-WILDCARD,*.a.com,P", "MATCH,P",

@@ -1,11 +1,11 @@
 {
   "artifacts": {
-    "flowCoreSHA256": "b0d8b5c60833529c9f40f4e3e4f329708ecc6dddc086798c141a72142e887283",
+    "flowCoreSHA256": "3a2e63fb652ce95db45e9fa7955c5fc616b437ecb42cf61f8b13d3b5968c28ef",
     "headerSHA256": "bf25e15ff3eeecec9d140fc7190cea240f7d5878af51f017f50faf09dc1c5dee",
     "interopTestBinarySHA256": "65859d87d94f4b6cf082874e478882e91d73609a15c60ba27950b0f71a466d59",
-    "packetFlowCoreSHA256": "13f63eb142c315e5ced569de9ee0f395bbfebc682bb303e1b4c2b08657b2037e"
+    "packetFlowCoreSHA256": "4fdd1859c00a97837fa1c1494fcf463d3c48c47be99fb0f78e5fe1016da8d1ea"
   },
-  "coreCommit": "3ee5b238c19dd0549b624333fefd2a0ff4568ca3",
+  "coreCommit": "b28f37f975d0e1fcf1f6fe68a9544ebdcef88377",
   "coreFeatures": [
     "aether-tuic",
     "shadowquic",
@@ -53,7 +53,8 @@
     "interoperates_shadowquic_with_mihomo_and_recovers_after_restart",
     "interoperates_vless_reality_with_xray",
     "interoperates_wireguard_with_wireguard_go_netstack",
-    "interoperates_with_openssh"
+    "interoperates_with_openssh",
+    "interoperates_with_ssr_python_server"
   ],
   "schemaVersion": 1,
   "sourceFiles": {
@@ -64,8 +65,8 @@
     "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
     "ffiSourceSHA256": "c76a6e9acf2825c9c246fbac78a387c931bcb23000ca4c29ecea8059ba3cb141",
     "flowFFISourceSHA256": "63cf2ebcdeeee46867d5cd0a24c61b065cd54ef27a81a21d4410bef45697f833",
-    "interopTestsSHA256": "ea93dc8d592a287beaebd81299ad9ea5246bc0ac668195b4f4124ea9d8d60854",
-    "outboundManagerSHA256": "898e818a2d072cd4134944f006924f780efabefcd8e5b8284c6713b31eecd86e",
+    "interopTestsSHA256": "af910ba9da4106735f7a02dffe714346b278e61432ccc9b684650f1b8dc7599f",
+    "outboundManagerSHA256": "b86ac3ddd066d80a0494e8ba8eec924058a5291832805cb1907582d581aa7716",
     "proxyManagerSHA256": "560fc42d699f21cf5a3801f587f6c76ddb1fce90bbe7a7b0a2eb69cf00ad9548",
     "selectorSourceSHA256": "b1092a6558910c5ab19e62eb613cdde72fe692a284d2b50f269b582fa25fc332"
   }

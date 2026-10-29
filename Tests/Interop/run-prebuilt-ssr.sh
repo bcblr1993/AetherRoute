@@ -4,7 +4,9 @@ set -eu
 # ShadowsocksR interoperability against the Apache-2.0 Python server
 # (shadowsocksrr/shadowsocksr, akkariiin/dev at b365980), one process per
 # line of ssr-cases.txt, all on 127.0.0.1. TEST ONLY: the server is never
-# copied into the application.
+# copied into the application. The server refuses loopback targets by
+# default; the echo target is on loopback, so the forbidden list is set to a
+# documentation address instead.
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ARCHIVE=${SSR_ARCHIVE:?set SSR_ARCHIVE to the pinned shadowsocksr source archive}
@@ -39,11 +41,27 @@ verify_sha256 "$EXPECTED_TEST_SHA256" "$TEST_BIN"
 mkdir "$WORK_DIR/src"
 tar -xzf "$ARCHIVE" -C "$WORK_DIR/src" --strip-components 1
 OPENSSL_LIB=$(brew --prefix openssl@3)/lib
+# RC4 (rc4-md5, and auth_chain's payload cipher) is in OpenSSL 3's legacy
+# provider, which is off by default; enable it for these test servers only.
+cat >"$WORK_DIR/openssl-legacy.cnf" <<'CNF'
+openssl_conf = openssl_init
+[openssl_init]
+providers = provider_sect
+[provider_sect]
+default = default_sect
+legacy = legacy_sect
+[default_sect]
+activate = 1
+[legacy_sect]
+activate = 1
+CNF
 
 grep -Ev '^[[:space:]]*(#|$)' "$CASES" >"$WORK_DIR/cases"
 while read -r port cipher protocol obfs; do
+  OPENSSL_CONF="$WORK_DIR/openssl-legacy.cnf" OPENSSL_MODULES="$OPENSSL_LIB/ossl-modules" \
   DYLD_LIBRARY_PATH="$OPENSSL_LIB" python3 "$WORK_DIR/src/shadowsocks/server.py" \
     -s 127.0.0.1 -p "$port" -k "$PASSWORD" -m "$cipher" -O "$protocol" -o "$obfs" \
+    --forbidden-ip 192.0.2.1/32 \
     >"$WORK_DIR/server-$port.log" 2>&1 &
   PIDS="$PIDS $!"
 done <"$WORK_DIR/cases"
