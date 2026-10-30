@@ -700,8 +700,8 @@ final class TunnelManager: ObservableObject {
             let isCompatReview = environment["AETHERROUTE_UI_REVIEW_PROFILE"] == "compat"
             let reviewCompatProxies = isCompatReview
                 ? """
-                  - {name: Hong Kong Snell 01, type: snell}
-                  - {name: Hong Kong Snell 02, type: snell}
+                  - {name: Hong Kong Mieru 01, type: mieru}
+                  - {name: Hong Kong Mieru 02, type: mieru}
                   - {name: Seoul KCP, type: vmess, network: kcp}
                   - {name: Osaka AnyTLS, type: anytls, smux: {enabled: true}}
                 """

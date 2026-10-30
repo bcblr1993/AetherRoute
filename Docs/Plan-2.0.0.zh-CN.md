@@ -133,8 +133,8 @@
 | ✅ | M2-2 SSR（TCP：6 种 protocol × 5 种 obfs × 流加密；UDP 见 3B） | 加密已知答案、帧往返、ticket 握手 | Python ShadowsocksR（Apache-2.0，固定提交） | 完成 |
 | ✅ | M2-3 xhttp（packet-up / stream-up / stream-one / auto，TLS · REALITY · 明文） | 配置加载与拒绝、路径与填充、Xray 互通 8 例 | Xray 26.3.27 | 完成 |
 | ✅ | M2-4 VLESS encryption（mlkem768x25519plus） | 配置加载与拒绝、密钥派生与分帧、Xray 互通 8 例 | Xray 26.3.27 | 完成 |
-| 4 | M2-5 TUIC v4（token） | 帧格式 | 官方 tuic-server v0.8 | 0.5 天 |
-| 5 | M2-6 Snell v1–v5 | 帧格式与加密 | 官方 snell-server（固定版本） | 0.5 天 |
+| ✅ | M2-5 TUIC v4（token） | 帧格式、配置加载与拒绝、tuic-server 互通 | 官方 tuic-server v0.8.5 | 完成 |
+| ✅ | M2-6 Snell v1–v5（含 obfs、v3+ UDP、v4 reuse） | 密钥派生、v1–v3 分块与 v4 填充帧、回复与错误、配置加载与拒绝 | Mihomo 1.19.29 Snell 入站 | 完成 |
 | 6 | M2-7 smux / sing-mux（h2mux、smux、yamux） | 多路复用帧 | sing-box | 0.5 天 |
 | 7 | M2-8 Mieru、AmneziaWG 参数、ECH（`ech-opts`） | 各自协议 | mita、amneziawg、sing-box | 0.5–1 天 |
 | 8 | M3 规则与 DNS 补齐 | 每种规则的匹配单测，与 Mihomo 命中同一出口 | Mihomo | 0.5–1 天 |
@@ -219,7 +219,9 @@
 - **完成情况（2026-10-29）**：引擎 `b594c64`。在 `aether_tuic` 中与 TUIC v5 共用 QUIC 层实现 TUIC v4（`VER = 0x04`）：`token` 的 32 字节 BLAKE3 摘要单向流认证、`Connect`（`0x01`）双向流首读剥离并校验 3 字节 `[0x04, 0xff, REP]` 响应、`Packet`（`0x02`，32 位 `ASSOC_ID`）与 `Dissociate`（`0x03`）支持 `native`（QUIC datagram）与 `quic`（单向流）双模式、`Heartbeat`（`0x04`）走单向流、`reduce-rtt` 支持 `into_0rtt()` 并在未命中时回退 1-RTT；配置加载兼容 `version: 4` + `token` 与省略 `version` 仅填 `token`（含数字标量 token），对空/缺 `token`、v4/v5 凭证混用及未知 `version` 明确拒绝并点名字段。对官方预编译 `tuic-server 0.8.5`（`tuic-server-0.8.5-aarch64-macos`，SHA-256 `34db3ad8...`）跑通 `native` 与 `quic`（含 `reduce-rtt: true`）TCP 2 MiB + 5s 空闲复用 + 8 包 UDP 回显、证书固定、`ca-str`、错误指纹拒绝及未授信证书拒绝 × 2 轮；变异检查：把 BLAKE3 摘要改为原始 token 字节得服务端 `authentication failed`，跳过剥离 3 字节 `Response` 得 `TCP echo payload changed`。
 
 ### M2-6 Snell
-- **范围**：与 Mihomo 一致，支持 v1–v3（`psk`、`version`、`obfs-opts` 的 http / tls，v3 支持 UDP）。Surge 的 v4 / v5 与 v3 不兼容，Mihomo 也不支持，导入时报告"暂不支持的 Snell 版本"。
+- **范围**：与 Mihomo 1.19.29 一致，支持 v1–v5（v5 线上同 v4）、`psk`、`version`（0 或不写为 v1）、`obfs-opts` 的 http / tls、v3 起的 UDP、v4/v5 的 `reuse`。原先以为 Mihomo 不支持 v4 / v5，核对其 1.19.29 源码后更正。
+- **完成情况（2026-10-30）**：引擎 `b325d28`。本机门禁 `snell` 用 Mihomo 的 Snell 入站作服务端：8 个用例 × 2 轮，连续 6 次通过；变异检查两项（16 字节 Argon2 输出、v4 填充不交错）均被抓住。官方 snell-server v5 的实验室对照随 M5 进行。
+- **顺带修复**：门禁发现 HTTP obfs 客户端在服务端 101 响应单独到达时返回空读，被当成连接结束。Snell 与 Shadowsocks 的 `obfs: http` 节点约五分之一的连接因此直接断开。已修复（引擎 `d840596`），新测试在旧代码上失败。
 - **测试先行**：AEAD 分帧（chacha20-poly1305 与 aes-128-gcm）、握手头、obfs 头的单测；参考是协议的公开描述和 Mihomo 的行为（不复制代码）。
 - **互通服务端**：官方 snell-server 只有 Linux 版，放在腾讯云实验室上测，不进本机回环门禁。本机门禁用 Mihomo 作对端做对照：同一节点两边结果一致。发布说明写明这一例外。
 
@@ -345,7 +347,7 @@
 | 盘点 | 完成（2026-10-29） | 本文第 2 节 |
 | M0 | 进行中：引擎能力清单（引擎 `22f8322`）、App 兼容性报告与提示、fast lane 加入引擎单测与能力一致性检查；热修复 VMess/Trojan `network: tcp`（1.11.1） | `ProfileCompatibilityReportTests`、`config::capabilities` 测试 |
 | M1 | 完成（引擎 `83ab7ce`）：Chrome 152 指纹 JA4 与真机逐字一致；VMess / VLESS / Trojan / AnyTLS / REALITY 与 `global-client-fingerprint` 生效；ALPS 客户端；12 协议互通门禁带指纹与不带指纹均通过；9 个真实站点（含 Google）握手并交换数据通过。已知：REALITY 不发送 MLKEM 密钥份额（会触发服务端 HRR） | `tls_fingerprint` 测试、`AETHER_INTEROP_CLIENT_FINGERPRINT=chrome` 互通 |
-| M2 | 进行中：Hysteria v1 完成（引擎 `3ee5b23`）；SSR TCP 完成（引擎 `b28f37f`，13 种组合连续 5 轮通过）；xhttp 完成（引擎 `5a9fc33`，对 Xray 8 例 × 2 轮通过，变异检查：去掉填充得 HTTP 400、包序号从 1 起即卡死）；VLESS encryption 完成（引擎 `ec8343c`，对 Xray 8 例 × 2 轮通过，变异检查：去掉 random 记录头 XOR 得连接重置、去掉 0-RTT PFS 密钥得复用失败）。待做：SSR UDP、TUIC v4、Snell、smux、Mieru / AmneziaWG / ECH；App 协议目录与分享链接随 M4 | 互通门禁 `ssr`、`xhttp`、`vless-enc` |
+| M2 | 进行中：Hysteria v1 完成（引擎 `3ee5b23`）；SSR TCP 完成（引擎 `b28f37f`，13 种组合连续 5 轮通过）；xhttp 完成（引擎 `5a9fc33`，对 Xray 8 例 × 2 轮通过，变异检查：去掉填充得 HTTP 400、包序号从 1 起即卡死）；VLESS encryption 完成（引擎 `ec8343c`，对 Xray 8 例 × 2 轮通过，变异检查：去掉 random 记录头 XOR 得连接重置、去掉 0-RTT PFS 密钥得复用失败）；TUIC v4 完成（引擎 `b594c64`）；Snell v1–v5 完成（引擎 `b325d28`，对 Mihomo 8 例 × 2 轮连续 6 次通过），顺带修复 HTTP obfs 偶发断连（`d840596`）。2026-10-30 在干净副本上重跑全部 9 项互通门禁，VLESS encryption 与 TUIC v4 通过。待做：SSR UDP、smux、Mieru / AmneziaWG / ECH；App 协议目录与分享链接随 M4 | 互通门禁 `ssr`、`xhttp`、`vless-enc`、`tuic-v4`、`snell` |
 | M3 | 未开始 | |
 | M4 | 未开始 | |
 | M5 | 未开始 | |

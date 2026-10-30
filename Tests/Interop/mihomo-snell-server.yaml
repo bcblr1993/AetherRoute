@@ -1,0 +1,78 @@
+allow-lan: false
+bind-address: 127.0.0.1
+ipv6: false
+log-level: warning
+mode: rule
+
+listeners:
+  - name: aetherroute-snell-59100
+    type: snell
+    listen: 127.0.0.1
+    port: 59100
+    psk: snell-interop-psk
+    version: 1
+    udp: false
+  - name: aetherroute-snell-59101
+    type: snell
+    listen: 127.0.0.1
+    port: 59101
+    psk: snell-interop-psk
+    version: 2
+    udp: false
+  - name: aetherroute-snell-59102
+    type: snell
+    listen: 127.0.0.1
+    port: 59102
+    psk: snell-interop-psk
+    version: 3
+    udp: true
+  - name: aetherroute-snell-59103
+    type: snell
+    listen: 127.0.0.1
+    port: 59103
+    psk: snell-interop-psk
+    version: 3
+    udp: true
+    obfs-opts:
+      mode: http
+      host: example.com
+  - name: aetherroute-snell-59104
+    type: snell
+    listen: 127.0.0.1
+    port: 59104
+    psk: snell-interop-psk
+    version: 3
+    udp: false
+    obfs-opts:
+      mode: tls
+      host: example.com
+  - name: aetherroute-snell-59105
+    type: snell
+    listen: 127.0.0.1
+    port: 59105
+    psk: snell-interop-psk
+    version: 4
+    udp: true
+  - name: aetherroute-snell-59106
+    type: snell
+    listen: 127.0.0.1
+    port: 59106
+    psk: snell-interop-psk
+    version: 4
+    udp: true
+    obfs-opts:
+      mode: http
+      host: example.com
+  - name: aetherroute-snell-59107
+    type: snell
+    listen: 127.0.0.1
+    port: 59107
+    psk: snell-interop-psk
+    version: 5
+    udp: true
+    obfs-opts:
+      mode: tls
+      host: example.com
+
+rules:
+  - MATCH,DIRECT

@@ -1,0 +1,10 @@
+# port version obfs udp [reuse]: one Mihomo 1.19.29 Snell listener each
+# (mihomo-snell-server.yaml). v2 always sends the reusable command.
+59100 1 none false
+59101 2 none false
+59102 3 none true
+59103 3 http true
+59104 3 tls false
+59105 4 none true
+59106 4 http true reuse
+59107 5 tls true

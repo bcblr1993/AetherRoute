@@ -273,9 +273,10 @@ class EndToEndTests(unittest.TestCase):
                          "port": ss_port, "cipher": "aes-128-gcm", "password": password},
                         {"name": "dead", "type": "ss", "server": "127.0.0.1",
                          "port": dead_port, "cipher": "aes-128-gcm", "password": password},
-                        # Mihomo loads Snell; our engine does not yet (2.0 M2).
-                        {"name": "unsupported", "type": "snell", "server": "127.0.0.1",
-                         "port": ss_port, "psk": password, "version": 3},
+                        # Mihomo loads Mieru; our engine does not yet (2.0 M2).
+                        {"name": "unsupported", "type": "mieru", "server": "127.0.0.1",
+                         "port": ss_port, "transport": "TCP", "username": "u",
+                         "password": password},
                         # As airport subscriptions write AnyTLS nodes. Up to
                         # 1.10.0 our engine refused these options, so every
                         # such node was skipped (or the profile failed).
@@ -314,7 +315,7 @@ class EndToEndTests(unittest.TestCase):
                 report = diff.compare(
                     raw_profile=profile,
                     # Our engine gets the same profile; it must skip the
-                    # Snell node on its own, and the report must say so.
+                    # Mieru node on its own, and the report must say so.
                     ours_profile=profile,
                     mihomo_binary=mihomo,
                     ours_binary=self.ours,

@@ -5,7 +5,7 @@
 /// nodes and rules the engine would otherwise drop with only a log line.
 public enum EngineCapabilities {
     public static let schema = 1
-    public static let outboundTypes: Set<String> = ["anytls", "direct", "http", "hysteria", "hysteria2", "reject", "shadowquic", "socks5", "ss", "ssh", "ssr", "trojan", "tuic", "vless", "vmess", "wireguard"]
+    public static let outboundTypes: Set<String> = ["anytls", "direct", "http", "hysteria", "hysteria2", "reject", "shadowquic", "snell", "socks5", "ss", "ssh", "ssr", "trojan", "tuic", "vless", "vmess", "wireguard"]
     public static let ruleTypes: Set<String> = ["AETHER-APP", "AND", "DOMAIN", "DOMAIN-KEYWORD", "DOMAIN-REGEX", "DOMAIN-SUFFIX", "DST-PORT", "GEOIP", "GEOSITE", "IP-CIDR", "IP-CIDR6", "MATCH", "NETWORK", "NOT", "OR", "PROCESS-NAME", "PROCESS-PATH", "PROCESS-PATH-REGEX", "RULE-SET", "SRC-IP-CIDR", "SRC-PORT"]
     public static let networks: [String: Set<String>] = [
         "trojan": ["grpc", "tcp", "ws"],

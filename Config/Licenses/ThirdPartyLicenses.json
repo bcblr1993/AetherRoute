@@ -1490,6 +1490,12 @@
     },
     {
       "license": "MIT OR Apache-2.0",
+      "name": "password-hash",
+      "repository": "https://github.com/RustCrypto/traits",
+      "version": "0.6.1"
+    },
+    {
+      "license": "MIT OR Apache-2.0",
       "name": "pbkdf2",
       "repository": "https://github.com/RustCrypto/password-hashes",
       "version": "0.13.0"
@@ -1517,6 +1523,12 @@
       "name": "percent-encoding",
       "repository": "https://github.com/servo/rust-url/",
       "version": "2.3.2"
+    },
+    {
+      "license": "Apache-2.0 OR MIT",
+      "name": "phc",
+      "repository": "https://github.com/RustCrypto/formats",
+      "version": "0.6.1"
     },
     {
       "license": "Apache-2.0 OR MIT",
@@ -2654,8 +2666,8 @@
     }
   ],
   "coreArtifacts": {
-    "packetTunnel": "c9945b2abbdb69bae82e547f59b7c9138e19b7ca47ee291ac201ad7281feaad9",
-    "transparentProxy": "cca1ec9226c32bf454e91d7e43fcea4dbebfa5e16c3d172074a5005131bcac27"
+    "packetTunnel": "83b34e5b638e1e8a627e256ccbb82c6e3bec57e3c09daff59289fc7c8d6528c5",
+    "transparentProxy": "7a002f6b8b736455790e33a0cc674a8077a84ea923416cc2d8fa484e9736786c"
   },
   "licenses": [
     {
@@ -3120,9 +3132,11 @@
         "p256@0.14.0",
         "p384@0.14.0",
         "p521@0.14.0",
+        "password-hash@0.6.1",
         "pbkdf2@0.13.0",
         "pem-rfc7468@0.7.0",
         "pem-rfc7468@1.0.0",
+        "phc@0.6.1",
         "pkcs5@0.8.0",
         "pkcs8@0.11.0",
         "poly1305@0.8.0",

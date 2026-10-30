@@ -133,6 +133,9 @@ run_gate ssr \
 run_gate tuic-v4 \
   TUIC_V4_BIN="$TOOLS/tuic-server-v4" \
   sh "$ROOT/Tests/Interop/run-prebuilt-tuic-v4.sh"
+run_gate snell \
+  MIHOMO_ARCHIVE="$TOOLS/mihomo-darwin-arm64-v1.19.29.gz" \
+  sh "$ROOT/Tests/Interop/run-prebuilt-snell.sh"
 
 passed_cases=$(grep -c "interoperability and network reset passed" \
   "$OUTPUT/matrix.log" || true)
