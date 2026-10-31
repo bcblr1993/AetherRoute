@@ -1,11 +1,11 @@
 {
   "artifacts": {
-    "flowCoreSHA256": "7a002f6b8b736455790e33a0cc674a8077a84ea923416cc2d8fa484e9736786c",
+    "flowCoreSHA256": "398c703b9da4c773b8b644fe04cf2b51a07712d769726fb442f0f2391f64f873",
     "headerSHA256": "bf25e15ff3eeecec9d140fc7190cea240f7d5878af51f017f50faf09dc1c5dee",
-    "interopTestBinarySHA256": "24912641437ca174c08a834af5d1bf3bb5ab92484df2fc14a86196b2343553b2",
-    "packetFlowCoreSHA256": "83b34e5b638e1e8a627e256ccbb82c6e3bec57e3c09daff59289fc7c8d6528c5"
+    "interopTestBinarySHA256": "61c952342bb500e2d52893fa448ccf4e010d55ccd429541c28c0236aae7d2f9d",
+    "packetFlowCoreSHA256": "3f10ce385534a9dce2ff8280e56106b058e6fd9be846e3ea8f46b74322bcd0ac"
   },
-  "coreCommit": "b325d287edb322cbe7f5cc514a8c3b6a349a7e22",
+  "coreCommit": "053216ba8095dda78c7a3331b893316bf2b31474",
   "coreFeatures": [
     "aether-tuic",
     "shadowquic",
@@ -33,21 +33,28 @@
     "Shadowsocks",
     "Shadowsocks 2022",
     "Shadowsocks over ShadowTLS v3",
+    "Shadowsocks with h2mux",
+    "Shadowsocks with h2mux padding",
+    "Shadowsocks with smux",
+    "Shadowsocks with yamux",
     "TUIC v5",
     "TUIC v5 QUIC relay",
     "Trojan",
     "Trojan over WebSocket",
     "Trojan over gRPC",
+    "Trojan with yamux",
     "VLESS",
     "VLESS over HTTP/2",
     "VLESS over TLS",
     "VLESS over WebSocket",
     "VLESS over gRPC",
+    "VLESS with smux",
     "VMess",
     "VMess over HTTP/2",
     "VMess over TLS",
     "VMess over WebSocket",
-    "VMess over gRPC"
+    "VMess over gRPC",
+    "VMess with h2mux"
   ],
   "interopTests": [
     "interoperates_shadowquic_with_mihomo_and_recovers_after_restart",
@@ -62,15 +69,15 @@
   ],
   "schemaVersion": 1,
   "sourceFiles": {
-    "coreManifestSHA256": "06660f21ba48e847f08b12bd9b613318479e9009d0a243e63bbc6d859b68db36",
+    "coreManifestSHA256": "8c13a7207f0dbc8a6cb722998e3c020e31d8b48a4b3a06bdc68d5831ca83262c",
     "directSourceSHA256": "b3114f4181bcc30e700521ac752136d7318d42a3106a9179660c090a7b80f6fd",
     "dispatcherSHA256": "25fd5673badaf476defbcf02c53109f783c9156056a6c4ca1efa575e53819883",
     "embeddedFlowSourceSHA256": "eb498ce8e62a18426fc6ee656de64519ac6309951292031a19cb16d1cb6449f8",
     "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
     "ffiSourceSHA256": "c76a6e9acf2825c9c246fbac78a387c931bcb23000ca4c29ecea8059ba3cb141",
     "flowFFISourceSHA256": "63cf2ebcdeeee46867d5cd0a24c61b065cd54ef27a81a21d4410bef45697f833",
-    "interopTestsSHA256": "5815a7a224319f59be2f1f35cdf0585af4a8328f4806c298a133cd375ae8fb9d",
-    "outboundManagerSHA256": "72d325520815379edb2c5411e847774e8343c29c4bc396d0041e140d5a98c106",
+    "interopTestsSHA256": "68da24b3b4a63be5939892c41ca646e95dfa32f82cefcc33f5ba342a2a86f51f",
+    "outboundManagerSHA256": "b1c8668d18d305ca314fa396c79aaf6d4ad6a355427fa2d889a98a7423a08da8",
     "proxyManagerSHA256": "560fc42d699f21cf5a3801f587f6c76ddb1fce90bbe7a7b0a2eb69cf00ad9548",
     "selectorSourceSHA256": "b1092a6558910c5ab19e62eb613cdde72fe692a284d2b50f269b582fa25fc332"
   }

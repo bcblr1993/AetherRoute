@@ -148,6 +148,85 @@
       "obfs": "xplus-password",
       "users": [{"name": "interop", "auth_str": "hy1-password"}],
       "tls": {"enabled": true, "alpn": ["hysteria"], "certificate_path": "__CERT__", "key_path": "__KEY__"}
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "ss-mux-in",
+      "listen": "127.0.0.1",
+      "listen_port": 59110,
+      "method": "aes-128-gcm",
+      "password": "shadow-password",
+      "multiplex": {
+        "enabled": true,
+        "padding": false
+      }
+    },
+    {
+      "type": "vmess",
+      "tag": "vmess-mux-in",
+      "listen": "127.0.0.1",
+      "listen_port": 59111,
+      "users": [
+        {
+          "name": "interop",
+          "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+          "alterId": 0
+        }
+      ],
+      "multiplex": {
+        "enabled": true,
+        "padding": false
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "vless-mux-in",
+      "listen": "127.0.0.1",
+      "listen_port": 59112,
+      "users": [
+        {
+          "name": "interop",
+          "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+          "flow": ""
+        }
+      ],
+      "multiplex": {
+        "enabled": true,
+        "padding": false
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "trojan-mux-in",
+      "listen": "127.0.0.1",
+      "listen_port": 59113,
+      "users": [
+        {
+          "name": "interop",
+          "password": "trojan-password"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "certificate_path": "__CERT__",
+        "key_path": "__KEY__"
+      },
+      "multiplex": {
+        "enabled": true,
+        "padding": false
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "ss-mux-pad-in",
+      "listen": "127.0.0.1",
+      "listen_port": 59114,
+      "method": "aes-128-gcm",
+      "password": "shadow-password",
+      "multiplex": {
+        "enabled": true,
+        "padding": true
+      }
     }
   ],
   "outbounds": [{"type": "direct", "tag": "direct"}],

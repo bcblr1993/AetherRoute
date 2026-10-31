@@ -62,19 +62,11 @@ struct ProfileCompatibilityNotice: View {
             ))
         }
         for entry in report.limitedOptions {
-            switch entry.option {
-            case "smux":
-                lines.append(AppLocalization.format(
-                    "%lld nodes request multiplexing (smux); they connect without it",
-                    Int64(entry.count)
-                ))
-            default:
-                lines.append(AppLocalization.format(
-                    "%lld nodes use option %@, which is not applied yet",
-                    Int64(entry.count),
-                    entry.option
-                ))
-            }
+            lines.append(AppLocalization.format(
+                "%lld nodes use option %@, which is not applied yet",
+                Int64(entry.count),
+                entry.option
+            ))
         }
         return lines
     }

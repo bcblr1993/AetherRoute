@@ -703,7 +703,6 @@ final class TunnelManager: ObservableObject {
                   - {name: Hong Kong Mieru 01, type: mieru}
                   - {name: Hong Kong Mieru 02, type: mieru}
                   - {name: Seoul KCP, type: vmess, network: kcp}
-                  - {name: Osaka AnyTLS, type: anytls, smux: {enabled: true}}
                 """
                 : ""
             let reviewCompatRules = isCompatReview

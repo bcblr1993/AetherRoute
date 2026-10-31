@@ -135,7 +135,7 @@
 | ✅ | M2-4 VLESS encryption（mlkem768x25519plus） | 配置加载与拒绝、密钥派生与分帧、Xray 互通 8 例 | Xray 26.3.27 | 完成 |
 | ✅ | M2-5 TUIC v4（token） | 帧格式、配置加载与拒绝、tuic-server 互通 | 官方 tuic-server v0.8.5 | 完成 |
 | ✅ | M2-6 Snell v1–v5（含 obfs、v3+ UDP、v4 reuse） | 密钥派生、v1–v3 分块与 v4 填充帧、回复与错误、配置加载与拒绝 | Mihomo 1.19.29 Snell 入站 | 完成 |
-| 6 | M2-7 smux / sing-mux（h2mux、smux、yamux） | 多路复用帧 | sing-box | 0.5 天 |
+| ✅ | M2-7 smux / sing-mux（h2mux、smux、yamux） | 多路复用帧、4 并发流共享单连接 | sing-box 1.13.15 | 完成 |
 | 7 | M2-8 Mieru、AmneziaWG 参数、ECH（`ech-opts`） | 各自协议 | mita、amneziawg、sing-box | 0.5–1 天 |
 | 8 | M3 规则与 DNS 补齐 | 每种规则的匹配单测，与 Mihomo 命中同一出口 | Mihomo | 0.5–1 天 |
 | 9 | M4 分享链接、SIP008、App 协议目录与手动节点编辑器 | 每种链接往返、旧数据解码 | — | 0.5 天 |
@@ -231,12 +231,12 @@
   - sing-mux 协议头，`protocol` 取 smux / yamux / h2mux；
   - `max-connections` / `min-streams` / `max-streams`、`padding`、`only-tcp`；
   - UDP over stream；`brutal-opts` 列为后续。
-  - 适用于 SS、VMess、VLESS、Trojan、AnyTLS（与 Mihomo 一致）。
+  - 适用于任意出站节点（与 Mihomo 一致）。
 - **测试先行**：
   - 各复用协议的帧单测；
   - 连接池单测：达到 max-streams 时开新连接，空闲回收；
-  - 互通：sing-box 入站开 multiplex，3 种协议 × SS 与 VLESS。
-- **完成后**：兼容性提示不再出现 smux。
+  - 互通：sing-box 入站开 multiplex，3 种协议 × SS / VMess / VLESS / Trojan（7 例），外加 4 并发流共享单条服务端 TCP 连接断言（防止服务端同时兼容非复用连接导致假通过）。
+- **完成情况（2026-10-30）**：引擎 `053216b`。支持 `smux: {enabled: true}` 包装任意非中继节点，连接 `sp.mux.sing-box.arpa:444` 承载多路流：`h2mux`（默认，HTTP/2 CONNECT）、`smux` v1、`yamux`（`yamux` crate，Apache-2.0 OR MIT）；支持前 16 条记录双向 `padding`、`max-connections` / `min-streams` / `max-streams` 连接池、`only-tcp`、每包带地址的 UDP over stream，以及会话与流全部释放后自动终止底层连接；对未知 `protocol`、`brutal-opts` 及中继链明确拒绝并点名选项；App 兼容性提示不再将 `smux` 列为未生效限制。变异检查：填充记录改为 15 条即触发 broken pipe。
 
 ### M2-8 Mieru、AmneziaWG、ECH
 - **Mieru**：
@@ -347,7 +347,7 @@
 | 盘点 | 完成（2026-10-29） | 本文第 2 节 |
 | M0 | 进行中：引擎能力清单（引擎 `22f8322`）、App 兼容性报告与提示、fast lane 加入引擎单测与能力一致性检查；热修复 VMess/Trojan `network: tcp`（1.11.1） | `ProfileCompatibilityReportTests`、`config::capabilities` 测试 |
 | M1 | 完成（引擎 `83ab7ce`）：Chrome 152 指纹 JA4 与真机逐字一致；VMess / VLESS / Trojan / AnyTLS / REALITY 与 `global-client-fingerprint` 生效；ALPS 客户端；12 协议互通门禁带指纹与不带指纹均通过；9 个真实站点（含 Google）握手并交换数据通过。已知：REALITY 不发送 MLKEM 密钥份额（会触发服务端 HRR） | `tls_fingerprint` 测试、`AETHER_INTEROP_CLIENT_FINGERPRINT=chrome` 互通 |
-| M2 | 进行中：Hysteria v1 完成（引擎 `3ee5b23`）；SSR TCP 完成（引擎 `b28f37f`，13 种组合连续 5 轮通过）；xhttp 完成（引擎 `5a9fc33`，对 Xray 8 例 × 2 轮通过，变异检查：去掉填充得 HTTP 400、包序号从 1 起即卡死）；VLESS encryption 完成（引擎 `ec8343c`，对 Xray 8 例 × 2 轮通过，变异检查：去掉 random 记录头 XOR 得连接重置、去掉 0-RTT PFS 密钥得复用失败）；TUIC v4 完成（引擎 `b594c64`）；Snell v1–v5 完成（引擎 `b325d28`，对 Mihomo 8 例 × 2 轮连续 6 次通过），顺带修复 HTTP obfs 偶发断连（`d840596`）。2026-10-30 在干净副本上重跑全部 9 项互通门禁，VLESS encryption 与 TUIC v4 通过。待做：SSR UDP、smux、Mieru / AmneziaWG / ECH；App 协议目录与分享链接随 M4 | 互通门禁 `ssr`、`xhttp`、`vless-enc`、`tuic-v4`、`snell` |
+| M2 | 进行中：Hysteria v1 完成（引擎 `3ee5b23`）；SSR TCP 完成（引擎 `b28f37f`，13 种组合连续 5 轮通过）；xhttp 完成（引擎 `5a9fc33`，对 Xray 8 例 × 2 轮通过，变异检查：去掉填充得 HTTP 400、包序号从 1 起即卡死）；VLESS encryption 完成（引擎 `ec8343c`，对 Xray 8 例 × 2 轮通过，变异检查：去掉 random 记录头 XOR 得连接重置、去掉 0-RTT PFS 密钥得复用失败）；TUIC v4 完成（引擎 `b594c64`）；Snell v1–v5 完成（引擎 `b325d28`，对 Mihomo 8 例 × 2 轮连续 6 次通过），顺带修复 HTTP obfs 偶发断连（`d840596`）；smux / sing-mux 完成（引擎 `053216b`，h2mux / smux / yamux 对 sing-box 7 例 + 4 并发流单连接校验通过）。待做：SSR UDP、Mieru / AmneziaWG / ECH；App 协议目录与分享链接随 M4 | 互通门禁 `ssr`、`xhttp`、`vless-enc`、`tuic-v4`、`snell`、sing-box mux |
 | M3 | 未开始 | |
 | M4 | 未开始 | |
 | M5 | 未开始 | |
