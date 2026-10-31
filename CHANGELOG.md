@@ -4,6 +4,43 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-10-31
+
+Major release delivering the comprehensive modern protocol matrix across 16 protocols, Chrome 152 uTLS fingerprinting with ALPS and post-quantum key exchange (X25519MLKEM768), full coverage of all 37 Mihomo routing rules and advanced DNS transports (DoQ, DoH3), bi-directional share-link conversion, SIP008 JSON and Surge `[Proxy]` import, engine capability discovery and subscription compatibility pre-flight reports.
+
+### Added
+
+- **Modern Protocol Matrix (Engine `e1a82c4`)**: Full native support for 16 protocols: Hysteria v1 (including xplus, auth-str), ShadowsocksR (SSR) TCP and UDP, VLESS over xhttp and httpupgrade, VLESS post-quantum encryption (`mlkem768x25519plus`), TUIC v4 (token-based auth), Snell v1 through v5 with PSK, sing-mux (`h2mux`, `smux`, `yamux`), Mieru over TCP and UDP, AmneziaWG obfuscated WireGuard parameters (`Jc`, `Jmin`, `Jmax`, `H1`–`H4`, `S1`–`S2`), and Encrypted ClientHello (`ech-opts`).
+- **Chrome 152 uTLS & Post-Quantum ALPS**: Client TLS handshakes accurately replicate Chrome 152 browser signatures, including Application-Layer Protocol Settings (ALPS) and hybrid post-quantum key agreement (`X25519MLKEM768`).
+- **Full Mihomo Rule Engine & DNS Coverage**: Implemented all 37 Mihomo rule types (`SUB-RULE`, `IN-TYPE`, `IN-USER`, `IN-NAME`, `DSCP`, `UID`, `PROCESS-NAME-REGEX`, `PROCESS-PATH-REGEX`, `NETWORK`, `RULE-SET`, etc.); added DNS over QUIC (`quic://`), DNS over HTTP/3 (`h3://`, `prefer-h3`), `direct-nameserver` policy fallback, `fake-ip-filter-mode` (`blacklist`, `whitelist`, `rule`), and top-level `sniffer` inspection.
+- **Bi-Directional Share Links & Import Formats**: Parses and generates share links for SSR (`ssr://`), Hysteria1 (`hysteria://`, `hy1://`), TUIC v4 (`tuic://`), Snell (`snell://`), Mieru (`mieru://`), and AmneziaWG parameters. Supports batch import via SIP008 JSON and Surge `[Proxy]` format.
+- **Engine Capability Manifest & Subscription Pre-Flight Report**: Dynamic engine capability discovery (`EngineCapabilities.json` & `EngineCapabilities.swift`) with automated pre-flight warnings for subscriptions carrying unsupported experimental parameters or missing required credentials.
+- **Protocol Lab & Extended Corpus**: Expanded `scripts/protocol_lab.py` to 43 nodes, confirming complete differential parity with Mihomo across real networks, with end-to-end regression tests on Xboard, V2Board, and SSPanel subscription formats.
+
+### Tests
+
+- Engine: comprehensive unit tests for all 16 protocols, 37 rule evaluations, DNS resolvers, and Chrome 152 TLS client handshakes.
+- Chrome 152 Real-Site Tests: 9 live external domains (Google, YouTube, Cloudflare, jsDelivr, Microsoft, GitHub, Apple, Amazon, Speed.cloudflare.com) verified with ALPS negotiation and Cloudflare ECH verification (`sni=encrypted`, `kex=X25519MLKEM768`).
+- Protocol Interoperability Gate: Two consecutive 11-gate interop passes (default configuration and `AETHER_INTEROP_CLIENT_FINGERPRINT=chrome`) verifying 68 test case connections and 34 certificate rejections against sing-box, Xray, WireGuard, Mihomo, and OpenSSH servers on loopback.
+- Full `./scripts/test.sh` passed with zero compiler warnings: XCTest 563, Swift Testing 113, TransparentProxyTests 98, FlowCoreBridgeTests 24 (0 failures).
+
+### Verified
+
+- Local fast lane (`test_fast_lane.sh`) passed in 114s: network-switch, engine-reconnect, runtime-environment, network-snapshot, large-upload, recovery-subscription-compat, differential-unit, differential-engine-build, differential-e2e, engine-unit, and engine-capabilities.
+- UI performance and memory gate on dedicated physical Mac mini (live GUI session, 300s per profile):
+
+| Profile | Page switch p95 / max (ms) | Footprint median / max (MB) | Growth |
+|---|---|---|---|
+| showcase 1.11.1 → 2.0.0 | 147.1 / 193.5 → 147.8 / 187.9 | 67 / 81 → 72 / 84 | +0 → +2 MB |
+| large 1.11.1 → 2.0.0 | 145.9 / 192.7 → 134.0 / 190.4 | 69 / 84 → 83 / 99 | +2 → +4 MB |
+
+All metrics well within budgets (p95 ≤ 180 ms, max ≤ 300 ms, median ≤ 90 MB, max ≤ 110 MB, growth ≤ 8 MB).
+
+- Physical hardware runtime evidence on Mac mini (`100.64.0.3`) for notarized candidate build `2026103101` (DMG SHA-256 `73cc51207f960995dbffca3cfcadadf0bcfd5e7f2f84c8202f8b546d86324904`):
+  - TUN: idle keep-alive reuse passed (50s idle connection retained), 2 MiB uploaded in 1.35s, and recovered from 6 interface switches in 2/2/2/2/2/3s.
+  - Transparent Proxy: idle keep-alive reuse passed, 2 MiB uploaded in 1.34s, and recovered from 6 interface switches in 2/1/2/2/2/2s.
+- Formal release DMG packaged cleanly without test fixtures, Developer ID signed, Apple notarized and stapled (`outputs/release-2.0.0-2026103101/AetherRoute-2.0.0-build-2026103101-arm64.dmg`, SHA-256 `48c7ad80827cfdd8b42bafc4c527b06699f33551257e28250f7e61112092df1c`). Sparkle `appcast.xml` signed with Ed25519.
+
 ## [1.11.1] - 2026-10-29
 
 VMess and Trojan nodes that write `network: tcp` load again. Subscription panels such as Xboard write it explicitly; since 1.10.0 these nodes were skipped, and before that they made the whole subscription fail.
