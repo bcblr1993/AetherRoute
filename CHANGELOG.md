@@ -4,6 +4,32 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.1] - 2026-10-31
+
+Optimization and UI polish release for menu bar real-time traffic rendering, delivering pixel-aligned three-column typography (arrow, right-aligned rate values, left-aligned units) and preventing speed unit clipping on large bandwidth rates.
+
+### Fixed & Improved
+
+- **Menu Bar Traffic Typography & Unit Alignment**: Split the two-line menu bar real-time speed display into three independent, pixel-aligned typographic columns:
+  - Fixed-width direction arrow column (`↑` / `↓`).
+  - Right-aligned monospaced numeric value column (`0`, `18.6`, `484.7`, `999.9`), keeping decimal points and digits neatly aligned between upload and download rows and eliminating horizontal jitter as rates change.
+  - Left-aligned rate unit column (`B/s`, `KB/s`, `MB/s`, `GB/s`), perfectly anchoring unit positions vertically.
+- **Eliminated Speed Unit Clipping on High Rates**: Expanded menu bar traffic canvas dimensions from 74x18 / 78x18 to 82x18 (standard) and 86x18 (badged), completely eliminating trailing character clipping (such as `484.7 KB/s` being cut off as `484.7 KB/`) when bandwidth exceeds triple digits.
+- **Decomposed Formatter API**: Added `MenuBarTrafficFormatter.rateComponents(_:) -> (value: String, unit: String)` while maintaining backward-compatible `formatRate(_:)`, `uploadRateString(_:)`, and `downloadRateString(_:)`.
+
+### Tests
+
+- Updated and passed `Tests/MenuBarTraffic/run.sh` covering `rateComponents`, updated canvas dimensions (82x18 unbadged, 86x18 badged), template vibrancy, and all 41 SF Symbols across connected/disconnected and unbadged/badged states.
+- Local fast lane (`test_fast_lane.sh`) passed in 347s: network-switch, engine-reconnect, runtime-environment, network-snapshot, large-upload, recovery-subscription-compat, differential-unit, differential-engine-build, differential-e2e, engine-unit, and engine-capabilities.
+- Full `./scripts/test.sh` passed with 0 warnings: XCTest 563, Swift Testing 113, TransparentProxyTests 98, FlowCoreBridgeTests 24 (0 failures).
+
+### Verified
+
+- Physical hardware runtime evidence on Mac mini (`100.64.0.3`) for notarized candidate build `2026103102` (DMG SHA-256 `0dea94a6bc49dd79dc2e768c9e9f556602d7a9e3253cfb250c786f49ead1f277`):
+  - TUN: idle keep-alive reuse passed (50s idle connection retained), 2 MiB uploaded in 8.17s, and recovered from 6 interface switches in 2/1/2/1/2/2s.
+  - Transparent Proxy: idle keep-alive reuse passed, 2 MiB uploaded in 0.84s, and recovered from 6 interface switches in 4/3/2/3/3/3s.
+- Formal release DMG packaged cleanly without test fixtures, Developer ID signed, Apple notarized and stapled (`outputs/release-2.0.1-2026103102/AetherRoute-2.0.1-build-2026103102-arm64.dmg`, SHA-256 `b3f3a5bf15e5a930afc0d16836296c84da03fe8808acdd39273d925b5315104c`). Sparkle `appcast.xml` signed with Ed25519.
+
 ## [2.0.0] - 2026-10-31
 
 Major release delivering the comprehensive modern protocol matrix across 16 protocols, Chrome 152 uTLS fingerprinting with ALPS and post-quantum key exchange (X25519MLKEM768), full coverage of all 37 Mihomo routing rules and advanced DNS transports (DoQ, DoH3), bi-directional share-link conversion, SIP008 JSON and Surge `[Proxy]` import, engine capability discovery and subscription compatibility pre-flight reports.

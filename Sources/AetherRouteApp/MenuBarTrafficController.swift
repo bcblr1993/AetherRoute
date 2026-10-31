@@ -5,19 +5,24 @@ import SwiftUI
 
 /// Compact and fixed-alignment speed formatter optimized for macOS menu bar typography.
 public enum MenuBarTrafficFormatter {
-    public static func formatRate(_ bytes: UInt64) -> String {
+    public static func rateComponents(_ bytes: UInt64) -> (value: String, unit: String) {
         if bytes < 1024 {
-            return "\(bytes) B/s"
+            return ("\(bytes)", "B/s")
         } else if bytes < 1024 * 1024 {
             let kb = Double(bytes) / 1024.0
-            return String(format: "%.1f KB/s", kb)
+            return (String(format: "%.1f", kb), "KB/s")
         } else if bytes < 1024 * 1024 * 1024 {
             let mb = Double(bytes) / (1024.0 * 1024.0)
-            return String(format: "%.1f MB/s", mb)
+            return (String(format: "%.1f", mb), "MB/s")
         } else {
             let gb = Double(bytes) / (1024.0 * 1024.0 * 1024.0)
-            return String(format: "%.2f GB/s", gb)
+            return (String(format: "%.2f", gb), "GB/s")
         }
+    }
+
+    public static func formatRate(_ bytes: UInt64) -> String {
+        let (val, unit) = rateComponents(bytes)
+        return "\(val) \(unit)"
     }
 
     public static func uploadRateString(_ bytes: UInt64) -> String {
@@ -33,8 +38,8 @@ public enum MenuBarTrafficFormatter {
 public enum MenuBarTrafficRenderer {
     public static let standardIconSize = MenuBarBadgedIcon.standardCanvasSize
     public static let badgedIconSize = MenuBarBadgedIcon.badgedCanvasSize
-    public static let trafficCanvasSize = NSSize(width: 74, height: 18)
-    public static let badgedTrafficCanvasSize = NSSize(width: 78, height: 18)
+    public static let trafficCanvasSize = NSSize(width: 82, height: 18)
+    public static let badgedTrafficCanvasSize = NSSize(width: 86, height: 18)
 
     public static func image(
         symbol: String,
@@ -97,33 +102,66 @@ public enum MenuBarTrafficRenderer {
                 }
             }
 
-            // 2. Draw 2-line Monospaced Traffic Rates
-            let uploadText = isConnected ? MenuBarTrafficFormatter.uploadRateString(uploadBytesPerSecond) : "↑ 0 B/s"
-            let downloadText = isConnected ? MenuBarTrafficFormatter.downloadRateString(downloadBytesPerSecond) : "↓ 0 B/s"
+            // 2. Draw 2-line Monospaced Traffic Rates with Column-Aligned Typography
+            let uploadComponents: (value: String, unit: String) = isConnected
+                ? MenuBarTrafficFormatter.rateComponents(uploadBytesPerSecond)
+                : (value: "0", unit: "B/s")
+            let downloadComponents: (value: String, unit: String) = isConnected
+                ? MenuBarTrafficFormatter.rateComponents(downloadBytesPerSecond)
+                : (value: "0", unit: "B/s")
 
             let font = NSFont.monospacedSystemFont(ofSize: 8.0, weight: .semibold)
             let textColor = hasUpdate ? NSColor.labelColor : NSColor.black
 
-            let paragraphStyle = NSMutableParagraphStyle()
-            paragraphStyle.alignment = .left
-            paragraphStyle.lineBreakMode = .byClipping
+            let arrowStyle = NSMutableParagraphStyle()
+            arrowStyle.alignment = .center
+            arrowStyle.lineBreakMode = .byClipping
 
-            let attributes: [NSAttributedString.Key: Any] = [
+            let valueStyle = NSMutableParagraphStyle()
+            valueStyle.alignment = .right
+            valueStyle.lineBreakMode = .byClipping
+
+            let unitStyle = NSMutableParagraphStyle()
+            unitStyle.alignment = .left
+            unitStyle.lineBreakMode = .byClipping
+
+            let arrowAttrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: textColor,
-                .paragraphStyle: paragraphStyle
+                .paragraphStyle: arrowStyle
+            ]
+            let valueAttrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: textColor,
+                .paragraphStyle: valueStyle
+            ]
+            let unitAttrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: textColor,
+                .paragraphStyle: unitStyle
             ]
 
-            let textStartX = iconAreaWidth + 3.0
-            let textWidth = canvas.width - textStartX - 1.0
+            let textStartX = iconAreaWidth + 2.0
+            let arrowWidth: CGFloat = 6.0
+            let valueWidth: CGFloat = 28.0
+            let valueUnitGap: CGFloat = 2.5
+            let unitWidth: CGFloat = 22.0
+
+            let arrowX = textStartX
+            let valueX = arrowX + arrowWidth
+            let unitX = valueX + valueWidth + valueUnitGap
+
+            let lineHeight: CGFloat = 8.5
 
             // Top Line: Upload (y: 9.0 to 17.5 in flipped: false)
-            let uploadRect = NSRect(x: textStartX, y: 9.0, width: textWidth, height: 8.5)
-            uploadText.draw(in: uploadRect, withAttributes: attributes)
+            "↑".draw(in: NSRect(x: arrowX, y: 9.0, width: arrowWidth, height: lineHeight), withAttributes: arrowAttrs)
+            uploadComponents.value.draw(in: NSRect(x: valueX, y: 9.0, width: valueWidth, height: lineHeight), withAttributes: valueAttrs)
+            uploadComponents.unit.draw(in: NSRect(x: unitX, y: 9.0, width: unitWidth, height: lineHeight), withAttributes: unitAttrs)
 
             // Bottom Line: Download (y: 0.5 to 9.0 in flipped: false)
-            let downloadRect = NSRect(x: textStartX, y: 0.5, width: textWidth, height: 8.5)
-            downloadText.draw(in: downloadRect, withAttributes: attributes)
+            "↓".draw(in: NSRect(x: arrowX, y: 0.5, width: arrowWidth, height: lineHeight), withAttributes: arrowAttrs)
+            downloadComponents.value.draw(in: NSRect(x: valueX, y: 0.5, width: valueWidth, height: lineHeight), withAttributes: valueAttrs)
+            downloadComponents.unit.draw(in: NSRect(x: unitX, y: 0.5, width: unitWidth, height: lineHeight), withAttributes: unitAttrs)
 
             return true
         }

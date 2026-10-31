@@ -26,6 +26,15 @@ enum AppLocalization {
         precondition(MenuBarTrafficFormatter.formatRate(1024 * 1024 * 1024) == "1.00 GB/s", "1 GB must format to 1.00 GB/s")
         precondition(MenuBarTrafficFormatter.formatRate(UInt64(2.5 * 1024 * 1024 * 1024)) == "2.50 GB/s", "2.5 GB formatting")
 
+        let zeroComponents = MenuBarTrafficFormatter.rateComponents(0)
+        precondition(zeroComponents.value == "0" && zeroComponents.unit == "B/s", "0 bytes components must be ('0', 'B/s')")
+        let kbComponents = MenuBarTrafficFormatter.rateComponents(1024)
+        precondition(kbComponents.value == "1.0" && kbComponents.unit == "KB/s", "1024 bytes components must be ('1.0', 'KB/s')")
+        let mbComponents = MenuBarTrafficFormatter.rateComponents(UInt64(15.4 * 1024 * 1024))
+        precondition(mbComponents.value == "15.4" && mbComponents.unit == "MB/s", "15.4 MB components must be ('15.4', 'MB/s')")
+        let gbComponents = MenuBarTrafficFormatter.rateComponents(UInt64(2.5 * 1024 * 1024 * 1024))
+        precondition(gbComponents.value == "2.50" && gbComponents.unit == "GB/s", "2.5 GB components must be ('2.50', 'GB/s')")
+
         precondition(MenuBarTrafficFormatter.uploadRateString(0) == "↑ 0 B/s", "Upload string for 0 B/s")
         precondition(MenuBarTrafficFormatter.downloadRateString(0) == "↓ 0 B/s", "Download string for 0 B/s")
         precondition(MenuBarTrafficFormatter.uploadRateString(1024) == "↑ 1.0 KB/s", "Upload string for 1.0 KB/s")
