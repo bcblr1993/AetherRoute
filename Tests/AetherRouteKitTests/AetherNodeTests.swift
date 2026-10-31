@@ -400,12 +400,13 @@ final class AetherNodeTests: XCTestCase {
         XCTAssertEqual(ssrNode.ssrObfsParam, "cloudflare.com")
         XCTAssertEqual(ssrNode.ssrProtocolParam, "32:user")
 
-        let hy1URI = "hysteria://hy1.example:443?protocol=wechat-video&auth=aHkxLXNlY3JldA==&peer=hy1.example&upmbps=40&downmbps=200&alpn=h3&obfs=xplus&obfsParam=xplus-key#Hy1-Node"
+        let hy1URI = "hysteria://hy1.example:443?protocol=wechat-video&auth=hy1-secret&peer=hy1.example&upmbps=40&downmbps=200&alpn=h3&obfs=xplus&obfsParam=xplus-key#Hy1-Node"
         let hy1Node = try AetherNodeURIParser.parse(hy1URI)
         XCTAssertEqual(hy1Node.protocolID, .hysteria)
         XCTAssertEqual(hy1Node.hysteriaProtocol, "wechat-video")
         XCTAssertEqual(hy1Node.password, "hy1-secret")
-        XCTAssertEqual(hy1Node.obfuscation, "xplus-key")
+        XCTAssertEqual(hy1Node.obfuscation, "xplus")
+        XCTAssertEqual(hy1Node.obfuscationPassword, "xplus-key")
 
         let tuicV4URI = "tuic://tuic-v4-token@tuic4.example:443?sni=tuic4.example&version=4&congestion_control=bbr&udp_relay_mode=quic#TUIC-v4"
         let tuicV4Node = try AetherNodeURIParser.parse(tuicV4URI)
@@ -465,6 +466,7 @@ final class AetherNodeTests: XCTestCase {
         let legacyJSON = """
         {
           "allowedIPs": ["0.0.0.0/0"],
+          "alterID": 0,
           "cipher": "aes-128-gcm",
           "congestionController": "bbr",
           "downloadMbps": 100,
@@ -479,10 +481,10 @@ final class AetherNodeTests: XCTestCase {
           "obfuscationPassword": "",
           "password": "secret",
           "port": 8388,
-          "presharedKey": "",
+          "preSharedKey": "",
           "privateKey": "",
           "privateKeyPassphrase": "",
-          "protocolID": "ss",
+          "protocolID": "shadowsocks",
           "publicKey": "",
           "reservedBytes": [],
           "server": "ss.example",
@@ -513,7 +515,7 @@ final class AetherNodeTests: XCTestCase {
         XCTAssertEqual(decoded.protocolID, .shadowsocks)
         XCTAssertEqual(decoded.transport.xhttpMode, "")
         XCTAssertFalse(decoded.fastOpen)
-        XCTAssertNil(decoded.amneziaWG)
+        XCTAssertTrue(decoded.amneziaWG.isEmpty)
         XCTAssertNoThrow(try decoded.validated())
     }
 

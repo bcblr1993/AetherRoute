@@ -519,7 +519,7 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
     func testInspectsInlineDNSAndClassifiesUnsupportedModeAndTransport() {
         let summary = ProfileConfigurationInspector.inspect(
             yaml: """
-            dns: {enable: true, ipv6: false, enhanced-mode: future-mode, nameserver: [quic://secret.example:853, 1.1.1.1], fake-ip-filter: ['*.lan'], nameserver-policy: {'+.example': https://dns.example/query}}
+            dns: {enable: true, ipv6: false, enhanced-mode: future-mode, nameserver: [sdns://secret.example:853, 1.1.1.1], fake-ip-filter: ['*.lan'], nameserver-policy: {'+.example': https://dns.example/query}}
             proxies: []
             rules: []
             """

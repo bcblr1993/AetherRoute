@@ -771,8 +771,6 @@ struct DNSView: View {
         case .tcp: "TCP"
         case .dnsOverTLS: "DoT"
         case .dnsOverHTTPS: "DoH"
-        case .doq: "DoQ"
-        case .doh3: "DoH3"
         case .dhcp: "DHCP"
         case .unsupported: AppLocalization.string("Core check")
         }
@@ -784,8 +782,6 @@ struct DNSView: View {
         case .tcp: "arrow.left.arrow.right"
         case .dnsOverTLS: "lock"
         case .dnsOverHTTPS: "lock.shield"
-        case .doq: "bolt.shield"
-        case .doh3: "bolt.shield.fill"
         case .dhcp: "network"
         case .unsupported: "questionmark.circle"
         }
@@ -793,7 +789,7 @@ struct DNSView: View {
 
     private func transportColor(_ transport: DNSUpstreamTransport) -> Color {
         switch transport {
-        case .dnsOverTLS, .dnsOverHTTPS, .doq, .doh3: .accentColor
+        case .dnsOverTLS, .dnsOverHTTPS: .accentColor
         case .udp, .tcp: .blue
         case .dhcp: .accentColor
         case .unsupported: .orange

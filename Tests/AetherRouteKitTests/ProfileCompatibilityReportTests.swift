@@ -175,7 +175,7 @@ final class ProfileCompatibilityReportTests: XCTestCase {
           - {name: Panel-Snell, type: snell, server: s.example, port: 8443, psk: p, version: 4, obfs-opts: {mode: tls, host: s.example}}
           - {name: Panel-Mieru, type: mieru, server: s.example, port: 8444, username: u, password: p, transport: TCP, multiplexing: MULTIPLEXING_HIGH}
           - {name: Panel-WireGuard, type: wireguard, server: s.example, port: 51820, ip: 10.0.0.2, private-key: k, public-key: k}
-          - {name: Panel-AmneziaWG, type: amneziawg, server: s.example, port: 51821, ip: 10.0.0.3, private-key: k, public-key: k}
+          - {name: Panel-AmneziaWG, type: wireguard, server: s.example, port: 51821, ip: 10.0.0.3, private-key: k, public-key: k, amnezia-wg-option: {jc: 4, jmin: 40, jmax: 70}}
           - {name: Panel-SSH, type: ssh, server: s.example, port: 22, username: u, password: p}
           - {name: Panel-ShadowQUIC, type: shadowquic, server: s.example, port: 443, username: u, password: p}
           - {name: Panel-SOCKS5, type: socks5, server: s.example, port: 1080, username: u, password: p}
@@ -211,10 +211,10 @@ final class ProfileCompatibilityReportTests: XCTestCase {
         XCTAssertEqual(summary.compatibility.unsupportedProxyCount, 0)
         XCTAssertEqual(summary.compatibility.unsupportedRules, [])
         XCTAssertEqual(summary.compatibility.limitedOptions, [])
-        let transports = Set(summary.dnsUpstreams.map(\.transport))
-        XCTAssertTrue(transports.contains(.doq))
-        XCTAssertTrue(transports.contains(.doh3))
+        let transports = Set(summary.dns.upstreamTransports)
+        XCTAssertTrue(transports.contains(.dnsOverTLS))
         XCTAssertTrue(transports.contains(.dnsOverHTTPS))
+        XCTAssertFalse(transports.contains(.unsupported))
     }
 
     func testSwiftCapabilitiesMatchTheEngineSnapshot() throws {

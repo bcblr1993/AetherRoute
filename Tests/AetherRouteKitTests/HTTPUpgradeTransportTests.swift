@@ -62,11 +62,11 @@ final class HTTPUpgradeTransportTests: XCTestCase {
     }
 
     func testPastedLinkWithAnUnknownTransportIsRefusedInsteadOfBecomingTCP() {
-        // `xhttp` used to be turned into a plain TCP node that could never
-        // connect, with no message.
-        let link = "vless://\(uuid)@cdn.example:443?security=tls&type=xhttp&path=%2Fx#X"
+        // An unknown `type=` used to be turned into a plain TCP node that could
+        // never connect, with no message.
+        let link = "vless://\(uuid)@cdn.example:443?security=tls&type=kcp&path=%2Fx#X"
         XCTAssertThrowsError(try AetherNodeURIParser.parse(link)) { error in
-            XCTAssertEqual(error as? AetherNodeURIError, .unsupportedTransport("xhttp"))
+            XCTAssertEqual(error as? AetherNodeURIError, .unsupportedTransport("kcp"))
         }
     }
 
