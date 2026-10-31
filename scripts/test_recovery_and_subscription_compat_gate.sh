@@ -176,6 +176,39 @@ struct RecoveryAndSubscriptionCompatVerifier {
             server: 127.0.0.1
             port: 8389
             psk: p
+            version: 4
+            obfs-opts:
+              mode: tls
+              host: example.com
+          - name: "Panel-Mieru-Node"
+            type: mieru
+            server: 127.0.0.1
+            port: 8390
+            username: u
+            password: p
+            transport: TCP
+            multiplexing: MULTIPLEXING_HIGH
+          - name: "Panel-Hy1-Node"
+            type: hysteria
+            server: 127.0.0.1
+            port: 8391
+            auth-str: hy1-secret
+            up: 50
+            down: 200
+            sni: example.com
+            skip-cert-verify: true
+          - name: "Panel-VLESS-XHTTP"
+            type: vless
+            server: 127.0.0.1
+            port: 8392
+            uuid: 00000000-0000-0000-0000-000000000000
+            tls: true
+            servername: example.com
+            skip-cert-verify: true
+            network: xhttp
+            xhttp-opts:
+              path: /xhttp
+              mode: packet-up
         proxy-groups:
           - name: "自动选择"
             type: url-test
@@ -346,10 +379,11 @@ mode: rule
 proxies:
   - {name: live, type: ss, server: 127.0.0.1, port: 1080, cipher: aes-128-gcm, password: fixture}
   - {name: xhttp-node, type: vless, server: 127.0.0.1, port: 1081, uuid: 11111111-2222-3333-4444-555555555555, network: xhttp, tls: true}
+  - {name: kcp-node, type: vmess, server: 127.0.0.1, port: 1083, uuid: 11111111-2222-3333-4444-555555555555, cipher: auto, alterId: 0, network: kcp}
   - {name: upgrade-node, type: vmess, server: 127.0.0.1, port: 1082, uuid: 11111111-2222-3333-4444-555555555555, cipher: auto, alterId: 0, network: httpupgrade}
 proxy-groups:
-  - {name: PROXY, type: select, proxies: [AUTO, live, xhttp-node, upgrade-node]}
-  - {name: AUTO, type: url-test, proxies: [xhttp-node, upgrade-node], url: 'http://www.gstatic.com/generate_204', interval: 300}
+  - {name: PROXY, type: select, proxies: [AUTO, live, xhttp-node, kcp-node, upgrade-node]}
+  - {name: AUTO, type: url-test, proxies: [xhttp-node, kcp-node, upgrade-node], url: 'http://www.gstatic.com/generate_204', interval: 300}
 rules:
   - DOMAIN-SUFFIX,example.com,AUTO
   - MATCH,PROXY

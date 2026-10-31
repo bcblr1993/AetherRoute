@@ -225,6 +225,7 @@ class EndToEndTests(unittest.TestCase):
             ss_port, dead_port, anytls_port, upgrade_port = (
                 free_port(), free_port(), free_port(), free_port())
             vmess_port, trojan_port = free_port(), free_port()
+            hy1_port, ss_mux_port = free_port(), free_port()
             password = "e2e-password"
             subprocess.run(
                 ["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt",
@@ -254,6 +255,16 @@ class EndToEndTests(unittest.TestCase):
                      "tls": {"enabled": True,
                              "certificate_path": str(work / "cert.pem"),
                              "key_path": str(work / "key.pem")}},
+                    {"type": "hysteria", "listen": "127.0.0.1", "listen_port": hy1_port,
+                     "up_mbps": 100, "down_mbps": 100,
+                     "users": [{"name": "e2e", "auth_str": password}],
+                     "tls": {"enabled": True, "alpn": ["hysteria"],
+                             "certificate_path": str(work / "cert.pem"),
+                             "key_path": str(work / "key.pem")}},
+                    {"type": "shadowsocks", "listen": "127.0.0.1",
+                     "listen_port": ss_mux_port, "method": "aes-128-gcm",
+                     "password": password,
+                     "multiplex": {"enabled": True, "padding": False}},
                 ],
                 "outbounds": [{"type": "direct"}],
             }))
@@ -266,6 +277,7 @@ class EndToEndTests(unittest.TestCase):
                 diff.wait_for_port(upgrade_port, timeout=10)
                 diff.wait_for_port(vmess_port, timeout=10)
                 diff.wait_for_port(trojan_port, timeout=10)
+                diff.wait_for_port(ss_mux_port, timeout=10)
                 profile = {
                     "mode": "global",
                     "proxies": [
@@ -303,13 +315,23 @@ class EndToEndTests(unittest.TestCase):
                          "server": "127.0.0.1", "port": trojan_port,
                          "password": password, "sni": "localhost",
                          "skip-cert-verify": True, "network": "tcp"},
+                        {"name": "hy1-quic", "type": "hysteria",
+                         "server": "127.0.0.1", "port": hy1_port,
+                         "auth-str": password, "up": 100, "down": 100,
+                         "sni": "localhost", "skip-cert-verify": True},
+                        {"name": "ss-smux", "type": "ss",
+                         "server": "127.0.0.1", "port": ss_mux_port,
+                         "cipher": "aes-128-gcm", "password": password,
+                         "smux": {"enabled": True, "protocol": "smux"}},
                     ],
                     "proxy-groups": [{"name": "PROXY", "type": "select",
                                       "proxies": ["live", "dead", "unsupported",
                                                   "airport-anytls",
                                                   "mihomo-httpupgrade",
                                                   "panel-vmess-tcp",
-                                                  "panel-trojan-tcp"]}],
+                                                  "panel-trojan-tcp",
+                                                  "hy1-quic",
+                                                  "ss-smux"]}],
                     "rules": ["MATCH,PROXY"],
                 }
                 report = diff.compare(
@@ -338,6 +360,8 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(by_name["mihomo-httpupgrade"], "both_ok", report)
         self.assertEqual(by_name["panel-vmess-tcp"], "both_ok", report)
         self.assertEqual(by_name["panel-trojan-tcp"], "both_ok", report)
+        self.assertEqual(by_name["hy1-quic"], "both_ok", report)
+        self.assertEqual(by_name["ss-smux"], "both_ok", report)
         self.assertNotIn(password, json.dumps(report))
 
 

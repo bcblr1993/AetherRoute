@@ -126,6 +126,97 @@ final class ProfileCompatibilityReportTests: XCTestCase {
         XCTAssertEqual(summary.compatibility.unsupportedProxyCount, 0)
     }
 
+    func testXboardV2BoardSSPanelSubscriptionCorpusIsFullySupported() {
+        let corpusYAML = """
+        mode: rule
+        global-client-fingerprint: chrome
+        sniffer:
+          enable: true
+          force-dns-mapping: true
+          parse-pure-ip: true
+          sniff:
+            HTTP:
+              ports: [80, 8080-8880]
+              override-destination: true
+            TLS:
+              ports: [443, 8443]
+            QUIC:
+              ports: [443, 8443]
+          force-domain:
+            - '+.netflix.com'
+          skip-domain:
+            - 'Mijia Cloud'
+        dns:
+          enable: true
+          enhanced-mode: fake-ip
+          fake-ip-filter-mode: blacklist
+          fake-ip-filter:
+            - '*.lan'
+          direct-nameserver:
+            - 223.5.5.5
+          direct-nameserver-follow-policy: true
+          prefer-h3: true
+          nameserver:
+            - quic://dns.adguard-dns.com:853
+            - h3://dns.alidns.com/dns-query
+            - https://cloudflare-dns.com/dns-query
+        proxies:
+          - {name: Xboard-SS2022, type: ss, server: s.example, port: 8388, cipher: 2022-blake3-aes-128-gcm, password: p, udp: true, smux: {enabled: true, protocol: smux}}
+          - {name: SSPanel-SSR, type: ssr, server: s.example, port: 8389, cipher: aes-256-cfb, password: p, protocol: auth_aes128_md5, obfs: tls1.2_ticket_auth}
+          - {name: V2Board-VMess, type: vmess, server: s.example, port: 443, uuid: \(uuid), alterId: 0, cipher: auto, network: ws, tls: true}
+          - {name: Xboard-VLESS-XHTTP, type: vless, server: s.example, port: 443, uuid: \(uuid), network: xhttp, tls: true, encryption: none}
+          - {name: Xboard-VLESS-ENC, type: vless, server: s.example, port: 443, uuid: \(uuid), network: tcp, encryption: mlkem768x25519plus.native.0rtt.6nZ2lmyau-KImiEm9nOtwdltnv2hX_gC2EFrAXDrjTk}
+          - {name: V2Board-Trojan, type: trojan, server: s.example, port: 443, password: p, network: tcp, client-fingerprint: chrome}
+          - {name: Panel-Hy1, type: hysteria, server: s.example, port: 443, auth-str: p, up: 50, down: 200, protocol: udp}
+          - {name: Panel-Hy2, type: hysteria2, server: s.example, port: 443, password: p, obfs: salamander, obfs-password: o}
+          - {name: Panel-TUICv4, type: tuic, server: s.example, port: 443, token: t, version: 4}
+          - {name: Panel-TUICv5, type: tuic, server: s.example, port: 443, uuid: \(uuid), password: p, version: 5}
+          - {name: Xboard-AnyTLS, type: anytls, server: s.example, port: 443, password: p, client-fingerprint: chrome}
+          - {name: Panel-Snell, type: snell, server: s.example, port: 8443, psk: p, version: 4, obfs-opts: {mode: tls, host: s.example}}
+          - {name: Panel-Mieru, type: mieru, server: s.example, port: 8444, username: u, password: p, transport: TCP, multiplexing: MULTIPLEXING_HIGH}
+          - {name: Panel-WireGuard, type: wireguard, server: s.example, port: 51820, ip: 10.0.0.2, private-key: k, public-key: k}
+          - {name: Panel-AmneziaWG, type: amneziawg, server: s.example, port: 51821, ip: 10.0.0.3, private-key: k, public-key: k}
+          - {name: Panel-SSH, type: ssh, server: s.example, port: 22, username: u, password: p}
+          - {name: Panel-ShadowQUIC, type: shadowquic, server: s.example, port: 443, username: u, password: p}
+          - {name: Panel-SOCKS5, type: socks5, server: s.example, port: 1080, username: u, password: p}
+          - {name: Panel-HTTP, type: http, server: s.example, port: 8080, username: u, password: p}
+        proxy-groups:
+          - {name: PROXY, type: select, include-all: true}
+        rules:
+          - DOMAIN-WILDCARD,*.google.com,PROXY
+          - GEOSITE,cn,DIRECT
+          - IP-ASN,13335,PROXY,no-resolve
+          - IP-SUFFIX,8.8.8.8/24,PROXY,no-resolve
+          - SRC-GEOIP,CN,DIRECT
+          - SRC-IP-ASN,4134,DIRECT
+          - SRC-IP-SUFFIX,192.168.1.1/24,DIRECT
+          - IN-PORT,7890,PROXY
+          - IN-TYPE,INNER,PROXY
+          - IN-USER,user1,PROXY
+          - IN-NAME,mixed-in,PROXY
+          - DSCP,46,PROXY
+          - PROCESS-NAME-REGEX,^Claude.*,PROXY
+          - PROCESS-PATH-REGEX,.*/Applications/.*,PROXY
+          - NETWORK,udp,PROXY
+          - UID,501,DIRECT
+          - SUB-RULE,(NETWORK,tcp),sub-group
+          - AND,((DOMAIN,example.com),(NETWORK,tcp)),PROXY
+          - OR,((GEOIP,CN),(GEOSITE,cn)),DIRECT
+          - NOT,((GEOIP,CN)),PROXY
+          - MATCH,PROXY
+        """
+        let summary = ProfileConfigurationInspector.inspect(yaml: corpusYAML)
+        XCTAssertEqual(summary.proxyCount, 19)
+        XCTAssertTrue(summary.compatibility.isFullySupported, "\(summary.compatibility)")
+        XCTAssertEqual(summary.compatibility.unsupportedProxyCount, 0)
+        XCTAssertEqual(summary.compatibility.unsupportedRules, [])
+        XCTAssertEqual(summary.compatibility.limitedOptions, [])
+        let transports = Set(summary.dnsUpstreams.map(\.transport))
+        XCTAssertTrue(transports.contains(.doq))
+        XCTAssertTrue(transports.contains(.doh3))
+        XCTAssertTrue(transports.contains(.dnsOverHTTPS))
+    }
+
     func testSwiftCapabilitiesMatchTheEngineSnapshot() throws {
         // Config/EngineCapabilities.json is `clash-rs --capabilities` from the
         // shipped feature set; scripts/verify_engine_capabilities.sh keeps it

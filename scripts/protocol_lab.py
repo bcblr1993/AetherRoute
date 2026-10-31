@@ -74,9 +74,17 @@ def generate(host):
                      run(str(LOCAL_SING_BOX), "generate", "wg-keypair").strip().splitlines())
     wg_client = dict(line.split(": ", 1) for line in
                      run(str(LOCAL_SING_BOX), "generate", "wg-keypair").strip().splitlines())
+    ech_lines = [line.strip() for line in
+                 run(str(LOCAL_SING_BOX), "generate", "ech-keypair", SNI).strip().splitlines()]
+    ech_cfg_start = ech_lines.index("-----BEGIN ECH CONFIGS-----") + 1
+    ech_cfg_end = ech_lines.index("-----END ECH CONFIGS-----")
+    ech_config = "".join(ech_lines[ech_cfg_start:ech_cfg_end])
+    ech_key_start = ech_lines.index("-----BEGIN ECH KEYS-----")
+    ech_key_pem = "\n".join(ech_lines[ech_key_start:])
     short_id = secrets.token_hex(8)
 
     inbounds, nodes, uris, endpoints = [], [], [], []
+    xray_inbounds, mihomo_listeners = [], []
     port = iter(range(BASE, BASE + 40))
 
     def node(name, expect, clash, uri=None):
@@ -110,6 +118,17 @@ def generate(host):
     node("ss-shadow-tls-v3", "ok", {"type": "ss", "port": p, "cipher": "aes-128-gcm", "password": ss_key,
                                     "plugin": "shadow-tls", "client-fingerprint": "chrome",
                                     "plugin-opts": {"host": SHADOW_TLS_SNI, "password": stls_key, "version": 3}})
+
+    # Shadowsocks with sing-mux (h2mux / smux / yamux sharing one inbound port).
+    p, mux_key = next(port), word()
+    inbounds.append({"type": "shadowsocks", "listen": "::", "listen_port": p,
+                     "method": "aes-128-gcm", "password": mux_key,
+                     "multiplex": {"enabled": True, "padding": False}})
+    for mux_proto in ("h2mux", "smux", "yamux"):
+        node(f"ss-{mux_proto}", "ok", {
+            "type": "ss", "port": p, "cipher": "aes-128-gcm", "password": mux_key,
+            "udp": True, "smux": {"enabled": True, "protocol": mux_proto},
+        })
 
     # VMess.
     vmess_variants = (
@@ -184,10 +203,26 @@ def generate(host):
                                                    "network": "ws",
                                                    "ws-opts": {"path": "/vlup", "v2ray-http-upgrade": True}})
 
-    # Trojan.
+    # VLESS over TLS with ECH.
+    p, uid = next(port), str(uuid.uuid4())
+    ech_tls = tls()
+    ech_tls["ech"] = {"enabled": True, "key": [ech_key_pem]}
+    inbounds.append({"type": "vless", "listen": "::", "listen_port": p, "users": [{"uuid": uid}],
+                     "tls": ech_tls})
+    node("vless-ech-tls", "ok", {"type": "vless", "port": p, "uuid": uid, **tls_client, "udp": True,
+                                 "ech-opts": {"enable": True, "config": ech_config}})
+
+    # Trojan (trojan-tcp and trojan-tcp-pinned reuse one inbound port).
+    p_tr_tcp, key_tr_tcp = next(port), word()
+    inbounds.append({"type": "trojan", "listen": "::", "listen_port": p_tr_tcp,
+                     "users": [{"password": key_tr_tcp}], "tls": tls()})
+    node("trojan-tcp", "ok", {"type": "trojan", "port": p_tr_tcp, "password": key_tr_tcp,
+                              "sni": SNI, "skip-cert-verify": True, "udp": True, "network": "tcp"})
+    node("trojan-tcp-pinned", "ok", {"type": "trojan", "port": p_tr_tcp, "password": key_tr_tcp,
+                                     "sni": SNI, "skip-cert-verify": False, "fingerprint": pin, "udp": True})
+    uris.append(f"trojan://{urllib.parse.quote(key_tr_tcp)}@{host}:{p_tr_tcp}?sni={SNI}&allowInsecure=1#trojan-tcp")
+
     trojan_variants = (
-        ("trojan-tcp", None, {"network": "tcp"}),
-        ("trojan-tcp-pinned", None, {"skip-cert-verify": False, "fingerprint": None}),
         ("trojan-ws", {"type": "ws", "path": "/trws"}, {"network": "ws", "ws-opts": {"path": "/trws"},
                                                          "client-fingerprint": "chrome"}),
         ("trojan-grpc", {"type": "grpc", "service_name": "trgrpc"},
@@ -208,7 +243,21 @@ def generate(host):
         uris.append(f"trojan://{urllib.parse.quote(key)}@{host}:{p}?sni={SNI}&allowInsecure=1"
                     + (f"&type={transport['type']}" if transport else "") + f"#{name}")
 
-    # QUIC family.
+    # QUIC family: Hysteria v1, Hysteria2, TUIC v5, TUIC v4.
+    for name, xplus in (("hysteria-v1", None), ("hysteria-v1-xplus", word())):
+        p, key = next(port), word()
+        inbound = {"type": "hysteria", "listen": "::", "listen_port": p, "up_mbps": 100, "down_mbps": 100,
+                   "users": [{"name": "lab", "auth_str": key}], "tls": tls(["hysteria"])}
+        client = {"type": "hysteria", "port": p, "auth-str": key, "up": 100, "down": 100,
+                  "sni": SNI, "skip-cert-verify": True}
+        q = {"protocol": "udp", "auth": key, "peer": SNI, "insecure": "1", "upmbps": "100", "downmbps": "100"}
+        if xplus:
+            inbound["obfs"] = xplus
+            client["obfs"] = xplus
+            q.update({"obfs": "xplus", "obfsParam": xplus})
+        inbounds.append(inbound)
+        node(name, "ok", client, f"hysteria://{host}:{p}?{urllib.parse.urlencode(q)}#{name}")
+
     for name, obfs in (("hysteria2", None), ("hysteria2-salamander", word())):
         p, key = next(port), word()
         inbound = {"type": "hysteria2", "listen": "::", "listen_port": p, "users": [{"password": key}],
@@ -261,7 +310,7 @@ def generate(host):
             client.update({"tls": True, "sni": SNI, "skip-cert-verify": True})
         node(kind, "ok", client)
 
-    # WireGuard.
+    # WireGuard & AmneziaWG.
     p = next(port)
     endpoints.append({"type": "wireguard", "tag": "wg-in", "system": False, "mtu": 1408,
                       "address": ["10.66.0.1/24"], "private_key": wg_server["PrivateKey"],
@@ -271,10 +320,110 @@ def generate(host):
                              "private-key": wg_client["PrivateKey"], "public-key": wg_server["PublicKey"],
                              "udp": True, "mtu": 1408})
 
+    p_awg = next(port)
+    awg_opts = {"jc": 4, "jmin": 40, "jmax": 70, "s1": 24, "s2": 32,
+                "h1": 1010101, "h2": 2020202, "h3": 3030303, "h4": 4040404}
+    node("amneziawg", "ok", {"type": "wireguard", "port": p_awg, "ip": "10.66.1.2",
+                             "private-key": wg_client["PrivateKey"], "public-key": wg_server["PublicKey"],
+                             "udp": True, "mtu": 1408, "amnezia-wg-option": awg_opts},
+         f"wireguard://{urllib.parse.quote(wg_client['PrivateKey'], safe='')}@{host}:{p_awg}?"
+         + urllib.parse.urlencode({"public-key": wg_server["PublicKey"], "address": "10.66.1.2/32",
+                                   "mtu": "1408", **{k: str(v) for k, v in awg_opts.items()}})
+         + "#amneziawg")
+
+    # VLESS over xhttp & VLESS encryption (Xray inbounds).
+    p_xhttp, uid_xhttp = next(port), str(uuid.uuid4())
+    xray_inbounds.append({
+        "listen": "::", "port": p_xhttp, "protocol": "vless",
+        "settings": {"clients": [{"id": uid_xhttp}], "decryption": "none"},
+        "streamSettings": {
+            "network": "xhttp", "security": "tls",
+            "tlsSettings": {"alpn": ["h2", "http/1.1"],
+                            "certificates": [{"certificateFile": f"{REMOTE}/cert.pem",
+                                              "keyFile": f"{REMOTE}/key.pem"}]},
+            "xhttpSettings": {"path": "/xh", "mode": "auto"},
+        },
+    })
+    for xh_mode in ("packet-up", "stream-one"):
+        xh_name = f"vless-xhttp-{xh_mode}"
+        node(xh_name, "ok", {"type": "vless", "port": p_xhttp, "uuid": uid_xhttp, **tls_client,
+                             "udp": True, "network": "xhttp",
+                             "xhttp-opts": {"path": "/xh", "mode": xh_mode}},
+             f"vless://{uid_xhttp}@{host}:{p_xhttp}?"
+             + urllib.parse.urlencode({"security": "tls", "sni": SNI, "allowInsecure": "1",
+                                       "type": "xhttp", "path": "/xh", "mode": xh_mode})
+             + f"#{xh_name}")
+
+    p_venc, uid_venc = next(port), str(uuid.uuid4())
+    venc_decryption = (
+        "mlkem768x25519plus.native.600s."
+        "kIiXcPpkuYjOTeLTBEyOIuPxDmtUC8VexSzuINO3kXc."
+        "YRO8NwsDVVzGYCApnlSoohsW0tEdith_ZzS46FEsSmAOEALVSC_fIJOJ5neEK4ZaYjoN1CbWbQbw4zKdt5kkOg"
+    )
+    venc_encryption = (
+        "mlkem768x25519plus.native.0rtt."
+        "B7K28dC0fP-hR1M5fC6V_w5mP1W0vH8jY6nZ9xL2qQ4."
+        "rN1kP5mS8vX2yB4nM7qW0eR3tY6uI9oP2aS5dF8gH1j"
+    )
+    xray_inbounds.append({
+        "listen": "::", "port": p_venc, "protocol": "vless",
+        "settings": {"clients": [{"id": uid_venc}], "decryption": venc_decryption},
+        "streamSettings": {"network": "tcp", "security": "none"},
+    })
+    node("vless-encryption-native", "ok", {"type": "vless", "port": p_venc, "uuid": uid_venc,
+                                           "udp": True, "encryption": venc_encryption},
+         f"vless://{uid_venc}@{host}:{p_venc}?"
+         + urllib.parse.urlencode({"security": "none", "type": "tcp", "encryption": venc_encryption})
+         + "#vless-encryption-native")
+
+    # Snell v4 & Mieru TCP/UDP (Mihomo listeners).
+    p_snell, snell_psk = next(port), word()
+    mihomo_listeners.append({"name": "snell-v4-in", "type": "snell", "listen": "0.0.0.0",
+                             "port": p_snell, "psk": snell_psk, "version": 4, "udp": True,
+                             "obfs-opts": {"mode": "tls", "host": SNI}})
+    node("snell-v4", "ok", {"type": "snell", "port": p_snell, "psk": snell_psk, "version": 4,
+                            "udp": True, "obfs-opts": {"mode": "tls", "host": SNI}},
+         f"snell://{urllib.parse.quote(snell_psk)}@{host}:{p_snell}?version=4&obfs=tls&obfs-host={SNI}#snell-v4")
+
+    for mieru_tr in ("TCP", "UDP"):
+        p_mieru, mieru_pass = next(port), word()
+        m_name = f"mieru-{mieru_tr.lower()}"
+        mihomo_listeners.append({"name": f"{m_name}-in", "type": "mieru", "listen": "0.0.0.0",
+                                 "port": p_mieru, "transport": mieru_tr, "users": {"lab": mieru_pass}})
+        node(m_name, "ok", {"type": "mieru", "port": p_mieru, "username": "lab", "password": mieru_pass,
+                            "transport": mieru_tr, "multiplexing": "MULTIPLEXING_HIGH", "udp": True},
+             f"mieru://lab:{urllib.parse.quote(mieru_pass)}@{host}:{p_mieru}?"
+             f"transport={mieru_tr}&multiplexing=MULTIPLEXING_HIGH#{m_name}")
+
+    # SSR & TUIC v4.
+    p_ssr, ssr_key = next(port), word()
+    ssr_b64_pass = base64.urlsafe_b64encode(ssr_key.encode()).decode().rstrip("=")
+    ssr_b64_rem = base64.urlsafe_b64encode(b"ssr-aes-256-cfb").decode().rstrip("=")
+    ssr_raw = f"{host}:{p_ssr}:auth_aes128_md5:aes-256-cfb:tls1.2_ticket_auth:{ssr_b64_pass}/?remarks={ssr_b64_rem}"
+    node("ssr-aes-256-cfb", "ok", {"type": "ssr", "port": p_ssr, "cipher": "aes-256-cfb", "password": ssr_key,
+                                   "protocol": "auth_aes128_md5", "obfs": "tls1.2_ticket_auth",
+                                   "obfs-param": SNI, "udp": True},
+         "ssr://" + base64.urlsafe_b64encode(ssr_raw.encode()).decode().rstrip("="))
+
+    p_tuic4, tuic4_token = next(port), word()
+    node("tuic-v4", "ok", {"type": "tuic", "port": p_tuic4, "token": tuic4_token, "sni": SNI,
+                           "skip-cert-verify": True, "alpn": ["h3"], "congestion-controller": "bbr",
+                           "udp-relay-mode": "native"},
+         f"tuic://{urllib.parse.quote(tuic4_token)}@{host}:{p_tuic4}?sni={SNI}&version=4&alpn=h3&allow_insecure=1#tuic-v4")
+
     server = {"log": {"level": "warn"}, "inbounds": inbounds, "endpoints": endpoints,
               "outbounds": [{"type": "direct", "tag": "direct"}],
               "route": {"final": "direct"}}
     (OUT / "server.json").write_text(json.dumps(server, indent=2))
+    (OUT / "xray.json").write_text(json.dumps({
+        "log": {"loglevel": "warning"}, "inbounds": xray_inbounds,
+        "outbounds": [{"protocol": "freedom", "tag": "direct"}],
+    }, indent=2))
+    (OUT / "mihomo-listeners.yaml").write_text(
+        "allow-lan: false\nmode: rule\nlog-level: warning\nlisteners:\n"
+        + "\n".join(f"  - {flow(item)}" for item in mihomo_listeners)
+        + "\nrules:\n  - MATCH,DIRECT\n"
+    )
     profile = {"mixed-port": 7890, "mode": "rule", "log-level": "warning",
                "proxies": [n["proxy"] for n in nodes],
                "proxy-groups": [{"name": "LAB", "type": "select", "proxies": [n["name"] for n in nodes]}],
