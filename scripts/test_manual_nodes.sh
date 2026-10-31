@@ -68,12 +68,12 @@ for profile in "$TEMP_DIR"/profiles/*.yaml; do
   fi
 done
 
-test "$count" -eq 12 || {
-  echo "manual node gate expected 12 protocol profiles, found $count" >&2
+test "$count" -eq 16 || {
+  echo "manual node gate expected 16 protocol profiles, found $count" >&2
   exit 1
 }
 test "$failures" -eq 0 || {
   echo "manual node isolation gate failed on $failures core surface(s)" >&2
   exit 1
 }
-echo "Manual nodes verified: protocols=12 core_surfaces=24 network=denied"
+echo "Manual nodes verified: protocols=16 core_surfaces=32 network=denied"

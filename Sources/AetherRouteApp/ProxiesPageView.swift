@@ -167,6 +167,12 @@ struct ProxiesView: View {
                 protocols: Dictionary(
                     summary.proxies.map { ($0.name, $0.protocolName) },
                     uniquingKeysWith: { first, _ in first }
+                ),
+                transports: Dictionary(
+                    summary.proxies.compactMap { proxy in
+                        proxy.transportName.map { (proxy.name, $0) }
+                    },
+                    uniquingKeysWith: { first, _ in first }
                 )
             )
             .id(activeGroup.name)
@@ -355,6 +361,7 @@ private struct ActiveProxyGroupView: View {
     @State private var editsCustomGroup = false
     let group: ProxyGroupConfigurationSummary
     let protocols: [String: String]
+    var transports: [String: String] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -699,6 +706,7 @@ private struct ActiveProxyGroupView: View {
             ProxyMemberTableItem(
                 member: member,
                 protocolName: memberType(member),
+                transportName: transports[member],
                 status: status(for: member),
                 isSelected: member == selectedMember,
                 isBusy: isBusy,
@@ -881,7 +889,7 @@ private struct ProxyNodeRow: View {
             }
             Spacer(minLength: AetherVisual.s2)
             if let protocolName = row.protocolName {
-                AetherProtocolBadge(type: protocolName)
+                AetherProtocolBadge(type: protocolName, transport: row.transportName)
             }
         }
     }
@@ -912,6 +920,7 @@ private struct ProxyMemberTableItem: Identifiable {
 
     let member: String
     let protocolName: String?
+    var transportName: String? = nil
     let status: ProxyLatencyStatus
     let isSelected: Bool
     let isBusy: Bool
@@ -1191,13 +1200,14 @@ private struct ProxyNodeInventory: View {
                     }
                     .width(min: 84, ideal: 90)
                     TableColumn(AppLocalization.string("Protocol")) { proxy in
-                        Text(proxy.protocolName.uppercased())
+                        let protocolSummary = "\(proxy.protocolName.uppercased()) · \(proxy.effectiveTransportName)"
+                        Text(verbatim: protocolSummary)
                             .font(.subheadline.monospaced().weight(.semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-                            .help(proxy.protocolName.uppercased())
+                            .help(protocolSummary)
                     }
-                    .width(min: 68, ideal: 80, max: 92)
+                    .width(min: 88, ideal: 108, max: 136)
                     TableColumn(AppLocalization.string("In groups")) { proxy in
                         Text(membership(of: proxy.name))
                             .font(.subheadline.weight(.medium))

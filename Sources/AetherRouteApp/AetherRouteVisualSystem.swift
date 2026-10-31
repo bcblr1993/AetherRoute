@@ -982,9 +982,10 @@ extension View {
 /// Protocol label for a node (SS, VMess, VLESS, Trojan, Hysteria2, ...).
 struct AetherProtocolBadge: View {
     let type: String
+    var transport: String? = nil
 
     var body: some View {
-        Text(displayType)
+        Text(displayLabel)
             .font(.caption2.weight(.semibold).monospaced())
             .foregroundStyle(badgeColor == .secondary ? Color.secondary : badgeColor)
             .padding(.horizontal, AetherVisual.s1)
@@ -992,11 +993,24 @@ struct AetherProtocolBadge: View {
             .background(AetherVisual.tintFill(badgeColor), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
     }
 
+    private var displayLabel: String {
+        guard let transport,
+              !transport.isEmpty,
+              transport.lowercased() != "tcp",
+              !["DIRECT", "REJECT", "REJECT-DROP"].contains(displayType)
+        else {
+            return displayType
+        }
+        return "\(displayType) · \(transport.uppercased())"
+    }
+
     private var displayType: String {
         let trimmed = type.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         if trimmed.isEmpty { return "PROXY" }
-        if trimmed == "HYSTERIA2" || trimmed == "HYSTERIA" { return "HY2" }
+        if trimmed == "HYSTERIA2" { return "HY2" }
+        if trimmed == "HYSTERIA" { return "HY1" }
         if trimmed == "SHADOWSOCKS" { return "SS" }
+        if trimmed == "SHADOWSOCKSR" { return "SSR" }
         return trimmed
     }
 

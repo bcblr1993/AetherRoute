@@ -384,6 +384,139 @@ final class AetherNodeTests: XCTestCase {
         }
     }
 
+    func testNodeURIParserSupportsM4ShareLinksAndSurgeLines() throws {
+        let ssrPass = Data("ssr-secret".utf8).base64EncodedString()
+        let ssrObfsParam = Data("cloudflare.com".utf8).base64EncodedString()
+        let ssrProtoParam = Data("32:user".utf8).base64EncodedString()
+        let ssrRemarks = Data("SSR-HK".utf8).base64EncodedString()
+        let ssrRaw = "ssr.example:8388:auth_aes128_md5:aes-256-cfb:tls1.2_ticket_auth:\(ssrPass)/?obfsparam=\(ssrObfsParam)&protoparam=\(ssrProtoParam)&remarks=\(ssrRemarks)"
+        let ssrURI = "ssr://\(Data(ssrRaw.utf8).base64EncodedString())"
+        let ssrNode = try AetherNodeURIParser.parse(ssrURI)
+        XCTAssertEqual(ssrNode.protocolID, .shadowsocksR)
+        XCTAssertEqual(ssrNode.name, "SSR-HK")
+        XCTAssertEqual(ssrNode.cipher, "aes-256-cfb")
+        XCTAssertEqual(ssrNode.ssrProtocol, "auth_aes128_md5")
+        XCTAssertEqual(ssrNode.ssrObfs, "tls1.2_ticket_auth")
+        XCTAssertEqual(ssrNode.ssrObfsParam, "cloudflare.com")
+        XCTAssertEqual(ssrNode.ssrProtocolParam, "32:user")
+
+        let hy1URI = "hysteria://hy1.example:443?protocol=wechat-video&auth=aHkxLXNlY3JldA==&peer=hy1.example&upmbps=40&downmbps=200&alpn=h3&obfs=xplus&obfsParam=xplus-key#Hy1-Node"
+        let hy1Node = try AetherNodeURIParser.parse(hy1URI)
+        XCTAssertEqual(hy1Node.protocolID, .hysteria)
+        XCTAssertEqual(hy1Node.hysteriaProtocol, "wechat-video")
+        XCTAssertEqual(hy1Node.password, "hy1-secret")
+        XCTAssertEqual(hy1Node.obfuscation, "xplus-key")
+
+        let tuicV4URI = "tuic://tuic-v4-token@tuic4.example:443?sni=tuic4.example&version=4&congestion_control=bbr&udp_relay_mode=quic#TUIC-v4"
+        let tuicV4Node = try AetherNodeURIParser.parse(tuicV4URI)
+        XCTAssertEqual(tuicV4Node.protocolID, .tuic)
+        XCTAssertEqual(tuicV4Node.tuicToken, "tuic-v4-token")
+        XCTAssertEqual(tuicV4Node.tuicVersion, 4)
+
+        let vlessXhttpURI = "vless://b831381d-6324-4d53-ad4f-8cda48b30811@vless.example:443?security=tls&sni=vless.example&type=xhttp&path=%2Fxhttp&host=cdn.vless.example&mode=stream-one&encryption=mlkem768x25519plus.native.0rtt#VLESS-XHTTP"
+        let vlessXhttpNode = try AetherNodeURIParser.parse(vlessXhttpURI)
+        XCTAssertEqual(vlessXhttpNode.protocolID, .vless)
+        XCTAssertEqual(vlessXhttpNode.transport.kind, .xhttp)
+        XCTAssertEqual(vlessXhttpNode.transport.path, "/xhttp")
+        XCTAssertEqual(vlessXhttpNode.transport.xhttpMode, "stream-one")
+        XCTAssertEqual(vlessXhttpNode.vlessEncryption, "mlkem768x25519plus.native.0rtt")
+
+        let snellURI = "snell://snell-psk@snell.example:8443?version=4&obfs=tls&obfs-host=cdn.snell.example&reuse=true&tfo=1#Snell-v4"
+        let snellNode = try AetherNodeURIParser.parse(snellURI)
+        XCTAssertEqual(snellNode.protocolID, .snell)
+        XCTAssertEqual(snellNode.snellVersion, 4)
+        XCTAssertEqual(snellNode.obfuscation, "tls")
+        XCTAssertEqual(snellNode.snellObfsHost, "cdn.snell.example")
+        XCTAssertTrue(snellNode.snellReuse)
+        XCTAssertTrue(snellNode.fastOpen)
+
+        let mieruURI = "mieru://mieru-user:mieru-pass@mieru.example:8443?transport=TCP&port-range=8443-8445&multiplexing=MULTIPLEXING_HIGH&handshake-mode=HANDSHAKE_NO_WAIT#Mieru-TCP"
+        let mieruNode = try AetherNodeURIParser.parse(mieruURI)
+        XCTAssertEqual(mieruNode.protocolID, .mieru)
+        XCTAssertEqual(mieruNode.mieruTransport, "TCP")
+        XCTAssertEqual(mieruNode.mieruPortRange, "8443-8445")
+        XCTAssertEqual(mieruNode.mieruMultiplexing, "MULTIPLEXING_HIGH")
+        XCTAssertEqual(mieruNode.mieruHandshakeMode, "HANDSHAKE_NO_WAIT")
+
+        for node in [ssrNode, hy1Node, tuicV4Node, vlessXhttpNode, snellNode, mieruNode] {
+            let formatted = try AetherNodeURIParser.format(node)
+            let reparsed = try AetherNodeURIParser.parse(formatted)
+            XCTAssertEqual(reparsed.protocolID, node.protocolID)
+            XCTAssertEqual(reparsed.server, node.server)
+            XCTAssertEqual(reparsed.port, node.port)
+            XCTAssertEqual(reparsed.name, node.name)
+            let yaml = try AetherNodeProfileCompiler.compile(node: reparsed)
+            try ProfileImportValidator.validate(data: Data(yaml.utf8))
+        }
+
+        let surgeSnell = try XCTUnwrap(
+            AetherNodeURIParser.parseSurgeProxyLine(
+                "HK-Snell = snell, snell.example, 8443, psk=snell-psk, obfs=tls, obfs-host=cdn.snell.example, version=4, reuse=true, tfo=true"
+            )
+        )
+        XCTAssertEqual(surgeSnell.protocolID, .snell)
+        XCTAssertEqual(surgeSnell.name, "HK-Snell")
+        XCTAssertEqual(surgeSnell.snellVersion, 4)
+        XCTAssertEqual(surgeSnell.obfuscation, "tls")
+        XCTAssertTrue(surgeSnell.fastOpen)
+    }
+
+    func testLegacyV1NodeJSONDecodesCleanlyWithDefaultV2Fields() throws {
+        let legacyJSON = """
+        {
+          "allowedIPs": ["0.0.0.0/0"],
+          "cipher": "aes-128-gcm",
+          "congestionController": "bbr",
+          "downloadMbps": 100,
+          "flow": "",
+          "formatVersion": 1,
+          "id": "11111111-2222-3333-4444-555555555555",
+          "localAddress": "10.0.0.2/32",
+          "localIPv6Address": "",
+          "mtu": 1280,
+          "name": "Legacy-1.x-Node",
+          "obfuscation": "",
+          "obfuscationPassword": "",
+          "password": "secret",
+          "port": 8388,
+          "presharedKey": "",
+          "privateKey": "",
+          "privateKeyPassphrase": "",
+          "protocolID": "ss",
+          "publicKey": "",
+          "reservedBytes": [],
+          "server": "ss.example",
+          "tls": {
+            "certificatePinSHA256": "",
+            "clientFingerprint": "chrome",
+            "enabled": false,
+            "realityPublicKey": "",
+            "realityShortID": "",
+            "serverName": "",
+            "skipCertificateVerification": false
+          },
+          "transport": {
+            "grpcServiceName": "GunService",
+            "host": "",
+            "kind": "tcp",
+            "path": "/"
+          },
+          "udp": true,
+          "udpRelayMode": "native",
+          "uploadMbps": 20,
+          "username": "",
+          "uuid": ""
+        }
+        """
+        let decoded = try JSONDecoder().decode(AetherNode.self, from: Data(legacyJSON.utf8))
+        XCTAssertEqual(decoded.name, "Legacy-1.x-Node")
+        XCTAssertEqual(decoded.protocolID, .shadowsocks)
+        XCTAssertEqual(decoded.transport.xhttpMode, "")
+        XCTAssertFalse(decoded.fastOpen)
+        XCTAssertNil(decoded.amneziaWG)
+        XCTAssertNoThrow(try decoded.validated())
+    }
+
     func testNodeURIParserRejectsOversizedAndInjectedLinks() {
         let oversized = "vless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443#" + String(repeating: "a", count: 5000)
         XCTAssertThrowsError(try AetherNodeURIParser.parse(oversized))
@@ -548,6 +681,51 @@ final class AetherNodeTests: XCTestCase {
                 tls: AetherNodeTLS(serverName: "shadowquic.example"),
                 congestionController: "bbr",
                 mtu: 1300
+            ),
+            AetherNode(
+                name: "ShadowsocksR",
+                protocolID: .shadowsocksR,
+                server: "ssr.example",
+                port: 8388,
+                password: "password",
+                cipher: "aes-256-cfb",
+                ssrProtocol: "auth_aes128_md5",
+                ssrProtocolParam: "32:user",
+                ssrObfs: "tls1.2_ticket_auth",
+                ssrObfsParam: "cloudflare.com"
+            ),
+            AetherNode(
+                name: "Hysteria",
+                protocolID: .hysteria,
+                server: "hy1.example",
+                port: 443,
+                password: "hy1-password",
+                tls: AetherNodeTLS(serverName: "hy1.example"),
+                uploadMbps: 40,
+                downloadMbps: 200,
+                hysteriaProtocol: "udp"
+            ),
+            AetherNode(
+                name: "Snell",
+                protocolID: .snell,
+                server: "snell.example",
+                port: 8443,
+                password: "snell-password",
+                obfuscation: "tls",
+                snellVersion: 4,
+                snellObfsHost: "snell.example",
+                snellReuse: true
+            ),
+            AetherNode(
+                name: "Mieru",
+                protocolID: .mieru,
+                server: "mieru.example",
+                port: 8443,
+                username: "user",
+                password: "password",
+                mieruTransport: "TCP",
+                mieruMultiplexing: "MULTIPLEXING_HIGH",
+                mieruHandshakeMode: "HANDSHAKE_STANDARD"
             ),
         ]
     }

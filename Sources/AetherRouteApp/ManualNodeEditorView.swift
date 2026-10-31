@@ -179,6 +179,15 @@ struct ManualNodeEditorSheet: View {
                     .fieldRow("Cipher")
                 SecureField(AppLocalization.string("Password"), text: $node.password)
                     .fieldRow("Password")
+            case .shadowsocksR:
+                TextField(AppLocalization.string("Cipher"), text: $node.cipher)
+                    .fieldRow("Cipher")
+                SecureField(AppLocalization.string("Password"), text: $node.password)
+                    .fieldRow("Password")
+                TextField(AppLocalization.string("SSR protocol"), text: $node.ssrProtocol)
+                    .fieldRow("SSR protocol")
+                TextField(AppLocalization.string("SSR obfuscation"), text: $node.ssrObfs)
+                    .fieldRow("SSR obfuscation")
             case .vmess, .vless:
                 TextField(AppLocalization.string("UUID"), text: $node.uuid)
                     .accessibilityIdentifier("manual-node-uuid")
@@ -195,13 +204,23 @@ struct ManualNodeEditorSheet: View {
                         in: 0...65_535
                     )
                 }
-            case .trojan, .hysteria2, .anyTLS:
+            case .trojan, .hysteria, .hysteria2, .anyTLS:
                 SecureField(AppLocalization.string("Password"), text: $node.password)
                     .fieldRow("Password")
             case .tuic:
                 TextField(AppLocalization.string("UUID"), text: $node.uuid)
                     .accessibilityIdentifier("manual-node-uuid")
                     .fieldRow("UUID")
+                SecureField(AppLocalization.string("Password"), text: $node.password)
+                    .fieldRow("Password")
+                SecureField(AppLocalization.string("TUIC v4 token (optional)"), text: $node.tuicToken)
+                    .fieldRow("TUIC v4 token (optional)")
+            case .snell:
+                SecureField(AppLocalization.string("Pre-shared key (PSK)"), text: $node.password)
+                    .fieldRow("Pre-shared key (PSK)")
+            case .mieru:
+                TextField(AppLocalization.string("Username"), text: $node.username)
+                    .fieldRow("Username")
                 SecureField(AppLocalization.string("Password"), text: $node.password)
                     .fieldRow("Password")
             case .wireGuard:
@@ -300,6 +319,13 @@ struct ManualNodeEditorSheet: View {
                     text: $node.transport.grpcServiceName
                 )
                     .fieldRow("Service name (optional)")
+            case .xhttp:
+                TextField(AppLocalization.string("Path (optional)"), text: $node.transport.path)
+                    .fieldRow("Path (optional)")
+                TextField(AppLocalization.string("Host (optional)"), text: $node.transport.host)
+                    .fieldRow("Host (optional)")
+                TextField(AppLocalization.string("XHTTP mode (optional)"), text: $node.transport.xhttpMode)
+                    .fieldRow("XHTTP mode (optional)")
             }
         }
     }
@@ -398,7 +424,24 @@ struct ManualNodeEditorSheet: View {
                 if node.protocolID == .vless {
                     TextField(AppLocalization.string("Flow (optional)"), text: $node.flow)
                         .fieldRow("Flow (optional)")
+                    TextField(AppLocalization.string("Encryption (optional)"), text: $node.vlessEncryption)
+                        .fieldRow("Encryption (optional)")
                 }
+            case .shadowsocksR:
+                Toggle(AppLocalization.string("UDP relay"), isOn: $node.udp)
+                TextField(AppLocalization.string("Protocol parameter (optional)"), text: $node.ssrProtocolParam)
+                    .fieldRow("Protocol parameter (optional)")
+                TextField(AppLocalization.string("Obfuscation parameter (optional)"), text: $node.ssrObfsParam)
+                    .fieldRow("Obfuscation parameter (optional)")
+            case .hysteria:
+                TextField(AppLocalization.string("Transport protocol"), text: $node.hysteriaProtocol)
+                    .fieldRow("Transport protocol")
+                TextField(AppLocalization.string("Obfuscation (optional)"), text: $node.obfuscation)
+                    .fieldRow("Obfuscation (optional)")
+                TextField(AppLocalization.string("Upload Mbps (optional)"), text: $uploadText)
+                    .fieldRow("Upload Mbps (optional)")
+                TextField(AppLocalization.string("Download Mbps (optional)"), text: $downloadText)
+                    .fieldRow("Download Mbps (optional)")
             case .hysteria2:
                 Toggle(
                     AppLocalization.string("Salamander obfuscation"),
@@ -432,6 +475,35 @@ struct ManualNodeEditorSheet: View {
                     text: $node.udpRelayMode
                 )
                     .fieldRow("UDP relay mode (optional)")
+                Toggle(AppLocalization.string("Reduce RTT"), isOn: $node.tuicReduceRTT)
+            case .snell:
+                Stepper(
+                    String.localizedStringWithFormat(
+                        AppLocalization.string("Version: %lld"),
+                        Int64(node.snellVersion ?? 4)
+                    ),
+                    value: Binding(
+                        get: { node.snellVersion ?? 4 },
+                        set: { node.snellVersion = $0 }
+                    ),
+                    in: 1...5
+                )
+                TextField(AppLocalization.string("Obfuscation (optional)"), text: $node.obfuscation)
+                    .fieldRow("Obfuscation (optional)")
+                TextField(AppLocalization.string("Obfuscation host (optional)"), text: $node.snellObfsHost)
+                    .fieldRow("Obfuscation host (optional)")
+                Toggle(AppLocalization.string("Connection reuse"), isOn: $node.snellReuse)
+                Toggle(AppLocalization.string("UDP relay"), isOn: $node.udp)
+            case .mieru:
+                Picker(AppLocalization.string("Transport"), selection: $node.mieruTransport) {
+                    Text(verbatim: "TCP").tag("TCP")
+                    Text(verbatim: "UDP").tag("UDP")
+                }
+                .fieldRow("Transport")
+                TextField(AppLocalization.string("Multiplexing (optional)"), text: $node.mieruMultiplexing)
+                    .fieldRow("Multiplexing (optional)")
+                TextField(AppLocalization.string("Port range (optional)"), text: $node.mieruPortRange)
+                    .fieldRow("Port range (optional)")
             case .wireGuard:
                 TextField(AppLocalization.string("Local IPv4 CIDR"), text: $node.localAddress)
                     .fieldRow("Local IPv4 CIDR")
@@ -594,9 +666,16 @@ struct ManualNodeEditorSheet: View {
     }
 
     private var availableTransports: [AetherNodeTransport] {
-        node.protocolID == .trojan
-            ? [.tcp, .webSocket, .grpc]
-            : AetherNodeTransport.allCases
+        switch node.protocolID {
+        case .trojan:
+            return [.tcp, .webSocket, .grpc]
+        case .vmess:
+            return [.tcp, .webSocket, .http2, .grpc]
+        case .vless:
+            return AetherNodeTransport.allCases
+        default:
+            return [.tcp]
+        }
     }
 
     private var supportsOptionalTLS: Bool {
@@ -613,7 +692,7 @@ struct ManualNodeEditorSheet: View {
 
     private var usesTLSIdentity: Bool {
         [
-            .trojan, .hysteria2, .tuic, .anyTLS, .shadowQUIC,
+            .trojan, .hysteria, .hysteria2, .tuic, .anyTLS, .shadowQUIC,
         ].contains(node.protocolID)
     }
 
@@ -628,8 +707,23 @@ struct ManualNodeEditorSheet: View {
             node.tls.enabled = false
             portText = "1080"
         case .shadowsocks:
+            node.tls.enabled = false
             node.cipher = node.cipher.isEmpty ? "aes-128-gcm" : node.cipher
             portText = "8388"
+        case .shadowsocksR:
+            node.tls.enabled = false
+            node.cipher = node.cipher.isEmpty ? "aes-256-cfb" : node.cipher
+            node.ssrProtocol = node.ssrProtocol.isEmpty ? "origin" : node.ssrProtocol
+            node.ssrObfs = node.ssrObfs.isEmpty ? "plain" : node.ssrObfs
+            portText = "8388"
+        case .snell:
+            node.tls.enabled = false
+            node.snellVersion = node.snellVersion ?? 4
+            portText = "6160"
+        case .mieru:
+            node.tls.enabled = false
+            node.mieruTransport = node.mieruTransport.isEmpty ? "TCP" : node.mieruTransport
+            portText = "8443"
         case .ssh:
             node.tls.enabled = false
             portText = "22"
@@ -637,7 +731,7 @@ struct ManualNodeEditorSheet: View {
             node.tls.enabled = false
             portText = "51820"
         default:
-            node.tls.enabled = [.vmess, .vless].contains(protocolID)
+            node.tls.enabled = [.vmess, .vless, .trojan, .hysteria, .hysteria2, .tuic, .anyTLS, .shadowQUIC].contains(protocolID)
             portText = "443"
         }
     }
@@ -648,6 +742,7 @@ struct ManualNodeEditorSheet: View {
         case .webSocket: "WebSocket"
         case .http2: "HTTP/2"
         case .grpc: "gRPC"
+        case .xhttp: "XHTTP"
         }
     }
 

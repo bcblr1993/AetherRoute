@@ -22,6 +22,11 @@
     {"id":"ss-legacy-whole-base64","protocol":"shadowsocks","variant":"Legacy whole-body Base64 URI","source":"https://shadowsocks.org/doc/configs.html"},
     {"id":"ss-empty-query-provider","protocol":"shadowsocks","variant":"Provider URI with an empty trailing query marker","source":"https://shadowsocks.org/doc/sip002.html"},
     {"id":"ss-ipv6","protocol":"shadowsocks","variant":"SIP002 IPv6 endpoint","source":"https://shadowsocks.org/doc/sip002.html"},
+    {"id":"ss-shadowrocket-obfs","protocol":"shadowsocks","variant":"Shadowrocket obfs and obfsParam query parameters","source":"https://wiki.metacubex.one/en/config/proxies/ss/"},
+    {"id":"ss-sip008-json","protocol":"shadowsocks","variant":"SIP008 Online Configuration Delivery JSON document","source":"https://shadowsocks.org/doc/sip008.html"},
+
+    {"id":"ssr-auth-aes128-md5","protocol":"ssr","variant":"ShadowsocksR auth_aes128_md5 with tls1.2_ticket_auth","source":"https://wiki.metacubex.one/en/config/proxies/ssr/"},
+    {"id":"ssr-auth-chain-a","protocol":"ssr","variant":"ShadowsocksR auth_chain_a with http_simple","source":"https://wiki.metacubex.one/en/config/proxies/ssr/"},
 
     {"id":"vmess-tcp-aead","protocol":"vmess","variant":"VMess AEAD over raw TCP","source":"https://www.v2fly.org/config/protocols/vmess.html"},
     {"id":"vmess-tcp-tls","protocol":"vmess","variant":"VMess AEAD over TCP and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vmess/"},
@@ -41,11 +46,16 @@
     {"id":"vless-h2-tls","protocol":"vless","variant":"VLESS over HTTP/2 and TLS","source":"https://wiki.metacubex.one/en/config/proxies/vless/"},
     {"id":"vless-query-aliases","protocol":"vless","variant":"Common peer, publickey, shortid and fingerprint aliases","source":"https://github.com/XTLS/Xray-core/discussions/716"},
     {"id":"vless-ipv6","protocol":"vless","variant":"VLESS IPv6 endpoint","source":"https://github.com/XTLS/Xray-core/discussions/716"},
+    {"id":"vless-xhttp-tls","protocol":"vless","variant":"VLESS over XHTTP split transport and TLS","source":"https://xtls.github.io/en/config/transports/splithttp.html"},
+    {"id":"vless-encryption-mlkem","protocol":"vless","variant":"VLESS post-quantum mlkem768x25519plus native encryption","source":"https://xtls.github.io/en/config/outbounds/vless.html"},
 
     {"id":"trojan-tcp-tls","protocol":"trojan","variant":"Trojan over raw TLS","source":"https://wiki.metacubex.one/en/config/proxies/trojan/"},
     {"id":"trojan-ws-tls","protocol":"trojan","variant":"Trojan over WebSocket and TLS","source":"https://wiki.metacubex.one/en/config/proxies/trojan/"},
     {"id":"trojan-grpc-tls","protocol":"trojan","variant":"Trojan over gRPC and TLS","source":"https://wiki.metacubex.one/en/config/proxies/trojan/"},
     {"id":"trojan-percent-password","protocol":"trojan","variant":"Trojan percent-encoded password","source":"https://wiki.metacubex.one/en/config/proxies/trojan/"},
+
+    {"id":"hysteria-v1-auth","protocol":"hysteria","variant":"Hysteria v1 UDP QUIC with auth string","source":"https://v1.hysteria.network/docs/uri-scheme/"},
+    {"id":"hysteria-v1-xplus","protocol":"hysteria","variant":"Hysteria v1 with xplus obfuscation and bandwidth limits","source":"https://v1.hysteria.network/docs/uri-scheme/"},
 
     {"id":"hy2-standard","protocol":"hysteria2","variant":"Hysteria2 TLS authentication","source":"https://v2.hysteria.network/docs/developers/URI-Scheme/"},
     {"id":"hy2-alias","protocol":"hysteria2","variant":"hy2 scheme alias","source":"https://v2.hysteria.network/docs/developers/URI-Scheme/"},
@@ -55,12 +65,20 @@
     {"id":"tuic-native-bbr","protocol":"tuic","variant":"TUIC v5 native UDP relay with BBR","source":"https://github.com/EAimTY/tuic/blob/dev/SPEC.md"},
     {"id":"tuic-quic-cubic","protocol":"tuic","variant":"TUIC v5 QUIC-stream UDP relay with Cubic","source":"https://github.com/EAimTY/tuic/blob/dev/SPEC.md"},
     {"id":"tuic-newreno-aliases","protocol":"tuic","variant":"TUIC v5 underscore query aliases and New Reno","source":"https://wiki.metacubex.one/en/config/proxies/tuic/"},
+    {"id":"tuic-v4-token","protocol":"tuic","variant":"TUIC v4 token authentication","source":"https://wiki.metacubex.one/en/config/proxies/tuic/"},
+
+    {"id":"snell-v4-tls","protocol":"snell","variant":"Snell v4 share link with TLS obfuscation","source":"https://wiki.metacubex.one/en/config/proxies/snell/"},
+    {"id":"snell-surge-line","protocol":"snell","variant":"Surge [Proxy] line for Snell v4 with connection reuse","source":"https://manual.nssurge.com/policy/proxy.html"},
+
+    {"id":"mieru-tcp-mux","protocol":"mieru","variant":"Mieru TCP transport with high multiplexing","source":"https://wiki.metacubex.one/en/config/proxies/mieru/"},
+    {"id":"mieru-udp-port-range","protocol":"mieru","variant":"Mieru UDP transport with port range","source":"https://wiki.metacubex.one/en/config/proxies/mieru/"},
 
     {"id":"anytls-standard","protocol":"anytls","variant":"AnyTLS with SNI","source":"https://wiki.metacubex.one/en/config/proxies/anytls/"},
     {"id":"anytls-insecure-alias","protocol":"anytls","variant":"AnyTLS peer and allowInsecure aliases","source":"https://wiki.metacubex.one/en/config/proxies/anytls/"},
 
     {"id":"wireguard-ipv4","protocol":"wireguard","variant":"WireGuard IPv4 with AllowedIPs and MTU","source":"https://wiki.metacubex.one/en/config/proxies/wireguard/"},
     {"id":"wireguard-dualstack-psk","protocol":"wireguard","variant":"WireGuard dual stack with pre-shared key","source":"https://www.wireguard.com/protocol/"},
+    {"id":"wireguard-amneziawg","protocol":"wireguard","variant":"AmneziaWG junk packet and custom header obfuscation","source":"https://wiki.metacubex.one/en/config/proxies/wireguard/"},
 
     {"id":"ssh-password","protocol":"ssh","variant":"SSH password authentication","source":"https://wiki.metacubex.one/en/config/proxies/ssh/"},
     {"id":"ssh-percent-credentials","protocol":"ssh","variant":"SSH percent-encoded credentials and IPv6 endpoint","source":"https://wiki.metacubex.one/en/config/proxies/ssh/"},

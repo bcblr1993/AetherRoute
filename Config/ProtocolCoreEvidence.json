@@ -1,11 +1,11 @@
 {
   "artifacts": {
-    "flowCoreSHA256": "60ebca0a88821d128dd41feca9e94d36721d77478515cb6d0b20185484baa661",
+    "flowCoreSHA256": "8d69e9d2fe25727ff1fedbc53c95b553c0c32f6d432cfeb7f358ef7699d5b41d",
     "headerSHA256": "bf25e15ff3eeecec9d140fc7190cea240f7d5878af51f017f50faf09dc1c5dee",
     "interopTestBinarySHA256": "2dfc1ba017022f5e1dfb6bbb3bb477c45cf21dca2d0b9ba23170115c00ba53f3",
-    "packetFlowCoreSHA256": "fde83821dd1ec144157eee54f47fe97c7172413006bd06048adf1caac9a23565"
+    "packetFlowCoreSHA256": "85ae2e220edcc56b91da74e5ad97463b3435bb4514590c9c074bbd8cec5201b4"
   },
-  "coreCommit": "91ffc532eb1475becb8b82b9e7ca0fe5b23c5ab9",
+  "coreCommit": "e1a82c48816c0caa4289f774dbdc7e1a77ed30f5",
   "coreFeatures": [
     "aether-tuic",
     "shadowquic",
@@ -71,9 +71,9 @@
   ],
   "schemaVersion": 1,
   "sourceFiles": {
-    "coreManifestSHA256": "8c13a7207f0dbc8a6cb722998e3c020e31d8b48a4b3a06bdc68d5831ca83262c",
+    "coreManifestSHA256": "e08000079aef88df15dd54a6fd476e09c836e9e8e763205dcacd3711c70ff0c1",
     "directSourceSHA256": "b3114f4181bcc30e700521ac752136d7318d42a3106a9179660c090a7b80f6fd",
-    "dispatcherSHA256": "25fd5673badaf476defbcf02c53109f783c9156056a6c4ca1efa575e53819883",
+    "dispatcherSHA256": "fc792082fb39be14266ae6b2cc9bcf373ff492ea87a9b5e6161933362d53f2ea",
     "embeddedFlowSourceSHA256": "eb498ce8e62a18426fc6ee656de64519ac6309951292031a19cb16d1cb6449f8",
     "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
     "ffiSourceSHA256": "c76a6e9acf2825c9c246fbac78a387c931bcb23000ca4c29ecea8059ba3cb141",

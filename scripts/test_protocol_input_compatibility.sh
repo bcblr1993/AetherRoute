@@ -14,8 +14,8 @@ trap cleanup EXIT HUP INT TERM
 jq -e '
   . as $matrix
   | .schemaVersion == 1
-  and (.cases | length >= 48)
-  and ([.cases[].protocol] | unique | length) == 12
+  and (.cases | length >= 60)
+  and ([.cases[].protocol] | unique | length) == 16
   and (([.cases[].id] | length) == ([$matrix.cases[].id] | unique | length))
   and all(.cases[];
     (.id | test("^[a-z0-9]+(-[a-z0-9]+)*$"))

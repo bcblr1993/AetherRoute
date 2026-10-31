@@ -123,18 +123,26 @@ enum ProtocolInputCompatibilityVerifier {
             "socks-alias-ipv6", "ss-sip002-aes128gcm",
             "ss-sip002-chacha20", "ss-sip002-2022-plain",
             "ss-legacy-whole-base64", "ss-empty-query-provider", "ss-ipv6",
+            "ss-shadowrocket-obfs", "ss-sip008-json",
+            "ssr-auth-aes128-md5", "ssr-auth-chain-a",
             "vmess-tcp-aead", "vmess-tcp-tls", "vmess-ws-tls",
             "vmess-grpc-tls", "vmess-h2-tls", "vmess-cipher-aes128gcm",
             "vmess-cipher-chacha20", "vmess-url-safe-unpadded",
             "vless-tcp-private", "vless-tcp-tls", "vless-reality-vision",
             "vless-reality-vision-udp443", "vless-ws-tls", "vless-grpc-tls",
             "vless-h2-tls",
-            "vless-query-aliases", "vless-ipv6", "trojan-tcp-tls",
+            "vless-query-aliases", "vless-ipv6",
+            "vless-xhttp-tls", "vless-encryption-mlkem",
+            "trojan-tcp-tls",
             "trojan-ws-tls", "trojan-grpc-tls", "trojan-percent-password",
+            "hysteria-v1-auth", "hysteria-v1-xplus",
             "hy2-standard", "hy2-alias", "hy2-salamander", "hy2-bandwidth",
             "tuic-native-bbr", "tuic-quic-cubic", "tuic-newreno-aliases",
+            "tuic-v4-token",
+            "snell-v4-tls", "snell-surge-line",
+            "mieru-tcp-mux", "mieru-udp-port-range",
             "anytls-standard", "anytls-insecure-alias", "wireguard-ipv4",
-            "wireguard-dualstack-psk", "ssh-password",
+            "wireguard-dualstack-psk", "wireguard-amneziawg", "ssh-password",
             "ssh-percent-credentials", "shadowquic-bbr", "shadowquic-cubic",
         ]
     }
@@ -213,6 +221,39 @@ enum ProtocolInputCompatibilityVerifier {
                 endpoint: "[::1]:18388",
                 name: "SS-v6",
                 extra: ["server: '::1'"]
+            )
+        case "ss-shadowrocket-obfs":
+            let userInfo = base64URL(Data("aes-128-gcm:secret".utf8))
+            return fixture(
+                "ss://\(userInfo)@127.0.0.1:18388?obfs=tls&obfsParam=cloudflare.com&tfo=1#SS-SR",
+                ["plugin: 'obfs'", "mode: 'tls'", "host: 'cloudflare.com'", "tfo: true"]
+            )
+        case "ss-sip008-json":
+            let sip008 = """
+            {"version":1,"servers":[{"server":"127.0.0.1","server_port":18388,"password":"secret","method":"aes-128-gcm","remarks":"SIP008-Edge","plugin":"obfs-local","plugin_opts":"obfs=http;obfs-host=edge.example"}]}
+            """
+            return fixture(
+                sip008,
+                ["cipher: 'aes-128-gcm'", "plugin: 'obfs'", "mode: 'http'", "host: 'edge.example'"]
+            )
+        case "ssr-auth-aes128-md5":
+            let passB64 = base64URL(Data("ssr-secret".utf8))
+            let obfsParam = base64URL(Data("cloudflare.com".utf8))
+            let protoParam = base64URL(Data("1001:userkey".utf8))
+            let remarks = base64URL(Data("SSR-MD5".utf8))
+            let raw = "127.0.0.1:18389:auth_aes128_md5:aes-256-cfb:tls1.2_ticket_auth:\(passB64)/?obfsparam=\(obfsParam)&protoparam=\(protoParam)&remarks=\(remarks)"
+            return fixture(
+                "ssr://\(base64URL(Data(raw.utf8)))",
+                ["cipher: 'aes-256-cfb'", "protocol: 'auth_aes128_md5'", "obfs: 'tls1.2_ticket_auth'"]
+            )
+        case "ssr-auth-chain-a":
+            let passB64 = base64URL(Data("ssr-secret".utf8))
+            let obfsParam = base64URL(Data("edge.example".utf8))
+            let remarks = base64URL(Data("SSR-ChainA".utf8))
+            let raw = "127.0.0.1:18390:auth_chain_a:none:http_simple:\(passB64)/?obfsparam=\(obfsParam)&remarks=\(remarks)"
+            return fixture(
+                "ssr://\(base64URL(Data(raw.utf8)))",
+                ["cipher: 'none'", "protocol: 'auth_chain_a'", "obfs: 'http_simple'"]
             )
         case "vmess-tcp-aead":
             return vmess(name: "VMess-TCP", network: "tcp", tls: false)
@@ -294,6 +335,17 @@ enum ProtocolInputCompatibilityVerifier {
                 "vless://\(uuid)@[::1]:1443?security=tls&sni=edge.example#VLESS-v6",
                 ["server: '::1'"]
             )
+        case "vless-xhttp-tls":
+            return fixture(
+                "vless://\(uuid)@127.0.0.1:1443?security=tls&sni=edge.example&type=xhttp&path=%2Fxhttp&host=edge.example&mode=packet-up#VLESS-XHTTP",
+                ["network: 'xhttp'", "xhttp-opts:", "path: '/xhttp'", "mode: 'packet-up'"]
+            )
+        case "vless-encryption-mlkem":
+            let enc = "mlkem768x25519plus.native.0rtt.\(urlKey)"
+            return fixture(
+                "vless://\(uuid)@127.0.0.1:1443?security=none&type=tcp&encryption=\(enc)#VLESS-PQ",
+                ["encryption: '\(enc)'"]
+            )
         case "trojan-tcp-tls":
             return fixture(
                 "trojan://secret@127.0.0.1:1443?sni=edge.example#Trojan",
@@ -313,6 +365,16 @@ enum ProtocolInputCompatibilityVerifier {
             return fixture(
                 "trojan://p%40ss%3Aword@127.0.0.1:1443?sni=edge.example#Trojan-Encoded",
                 ["password: 'p@ss:word'"]
+            )
+        case "hysteria-v1-auth":
+            return fixture(
+                "hysteria://127.0.0.1:18441?protocol=udp&auth=hy1-secret&peer=edge.example&upmbps=30&downmbps=150#HY1-Auth",
+                ["auth-str: 'hy1-secret'", "protocol: 'udp'", "sni: 'edge.example'"]
+            )
+        case "hysteria-v1-xplus":
+            return fixture(
+                "hy1://127.0.0.1:18442?protocol=wechat-video&auth=hy1-secret&peer=edge.example&obfs=xplus&obfsParam=xplus-key&upmbps=50&downmbps=200&alpn=h3#HY1-XPlus",
+                ["protocol: 'wechat-video'", "obfs: 'xplus-key'", "up: 50", "down: 200"]
             )
         case "hy2-standard":
             return fixture(
@@ -349,6 +411,31 @@ enum ProtocolInputCompatibilityVerifier {
                 "tuic://\(uuid):secret@127.0.0.1:18443?peer=edge.example&congestion_control=new_reno&udp_relay_mode=native#TUIC-NewReno",
                 ["congestion-controller: 'new_reno'", "udp-relay-mode: 'native'"]
             )
+        case "tuic-v4-token":
+            return fixture(
+                "tuic://my-tuic-v4-token@127.0.0.1:18444?sni=edge.example&version=4&congestion_control=bbr&alpn=h3#TUIC-v4",
+                ["token: 'my-tuic-v4-token'", "version: 4", "sni: 'edge.example'"]
+            )
+        case "snell-v4-tls":
+            return fixture(
+                "snell://snell-secret-psk@127.0.0.1:16160?version=4&obfs=tls&obfs-host=bing.com&reuse=1#Snell-v4",
+                ["psk: 'snell-secret-psk'", "version: 4", "mode: 'tls'", "host: 'bing.com'", "reuse: true"]
+            )
+        case "snell-surge-line":
+            return fixture(
+                "Snell-Surge = snell, 127.0.0.1, 16161, psk=surge-psk, version=4, obfs=http, obfs-host=example.com, reuse=true, tfo=true",
+                ["psk: 'surge-psk'", "version: 4", "mode: 'http'", "tfo: true"]
+            )
+        case "mieru-tcp-mux":
+            return fixture(
+                "mieru://mieru-user:mieru-pass@127.0.0.1:18445?transport=TCP&multiplexing=MULTIPLEXING_HIGH#Mieru-TCP",
+                ["username: 'mieru-user'", "password: 'mieru-pass'", "transport: 'TCP'", "multiplexing: 'MULTIPLEXING_HIGH'"]
+            )
+        case "mieru-udp-port-range":
+            return fixture(
+                "mieru://mieru-user:mieru-pass@127.0.0.1:18446?transport=UDP&port-range=18446-18450#Mieru-UDP",
+                ["transport: 'UDP'", "port-range: '18446-18450'"]
+            )
         case "anytls-standard":
             return fixture(
                 "anytls://secret@127.0.0.1:1443?sni=edge.example#AnyTLS",
@@ -363,6 +450,13 @@ enum ProtocolInputCompatibilityVerifier {
             return wireGuard(dualStack: false)
         case "wireguard-dualstack-psk":
             return wireGuard(dualStack: true)
+        case "wireguard-amneziawg":
+            let privateKey = percent(key)
+            let publicKey = percent(key)
+            return fixture(
+                "amneziawg://\(privateKey)@127.0.0.1:51820?public-key=\(publicKey)&address=10.0.0.2%2F32&allowed-ips=0.0.0.0%2F0&jc=4&jmin=40&jmax=70&s1=15&s2=18&h1=100&h2=200&h3=300&h4=400#AWG",
+                ["amnezia-wg-option:", "jc: 4", "jmin: 40", "jmax: 70", "h1: 100"]
+            )
         case "ssh-password":
             return fixture(
                 "ssh://user:secret@127.0.0.1:10022#SSH",

@@ -98,7 +98,7 @@ struct NativeProfileEditorSheet: View {
                             .font(.body.weight(.medium))
                             .lineLimit(1)
                         Text(
-                            verbatim: "\(node.protocolID.displayName) · \(node.server):\(node.port)"
+                            verbatim: "\(node.protocolID.displayName) · \(node.transportDisplayName) · \(node.server):\(node.port)"
                         )
                             .font(.caption)
                             .foregroundStyle(AetherVisual.secondaryText)

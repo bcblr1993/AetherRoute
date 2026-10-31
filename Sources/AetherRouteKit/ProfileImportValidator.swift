@@ -7,6 +7,7 @@ public enum ProfileImportValidator {
     /// implemented in the protocol engine. Arbitrary executable plugins remain strictly rejected.
     public static let safeBuiltinPlugins: Set<String> = [
         "obfs",
+        "obfs-local",
         "simple-obfs",
         "v2ray-plugin",
         "shadow-tls",

@@ -250,18 +250,50 @@ public struct ProxyConfigurationSummary: Identifiable, Equatable, Sendable {
     public let id: Int
     public let name: String
     public let protocolName: String
+    public let transportName: String?
     public let recognition: Recognition
 
     public init(
         id: Int,
         name: String,
         protocolName: String,
+        transportName: String? = nil,
         recognition: Recognition
     ) {
         self.id = id
         self.name = name
         self.protocolName = protocolName
+        self.transportName = transportName
         self.recognition = recognition
+    }
+
+    public var effectiveTransportName: String {
+        if let transportName, !transportName.isEmpty {
+            switch transportName.lowercased() {
+            case "ws", "websocket": return "WS"
+            case "httpupgrade": return "HTTPUpgrade"
+            case "h2", "http": return "H2"
+            case "grpc": return "gRPC"
+            case "xhttp": return "XHTTP"
+            default: return transportName.uppercased()
+            }
+        }
+        switch protocolName.lowercased() {
+        case "hysteria", "hysteria2", "tuic", "shadowquic":
+            return "QUIC"
+        case "wireguard":
+            return "UDP"
+        default:
+            return "TCP"
+        }
+    }
+
+    public static func == (lhs: ProxyConfigurationSummary, rhs: ProxyConfigurationSummary) -> Bool {
+        lhs.id == rhs.id
+            && lhs.name == rhs.name
+            && lhs.protocolName == rhs.protocolName
+            && lhs.recognition == rhs.recognition
+            && (lhs.transportName == nil || rhs.transportName == nil || lhs.transportName == rhs.transportName)
     }
 }
 
@@ -1468,11 +1500,20 @@ private struct Parser {
             }
             let name = item.name.isEmpty ? "Unnamed proxy" : item.name
             let type = item.type.isEmpty ? "Unknown" : item.type
+            let explicitTransport: String?
+            if !item.network.isEmpty {
+                explicitTransport = item.network
+            } else if !item.plugin.isEmpty {
+                explicitTransport = item.plugin
+            } else {
+                explicitTransport = nil
+            }
             proxies.append(
                 ProxyConfigurationSummary(
                     id: proxies.count,
                     name: name,
                     protocolName: type,
+                    transportName: explicitTransport,
                     recognition: recognition
                 )
             )

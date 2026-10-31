@@ -18,19 +18,26 @@ final class SubscriptionPayloadNormalizerTests: XCTestCase {
             .base64EncodedString()
         let privateKey = percentEncode(key)
         let publicKey = percentEncode(key)
+        let ssrPayload = Data(
+            "127.0.0.1:8389:auth_aes128_md5:aes-256-cfb:tls1.2_ticket_auth:\(Data("ssr-secret".utf8).base64EncodedString())/?remarks=\(Data("SSR".utf8).base64EncodedString())".utf8
+        ).base64EncodedString()
         let links = [
             "http://user:pass@127.0.0.1:8080#HTTP",
             "socks5://user:pass@127.0.0.1:1080#SOCKS",
             "ss://\(ssCredentials)@127.0.0.1:8388#SS",
+            "ssr://\(ssrPayload)",
             vmess,
             "vless://\(uuid)@127.0.0.1:443?security=reality&sni=edge.example&pbk=\(key.replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: ""))&sid=abcd&type=ws&path=%2Fws&host=edge.example#VLESS",
             "trojan://trojan-secret@127.0.0.1:443?sni=edge.example&type=grpc&serviceName=route#Trojan",
+            "hysteria://127.0.0.1:8444?auth_str=hy1-secret&peer=edge.example&upmbps=30&downmbps=150#HY1",
             "hysteria2://hy-secret@127.0.0.1:8443?sni=edge.example&obfs=salamander&obfs-password=obfs#HY2",
             "tuic://\(uuid):tuic-secret@127.0.0.1:8443?sni=edge.example&congestion_control=bbr&udp_relay_mode=native#TUIC",
             "anytls://any-secret@127.0.0.1:443?sni=edge.example#AnyTLS",
             "wireguard://\(privateKey)@127.0.0.1:51820?public-key=\(publicKey)&address=10.0.0.2&allowed-ips=0.0.0.0%2F0&mtu=1280#WG",
             "ssh://ssh-user:ssh-secret@127.0.0.1:22#SSH",
             "shadowquic://sq-user:sq-secret@127.0.0.1:443?sni=edge.example&congestion_control=bbr&initial-mtu=1280#ShadowQUIC",
+            "snell://snell-secret@127.0.0.1:8445?version=4&obfs=tls&obfs-host=edge.example#Snell",
+            "mieru://mieru-user:mieru-secret@127.0.0.1:8446?transport=TCP&multiplexing=MULTIPLEXING_HIGH#Mieru",
         ]
         XCTAssertEqual(
             links.count,
@@ -44,8 +51,9 @@ final class SubscriptionPayloadNormalizerTests: XCTestCase {
         let yaml = try XCTUnwrap(String(data: output, encoding: .utf8))
         try ProfileImportValidator.validate(data: output)
         for coreType in [
-            "http", "socks5", "ss", "vmess", "vless", "trojan",
-            "hysteria2", "tuic", "anytls", "wireguard", "ssh", "shadowquic",
+            "http", "socks5", "ss", "ssr", "vmess", "vless", "trojan",
+            "hysteria", "hysteria2", "tuic", "anytls", "wireguard", "ssh",
+            "shadowquic", "snell", "mieru",
         ] {
             XCTAssertTrue(yaml.contains("type: '\(coreType)'"), coreType)
         }
@@ -237,6 +245,51 @@ final class SubscriptionPayloadNormalizerTests: XCTestCase {
         XCTAssertFalse(normalizedYAML.contains("external-ui"))
         XCTAssertTrue(normalizedYAML.contains("name: Edge"))
         try ProfileImportValidator.validate(data: result.data)
+    }
+
+    func testSIP008JSONAndSurgeProxySectionsNormalizeToValidatedYAML() throws {
+        let sip008 = """
+        {
+          "version": 1,
+          "servers": [
+            {
+              "server": "127.0.0.1",
+              "server_port": 8388,
+              "password": "ss-password",
+              "method": "2022-blake3-aes-128-gcm",
+              "remarks": "SIP008-HK",
+              "plugin": "obfs-local",
+              "plugin_opts": "obfs=tls;obfs-host=cloudflare.com"
+            }
+          ]
+        }
+        """
+        let sip008Result = try SubscriptionPayloadNormalizer.normalizeWithReport(Data(sip008.utf8))
+        let sip008YAML = try XCTUnwrap(String(data: sip008Result.data, encoding: .utf8))
+        try ProfileImportValidator.validate(data: sip008Result.data)
+        XCTAssertTrue(sip008YAML.contains("name: 'SIP008-HK'"))
+        XCTAssertTrue(sip008YAML.contains("plugin: 'obfs'"))
+        XCTAssertEqual(sip008Result.report.usableNodeCount, 1)
+
+        let surgeConf = """
+        [General]
+        loglevel = notify
+
+        [Proxy]
+        Surge-Snell = snell, 127.0.0.1, 8443, psk=snell-psk, obfs=tls, obfs-host=cloudflare.com, version=4, reuse=true
+        Surge-Trojan = trojan, 127.0.0.1, 443, password=trojan-pass, sni=edge.example, skip-cert-verify=true
+
+        [Rule]
+        FINAL,Surge-Snell
+        """
+        let surgeResult = try SubscriptionPayloadNormalizer.normalizeWithReport(Data(surgeConf.utf8))
+        let surgeYAML = try XCTUnwrap(String(data: surgeResult.data, encoding: .utf8))
+        try ProfileImportValidator.validate(data: surgeResult.data)
+        XCTAssertTrue(surgeYAML.contains("name: 'Surge-Snell'"))
+        XCTAssertTrue(surgeYAML.contains("type: 'snell'"))
+        XCTAssertTrue(surgeYAML.contains("name: 'Surge-Trojan'"))
+        XCTAssertTrue(surgeYAML.contains("type: 'trojan'"))
+        XCTAssertEqual(surgeResult.report.usableNodeCount, 2)
     }
 
     private func vmessLink(uuid: String) throws -> String {

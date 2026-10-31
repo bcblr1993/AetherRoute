@@ -50,6 +50,13 @@ enum ManualNodeFixtureGenerator {
                 password: "password", cipher: "aes-128-gcm"
             ),
             AetherNode(
+                name: "ShadowsocksR", protocolID: .shadowsocksR,
+                server: "127.0.0.1", port: 59013,
+                password: "password", cipher: "aes-256-cfb",
+                ssrProtocol: "auth_aes128_md5", ssrProtocolParam: "1001:secret",
+                ssrObfs: "tls1.2_ticket_auth", ssrObfsParam: "cloudflare.com"
+            ),
+            AetherNode(
                 name: "VMess", protocolID: .vmess,
                 server: "127.0.0.1", port: 59004, uuid: uuid,
                 tls: .init(enabled: true, serverName: "example.com"),
@@ -73,6 +80,14 @@ enum ManualNodeFixtureGenerator {
                 tls: .init(serverName: "example.com")
             ),
             AetherNode(
+                name: "Hysteria", protocolID: .hysteria,
+                server: "127.0.0.1", port: 59014, password: "password",
+                tls: .init(serverName: "example.com"),
+                obfuscation: "xplus-key",
+                uploadMbps: 30, downloadMbps: 200,
+                hysteriaProtocol: "udp"
+            ),
+            AetherNode(
                 name: "Hysteria2", protocolID: .hysteria2,
                 server: "127.0.0.1", port: 59007, password: "password",
                 tls: .init(serverName: "example.com"),
@@ -86,6 +101,22 @@ enum ManualNodeFixtureGenerator {
                 password: "password", uuid: uuid,
                 tls: .init(serverName: "example.com"),
                 congestionController: "bbr", udpRelayMode: "native"
+            ),
+            AetherNode(
+                name: "Snell", protocolID: .snell,
+                server: "127.0.0.1", port: 59015,
+                password: "password",
+                obfuscation: "tls",
+                snellVersion: 4,
+                snellObfsHost: "bing.com",
+                snellReuse: true
+            ),
+            AetherNode(
+                name: "Mieru", protocolID: .mieru,
+                server: "127.0.0.1", port: 59016,
+                username: "user", password: "password",
+                mieruTransport: "TCP",
+                mieruMultiplexing: "MULTIPLEXING_HIGH"
             ),
             AetherNode(
                 name: "AnyTLS", protocolID: .anyTLS,

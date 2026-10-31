@@ -10,9 +10,9 @@ final class ProtocolCatalogTests: XCTestCase {
     func testEverySupportedProtocolIsAReleaseGate() {
         let identifiers = Set(ProtocolCatalog.releaseTarget.map(\.id))
         let required = Set([
-            "http", "socks5", "shadowsocks", "vmess", "vless", "trojan",
-            "hysteria2", "tuic", "anytls", "wireguard", "ssh",
-            "shadowquic"
+            "http", "socks5", "shadowsocks", "ssr", "vmess", "vless", "trojan",
+            "hysteria", "hysteria2", "tuic", "snell", "mieru", "anytls",
+            "wireguard", "ssh", "shadowquic"
         ])
         XCTAssertEqual(identifiers, required)
     }
