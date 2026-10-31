@@ -1313,9 +1313,9 @@ private struct Parser {
             transport = .udp
         } else if value.hasPrefix("tcp://") {
             transport = .tcp
-        } else if value.hasPrefix("tls://") {
+        } else if value.hasPrefix("tls://") || value.hasPrefix("quic://") {
             transport = .dnsOverTLS
-        } else if value.hasPrefix("https://") {
+        } else if value.hasPrefix("https://") || value.hasPrefix("h3://") {
             transport = .dnsOverHTTPS
         } else if value.hasPrefix("dhcp://") {
             transport = .dhcp
@@ -1668,10 +1668,20 @@ private struct Parser {
         recordResourceRequirements(kind: kind, rawValue: rawValue)
         ruleCount += 1
         compatibility.record(ruleKind: kind)
-        let hasNoResolve = fields.count >= 3
-            && fields.last?.lowercased() == "no-resolve"
+        var optionCount = 0
+        while fields.count - optionCount > 2 {
+            let candidate = fields[fields.count - 1 - optionCount].lowercased()
+            if candidate == "no-resolve" || candidate == "src" {
+                optionCount += 1
+            } else {
+                break
+            }
+        }
+        let hasNoResolve = fields.dropFirst(max(2, fields.count - optionCount)).contains {
+            $0.lowercased() == "no-resolve"
+        }
         let targetIndex = fields.count > 1
-            ? fields.count - (hasNoResolve ? 2 : 1)
+            ? fields.count - 1 - optionCount
             : nil
         let target = targetIndex.map { fields[$0] } ?? "Unknown"
         switch target.uppercased() {
@@ -1717,7 +1727,8 @@ private struct Parser {
         let compactRule = rawValue
             .filter { !$0.isWhitespace }
             .uppercased()
-        if normalizedKind == "GEOIP" || compactRule.contains("(GEOIP,") {
+        if normalizedKind == "GEOIP" || normalizedKind == "SRC-GEOIP"
+            || compactRule.contains("(GEOIP,") || compactRule.contains("(SRC-GEOIP,") {
             requiresCountryMMDB = true
         }
         if normalizedKind == "GEOSITE" || compactRule.contains("(GEOSITE,") {

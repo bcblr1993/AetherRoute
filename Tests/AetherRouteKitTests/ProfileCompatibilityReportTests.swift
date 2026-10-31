@@ -33,8 +33,10 @@ final class ProfileCompatibilityReportTests: XCTestCase {
         rules:
           - DOMAIN-SUFFIX,example.com,DIRECT
           - IP-ASN,13335,P
-          - IP-ASN,15169,P
           - DOMAIN-WILDCARD,*.a.com,P
+          - FUTURE-RULE,13335,P
+          - FUTURE-RULE,15169,P
+          - UNKNOWN-RULE,*.a.com,P
           - MATCH,P
         """
     }
@@ -73,7 +75,7 @@ final class ProfileCompatibilityReportTests: XCTestCase {
         )
         XCTAssertEqual(
             report.unsupportedRules,
-            [.init(kind: "IP-ASN", count: 2), .init(kind: "DOMAIN-WILDCARD", count: 1)],
+            [.init(kind: "FUTURE-RULE", count: 2), .init(kind: "UNKNOWN-RULE", count: 1)],
             file: file, line: line
         )
         // The engine sends a browser-like ClientHello and multiplexes
@@ -102,8 +104,9 @@ final class ProfileCompatibilityReportTests: XCTestCase {
             "proxies": proxies,
             "proxy-groups": [["name": "P", "type": "select", "proxies": ["ok-vmess", "future-1"]]],
             "rules": [
-                "DOMAIN-SUFFIX,example.com,DIRECT", "IP-ASN,13335,P", "IP-ASN,15169,P",
-                "DOMAIN-WILDCARD,*.a.com,P", "MATCH,P",
+                "DOMAIN-SUFFIX,example.com,DIRECT", "IP-ASN,13335,P", "DOMAIN-WILDCARD,*.a.com,P",
+                "FUTURE-RULE,13335,P", "FUTURE-RULE,15169,P",
+                "UNKNOWN-RULE,*.a.com,P", "MATCH,P",
             ],
         ]
         let data = try JSONSerialization.data(withJSONObject: object)

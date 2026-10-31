@@ -707,8 +707,8 @@ final class TunnelManager: ObservableObject {
                 : ""
             let reviewCompatRules = isCompatReview
                 ? """
-                  - IP-ASN,13335,Balanced
-                  - DOMAIN-WILDCARD,*.cdn.example,Balanced
+                  - FUTURE-RULE,13335,Balanced
+                  - UNKNOWN-RULE,*.cdn.example,Balanced
                 """
                 : ""
             // "large" stresses the lists: 500 nodes and 10,000 rules.

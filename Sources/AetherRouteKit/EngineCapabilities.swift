@@ -6,7 +6,7 @@
 public enum EngineCapabilities {
     public static let schema = 1
     public static let outboundTypes: Set<String> = ["anytls", "direct", "http", "hysteria", "hysteria2", "mieru", "reject", "shadowquic", "snell", "socks5", "ss", "ssh", "ssr", "trojan", "tuic", "vless", "vmess", "wireguard"]
-    public static let ruleTypes: Set<String> = ["AETHER-APP", "AND", "DOMAIN", "DOMAIN-KEYWORD", "DOMAIN-REGEX", "DOMAIN-SUFFIX", "DST-PORT", "GEOIP", "GEOSITE", "IP-CIDR", "IP-CIDR6", "MATCH", "NETWORK", "NOT", "OR", "PROCESS-NAME", "PROCESS-PATH", "PROCESS-PATH-REGEX", "RULE-SET", "SRC-IP-CIDR", "SRC-PORT"]
+    public static let ruleTypes: Set<String> = ["AETHER-APP", "AND", "DOMAIN", "DOMAIN-KEYWORD", "DOMAIN-REGEX", "DOMAIN-SUFFIX", "DOMAIN-WILDCARD", "DSCP", "DST-PORT", "GEOIP", "GEOSITE", "IN-NAME", "IN-PORT", "IN-TYPE", "IN-USER", "IP-ASN", "IP-CIDR", "IP-CIDR6", "IP-SUFFIX", "MATCH", "NETWORK", "NOT", "OR", "PROCESS-NAME", "PROCESS-NAME-REGEX", "PROCESS-NAME-WILDCARD", "PROCESS-PATH", "PROCESS-PATH-REGEX", "PROCESS-PATH-WILDCARD", "RULE-SET", "SRC-GEOIP", "SRC-IP-ASN", "SRC-IP-CIDR", "SRC-IP-SUFFIX", "SRC-PORT", "SUB-RULE", "UID"]
     public static let networks: [String: Set<String>] = [
         "trojan": ["grpc", "tcp", "ws"],
         "vless": ["grpc", "h2", "tcp", "ws", "xhttp"],
