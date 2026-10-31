@@ -1,11 +1,11 @@
 {
   "artifacts": {
-    "flowCoreSHA256": "398c703b9da4c773b8b644fe04cf2b51a07712d769726fb442f0f2391f64f873",
+    "flowCoreSHA256": "60ebca0a88821d128dd41feca9e94d36721d77478515cb6d0b20185484baa661",
     "headerSHA256": "bf25e15ff3eeecec9d140fc7190cea240f7d5878af51f017f50faf09dc1c5dee",
-    "interopTestBinarySHA256": "61c952342bb500e2d52893fa448ccf4e010d55ccd429541c28c0236aae7d2f9d",
-    "packetFlowCoreSHA256": "3f10ce385534a9dce2ff8280e56106b058e6fd9be846e3ea8f46b74322bcd0ac"
+    "interopTestBinarySHA256": "2dfc1ba017022f5e1dfb6bbb3bb477c45cf21dca2d0b9ba23170115c00ba53f3",
+    "packetFlowCoreSHA256": "fde83821dd1ec144157eee54f47fe97c7172413006bd06048adf1caac9a23565"
   },
-  "coreCommit": "053216ba8095dda78c7a3331b893316bf2b31474",
+  "coreCommit": "91ffc532eb1475becb8b82b9e7ca0fe5b23c5ab9",
   "coreFeatures": [
     "aether-tuic",
     "shadowquic",
@@ -46,6 +46,7 @@
     "VLESS",
     "VLESS over HTTP/2",
     "VLESS over TLS",
+    "VLESS over TLS with ECH",
     "VLESS over WebSocket",
     "VLESS over gRPC",
     "VLESS with smux",
@@ -63,6 +64,7 @@
     "interoperates_vless_reality_with_xray",
     "interoperates_vless_xhttp_with_xray",
     "interoperates_wireguard_with_wireguard_go_netstack",
+    "interoperates_with_mieru_mihomo_server",
     "interoperates_with_openssh",
     "interoperates_with_snell_mihomo_server",
     "interoperates_with_ssr_python_server"
@@ -76,8 +78,8 @@
     "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
     "ffiSourceSHA256": "c76a6e9acf2825c9c246fbac78a387c931bcb23000ca4c29ecea8059ba3cb141",
     "flowFFISourceSHA256": "63cf2ebcdeeee46867d5cd0a24c61b065cd54ef27a81a21d4410bef45697f833",
-    "interopTestsSHA256": "68da24b3b4a63be5939892c41ca646e95dfa32f82cefcc33f5ba342a2a86f51f",
-    "outboundManagerSHA256": "b1c8668d18d305ca314fa396c79aaf6d4ad6a355427fa2d889a98a7423a08da8",
+    "interopTestsSHA256": "1a12f1e1aa010030e7dec473628a0dbe92131b03e63302be0ce94304e3c0a69b",
+    "outboundManagerSHA256": "136a9fda16384db9a6b18ecdc6003cb4e84935e666f83e83e36e336003450e8c",
     "proxyManagerSHA256": "560fc42d699f21cf5a3801f587f6c76ddb1fce90bbe7a7b0a2eb69cf00ad9548",
     "selectorSourceSHA256": "b1092a6558910c5ab19e62eb613cdde72fe692a284d2b50f269b582fa25fc332"
   }

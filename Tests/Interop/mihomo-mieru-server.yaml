@@ -1,0 +1,45 @@
+allow-lan: false
+bind-address: 127.0.0.1
+ipv6: false
+log-level: warning
+mode: rule
+
+listeners:
+  - name: aetherroute-mieru-59200
+    type: mieru
+    listen: 127.0.0.1
+    port: 59200
+    transport: TCP
+    users:
+      mieru-user: mieru-pass
+  - name: aetherroute-mieru-59201
+    type: mieru
+    listen: 127.0.0.1
+    port: 59201
+    transport: UDP
+    users:
+      mieru-user: mieru-pass
+  - name: aetherroute-mieru-59202
+    type: mieru
+    listen: 127.0.0.1
+    port: 59202
+    transport: TCP
+    users:
+      mieru-user: mieru-pass
+  - name: aetherroute-mieru-59203
+    type: mieru
+    listen: 127.0.0.1
+    port: 59203
+    transport: TCP
+    users:
+      mieru-user: mieru-pass
+  - name: aetherroute-mieru-59204
+    type: mieru
+    listen: 127.0.0.1
+    port: 59204
+    transport: TCP
+    users:
+      mieru-user: mieru-pass
+
+rules:
+  - MATCH,DIRECT

@@ -153,18 +153,12 @@
 - 同步 `ProtocolCoreEvidence.json`（核心提交、核心哈希、源码哈希、互通用例）与许可证；
 - 若移植第三方代码，只取 MIT / Apache-2.0 / BSD 来源，并写入 NOTICE。Mihomo、sing-box、Xray 不在此列：Mihomo、sing-box 为 GPL，Xray 为 MPL-2.0。它们只用作行为参考和互通对端。
 
-### M2-2 SSR（TCP 已完成，剩余 UDP）
-- **已完成**（引擎 `b28f37f`）：
+### M2-2 SSR（TCP 与 UDP 已完成）
+- **已完成**（引擎 `b28f37f` + `b25a7ca`）：
   - 6 种 protocol、5 种 obfs 与全部流加密；
-  - 13 种组合对 Python 服务端互通，连续 5 轮通过；
+  - SSR UDP：`origin`、`auth_sha1_v4`、`auth_aes128_md5` / `auth_aes128_sha1`、`auth_chain_a` / `auth_chain_b` 的 `client_udp_pre_encrypt` 与 `client_udp_post_decrypt`（不经过 obfs，每包独立流密码 IV）；
+  - 13 种组合对 Python 服务端 TCP 2 MiB + 空闲复用 + 8 包 UDP 回显全部通过；
   - 修复 tls1.2_ticket_auth 遇到服务端追加 NewSessionTicket 时的偶发握手失败。
-- **剩余**：SSR UDP。
-  - origin 的 UDP 与 SS 流加密 UDP 相同；
-  - auth_aes128_* 与 auth_chain_* 的 UDP 有各自的包格式（带 uid 与 HMAC 尾部）。
-- **测试先行**：
-  - 先对照 Python 参考实现的 `client_udp_pre_encrypt` / `client_udp_post_decrypt` 写包格式单测；
-  - 再在 SSR 互通用例中加入 8 包 UDP 回显（与其他协议同一检查，重复送达即失败）。
-- **决定**：UDP 计划放进 2.0。若服务端 UDP 在本机回环上无法稳定复现，则 2.0 只支持 TCP，导入时提示"该节点 UDP 不可用"，并写进发布说明。
 
 ### M2-3 xhttp 传输（VLESS）
 - **背景**：1.10.0 的对照工具发现，订阅里只要有一个 xhttp 节点，Mihomo 和我们都会拒绝整份配置。现在我们改为跳过并报告，下一步是真正支持。
@@ -241,14 +235,14 @@
 ### M2-8 Mieru、AmneziaWG、ECH
 - **Mieru**：
   - 范围：mita 服务端，TCP / UDP 传输，用户名 + 密码按时间派生密钥，XChaCha20-Poly1305 分段与填充；`multiplexing` 选项。
-  - 测试：密钥派生与分段单测；互通对官方 mita（固定版本，源码编译）。
+  - 测试：密钥派生与分段单测；互通对 Mihomo 1.19.29 Mieru 服务端（TCP / UDP / 多路复用 / `port-range` 4 例 × 2 轮，含 2 MiB、空闲复用与 8 包 UDP Associate 回显）。
 - **AmneziaWG**：
-  - 范围：`amnezia-wg-option`（jc、jmin、jmax、s1、s2、h1–h4）。在现有 WireGuard 握手前发送垃圾包，修改消息头类型与填充。
-  - 测试：握手包格式单测；互通对 amneziawg-go。
+  - 范围：`amnezia-wg-option`（jc、jmin、jmax、s1、s2、h1–h4）。在现有 WireGuard 握手前发送垃圾包，修改消息头类型与填充，重算 BLAKE2s-128 `mac1`。
+  - 测试：握手包格式与篡改 `mac1` 拒绝单测；互通对 `wireguard-go` 回路网关。
 - **ECH**：
-  - 范围：`ech-opts`（`enable`、`config`）。配置可以由订阅给出，也可以从 DNS HTTPS 记录获取，用 rustls 自带的 ECH 客户端。
+  - 范围：`ech-opts`（`enable`、`config`、`query-server-name`）。配置可以由订阅给出，也可以从 DNS HTTPS 记录（含 RFC 8484 DoH 回退）获取，用 rustls 自带的 ECH 客户端。
   - 测试：rustls ECH 配置解析；互通对 sing-box 的 ECH 入站；真实站点 `crypto.cloudflare.com/cdn-cgi/trace` 显示 `sni=encrypted`。
-- **后续**：三项中若有一项的服务端无法取得，按 3A 末尾的规则处理。
+- **完成情况（2026-10-31）**：引擎 `91ffc53`。三项全部完成并通过单测、变异检查与本机回环互通门禁。
 
 ### M3 规则与 DNS
 - **规则**：IP-ASN、SRC-IP-ASN（用 GeoLite2-ASN mmdb，与 GeoIP 同样下载和更新）；DOMAIN-WILDCARD；IP-SUFFIX、SRC-IP-SUFFIX；SRC-GEOIP；PROCESS-NAME-REGEX / -WILDCARD；IN-PORT / IN-TYPE / IN-NAME / IN-USER；UID；DSCP；`sub-rules` 段与 SUB-RULE。
@@ -347,7 +341,7 @@
 | 盘点 | 完成（2026-10-29） | 本文第 2 节 |
 | M0 | 进行中：引擎能力清单（引擎 `22f8322`）、App 兼容性报告与提示、fast lane 加入引擎单测与能力一致性检查；热修复 VMess/Trojan `network: tcp`（1.11.1） | `ProfileCompatibilityReportTests`、`config::capabilities` 测试 |
 | M1 | 完成（引擎 `83ab7ce`）：Chrome 152 指纹 JA4 与真机逐字一致；VMess / VLESS / Trojan / AnyTLS / REALITY 与 `global-client-fingerprint` 生效；ALPS 客户端；12 协议互通门禁带指纹与不带指纹均通过；9 个真实站点（含 Google）握手并交换数据通过。已知：REALITY 不发送 MLKEM 密钥份额（会触发服务端 HRR） | `tls_fingerprint` 测试、`AETHER_INTEROP_CLIENT_FINGERPRINT=chrome` 互通 |
-| M2 | 进行中：Hysteria v1 完成（引擎 `3ee5b23`）；SSR TCP 完成（引擎 `b28f37f`，13 种组合连续 5 轮通过）；xhttp 完成（引擎 `5a9fc33`，对 Xray 8 例 × 2 轮通过，变异检查：去掉填充得 HTTP 400、包序号从 1 起即卡死）；VLESS encryption 完成（引擎 `ec8343c`，对 Xray 8 例 × 2 轮通过，变异检查：去掉 random 记录头 XOR 得连接重置、去掉 0-RTT PFS 密钥得复用失败）；TUIC v4 完成（引擎 `b594c64`）；Snell v1–v5 完成（引擎 `b325d28`，对 Mihomo 8 例 × 2 轮连续 6 次通过），顺带修复 HTTP obfs 偶发断连（`d840596`）；smux / sing-mux 完成（引擎 `053216b`，h2mux / smux / yamux 对 sing-box 7 例 + 4 并发流单连接校验通过）。待做：SSR UDP、Mieru / AmneziaWG / ECH；App 协议目录与分享链接随 M4 | 互通门禁 `ssr`、`xhttp`、`vless-enc`、`tuic-v4`、`snell`、sing-box mux |
+| M2 | 完成（2026-10-31，引擎 `91ffc53`）：Hysteria v1（`3ee5b23`）；SSR TCP + UDP（`b28f37f` + `b25a7ca`，13 种组合 TCP 2 MiB + 空闲复用 + 8 包 UDP 回显通过）；xhttp（`5a9fc33`，对 Xray 8 例 × 2 轮通过）；VLESS encryption（`ec8343c`，对 Xray 8 例 × 2 轮通过）；TUIC v4（`b594c64`）；Snell v1–v5（`b325d28` + `d840596`）；smux / sing-mux（`053216b`，h2mux / smux / yamux 对 sing-box 7 例 + 4 并发流单连接校验通过）；Mieru TCP/UDP + AmneziaWG + ECH（`91ffc53`）。App 协议目录与分享链接随 M4 | 互通门禁 `matrix`（含 mux、ECH）、`ssr`（TCP+UDP）、`xhttp`、`vless-enc`、`tuic-v4`、`snell`、`mieru`、`wireguard`（含 AmneziaWG） |
 | M3 | 未开始 | |
 | M4 | 未开始 | |
 | M5 | 未开始 | |

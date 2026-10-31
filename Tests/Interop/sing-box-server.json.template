@@ -227,6 +227,31 @@
         "enabled": true,
         "padding": true
       }
+    },
+    {
+      "type": "vless",
+      "tag": "vless-ech-in",
+      "listen": "127.0.0.1",
+      "listen_port": 59115,
+      "users": [
+        {
+          "name": "interop",
+          "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+          "flow": ""
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "localhost",
+        "certificate_path": "__CERT__",
+        "key_path": "__KEY__",
+        "ech": {
+          "enabled": true,
+          "key": [
+            "-----BEGIN ECH KEYS-----\nACAmZ5hSMhFWb8X08zAo3UvW6hY9D2yvzORXPxDlKKuH5ABP/g0ASwAAIAAgO8A7\nkZLHduI2xY5ukD8eA172GGLt2GstYHgGR6gY9F8ADAABAAEAAQACAAEAAwAUcHVi\nbGljLWVjaC5sb2NhbGhvc3QAAA==\n-----END ECH KEYS-----"
+          ]
+        }
+      }
     }
   ],
   "outbounds": [{"type": "direct", "tag": "direct"}],

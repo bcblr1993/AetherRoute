@@ -136,6 +136,9 @@ run_gate tuic-v4 \
 run_gate snell \
   MIHOMO_ARCHIVE="$TOOLS/mihomo-darwin-arm64-v1.19.29.gz" \
   sh "$ROOT/Tests/Interop/run-prebuilt-snell.sh"
+run_gate mieru \
+  MIHOMO_ARCHIVE="$TOOLS/mihomo-darwin-arm64-v1.19.29.gz" \
+  sh "$ROOT/Tests/Interop/run-prebuilt-mieru.sh"
 
 passed_cases=$(grep -c "interoperability and network reset passed" \
   "$OUTPUT/matrix.log" || true)

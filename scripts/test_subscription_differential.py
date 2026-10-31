@@ -273,10 +273,10 @@ class EndToEndTests(unittest.TestCase):
                          "port": ss_port, "cipher": "aes-128-gcm", "password": password},
                         {"name": "dead", "type": "ss", "server": "127.0.0.1",
                          "port": dead_port, "cipher": "aes-128-gcm", "password": password},
-                        # Mihomo loads Mieru; our engine does not yet (2.0 M2).
-                        {"name": "unsupported", "type": "mieru", "server": "127.0.0.1",
-                         "port": ss_port, "transport": "TCP", "username": "u",
-                         "password": password},
+                        # Mihomo loads VMess over KCP; our engine skips it.
+                        {"name": "unsupported", "type": "vmess", "server": "127.0.0.1",
+                         "port": ss_port, "uuid": SECRET_UUID, "alterId": 0,
+                         "cipher": "auto", "network": "kcp"},
                         # As airport subscriptions write AnyTLS nodes. Up to
                         # 1.10.0 our engine refused these options, so every
                         # such node was skipped (or the profile failed).
@@ -315,7 +315,7 @@ class EndToEndTests(unittest.TestCase):
                 report = diff.compare(
                     raw_profile=profile,
                     # Our engine gets the same profile; it must skip the
-                    # Mieru node on its own, and the report must say so.
+                    # unsupported KCP node on its own, and the report must say so.
                     ours_profile=profile,
                     mihomo_binary=mihomo,
                     ours_binary=self.ours,
