@@ -12,6 +12,7 @@ trap cleanup EXIT HUP INT TERM
 "$ROOT/scripts/bootstrap.sh"
 "$ROOT/scripts/test_signing_overrides.sh"
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_engine_dependency_security.py"
+sh "$ROOT/Tests/EngineDependencySecurity/run.sh"
 "$ROOT/scripts/test_temporary_cleanup_guards.sh"
 "$ROOT/scripts/test_external_profile_sanitizer.sh"
 sh "$ROOT/Tests/EngineReconnect/run.sh"

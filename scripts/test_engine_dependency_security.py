@@ -2,7 +2,8 @@
 """Reject lockfile versions covered by the release's reviewed Rust advisories."""
 from pathlib import Path
 import sys
-import tomllib
+import json
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 # Reviewed GHSA floors, including Windows-only lockfile entries. Resolver DNSSEC,
@@ -14,8 +15,28 @@ MINIMUM = {
     "pageant": ((0, 2, 3), "GHSA-g4mp-vgx3-xrvm"),
 }
 
+def locked_packages(text):
+    # Cargo writes name/version as one-line quoted strings. Read only those
+    # policy fields, without requiring Python 3.11's tomllib on the test VM.
+    # Cargo --locked remains responsible for validating the complete document.
+    records = re.split(r"(?m)^\[\[package\]\][ \t]*$", text)[1:]
+    if not records:
+        raise SystemExit("Unsafe engine dependency lockfile: no package records")
+    for record in records:
+        package = {}
+        for field in ("name", "version"):
+            values = re.findall(r'(?m)^' + field + r'[ \t]*=[ \t]*("(?:[^"\\]|\\.)*")[ \t]*(?:#.*)?$', record)
+            if len(values) != 1:
+                raise SystemExit("Unsafe engine dependency lockfile: invalid package field " + field)
+            try:
+                package[field] = json.loads(values[0])
+            except ValueError:
+                raise SystemExit("Unsafe engine dependency lockfile: invalid package string") from None
+        yield package
+
+
 def check(path):
-    packages = tomllib.loads(path.read_text())["package"]
+    packages = locked_packages(path.read_text())
     found = set()
     failures = []
     for package in packages:

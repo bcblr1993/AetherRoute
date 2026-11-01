@@ -34,6 +34,7 @@ if [ -n "$(git -C "$ROOT" status --porcelain -- Core/Engine)" ] \
 fi
 
 step engine-security-floors env PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_engine_dependency_security.py"
+step engine-security-regression sh "$ROOT/Tests/EngineDependencySecurity/run.sh"
 step network-switch env PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_network_switch_gate.py"
 step engine-reconnect sh "$ROOT/Tests/EngineReconnect/run.sh"
 step runtime-environment sh "$ROOT/Tests/RuntimeEnvironment/run.sh"
