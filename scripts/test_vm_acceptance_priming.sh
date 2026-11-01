@@ -66,10 +66,18 @@ elif name=='ssh':
     elif cmd.startswith('set -e\n  cd '): event('install')
     elif cmd.startswith('/usr/libexec/PlistBuddy '): print('2026090501')
     elif cmd.startswith('grep -aq "qaAutomation autoConnect"'): pass
+    elif cmd.startswith('set -e\n  raw='):
+        shell(cmd)
+    elif cmd.startswith('set -e\n  snapshot='):
+        target=base/'home/Library/Group Containers/group.com.aetherroute.desktop/Library/Application Support/AetherRoute/qa-profile-aetherroute-vm-matrix.fixture.yaml'
+        target.write_bytes(sys.stdin.buffer.read()); target.chmod(0o600)
+        print(hashlib.sha256(target.read_bytes()).hexdigest()+'  '+str(target))
+        event('profile-snapshot',host=True)
     elif cmd.startswith('set -e\n  fixture='):
         source=base/'home/Library/Group Containers/group.com.aetherroute.desktop/Library/Application Support/AetherRoute/debug_profile_optimized.yaml'
         target=source.parent/'qa-profile-aetherroute-vm-matrix.fixture.yaml'
         shutil.copy2(source,target); event('profile-snapshot')
+        print(hashlib.sha256(target.read_bytes()).hexdigest()+'  '+str(target))
     elif cmd.startswith('sh ') and 'prime-extensions.sh' in cmd:
         raise SystemExit(subprocess.run(['sh',str(base/'remote/prime-extensions.sh'),'2026090501'],env=os.environ).returncode)
     elif 'vm_matrix_lifecycle.sh' in cmd:
@@ -112,7 +120,7 @@ elif name=='open':
     flag=next(a for a in args if a.startswith('AETHERROUTE_QA_AUTOCONNECT='))
     engine=state.get('engine','tun'); state['app']=True
     if flag.endswith('=0'):
-        if state['case']=='profile-snapshot':
+        if state['case'] in ('profile-snapshot','host-profile','raw-profile-mismatch'):
             (base/'home/Library/Group Containers/group.com.aetherroute.desktop/Library/Application Support/AetherRoute/debug_profile_optimized.yaml').write_text('rewritten-during-prepare')
         assert not state['provider']
         event('prepare',engine=engine,autoConnect=False)
@@ -120,10 +128,13 @@ elif name=='open':
             state['versions'][engine]='2026090501'
         if state['case']=='regresses' and engine=='transparent': state['versions']['tun']='2026081469'
     else:
-        if state['case']=='profile-snapshot':
+        if state['case'] in ('profile-snapshot','host-profile','raw-profile-mismatch'):
             profile=next(a.split('=',1)[1] for a in args if a.startswith('AETHERROUTE_QA_PROFILE_PATH='))
             assert '/Library/Group Containers/group.com.aetherroute.desktop/' in profile, 'QA profile must remain accessible to the sandboxed app'
-            assert pathlib.Path(profile).read_text()=='original-fixture', 'prepare overwrote the scored QA profile'
+            expected='host-authoritative-fixture' if state['case']=='host-profile' else 'original-fixture'
+            assert pathlib.Path(profile).read_text()==expected, 'scored profile did not use the authoritative input'
+            raw=pathlib.Path(profile).parent/'debug_profile_raw.yaml'
+            raw.write_text('wrong-loaded-profile' if state['case']=='raw-profile-mismatch' else expected)
             event('profile-import',original=True)
         assert state['versions']=={'tun':'2026090501','transparent':'2026090501'}
         event('connect',engine=engine); state['provider']=True
@@ -173,6 +184,8 @@ for name in ['tart','scp','ssh','osascript','pgrep','sleep','open','defaults','s
 for case, original, should_pass in [
     ('healthy', 'transparent', True),
     ('profile-snapshot', 'transparent', True),
+    ('host-profile', 'transparent', True),
+    ('raw-profile-mismatch', 'transparent', False),
     ('absent', None, True),
     ('stale', 'transparent', False),
     ('duplicate', 'transparent', False),
@@ -184,9 +197,10 @@ for case, original, should_pass in [
     state_root = temporary / case
     (state_root / 'remote').mkdir(parents=True)
     (state_root / 'home').mkdir()
-    if case=='profile-snapshot':
+    if case in ('profile-snapshot','host-profile','raw-profile-mismatch'):
         profile=state_root/'home/Library/Group Containers/group.com.aetherroute.desktop/Library/Application Support/AetherRoute/debug_profile_optimized.yaml'
-        profile.parent.mkdir(parents=True); profile.write_text('original-fixture')
+        profile.parent.mkdir(parents=True); profile.write_text('wrong-live-fixture' if case=='host-profile' else 'original-fixture')
+        (state_root/'authoritative profile.json').write_text('host-authoritative-fixture')
     state = {'case':case, 'versions':{'tun':'2026081469','transparent':'2026081469'},
              'app':False,'provider':False,'events':[],
              'defaultRoutingMode':'global','AetherRoute.LocalProxySettings':'original-proxy-data'}
@@ -196,7 +210,9 @@ for case, original, should_pass in [
                HOME=str(state_root/'home'), MOCK_STATE_ROOT=str(state_root),
                AETHERROUTE_MATRIX_ENGINES='tun', AETHERROUTE_MATRIX_ROUTING='rule global')
     env.pop('AETHERROUTE_VM_QA_PROFILE',None)
-    if case=='profile-snapshot': env['AETHERROUTE_VM_QA_PROFILE']='debug-optimized'
+    env.pop('AETHERROUTE_VM_QA_PROFILE_SOURCE',None)
+    if case in ('profile-snapshot','host-profile','raw-profile-mismatch'): env['AETHERROUTE_VM_QA_PROFILE']='debug-optimized'
+    if case=='host-profile': env['AETHERROUTE_VM_QA_PROFILE_SOURCE']=str(state_root/'authoritative profile.json')
     args=[str(driver),str(candidate),'mock-vm']
     if case!='stale': args.append(str(state_root/'report'))
     completed = subprocess.run(args, env=env, capture_output=True, text=True, timeout=30)
@@ -204,13 +220,17 @@ for case, original, should_pass in [
         raise AssertionError(case+': '+completed.stdout+completed.stderr)
     final=json.loads((state_root/'state.json').read_text())
     events=final['events']
-    if case=='profile-snapshot':
+    if case in ('profile-snapshot','host-profile','raw-profile-mismatch'):
         assert sum(e['kind']=='profile-import' for e in events)==2
         assert next(i for i,e in enumerate(events) if e['kind']=='profile-snapshot') < next(i for i,e in enumerate(events) if e['kind']=='prepare')
     prepares=[e for e in events if e['kind']=='prepare']
     assert [e['engine'] for e in prepares]==['tun','transparent'], (case,events)
     assert all(e['autoConnect'] is False for e in prepares)
-    if should_pass or case=='quit-fails':
+    if case=='raw-profile-mismatch':
+        assert not any(e['kind']=='score' for e in events),events
+        assert sum(e['kind']=='quit-verified' for e in events)==2
+        assert not final['app']
+    elif should_pass or case=='quit-fails':
         assert sum(e['kind']=='score' for e in events)==(2 if should_pass else 1)
         scoring=next(i for i,e in enumerate(events) if e['kind']=='scoring-setup')
         prepared=max(i for i,e in enumerate(events[:scoring]) if e['kind']=='prepare')
@@ -234,12 +254,26 @@ for case, original, should_pass in [
     else: report=state_root/'report'
     assert report.is_dir() and (report/'extension-priming.txt').is_file()
     result=(report/'result.txt').read_text()
-    stage=('matrix' if should_pass else 'network-baseline' if case=='baseline-fails'
+    stage=('matrix' if should_pass or case=='raw-profile-mismatch' else 'network-baseline' if case=='baseline-fails'
            else 'quit-tun-rule' if case=='quit-fails' else 'extension-priming')
     assert 'stage='+stage in result
     assert ('exit_status=0' in result)==should_pass
     subprocess.run(['shasum','-a','256','-c','SHA256SUMS'],cwd=report,check=True,capture_output=True)
     assert not list((state_root/'remote').iterdir())
     print('PASS: '+case)
+# Invalid host inputs must fail before installing, booting or creating reports.
+empty=temporary/'empty-host-profile.json'; empty.touch()
+for label, source, expected in [('relative','relative.json',64),
+                                ('missing',str(temporary/'absent.json'),66),
+                                ('empty',str(empty),66)]:
+    report=temporary/('invalid-host-'+label)
+    env=dict(os.environ,PATH=str(mock_bin)+os.pathsep+os.environ['PATH'],
+             MOCK_STATE_ROOT=str(temporary/'must-not-contact-vm'),
+             AETHERROUTE_VM_QA_PROFILE_SOURCE=source)
+    completed=subprocess.run([str(driver),str(candidate),'mock-vm',str(report)],
+                             env=env,capture_output=True,text=True,timeout=10)
+    assert completed.returncode==expected,(label,completed.stdout,completed.stderr)
+    assert not report.exists(),label
+    print('PASS: invalid-host-'+label)
 print('VM extension priming regressions passed: two-engine prepare, strict registrations, restoration, failed-score exclusion, verified mode teardown and persistent evidence.')
 PY

@@ -24,6 +24,7 @@ VM_USER=${AETHERROUTE_VM_USER:-chenxu}
 ENGINES=${AETHERROUTE_MATRIX_ENGINES:-tun transparent}
 ROUTING_MODES=${AETHERROUTE_MATRIX_ROUTING:-rule global direct}
 QA_PROFILE=${AETHERROUTE_VM_QA_PROFILE:-}
+QA_PROFILE_SOURCE=${AETHERROUTE_VM_QA_PROFILE_SOURCE:-}
 MIN_FREE_KB=${AETHERROUTE_VM_MIN_FREE_KB:-2097152}
 BURST_REMOTE_ENV=
 if [ -n "${AETHERROUTE_BURST_URL:-}" ]; then
@@ -49,6 +50,13 @@ done
 case "$MIN_FREE_KB" in ''|*[!0-9]*) echo "invalid disk budget" >&2; exit 64 ;; esac
 test "$engine_count" -gt 0 && test "$routing_count" -gt 0 || exit 64
 case "$QA_PROFILE" in ''|debug-optimized) ;; *) echo "invalid QA profile fixture" >&2; exit 64 ;; esac
+if [ -n "$QA_PROFILE_SOURCE" ]; then
+  case "$QA_PROFILE_SOURCE" in /*) ;; *) echo "QA profile source must be absolute" >&2; exit 64 ;; esac
+  test -f "$QA_PROFILE_SOURCE" && test -r "$QA_PROFILE_SOURCE" && test -s "$QA_PROFILE_SOURCE" || {
+    echo "QA profile source must be a readable nonempty file" >&2; exit 66;
+  }
+  QA_PROFILE=debug-optimized
+fi
 
 usage() {
   echo "usage: $0 /absolute/candidate.zip [vm-name] [/absolute/report-dir]" >&2
@@ -226,7 +234,24 @@ if [ "$QA_PROFILE" = debug-optimized ]; then
   # prepare() regenerates the live debug profile from the active catalog.
   # Preserve the requested fixture before either prepare-only launch; every
   # scored combination must import these same bytes, not the regenerated file.
-  vm "set -e
+  if [ -n "$QA_PROFILE_SOURCE" ]; then
+    # A boot/login launch can rewrite guest debug files before this driver
+    # starts. Stream the explicit host input straight to the owned snapshot.
+    source_sha=$(shasum -a 256 "$QA_PROFILE_SOURCE" | awk '{print $1}')
+    vm "set -e
+  snapshot=\$HOME/Library/Group\ Containers/group.com.aetherroute.desktop/Library/Application\ Support/AetherRoute/qa-profile-${REMOTE_WORK##*/}.yaml
+  test ! -e \"\$snapshot\"
+  umask 077
+  cat >\"\$snapshot\"
+  chmod 600 \"\$snapshot\"
+  shasum -a 256 \"\$snapshot\"" <"$QA_PROFILE_SOURCE" >"$REPORT_DIR/profile-fixture.txt"
+    snapshot_sha=$(awk 'NR == 1 {print $1}' "$REPORT_DIR/profile-fixture.txt")
+    test "$snapshot_sha" = "$source_sha" && \
+      test "$(shasum -a 256 "$QA_PROFILE_SOURCE" | awk '{print $1}')" = "$source_sha" || {
+      echo "QA profile source changed during transfer" >&2; exit 1;
+    }
+  else
+    vm "set -e
   fixture=\$HOME/Library/Group\ Containers/group.com.aetherroute.desktop/Library/Application\ Support/AetherRoute/debug_profile_optimized.yaml
   snapshot=\$HOME/Library/Group\ Containers/group.com.aetherroute.desktop/Library/Application\ Support/AetherRoute/qa-profile-${REMOTE_WORK##*/}.yaml
   test -f \"\$fixture\"
@@ -234,6 +259,11 @@ if [ "$QA_PROFILE" = debug-optimized ]; then
   cp \"\$fixture\" \"\$snapshot\"
   chmod 600 \"\$snapshot\"
   shasum -a 256 \"\$snapshot\"" >"$REPORT_DIR/profile-fixture.txt"
+  fi
+  fixture_sha=$(awk 'NR == 1 {print $1}' "$REPORT_DIR/profile-fixture.txt")
+  printf '%s\n' "$fixture_sha" | grep -Eq '^[0-9a-f]{64}$' || {
+    echo "QA profile snapshot has no valid SHA-256" >&2; exit 1;
+  }
 fi
 RUN_STAGE=extension-priming
 cat >"$WORK/prime-extensions.sh" <<'PRIME'
@@ -405,14 +435,33 @@ for engine in $ENGINES; do
       readiness_failed=1
     fi
 
+    if [ "$QA_PROFILE" = debug-optimized ]; then
+      active_profile_report="$REPORT_DIR/profile-active-$engine-$routing.txt"
+      if ! vm "set -e
+  raw=\$HOME/Library/Group\ Containers/group.com.aetherroute.desktop/Library/Application\ Support/AetherRoute/debug_profile_raw.yaml
+  test -f \"\$raw\"
+  shasum -a 256 \"\$raw\"" >"$active_profile_report"; then
+        log "cannot verify active QA profile for $label"
+        readiness_failed=1
+      fi
+      active_sha=$(awk 'NR == 1 {print $1}' "$active_profile_report")
+      if [ "$active_sha" != "$fixture_sha" ]; then
+        log "active QA profile differs from the immutable fixture for $label"
+        readiness_failed=1
+      fi
+    fi
+
     remote_report=$REMOTE_WORK/acceptance-$engine-$routing.txt
-    if vm "AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=YES AETHERROUTE_ACCEPTANCE_ALLOW_UNROUTED_IPV6=YES $BURST_REMOTE_ENV ${AETHERROUTE_IDLE_REUSE_HOST:+AETHERROUTE_IDLE_REUSE_HOST=\"$AETHERROUTE_IDLE_REUSE_HOST\"} '$REMOTE_WORK/test_runtime_acceptance.sh' $BUILD '$remote_report'" \
+    if [ "$readiness_failed" -ne 0 ]; then
+      failures=1
+      printf '%s\n' 'not scored: candidate readiness or active profile verification failed' \
+        >"$WORK/matrix-$engine-$routing.out"
+    elif vm "AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=YES AETHERROUTE_ACCEPTANCE_ALLOW_UNROUTED_IPV6=YES $BURST_REMOTE_ENV ${AETHERROUTE_IDLE_REUSE_HOST:+AETHERROUTE_IDLE_REUSE_HOST=\"$AETHERROUTE_IDLE_REUSE_HOST\"} '$REMOTE_WORK/test_runtime_acceptance.sh' $BUILD '$remote_report'" \
       >"$WORK/matrix-$engine-$routing.out" 2>&1; then
       failures=0
     else
       failures=$?
     fi
-    failures=$((failures + readiness_failed))
     tail -30 "$WORK/matrix-$engine-$routing.out"
     if [ -n "$REPORT_DIR" ]; then
       cp "$WORK/matrix-$engine-$routing.out" \

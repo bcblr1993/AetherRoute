@@ -42,6 +42,11 @@ All notable changes to AetherRoute are recorded here. The format follows
   live debug files, and quote remote paths correctly. A driver regression first
   failed on the old path, then verifies that both scored combinations consume
   the original fixture after preparation overwrites the live file.
+- Accept an explicit host-side QA fixture so guest boot/login cannot replace
+  the intended input before staging. Compare the active raw profile hash with
+  the immutable snapshot before every scored combination, skip scoring on a
+  mismatch and still verify teardown. Driver regressions first reproduced both
+  stale input and falsely successful scoring, then passed.
 - Make QA automation wait for local profile import before connecting, stop on
   rejected/failed imports, and prevent normal startup restoration from racing
   QA setup. Tests compile and execute the real startup branches, first failing
