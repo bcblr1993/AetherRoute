@@ -140,13 +140,10 @@ mkdir -p "$STAGED_ROOT/.git/refs/heads"
 printf '%s\n' "$local_commit" > "$STAGED_ROOT/.git/refs/heads/main"
 printf 'ref: refs/heads/main\n' > "$STAGED_ROOT/.git/HEAD"
 
-test -f "$INTEROP_TEST_SOURCE" || {
-  echo "Pinned protocol interoperability verifier is missing" >&2
-  exit 1
-}
 interop_destination="$PAYLOAD/references/interop-tools/clash-rs-2272555"
 mkdir -p "$interop_destination"
-rsync -a "$INTEROP_TEST_SOURCE" "$interop_destination/"
+stage_remote_interop_verifier "$INTEROP_TEST_SOURCE" \
+  "${AETHERROUTE_INTEROP_TEST_BINARY:-}" "$interop_destination/clash-lib-protocol-tests"
 
 "$STAGED_ROOT/scripts/source_manifest.sh" > "$WORK/source-manifest-staged.txt"
 cmp -s "$EXPECTED_SOURCE" "$WORK/source-manifest-staged.txt" || {

@@ -7,3 +7,12 @@ stage_remote_source_directory() {
     rsync -a "$1/" "$2/"
   fi
 }
+
+stage_remote_interop_verifier() {
+  interop_stage_source=${2:-$1}
+  if [ ! -f "$interop_stage_source" ] || [ ! -x "$interop_stage_source" ]; then
+    echo "Pinned protocol interoperability verifier is missing or not executable" >&2
+    return 1
+  fi
+  rsync -a --checksum "$interop_stage_source" "$3"
+}

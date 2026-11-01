@@ -38,11 +38,31 @@ All notable changes to AetherRoute are recorded here. The format follows
   failures without hidden retries. Use the lab's supervised empty-response
   origin for release acceptance, checking response identity and internal
   listener ports and forwarding the URL safely to the VM.
+- Snapshot the requested VM QA profile before prepare-only launches regenerate
+  live debug files, and quote remote paths correctly. A driver regression first
+  failed on the old path, then verifies that both scored combinations consume
+  the original fixture after preparation overwrites the live file.
+- Make QA automation wait for local profile import before connecting, stop on
+  rejected/failed imports, and prevent normal startup restoration from racing
+  QA setup. Tests compile and execute the real startup branches, first failing
+  on both old races. Store staged QA fixtures inside the sandbox's App Group.
+- Convert JSON Clash profiles into block YAML in the runtime copy before
+  section-based routing rewrites. Preserve the imported text and nested proxy
+  options exactly; round-trip regressions first reproduced invalid runtime YAML.
 
 ### Validation
 
-- Initial complete local regression passed: 571 XCTest, 113 Swift Testing,
-  98 transparent-proxy and 24 bridge tests. Fast lane passed in 66 seconds.
+- Complete local regression passed: 571 XCTest, 113 Swift Testing,
+  98 transparent-proxy and 24 bridge tests. Final fast lane passed in 61 seconds.
+- Default and Chrome-fingerprint full protocol interoperability matrices passed;
+  Chrome real-site checks covered all nine sites. The final deployed lab
+  comparison reached 43/43 working nodes in both engines; initial reference
+  failures and the unstable existing REALITY node are retained in the release
+  exceptions rather than silently retried away.
+- Both full 300-second physical UI performance profiles passed with menu-bar
+  traffic enabled. Showcase: page-switch p95 147.5 ms / max 192.5 ms, footprint
+  median 73 MB / peak 88 MB / latter-half growth -9 MB. Large: p95 147.6 ms /
+  max 194.9 ms, median 74 MB / peak 89 MB / growth +1 MB.
 - Live 2.0.1 memory investigation found a stable 195.1–197.6 MB physical
   footprint in six early samples, with font-cache retention paths. A later
   footprint was 388.7 MB, while heap allocations grew by only 4.7 MB; these
@@ -56,6 +76,11 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ### Security
 
+- Configuration parse errors no longer echo complete profiles or rejected
+  values into returned errors and logs. Keep a fixed failure stage and source
+  location when available. Regression cases first reproduced disclosure for
+  syntax, merge-anchor, typed-value and malformed-node errors, then passed in
+  normal and strict parsing.
 - Exclude the private Sparkle signing file and host signing configuration from
   remote source staging. Keep public-key validation intact. A synthetic-key
   regression first caught the private file in the snapshot, then verifies its
@@ -77,8 +102,8 @@ All notable changes to AetherRoute are recorded here. The format follows
   reproduces Broken pipe/retries and succeeds after the client's HTTPS fallback
   on the same proxy path. This is a remote WebSocket size-limit finding, not an
   AetherRoute data-plane fix. See `Docs/CodexWebSocketDiagnostics.md` for scope
-  and reproduction evidence. New diagnostics are source changes, not installed
-  in the currently running 2.0.1 extension.
+  and reproduction evidence. These diagnostics are included in 2.0.2; the
+  previously running 2.0.1 extension did not contain them.
 
 ## [2.0.1] - 2026-10-31
 

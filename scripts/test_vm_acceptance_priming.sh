@@ -47,6 +47,7 @@ def save(): state_path.write_text(json.dumps(state))
 def event(kind, **values):
     state['events'].append(dict(kind=kind,**values)); save()
 def shell(command):
+    command=command.replace('/tmp/aetherroute-vm-matrix.fixture',str(base/'remote'))
     raise SystemExit(subprocess.run(['sh','-c',command],env=os.environ).returncode)
 if name=='tart':
     if args==['list']: print('local mock-vm running')
@@ -65,6 +66,10 @@ elif name=='ssh':
     elif cmd.startswith('set -e\n  cd '): event('install')
     elif cmd.startswith('/usr/libexec/PlistBuddy '): print('2026090501')
     elif cmd.startswith('grep -aq "qaAutomation autoConnect"'): pass
+    elif cmd.startswith('set -e\n  fixture='):
+        source=base/'home/Library/Group Containers/group.com.aetherroute.desktop/Library/Application Support/AetherRoute/debug_profile_optimized.yaml'
+        target=source.parent/'qa-profile-aetherroute-vm-matrix.fixture.yaml'
+        shutil.copy2(source,target); event('profile-snapshot')
     elif cmd.startswith('sh ') and 'prime-extensions.sh' in cmd:
         raise SystemExit(subprocess.run(['sh',str(base/'remote/prime-extensions.sh'),'2026090501'],env=os.environ).returncode)
     elif 'vm_matrix_lifecycle.sh' in cmd:
@@ -84,6 +89,7 @@ elif name=='ssh':
     elif cmd.startswith('for path in /tmp/candidate.zip'): pass
     elif cmd.startswith("find '/tmp/aetherroute-vm-matrix."):
         for child in (base/'remote').iterdir(): child.unlink()
+        for child in (base/'home').rglob('qa-profile-aetherroute-vm-matrix.fixture.yaml'): child.unlink()
         event('remote-cleanup')
     elif cmd.startswith('AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=YES '):
         assert state['versions']=={'tun':'2026090501','transparent':'2026090501'}
@@ -103,16 +109,22 @@ elif name=='pgrep':
 elif name=='sleep': pass
 elif name=='open':
     assert args[:2]==['-a','/Applications/AetherRoute.app']
-    flag=args[-1]
-    assert flag in ('AETHERROUTE_QA_AUTOCONNECT=0','AETHERROUTE_QA_AUTOCONNECT=1')
+    flag=next(a for a in args if a.startswith('AETHERROUTE_QA_AUTOCONNECT='))
     engine=state.get('engine','tun'); state['app']=True
     if flag.endswith('=0'):
+        if state['case']=='profile-snapshot':
+            (base/'home/Library/Group Containers/group.com.aetherroute.desktop/Library/Application Support/AetherRoute/debug_profile_optimized.yaml').write_text('rewritten-during-prepare')
         assert not state['provider']
         event('prepare',engine=engine,autoConnect=False)
         if not (state['case']=='stale' and engine=='transparent'):
             state['versions'][engine]='2026090501'
         if state['case']=='regresses' and engine=='transparent': state['versions']['tun']='2026081469'
     else:
+        if state['case']=='profile-snapshot':
+            profile=next(a.split('=',1)[1] for a in args if a.startswith('AETHERROUTE_QA_PROFILE_PATH='))
+            assert '/Library/Group Containers/group.com.aetherroute.desktop/' in profile, 'QA profile must remain accessible to the sandboxed app'
+            assert pathlib.Path(profile).read_text()=='original-fixture', 'prepare overwrote the scored QA profile'
+            event('profile-import',original=True)
         assert state['versions']=={'tun':'2026090501','transparent':'2026090501'}
         event('connect',engine=engine); state['provider']=True
     save()
@@ -160,6 +172,7 @@ for name in ['tart','scp','ssh','osascript','pgrep','sleep','open','defaults','s
 
 for case, original, should_pass in [
     ('healthy', 'transparent', True),
+    ('profile-snapshot', 'transparent', True),
     ('absent', None, True),
     ('stale', 'transparent', False),
     ('duplicate', 'transparent', False),
@@ -171,6 +184,9 @@ for case, original, should_pass in [
     state_root = temporary / case
     (state_root / 'remote').mkdir(parents=True)
     (state_root / 'home').mkdir()
+    if case=='profile-snapshot':
+        profile=state_root/'home/Library/Group Containers/group.com.aetherroute.desktop/Library/Application Support/AetherRoute/debug_profile_optimized.yaml'
+        profile.parent.mkdir(parents=True); profile.write_text('original-fixture')
     state = {'case':case, 'versions':{'tun':'2026081469','transparent':'2026081469'},
              'app':False,'provider':False,'events':[],
              'defaultRoutingMode':'global','AetherRoute.LocalProxySettings':'original-proxy-data'}
@@ -179,6 +195,8 @@ for case, original, should_pass in [
     env = dict(os.environ, PATH=str(mock_bin)+os.pathsep+os.environ['PATH'],
                HOME=str(state_root/'home'), MOCK_STATE_ROOT=str(state_root),
                AETHERROUTE_MATRIX_ENGINES='tun', AETHERROUTE_MATRIX_ROUTING='rule global')
+    env.pop('AETHERROUTE_VM_QA_PROFILE',None)
+    if case=='profile-snapshot': env['AETHERROUTE_VM_QA_PROFILE']='debug-optimized'
     args=[str(driver),str(candidate),'mock-vm']
     if case!='stale': args.append(str(state_root/'report'))
     completed = subprocess.run(args, env=env, capture_output=True, text=True, timeout=30)
@@ -186,6 +204,9 @@ for case, original, should_pass in [
         raise AssertionError(case+': '+completed.stdout+completed.stderr)
     final=json.loads((state_root/'state.json').read_text())
     events=final['events']
+    if case=='profile-snapshot':
+        assert sum(e['kind']=='profile-import' for e in events)==2
+        assert next(i for i,e in enumerate(events) if e['kind']=='profile-snapshot') < next(i for i,e in enumerate(events) if e['kind']=='prepare')
     prepares=[e for e in events if e['kind']=='prepare']
     assert [e['engine'] for e in prepares]==['tun','transparent'], (case,events)
     assert all(e['autoConnect'] is False for e in prepares)

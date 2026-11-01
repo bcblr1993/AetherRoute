@@ -80,7 +80,9 @@ cleanup() {
   exit_status=$?
   trap - EXIT HUP INT TERM
   if [ -n "$REMOTE_WORK" ]; then
-    if ! vm "find '$REMOTE_WORK' -depth -delete" \
+    if ! vm "find '$REMOTE_WORK' -depth -delete
+      snapshot=\$HOME/Library/Group\ Containers/group.com.aetherroute.desktop/Library/Application\ Support/AetherRoute/qa-profile-${REMOTE_WORK##*/}.yaml
+      if [ -f \"\$snapshot\" ]; then find \"\$snapshot\" -delete; fi" \
       >"$REPORT_DIR/cleanup.txt" 2>&1; then
       echo "VM staging cleanup failed; see $REPORT_DIR/cleanup.txt" >&2
       exit_status=1
@@ -220,6 +222,19 @@ vm 'grep -aq "qaAutomation autoConnect" \
 # any scored run so its checks cannot observe the other engine's old build.
 # This helper owns only the temporary engine preference; every exit restores
 # its original value (including an originally absent key).
+if [ "$QA_PROFILE" = debug-optimized ]; then
+  # prepare() regenerates the live debug profile from the active catalog.
+  # Preserve the requested fixture before either prepare-only launch; every
+  # scored combination must import these same bytes, not the regenerated file.
+  vm "set -e
+  fixture=\$HOME/Library/Group\ Containers/group.com.aetherroute.desktop/Library/Application\ Support/AetherRoute/debug_profile_optimized.yaml
+  snapshot=\$HOME/Library/Group\ Containers/group.com.aetherroute.desktop/Library/Application\ Support/AetherRoute/qa-profile-${REMOTE_WORK##*/}.yaml
+  test -f \"\$fixture\"
+  test ! -e \"\$snapshot\"
+  cp \"\$fixture\" \"\$snapshot\"
+  chmod 600 \"\$snapshot\"
+  shasum -a 256 \"\$snapshot\"" >"$REPORT_DIR/profile-fixture.txt"
+fi
 RUN_STAGE=extension-priming
 cat >"$WORK/prime-extensions.sh" <<'PRIME'
 #!/bin/sh
@@ -365,9 +380,9 @@ for engine in $ENGINES; do
       test \"\$(defaults read \"\$PREF\" AetherRoute.NetworkEngineMode)\" = $engine
       test \"\$(defaults read \"\$PREF\" defaultRoutingMode)\" = $routing
       if [ '$QA_PROFILE' = debug-optimized ]; then
-        fixture=\$HOME/Library/Group\ Containers/group.com.aetherroute.desktop/Library/Application\ Support/AetherRoute/debug_profile_optimized.yaml
-        test -f "\$fixture"
-        open -a /Applications/AetherRoute.app --env AETHERROUTE_QA_AUTOCONNECT=1 --env AETHERROUTE_QA_PROFILE_PATH="\$fixture"
+        fixture=\$HOME/Library/Group\ Containers/group.com.aetherroute.desktop/Library/Application\ Support/AetherRoute/qa-profile-${REMOTE_WORK##*/}.yaml
+        test -f \"\$fixture\"
+        open -a /Applications/AetherRoute.app --env AETHERROUTE_QA_AUTOCONNECT=1 --env AETHERROUTE_QA_PROFILE_PATH=\"\$fixture\"
       else
         open -a /Applications/AetherRoute.app --env AETHERROUTE_QA_AUTOCONNECT=1
       fi"

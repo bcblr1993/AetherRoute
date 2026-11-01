@@ -49,7 +49,7 @@ changes the machine's network settings.
 
 The new tests are in the existing XCTest targets executed by `scripts/test.sh`.
 No Rust engine source or production dependency was changed. The subsequent
-release work targets 2.0.2 / 2026110102; the installed extension used for the
+release work targets 2.0.2 / 2026110104; the installed extension used for the
 measurements below was still 2.0.1.
 
 ## Live memory investigation — 2026-11-01
@@ -102,6 +102,14 @@ heap inventories, however, shows only 4,652,777 additional allocated bytes
 2.5 KiB classes grew by roughly 1,000 allocations each. Diagnostic traversal
 can change page residency, so these footprint and allocation changes must not
 be equated or used alone to claim a new leak.
+
+A further `vmmap -summary` sample at 2026-11-01 22:08:53, still from PID 12299
+without a restart, reports a current footprint of 139.5M and a historical peak
+of 400.1M. Its RSS was approximately 484 MiB immediately beforehand. This
+observed decline further rules out treating the earlier footprint peak or RSS
+as an equal amount of permanently leaked allocations; it does not isolate all
+retention sources or replace the targeted renderer regression. The snapshot is
+`memory/vmmap-app-before-update.txt` in the evidence directory.
 
 The actual SwiftUI `MenuBarExtra` consumer exposed a failure missed by the
 offscreen controls: rapidly changing traffic images raised a CoreText

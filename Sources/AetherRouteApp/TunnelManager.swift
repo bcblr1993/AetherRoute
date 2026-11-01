@@ -993,9 +993,10 @@ final class TunnelManager: ObservableObject {
     private func restorePreviousConnectionIfRequested() async {
         guard !isUIReviewMode else { return }
 #if AETHERROUTE_QA_AUTOMATION
-        if qaAutomationEnvironment["AETHERROUTE_QA_AUTOCONNECT"] == "0" {
+        if let automation = qaAutomationEnvironment["AETHERROUTE_QA_AUTOCONNECT"],
+           automation == "0" || automation == "1" {
             Self.runtimeLogger.info(
-                "stage=startup autoReconnect skipped reason=qaAutomationAutoconnectDisabled"
+                "stage=startup autoReconnect skipped reason=qaAutomationOwnsStartup"
             )
             return
         }
@@ -1181,6 +1182,15 @@ final class TunnelManager: ObservableObject {
                 "stage=qaAutomation localProfile requested path=\(localPath, privacy: .public)"
             )
             importProfile(from: fileURL)
+            guard let importTask = profileImportTask else {
+                Self.runtimeLogger.error("stage=qaAutomation localProfile failed reason=notStarted")
+                return
+            }
+            await importTask.value
+            guard !profileMessageIsError else {
+                Self.runtimeLogger.error("stage=qaAutomation localProfile failed reason=importFailed")
+                return
+            }
         } else if let subURL = qaAutomationEnvironment["AETHERROUTE_QA_SUBSCRIPTION_URL"], !subURL.isEmpty {
             Self.runtimeLogger.info(
                 "stage=qaAutomation autoImport requested url=\(subURL.sanitizedURLForLogging, privacy: .private)"

@@ -73,6 +73,21 @@ test ! -e "$WORK/staged-config/Signing.json"
 test ! -e "$WORK/staged-config/sparkle_ed25519_priv.key"
 cmp "$FIXTURE/Config/sparkle_ed25519_pub.key" "$WORK/staged-config/sparkle_ed25519_pub.key"
 
+# The worker always invokes this fixed filename, even when the selected fresh
+# Cargo binary has a hash suffix. Never silently fall back to a stale verifier.
+printf 'old verifier\n' >"$WORK/default-verifier"
+printf 'new verifier\n' >"$WORK/fresh-cargo-binary"
+touch -r "$WORK/default-verifier" "$WORK/fresh-cargo-binary"
+chmod +x "$WORK/default-verifier" "$WORK/fresh-cargo-binary"
+stage_remote_interop_verifier "$WORK/default-verifier" "$WORK/fresh-cargo-binary" "$WORK/clash-lib-protocol-tests"
+cmp "$WORK/fresh-cargo-binary" "$WORK/clash-lib-protocol-tests"
+stage_remote_interop_verifier "$WORK/default-verifier" '' "$WORK/clash-lib-protocol-tests"
+cmp "$WORK/default-verifier" "$WORK/clash-lib-protocol-tests"
+if stage_remote_interop_verifier "$WORK/default-verifier" "$WORK/missing-verifier" "$WORK/clash-lib-protocol-tests" 2>/dev/null; then
+  echo 'missing explicit verifier silently fell back to stale default' >&2
+  exit 1
+fi
+
 find "$FIXTURE/Core/Engine/src/main.rs" -delete
 if sh "$FIXTURE/scripts/source_manifest.sh" >"$WORK/missing.txt" 2>"$WORK/missing.err"; then
   echo "source manifest accepted a checkout missing a tracked engine file" >&2

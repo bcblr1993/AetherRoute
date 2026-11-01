@@ -36,8 +36,9 @@ public struct ActiveProfile: Codable, Equatable, Sendable {
     /// choices and other settings stay bound to `yaml`, the text the
     /// provider sent, so changing an override never loses them.
     public var runtimeYAML: String {
-        guard let overrides else { return yaml }
-        return ProfileOverrideCompiler.apply(overrides, to: yaml).yaml
+        let text = ProfileRuntimeYAML.canonicalize(yaml)
+        guard let overrides else { return text }
+        return ProfileOverrideCompiler.apply(overrides, to: text).yaml
     }
 
     /// The same profile with other overrides (nil clears them).

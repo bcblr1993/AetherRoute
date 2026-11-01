@@ -249,7 +249,7 @@ public enum DomesticRoutingOptimizer {
         remoteRules: [String] = []
     ) -> String {
         guard !yaml.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return yaml }
-        let lines = yaml.components(separatedBy: "\n")
+        let lines = ProfileRuntimeYAML.canonicalize(yaml).components(separatedBy: "\n")
         guard !lines.isEmpty else { return yaml }
 
         let sections = parseTopLevelSections(from: lines)
