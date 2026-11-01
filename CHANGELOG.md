@@ -6,7 +6,7 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
-## [2.0.2] - 2026-11-01
+## [2.0.2] - 2026-11-02
 
 ### Fixed
 
@@ -53,19 +53,28 @@ All notable changes to AetherRoute are recorded here. The format follows
   optimization; preserve plain URI slashes and validate all three resulting
   configurations with the actual core.
 
+- Remove the exact physical-test candidate file through macOS symlinked `/tmp`
+  rather than walking the symlink root. A real-command regression first reproduced
+  the leftover file, then passed while preserving another build.
+
 ### Validation
 
 - Complete local regression passed: 571 XCTest, 113 Swift Testing,
-  98 transparent-proxy and 24 bridge tests. Final fast lane passed in 61 seconds.
+  98 transparent-proxy and 24 bridge tests. Final fast lane passed in 67 seconds.
 - Default and Chrome-fingerprint full protocol interoperability matrices passed;
   Chrome real-site checks covered all nine sites. The final deployed lab
   comparison reached 43/43 working nodes in both engines; initial reference
   failures and the unstable existing REALITY node are retained in the release
   exceptions rather than silently retried away.
 - Both full 300-second physical UI performance profiles passed with menu-bar
-  traffic enabled. Showcase: page-switch p95 147.5 ms / max 192.5 ms, footprint
-  median 73 MB / peak 88 MB / latter-half growth -9 MB. Large: p95 147.6 ms /
-  max 194.9 ms, median 74 MB / peak 89 MB / growth +1 MB.
+  traffic enabled. Showcase: page-switch p95 149.8 ms / max 179.2 ms, footprint
+  median 71 MB / peak 86 MB / latter-half growth +2 MB. Large: p95 148.1 ms /
+  max 186.9 ms, median 72 MB / peak 87 MB / growth +2 MB.
+- Final 0105 VM matrix passed all six engine/routing combinations, followed by
+  the full remote source gate with unchanged source, proxies and default routes.
+  DMG-bound physical idle-reuse and 2 MiB upload checks passed in both engines.
+  Six real interface switches recovered in 2/2/2/2/2/2 seconds (TUN) and
+  4/2/2/1/3/2 seconds (transparent), without manual reconnects.
 - Live 2.0.1 memory investigation found a stable 195.1–197.6 MB physical
   footprint in six early samples, with font-cache retention paths. A later
   footprint was 388.7 MB, while heap allocations grew by only 4.7 MB; these
@@ -79,7 +88,7 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ### Security
 
-- Configuration parse errors no longer echo complete profiles or rejected
+- YAML/JSON deserialization errors no longer echo complete profiles or rejected
   values into returned errors and logs. Keep a fixed failure stage and source
   location when available. Regression cases first reproduced disclosure for
   syntax, merge-anchor, typed-value and malformed-node errors, then passed in

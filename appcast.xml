@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 2.0.1 (Build 2026103102)</title>
-            <pubDate>Sat, 31 Oct 2026 22:06:33 +0800</pubDate>
-            <sparkle:version>2026103102</sparkle:version>
-            <sparkle:shortVersionString>2.0.1</sparkle:shortVersionString>
+            <title>Version 2.0.2 (Build 2026110105)</title>
+            <pubDate>Sun, 01 Nov 2026 23:57:19 +0800</pubDate>
+            <sparkle:version>2026110105</sparkle:version>
+            <sparkle:shortVersionString>2.0.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/2.0.1/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/2.0.2/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,33 +120,19 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 2.0.1 更新要点</span>
-  <span class="release-badge">Build 2026103102 · 正式发布</span>
+  <span class="release-title">AetherRoute 2.0.2 更新要点</span>
+  <span class="release-badge">Build 2026110105 · 正式发布</span>
 </div>
-<div class="section">
-  <span class="section-tag tag-feature">🚀 菜单栏排版：实时网速三列对齐与防截断</span>
-  <ul>
-    <li><strong>三列像素级对齐</strong>：将实时网速显示拆分为独立三列布局：固定方向箭头列（<code>↑</code>/<code>↓</code>）、右对齐等宽数值列与左对齐单位列（<code>B/s</code>、<code>KB/s</code>、<code>MB/s</code>、<code>GB/s</code>），彻底消除网速数值变化引起的左右水平抖动，上下两行小数点与单位垂直严格对齐。</li>
-    <li><strong>彻底根除单位截断</strong>：网速画布宽度扩容至 82pt（未标记）与 86pt（带更新红点），彻底解决三位数及以上大网速（如 <code>484.7 KB/s</code>、<code>10.25 GB/s</code>）在特定分辨率下末尾 <code>/s</code> 被裁切的问题。</li>
-    <li><strong>未连接态规范化归零</strong>：未连接状态下上下行速率精准显示为 <code>0 B/s</code>，并与已连接态保持完全一致的列宽和对齐基线。</li>
-  </ul>
-</div>
-<div class="section">
-  <span class="section-tag tag-improve">✨ 严苛真机与多环境验证</span>
-  <ul>
-    <li><strong>物理真机 Mac mini 全量通过</strong>：Apple Silicon 真机环境 TUN 与透明代理双模式验证通过，空闲 50s 复用、2 MiB 大上传及 6 轮有线/Wi-Fi 网络切换自愈 100% 通过。</li>
-    <li><strong>全量 41 款 SF Symbols 兼容</strong>：全量 41 款菜单栏图标在实时网速模式与双态下均通过像素级对齐渲染与模版色自适应测试。</li>
-  </ul>
-</div>
+<h2>AetherRoute 2.0.2</h2><p>修复半关闭连接上传中断、透明代理计量与终止日志、JSON/DoH 配置兼容及菜单栏绘制缓存问题。</p><p>Fix half-closed uploads, diagnostic metering, JSON/DoH compatibility and menu-bar rendering.</p>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/2.0.1/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/2.0.2/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v2.0.1/AetherRoute-2.0.1-build-2026103102-arm64.dmg"
-                sparkle:edSignature="xqKO/fNk9bumqHJLO2+KFZySpHo504LapeEr7sQLERKyfYccb797dkKCrN0M3QXxOixEklTIlcbHWJMOQ5V1AQ=="
-                length="29114825"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v2.0.2/AetherRoute-2.0.2-build-2026110105-arm64.dmg"
+                sparkle:edSignature="yxOSBXvjJwI9bEc3lEtwXQksVrLQbfJNf/y9poQhyjSfekw1UA2jdIc5xfsdAIKW5lVWG0zuC0wCmSCfygs2AQ=="
+                length="29141423"
                 type="application/octet-stream" />
         </item>
     </channel>

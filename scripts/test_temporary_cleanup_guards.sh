@@ -46,6 +46,28 @@ expect_failure_without_temp aetherroute-shadowquic \
     AETHER_INTEROP_CYCLES=0 \
     "$ROOT/scripts/test_shadowquic_interop.sh"
 
+# Exercise the real candidate-cleanup command through a symlinked /tmp root,
+# as on macOS; retain a neighbouring candidate from another build.
+python3 - "$ROOT" "$WORK" <<'PYTEST'
+from pathlib import Path
+import os, subprocess, sys
+root, work = map(Path, sys.argv[1:])
+real = work / "physical-real-tmp"; real.mkdir()
+alias = work / "physical-tmp"; alias.symlink_to(real, target_is_directory=True)
+target = real / "aetherroute-candidate-regression.dmg"
+other = real / "aetherroute-candidate-another-build.dmg"
+target.write_bytes(b"synthetic candidate"); other.write_bytes(b"preserve another build")
+source = (root / "scripts/collect_physical_runtime_pair.sh").read_text()
+restore = source.split("restore() {", 1)[1].split("\n}", 1)[0]
+command = next(line for line in restore.splitlines() if "/tmp" in line and "aetherroute-candidate-$BUILD.dmg" in line)
+command = command.replace("/tmp", str(alias)).replace('\\"', '"')
+subprocess.run(["sh", "-c", command], env={**os.environ, "BUILD": "regression"}, check=True)
+assert not target.exists(), "Physical candidate leaked through symlinked tmp root"
+assert other.read_bytes() == b"preserve another build", "Another build was removed"
+assert alias.is_symlink(), "Temporary root was removed"
+print("Physical candidate cleanup: symlinked tmp works and other builds survive")
+PYTEST
+
 recursive_remove=$(printf 'rm%srf' ' -')
 for script in "$ROOT"/scripts/*.sh; do
   grep -q 'mktemp' "$script" || continue

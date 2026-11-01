@@ -48,7 +48,8 @@ forwarding bytes. The probe uses the production actor with fake I/O and never
 changes the machine's network settings.
 
 The new tests are in the existing XCTest targets executed by `scripts/test.sh`.
-No Rust engine source or production dependency was changed. The subsequent
+The TCP/metering fix changes no Rust source or production dependency; subsequent
+release work also redacts Rust YAML/JSON deserialization errors. That subsequent
 release work targets 2.0.2 / 2026110105; the installed extension used for the
 measurements below was still 2.0.1.
 
@@ -110,6 +111,10 @@ observed decline further rules out treating the earlier footprint peak or RSS
 as an equal amount of permanently leaked allocations; it does not isolate all
 retention sources or replace the targeted renderer regression. The snapshot is
 `memory/vmmap-app-before-update.txt` in the evidence directory.
+
+Immediately before the 0105 update, PID 12299 had run for about 25 hours;
+a 23:15 sample measured 135.8M footprint, peak 400.1M. This remains an old-version
+observation, stored as `memory/vmmap-app-pre-update-0105.txt`.
 
 The actual SwiftUI `MenuBarExtra` consumer exposed a failure missed by the
 offscreen controls: rapidly changing traffic images raised a CoreText

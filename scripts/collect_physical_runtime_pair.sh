@@ -39,7 +39,7 @@ restore() {
   $SSH "$HOST" "PREF=$PREF; BK=\$HOME/aetherroute-prefs-backup-$BUILD.plist
 $QUIT
 if [ -f \"\$BK\" ]; then defaults import \"\$PREF\" \"\$BK\" && find \"\$BK\" -delete; fi
-find /tmp -maxdepth 1 -name aetherroute-candidate-$BUILD.dmg -delete
+rm -f \"/tmp/aetherroute-candidate-$BUILD.dmg\"
 echo \"restored engine=\$(defaults read \"\$PREF\" AetherRoute.NetworkEngineMode 2>/dev/null)\"" || true
 }
 trap 'restore; find "$WORK" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
