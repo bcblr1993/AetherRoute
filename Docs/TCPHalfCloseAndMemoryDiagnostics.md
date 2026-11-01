@@ -49,7 +49,7 @@ changes the machine's network settings.
 
 The new tests are in the existing XCTest targets executed by `scripts/test.sh`.
 No Rust engine source or production dependency was changed. The subsequent
-release work targets 2.0.2 / 2026110104; the installed extension used for the
+release work targets 2.0.2 / 2026110105; the installed extension used for the
 measurements below was still 2.0.1.
 
 ## Live memory investigation — 2026-11-01

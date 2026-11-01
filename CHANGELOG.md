@@ -49,6 +49,9 @@ All notable changes to AetherRoute are recorded here. The format follows
 - Convert JSON Clash profiles into block YAML in the runtime copy before
   section-based routing rewrites. Preserve the imported text and nested proxy
   options exactly; round-trip regressions first reproduced invalid runtime YAML.
+  A second failing regression caught escaped slashes corrupting DoH URLs during
+  optimization; preserve plain URI slashes and validate all three resulting
+  configurations with the actual core.
 
 ### Validation
 

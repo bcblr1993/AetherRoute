@@ -26,7 +26,7 @@ import Foundation
         return object
     }
     static func main() throws {
-        let raw = #"{"dns":{"enable":true,"nameserver":["1.1.1.1"]},"proxies":[{"name":"test:#node","type":"ss","server":"example.invalid","port":443,"cipher":"aes-128-gcm","password":"SYNTHETIC:#\"secret\nline","udp":true,"plugin-opts":{"host":"x:#y","nested":[null,false,17,{"quoted:key":"text"}]}}],"proxy-groups":[{"name":"Proxy","type":"select","proxies":["test:#node"]}],"rules":["MATCH,Proxy"]}"#
+        let raw = #"{"dns":{"enable":true,"nameserver":["1.1.1.1","https://doh.pub/dns-query"],"fallback":["https://dns.google/dns-query#Proxy"],"nameserver-policy":{"private.example.invalid":["https://doh.pub/dns-query","tls://dns.example.invalid"]}},"proxies":[{"name":"test:#node","type":"ss","server":"example.invalid","port":443,"cipher":"aes-128-gcm","password":"SYNTHETIC:#\"secret\nline","udp":true,"plugin-opts":{"host":"x:#y","nested":[null,false,17,{"quoted:key":"text"}]}}],"proxy-groups":[{"name":"Proxy","type":"select","proxies":["test:#node"]}],"rules":["MATCH,Proxy"]}"#
         let profile = ActiveProfile(name: "JSON", yaml: raw)
         let original = try mapping(raw)
         for (label, text) in [
@@ -37,6 +37,14 @@ import Foundation
             let result = try mapping(text)
             precondition((result["proxies"] as! NSArray).isEqual(original["proxies"]), "Proxy options changed")
             precondition((result["proxy-groups"] as! NSArray).isEqual(original["proxy-groups"]), "Group members changed")
+            let dns = result["dns"] as! NSDictionary
+            precondition((dns["nameserver"] as! [String]).contains("https://doh.pub/dns-query"), "DoH nameserver changed")
+            precondition((dns["fallback"] as! [String]).contains("https://dns.google/dns-query#Proxy"), "DoH fallback changed")
+            let policies = dns["nameserver-policy"] as! NSDictionary
+            precondition((policies["private.example.invalid"] as! [String]) == ["https://doh.pub/dns-query", "tls://dns.example.invalid"], "Policy resolver URLs changed")
+            if let directory = ProcessInfo.processInfo.environment["AETHER_RUNTIME_JSON_OUTPUT"] {
+                try text.write(toFile: directory + "/" + label + ".yaml", atomically: true, encoding: .utf8)
+            }
             if label != "optimization-off" {
                 precondition((result["dns"] as? NSDictionary)?["enhanced-mode"] as? String == "fake-ip")
                 precondition((result["rules"] as? [String])?.last == "MATCH,Proxy")

@@ -12,7 +12,10 @@ public enum ProfileRuntimeYAML {
     }
 
     private static func scalar(_ value: Any) throws -> String {
-        let data = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys])
+        // Later DNS section rewrites consume URI scalars without JSON decoding.
+        let data = try JSONSerialization.data(
+            withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys, .withoutEscapingSlashes]
+        )
         return String(decoding: data, as: UTF8.self)
     }
 
