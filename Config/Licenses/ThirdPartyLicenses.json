@@ -970,19 +970,19 @@
       "license": "MIT OR Apache-2.0",
       "name": "hickory-net",
       "repository": "https://github.com/hickory-dns/hickory-dns",
-      "version": "0.26.1"
+      "version": "0.26.3"
     },
     {
       "license": "MIT OR Apache-2.0",
       "name": "hickory-proto",
       "repository": "https://github.com/hickory-dns/hickory-dns",
-      "version": "0.26.1"
+      "version": "0.26.3"
     },
     {
       "license": "MIT OR Apache-2.0",
       "name": "hickory-resolver",
       "repository": "https://github.com/hickory-dns/hickory-dns",
-      "version": "0.26.1"
+      "version": "0.26.3"
     },
     {
       "license": "MIT OR Apache-2.0",
@@ -1163,12 +1163,6 @@
       "name": "inout",
       "repository": "https://github.com/RustCrypto/utils",
       "version": "0.2.2"
-    },
-    {
-      "license": "MIT OR Apache-2.0",
-      "name": "internal-russh-num-bigint",
-      "repository": "https://github.com/rust-num/num-bigint",
-      "version": "0.5.0"
     },
     {
       "license": "MIT",
@@ -1420,7 +1414,7 @@
       "license": "MIT OR Apache-2.0",
       "name": "num-bigint",
       "repository": "https://github.com/rust-num/num-bigint",
-      "version": "0.4.6"
+      "version": "0.5.1"
     },
     {
       "license": "MIT OR Apache-2.0",
@@ -1786,7 +1780,7 @@
       "license": "Apache-2.0",
       "name": "russh",
       "repository": "https://github.com/warp-tech/russh",
-      "version": "0.62.5"
+      "version": "0.64.1"
     },
     {
       "license": "Apache-2.0",
@@ -2684,8 +2678,8 @@
     }
   ],
   "coreArtifacts": {
-    "packetTunnel": "1f8ff026ce84dfc33cc440fae27de0b705c5c5c01b9dd60b315e2535537d98db",
-    "transparentProxy": "6640adab96b8b8c1d3a69754d6772f91c0cb7fd2e7fb3d31a67daffd780b6fcd"
+    "packetTunnel": "3dd7d17ae0df9e8e62862dac5b2dd59416abbd5f029a2b9ba6f8ac8c771c3441",
+    "transparentProxy": "c1e7cee6ec00884fcc8314142fc1fea220e7657eb067961b9411812358b97b54"
   },
   "licenses": [
     {
@@ -2865,9 +2859,9 @@
     },
     {
       "components": [
-        "hickory-net@0.26.1",
-        "hickory-proto@0.26.1",
-        "hickory-resolver@0.26.1",
+        "hickory-net@0.26.3",
+        "hickory-proto@0.26.3",
+        "hickory-resolver@0.26.3",
         "hickory-server@0.26.1"
       ],
       "id": "Apache-2.0",
@@ -3024,13 +3018,12 @@
         "idna@1.1.0",
         "idna_adapter@1.2.2",
         "indexmap@2.14.0",
-        "internal-russh-num-bigint@0.5.0",
         "itertools@0.14.0",
         "lazy_static@1.5.0",
         "lock_api@0.4.14",
         "log@0.4.30",
         "mime@0.3.17",
-        "num-bigint@0.4.6",
+        "num-bigint@0.5.1",
         "num-integer@0.1.46",
         "num-traits@0.2.19",
         "once_cell@1.21.4",
@@ -3282,7 +3275,7 @@
         "rcgen@0.14.8",
         "russh-cryptovec@0.62.0",
         "russh-util@0.52.0",
-        "russh@0.62.5",
+        "russh@0.64.1",
         "rustc-hash@2.1.2",
         "rustversion@1.0.22",
         "ryu@1.0.23",

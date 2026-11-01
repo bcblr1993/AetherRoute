@@ -88,6 +88,13 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ### Security
 
+- Upgrade Hickory to 0.26.3, russh to 0.64.1 and Windows-only pageant to 0.2.3
+  for reviewed DNS resource-exhaustion/validation and SSH client security fixes.
+  A dependency-floor gate first rejects the previous lockfile, then passes and
+  runs in both fast and complete regression. Preserve host-key pins across the
+  new SSH certificate callback API; reject mismatched subject/issuer pins and
+  keep unsupported GSSAPI distinct. Three adaptation regressions pass.
+
 - YAML/JSON deserialization errors no longer echo complete profiles or rejected
   values into returned errors and logs. Keep a fixed failure stage and source
   location when available. Regression cases first reproduced disclosure for
