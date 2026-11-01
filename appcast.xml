@@ -6,9 +6,9 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 2.0.2 (Build 2026110105)</title>
-            <pubDate>Sun, 01 Nov 2026 23:57:19 +0800</pubDate>
-            <sparkle:version>2026110105</sparkle:version>
+            <title>Version 2.0.2 (Build 2026110202)</title>
+            <pubDate>Mon, 02 Nov 2026 02:14:41 +0800</pubDate>
+            <sparkle:version>2026110202</sparkle:version>
             <sparkle:shortVersionString>2.0.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/2.0.2/</sparkle:fullReleaseNotesLink>
@@ -121,18 +121,18 @@
 
 <div class="release-header">
   <span class="release-title">AetherRoute 2.0.2 更新要点</span>
-  <span class="release-badge">Build 2026110105 · 正式发布</span>
+  <span class="release-badge">Build 2026110202 · 正式发布</span>
 </div>
-<h2>AetherRoute 2.0.2</h2><p>修复半关闭连接上传中断、透明代理计量与终止日志、JSON/DoH 配置兼容及菜单栏绘制缓存问题。</p><p>Fix half-closed uploads, diagnostic metering, JSON/DoH compatibility and menu-bar rendering.</p>
+<h2>AetherRoute 2.0.2</h2><p>修复半关闭连接上传中断、透明代理计量与日志、JSON/DoH 配置兼容及菜单栏绘制缓存，包含 DNS/SSH 安全更新。</p><p>Fix half-closed uploads, diagnostics, JSON/DoH compatibility and menu-bar rendering; includes DNS/SSH security updates.</p>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
   <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/2.0.2/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v2.0.2/AetherRoute-2.0.2-build-2026110105-arm64.dmg"
-                sparkle:edSignature="yxOSBXvjJwI9bEc3lEtwXQksVrLQbfJNf/y9poQhyjSfekw1UA2jdIc5xfsdAIKW5lVWG0zuC0wCmSCfygs2AQ=="
-                length="29141423"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v2.0.2/AetherRoute-2.0.2-build-2026110202-arm64.dmg"
+                sparkle:edSignature="mcE1/WJqicFsEMNe9dqVhJEM1fzgxqPvRnixxjGsnBWO0nBLUIFp7v0anM+zyLV+QPcDWajVpa1gkeAQgvQsAQ=="
+                length="29185083"
                 type="application/octet-stream" />
         </item>
     </channel>

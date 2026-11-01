@@ -49,8 +49,9 @@ changes the machine's network settings.
 
 The new tests are in the existing XCTest targets executed by `scripts/test.sh`.
 The TCP/metering fix changes no Rust source or production dependency; subsequent
-release work also redacts Rust YAML/JSON deserialization errors. That subsequent
-release work targets 2.0.2 / 2026110105; the installed extension used for the
+release work also redacts Rust YAML/JSON deserialization errors and upgrades
+DNS/SSH dependencies for reviewed security fixes. That subsequent
+release work targets 2.0.2 / 2026110202; the installed extension used for the
 measurements below was still 2.0.1.
 
 ## Live memory investigation — 2026-11-01

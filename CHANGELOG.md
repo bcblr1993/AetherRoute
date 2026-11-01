@@ -65,21 +65,25 @@ All notable changes to AetherRoute are recorded here. The format follows
 ### Validation
 
 - Complete local regression passed: 571 XCTest, 113 Swift Testing,
-  98 transparent-proxy and 24 bridge tests. Final fast lane passed in 67 seconds.
+  98 transparent-proxy and 24 bridge tests. Final fast lane passed in 62 seconds
+  (including portable dependency-policy regression).
 - Default and Chrome-fingerprint full protocol interoperability matrices passed;
   Chrome real-site checks covered all nine sites. The final deployed lab
-  comparison reached 43/43 working nodes in both engines; initial reference
-  failures and the unstable existing REALITY node are retained in the release
-  exceptions rather than silently retried away.
+  comparison reached 43/43 working nodes in our engine and 41/43 in Mihomo
+  in two full-profile runs (two WireGuard reference-side 5-second timeouts).
+  The same two nodes pass individually and together in both engines. These
+  differences and the unstable existing REALITY path remain in the release
+  exceptions; deadlines and attempt counts were unchanged.
 - Both full 300-second physical UI performance profiles passed with menu-bar
-  traffic enabled. Showcase: page-switch p95 149.8 ms / max 179.2 ms, footprint
-  median 71 MB / peak 86 MB / latter-half growth +2 MB. Large: p95 148.1 ms /
-  max 186.9 ms, median 72 MB / peak 87 MB / growth +2 MB.
-- Final 0105 VM matrix passed all six engine/routing combinations, followed by
-  the full remote source gate with unchanged source, proxies and default routes.
-  DMG-bound physical idle-reuse and 2 MiB upload checks passed in both engines.
-  Six real interface switches recovered in 2/2/2/2/2/2 seconds (TUN) and
-  4/2/2/1/3/2 seconds (transparent), without manual reconnects.
+  traffic enabled. Showcase: page-switch p95 148.3 ms / max 175.9 ms, footprint
+  median 72 MB / peak 89 MB / latter-half growth +2 MB. Large: p95 147.5 ms /
+  max 180.9 ms, median 72 MB / peak 87 MB / growth +1 MB.
+- Final 0202 VM matrix passed all six engine/routing combinations, verifying
+  strict resident-binary identity and the expected active raw-profile SHA for
+  every combination. Complete host and VM source gates passed with the portable
+  dependency policy; the original sandbox preference domain and profile files
+  were restored. DMG-bound physical receipts are recorded in the release
+  exception report.
 - Live 2.0.1 memory investigation found a stable 195.1–197.6 MB physical
   footprint in six early samples, with font-cache retention paths. A later
   footprint was 388.7 MB, while heap allocations grew by only 4.7 MB; these
