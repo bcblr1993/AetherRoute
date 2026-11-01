@@ -188,6 +188,8 @@ public actor UDPFlowStateMachine {
     private var flowWriteToken: FlowOperationToken?
     private var bridgeReadToken: FlowOperationToken?
     private var bridgeWriteToken: FlowOperationToken?
+    private var pendingBridgeWriteBytes = 0
+    private var pendingFlowWriteBytes = 0
     private var didReportTermination = false
 
     public init(
@@ -336,6 +338,7 @@ public actor UDPFlowStateMachine {
         }
         let token = nextToken(.bridgeWrite)
         bridgeWriteToken = token
+        pendingBridgeWriteBytes = datagrams.reduce(0) { $0 + $1.payload.count }
         bridgeSink.writeDatagrams(datagrams, token: token) {
             [weak self] returnedToken, result in
             Task {
@@ -356,6 +359,8 @@ public actor UDPFlowStateMachine {
         case let .failure(error):
             fail(error)
         case .success:
+            DiagnosticFlowOpenObserver.shared.record(.bytesUpstream(pendingBridgeWriteBytes))
+            pendingBridgeWriteBytes = 0
             issueFlowRead()
         }
     }
@@ -367,6 +372,7 @@ public actor UDPFlowStateMachine {
         }
         let token = nextToken(.flowWrite)
         flowWriteToken = token
+        pendingFlowWriteBytes = datagrams.reduce(0) { $0 + $1.payload.count }
         flow.writeDatagrams(datagrams, token: token) {
             [weak self] returnedToken, result in
             Task {
@@ -387,6 +393,8 @@ public actor UDPFlowStateMachine {
         case let .failure(error):
             fail(error)
         case .success:
+            DiagnosticFlowOpenObserver.shared.record(.bytesClient(pendingFlowWriteBytes))
+            pendingFlowWriteBytes = 0
             issueBridgeRead()
         }
     }
@@ -425,6 +433,9 @@ public actor UDPFlowStateMachine {
     private func reportTermination() {
         guard !didReportTermination else { return }
         didReportTermination = true
+        if case .failed = lifecycle {
+            DiagnosticFlowOpenObserver.shared.record(.sessionFailed)
+        }
         onTermination(lifecycle)
     }
 }

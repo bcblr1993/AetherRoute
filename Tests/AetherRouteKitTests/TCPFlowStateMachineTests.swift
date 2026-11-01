@@ -264,6 +264,254 @@ final class TCPFlowStateMachineTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(bridge.cancelCallCount, 1)
     }
 
+    /// The old pump silently failed writes and only logged read failures.
+    /// A terminal record must survive standard (non-verbose) diagnostics and
+    /// must never interpolate a transport's potentially private description.
+    func testBridgeWriteFailureRecordsCorrelatedPrivateSafeTerminationOnce() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tcp-termination-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sink = RotatingLogSink(configuration: .init(directoryURL: directory, baseName: "tcp"))
+        let log = DiagnosticLog(category: "test", sink: sink, levelProvider: { .standard })
+        let sessionID = UUID()
+        let flow = FakeTCPFlow()
+        let source = FakeRustTCPSource()
+        let bridge = FakeRustTCPSink()
+        let machine = try TCPFlowStateMachine(
+            flow: flow, bridgeSource: source, bridgeSink: bridge,
+            sessionID: sessionID, diagnosticLog: log
+        )
+        try await machine.start()
+        XCTAssertTrue(flow.completeNextRead(.success(.bytes(Data(repeating: 7, count: 1024)))))
+        let started = await eventually { bridge.writeCallCount == 1 }
+        XCTAssertTrue(started)
+        XCTAssertTrue(bridge.completeNextWrite(.failure(.transport("SECRET credentials.example"))))
+        let stopped = await eventually(machine) { if case .failed = $0.lifecycle { return true }; return false }
+        XCTAssertTrue(stopped)
+        await machine.cancel()
+        _ = source.completeNextRead(.failure(.closed))
+        let flushed = expectation(description: "termination flushed")
+        sink.flush { flushed.fulfill() }
+        await fulfillment(of: [flushed], timeout: 5)
+        let text = sink.tail(maximumBytes: 8192)
+        XCTAssertEqual(text.components(separatedBy: "stage=tcpTermination").count - 1, 1)
+        XCTAssertTrue(text.contains("session=\(sessionID.uuidString)"))
+        XCTAssertTrue(text.contains("trigger=bridgeWrite outcome=failed error=transport"))
+        XCTAssertTrue(text.contains("flowReadBytes=1024 bridgeWrittenBytes=0"))
+        XCTAssertTrue(text.contains("firstEOF=none"))
+        XCTAssertFalse(text.contains("SECRET"))
+        XCTAssertFalse(text.contains("credentials.example"))
+    }
+
+    func testClientEOFAndDownstreamWriteFailureRemainDistinct() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tcp-termination-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sink = RotatingLogSink(configuration: .init(directoryURL: directory, baseName: "tcp"))
+        let log = DiagnosticLog(category: "test", sink: sink, levelProvider: { .standard })
+        let flow = FakeTCPFlow()
+        let source = FakeRustTCPSource()
+        let bridge = FakeRustTCPSink()
+        let machine = try TCPFlowStateMachine(
+            flow: flow, bridgeSource: source, bridgeSink: bridge, diagnosticLog: log
+        )
+        try await machine.start()
+        XCTAssertTrue(flow.completeNextRead(.success(.endOfStream)))
+        let finishing = await eventually { bridge.finishCallCount == 1 }
+        XCTAssertTrue(finishing)
+        XCTAssertTrue(bridge.completeNextFinish(.success(())))
+        XCTAssertTrue(source.completeNextRead(.success(.bytes(Data(repeating: 1, count: 64)))))
+        let writing = await eventually { flow.writeCallCount == 1 }
+        XCTAssertTrue(writing)
+        XCTAssertTrue(flow.completeNextWrite(.failure(.closed)))
+        let stopped = await eventually(machine) { if case .failed = $0.lifecycle { return true }; return false }
+        XCTAssertTrue(stopped)
+        let flushed = expectation(description: "termination flushed")
+        sink.flush { flushed.fulfill() }
+        await fulfillment(of: [flushed], timeout: 5)
+        let text = sink.tail(maximumBytes: 8192)
+        XCTAssertTrue(text.contains("trigger=flowWrite outcome=failed error=closed"))
+        XCTAssertTrue(text.contains("firstEOF=flowRead"))
+        XCTAssertTrue(text.contains("bridgeReadBytes=64 flowWrittenBytes=0"))
+    }
+
+    func testEveryTCPFailureStageEmitsOneTerminalRecord() async throws {
+        for stage in [FlowOperationKind.flowRead, .bridgeRead, .bridgeWrite,
+                      .flowWrite, .bridgeFinishWriting, .flowFinishWriting] {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("tcp-stages-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let sink = RotatingLogSink(configuration: .init(directoryURL: directory, baseName: "tcp"))
+            let log = DiagnosticLog(category: "test", sink: sink, levelProvider: { .standard })
+            let flow = FakeTCPFlow()
+            let source = FakeRustTCPSource()
+            let bridge = FakeRustTCPSink()
+            let machine = try TCPFlowStateMachine(
+                flow: flow, bridgeSource: source, bridgeSink: bridge, diagnosticLog: log
+            )
+            try await machine.start()
+            switch stage {
+            case .flowRead: XCTAssertTrue(flow.completeNextRead(.failure(.closed)))
+            case .bridgeRead: XCTAssertTrue(source.completeNextRead(.failure(.closed)))
+            case .bridgeWrite:
+                XCTAssertTrue(flow.completeNextRead(.success(.bytes(Data([1])))))
+                let ready = await eventually { bridge.writeCallCount == 1 }
+                XCTAssertTrue(ready)
+                XCTAssertTrue(bridge.completeNextWrite(.failure(.closed)))
+            case .flowWrite:
+                XCTAssertTrue(source.completeNextRead(.success(.bytes(Data([1])))))
+                let ready = await eventually { flow.writeCallCount == 1 }
+                XCTAssertTrue(ready)
+                XCTAssertTrue(flow.completeNextWrite(.failure(.closed)))
+            case .bridgeFinishWriting:
+                XCTAssertTrue(flow.completeNextRead(.success(.endOfStream)))
+                let ready = await eventually { bridge.finishCallCount == 1 }
+                XCTAssertTrue(ready)
+                XCTAssertTrue(bridge.completeNextFinish(.failure(.closed)))
+            case .flowFinishWriting:
+                XCTAssertTrue(source.completeNextRead(.success(.endOfStream)))
+                let ready = await eventually { flow.finishCallCount == 1 }
+                XCTAssertTrue(ready)
+                XCTAssertTrue(flow.completeNextFinish(.failure(.closed)))
+            }
+            let stopped = await eventually(machine) { if case .failed = $0.lifecycle { return true }; return false }
+            XCTAssertTrue(stopped)
+            let flushed = expectation(description: "stage flushed")
+            sink.flush { flushed.fulfill() }
+            await fulfillment(of: [flushed], timeout: 5)
+            let text = sink.tail(maximumBytes: 8192)
+            XCTAssertTrue(text.contains("trigger=\(stage.rawValue) outcome=failed error=closed"), stage.rawValue)
+            XCTAssertEqual(text.components(separatedBy: "stage=tcpTermination").count - 1, 1)
+        }
+    }
+
+    func testHalfCloseIdleDeadlineFollowsActiveUploadAndLogsRealIdleExpiry() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tcp-idle-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sink = RotatingLogSink(configuration: .init(directoryURL: directory, baseName: "tcp"))
+        let log = DiagnosticLog(category: "test", sink: sink, levelProvider: { .standard })
+        let flow = FakeTCPFlow()
+        let source = FakeRustTCPSource()
+        let bridge = FakeRustTCPSink()
+        let machine = try TCPFlowStateMachine(
+            flow: flow, bridgeSource: source, bridgeSink: bridge,
+            halfCloseIdleTimeout: .milliseconds(150), diagnosticLog: log
+        )
+        try await machine.start()
+        XCTAssertTrue(source.completeNextRead(.success(.endOfStream)))
+        let finishing = await eventually { flow.finishCallCount == 1 }
+        XCTAssertTrue(finishing)
+        XCTAssertTrue(flow.completeNextFinish(.success(())))
+        for index in 1...8 {
+            XCTAssertTrue(flow.completeNextRead(.success(.bytes(Data([1])))))
+            let writing = await eventually { bridge.writeCallCount == index }
+            XCTAssertTrue(writing)
+            XCTAssertTrue(bridge.completeNextWrite(.success(())))
+            let reading = await eventually { flow.readCallCount == index + 1 }
+            XCTAssertTrue(reading)
+            try await Task.sleep(for: .milliseconds(40))
+            let state = await machine.snapshot()
+            guard state.lifecycle == .running else {
+                XCTFail("active reverse upload was cut off at iteration \(index)")
+                return
+            }
+        }
+        let expired = await eventually(machine) { $0.lifecycle == .cancelled }
+        XCTAssertTrue(expired, "quiet half-closed clients must still be reclaimed")
+        let flushed = expectation(description: "idle expiry log flushed")
+        sink.flush { flushed.fulfill() }
+        await fulfillment(of: [flushed], timeout: 5)
+        let text = sink.tail(maximumBytes: 8192)
+        XCTAssertTrue(text.contains("trigger=halfCloseTimeout outcome=cancelled"))
+        XCTAssertEqual(text.components(separatedBy: "stage=tcpTermination").count - 1, 1)
+    }
+
+    func testHalfCloseExpiryIsVisibleAtStandardLevel() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tcp-idle-log-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sink = RotatingLogSink(configuration: .init(directoryURL: directory, baseName: "tcp"))
+        let log = DiagnosticLog(category: "test", sink: sink, levelProvider: { .standard })
+        let flow = FakeTCPFlow()
+        let source = FakeRustTCPSource()
+        let bridge = FakeRustTCPSink()
+        let machine = try TCPFlowStateMachine(
+            flow: flow, bridgeSource: source, bridgeSink: bridge,
+            halfCloseIdleTimeout: .milliseconds(50), diagnosticLog: log
+        )
+        try await machine.start()
+        XCTAssertTrue(source.completeNextRead(.success(.endOfStream)))
+        let ready = await eventually { flow.finishCallCount == 1 }
+        XCTAssertTrue(ready)
+        XCTAssertTrue(flow.completeNextFinish(.success(())))
+        let expired = await eventually(machine) { $0.lifecycle == .cancelled }
+        XCTAssertTrue(expired)
+        let flushed = expectation(description: "timeout flushed")
+        sink.flush { flushed.fulfill() }
+        await fulfillment(of: [flushed], timeout: 5)
+        XCTAssertTrue(sink.tail(maximumBytes: 8192).contains("trigger=halfCloseTimeout"))
+    }
+
+    func testHalfCloseDoesNotExpireWhileBridgeWriteIsInFlight() async throws {
+        let flow = FakeTCPFlow()
+        let source = FakeRustTCPSource()
+        let bridge = FakeRustTCPSink()
+        let machine = try TCPFlowStateMachine(
+            flow: flow, bridgeSource: source, bridgeSink: bridge,
+            halfCloseIdleTimeout: .milliseconds(80)
+        )
+        try await machine.start()
+        XCTAssertTrue(source.completeNextRead(.success(.endOfStream)))
+        let finishing = await eventually { flow.finishCallCount == 1 }
+        XCTAssertTrue(finishing)
+        XCTAssertTrue(flow.completeNextFinish(.success(())))
+        XCTAssertTrue(flow.completeNextRead(.success(.bytes(Data([1])))))
+        let writing = await eventually { bridge.writeCallCount == 1 }
+        XCTAssertTrue(writing)
+        try await Task.sleep(for: .milliseconds(200))
+        let state = await machine.snapshot()
+        XCTAssertEqual(state.lifecycle, .running, "backpressure is not idle")
+        await machine.cancel()
+    }
+
+    func testTCPActualWritesFeedAggregateCountersAndFailureExactlyOnce() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tcp-metrics-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sink = RotatingLogSink(configuration: .init(directoryURL: directory, baseName: "aggregate"))
+        let log = DiagnosticLog(category: "test", sink: sink, levelProvider: { .standard })
+        let aggregate = DiagnosticAggregator(log: log)
+        DiagnosticFlowOpenObserver.shared.attach(aggregate)
+        defer { DiagnosticFlowOpenObserver.shared.detach() }
+        let (machine, flow, source, bridge) = try makeMachine()
+        try await machine.start()
+        XCTAssertTrue(flow.completeNextRead(.success(.bytes(Data(repeating: 1, count: 8)))))
+        let uploading = await eventually { bridge.writeCallCount == 1 }
+        XCTAssertTrue(uploading)
+        XCTAssertTrue(bridge.completeNextWrite(.success(())))
+        let uploaded = await eventually { flow.readCallCount == 2 }
+        XCTAssertTrue(uploaded)
+        XCTAssertTrue(source.completeNextRead(.success(.bytes(Data(repeating: 2, count: 3)))))
+        let downloading = await eventually { flow.writeCallCount == 1 }
+        XCTAssertTrue(downloading)
+        XCTAssertTrue(flow.completeNextWrite(.success(())))
+        let downloaded = await eventually { source.readCallCount == 2 }
+        XCTAssertTrue(downloaded)
+        XCTAssertTrue(flow.completeNextRead(.success(.bytes(Data(repeating: 3, count: 5)))))
+        let pending = await eventually { bridge.writeCallCount == 2 }
+        XCTAssertTrue(pending)
+        XCTAssertTrue(bridge.completeNextWrite(.failure(.closed)))
+        let failed = await eventually(machine) { if case .failed = $0.lifecycle { return true }; return false }
+        XCTAssertTrue(failed)
+        await machine.cancel()
+        _ = source.completeNextRead(.failure(.closed))
+        aggregate.emit()
+        let flushed = expectation(description: "TCP aggregate flushed")
+        sink.flush { flushed.fulfill() }
+        await fulfillment(of: [flushed], timeout: 5)
+        let text = sink.tail(maximumBytes: 8192)
+        XCTAssertTrue(text.contains("up=8 down=3"), "count only successful sink acknowledgements")
+        XCTAssertTrue(text.contains("sessionsFailed=1"))
+    }
+
     private func makeMachine(
         onTermination: @escaping FlowTerminationHandler = { _ in }
     ) throws -> (

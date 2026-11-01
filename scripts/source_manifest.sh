@@ -28,6 +28,7 @@ MANIFEST="$WORK/manifest.txt"
   do
     find "$manifest_path" -type f \
       ! -path 'Config/Signing.json' \
+      ! -path 'Config/sparkle_ed25519_priv.key' \
       ! -path '*/xcuserdata/*' \
       ! -name '*.xcuserstate' -print
   done

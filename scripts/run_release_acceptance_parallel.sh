@@ -32,6 +32,11 @@ VM_USER=${AETHERROUTE_VM_USER:-chenxu}
 NOTARY_PROFILE=${AETHERROUTE_NOTARY_PROFILE:-AetherRoute-Notary}
 PERF_SECONDS=${AETHERROUTE_PERF_SECONDS:-300}
 export AETHERROUTE_IDLE_REUSE_HOST=${AETHERROUTE_IDLE_REUSE_HOST:-httpbin.org}
+if [ -z "${AETHERROUTE_BURST_URL:-}" ] && [ -f "$ROOT/outputs/protocol-lab/burst-url.txt" ]; then
+  AETHERROUTE_BURST_URL=$(cat "$ROOT/outputs/protocol-lab/burst-url.txt")
+  export AETHERROUTE_BURST_URL
+  export AETHERROUTE_BURST_REQUIRE_ORIGIN=1
+fi
 
 # Reject diagnostic shortcuts before any build, SSH, or VM operation. They
 # remain available on the individual diagnostic scripts, not this release gate.

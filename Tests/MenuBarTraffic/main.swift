@@ -8,7 +8,26 @@ enum AppLocalization {
 
 @main struct MenuBarTrafficTests {
     @MainActor
+    static func retinaPixels(_ image: NSImage) -> NSBitmapImageRep {
+        let pixels = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(image.size.width * 2),
+            pixelsHigh: Int(image.size.height * 2), bitsPerSample: 8,
+            samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        )!
+        pixels.size = image.size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: pixels)!
+        NSGraphicsContext.current!.cgContext.clear(CGRect(origin: .zero, size: image.size))
+        image.draw(in: NSRect(origin: .zero, size: image.size), from: .zero,
+                   operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        return pixels
+    }
+
+    @MainActor
     static func main() {
+        _ = NSApplication.shared
         print("Running menu bar real-time traffic gate tests...")
 
         // ---------------------------------------------------------
@@ -123,6 +142,47 @@ enum AppLocalization {
         precondition(enabledBadged.size == MenuBarTrafficRenderer.badgedTrafficCanvasSize,
                      "Enabled badged traffic must return badgedTrafficCanvasSize \(MenuBarTrafficRenderer.badgedTrafficCanvasSize), got \(enabledBadged.size)")
         precondition(!enabledBadged.isTemplate, "Enabled badged traffic must not be template to preserve red badge dot")
+
+        // Check actual Retina output independently of the image's backing type.
+        for image in [enabledStandard, enabledBadged] {
+            let pixels = retinaPixels(image)
+            var visible = 0
+            for y in 0..<pixels.pixelsHigh {
+                for x in 0..<pixels.pixelsWide {
+                    let alpha = pixels.colorAt(x: x, y: y)!.alphaComponent
+                    if alpha > 0.01 { visible += 1 }
+                    if x >= pixels.pixelsWide - 4 {
+                        precondition(alpha < 0.01, "Traffic text must fit without clipping at the right edge")
+                    }
+                }
+            }
+            precondition(visible > 100, "Traffic icon pixels must contain visible content")
+        }
+
+        // A menu-bar label may be created in one appearance and drawn in
+        // another. Colored badges must not freeze the text's contrast.
+        for drawingName in [NSAppearance.Name.aqua, .darkAqua] {
+            var expected: Data!
+            var actual: Data!
+            var createdInLight: NSImage!
+            NSAppearance(named: .aqua)!.performAsCurrentDrawingAppearance {
+                createdInLight = MenuBarTrafficRenderer.image(
+                    symbol: sampleSymbol, isConnected: true, hasUpdate: true,
+                    isTrafficEnabled: true, uploadBytesPerSecond: 512_000,
+                    downloadBytesPerSecond: 15_400_000)
+            }
+            NSAppearance(named: drawingName)!.performAsCurrentDrawingAppearance {
+                let matching = MenuBarTrafficRenderer.image(
+                    symbol: sampleSymbol, isConnected: true, hasUpdate: true,
+                    isTrafficEnabled: true, uploadBytesPerSecond: 512_000,
+                    downloadBytesPerSecond: 15_400_000)
+                let reference = retinaPixels(matching)
+                let switched = retinaPixels(createdInLight)
+                expected = Data(bytes: reference.bitmapData!, count: reference.bytesPerRow * reference.pixelsHigh)
+                actual = Data(bytes: switched.bitmapData!, count: switched.bytesPerRow * switched.pixelsHigh)
+            }
+            precondition(actual == expected, "Badged traffic contrast must follow the drawing appearance")
+        }
 
         // 3c. Disconnected state: rates must clamp to 0 B/s
         let disconnectedImage = MenuBarTrafficRenderer.image(

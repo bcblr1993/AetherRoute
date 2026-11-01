@@ -49,6 +49,7 @@ public struct FlowOperationToken: Sendable, Hashable {
 }
 
 public enum FlowStateMachineConfigurationError: Error, Sendable, Equatable {
+    case invalidHalfCloseIdleTimeout
     case invalidMaximumReadBytes(Int)
     case invalidMaximumDatagrams(Int)
     case invalidMaximumBatchBytes(Int)

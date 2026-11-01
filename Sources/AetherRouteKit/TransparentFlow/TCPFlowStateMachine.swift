@@ -106,11 +106,23 @@ public actor TCPFlowStateMachine {
     private let bridgeSource: any RustTCPSource
     private let bridgeSink: any RustTCPSink
     private let bridgeSourceAndSinkShareIdentity: Bool
+    private let halfCloseIdleTimeout: Duration
     private let maximumReadBytes: Int
     private let onTermination: FlowTerminationHandler
-    private let sessionID = UUID()
+    private let sessionID: UUID
+    private let diagnosticLog: DiagnosticLog
 
     private var lifecycle: FlowLifecycle = .idle
+    private var lastTransferAt = ContinuousClock.now
+    private var startedAt = ProcessInfo.processInfo.systemUptime
+    private var terminationTrigger = "cancel"
+    private var firstEOF = "none"
+    private var flowReadBytes: UInt64 = 0
+    private var bridgeReadBytes: UInt64 = 0
+    private var bridgeWrittenBytes: UInt64 = 0
+    private var flowWrittenBytes: UInt64 = 0
+    private var pendingBridgeWriteBytes = 0
+    private var pendingFlowWriteBytes = 0
     private var sequence: UInt64 = 0
     private var flowReadToken: FlowOperationToken?
     private var flowWriteToken: FlowOperationToken?
@@ -130,6 +142,9 @@ public actor TCPFlowStateMachine {
         bridgeSource: any RustTCPSource,
         bridgeSink: any RustTCPSink,
         maximumReadBytes: Int = TCPFlowStateMachine.defaultMaximumReadBytes,
+        halfCloseIdleTimeout: Duration = .seconds(15),
+        sessionID: UUID = UUID(),
+        diagnosticLog: DiagnosticLog? = nil,
         onTermination: @escaping FlowTerminationHandler = { _ in }
     ) throws {
         guard (1...Self.hardMaximumReadBytes).contains(maximumReadBytes) else {
@@ -137,6 +152,12 @@ public actor TCPFlowStateMachine {
                 maximumReadBytes
             )
         }
+        guard halfCloseIdleTimeout > .zero else {
+            throw FlowStateMachineConfigurationError.invalidHalfCloseIdleTimeout
+        }
+        self.halfCloseIdleTimeout = halfCloseIdleTimeout
+        self.sessionID = sessionID
+        self.diagnosticLog = diagnosticLog ?? Self.pumpLog
         self.flow = flow
         self.bridgeSource = bridgeSource
         self.bridgeSink = bridgeSink
@@ -157,6 +178,7 @@ public actor TCPFlowStateMachine {
             throw FlowStateMachineStartError.alreadyStarted
         }
         lifecycle = .running
+        startedAt = ProcessInfo.processInfo.systemUptime
         issueFlowRead()
         issueBridgeRead()
     }
@@ -244,12 +266,10 @@ public actor TCPFlowStateMachine {
 
         switch result {
         case let .failure(error):
-            Self.pumpLog.failure(
-                "stage=flowRead outcome=failure error=\(String(reflecting: error))"
-            )
-            fail(error)
+            fail(error, stage: .flowRead)
         case .success(.endOfStream):
             Self.pumpLog.verbose("stage=flowRead outcome=endOfStream")
+            if firstEOF == "none" { firstEOF = "flowRead" }
             flowInputEnded = true
             halfCloseTimeoutTask?.cancel()
             halfCloseTimeoutTask = nil
@@ -259,9 +279,11 @@ public actor TCPFlowStateMachine {
                 "stage=flowRead outcome=bytes count=\(data.count)"
             )
             guard !data.isEmpty, data.count <= maximumReadBytes else {
-                fail(.invalidData("TCP flow returned an invalid read size"))
+                fail(.invalidData("TCP flow returned an invalid read size"), stage: .flowRead)
                 return
             }
+            lastTransferAt = .now
+            flowReadBytes += UInt64(data.count)
             issueBridgeWrite(data)
         }
     }
@@ -277,14 +299,12 @@ public actor TCPFlowStateMachine {
 
         switch result {
         case let .failure(error):
-            Self.pumpLog.failure(
-                "stage=bridgeRead outcome=failure error=\(String(reflecting: error))"
-            )
-            fail(error)
+            fail(error, stage: .bridgeRead)
         case .success(.endOfStream):
             // An immediate end-of-stream here means the core closed the flow
             // without ever reaching the upstream node.
             Self.pumpLog.verbose("stage=bridgeRead outcome=endOfStream")
+            if firstEOF == "none" { firstEOF = "bridgeRead" }
             bridgeInputEnded = true
             issueFlowFinish()
         case let .success(.bytes(data)):
@@ -292,20 +312,22 @@ public actor TCPFlowStateMachine {
                 "stage=bridgeRead outcome=bytes count=\(data.count)"
             )
             guard !data.isEmpty, data.count <= maximumReadBytes else {
-                fail(.invalidData("TCP bridge returned an invalid read size"))
+                fail(.invalidData("TCP bridge returned an invalid read size"), stage: .bridgeRead)
                 return
             }
+            bridgeReadBytes += UInt64(data.count)
             issueFlowWrite(data)
         }
     }
 
     private func issueBridgeWrite(_ data: Data) {
         guard lifecycle == .running, bridgeWriteToken == nil else {
-            fail(.invalidData("Overlapping TCP bridge write"))
+            fail(.invalidData("Overlapping TCP bridge write"), stage: .bridgeWrite)
             return
         }
         let token = nextToken(.bridgeWrite)
         bridgeWriteToken = token
+        pendingBridgeWriteBytes = data.count
         bridgeSink.write(data, token: token) {
             [weak self] returnedToken, result in
             Task {
@@ -324,19 +346,24 @@ public actor TCPFlowStateMachine {
         bridgeWriteToken = nil
         switch result {
         case let .failure(error):
-            fail(error)
+            fail(error, stage: .bridgeWrite)
         case .success:
+            lastTransferAt = .now
+            DiagnosticFlowOpenObserver.shared.record(.bytesUpstream(pendingBridgeWriteBytes))
+            bridgeWrittenBytes += UInt64(pendingBridgeWriteBytes)
+            pendingBridgeWriteBytes = 0
             issueFlowRead()
         }
     }
 
     private func issueFlowWrite(_ data: Data) {
         guard lifecycle == .running, flowWriteToken == nil else {
-            fail(.invalidData("Overlapping TCP flow write"))
+            fail(.invalidData("Overlapping TCP flow write"), stage: .flowWrite)
             return
         }
         let token = nextToken(.flowWrite)
         flowWriteToken = token
+        pendingFlowWriteBytes = data.count
         flow.write(data, token: token) {
             [weak self] returnedToken, result in
             Task {
@@ -355,8 +382,11 @@ public actor TCPFlowStateMachine {
         flowWriteToken = nil
         switch result {
         case let .failure(error):
-            fail(error)
+            fail(error, stage: .flowWrite)
         case .success:
+            DiagnosticFlowOpenObserver.shared.record(.bytesClient(pendingFlowWriteBytes))
+            flowWrittenBytes += UInt64(pendingFlowWriteBytes)
+            pendingFlowWriteBytes = 0
             issueBridgeRead()
         }
     }
@@ -388,7 +418,7 @@ public actor TCPFlowStateMachine {
         bridgeFinishToken = nil
         switch result {
         case let .failure(error):
-            fail(error)
+            fail(error, stage: .bridgeFinishWriting)
         case .success:
             bridgeOutputFinished = true
             finishIfBothDirectionsEnded()
@@ -419,7 +449,7 @@ public actor TCPFlowStateMachine {
         flowFinishToken = nil
         switch result {
         case let .failure(error):
-            fail(error)
+            fail(error, stage: .flowFinishWriting)
         case .success:
             flowOutputFinished = true
             finishIfBothDirectionsEnded()
@@ -434,38 +464,53 @@ public actor TCPFlowStateMachine {
             bridgeOutputFinished
         else {
             if bridgeInputEnded, flowOutputFinished, !flowInputEnded, halfCloseTimeoutTask == nil {
-                halfCloseTimeoutTask = Task { [weak self] in
-                    do {
-                        try await Task.sleep(for: .seconds(15))
-                    } catch {
-                        return
+                lastTransferAt = .now
+                halfCloseTimeoutTask = Task { [weak self, timeout = halfCloseIdleTimeout] in
+                    var delay = timeout
+                    while !Task.isCancelled {
+                        do {
+                            try await Task.sleep(for: delay)
+                        } catch {
+                            return
+                        }
+                        guard let remaining = await self?.nextHalfCloseIdleDelay() else { return }
+                        delay = remaining
                     }
-                    await self?.handleHalfCloseTimeout()
                 }
             }
             return
         }
         halfCloseTimeoutTask?.cancel()
         halfCloseTimeoutTask = nil
+        terminationTrigger = "bothEOF"
         lifecycle = .finished
         invalidateOperations()
         reportTermination()
     }
 
-    private func handleHalfCloseTimeout() {
+    /// One watchdog per half-closed flow. Traffic updates a timestamp instead
+    /// of allocating/cancelling a timer task for every forwarded chunk.
+    private func nextHalfCloseIdleDelay() -> Duration? {
         guard lifecycle == .running, bridgeInputEnded, flowOutputFinished, !flowInputEnded else {
-            return
+            return nil
         }
-        Self.pumpLog.verbose("stage=halfCloseTimeout expired")
+        // Rust owns the network-side idle policy. A pending bridge write can
+        // still be draining a slow upstream; it is not an idle local client.
+        guard bridgeWriteToken == nil else { return halfCloseIdleTimeout }
+        let remaining = halfCloseIdleTimeout - lastTransferAt.duration(to: .now)
+        if remaining > .zero { return remaining }
+        terminationTrigger = "halfCloseTimeout"
         cancel()
+        return nil
     }
 
-    private func fail(_ error: FlowIOError) {
+    private func fail(_ error: FlowIOError, stage: FlowOperationKind) {
         guard lifecycle == .running else {
             return
         }
         halfCloseTimeoutTask?.cancel()
         halfCloseTimeoutTask = nil
+        terminationTrigger = stage.rawValue
         lifecycle = .failed(error)
         invalidateOperations()
         cancelTransports()
@@ -492,6 +537,47 @@ public actor TCPFlowStateMachine {
     private func reportTermination() {
         guard !didReportTermination else { return }
         didReportTermination = true
+        if case .failed = lifecycle {
+            DiagnosticFlowOpenObserver.shared.record(.sessionFailed)
+        }
+        // Exactly one boundary record, with fixed classifications only. Error
+        // descriptions may contain credentials/endpoints and never enter it.
+        let outcome: String
+        let errorClass: String
+        switch lifecycle {
+        case let .failed(error):
+            outcome = "failed"
+            switch error {
+            case .closed: errorClass = "closed"
+            case .cancelled: errorClass = "cancelled"
+            case .invalidData: errorClass = "invalidData"
+            case .transport: errorClass = "transport"
+            }
+        case .finished: outcome = "finished"; errorClass = "none"
+        case .cancelled: outcome = "cancelled"; errorClass = "none"
+        case .idle, .running: return
+        }
+        let expiredHalfClose = terminationTrigger == "halfCloseTimeout"
+        guard outcome == "failed" || expiredHalfClose || diagnosticLog.level.recordsPerFlow else {
+            onTermination(lifecycle)
+            return
+        }
+        let ageMilliseconds = Int(max(0, ProcessInfo.processInfo.systemUptime - startedAt) * 1_000)
+        let summary = "stage=tcpTermination session=\(sessionID.uuidString) "
+            + "trigger=\(terminationTrigger) outcome=\(outcome) error=\(errorClass) "
+            + "ageMs=\(ageMilliseconds) firstEOF=\(firstEOF) "
+            + "flowReadBytes=\(flowReadBytes) bridgeWrittenBytes=\(bridgeWrittenBytes) "
+            + "bridgeReadBytes=\(bridgeReadBytes) flowWrittenBytes=\(flowWrittenBytes) "
+            + "pendingBridgeWriteBytes=\(pendingBridgeWriteBytes) pendingFlowWriteBytes=\(pendingFlowWriteBytes)"
+        if outcome == "failed" {
+            diagnosticLog.failure(summary)
+        } else if expiredHalfClose {
+            // Expected idle reclamation is visible in standard diagnostics,
+            // but is not a failed session or a user-requested cancellation.
+            diagnosticLog.aggregate(summary)
+        } else {
+            diagnosticLog.verbose(summary)
+        }
         onTermination(lifecycle)
     }
 }

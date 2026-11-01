@@ -25,6 +25,14 @@ ENGINES=${AETHERROUTE_MATRIX_ENGINES:-tun transparent}
 ROUTING_MODES=${AETHERROUTE_MATRIX_ROUTING:-rule global direct}
 QA_PROFILE=${AETHERROUTE_VM_QA_PROFILE:-}
 MIN_FREE_KB=${AETHERROUTE_VM_MIN_FREE_KB:-2097152}
+BURST_REMOTE_ENV=
+if [ -n "${AETHERROUTE_BURST_URL:-}" ]; then
+  burst_url_quoted=$(printf '%s' "$AETHERROUTE_BURST_URL" | python3 -c 'import shlex,sys; print(shlex.quote(sys.stdin.read()))')
+  BURST_REMOTE_ENV="AETHERROUTE_BURST_URL=$burst_url_quoted"
+fi
+if [ "${AETHERROUTE_BURST_REQUIRE_ORIGIN:-0}" = 1 ]; then
+  BURST_REMOTE_ENV="$BURST_REMOTE_ENV AETHERROUTE_BURST_REQUIRE_ORIGIN=1"
+fi
 
 # Values below become remote shell arguments. Reject unknown modes before any
 # installation, and make every run own its temporary files and logs.
@@ -383,7 +391,7 @@ for engine in $ENGINES; do
     fi
 
     remote_report=$REMOTE_WORK/acceptance-$engine-$routing.txt
-    if vm "AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=YES AETHERROUTE_ACCEPTANCE_ALLOW_UNROUTED_IPV6=YES ${AETHERROUTE_IDLE_REUSE_HOST:+AETHERROUTE_IDLE_REUSE_HOST=\"$AETHERROUTE_IDLE_REUSE_HOST\"} '$REMOTE_WORK/test_runtime_acceptance.sh' $BUILD '$remote_report'" \
+    if vm "AETHERROUTE_ACCEPTANCE_PRIVILEGED_OBSERVATION=YES AETHERROUTE_ACCEPTANCE_ALLOW_UNROUTED_IPV6=YES $BURST_REMOTE_ENV ${AETHERROUTE_IDLE_REUSE_HOST:+AETHERROUTE_IDLE_REUSE_HOST=\"$AETHERROUTE_IDLE_REUSE_HOST\"} '$REMOTE_WORK/test_runtime_acceptance.sh' $BUILD '$remote_report'" \
       >"$WORK/matrix-$engine-$routing.out" 2>&1; then
       failures=0
     else

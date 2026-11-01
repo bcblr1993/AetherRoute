@@ -4,6 +4,82 @@ All notable changes to AetherRoute are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [2.0.2] - 2026-11-01
+
+### Fixed
+
+- Rasterize menu-bar traffic text in fixed Retina contexts before handing it
+  to the native status item. The old deferred drawing path reproduced a
+  CoreText exception under changing-rate updates. Add a 6,000-update native
+  status-item regression with a 64 MiB footprint budget, a 3,000-transform
+  retained-memory regression (8 MiB growth budget after warmup), clipping and
+  visible-content checks. Pre-render native appearance variants to preserve
+  contrast when an icon is created and drawn under different appearances.
+  Light/dark and badged/unbadged outputs match the old renderer pixel-for-pixel.
+- Preserve active reverse uploads after the remote TCP half-closes. The Swift
+  watchdog now measures monotonic idle time and defers while a bridge write is
+  in flight; confirmed progress extends the deadline without per-chunk timers.
+- Feed transparent TCP/UDP aggregate byte counters from successful sink
+  acknowledgements and record pump session failures once. Failed, stale and
+  cancelled callbacks do not count undelivered bytes.
+- Emit half-close idle reclamation in standard diagnostics, separately from
+  verbose-only user cancellation and error-level failures.
+- Tests first reproduced all three defects (five cases, seven failing
+  assertions), then passed: active upload, pending-write backpressure, eventual
+  idle cleanup, standard timeout logs and TCP/UDP aggregate integration.
+- Restore reproducible protocol-lab deployment: supervise every advertised
+  server, verify pinned downloads, and generate matching fresh VLESS encryption
+  keys. Install binaries atomically to avoid Linux `Text file busy` when
+  redeploying running services. Both defects first failed regression tests;
+  actual redeployment then succeeded.
+- Launch 60 concurrent requests in the native TCP burst gate and report first
+  failures without hidden retries. Use the lab's supervised empty-response
+  origin for release acceptance, checking response identity and internal
+  listener ports and forwarding the URL safely to the VM.
+
+### Validation
+
+- Initial complete local regression passed: 571 XCTest, 113 Swift Testing,
+  98 transparent-proxy and 24 bridge tests. Fast lane passed in 66 seconds.
+- Live 2.0.1 memory investigation found a stable 195.1–197.6 MB physical
+  footprint in six early samples, with font-cache retention paths. A later
+  footprint was 388.7 MB, while heap allocations grew by only 4.7 MB; these
+  measurements do not prove an equivalent allocation leak. Native status-item
+  testing subsequently reproduced the deferred-text exception fixed above.
+  The full app's historical retained-memory origin remains under observation.
+  See `Docs/TCPHalfCloseAndMemoryDiagnostics.md` for evidence and limitations.
+- A controlled transform sweep reproduced sustained renderer retention: the
+  old renderer reached about 54 MB after 3,000 draws and retained another
+  37 MB after warmup; the new renderer stayed near 10 MB.
+
+### Security
+
+- Exclude the private Sparkle signing file and host signing configuration from
+  remote source staging. Keep public-key validation intact. A synthetic-key
+  regression first caught the private file in the snapshot, then verifies its
+  exclusion from both the manifest and staged payload.
+
+### Diagnostics
+
+- Record one privacy-safe TCP failure summary with the session ID shared by
+  ingress and pump, the exact failing read/write/half-close operation, first
+  EOF direction, monotonic age, completed byte counts and pending write size.
+  Normal completion/user cancellation stays verbose-only; arbitrary error strings,
+  endpoints, credentials and payloads are excluded from the new record.
+- Regression tests reproduced the missing write-failure logs before the change
+  (8 assertions failed), then cover all six I/O failure stages, correlation,
+  byte accounting, late-callback deduplication and private-error redaction.
+- Investigated Codex WebSocket retries on 2026-11-01: the authenticated remote
+  peer rejects a declared frame of 16 MiB + 1 byte with close code 1009, while
+  16 MiB has no immediate rejection. A two-image synthetic Codex request
+  reproduces Broken pipe/retries and succeeds after the client's HTTPS fallback
+  on the same proxy path. This is a remote WebSocket size-limit finding, not an
+  AetherRoute data-plane fix. See `Docs/CodexWebSocketDiagnostics.md` for scope
+  and reproduction evidence. New diagnostics are source changes, not installed
+  in the currently running 2.0.1 extension.
+
 ## [2.0.1] - 2026-10-31
 
 Optimization and UI polish release for menu bar real-time traffic rendering, delivering pixel-aligned three-column typography (arrow, right-aligned rate values, left-aligned units) and preventing speed unit clipping on large bandwidth rates.

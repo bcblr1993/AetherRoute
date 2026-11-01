@@ -43,6 +43,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_parallel_acceptance_policy
 "$ROOT/scripts/test_runtime_acceptance_regressions.sh"
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_large_upload_gate.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_subscription_differential.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_protocol_lab.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_transparent_burst_gate.py"
 "$ROOT/scripts/test_payload_manifest.sh"
 "$ROOT/scripts/test_source_manifest.sh"
 "$ROOT/scripts/test_vm_acceptance_priming.sh"

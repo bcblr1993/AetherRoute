@@ -16,6 +16,8 @@ mkdir -p "$FIXTURE/scripts" "$FIXTURE/Sources/App" "$FIXTURE/Config" \
   "$FIXTURE/Services" "$FIXTURE/Tests"
 cp "$ROOT/scripts/source_manifest.sh" "$FIXTURE/scripts/"
 printf 'secret\n' >"$FIXTURE/Config/Signing.json"
+printf 'synthetic-private-fixture\n' >"$FIXTURE/Config/sparkle_ed25519_priv.key"
+printf 'synthetic-public-fixture\n' >"$FIXTURE/Config/sparkle_ed25519_pub.key"
 printf 'name: fixture\n' >"$FIXTURE/project.yml"
 printf '# notes\n' >"$FIXTURE/Docs/with space/a file.md"
 i=0
@@ -56,13 +58,20 @@ cmp -s "$WORK/expected.txt" "$WORK/actual.txt" || {
 }
 
 count=$(wc -l <"$WORK/paths.txt" | tr -d ' ')
-# 300 sources + 1 doc + project.yml + source_manifest.sh + 2 engine files.
-test "$count" = 305 || { echo "expected 305 manifest entries, got $count" >&2; exit 1; }
+# 300 sources + 1 doc + project.yml + source_manifest.sh + 2 engine files + public key.
+test "$count" = 306 || { echo "expected 306 manifest entries, got $count" >&2; exit 1; }
 grep -F 'Docs/with space/a file.md' "$WORK/paths.txt" >/dev/null
-if grep -E 'Signing.json|target/ignored.o' "$WORK/paths.txt" >/dev/null; then
+if grep -E 'Signing.json|sparkle_ed25519_priv.key|target/ignored.o' "$WORK/paths.txt" >/dev/null; then
   echo "source manifest included an excluded file" >&2
   exit 1
 fi
+
+. "$ROOT/scripts/remote_source_copy.sh"
+mkdir -p "$WORK/staged-config"
+stage_remote_source_directory "$FIXTURE/Config" "$WORK/staged-config" Config
+test ! -e "$WORK/staged-config/Signing.json"
+test ! -e "$WORK/staged-config/sparkle_ed25519_priv.key"
+cmp "$FIXTURE/Config/sparkle_ed25519_pub.key" "$WORK/staged-config/sparkle_ed25519_pub.key"
 
 find "$FIXTURE/Core/Engine/src/main.rs" -delete
 if sh "$FIXTURE/scripts/source_manifest.sh" >"$WORK/missing.txt" 2>"$WORK/missing.err"; then

@@ -117,6 +117,7 @@ run_profile() {
   # HOME, so the review bundle's defaults are cleared before and after.
   $SSH "$REMOTE" "defaults delete com.aetherroute.desktop.ui-review >/dev/null 2>&1; \
     defaults write com.aetherroute.desktop.ui-review SUEnableAutomaticChecks -bool NO; \
+    defaults write com.aetherroute.desktop.ui-review AetherRouteMenuBarTrafficEnabled -bool YES; \
     open -n -F --stdout '$REMOTE_DIR/app.log' --stderr '$REMOTE_DIR/app.log' \
       --env HOME='$REMOTE_DIR/Home' --env CFFIXED_USER_HOME='$REMOTE_DIR/Home' \
       --env TMPDIR='$REMOTE_DIR/Home/tmp' \

@@ -260,6 +260,45 @@ final class UDPFlowStateMachineTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(bridge.cancelCallCount, 1)
     }
 
+    func testUDPActualBatchWritesFeedAggregateCountersAndFailureExactlyOnce() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("udp-metrics-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sink = RotatingLogSink(configuration: .init(directoryURL: directory, baseName: "aggregate"))
+        let log = DiagnosticLog(category: "test", sink: sink, levelProvider: { .standard })
+        let aggregate = DiagnosticAggregator(log: log)
+        DiagnosticFlowOpenObserver.shared.attach(aggregate)
+        defer { DiagnosticFlowOpenObserver.shared.detach() }
+        let (machine, flow, source, bridge) = try makeMachine()
+        try await machine.start()
+        XCTAssertTrue(flow.completeNextRead(.success(.datagrams([datagram("abc"), datagram("defgh")]))))
+        let uploading = await eventually { bridge.writeCallCount == 1 }
+        XCTAssertTrue(uploading)
+        XCTAssertTrue(bridge.completeNextWrite(.success(())))
+        let uploaded = await eventually { flow.readCallCount == 2 }
+        XCTAssertTrue(uploaded)
+        XCTAssertTrue(source.completeNextRead(.success(.datagrams([datagram("xyz")]))))
+        let downloading = await eventually { flow.writeCallCount == 1 }
+        XCTAssertTrue(downloading)
+        XCTAssertTrue(flow.completeNextWrite(.success(())))
+        let downloaded = await eventually { source.readCallCount == 2 }
+        XCTAssertTrue(downloaded)
+        XCTAssertTrue(flow.completeNextRead(.success(.datagrams([datagram("not delivered")]))))
+        let pending = await eventually { bridge.writeCallCount == 2 }
+        XCTAssertTrue(pending)
+        XCTAssertTrue(bridge.completeNextWrite(.failure(.closed)))
+        let failed = await eventually(machine) { if case .failed = $0.lifecycle { return true }; return false }
+        XCTAssertTrue(failed)
+        await machine.cancel()
+        _ = source.completeNextRead(.failure(.closed))
+        aggregate.emit()
+        let flushed = expectation(description: "UDP aggregate flushed")
+        sink.flush { flushed.fulfill() }
+        await fulfillment(of: [flushed], timeout: 5)
+        let text = sink.tail(maximumBytes: 8192)
+        XCTAssertTrue(text.contains("up=8 down=3"))
+        XCTAssertTrue(text.contains("sessionsFailed=1"))
+    }
+
     private func makeMachine(
         onTermination: @escaping FlowTerminationHandler = { _ in }
     ) throws -> (

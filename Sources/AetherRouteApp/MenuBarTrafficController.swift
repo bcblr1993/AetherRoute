@@ -166,8 +166,67 @@ public enum MenuBarTrafficRenderer {
             return true
         }
 
-        image.isTemplate = !hasUpdate
-        return image
+        // Finish text drawing in fixed Retina contexts. Colored labels must
+        // still follow the native status item's drawing appearance, which can
+        // differ from the appearance in which SwiftUI created the image.
+        guard hasUpdate else {
+            guard let rendered = rasterize(image, canvas: canvas) else {
+                return MenuBarBadgedIcon.image(symbol: symbol, hasUpdate: false)
+            }
+            rendered.isTemplate = true
+            return rendered
+        }
+        let names: [NSAppearance.Name] = [
+            .aqua, .darkAqua, .vibrantLight, .vibrantDark,
+            .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
+            .accessibilityHighContrastVibrantLight, .accessibilityHighContrastVibrantDark
+        ]
+        var variants: [NSAppearance.Name: NSImage] = [:]
+        for name in names {
+            NSAppearance(named: name)?.performAsCurrentDrawingAppearance {
+                variants[name] = rasterize(image, canvas: canvas)
+            }
+        }
+        guard variants.count == names.count else {
+            return MenuBarBadgedIcon.image(symbol: symbol, hasUpdate: true)
+        }
+        let pixelsByAppearance = variants
+        let rendered = NSImage(size: canvas, flipped: false) { _ in
+            let name = NSAppearance.currentDrawing().bestMatch(from: names) ?? .aqua
+            pixelsByAppearance[name]?.draw(
+                in: NSRect(origin: .zero, size: canvas), from: .zero,
+                operation: .sourceOver, fraction: 1
+            )
+            return true
+        }
+        rendered.isTemplate = false
+        return rendered
+    }
+
+    private static func rasterize(_ image: NSImage, canvas: NSSize) -> NSImage? {
+        guard let pixels = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(canvas.width * 2), pixelsHigh: Int(canvas.height * 2),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0
+        ) else {
+            return nil
+        }
+        pixels.size = canvas
+        guard let context = NSGraphicsContext(bitmapImageRep: pixels) else {
+            return nil
+        }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        // NSGraphicsContext derives its 2x transform from pixels.size.
+        context.cgContext.clear(CGRect(origin: .zero, size: canvas))
+        image.draw(in: NSRect(origin: .zero, size: canvas), from: .zero,
+                   operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        let rendered = NSImage(size: canvas)
+        rendered.addRepresentation(pixels)
+        return rendered
     }
 }
 

@@ -14,13 +14,16 @@ import concurrent.futures
 import os
 import subprocess
 import sys
+import threading
 import time
+import traceback
 import urllib.request
 
 TOTAL_REQUESTS = int(os.environ.get("AETHERROUTE_BURST_REQUESTS", "60"))
-MAX_WORKERS = int(os.environ.get("AETHERROUTE_BURST_WORKERS", "20"))
+MAX_WORKERS = int(os.environ.get("AETHERROUTE_BURST_WORKERS", "60"))
 TIMEOUT = float(os.environ.get("AETHERROUTE_BURST_TIMEOUT", "10.0"))
 TARGET_URL = os.environ.get("AETHERROUTE_BURST_URL", "http://cp.cloudflare.com/generate_204")
+REQUIRE_ORIGIN = os.environ.get("AETHERROUTE_BURST_REQUIRE_ORIGIN") == "1"
 
 
 def clean_fetch(index: int) -> int:
@@ -31,13 +34,34 @@ def clean_fetch(index: int) -> int:
         TARGET_URL,
         headers={"User-Agent": f"AetherRouteBurstGate/{index}"},
     )
-    for attempt in range(2):
-        try:
-            with opener.open(req, timeout=TIMEOUT) as response:
-                return response.getcode()
-        except Exception:
-            if attempt == 1:
-                raise
+    with opener.open(req, timeout=TIMEOUT) as response:
+        if REQUIRE_ORIGIN and (
+            response.getcode() != 204 or response.headers.get("X-AetherRoute-Burst") != "1"
+        ):
+            raise ValueError("Unexpected controlled-origin response")
+        return response.getcode()
+
+
+def classify_error(error: Exception) -> str:
+    names = set()
+    current = error
+    for _ in range(5):
+        names.update(frame.name for frame in traceback.extract_tb(current.__traceback__))
+        reason = getattr(current, "reason", None)
+        current = reason if isinstance(reason, BaseException) else current.__context__
+        if current is None:
+            break
+    if "_read_status" in names:
+        phase = "responseHeaders"
+    elif "getaddrinfo" in names:
+        phase = "dns"
+    elif "do_handshake" in names:
+        phase = "tls"
+    elif "create_connection" in names or "connect" in names:
+        phase = "connect"
+    else:
+        phase = "request"
+    return f"stage={phase} error={type(error).__name__}"
 
 
 def get_transparent_provider_pid() -> int | None:
@@ -73,13 +97,20 @@ def main() -> int:
     pid = get_transparent_provider_pid()
     rss_before = get_rss_kb(pid) if pid else None
 
-    start_time = time.time()
+    start_time = time.monotonic()
     successes = 0
     failures = 0
     errors: list[str] = []
 
+    first_wave = min(MAX_WORKERS, TOTAL_REQUESTS)
+    ready = threading.Barrier(first_wave)
+    def synchronized_fetch(index):
+        if index < first_wave:
+            ready.wait(timeout=TIMEOUT)
+        return clean_fetch(index)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(clean_fetch, i): i for i in range(TOTAL_REQUESTS)}
+        futures = {executor.submit(synchronized_fetch, i): i for i in range(TOTAL_REQUESTS)}
         for future in concurrent.futures.as_completed(futures):
             try:
                 code = future.result()
@@ -90,9 +121,9 @@ def main() -> int:
                     errors.append(f"HTTP {code}")
             except Exception as e:
                 failures += 1
-                errors.append(str(e))
+                errors.append(f"request={futures[future]} {classify_error(e)}")
 
-    duration = time.time() - start_time
+    duration = time.monotonic() - start_time
 
     # Wait 1.5 seconds for sessions to drain and release leases
     time.sleep(1.5)

@@ -55,6 +55,7 @@ CURRENT_SOURCE="$WORK/source-manifest-current.txt"
 INTEROP_TEST_SOURCE="$ROOT/../references/interop-tools/clash-rs-2272555/clash-lib-protocol-tests"
 REMOTE_BASE=
 RUN_STATUS=failed
+. "$ROOT/scripts/remote_source_copy.sh"
 STAMP=$(date -u '+%Y%m%dT%H%M%SZ')
 EVIDENCE="$ROOT/outputs/test-evidence/remote-arm64-$STAMP-$MODE"
 mkdir -p "$STAGED_ROOT"
@@ -120,7 +121,7 @@ do
   mkdir -p "$(dirname -- "$destination_path")"
   if [ -d "$source_path" ]; then
     mkdir -p "$destination_path"
-    rsync -a "$source_path/" "$destination_path/"
+    stage_remote_source_directory "$source_path" "$destination_path" "$relative_path"
   else
     rsync -a "$source_path" "$destination_path"
   fi

@@ -1,13 +1,8 @@
 import Foundation
 
-/// Bridges flow-open outcomes from the Apple access layer to whichever
-/// aggregator the running provider owns.
-///
-/// The access layer sits below the provider and must not depend on it, but the
-/// open success/failure ratio is the single most useful health number this
-/// product has — it is what distinguished "the proxy is broken" from "one app
-/// is spamming an unreachable endpoint". A one-way observer keeps the counting
-/// available without inverting the module dependency.
+/// Routes native open outcomes and confirmed TCP/UDP writes to the running
+/// provider's aggregate counters, without coupling the pump to the provider.
+/// No endpoint, payload or error description crosses this boundary.
 public final class DiagnosticFlowOpenObserver: @unchecked Sendable {
     public static let shared = DiagnosticFlowOpenObserver()
 
@@ -28,16 +23,19 @@ public final class DiagnosticFlowOpenObserver: @unchecked Sendable {
         aggregator = nil
     }
 
-    public func record(transport: String, succeeded: Bool) {
+    public func record(_ counter: DiagnosticCounter) {
         lock.lock()
         let target = aggregator
         lock.unlock()
-        guard let target else { return }
+        target?.record(counter)
+    }
+
+    public func record(transport: String, succeeded: Bool) {
         switch (transport, succeeded) {
-        case ("tcp", true): target.record(.tcpOpened)
-        case ("tcp", false): target.record(.tcpOpenFailed)
-        case ("udp", true): target.record(.udpOpened)
-        case ("udp", false): target.record(.udpOpenFailed)
+        case ("tcp", true): record(.tcpOpened)
+        case ("tcp", false): record(.tcpOpenFailed)
+        case ("udp", true): record(.udpOpened)
+        case ("udp", false): record(.udpOpenFailed)
         default: break
         }
     }

@@ -113,7 +113,8 @@ final class TransparentTCPProxySession:
                 flow: flow,
                 bridgeSource: rust,
                 bridgeSink: rust,
-                maximumReadBytes: maximumReadBytes
+                maximumReadBytes: maximumReadBytes,
+                sessionID: sessionID
             ) { [weak self] lifecycle in
                 self?.scheduleMachineTermination(lifecycle)
             }

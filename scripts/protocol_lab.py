@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """A throwaway multi-protocol server on a real VPS, for subscription testing.
 
-One sing-box process, run by its own `aether-lab` systemd unit from
-/opt/aether-lab, listens on ports BASE..BASE+39 (TCP and UDP) and touches
-nothing else on the host. Every inbound gets fresh random credentials.
+A dedicated `aether-lab` systemd unit supervises the required protocol servers
+from /opt/aether-lab. The generated service manifest covers every advertised
+node. Every inbound gets fresh random credentials.
 
     protocol_lab.py generate HOST     # writes outputs/protocol-lab/
     protocol_lab.py deploy SSH_TARGET # installs and starts aether-lab
@@ -20,6 +20,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import shlex
@@ -355,16 +356,10 @@ def generate(host):
              + f"#{xh_name}")
 
     p_venc, uid_venc = next(port), str(uuid.uuid4())
-    venc_decryption = (
-        "mlkem768x25519plus.native.600s."
-        "kIiXcPpkuYjOTeLTBEyOIuPxDmtUC8VexSzuINO3kXc."
-        "YRO8NwsDVVzGYCApnlSoohsW0tEdith_ZzS46FEsSmAOEALVSC_fIJOJ5neEK4ZaYjoN1CbWbQbw4zKdt5kkOg"
-    )
-    venc_encryption = (
-        "mlkem768x25519plus.native.0rtt."
-        "B7K28dC0fP-hR1M5fC6V_w5mP1W0vH8jY6nZ9xL2qQ4."
-        "rN1kP5mS8vX2yB4nM7qW0eR3tY6uI9oP2aS5dF8gH1j"
-    )
+    # Xray generates a matching fresh pair. Never ship example/private keys.
+    key_pairs = run(str(ROOT / "build/interop-tools/xray"), "vlessenc")
+    venc_decryption = re.search(r'"decryption":\s*"([^"]+)"', key_pairs)[1]
+    venc_encryption = re.search(r'"encryption":\s*"([^"]+)"', key_pairs)[1]
     xray_inbounds.append({
         "listen": "::", "port": p_venc, "protocol": "vless",
         "settings": {"clients": [{"id": uid_venc}], "decryption": venc_decryption},
@@ -433,8 +428,50 @@ def generate(host):
     (OUT / "subscription.b64").write_text(base64.b64encode(("\n".join(uris) + "\n").encode()).decode())
     (OUT / "expect.json").write_text(json.dumps({n["name"]: n["expect"] for n in nodes}, indent=2))
     (OUT / "ports.txt").write_text(f"{BASE}-{BASE + 39}\n")
+    # Every node must be backed by a service in the deployed supervisor.
+    by_name = {n["name"]: n["proxy"] for n in nodes}
+    service_nodes = {
+        "xray": [n for n in by_name if n.startswith("vless-xhttp") or n == "vless-encryption-native"],
+        "mihomo": [n for n in by_name if n.startswith("mieru-") or n == "snell-v4"],
+        "ssr": ["ssr-aes-256-cfb"], "tuic4": ["tuic-v4"], "awg": ["amneziawg"],
+    }
+    assigned = {n for names in service_nodes.values() for n in names}
+    service_nodes["sing-box"] = [n for n in by_name if n not in assigned]
+    # Use a private loopback WG endpoint behind an independent AWG wire adapter.
+    awg_endpoint = {**endpoints[0], "tag": "awg-in", "listen_port": 30999,
+                    "address": ["10.66.1.1/24"],
+                    "peers": [{"public_key": wg_client["PublicKey"], "allowed_ips": ["10.66.1.2/32"]}]}
+    server["endpoints"].append(awg_endpoint)
+    (OUT / "server.json").write_text(json.dumps(server, indent=2))
+    (OUT / "awg.json").write_text(json.dumps({"port": p_awg, "backend": 30999,
+        "server_public": wg_server["PublicKey"], "client_public": wg_client["PublicKey"], "options": awg_opts}))
+    (OUT / "ssr.json").write_text(json.dumps({"server": "0.0.0.0", "server_port": p_ssr,
+        "password": ssr_key, "method": "aes-256-cfb", "protocol": "auth_aes128_md5",
+        "obfs": "tls1.2_ticket_auth", "timeout": 300}))
+    commands = {
+        "sing-box": [f"{REMOTE}/sing-box", "run", "-c", f"{REMOTE}/server.json"],
+        "xray": [f"{REMOTE}/xray", "run", "-config", f"{REMOTE}/xray.json"],
+        "mihomo": [f"{REMOTE}/mihomo", "-d", f"{REMOTE}/mihomo-home", "-f", f"{REMOTE}/mihomo-listeners.yaml"],
+        "ssr": ["python3", f"{REMOTE}/ssr/shadowsocks/server.py", "-c", f"{REMOTE}/ssr.json"],
+        "tuic4": [f"{REMOTE}/tuic4", "--port", str(p_tuic4), "--ip", "0.0.0.0", "--token", tuic4_token,
+                  "--certificate", f"{REMOTE}/cert.pem", "--private-key", f"{REMOTE}/key.pem", "--alpn", "h3"],
+        "awg": ["python3", f"{REMOTE}/lab_services.py", "awg", f"{REMOTE}/awg.json"],
+    }
+    services = [{"name": s, "nodes": names, "argv": commands[s],
+                 "ports": sorted({by_name[n]["port"] for n in names})} for s, names in service_nodes.items()]
+    internal_ports = {item["listen_port"] for item in server["inbounds"] + server["endpoints"]}
+    next(service for service in services if service["name"] == "sing-box")["ports"] = sorted(internal_ports)
+    burst_port = BASE + 38
+    if any(burst_port in service["ports"] for service in services):
+        raise ValueError("burst origin port overlaps a protocol node")
+    services.append({"name": "burst-http", "nodes": [], "ports": [burst_port],
+                     "argv": ["python3", f"{REMOTE}/burst_http_server.py", str(burst_port)]})
+    (OUT / "burst-url.txt").write_text(f"http://{host}:{burst_port}/generate_204\n")
+    validate_services(services, by_name)
+    (OUT / "services.json").write_text(json.dumps(services, indent=2))
     for f in OUT.iterdir():
-        os.chmod(f, 0o600)
+        if f.is_file():
+            os.chmod(f, 0o600)
     print(f"{len(nodes)} nodes, ports {BASE}-{BASE + 39}, written to {OUT}")
 
 
@@ -471,12 +508,22 @@ def ssh(target, script):
                           text=True, check=True)
 
 
+def validate_services(services, nodes):
+    assigned = [n for service in services for n in service["nodes"]]
+    if len(assigned) != len(set(assigned)) or set(assigned) != set(nodes):
+        raise ValueError("lab nodes must each have exactly one deployed service")
+
+
 def deploy(target):
-    for f in ("server.json", "cert.pem", "key.pem"):
+    files = ("server.json", "cert.pem", "key.pem", "xray.json", "mihomo-listeners.yaml",
+             "awg.json", "ssr.json", "services.json")
+    for f in files:
         if not (OUT / f).exists():
             sys.exit(f"missing {OUT / f}; run generate first")
-    subprocess.run(["scp", "-q", "-o", "BatchMode=yes", str(OUT / "server.json"), str(OUT / "cert.pem"),
-                    str(OUT / "key.pem"), f"{target}:/tmp/"], check=True)
+    stage = run("ssh", "-o", "BatchMode=yes", target, "mktemp -d /tmp/aether-lab-deploy.XXXXXX").strip()
+    subprocess.run(["scp", "-q", "-o", "BatchMode=yes", *[str(OUT / f) for f in files],
+                    str(ROOT / "scripts/lab_services.py"),
+                    str(ROOT / "Tests/Interop/burst_http_server.py"), f"{target}:{stage}/"], check=True)
     url = (f"https://github.com/SagerNet/sing-box/releases/download/v{SING_BOX_VERSION}/"
            f"sing-box-{SING_BOX_VERSION}-linux-amd64.tar.gz")
     ssh(target, f"""set -euo pipefail
@@ -489,24 +536,24 @@ if ! {REMOTE}/sing-box version 2>/dev/null | grep -q {SING_BOX_VERSION}; then
   sudo install -m 0755 "$tmp/sing-box-{SING_BOX_VERSION}-linux-amd64/sing-box" {REMOTE}/sing-box
   rm -rf "$tmp"
 fi
-sudo install -m 0600 /tmp/server.json {REMOTE}/config.json
-sudo install -m 0600 /tmp/cert.pem {REMOTE}/cert.pem
-sudo install -m 0600 /tmp/key.pem {REMOTE}/key.pem
-rm -f /tmp/server.json /tmp/cert.pem /tmp/key.pem
-sudo {REMOTE}/sing-box check -c {REMOTE}/config.json
+sudo install -m 0600 {stage}/* {REMOTE}/
+rm -rf {stage}
+sudo python3 {REMOTE}/lab_services.py install
+sudo {REMOTE}/sing-box check -c {REMOTE}/server.json
 sudo tee /etc/systemd/system/aether-lab.service >/dev/null <<'UNIT'
 [Unit]
 Description=AetherRoute protocol lab (throwaway, safe to remove)
 After=network-online.target
 [Service]
-ExecStart={REMOTE}/sing-box run -c {REMOTE}/config.json
+ExecStart=/usr/bin/python3 {REMOTE}/lab_services.py supervise
 Restart=on-failure
-MemoryMax=300M
-CPUQuota=80%
+MemoryMax=900M
+CPUQuota=150%
 [Install]
 WantedBy=multi-user.target
 UNIT
 sudo systemctl daemon-reload
+sudo systemctl reset-failed aether-lab
 sudo systemctl enable --now aether-lab
 sudo systemctl restart aether-lab
 sleep 2
@@ -516,7 +563,7 @@ systemctl is-active aether-lab
 
 def status(target):
     ssh(target, f"""systemctl is-active aether-lab; systemctl show aether-lab -p MemoryCurrent
-sudo ss -tulnp | grep -c sing-box || true
+sudo ss -tulnp | grep -cE ':(310[0-3][0-9]|31040) ' || true
 sudo journalctl -u aether-lab --since -10min --no-pager | tail -20""")
 
 
