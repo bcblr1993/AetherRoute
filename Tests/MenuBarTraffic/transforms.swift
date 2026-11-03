@@ -16,7 +16,9 @@ enum AppLocalization { static func string(_ value: String) -> String { value } }
         return value.phys_footprint
     }
     @MainActor static func main() {
-        _ = NSApplication.shared
+        // This CLI probe has no App/NSApplication.run() entry point. Complete
+        // AppKit startup before exercising the production font renderer.
+        NSApplication.shared.finishLaunching()
         var warmedFootprint: UInt64 = 0
         var peakAfterWarmup: UInt64 = 0
         for frame in 0...3000 {

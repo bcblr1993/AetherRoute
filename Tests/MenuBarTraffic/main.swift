@@ -27,7 +27,8 @@ enum AppLocalization {
 
     @MainActor
     static func main() {
-        _ = NSApplication.shared
+        // Match the production app's initialized AppKit/font environment.
+        NSApplication.shared.finishLaunching()
         print("Running menu bar real-time traffic gate tests...")
 
         // ---------------------------------------------------------
