@@ -53,14 +53,22 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ### Validation
 
-- Local regression: 573 XCTest and 121 Swift Testing tests (including 99
-  transparent-proxy and 24 bridge tests) passed with warnings as errors.
+- Local regression: 573 XCTest, 121 Swift Testing, 99 transparent-proxy and
+  24 bridge tests passed with compiler warnings treated as errors.
   Fast lane passed all 13 steps; menu-bar icon, menu-bar traffic and traffic
   history gates passed.
-- Abbreviated release at the maintainer's request: the VM matrix, remote
-  source gate, UI performance gate, interop matrices and protocol-lab
-  comparison were not rerun for this build (no `Core/Engine` change). See
-  `Docs/ReleaseExceptions/2.0.3.md`.
+- Full release qualification completed: VM six-way matrix (157 passed, zero
+  failed), complete VM source regression, and both 300-second physical UI
+  profiles passed. Showcase p95/max 148.2/179.4 ms and median/peak 67/78 MB;
+  large 144.6/185.2 ms and 67/84 MB. Budgets were unchanged.
+- The exact notarized candidate passed physical TUN and transparent-proxy
+  idle reuse, 2 MiB upload, and six real interface switches per engine.
+  TUN recovery seconds: 1/2/2/1/1/2; transparent: 2/1/2/2/2/2.
+- Default and Chrome interop matrices each passed 68 cases and 34 certificate
+  rejections on the unchanged engine. Nine real sites and ECH passed; the
+  43-node lab comparison passed on both engines. Initial SDK-cache and stale
+  reference-verifier failures are preserved in the release evidence. See
+  `Docs/ReleaseExceptions/2.0.3.md` for scope and environment limitations.
 
 ## [2.0.2] - 2026-11-02
 

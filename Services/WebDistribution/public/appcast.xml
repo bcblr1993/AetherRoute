@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 2.0.2 (Build 2026110202)</title>
-            <pubDate>Mon, 02 Nov 2026 02:14:41 +0800</pubDate>
-            <sparkle:version>2026110202</sparkle:version>
-            <sparkle:shortVersionString>2.0.2</sparkle:shortVersionString>
+            <title>Version 2.0.3 (Build 2026110301)</title>
+            <pubDate>Tue, 03 Nov 2026 11:02:47 +0800</pubDate>
+            <sparkle:version>2026110301</sparkle:version>
+            <sparkle:shortVersionString>2.0.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/2.0.2/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/2.0.3/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,19 +120,33 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 2.0.2 更新要点</span>
-  <span class="release-badge">Build 2026110202 · 正式发布</span>
+  <span class="release-title">AetherRoute 2.0.3 更新要点</span>
+  <span class="release-badge">Build 2026110301 · 正式发布</span>
 </div>
-<h2>AetherRoute 2.0.2</h2><p>修复半关闭连接上传中断、透明代理计量与日志、JSON/DoH 配置兼容及菜单栏绘制缓存，包含 DNS/SSH 安全更新。</p><p>Fix half-closed uploads, diagnostics, JSON/DoH compatibility and menu-bar rendering; includes DNS/SSH security updates.</p>
+<div class="section">
+  <span class="section-tag tag-fix">🐛 修复：唤醒后不再连续断开连接</span>
+  <ul>
+    <li><strong>透明代理唤醒只按需重置</strong>：同时使用 Wi‑Fi 和 USB 有线网卡时，过去每次唤醒约 5 秒内会重置三次网络，所有代理连接都被打断三次。现在已经切换过的网卡不会重复重置，有线网卡恢复后仍会切换过去。</li>
+    <li><strong>正常关闭的连接不再记为失败</strong>：应用收到响应后自行关闭的连接按正常结束处理，诊断里的失败会话和错误日志只反映真实失败。</li>
+    <li><strong>恢复流程更稳</strong>：唤醒恢复期间收到的重置请求会并入本次恢复，睡眠时取消的恢复不会再误报已恢复。</li>
+  </ul>
+</div>
+<div class="section">
+  <span class="section-tag tag-improve">✨ 改进：菜单栏网速</span>
+  <ul>
+    <li><strong>关闭窗口后菜单栏网速保持每 3 秒刷新</strong>，开启时立即刷新；没有流量或屏幕休眠时暂停流量图动画，减少后台耗电。</li>
+  </ul>
+</div>
+
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/2.0.2/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/2.0.3/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v2.0.2/AetherRoute-2.0.2-build-2026110202-arm64.dmg"
-                sparkle:edSignature="mcE1/WJqicFsEMNe9dqVhJEM1fzgxqPvRnixxjGsnBWO0nBLUIFp7v0anM+zyLV+QPcDWajVpa1gkeAQgvQsAQ=="
-                length="29185083"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v2.0.3/AetherRoute-2.0.3-build-2026110301-arm64.dmg"
+                sparkle:edSignature="ZwpvMwS0hPFylgtyMWHPPNGFom10NmOy+HqHwWm/X2akWY/JDo0PLkm+ndNbxIC+MDeZ3Zzh+Tt8VNt8hgnuDg=="
+                length="29210020"
                 type="application/octet-stream" />
         </item>
     </channel>
