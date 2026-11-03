@@ -239,6 +239,7 @@ public final class MenuBarTrafficController: ObservableObject {
     @Published public private(set) var isEnabled: Bool
     @Published public private(set) var uploadBytesPerSecond: UInt64 = 0
     @Published public private(set) var downloadBytesPerSecond: UInt64 = 0
+    public var onEnabledChanged: ((Bool) -> Void)?
 
     private let defaults: UserDefaults
 
@@ -254,6 +255,7 @@ public final class MenuBarTrafficController: ObservableObject {
         if !enabled {
             reset()
         }
+        onEnabledChanged?(enabled)
     }
 
     public func updateTelemetry(upload: UInt64, download: UInt64) {

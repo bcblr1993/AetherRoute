@@ -2062,7 +2062,12 @@ private struct LiveTrafficHistoryGraph: View {
                 .foregroundStyle(AetherVisual.secondaryText)
                 .aetherLiveValue()
             }
-            TimelineView(.animation(minimumInterval: Self.frameInterval, paused: !isRealtime)) { context in
+            TimelineView(
+                .animation(
+                    minimumInterval: Self.frameInterval,
+                    paused: !isRealtime || !model.history.hasActiveTraffic
+                )
+            ) { context in
                 let now = windowEnd(at: context.date, lastSample: lastSample)
                 let samples = model.history.visible(at: now)
                 ZStack {

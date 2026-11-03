@@ -21,9 +21,15 @@ public enum TelemetryCadence: Equatable, Sendable {
     }
 
     /// The strongest demand across surfaces wins.
-    public static func resolve(realtimeSources: Int, backgroundSources: Int) -> TelemetryCadence {
-        if realtimeSources > 0 { return .realtime }
+    public static func resolve(
+        realtimeSources: Int,
+        backgroundSources: Int,
+        isMenuBarTrafficEnabled: Bool = false,
+        isTrafficStatisticsEnabled: Bool = false
+    ) -> TelemetryCadence {
+        if realtimeSources > 0 || isMenuBarTrafficEnabled { return .realtime }
         if backgroundSources > 0 { return .background }
+        if isTrafficStatisticsEnabled { return .statistics }
         return .healthOnly
     }
 }

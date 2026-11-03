@@ -358,9 +358,19 @@ final class NetworkExtensionUDPFlowAccess:
         ) -> Void
     ) {
         if let error {
-            NativeFlowRuntimeLog.log.failure(
-                "stage=udpNativeRead failed code=\((error as NSError).code)"
-            )
+            let code = (error as NSError).code
+            let isPeerClosed =
+                code == NEAppProxyFlowError.notConnected.rawValue
+                || code == NEAppProxyFlowError.peerReset.rawValue
+            if isPeerClosed {
+                NativeFlowRuntimeLog.log.verbose(
+                    "stage=udpNativeRead peerClosed code=\(code)"
+                )
+            } else {
+                NativeFlowRuntimeLog.log.failure(
+                    "stage=udpNativeRead failed code=\(code)"
+                )
+            }
             completion(.failure(NetworkExtensionFlowErrorMapper.map(error)))
             return
         }
@@ -416,9 +426,19 @@ final class NetworkExtensionUDPFlowAccess:
         ) -> Void
     ) {
         if let error {
-            NativeFlowRuntimeLog.log.failure(
-                "stage=udpNativeWrite failed code=\((error as NSError).code)"
-            )
+            let code = (error as NSError).code
+            let isPeerClosed =
+                code == NEAppProxyFlowError.notConnected.rawValue
+                || code == NEAppProxyFlowError.peerReset.rawValue
+            if isPeerClosed {
+                NativeFlowRuntimeLog.log.verbose(
+                    "stage=udpNativeWrite peerClosed code=\(code)"
+                )
+            } else {
+                NativeFlowRuntimeLog.log.failure(
+                    "stage=udpNativeWrite failed code=\(code)"
+                )
+            }
             completion(.failure(NetworkExtensionFlowErrorMapper.map(error)))
         } else {
             NativeFlowRuntimeLog.log.verbose("stage=udpNativeWrite success")

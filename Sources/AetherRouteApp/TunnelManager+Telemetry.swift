@@ -55,6 +55,15 @@ extension TunnelManager {
         setTelemetryDemand(preferred ? .realtime : .none, for: source)
     }
 
+    func handleMenuBarTrafficEnabledChanged(_ enabled: Bool) {
+        if enabled && state == .connected {
+            Task { [weak self] in
+                await self?.refreshTelemetry()
+            }
+        }
+        restartTelemetryPolling()
+    }
+
     /// A cadence change (a page with live traffic opened or closed). Unlike
     /// a real stop it keeps the statistics baseline and does not write the
     /// ledger, so switching pages costs nothing beyond the new schedule.
@@ -76,16 +85,15 @@ extension TunnelManager {
         else { return }
         // Statistics need a sample now and then even with no traffic view
         // open; once a minute is enough because the engine keeps exact
-        // lifetime totals between samples.
-        let cadence: TelemetryCadence = if isRealtimeTelemetryPreferred {
-            .realtime
-        } else if isBackgroundTelemetryPreferred {
-            .background
-        } else if isTrafficStatisticsEnabled {
-            .statistics
-        } else {
-            .healthOnly
-        }
+        // lifetime totals between samples. When menu bar real-time traffic is
+        // enabled, keep 3 s polling active even if all windows are closed,
+        // without marking window surfaces as realtime.
+        let cadence = TelemetryCadence.resolve(
+            realtimeSources: isRealtimeTelemetryPreferred ? 1 : 0,
+            backgroundSources: isBackgroundTelemetryPreferred ? 1 : 0,
+            isMenuBarTrafficEnabled: MenuBarTrafficController.shared.isEnabled,
+            isTrafficStatisticsEnabled: isTrafficStatisticsEnabled
+        )
         telemetryPollingTask = Task { [weak self] in
             var schedule = TelemetryPollingSchedule(cadence: cadence)
             while !Task.isCancelled {
@@ -400,7 +408,7 @@ extension TunnelManager {
                         "stage=automaticRouteHealth recovered"
                     )
                 }
-                Self.runtimeLogger.info(
+                Self.runtimeLogger.debug(
                     "stage=automaticRouteHealth success attemptsMax=\(TunnelStartupTimingPolicy.automaticRouteFailoverAttemptCount, privacy: .public)"
                 )
                 if proxySelectionMode(for: group) == .failover,

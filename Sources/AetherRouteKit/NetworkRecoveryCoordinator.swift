@@ -125,9 +125,12 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
     private let observer: @Sendable (Event) -> Void
     private let clock: @Sendable () -> Date
 
+    private let stateLock = NSLock()
     private var pending: DispatchWorkItem?
     private var runToken: UInt64 = 0
     private var isRunning = false
+    private var currentReason: String?
+    private var lastCompletedReason: String?
     /// Stamped when a run starts *and* when it ends. Reinstalling the tunnel's
     /// settings makes the tunnel interface disappear and reappear, which the
     /// path monitor reports as a change, so a completed run is immediately
@@ -167,49 +170,62 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
     /// Requests recovery. Safe to call from any thread and from any number of
     /// notification sources; overlapping requests collapse into one run.
     public func trigger(reason: String, supersedes: Bool = false) {
-        queue.async { [self] in
-            // A run already in flight is the answer to any new trigger: it
-            // retries on its own and stops on its own health check. Restarting
-            // it would reset the backoff, and reinstalling routes itself emits
-            // path-change notifications, so accepting triggers mid-run kept the
-            // loop pinned to its shortest delays and it never reached the long
-            // ones a slow link needs.
-            if isRunning && !supersedes {
-                observer(.coalesced(reason: reason))
-                return
+        let decision: (coalesced: Bool, token: UInt64) = stateLock.withLock {
+            let effectiveSupersedes: Bool
+            if reason == "appMessage",
+               (isRunning && currentReason == "wake")
+                || (!isRunning && lastCompletedReason == "wake") {
+                effectiveSupersedes = false
+            } else {
+                effectiveSupersedes = supersedes
+            }
+            if isRunning && !effectiveSupersedes {
+                return (true, runToken)
             }
             let now = clock()
-            if !supersedes, let activeAt = lastRunActivityAt,
+            if !effectiveSupersedes, let activeAt = lastRunActivityAt,
                now.timeIntervalSince(activeAt) < debounce {
-                observer(.coalesced(reason: reason))
-                return
+                return (true, runToken)
             }
             lastRunActivityAt = now
             isRunning = true
+            currentReason = reason
             runToken &+= 1
             pending?.cancel()
             pending = nil
+            return (false, runToken)
+        }
+        if decision.coalesced {
+            observer(.coalesced(reason: reason))
+            return
+        }
+        let token = decision.token
+        queue.async { [self] in
+            guard stateLock.withLock({ runToken == token }) else { return }
             observer(.started(reason: reason))
-            scheduleAttempt(index: 0, token: runToken, reason: reason)
+            scheduleAttempt(index: 0, token: token, reason: reason)
         }
     }
 
     /// Abandons any run in flight. Call when the host is suspending or the
     /// provider is stopping, so a queued attempt cannot outlive it.
     public func cancel(reason: String = "cancelled") {
-        queue.async { [self] in
-            let wasRunning = isRunning
+        let wasRunning: Bool = stateLock.withLock {
+            let running = isRunning
             pending?.cancel()
             pending = nil
             runToken &+= 1
             isRunning = false
+            currentReason = nil
+            lastCompletedReason = nil
             // Deliberately clears the debounce stamp: a cancel is a suspend or
             // a stop, and the wake that follows must be able to start a run
             // immediately instead of being swallowed as a duplicate.
             lastRunActivityAt = nil
-            if wasRunning {
-                observer(.cancelled(reason: reason))
-            }
+            return running
+        }
+        if wasRunning {
+            observer(.cancelled(reason: reason))
         }
     }
 
@@ -220,9 +236,16 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
 
     private func scheduleAttempt(index: Int, token: UInt64, reason: String) {
         guard index < delays.count else {
-            pending = nil
-            isRunning = false
-            lastRunActivityAt = clock()
+            let stillValid: Bool = stateLock.withLock {
+                guard runToken == token else { return false }
+                pending = nil
+                isRunning = false
+                currentReason = nil
+                lastCompletedReason = reason
+                lastRunActivityAt = clock()
+                return true
+            }
+            guard stillValid else { return }
             observer(.exhausted(reason: reason, attempts: delays.count))
             return
         }
@@ -231,20 +254,43 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
             // A newer run, or a cancel, invalidates this attempt. The token
             // check matters because `DispatchWorkItem.cancel` cannot interrupt
             // an item the queue has already begun executing.
-            guard self.runToken == token else { return }
+            guard self.stateLock.withLock({ self.runToken == token }) else { return }
             self.perform(reason, index)
-            guard self.runToken == token else { return }
-            if self.verify() {
-                self.pending = nil
-                self.isRunning = false
-                self.lastRunActivityAt = self.clock()
+            guard self.stateLock.withLock({ self.runToken == token }) else { return }
+            let healthy = self.verify()
+            let stillValid: Bool = self.stateLock.withLock {
+                guard self.runToken == token else { return false }
+                if healthy {
+                    self.pending = nil
+                    self.isRunning = false
+                    self.currentReason = nil
+                    self.lastCompletedReason = reason
+                    self.lastRunActivityAt = self.clock()
+                }
+                return true
+            }
+            guard stillValid else { return }
+            if healthy {
                 self.observer(.recovered(reason: reason, attempt: index))
                 return
             }
             self.observer(.attemptFailed(reason: reason, attempt: index))
             self.scheduleAttempt(index: index + 1, token: token, reason: reason)
         }
-        pending = item
+        let scheduled: Bool = stateLock.withLock {
+            guard runToken == token else { return false }
+            pending = item
+            return true
+        }
+        guard scheduled else { return }
         queue.asyncAfter(deadline: .now() + delays[index], execute: item)
+    }
+}
+
+private extension NSLock {
+    func withLock<Value>(_ body: () -> Value) -> Value {
+        lock()
+        defer { unlock() }
+        return body()
     }
 }

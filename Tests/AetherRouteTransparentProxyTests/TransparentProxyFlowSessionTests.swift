@@ -269,6 +269,51 @@ final class TransparentProxyFlowSessionTests:
         XCTAssertEqual(udpBudget.snapshot().activeLeaseCount, 1)
     }
 
+    func testCancelledOpenDoesNotLogFailureForTCPOrUDP() throws {
+        XCTAssertTrue(TransparentSessionRuntimeLog.isExpectedEarlyOpenTermination(.closed))
+        XCTAssertTrue(TransparentSessionRuntimeLog.isExpectedEarlyOpenTermination(.cancelled))
+        XCTAssertFalse(TransparentSessionRuntimeLog.isExpectedEarlyOpenTermination(.transport("io")))
+
+        let registry = try TransparentProxySessionRegistry()
+        let tcpOpening = StubFlowOpening()
+        let tcpFlow = StubTCPFlow()
+        let tcpRust = StubRustTCPFlow()
+        let tcpSession = try TransparentTCPProxySession(
+            opening: tcpOpening,
+            flow: tcpFlow,
+            rust: tcpRust,
+            resourceLease: try resourceLease(for: .tcp),
+            registry: registry
+        )
+        try registry.insert(tcpSession)
+        tcpSession.start()
+        waitUntil { tcpOpening.openCount == 1 }
+        tcpOpening.complete(.failure(.cancelled))
+        waitUntil { tcpRust.destroyCount == 1 }
+        tcpRust.completeDestroy()
+        waitUntil { registry.snapshot().activeSessionCount == 0 }
+
+        let udpOpening = StubFlowOpening()
+        let udpFlow = StubUDPFlow()
+        let udpRust = StubRustUDPFlow()
+        let pool = try SyntheticSourceEndpointPool(portRange: 62_100...62_100)
+        let udpSession = try TransparentUDPProxySession(
+            opening: udpOpening,
+            flow: udpFlow,
+            rust: udpRust,
+            resourceLease: try resourceLease(for: .udp),
+            registry: registry,
+            sourceLease: try pool.leaseUDP()
+        )
+        try registry.insert(udpSession)
+        udpSession.start()
+        waitUntil { udpOpening.openCount == 1 }
+        udpOpening.complete(.failure(.cancelled))
+        waitUntil { udpRust.destroyCount == 1 }
+        udpRust.completeDestroy()
+        waitUntil { registry.snapshot().activeSessionCount == 0 }
+    }
+
     private func waitUntil(
         timeout: TimeInterval = 1,
         _ predicate: () -> Bool

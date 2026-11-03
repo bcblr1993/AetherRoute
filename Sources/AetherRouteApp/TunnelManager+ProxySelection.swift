@@ -574,9 +574,15 @@ extension TunnelManager {
                ProviderMessageClass.of(messageData: data).countsTowardUnresponsiveProvider {
                 consecutiveProviderUnresponsiveCount += 1
             }
-            Self.runtimeLogger.error(
-                "stage=providerMessage hostSend failed error=\(String(reflecting: error), privacy: .public) consecutiveUnresponsive=\(self.consecutiveProviderUnresponsiveCount, privacy: .public)"
-            )
+            if error is CancellationError {
+                Self.runtimeLogger.debug(
+                    "stage=providerMessage hostSend cancelled"
+                )
+            } else {
+                Self.runtimeLogger.error(
+                    "stage=providerMessage hostSend failed error=\(String(reflecting: error), privacy: .public) consecutiveUnresponsive=\(self.consecutiveProviderUnresponsiveCount, privacy: .public)"
+                )
+            }
             throw error
         }
     }

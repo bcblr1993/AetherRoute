@@ -6,6 +6,62 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-11-03
+
+### Fixed
+
+- Transparent proxy: stop counting a peer's trailing close as a failed session.
+  Field logs from 2.0.2 showed 14,250 `tcpTermination trigger=flowWrite
+  error=closed firstEOF=flowRead` records in 24 hours: the client had already
+  sent EOF and received a response, then closed before the last write. Such a
+  flow (and a half-close finish answered with `.closed` after EOF) now ends as
+  finished instead of failed, so `sessionsFailed` and error-level logs reflect
+  real failures. Flows that closed before receiving anything still fail.
+  Six new `TCPFlowStateMachineTests` assertions fail on 2.0.2 and pass now.
+- Transparent proxy: UDP reads/writes that end with `notConnected`/`peerReset`,
+  and TCP/UDP opens that end `cancelled`, are logged at verbose level instead
+  of as errors.
+- Transparent proxy: stop resetting the engine twice onto the same uplink after
+  wake. On a Mac with Wi-Fi and a USB Ethernet adapter, every wake reset the
+  engine three times in about five seconds (wake onto Wi-Fi, a path change
+  onto the same Wi-Fi, then the adapter), closing every proxied connection each
+  time; field logs showed 59 such wakes in one night. Each recovery run used
+  to forget which uplink the last reset used. Runs started by a path change
+  now keep that record in `UplinkResetLedger` and skip a reset onto the
+  uplink an earlier run already reset onto (logged as
+  `coreReset skipped ... cause=unchangedUplink`). Wake and app requests still
+  always reset. `UplinkResetLedgerTests` and the recovery gate replay the
+  recorded sequence; on the old behaviour the gate fails with
+  `resets=[true, true, true]`, now it is `[true, false, true]`.
+- Network recovery: an app `resetNetwork` request during or just after a wake
+  run joins that run instead of restarting it from its shortest delay, and a
+  cancel (sleep, stop) now invalidates an attempt whose health check is
+  already running, so it can no longer report a stale `recovered`. Run state is
+  guarded by a lock instead of relying on queue order. Two new
+  `NetworkRecoveryCoordinatorTests` fail on 2.0.2 and pass now. The TUN
+  provider no longer clears its reset record twice on wake.
+- Menu bar real-time traffic keeps 3-second telemetry polling with every
+  window closed, and turning it on refreshes immediately; before, with no
+  window open the menu-bar rate updated only at the background or statistics
+  cadence. The 12 FPS traffic graphs pause
+  while every sample in the window is 0 B/s, and windows count as hidden while
+  the display sleeps or the session is inactive.
+- The app logs a cancelled provider message at debug level; it never counted
+  toward the unresponsive-provider reconnect.
+- Menu-bar icon and traffic test harnesses delete their temporary preference
+  plists.
+
+### Validation
+
+- Local regression: 573 XCTest and 121 Swift Testing tests (including 99
+  transparent-proxy and 24 bridge tests) passed with warnings as errors.
+  Fast lane passed all 13 steps; menu-bar icon, menu-bar traffic and traffic
+  history gates passed.
+- Abbreviated release at the maintainer's request: the VM matrix, remote
+  source gate, UI performance gate, interop matrices and protocol-lab
+  comparison were not rerun for this build (no `Core/Engine` change). See
+  `Docs/ReleaseExceptions/2.0.3.md`.
+
 ## [2.0.2] - 2026-11-02
 
 ### Fixed

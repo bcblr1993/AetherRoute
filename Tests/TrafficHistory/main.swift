@@ -31,6 +31,14 @@ import Foundation
         precondition(realtime3s.samples.first?.download == 30)
         precondition(realtime3s.samples.last?.download == 60)
         precondition(background.visible(at: origin.addingTimeInterval(-1)).isEmpty)
-        print("Traffic history passed: 1s/3s/10s samples, 30s retention, time axis, gaps, coalescing, clock rollback.")
+
+        var idleHistory = TrafficHistory()
+        precondition(!idleHistory.hasActiveTraffic, "Empty history must report no active traffic")
+        idleHistory.append(download: 0, upload: 0, at: origin)
+        idleHistory.append(download: 0, upload: 0, at: origin.addingTimeInterval(3))
+        precondition(!idleHistory.hasActiveTraffic, "Zero-rate history samples must report no active traffic so 12 FPS TimelineView pauses")
+        idleHistory.append(download: 512, upload: 0, at: origin.addingTimeInterval(6))
+        precondition(idleHistory.hasActiveTraffic, "Non-zero rate sample must activate traffic history animation")
+        print("Traffic history passed: 1s/3s/10s samples, 30s retention, time axis, gaps, coalescing, clock rollback, active-traffic detection.")
     }
 }

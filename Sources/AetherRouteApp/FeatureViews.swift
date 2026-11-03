@@ -180,6 +180,7 @@ private struct TelemetryDemandModifier: ViewModifier {
     /// The strongest demand this surface may ask for.
     var ceiling: TunnelManager.TelemetryDemand = .realtime
     @State private var isPresented = false
+    @State private var isDisplayOrSessionAsleep = false
 
     func body(content: Content) -> some View {
         content
@@ -198,6 +199,22 @@ private struct TelemetryDemandModifier: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didUnhideNotification)) { _ in update() }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in update() }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in update() }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidSleepNotification)) { _ in
+                isDisplayOrSessionAsleep = true
+                update()
+            }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidWakeNotification)) { _ in
+                isDisplayOrSessionAsleep = false
+                update()
+            }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidResignActiveNotification)) { _ in
+                isDisplayOrSessionAsleep = true
+                update()
+            }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidBecomeActiveNotification)) { _ in
+                isDisplayOrSessionAsleep = false
+                update()
+            }
     }
 
     private func update() {
@@ -206,7 +223,7 @@ private struct TelemetryDemandModifier: ViewModifier {
         DispatchQueue.main.async {
             guard isPresented else { return }
             let app = NSApplication.shared
-            let hasVisibleWindow = !app.isHidden && app.windows.contains { window in
+            let hasVisibleWindow = !isDisplayOrSessionAsleep && !app.isHidden && app.windows.contains { window in
                 window.isVisible && !window.isMiniaturized && !(window is NSPanel)
                     && window.occlusionState.contains(.visible)
             }

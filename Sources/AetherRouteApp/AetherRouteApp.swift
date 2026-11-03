@@ -1770,7 +1770,12 @@ private struct MenuTrafficGraph: View {
     )
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: Self.frameInterval, paused: !isLive)) { context in
+        TimelineView(
+            .animation(
+                minimumInterval: Self.frameInterval,
+                paused: !isLive || !model.history.hasActiveTraffic
+            )
+        ) { context in
             let lastSample = model.history.samples.last?.date
             let now = isLive
                 ? context.date.addingTimeInterval(-Self.entryLag)

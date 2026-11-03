@@ -311,6 +311,92 @@ struct NetworkRecoveryCoordinatorTests {
 
         #expect(attempts.value == 0)
     }
+
+    @Test("cancel during an in-flight verify immediately invalidates the run and prevents stale completion")
+    func cancelDuringInFlightVerifyInvalidatesStaleCompletion() {
+        let verifyStarted = DispatchSemaphore(value: 0)
+        let releaseVerify = DispatchSemaphore(value: 0)
+        let recorder = EventRecorder()
+        let coordinator = NetworkRecoveryCoordinator(
+            delays: [0.01, 0.01],
+            perform: { _, _ in },
+            verify: {
+                verifyStarted.signal()
+                _ = releaseVerify.wait(timeout: .now() + 5)
+                return true
+            },
+            observer: { recorder.record($0) }
+        )
+
+        coordinator.trigger(reason: "wake")
+        #expect(verifyStarted.wait(timeout: .now() + 2) == .success)
+
+        // Cancel while verify() is blocked on the coordinator queue.
+        coordinator.cancel(reason: "sleep")
+        releaseVerify.signal()
+        coordinator.waitForQuiescence()
+
+        let hasCancelled = recorder.recorded.contains {
+            if case .cancelled(reason: "sleep") = $0 { return true }
+            return false
+        }
+        let hasStaleRecovered = recorder.recorded.contains {
+            if case .recovered(reason: "wake", _) = $0 { return true }
+            return false
+        }
+        #expect(hasCancelled, "Cancel during in-flight verify must emit .cancelled(reason: \"sleep\")")
+        #expect(!hasStaleRecovered, "Cancelled in-flight verify must not emit stale .recovered")
+    }
+
+    @Test("appMessage coalesces into active or recent wake instead of superseding it, but still supersedes stale non-wake backoff")
+    func appMessageCoalescesIntoActiveOrRecentWakeButSupersedesStaleNonWakeBackoff() {
+        let recorder = EventRecorder()
+        let starts = Counter()
+        let coordinator = NetworkRecoveryCoordinator(
+            delays: [0.05, 60],
+            debounce: 5,
+            perform: { _, _ in },
+            verify: { true },
+            observer: { event in
+                if case .started = event { starts.increment() }
+                recorder.record(event)
+            }
+        )
+
+        coordinator.trigger(reason: "wake")
+        // App also sends resetNetwork (appMessage) right after wake: must coalesce, not restart wake.
+        coordinator.trigger(reason: "appMessage", supersedes: true)
+        #expect(recorder.wait(for: {
+            if case .recovered(reason: "wake", attempt: 0) = $0 { return true }
+            return false
+        }))
+        // Another appMessage arriving inside the debounce window right after wake recovered must also coalesce.
+        coordinator.trigger(reason: "appMessage", supersedes: true)
+        coordinator.waitForQuiescence()
+        #expect(starts.value == 1)
+
+        // However, if a non-wake backoff ("offline") is stuck on a 60s delay and NEProvider.wake() never fired,
+        // appMessage with supersedes: true must still supersede it immediately.
+        let offlineRecorder = EventRecorder()
+        let offlineCoordinator = NetworkRecoveryCoordinator(
+            delays: [0.01, 60],
+            debounce: 5,
+            perform: { _, _ in },
+            verify: { false },
+            observer: { offlineRecorder.record($0) }
+        )
+        offlineCoordinator.trigger(reason: "offline")
+        #expect(offlineRecorder.wait(for: {
+            if case .attemptFailed(reason: "offline", attempt: 0) = $0 { return true }
+            return false
+        }))
+        offlineCoordinator.trigger(reason: "appMessage", supersedes: true)
+        #expect(offlineRecorder.wait(for: {
+            if case .attemptFailed(reason: "appMessage", attempt: 0) = $0 { return true }
+            return false
+        }))
+        offlineCoordinator.cancel()
+    }
 }
 
 private final class Counter: @unchecked Sendable {

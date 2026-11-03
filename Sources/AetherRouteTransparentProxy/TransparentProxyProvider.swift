@@ -46,10 +46,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     /// that first access.
     private var recovery: NetworkRecoveryCoordinator!
     // Accessed only on the recovery coordinator's serial queue.
-    private var resetSucceeded = false
-    private var lastResetInterface: UInt32?
-    private var lastResetSignature: String?
-    private var rebuiltDuringRun = false
+    private var resetLedger = UplinkResetLedger()
     /// Recovery attempt (zero-based) at which a run that has not regained a
     /// data path replaces the engine, as a disconnect and reconnect would.
     /// Attempts 0–1 already reset it onto the current uplink, about three
@@ -167,11 +164,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             verify: { [weak self] in self?.dataPathIsHealthy() ?? false },
             observer: { [weak self] event in
                 switch event {
-                case .started:
-                    self?.resetSucceeded = false
-                    self?.lastResetInterface = nil
-                    self?.lastResetSignature = nil
-                    self?.rebuiltDuringRun = false
+                case let .started(reason):
+                    self?.resetLedger.runStarted(reason: reason)
                 case .exhausted:
                     // Resets and one rebuild did not bring the data path back.
                     // The link may have come up only now; one more rebuild is
@@ -430,31 +424,36 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     private func performNetworkRecovery(reason: String, attempt: Int) {
         guard !uplinkLock.withLock({ providerStopping }) else { return }
         guard let uplink = currentPhysicalUplink() else {
-            resetSucceeded = false
+            resetLedger.invalidate()
             Self.runtimeLog.aggregate(
                 "stage=networkRecovery waitingForPhysicalUplink attempt=\(attempt)"
             )
             return
         }
-        if attempt >= Self.rebuildAttemptIndex, !rebuiltDuringRun {
-            rebuiltDuringRun = true
+        if attempt >= Self.rebuildAttemptIndex, resetLedger.claimRebuild() {
             if rebuildRuntimeForRecovery(reason: reason) {
                 // A fresh engine selects its uplink as it starts.
-                lastResetInterface = UInt32(uplink.index)
-                lastResetSignature = pathSignature(for: uplink)
-                resetSucceeded = true
+                resetLedger.resetCompleted(
+                    interfaceIndex: UInt32(uplink.index),
+                    signature: pathSignature(for: uplink)
+                )
                 return
             }
             // The rebuild did not happen; fall through to a plain reset.
         }
         let index = UInt32(uplink.index)
         let signature = pathSignature(for: uplink)
-        guard
-            !resetSucceeded
-                || lastResetInterface != index
-                || lastResetSignature != signature
-        else { return }
-        resetSucceeded = false
+        guard resetLedger.needsReset(interfaceIndex: index, signature: signature) else {
+            if attempt == 0 {
+                // A path change an earlier run (usually the wake run) already
+                // reset onto. Resetting again would close every connection.
+                Self.runtimeLog.aggregate(
+                    "stage=networkRecovery coreReset skipped reason=\(reason) interface=\(uplink.name) index=\(index) cause=unchangedUplink"
+                )
+            }
+            return
+        }
+        resetLedger.invalidate()
         var outcome = runtimeController.resetNetworkState(interfaceIndex: index)
         if outcome == .interfaceUnavailable {
             // The engine enumerates interfaces itself and may not list one
@@ -465,9 +464,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             "stage=networkRecovery coreReset reason=\(reason) attempt=\(attempt) interface=\(uplink.name) index=\(index) outcome=\(String(describing: outcome))"
         )
         guard outcome == .reset else { return }
-        lastResetInterface = index
-        lastResetSignature = signature
-        resetSucceeded = true
+        resetLedger.resetCompleted(interfaceIndex: index, signature: signature)
     }
 
     /// Replaces the engine in place from the current recipe and waits for the
@@ -533,7 +530,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     /// run could report `recovered` while proxied traffic was still dead. Only
     /// a probe through the engine is evidence now.
     private func dataPathIsHealthy() -> Bool {
-        guard resetSucceeded else { return false }
+        guard resetLedger.resetSucceeded else { return false }
         let routingMode = recipeLock.withLock { runtimeRecipe?.routingMode } ?? .rule
         return NetworkRecoveryHealthPolicy.isReachable(
             groups: NetworkRecoveryHealthPolicy.probeGroups(routingMode: routingMode)

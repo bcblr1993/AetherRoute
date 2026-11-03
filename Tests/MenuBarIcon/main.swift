@@ -54,7 +54,12 @@ enum AppLocalization {
         // 3. Verify AppMenuBarIconController persistence and fallback isolation
         let suiteName = "com.aetherroute.test.menubaricon.\(UUID().uuidString)"
         let testDefaults = UserDefaults(suiteName: suiteName)!
-        defer { testDefaults.removePersistentDomain(forName: suiteName) }
+        defer {
+            testDefaults.removePersistentDomain(forName: suiteName)
+            let plistURL = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Preferences/\(suiteName).plist")
+            try? FileManager.default.removeItem(at: plistURL)
+        }
 
         // Test default value
         let controller = AppMenuBarIconController(defaults: testDefaults)

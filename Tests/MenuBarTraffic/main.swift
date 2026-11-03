@@ -65,21 +65,33 @@ enum AppLocalization {
         print("2. Testing MenuBarTrafficController persistence...")
         let suiteName = "com.aetherroute.test.menubartraffic.\(UUID().uuidString)"
         let testDefaults = UserDefaults(suiteName: suiteName)!
-        defer { testDefaults.removePersistentDomain(forName: suiteName) }
+        defer {
+            testDefaults.removePersistentDomain(forName: suiteName)
+            let plistURL = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Preferences/\(suiteName).plist")
+            try? FileManager.default.removeItem(at: plistURL)
+        }
 
         // Test default: must be disabled (false)
         let controller = MenuBarTrafficController(defaults: testDefaults)
         precondition(!controller.isEnabled, "Default state of menu bar traffic must be false (disabled)")
 
+        var observedEnabledChanges: [Bool] = []
+        controller.onEnabledChanged = { enabled in
+            observedEnabledChanges.append(enabled)
+        }
+
         // Test enabling
         controller.setEnabled(true)
         precondition(controller.isEnabled, "Controller must reflect enabled state")
         precondition(testDefaults.bool(forKey: MenuBarTrafficController.storageKey) == true, "UserDefaults must persist true")
+        precondition(observedEnabledChanges == [true], "onEnabledChanged must fire when enabling menu bar traffic")
 
         // Test disabling
         controller.setEnabled(false)
         precondition(!controller.isEnabled, "Controller must reflect disabled state")
         precondition(testDefaults.bool(forKey: MenuBarTrafficController.storageKey) == false, "UserDefaults must persist false")
+        precondition(observedEnabledChanges == [true, false], "onEnabledChanged must fire when disabling menu bar traffic")
 
         // Test corrupt / missing key fallback
         testDefaults.removeObject(forKey: MenuBarTrafficController.storageKey)

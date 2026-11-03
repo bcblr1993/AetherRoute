@@ -346,6 +346,13 @@ public actor TCPFlowStateMachine {
         bridgeWriteToken = nil
         switch result {
         case let .failure(error):
+            if error == .closed,
+               bridgeInputEnded,
+               flowOutputFinished,
+               bridgeWrittenBytes > 0 {
+                finishAfterPeerClosedPostEOF()
+                return
+            }
             fail(error, stage: .bridgeWrite)
         case .success:
             lastTransferAt = .now
@@ -382,6 +389,13 @@ public actor TCPFlowStateMachine {
         flowWriteToken = nil
         switch result {
         case let .failure(error):
+            if error == .closed,
+               flowInputEnded,
+               bridgeOutputFinished,
+               flowWrittenBytes > 0 {
+                finishAfterPeerClosedPostEOF()
+                return
+            }
             fail(error, stage: .flowWrite)
         case .success:
             DiagnosticFlowOpenObserver.shared.record(.bytesClient(pendingFlowWriteBytes))
@@ -418,6 +432,11 @@ public actor TCPFlowStateMachine {
         bridgeFinishToken = nil
         switch result {
         case let .failure(error):
+            if error == .closed, bridgeInputEnded {
+                bridgeOutputFinished = true
+                finishIfBothDirectionsEnded()
+                return
+            }
             fail(error, stage: .bridgeFinishWriting)
         case .success:
             bridgeOutputFinished = true
@@ -449,6 +468,11 @@ public actor TCPFlowStateMachine {
         flowFinishToken = nil
         switch result {
         case let .failure(error):
+            if error == .closed, flowInputEnded {
+                flowOutputFinished = true
+                finishIfBothDirectionsEnded()
+                return
+            }
             fail(error, stage: .flowFinishWriting)
         case .success:
             flowOutputFinished = true
@@ -485,6 +509,21 @@ public actor TCPFlowStateMachine {
         terminationTrigger = "bothEOF"
         lifecycle = .finished
         invalidateOperations()
+        reportTermination()
+    }
+
+    private func finishAfterPeerClosedPostEOF() {
+        guard lifecycle == .running else {
+            return
+        }
+        halfCloseTimeoutTask?.cancel()
+        halfCloseTimeoutTask = nil
+        pendingBridgeWriteBytes = 0
+        pendingFlowWriteBytes = 0
+        terminationTrigger = "peerClosedAfterEOF"
+        lifecycle = .finished
+        invalidateOperations()
+        cancelTransports()
         reportTermination()
     }
 

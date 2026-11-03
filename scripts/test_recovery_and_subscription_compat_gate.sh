@@ -79,6 +79,122 @@ struct RecoveryAndSubscriptionCompatVerifier {
             "Unexpected termination after an established session must trigger auto-reconnect"
         )
 
+        // 1b. Menu bar real-time traffic polling schedule when windows are closed/backgrounded
+        assertTrue(
+            TelemetryCadence.resolve(
+                realtimeSources: 0,
+                backgroundSources: 0,
+                isMenuBarTrafficEnabled: true,
+                isTrafficStatisticsEnabled: false
+            ) == .realtime,
+            "Enabled menu bar traffic must keep 3s .realtime polling when all windows are closed"
+        )
+        assertTrue(
+            TelemetryCadence.resolve(
+                realtimeSources: 0,
+                backgroundSources: 1,
+                isMenuBarTrafficEnabled: true,
+                isTrafficStatisticsEnabled: true
+            ) == .realtime,
+            "Enabled menu bar traffic must promote 10s .background window demand to 3s .realtime"
+        )
+        assertTrue(
+            TelemetryCadence.resolve(
+                realtimeSources: 0,
+                backgroundSources: 0,
+                isMenuBarTrafficEnabled: false,
+                isTrafficStatisticsEnabled: true
+            ) == .statistics,
+            "Disabled menu bar traffic with statistics enabled must use .statistics cadence"
+        )
+
+        // 1c. NetworkRecoveryCoordinator: cancel during in-flight verify & appMessage wake coalescing
+        final class Box<Value>: @unchecked Sendable {
+            private let lock = NSLock()
+            private var storage: Value
+            init(_ initial: Value) { self.storage = initial }
+            func withLock<R>(_ body: (inout Value) -> R) -> R {
+                lock.lock()
+                defer { lock.unlock() }
+                return body(&storage)
+            }
+        }
+        do {
+            let verifyStarted = DispatchSemaphore(value: 0)
+            let releaseVerify = DispatchSemaphore(value: 0)
+            let events = Box<[NetworkRecoveryCoordinator.Event]>([])
+            let coordinator = NetworkRecoveryCoordinator(
+                delays: [0.01, 0.01],
+                perform: { _, _ in },
+                verify: {
+                    verifyStarted.signal()
+                    _ = releaseVerify.wait(timeout: .now() + 5)
+                    return true
+                },
+                observer: { event in
+                    events.withLock { $0.append(event) }
+                }
+            )
+            coordinator.trigger(reason: "wake")
+            assertTrue(verifyStarted.wait(timeout: .now() + 2) == .success, "verify() must start")
+            coordinator.cancel(reason: "sleep")
+            releaseVerify.signal()
+            coordinator.waitForQuiescence()
+            let recorded = events.withLock { $0 }
+            assertTrue(
+                recorded.contains { if case .cancelled(reason: "sleep") = $0 { return true }; return false },
+                "Cancel during in-flight verify must emit .cancelled(reason: \"sleep\")"
+            )
+            assertTrue(
+                !recorded.contains { if case .recovered = $0 { return true }; return false },
+                "Cancelled in-flight verify must not emit stale .recovered"
+            )
+        }
+        do {
+            let starts = Box<Int>(0)
+            let recovered = DispatchSemaphore(value: 0)
+            let coordinator = NetworkRecoveryCoordinator(
+                delays: [0.03, 60],
+                debounce: 5,
+                perform: { _, _ in },
+                verify: { true },
+                observer: { event in
+                    if case .started = event { starts.withLock { $0 += 1 } }
+                    if case .recovered(reason: "wake", attempt: 0) = event { recovered.signal() }
+                }
+            )
+            coordinator.trigger(reason: "wake")
+            coordinator.trigger(reason: "appMessage", supersedes: true)
+            assertTrue(
+                recovered.wait(timeout: .now() + 2) == .success,
+                "appMessage must coalesce into active wake instead of superseding it"
+            )
+            coordinator.trigger(reason: "appMessage", supersedes: true)
+            coordinator.waitForQuiescence()
+            let totalStarts = starts.withLock { $0 }
+            assertTrue(totalStarts == 1, "appMessage during/after wake must not restart recovery (starts=\(totalStarts))")
+        }
+
+        // 1d. UplinkResetLedger: wake onto Wi-Fi, same Wi-Fi path, late USB Ethernet = 2 resets
+        do {
+            var ledger = UplinkResetLedger()
+            func run(_ reason: String, _ index: UInt32, _ signature: String) -> Bool {
+                ledger.runStarted(reason: reason)
+                guard ledger.needsReset(interfaceIndex: index, signature: signature) else { return false }
+                ledger.invalidate()
+                ledger.resetCompleted(interfaceIndex: index, signature: signature)
+                return true
+            }
+            _ = run("pathChanged", 36, "en11:36|10.8.5.253")
+            let resets = [
+                run("wake", 14, "en0:14|172.16.3.110"),
+                run("pathChanged", 14, "en0:14|172.16.3.110"),
+                run("pathChanged", 36, "en11:36|10.8.5.253"),
+            ]
+            assertTrue(resets == [true, false, true], "Path change onto the uplink the wake run just reset must not reset again (resets=\(resets))")
+            assertTrue(run("wake", 36, "en11:36|10.8.5.253"), "Wake must reset even when the uplink is unchanged")
+        }
+
         // 2. Domestic DIRECT recovery health probe ordering & uplink eligibility
         let directProbes = NetworkRecoveryHealthPolicy.probeURLs(forTargetGroup: "DIRECT")
         assertTrue(

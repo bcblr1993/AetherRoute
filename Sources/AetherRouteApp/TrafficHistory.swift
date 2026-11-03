@@ -9,6 +9,14 @@ struct TrafficHistory {
     }
     private(set) var samples: [Sample] = []
 
+    /// Whether there are at least two samples with non-zero traffic so a live
+    /// waveform needs continuous 12 FPS animation. When all samples in the
+    /// window are 0 B/s, the curve is a flat baseline and does not need to
+    /// redraw 12 times per second.
+    var hasActiveTraffic: Bool {
+        samples.count >= 2 && samples.contains { $0.download > 0 || $0.upload > 0 }
+    }
+
     mutating func append(download: Double, upload: Double, at date: Date) {
         // A wall-clock correction must not leave future samples on the graph.
         if let last = samples.last, date < last.date { samples.removeAll() }

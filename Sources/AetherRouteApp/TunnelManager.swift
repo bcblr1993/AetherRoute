@@ -897,6 +897,9 @@ final class TunnelManager: ObservableObject {
         }
         if !isUIReviewMode {
             LANProxyServerController.shared.updateConfiguration(settings: localProxySettings)
+            MenuBarTrafficController.shared.onEnabledChanged = { [weak self] enabled in
+                self?.handleMenuBarTrafficEnabledChanged(enabled)
+            }
         }
     }
 

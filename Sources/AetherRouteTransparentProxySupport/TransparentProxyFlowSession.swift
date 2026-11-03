@@ -2,10 +2,14 @@ import AetherRouteKit
 import Foundation
 import OSLog
 
-private enum TransparentSessionRuntimeLog {
+enum TransparentSessionRuntimeLog {
     static let log = DiagnosticLogCenter.current.log(
         category: "transparent-session"
     )
+
+    static func isExpectedEarlyOpenTermination(_ error: FlowIOError) -> Bool {
+        error == .closed || error == .cancelled
+    }
 }
 
 protocol AppleProxyFlowOpening: Sendable {
@@ -206,7 +210,7 @@ final class TransparentTCPProxySession:
                 "transport=tcp session=\(self.sessionID.uuidString) stage=open success"
             )
         case let .failure(error):
-            if error == .closed {
+            if TransparentSessionRuntimeLog.isExpectedEarlyOpenTermination(error) {
                 TransparentSessionRuntimeLog.log.verbose(
                     "transport=tcp session=\(self.sessionID.uuidString) stage=open closedByPeer error=\(String(reflecting: error))"
                 )
@@ -604,7 +608,7 @@ final class TransparentUDPProxySession:
                 "transport=udp session=\(self.sessionID.uuidString) stage=open success"
             )
         case let .failure(error):
-            if error == .closed {
+            if TransparentSessionRuntimeLog.isExpectedEarlyOpenTermination(error) {
                 TransparentSessionRuntimeLog.log.verbose(
                     "transport=udp session=\(self.sessionID.uuidString) stage=open closedByPeer error=\(String(reflecting: error))"
                 )
