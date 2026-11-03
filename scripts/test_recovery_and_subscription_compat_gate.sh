@@ -25,6 +25,30 @@ struct RecoveryAndSubscriptionCompatVerifier {
     }
 
     static func main() {
+        // A healthy backup must keep its streams when the preferred node
+        // recovers. Field logs showed a recovery closing 120 live sessions.
+        // Manual node-switch preferences must not turn recovery into an outage.
+        for closesOnManualSwitch in [true, false] {
+            assertTrue(
+                ProxyFailoverPolicy.closeRequest(
+                    reason: .preferredRecovered,
+                    group: "Proxy",
+                    previousMember: "working-backup",
+                    closesConnectionsOnSwitch: closesOnManualSwitch
+                ) == nil,
+                "Preferred-node recovery must preserve healthy connections regardless of manual-switch settings"
+            )
+            assertTrue(
+                ProxyFailoverPolicy.closeRequest(
+                    reason: .unresponsive,
+                    group: "Proxy",
+                    previousMember: "failed-node",
+                    closesConnectionsOnSwitch: closesOnManualSwitch
+                ) == .proxyChainMember("failed-node"),
+                "A real failure must still reclaim only the failed node's connections"
+            )
+        }
+
         // 1. Recovery state-machine deadlock guards
         assertTrue(
             TunnelLifecycleTransitionPolicy.canBeginConnection(

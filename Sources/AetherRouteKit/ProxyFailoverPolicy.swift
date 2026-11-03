@@ -31,9 +31,10 @@ public enum ProxyFailoverPolicy {
     ///
     /// Moving away from a node that stopped answering drops what still runs
     /// through that node: those connections cannot recover, and apps only
-    /// reconnect once they are closed. Returning to the preferred node from a
-    /// working backup follows the "close connections when switching nodes"
-    /// setting, because the backup's connections still work.
+    /// reconnect once they are closed. Returning to the preferred node keeps
+    /// the working backup's existing streams alive; new connections use the
+    /// preferred node. The manual-switch preference must not interrupt an
+    /// automatic recovery.
     public static func closeRequest(
         reason: ProxySwitchEvent.Reason,
         group: String,
@@ -47,7 +48,7 @@ public enum ProxyFailoverPolicy {
             else { return nil }
             return .proxyChainMember(previousMember)
         case .preferredRecovered:
-            return closesConnectionsOnSwitch ? .proxyChainMember(group) : nil
+            return nil
         }
     }
 

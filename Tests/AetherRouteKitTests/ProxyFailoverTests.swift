@@ -88,25 +88,18 @@ final class ProxyFailoverTests: XCTestCase {
         )
     }
 
-    func testReturningToThePreferredNodeFollowsTheSetting() {
-        XCTAssertEqual(
-            ProxyFailoverPolicy.closeRequest(
-                reason: .preferredRecovered,
-                group: "Proxy",
-                previousMember: "SG 02",
-                closesConnectionsOnSwitch: true
-            ),
-            .proxyChainMember("Proxy")
-        )
-        XCTAssertNil(
-            ProxyFailoverPolicy.closeRequest(
-                reason: .preferredRecovered,
-                group: "Proxy",
-                previousMember: "SG 02",
-                closesConnectionsOnSwitch: false
-            ),
-            "The backup's connections still work; keep them unless asked."
-        )
+    func testReturningToThePreferredNodePreservesWorkingConnectionsRegardlessOfManualSwitchSetting() {
+        for setting in [true, false] {
+            XCTAssertNil(
+                ProxyFailoverPolicy.closeRequest(
+                    reason: .preferredRecovered,
+                    group: "Proxy",
+                    previousMember: "SG 02",
+                    closesConnectionsOnSwitch: setting
+                ),
+                "Automatic recovery must preserve the working backup's streams even when manual switches close connections (setting=\(setting))."
+            )
+        }
     }
 
     // MARK: Switching back

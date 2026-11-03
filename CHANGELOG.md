@@ -6,6 +6,28 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-11-03
+
+### Fixed
+
+- Preserve working backup connections when failover automatically returns to
+  the recovered preferred node. New connections use the preferred node;
+  existing streams continue on the backup until they finish. A field incident
+  at 13:50:39 closed 120 live sessions under the default manual-switch
+  preference. Automatic recovery no longer uses that preference to close
+  connections. Manual node switches still follow the existing setting, and
+  an unresponsive node still has only its own connections reclaimed.
+- Tests first: the revised recovery gate fails on 2.0.3 with
+  `Preferred-node recovery must preserve healthy connections regardless of
+  manual-switch settings`, then passes with this fix. XCTest covers both
+  values of the manual-switch preference, retaining the dead-node and DIRECT
+  safety checks. The regression runs in fast lane and the full release gate.
+
+### Validation
+
+- Release qualification in progress; final measurements and delivery evidence
+  will be recorded in `Docs/ReleaseExceptions/2.0.4.md`.
+
 ## [2.0.3] - 2026-11-03
 
 ### Fixed
