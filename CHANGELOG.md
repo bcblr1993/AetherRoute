@@ -25,8 +25,18 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ### Validation
 
-- Release qualification in progress; final measurements and delivery evidence
-  will be recorded in `Docs/ReleaseExceptions/2.0.4.md`.
+- Local and VM full regression passed: 573 XCTest, 121 Swift Testing,
+  99 transparent-proxy and 24 bridge tests, plus all script gates. The VM
+  six-way matrix, both full 300-second physical UI profiles, and all six
+  exact-candidate-bound physical runtime checks passed without relaxed budgets.
+- Default/Chrome interop each passed 68 cases and 34 certificate rejections;
+  nine real sites, ECH and the 43-node two-engine lab comparison passed.
+- Initial VM termination, SSH and headless CoreText failures remain recorded;
+  complete replacement gates passed. CLI rendering probes now finish AppKit
+  startup; product rendering code is unchanged. See
+  `Docs/ReleaseExceptions/2.0.4.md` for measurements, limits and evidence.
+- At the maintainer's explicit request, release verification leaves the
+  running local installation untouched; local in-app upgrade is not performed.
 
 ## [2.0.3] - 2026-11-03
 
