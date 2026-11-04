@@ -30,6 +30,19 @@ All notable changes to AetherRoute are recorded here. The format follows
   (819 total), production proxy sockets and both-core subscription gates.
   Release qualification is tracked in `Docs/ReleaseExceptions/2.0.5.md`.
   The running local 2.0.4 app is excluded from installation or upgrade tests.
+- Release qualification: VM six-way matrix, 43-node Mihomo comparison,
+  default/Chrome interop (68 case passes and 34 certificate rejections each),
+  nine real sites, ECH and all six candidate-bound physical checks passed.
+  TUN NIC recovery: 2/2/2/1/1/2 s; transparent: 2/1/1/2/2/2 s.
+- UI showcase p95/max 147.7/210.0 ms, memory median/peak 68/80 MB (2.0.4:
+  148.7/190.1 ms, 67/78 MB); large 146.0/205.9 ms, 67/77 MB (2.0.4:
+  144.8/202.5 ms, 67/83 MB). Both full 300-second profiles passed; latter-half
+  growth 0/+2 MB. No long-term performance improvement is claimed.
+- Scope: the 2026-11-04 unresponsive-node switch that closed 12 sessions is
+  still under investigation. This release does not claim to fix all outages.
+- Final fast lane passed all 14 steps in 64 seconds. The formal stable DMG
+  passed Developer ID signing, Apple notarization/stapling and official
+  Sparkle Ed25519 verification.
 
 ## [2.0.4] - 2026-11-03
 
