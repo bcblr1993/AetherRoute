@@ -6,6 +6,8 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-11-04
+
 ### Fixed
 
 - Keep Google HTTPS readiness/recovery scans separate from menu latency tests,
@@ -26,8 +28,8 @@ All notable changes to AetherRoute are recorded here. The format follows
   `scripts/test.sh` passed, including warning-as-error product builds,
   575 XCTest + 121 Swift Testing + 99 transparent proxy + 24 bridge tests
   (819 total), production proxy sockets and both-core subscription gates.
-  This source fix has not been packaged or published, and the running local
-  2.0.4 app was not replaced, restarted or reconfigured.
+  Release qualification is tracked in `Docs/ReleaseExceptions/2.0.5.md`.
+  The running local 2.0.4 app is excluded from installation or upgrade tests.
 
 ## [2.0.4] - 2026-11-03
 
