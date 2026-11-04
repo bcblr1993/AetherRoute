@@ -6,6 +6,33 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-11-04
+
+### Fixed
+
+- **Fake-IP pool reservation, SNI mapping self-healing, non-A/AAAA NODATA, and non-blocking TUN DNS (P0-1)**:
+  - Reserve `198.18.0.1`, `198.18.0.2` (`packetFlowDNSServers`), and `198.18.0.255` in `FakeDns` and filter legacy poisoned `198.18.0.2` entries from `EncryptedFileStore` on load so `198.18.0.2` is never allocated as a domain Fake-IP or counted as `FakeIpMappingMissing`.
+  - Add `ClashResolver::restore_fake_ip_mapping` (`FakeDns::restore_if_unmapped`) and invoke it in `Dispatcher::dispatch_stream` when TLS SNI recovers a hostname on port 443 for an unmapped Fake-IP, allowing subsequent UDP/QUIC 443 datagrams to the same Fake-IP to pass `reverse_lookup`.
+  - Return an empty `NoError` (NODATA) response locally in Fake-IP mode for non-`A`/`AAAA` queries (`HTTPS` type 65, `SVCB` type 64, `PTR`, `TXT`) instead of calling `resolve_v4` and synthesizing invalid `RData::A` records.
+  - Spawn hijacked TUN UDP DNS queries onto a bounded `JoinSet` (`MAX_CONCURRENT_TUN_DNS_QUERIES = 64`) in `handle_inbound_datagram` so slow upstream DNS lookups never head-of-line block TUN UDP data-plane packets.
+- **Outbound interface bind self-healing and wake recovery deduplication (P0-2)**:
+  - Add `replace_failed_outbound_interface` / `get_outbound_interface_excluding` in the Rust engine so `new_tcp_stream` and `new_udp_socket` automatically rebind to a live physical interface and update `DEFAULT_OUTBOUND_INTERFACE` when `must_bind_socket_on_interface` fails on a stale interface after sleep/wake or hot-plug.
+  - Coalesce `appMessage` into an active `attempt 0` (`physicalLinkChanged` / `pathChanged` / `wake`) or a just-completed recovery run inside the debounce window in `NetworkRecoveryCoordinator`, while still superseding stale runs that already failed `attempt 0` (`currentAttemptIndex >= 1`), and apply `UplinkResetLedger` in `PacketTunnelProvider` so unchanged uplink signatures do not trigger redundant `resetNetworkState` calls.
+- **Failover probe session isolation, sub-threshold telemetry severity, AppKit progress transition, and macOS physical footprint reporting (P1-1 / P1-2 / P1-3)**:
+  - Refresh `probeSession` before `verifyCurrentRouteDataPlane()` in `checkFailoverRecovery` so preferred-node recovery probes cannot reuse pooled keep-alive connections from the backup node.
+  - Log sub-threshold `stage=automaticRouteHealth failed consecutive=...` checks at `.info` and reserve `.error` for failures reaching `automaticRouteFailureThreshold`.
+  - Replace `.scale(scale: 0.6).combined(with: .opacity)` with `.transition(.opacity)` on `ProgressView` in `AetherProgressButtonLabel` to avoid `AppKitProgressView` fractional layout constraint faults (`min <= max`).
+  - Report macOS physical memory footprint (`proc_pid_rusage` `RUSAGE_INFO_V4` `ri_phys_footprint`) in `Manager::memory_usage()`, aligning engine telemetry with Activity Monitor and `DataPlaneSampler`.
+- **Tests first (TDD)**:
+  - Six new Rust unit tests (`fakeip_pool_reserves_gateway_dns_and_broadcast_and_ignores_dns_probe_miss`, `fakeip_restore_if_unmapped_heals_missing_mapping_without_overwriting_existing`, `fakeip_non_a_queries_return_nodata_without_allocating_fake_ip`, `tun_dns_slow_upstream_does_not_head_of_line_block_udp_packets`, `replace_failed_outbound_interface_switches_away_from_stale_interface`, `macos_memory_usage_reports_physical_footprint`) failed on old code (`0 passed; 6 failed`) and pass with this implementation.
+  - Extended `scripts/test_recovery_and_subscription_compat_gate.sh` and `NetworkRecoveryCoordinatorTests` failed on old code (`FAILED: appMessage must coalesce into active physicalLinkChanged instead of superseding it`) and pass now.
+- **Validation & Release Qualification**:
+  - Fast lane passed all 14 steps. Full local and Tart VM (`macos27`) `scripts/test.sh` regressions passed with zero warnings (575 XCTest + 121 Swift Testing + 99 transparent proxy + 24 bridge tests = 819 total, plus all script gates; VM evidence `outputs/test-evidence/remote-arm64-20261104T082537Z-fast`).
+  - Default and Chrome fingerprint 12-protocol interop gates each passed all 11 suites (68 matrix case passes and 34 certificate rejections each); 9 real sites (including Google/YouTube ALPS and Cloudflare ECH) and the 43-node Mihomo differential on Mac mini passed (`both_ok=43`, all failure/missing buckets `0`).
+  - Tart VM `macos27` 6-dimension engine × routing matrix passed all 6 combinations (210 checks: 158 PASS, 0 FAIL, 52 SKIP), including all 5 transparent proxy gates, 50s TLS idle keep-alive reuse, and 2 MiB large uploads (`outputs/acceptance-2.0.6-2026110402/vm-acceptance-retry`).
+  - Physical Mac mini (`chenxu@100.64.0.3`) runtime evidence bound to notarized stable candidate DMG (`2de0d8bdf330a50b1a177e37779c74cd8e4f7df66987c7cd41c65ce5470daa5a`) passed 50s TLS idle keep-alive reuse, 2 MiB upload (TUN `1.181634s`, transparent `1.029831s`), and 3-cycle / 6-move NIC switch recovery (TUN: `1/2/2/2/2/2 s`; transparent: `2/1/1/2/2/2 s`; deadline 15s, zero manual reconnects).
+  - Physical Mac mini UI performance and memory budget gate passed both full 300-second profiles: `showcase` switch latency p95/max `144.9 / 190.2 ms` (2.0.5: `147.7 / 210.0 ms`), memory median/peak `67 / 78 MB` (2.0.5: `68 / 80 MB`), latter-half growth `+1 MB`; `large` switch latency p95/max `144.7 / 195.5 ms` (2.0.5: `146.0 / 205.9 ms`), memory median/peak `67 / 82 MB` (2.0.5: `67 / 77 MB`), latter-half growth `+1 MB`. See `Docs/ReleaseExceptions/2.0.6.md`.
+
 ## [2.0.5] - 2026-11-04
 
 ### Fixed

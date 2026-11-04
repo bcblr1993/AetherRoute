@@ -53,10 +53,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private var lastPathSignature: String?
     private let uplinkLock = NSLock()
     private var physicalInterfaces: [NWInterface] = []
-    private var resetSucceeded = false
     // Accessed only on the recovery coordinator's serial queue.
-    private var lastResetInterface: UInt32?
-    private var lastResetSignature: String?
+    private var resetLedger = UplinkResetLedger()
     private var providerStopping = false
     private var recoveryRoutingMode: RoutingMode = .rule
     /// Launch-only inputs a live profile reload must carry forward: the
@@ -84,10 +82,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 Self.logRecovery(event)
                 guard let self else { return }
                 switch event {
-                case .started:
-                    self.resetSucceeded = false
-                    self.lastResetInterface = nil
-                    self.lastResetSignature = nil
+                case let .started(reason):
+                    self.resetLedger.runStarted(reason: reason)
                     // Only enter `.reasserting` immediately if there is no
                     // physical uplink. When a physical uplink is already
                     // present, keep the tunnel state connected during the first
@@ -488,7 +484,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private func performNetworkRecovery(reason: String, attempt: Int) {
         guard !uplinkLock.withLock({ providerStopping }) else { return }
         guard let interface = currentPhysicalUplink() else {
-            resetSucceeded = false
+            resetLedger.invalidate()
             Self.runtimeLogger.info("stage=networkRecovery waitingForPhysicalUplink attempt=\(attempt, privacy: .public)")
             return
         }
@@ -498,16 +494,21 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         // Once an interface and IP signature was reset, retry the probe without destroying the
         // connections/DNS transports that are only just becoming usable, unless the physical uplink
         // signature changed or reset has not yet succeeded.
-        guard lastResetInterface != index || lastResetSignature != signature || !resetSucceeded else { return }
-        resetSucceeded = false
+        guard resetLedger.needsReset(interfaceIndex: index, signature: signature) else {
+            if attempt == 0 {
+                Self.runtimeLogger.info(
+                    "stage=networkRecovery coreReset skipped reason=\(reason, privacy: .public) interface=\(interface.name, privacy: .public) index=\(index, privacy: .public) cause=unchangedUplink"
+                )
+            }
+            return
+        }
+        resetLedger.invalidate()
         Self.runtimeLogger.info(
             "stage=networkRecovery begin reason=\(reason, privacy: .public) attempt=\(attempt, privacy: .public) interface=\(interface.name, privacy: .public) index=\(index, privacy: .public) signature=\(signature ?? "unknown", privacy: .public)"
         )
         do {
             try currentCore().resetNetworkState(interfaceIndex: index)
-            lastResetInterface = index
-            lastResetSignature = signature
-            resetSucceeded = true
+            resetLedger.resetCompleted(interfaceIndex: index, signature: signature)
             Self.runtimeLogger.info("stage=networkRecovery coreReset success")
         } catch {
             Self.runtimeLogger.error(
@@ -525,12 +526,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     /// route exercises the real outbound path — interface binding, DNS and the
     /// proxy connection — which is exactly the state a sleep invalidates.
     private func dataPathIsHealthy() -> Bool {
-        guard resetSucceeded, !uplinkLock.withLock({ providerStopping }),
-              let uplink = currentPhysicalUplink(),
-              UInt32(uplink.index) == lastResetInterface else { return false }
+        guard !uplinkLock.withLock({ providerStopping }),
+              let uplink = currentPhysicalUplink() else { return false }
         let store = SCDynamicStoreCreate(nil, "AetherRoute health signature" as CFString, nil, nil)
         let signature = store.flatMap { PhysicalUplinkDetector.pathSignature(store: $0, uplink: uplink) }
-        guard lastResetSignature == signature else { return false }
+        guard !resetLedger.needsReset(interfaceIndex: UInt32(uplink.index), signature: signature) else {
+            return false
+        }
         // Received bytes are no evidence: flows that bypass the engine's
         // outbound path count too. Only a probe through the engine is.
         let activeCore = currentCore()

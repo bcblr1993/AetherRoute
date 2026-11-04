@@ -425,9 +425,15 @@ extension TunnelManager {
                 : previousFailures + 1
             automaticRouteFailureCounts[group] = failures
             updateAutomaticRouteRecoveryPresentation()
-            Self.runtimeLogger.error(
-                "stage=automaticRouteHealth failed consecutive=\(failures, privacy: .public)"
-            )
+            if failures >= TunnelStartupTimingPolicy.automaticRouteFailureThreshold {
+                Self.runtimeLogger.error(
+                    "stage=automaticRouteHealth failed consecutive=\(failures, privacy: .public)"
+                )
+            } else {
+                Self.runtimeLogger.info(
+                    "stage=automaticRouteHealth failed consecutive=\(failures, privacy: .public)"
+                )
+            }
             if isInWakeGracePeriod {
                 Self.runtimeLogger.info(
                     "stage=automaticRouteHealth transientFailureInGracePeriod consecutive=\(failures, privacy: .public)"

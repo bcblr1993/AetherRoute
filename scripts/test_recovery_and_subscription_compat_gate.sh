@@ -198,6 +198,41 @@ struct RecoveryAndSubscriptionCompatVerifier {
             let totalStarts = starts.withLock { $0 }
             assertTrue(totalStarts == 1, "appMessage during/after wake must not restart recovery (starts=\(totalStarts))")
         }
+        do {
+            // Field logs showed NEProvider.wake() never arriving on wake; instead
+            // SCDynamicStore fired physicalLinkChanged first, and 350ms later the
+            // host app's systemDidWake handler sent appMessage (resetNetwork).
+            // appMessage must coalesce into an in-flight or just-completed
+            // physicalLinkChanged/pathChanged recovery run instead of aborting
+            // its health probe and resetting all active connections a second time.
+            let starts = Box<Int>(0)
+            let recovered = DispatchSemaphore(value: 0)
+            let coordinator = NetworkRecoveryCoordinator(
+                delays: [0.03, 60],
+                debounce: 5,
+                perform: { _, _ in },
+                verify: { true },
+                observer: { event in
+                    if case .started = event { starts.withLock { $0 += 1 } }
+                    if case .recovered(reason: "physicalLinkChanged", attempt: 0) = event {
+                        recovered.signal()
+                    }
+                }
+            )
+            coordinator.trigger(reason: "physicalLinkChanged", supersedes: true)
+            coordinator.trigger(reason: "appMessage", supersedes: true)
+            assertTrue(
+                recovered.wait(timeout: .now() + 2) == .success,
+                "appMessage must coalesce into active physicalLinkChanged instead of superseding it"
+            )
+            coordinator.trigger(reason: "appMessage", supersedes: true)
+            coordinator.waitForQuiescence()
+            let totalStarts = starts.withLock { $0 }
+            assertTrue(
+                totalStarts == 1,
+                "appMessage during/within debounce of physicalLinkChanged must not restart recovery (starts=\(totalStarts))"
+            )
+        }
 
         // 1d. UplinkResetLedger: wake onto Wi-Fi, same Wi-Fi path, late USB Ethernet = 2 resets
         do {
@@ -472,6 +507,22 @@ swiftc -swift-version 6 -parse-as-library \
 
 COMPAT_PROFILE="$TEMP_DIR/compat_profile.yaml"
 "$TEMP_DIR/compat_verifier" "$COMPAT_PROFILE"
+
+# 3b. Verify PacketTunnelProvider UplinkResetLedger parity, failover recovery
+# probe session refresh, sub-threshold automaticRouteHealth log level, and
+# AppKitProgressView opacity-only transition in AetherActionButtonLabel.
+if ! grep -Fq 'private var resetLedger = UplinkResetLedger()' "$ROOT/Sources/AetherRoutePacketTunnel/PacketTunnelProvider.swift"; then
+  echo "FAIL: PacketTunnelProvider must use UplinkResetLedger to avoid duplicate core resets on unchanged uplinks" >&2
+  exit 1
+fi
+if ! grep -Fq 'Self.refreshProbeSession()' "$ROOT/Sources/AetherRouteApp/TunnelManager+Failover.swift"; then
+  echo "FAIL: checkFailoverRecovery must call Self.refreshProbeSession() before verifyCurrentRouteDataPlane()" >&2
+  exit 1
+fi
+if ! awk '/struct AetherProgressButtonLabel/,/^}/' "$ROOT/Sources/AetherRouteApp/AetherRouteVisualSystem.swift" | grep -A3 'ProgressView()' | grep -Fq '.transition(.opacity)'; then
+  echo "FAIL: ProgressView in AetherProgressButtonLabel must use .transition(.opacity) (avoiding AppKitProgressView min<=max layout constraint fault)" >&2
+  exit 1
+fi
 
 # 4. Test both Flow Core (libclashrs.a) and Direct/Packet Core (libclashrs-direct.a) loading the normalized profile
 COMMON_FLAGS="-std=c17 -Wall -Wextra -Werror -mmacosx-version-min=14.0"

@@ -326,6 +326,7 @@ extension TunnelManager {
                 throw TunnelManagerError.providerSelectorUnavailable
             }
             if isCatchAllRouteGroup(group) {
+                Self.refreshProbeSession()
                 try await verifyCurrentRouteDataPlane()
             }
             proxySelections[group] = selected

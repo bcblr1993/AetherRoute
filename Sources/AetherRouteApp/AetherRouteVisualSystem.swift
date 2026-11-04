@@ -802,7 +802,7 @@ struct AetherProgressButtonLabel: View {
                 ProgressView()
                     .controlSize(.small)
                     .accessibilityHidden(true)
-                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    .transition(.opacity)
             } else if let systemImage {
                 Image(systemName: systemImage)
                     .accessibilityHidden(true)

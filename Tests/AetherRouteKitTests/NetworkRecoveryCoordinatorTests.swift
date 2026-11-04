@@ -375,6 +375,30 @@ struct NetworkRecoveryCoordinatorTests {
         coordinator.waitForQuiescence()
         #expect(starts.value == 1)
 
+        // Likewise, if physicalLinkChanged starts attempt 0 on wake (when NEProvider.wake() never fires),
+        // appMessage arriving during attempt 0 or right after it recovers must coalesce.
+        let linkRecorder = EventRecorder()
+        let linkStarts = Counter()
+        let linkCoordinator = NetworkRecoveryCoordinator(
+            delays: [0.05, 60],
+            debounce: 5,
+            perform: { _, _ in },
+            verify: { true },
+            observer: { event in
+                if case .started = event { linkStarts.increment() }
+                linkRecorder.record(event)
+            }
+        )
+        linkCoordinator.trigger(reason: "physicalLinkChanged", supersedes: true)
+        linkCoordinator.trigger(reason: "appMessage", supersedes: true)
+        #expect(linkRecorder.wait(for: {
+            if case .recovered(reason: "physicalLinkChanged", attempt: 0) = $0 { return true }
+            return false
+        }))
+        linkCoordinator.trigger(reason: "appMessage", supersedes: true)
+        linkCoordinator.waitForQuiescence()
+        #expect(linkStarts.value == 1)
+
         // However, if a non-wake backoff ("offline") is stuck on a 60s delay and NEProvider.wake() never fired,
         // appMessage with supersedes: true must still supersede it immediately.
         let offlineRecorder = EventRecorder()

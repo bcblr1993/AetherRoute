@@ -130,6 +130,7 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
     private var runToken: UInt64 = 0
     private var isRunning = false
     private var currentReason: String?
+    private var currentAttemptIndex = 0
     private var lastCompletedReason: String?
     /// Stamped when a run starts *and* when it ends. Reinstalling the tunnel's
     /// settings makes the tunnel interface disappear and reappear, which the
@@ -173,8 +174,15 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
         let decision: (coalesced: Bool, token: UInt64) = stateLock.withLock {
             let effectiveSupersedes: Bool
             if reason == "appMessage",
-               (isRunning && currentReason == "wake")
-                || (!isRunning && lastCompletedReason == "wake") {
+               (isRunning && (currentReason == "wake" || currentAttemptIndex == 0))
+                || (!isRunning && lastCompletedReason != nil) {
+                // The host app sends resetNetwork on systemDidWake ~500ms after
+                // wake. Often SCDynamicStore (physicalLinkChanged) or NWPathMonitor
+                // (pathChanged) has already started attempt 0 or just completed a
+                // recovery run on wake, whereas NEProvider.wake() may never arrive.
+                // Coalesce into an active attempt 0 or a just-completed run, while
+                // still superseding a stale run that already failed attempt 0 and
+                // is waiting on a long backoff delay.
                 effectiveSupersedes = false
             } else {
                 effectiveSupersedes = supersedes
@@ -190,6 +198,7 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
             lastRunActivityAt = now
             isRunning = true
             currentReason = reason
+            currentAttemptIndex = 0
             runToken &+= 1
             pending?.cancel()
             pending = nil
@@ -217,6 +226,7 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
             runToken &+= 1
             isRunning = false
             currentReason = nil
+            currentAttemptIndex = 0
             lastCompletedReason = nil
             // Deliberately clears the debounce stamp: a cancel is a suspend or
             // a stop, and the wake that follows must be able to start a run
@@ -264,8 +274,11 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
                     self.pending = nil
                     self.isRunning = false
                     self.currentReason = nil
+                    self.currentAttemptIndex = 0
                     self.lastCompletedReason = reason
                     self.lastRunActivityAt = self.clock()
+                } else {
+                    self.currentAttemptIndex = index + 1
                 }
                 return true
             }
