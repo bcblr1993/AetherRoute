@@ -15,3 +15,5 @@ swiftc -swift-version 6 -warnings-as-errors -parse-as-library \
   -Xlinker -rpath -Xlinker "$TEST_TEMP" \
   "$ROOT/Tests/ProxyLatencyMeasurement/main.swift" -o "$TEST_TEMP/test"
 "$TEST_TEMP/test"
+
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_latency_measurement_contract.py"

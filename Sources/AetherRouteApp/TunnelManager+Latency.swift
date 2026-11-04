@@ -33,7 +33,11 @@ extension TunnelManager {
             pendingLatencyFlush.removeAll(keepingCapacity: true)
             lastLatencyFlushAt = nil
         }
-        latencyIndex.beginRun(groups: latencyGroupsSnapshot())
+        latencyIndex.beginRun(
+            groups: latencyGroupsSnapshot(),
+            testURL: Self.defaultLatencyTestURL,
+            selectedMembers: latencySelectedMembers
+        )
         return token
     }
 
@@ -74,7 +78,7 @@ extension TunnelManager {
         lastLatencyFlushAt = ContinuousClock.now
         for group in pendingLatencyFlush {
             proxyLatencies[group] = latencyIndex.state(for: group)
-            latencyMeasuredAt[group] = pendingLatencyMeasuredAt[group]
+            latencyMeasuredAt[group] = latencyIndex.measurementDates(for: group)
         }
         pendingLatencyFlush.removeAll(keepingCapacity: true)
     }
@@ -91,7 +95,6 @@ extension TunnelManager {
             member: member,
             measurement: measurement
         )
-        for group in affected { pendingLatencyMeasuredAt[group, default: [:]][member] = .now }
         publishLatency(groups: affected, force: force)
     }
 
@@ -113,36 +116,26 @@ extension TunnelManager {
             : .reachability
     }
 
-    /// Folds a provider-measured result into the index.
-    ///
-    /// These come from the core's real handlers, so they are recorded as
-    /// verified. Routing them through the index is also what stops a later
-    /// manual flush from overwriting them, and it keeps a single-result
-    /// `activeLatency` reply from shrinking the whole group down to one row
-    /// the way a direct assignment did.
+    /// Readiness and route recovery use a stricter, different destination.
+    /// Their results must never overwrite a user-facing latency test.
     func adoptProviderLatency(
         _ latency: ProxyLatencyState,
         forGroup groupName: String
     ) {
         prepareLatencyIndex()
-        var affected: Set<String> = [groupName]
-        for result in latency.results {
-            let merged = latencyIndex.merge(
-                member: result.member,
-                measurement: result.delayMilliseconds
-                    .map { .verified($0) } ?? .timedOut
-            )
-            affected.formUnion(merged)
-            if merged.isEmpty {
-                latencyIndex.recordDirect(
-                    member: result.member,
-                    measurement: result.delayMilliseconds
-                        .map { .verified($0) } ?? .timedOut,
-                    in: groupName
-                )
-            }
-        }
-        publishLatency(groups: affected, force: true)
+        latencyIndex.recordRouteHealth(latency, group: groupName)
+    }
+
+    var latencySelectedMembers: [String: String] {
+        proxySelections.compactMapValues(\.selectedMember)
+            .merging(automaticGroupLeaves) { _, leaf in leaf }
+    }
+
+    func refreshProxyLatencyIfNeeded(group groupName: String) async {
+        guard state == .connected, !Task.isCancelled, !isUIReviewMode else { return }
+        prepareLatencyIndex()
+        guard latencyIndex.needsRefresh(group: groupName) else { return }
+        await testProxyLatency(group: groupName)
     }
 
     static func uiReviewMeasurement(
@@ -203,7 +196,7 @@ extension TunnelManager {
                 runToken: runToken
             ) {
                 guard runToken == currentLatencyRunToken else { return }
-                let aggregated = latencyIndex.aggregateChildGroups()
+                let aggregated = latencyIndex.aggregateChildGroups(selectedMembers: latencySelectedMembers)
                 publishLatency(groups: aggregated.union([groupName]), force: true)
                 let measured = proxyLatencies[groupName]?.results ?? []
                 Self.runtimeLogger.info(
@@ -223,7 +216,7 @@ extension TunnelManager {
             runToken: runToken
         )
         guard runToken == currentLatencyRunToken else { return }
-        let aggregated = latencyIndex.aggregateChildGroups()
+        let aggregated = latencyIndex.aggregateChildGroups(selectedMembers: latencySelectedMembers)
         publishLatency(groups: aggregated.union([groupName]), force: true)
 
         let measured = proxyLatencies[groupName]?.results ?? []
@@ -268,43 +261,32 @@ extension TunnelManager {
         client: ProxySelectionProviderClient,
         timeoutMilliseconds: UInt32 = TunnelManager.uiLatencyTimeoutMilliseconds
     ) async throws -> ProxyLatencyMeasurement {
-        let upper = member.uppercased()
-        if upper == "DIRECT" { return .verified(1) }
-        if upper == "REJECT" { return .timedOut }
-        let latency = try await client.activeLatency(
-            group: member,
+        try await client.displayLatency(
+            member: member,
             url: Self.defaultLatencyTestURL,
             timeoutMilliseconds: timeoutMilliseconds
         )
-        let delay = latency.results
-            .first(where: { $0.member == member })?.delayMilliseconds
-            ?? latency.results.first?.delayMilliseconds
-        return delay.map { .verified($0) } ?? .timedOut
     }
 
     /// Streams protocol-verified latency for a group's members using a bounded
     /// sliding window of per-member `activeLatency` probes.
     ///
-    /// Fast nodes update the UI within ~100 ms as they respond instead of
-    /// waiting for dead nodes in the group to hit the 3,000 ms timeout, and
-    /// groups with more than 64 members no longer fail `selector_url_test` and
-    /// fall back to bare TCP.
+    /// Nodes, DIRECT and nested groups all use the same bounded URL test.
+    /// Each result streams without waiting for slower neighbours; group names
+    /// resolve through the core's current active leaf rather than a minimum.
     func measureVerifiedLatency(
         group groupName: String,
         members: [String],
         runToken: LatencyRunToken?
     ) async -> Bool {
         guard !members.isEmpty else { return true }
-        let probeTargets = Set(latencyIndex.probeTargets)
         let selected = proxySelections[groupName]?.selectedMember
         var orderedTargets: [String] = []
         orderedTargets.reserveCapacity(members.count)
-        if let selected,
-           probeTargets.contains(selected),
-           members.contains(selected) {
+        if let selected, members.contains(selected) {
             orderedTargets.append(selected)
         }
-        for member in members where probeTargets.contains(member) && member != selected {
+        for member in members where member != selected {
             orderedTargets.append(member)
         }
 
@@ -318,13 +300,7 @@ extension TunnelManager {
 
         for member in orderedTargets {
             let upper = member.uppercased()
-            if upper == "DIRECT" {
-                recordLatency(
-                    member: member,
-                    measurement: .verified(1),
-                    runToken: runToken
-                )
-            } else if upper == "REJECT" {
+            if upper == "REJECT" {
                 recordLatency(
                     member: member,
                     measurement: .timedOut,
@@ -337,7 +313,7 @@ extension TunnelManager {
 
         let remoteTargets = orderedTargets.filter { member in
             let upper = member.uppercased()
-            return upper != "DIRECT" && upper != "REJECT"
+            return upper != "REJECT"
         }
 
         if !remoteTargets.isEmpty {
@@ -405,43 +381,13 @@ extension TunnelManager {
         }
 
         // Propagate measured leaf nodes up to any child strategy groups first.
-        let aggregated = latencyIndex.aggregateChildGroups()
+        let aggregated = latencyIndex.aggregateChildGroups(selectedMembers: latencySelectedMembers)
         if !aggregated.isEmpty {
             publishLatency(groups: aggregated, force: false)
         }
 
-        // Any child strategy group listed in `members` whose own leaf nodes were
-        // not part of `members` is probed directly through its active leaf.
-        let unresolvedChildGroups = members.filter { member in
-            !probeTargets.contains(member)
-                && latencyIndex.measurement(for: member, in: groupName) == nil
-        }
-        for childGroup in unresolvedChildGroups {
-            if runToken != currentLatencyRunToken || Task.isCancelled || state != .connected {
-                break
-            }
-            hadRemoteProbes = true
-            do {
-                let measurement = try await Self.probeVerifiedMemberLatency(
-                    member: childGroup,
-                    client: client,
-                    timeoutMilliseconds: timeoutMilliseconds
-                )
-                anyProviderProbeSucceeded = true
-                recordLatency(
-                    member: childGroup,
-                    measurement: measurement,
-                    runToken: runToken
-                )
-            } catch {
-                recordLatency(
-                    member: childGroup,
-                    measurement: .timedOut,
-                    runToken: runToken
-                )
-            }
-        }
-
+        // Child groups were probed alongside nodes, through their active
+        // handler. No fastest-child estimate may replace those readings.
         return anyProviderProbeSucceeded || !hadRemoteProbes
     }
 
@@ -544,7 +490,7 @@ extension TunnelManager {
                 "stage=proxyLatency memberSuccess group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) delay=\(measurement.delayMilliseconds.map(String.init) ?? "timeout", privacy: .public)"
             )
             guard runToken == currentLatencyRunToken else { return }
-            latencyIndex.aggregateChildGroups()
+            latencyIndex.aggregateChildGroups(selectedMembers: latencySelectedMembers)
             let allGroups = (activeProfileSummary?.proxyGroups ?? []).map(\.name)
             publishLatency(groups: allGroups, force: true)
             return
@@ -558,7 +504,7 @@ extension TunnelManager {
                 recordTimeoutOnFailure: true
             ) {
                 guard runToken == currentLatencyRunToken else { return }
-                latencyIndex.aggregateChildGroups()
+                latencyIndex.aggregateChildGroups(selectedMembers: latencySelectedMembers)
                 let allGroups = (activeProfileSummary?.proxyGroups ?? []).map(\.name)
                 publishLatency(groups: allGroups, force: true)
                 return
@@ -568,6 +514,7 @@ extension TunnelManager {
             )
         }
 
+        guard memberName.uppercased() != "DIRECT" else { return }
         let endpoints = activeProfile
             .map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
         measurement = await Self.probeDirectMemberLatency(
@@ -586,20 +533,20 @@ extension TunnelManager {
         )
 
         guard runToken == currentLatencyRunToken else { return }
-        latencyIndex.aggregateChildGroups()
+        latencyIndex.aggregateChildGroups(selectedMembers: latencySelectedMembers)
         let allGroups = (activeProfileSummary?.proxyGroups ?? []).map(\.name)
         publishLatency(groups: allGroups, force: true)
     }
 
     /// Drives the bounded probe pool and streams each result into the index.
     ///
-    /// The 16-worker sliding window is unchanged; what changed is that results
-    /// land in the index in O(1) and reach the published property on a flush
-    /// window instead of rebuilding every group's array per result.
+    /// Results land in the index in O(1) and publish on a flush window.
+    /// DIRECT stays unmeasured offline: it has no node endpoint to TCP-ping.
     func measureReachability(
         members: [String],
         runToken: LatencyRunToken?
     ) async {
+        let members = members.filter { $0.uppercased() != "DIRECT" }
         guard !members.isEmpty else { return }
         let endpoints = activeProfile
             .map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
@@ -691,7 +638,6 @@ extension TunnelManager {
         endpoints: [String: ProfileUpstreamEndpoint],
         excludingVirtualInterfaces: Bool
     ) async -> ProxyLatencyMeasurement {
-        if member.uppercased() == "DIRECT" { return .reachable(5) }
         if member.uppercased() == "REJECT" { return .timedOut }
         guard let endpoint = endpoints[member] else { return .timedOut }
         let delay = await probeTCPLatency(

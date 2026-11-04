@@ -426,7 +426,6 @@ final class TunnelManager: ObservableObject {
         }
     }
     @Published var latencyMeasuredAt: [String: [String: Date]] = [:]
-    var pendingLatencyMeasuredAt: [String: [String: Date]] = [:]
     @Published var connectionStage: ConnectionStage = .systemAuthorization
     let telemetryViewModel = NetworkTelemetryViewModel()
     var telemetry: NetworkTelemetrySnapshot { telemetryViewModel.snapshot }

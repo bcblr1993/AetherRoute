@@ -13,6 +13,10 @@ struct ProxyLatencyMeasurementTests {
     static func main() {
         print("Running ProxyLatencyMeasurementTests...")
 
+        unknownActiveGroupDoesNotGuessFastest()
+        healthIsolationAndFreshness()
+        explicitGroupMeasurementWins()
+        changedNestedRouteInvalidatesAlias()
         stateMachine()
         streamingDuringGroupSweep()
         streamingVerifiedSweepAbove64Members()
@@ -25,6 +29,71 @@ struct ProxyLatencyMeasurementTests {
         largeGroupMergeCost()
 
         print("ProxyLatencyMeasurementTests passed successfully!")
+    }
+
+    private static func unknownActiveGroupDoesNotGuessFastest() {
+        var index = ProxyLatencyIndex()
+        index.beginRun(groups: [("Top", ["Manual"]), ("Manual", ["Fast", "SelectedSlow"])])
+        index.merge(member: "Fast", measurement: .verified(20))
+        index.merge(member: "SelectedSlow", measurement: .verified(900))
+        index.aggregateChildGroups()
+        expect(index.measurement(for: "Manual", in: "Top") == nil,
+               "A strategy group must not claim its fastest child's latency without knowing its active route")
+    }
+
+    private static func healthIsolationAndFreshness() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        var index = ProxyLatencyIndex()
+        index.beginRun(groups: [("Top", ["Node"])], testURL: "http://display.test/204")
+        expect(index.needsRefresh(group: "Top", now: now), "unmeasured menu must test")
+        index.recordRouteHealth(ProxyLatencyState(results: [
+            .init(member: "Node", delayMilliseconds: 6819)
+        ]), group: "Top")
+        expect(index.state(for: "Top").results.isEmpty, "health must not seed UI readings")
+        expect(index.needsRefresh(group: "Top", now: now), "health must not suppress a display test")
+        index.merge(member: "Node", measurement: .verified(130), at: now)
+        index.recordRouteHealth(ProxyLatencyState(results: [
+            .init(member: "Node", delayMilliseconds: nil)
+        ]), group: "Top")
+        expect(index.measurement(for: "Node", in: "Top") == .verified(130), "background failure must not overwrite display result")
+        expect(index.measurementDates(for: "Top")["Node"] == now, "health must not advance UI timestamp")
+        expect(!index.needsRefresh(group: "Top", now: now.addingTimeInterval(59)), "fresh samples must not retest on every opening")
+        expect(index.needsRefresh(group: "Top", now: now.addingTimeInterval(60)), "expired samples must retest")
+        expect(index.needsRefresh(group: "Top", now: now.addingTimeInterval(-1)), "clock rollback must not preserve readings indefinitely")
+        index.merge(member: "Node", measurement: .reachable(10), at: now)
+        expect(index.needsRefresh(group: "Top", now: now), "TCP-only readings need a protocol test when connected")
+        index.merge(member: "Node", measurement: .timedOut, at: now)
+        expect(!index.needsRefresh(group: "Top", now: now), "a fresh real timeout must remain truthful without retry loops")
+        index.beginRun(groups: [("Top", ["Node"])], testURL: "https://changed.test/204")
+        expect(index.state(for: "Top").results.isEmpty, "a changed test URL invalidates old measurements")
+    }
+
+    private static func explicitGroupMeasurementWins() {
+        var index = ProxyLatencyIndex()
+        index.beginRun(groups: [("Top", ["Manual"]), ("Manual", ["Fast", "SelectedSlow"])])
+        index.merge(member: "Fast", measurement: .verified(20))
+        index.merge(member: "SelectedSlow", measurement: .verified(900))
+        index.aggregateChildGroups(selectedMembers: ["Manual": "SelectedSlow"])
+        expect(index.measurement(for: "Manual", in: "Top") == .verified(900), "manual group must inherit its selected slow child")
+        index.merge(member: "Manual", measurement: .verified(950))
+        index.aggregateChildGroups(selectedMembers: ["Manual": "Fast"])
+        expect(index.measurement(for: "Manual", in: "Top") == .verified(950), "a real active-handler probe wins over inferred children")
+    }
+
+    private static func changedNestedRouteInvalidatesAlias() {
+        let groups: [(name: String, members: [String])] = [
+            ("Top", ["Middle"]), ("Middle", ["Leaf"]), ("Leaf", ["A", "B"])
+        ]
+        var index = ProxyLatencyIndex()
+        index.beginRun(groups: groups, selectedMembers: ["Middle": "Leaf", "Leaf": "A"])
+        index.merge(member: "A", measurement: .verified(30))
+        index.merge(member: "Middle", measurement: .verified(40))
+        index.beginRun(groups: groups, selectedMembers: ["Middle": "Leaf", "Leaf": "A"])
+        expect(index.measurement(for: "Middle", in: "Top") == .verified(40), "same route preserves a fresh explicit probe")
+        index.beginRun(groups: groups, selectedMembers: ["Middle": "Leaf", "Leaf": "B"])
+        expect(index.measurement(for: "Middle", in: "Top") == nil, "a changed nested leaf invalidates its parent alias")
+        expect(index.needsRefresh(group: "Top"), "changed active route must trigger a menu refresh")
+        expect(index.measurement(for: "A", in: "Leaf") == .verified(30), "route changes must preserve independent physical-node measurements")
     }
 
     // MARK: - Helpers
@@ -131,12 +200,12 @@ struct ProxyLatencyMeasurementTests {
         index.beginRun(groups: [(name: group, members: members)])
         index.clear(group: group)
 
-        // DIRECT and REJECT resolve immediately before remote probes finish.
-        index.merge(member: "DIRECT", measurement: .verified(1))
+        // DIRECT arrives through the same real protocol probe as other nodes.
+        index.merge(member: "DIRECT", measurement: .verified(125))
         index.merge(member: "REJECT", measurement: .timedOut)
         expect(
-            reading("DIRECT", index, group: group, isTesting: true) == .responded(1),
-            "DIRECT must report 1 ms while remote nodes are still testing"
+            reading("DIRECT", index, group: group, isTesting: true) == .responded(125),
+            "DIRECT must display its actual measured result, not a fixed 1 ms"
         )
         expect(
             index.isVerified(member: "DIRECT", in: group),
@@ -271,7 +340,7 @@ struct ProxyLatencyMeasurementTests {
 
         index.merge(member: "Fast Node", measurement: .reachable(20))
         index.merge(member: "Slow Node", measurement: .reachable(90))
-        index.aggregateChildGroups()
+        index.aggregateChildGroups(selectedMembers: ["Middle": "Leaf", "Leaf": "Fast Node"])
 
         expect(
             index.measurement(for: "Leaf", in: "Middle") == .reachable(20),
@@ -289,7 +358,7 @@ struct ProxyLatencyMeasurementTests {
             (name: "Leaf", members: ["Fast Node"]),
         ])
         verifiedIndex.merge(member: "Fast Node", measurement: .verified(18))
-        verifiedIndex.aggregateChildGroups()
+        verifiedIndex.aggregateChildGroups(selectedMembers: ["Leaf": "Fast Node"])
         expect(
             verifiedIndex.measurement(for: "Leaf", in: "Top")?.isVerified == true,
             "a parent must inherit a verified child as verified"
@@ -317,7 +386,7 @@ struct ProxyLatencyMeasurementTests {
             (name: "Leaf", members: ["Dead Node"]),
         ])
         deadIndex.merge(member: "Dead Node", measurement: .timedOut)
-        deadIndex.aggregateChildGroups()
+        deadIndex.aggregateChildGroups(selectedMembers: ["Leaf": "Dead Node"])
         expect(
             deadIndex.measurement(for: "Leaf", in: "Top") == .timedOut,
             "a child group with no usable member must read as timedOut"

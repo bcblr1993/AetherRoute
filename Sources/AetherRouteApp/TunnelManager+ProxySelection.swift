@@ -590,7 +590,6 @@ extension TunnelManager {
     func clearProxySelectionRuntimeState() {
         consecutiveProviderUnresponsiveCount = 0
         latencyMeasuredAt = [:]
-        pendingLatencyMeasuredAt = [:]
         stopTelemetryPolling()
         connectionQuality = .unknown
         automaticReadinessGroupNames = []

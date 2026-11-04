@@ -79,6 +79,22 @@ public struct ProxySelectionProviderClient: Sendable {
         }
     }
 
+    /// Measures every outbound, including DIRECT and nested groups, through
+    /// the real core. This never selects a node or closes a connection.
+    public func displayLatency(
+        member: String,
+        url: String,
+        timeoutMilliseconds: UInt32
+    ) async throws -> ProxyLatencyMeasurement {
+        if member.uppercased() == "REJECT" { return .timedOut }
+        let state = try await activeLatency(
+            group: member, url: url, timeoutMilliseconds: timeoutMilliseconds
+        )
+        let delay = state.results.first(where: { $0.member == member })?.delayMilliseconds
+            ?? state.results.first?.delayMilliseconds
+        return delay.map { .verified($0) } ?? .timedOut
+    }
+
     public func telemetry(
         maximumConnections: UInt16 = 50
     ) async throws -> NetworkTelemetrySnapshot {

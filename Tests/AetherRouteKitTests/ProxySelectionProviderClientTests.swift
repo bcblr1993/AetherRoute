@@ -2,6 +2,30 @@ import AetherRouteKit
 import XCTest
 
 final class ProxySelectionProviderClientTests: XCTestCase {
+    func testDisplayLatencyMeasuresDirectAndActualNestedLeafWithoutSelecting() async throws {
+        for member in ["DIRECT", "Nested strategy"] {
+            let client = ProxySelectionProviderClient { data in
+                XCTAssertEqual(try ProxySelectionProviderMessageCodec.decodeRequest(data),
+                               .activeLatency(group: member, url: "http://display.test/204", timeoutMilliseconds: 3000))
+                return try ProxySelectionProviderMessageCodec.encode(response: .latency(
+                    .init(results: [.init(member: member == "DIRECT" ? "DIRECT" : "Active leaf", delayMilliseconds: 247)])
+                ))
+            }
+            let measured = try await client.displayLatency(member: member, url: "http://display.test/204", timeoutMilliseconds: 3000)
+            XCTAssertEqual(measured, .verified(247), "DIRECT must use the provider result and groups must use their active leaf")
+        }
+    }
+
+    func testDisplayLatencyPreservesRealDirectTimeout() async throws {
+        let client = ProxySelectionProviderClient { _ in
+            try ProxySelectionProviderMessageCodec.encode(response: .latency(
+                .init(results: [.init(member: "DIRECT", delayMilliseconds: nil)])
+            ))
+        }
+        let measured = try await client.displayLatency(member: "DIRECT", url: "http://display.test/204", timeoutMilliseconds: 3000)
+        XCTAssertEqual(measured, .timedOut)
+    }
+
     func testSnapshotUsesBoundedWireProtocol() async throws {
         let client = ProxySelectionProviderClient { data in
             XCTAssertEqual(

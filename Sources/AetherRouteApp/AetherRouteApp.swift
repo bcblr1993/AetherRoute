@@ -1139,6 +1139,7 @@ private struct MenuBarContent: View {
         .accessibilityIdentifier("menu-proxy-node-selector")
         .task(id: "\(group.name):\(tunnel.isConnected)") {
             await tunnel.refreshProxySelection(group: group.name)
+            await tunnel.refreshProxyLatencyIfNeeded(group: group.name)
         }
     }
 
@@ -1535,8 +1536,8 @@ private struct MenuNodeListInline: View {
             await tunnel.refreshProxySelection(group: group.name)
             guard !Task.isCancelled else { return }
             updateOrder()
-            if tunnel.isConnected, tunnel.proxyLatencies[group.name] == nil {
-                await tunnel.testProxyLatency(group: group.name)
+            if tunnel.isConnected {
+                await tunnel.refreshProxyLatencyIfNeeded(group: group.name)
                 guard !Task.isCancelled else { return }
                 updateOrder()
             }

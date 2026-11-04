@@ -6,6 +6,29 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep Google HTTPS readiness/recovery scans separate from menu latency tests,
+  preventing a background 10-second scan from replacing a fresh Cloudflare
+  display measurement. Opening the menu refreshes missing or 60-second-old
+  samples using the same probe as the manual test; fresh samples are reused.
+- Measure DIRECT through the real core instead of reporting a fabricated
+  verified 1 ms. Strategy rows probe the current active handler; offline
+  aggregation only follows a known selected child and never guesses the
+  fastest child. Timestamps follow actual samples, and changing the display
+  test URL invalidates prior measurements.
+- Tests first: on 2.0.4 the real latency model fails the regression with
+  `A strategy group must not claim its fastest child's latency without knowing
+  its active route`. Coverage also checks background-result isolation, expiry,
+  clock rollback, URL changes and real DIRECT/provider results. The latency
+  model and App wiring gate run in both fast lane and the complete test suite.
+- Validation: final fast lane passed all 14 steps in 62 seconds. Complete
+  `scripts/test.sh` passed, including warning-as-error product builds,
+  575 XCTest + 121 Swift Testing + 99 transparent proxy + 24 bridge tests
+  (819 total), production proxy sockets and both-core subscription gates.
+  This source fix has not been packaged or published, and the running local
+  2.0.4 app was not replaced, restarted or reconfigured.
+
 ## [2.0.4] - 2026-11-03
 
 ### Fixed

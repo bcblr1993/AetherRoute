@@ -1,3 +1,5 @@
+import Foundation
+
 public struct ProxyLatencyResult: Sendable, Equatable {
     public let member: String
     public let delayMilliseconds: UInt32?
@@ -69,14 +71,36 @@ public struct ProxyLatencyIndex {
     /// resolve nested groups bottom-up.
     private var orderedGroups: [String] = []
 
+    private var measuredAt: [String: [String: Date]] = [:]
+    private var explicitlyMeasuredGroups: Set<String> = []
+    private var testURL: String?
+    private var activeRoutes: [String: [String]] = [:]
+    /// Readiness probes have a different destination and budget. They never
+    /// supply display readings, confidence badges or freshness timestamps.
+    public private(set) var routeHealth: [String: ProxyLatencyState] = [:]
+
     public init() {}
+
+    public mutating func recordRouteHealth(_ state: ProxyLatencyState, group: String) {
+        routeHealth[group] = state
+    }
 
     /// Rebuilds the reverse index for one measurement run.
     ///
     /// `groups` must carry the members actually shown for each group, which is
     /// the live selector snapshot when there is one and the profile summary
     /// otherwise.
-    public mutating func beginRun(groups: [(name: String, members: [String])]) {
+    public mutating func beginRun(
+        groups: [(name: String, members: [String])],
+        testURL: String? = nil,
+        selectedMembers: [String: String] = [:]
+    ) {
+        if self.testURL != testURL {
+            measurements.removeAll()
+            measuredAt.removeAll()
+            explicitlyMeasuredGroups.removeAll()
+            self.testURL = testURL
+        }
         membership.removeAll(keepingCapacity: true)
         groupMembers.removeAll(keepingCapacity: true)
         groupNames = Set(groups.map(\.name))
@@ -87,6 +111,25 @@ public struct ProxyLatencyIndex {
                 membership[member, default: []].append(group.name)
             }
         }
+        // A group alias belongs to its current route, not just its name.
+        // Invalidate aliases above a changed nested selector as well.
+        var routes: [String: [String]] = [:]
+        for group in groupNames {
+            var chain: [String] = []
+            var cursor = group
+            var seen: Set<String> = []
+            while seen.insert(cursor).inserted, let selected = selectedMembers[cursor] {
+                chain.append(selected)
+                cursor = selected
+            }
+            routes[group] = chain
+            if activeRoutes[group] != chain {
+                for parent in membership[group] ?? [] {
+                    clear(member: group, in: parent)
+                }
+            }
+        }
+        activeRoutes = routes
     }
 
     /// Members that need probing: every unique member across all groups, minus
@@ -113,16 +156,20 @@ public struct ProxyLatencyIndex {
     /// is in flight.
     public mutating func clear(group: String) {
         measurements[group] = [:]
+        measuredAt[group] = [:]
+        for member in groupMembers[group] ?? [] {
+            explicitlyMeasuredGroups.remove(member)
+        }
     }
 
     public mutating func clearAll() {
-        for group in orderedGroups {
-            measurements[group] = [:]
-        }
+        for group in orderedGroups { clear(group: group) }
     }
 
     public mutating func clear(member: String, in group: String) {
         measurements[group]?[member] = nil
+        measuredAt[group]?[member] = nil
+        explicitlyMeasuredGroups.remove(member)
     }
 
     /// Records one result in every group that lists the member, and returns
@@ -130,11 +177,14 @@ public struct ProxyLatencyIndex {
     @discardableResult
     public mutating func merge(
         member: String,
-        measurement: ProxyLatencyMeasurement
+        measurement: ProxyLatencyMeasurement,
+        at date: Date = .now
     ) -> [String] {
         let groups = membership[member] ?? []
+        if groupNames.contains(member) { explicitlyMeasuredGroups.insert(member) }
         for group in groups {
             measurements[group, default: [:]][member] = measurement
+            measuredAt[group, default: [:]][member] = date
         }
         return groups
     }
@@ -142,9 +192,36 @@ public struct ProxyLatencyIndex {
     public mutating func recordDirect(
         member: String,
         measurement: ProxyLatencyMeasurement,
-        in group: String
+        in group: String,
+        at date: Date = .now
     ) {
         measurements[group, default: [:]][member] = measurement
+        measuredAt[group, default: [:]][member] = date
+        if groupNames.contains(member) { explicitlyMeasuredGroups.insert(member) }
+    }
+
+    public func measurementDates(for group: String) -> [String: Date] {
+        measuredAt[group] ?? [:]
+    }
+
+    /// A menu opening never treats an old reading as a new test. Reachability
+    /// results also need upgrading once a protocol core becomes available.
+    public func needsRefresh(
+        group: String,
+        now: Date = .now,
+        maximumAge: TimeInterval = 60,
+        requiresVerified: Bool = true
+    ) -> Bool {
+        let members = groupMembers[group] ?? []
+        guard !members.isEmpty else { return false }
+        return members.contains { member in
+            guard let measurement = measurements[group]?[member],
+                  let date = measuredAt[group]?[member] else { return true }
+            let age = now.timeIntervalSince(date)
+            if age < 0 || age >= maximumAge { return true }
+            if requiresVerified, case .reachable = measurement { return true }
+            return false
+        }
     }
 
     public func measurement(for member: String, in group: String) -> ProxyLatencyMeasurement? {
@@ -182,54 +259,36 @@ public struct ProxyLatencyIndex {
         return ProxyLatencyState(results: results)
     }
 
-    /// Propagates each strategy group's best child latency up to the rows that
-    /// reference that group as a member.
-    ///
-    /// Resolution walks reverse declaration order and repeats until nothing
-    /// changes, so a group nested two or more levels deep resolves regardless
-    /// of the order it was declared in. The previous single pass in
-    /// declaration order left deeper nesting showing whatever that one pass
-    /// happened to produce.
-    /// Returns every group whose rows changed, so the caller publishes exactly
-    /// those rather than guessing.
+    /// Only the active child can describe a strategy group's actual route.
+    /// Unknown groups stay unmeasured until the core probes their active leaf.
+    /// An explicit core measurement wins over any derived child reading.
     @discardableResult
-    public mutating func aggregateChildGroups() -> Set<String> {
+    public mutating func aggregateChildGroups(
+        selectedMembers: [String: String] = [:]
+    ) -> Set<String> {
         var touched: Set<String> = []
-        var didChange = true
-        var passes = 0
-        // Each pass resolves at least one more level; the bound only stops a
-        // pathological cyclic profile from spinning.
-        let maximumPasses = max(1, orderedGroups.count)
-        while didChange, passes < maximumPasses {
-            didChange = false
-            passes += 1
+        for _ in 0..<max(1, orderedGroups.count) {
+            var changed = false
             for group in orderedGroups.reversed() {
                 for member in groupMembers[group] ?? [] where groupNames.contains(member) {
-                    let childEntries = measurements[member] ?? [:]
-                    // A child group nobody has measured stays unmeasured.
-                    // Reporting a timeout for it would claim a failure that
-                    // was never observed, which is what a single-group run
-                    // would otherwise do to every sibling group it lists.
-                    if childEntries.isEmpty { continue }
-                    // The parent inherits its best child whole, confidence
-                    // included: if the fastest usable child was core-verified,
-                    // the parent row is reporting a verified path.
-                    let resolved = childEntries.values
-                        .filter { $0.delayMilliseconds != nil }
-                        .min { lhs, rhs in
-                            (lhs.delayMilliseconds ?? .max)
-                                < (rhs.delayMilliseconds ?? .max)
-                        } ?? .timedOut
-                    if measurements[group]?[member] != resolved {
+                    guard !explicitlyMeasuredGroups.contains(member),
+                          let selected = selectedMembers[member],
+                          let resolved = measurements[member]?[selected],
+                          let date = measuredAt[member]?[selected] else { continue }
+                    if measurements[group]?[member] != resolved
+                        || measuredAt[group]?[member] != date {
                         measurements[group, default: [:]][member] = resolved
+                        measuredAt[group, default: [:]][member] = date
                         touched.insert(group)
-                        didChange = true
+                        changed = true
                     }
                 }
             }
+            if !changed { break }
         }
         return touched
     }
+
 }
 
 /// How a member responded the last time it was measured.
