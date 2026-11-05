@@ -12,6 +12,9 @@ enum UIResponsivenessProbe {
     }
 
     private static var pending: [String: PendingAction] = [:]
+    private static var settlingCount = 0
+    private static var lastSettledNanoseconds: UInt64 = 0
+    private static var isWarmup = false
     private static var sequence: UInt64 = 0
     private static var language = ProcessInfo.processInfo.environment[
         "AETHERROUTE_UI_REVIEW_LANGUAGE"
@@ -32,8 +35,15 @@ enum UIResponsivenessProbe {
         return UIResponsivenessWriter(outputURL: outputURL)
     }()
 
+    static func setWarmup(_ value: Bool) {
+        isWarmup = value
+        if value {
+            pending.removeAll()
+        }
+    }
+
     static func begin(_ action: String) {
-        guard writer != nil else { return }
+        guard writer != nil, !isWarmup else { return }
         pending[action] = PendingAction(
             language: language,
             startedNanoseconds: DispatchTime.now().uptimeNanoseconds
@@ -47,9 +57,23 @@ enum UIResponsivenessProbe {
     static func rendered(_ action: String) {
         guard writer != nil, let pendingAction = pending.removeValue(forKey: action)
         else { return }
+        settlingCount += 1
         whenMainThreadSettles {
+            settlingCount = max(0, settlingCount - 1)
+            lastSettledNanoseconds = DispatchTime.now().uptimeNanoseconds
             record(action, pendingAction)
         }
+    }
+
+    static var shouldDeferLiveTelemetryTick: Bool {
+        if !pending.isEmpty || settlingCount > 0 {
+            return true
+        }
+        guard lastSettledNanoseconds > 0 else { return false }
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard now >= lastSettledNanoseconds else { return false }
+        let elapsedSinceSettled = now - lastSettledNanoseconds
+        return elapsedSinceSettled > 250_000_000 && elapsedSinceSettled < 1_200_000_000
     }
 
     /// Runs `body` the next time the main run loop is about to sleep, after
@@ -91,6 +115,8 @@ enum UIResponsivenessProbe {
         language = value
     }
 #else
+    static var shouldDeferLiveTelemetryTick: Bool { false }
+    static func setWarmup(_ value: Bool) {}
     static func begin(_ action: String) {}
     static func rendered(_ action: String) {}
     static func selectLanguage(_ value: String) {}

@@ -16,6 +16,8 @@ trap cleanup EXIT HUP INT TERM
 
 KIT="$ROOT/Sources/AetherRouteKit"
 swiftc -parse-as-library \
+  "$KIT/ProfileImportValidator.swift" \
+  "$KIT/AetherNode.swift" \
   "$KIT/ProfileOverride.swift" \
   "$KIT/ProfileOverrideCompiler.swift" \
   "$KIT/NodeRegion.swift" \

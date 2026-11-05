@@ -1,11 +1,11 @@
 {
   "artifacts": {
-    "flowCoreSHA256": "11e7f38c56ab1b1268101d350e5b0c65f0e3fb137b731fd90fa259b1e230fbf5",
+    "flowCoreSHA256": "99026a294d0e5189bb70a42a41487e19ecb7b9d4fe4d588f576f13f0e7cbe168",
     "headerSHA256": "bf25e15ff3eeecec9d140fc7190cea240f7d5878af51f017f50faf09dc1c5dee",
-    "interopTestBinarySHA256": "31961bac34b88b54de4fefa0f16d493667b71cf5dcc4f584ebbe08862b39eece",
-    "packetFlowCoreSHA256": "2bda14b7a6d139a9ede852d6a401db6fe20d965d591af0fce56b54ef762ad28f"
+    "interopTestBinarySHA256": "07f3458030db632fd397ee35de02d012f79471f7b4a0eb37b8017388fba481dd",
+    "packetFlowCoreSHA256": "b798d003ef3c282820c95d9dc6f412e6cd9a1c074704be76ffc094e8cc69d8e9"
   },
-  "coreCommit": "ba3d404c092ff2165cb982eafcaf1833574d2321",
+  "coreCommit": "bdb88eb081eb8594351438d1f78a40f84dc858ab",
   "coreFeatures": [
     "aether-tuic",
     "shadowquic",
@@ -73,14 +73,14 @@
   "sourceFiles": {
     "coreManifestSHA256": "f3076cbcc886f37ebb8feee21160bd1c7d3a67e310a596e9360ef09224937182",
     "directSourceSHA256": "b3114f4181bcc30e700521ac752136d7318d42a3106a9179660c090a7b80f6fd",
-    "dispatcherSHA256": "53157c194a6fe027bef4512b270a7378fe3687f5f5f2f3db987a3330bed61851",
+    "dispatcherSHA256": "8b431a02d330cf5416aeb516ef1cc3fe548768ec35937e62ded301b9e665cbcf",
     "embeddedFlowSourceSHA256": "eb498ce8e62a18426fc6ee656de64519ac6309951292031a19cb16d1cb6449f8",
     "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
     "ffiSourceSHA256": "c76a6e9acf2825c9c246fbac78a387c931bcb23000ca4c29ecea8059ba3cb141",
     "flowFFISourceSHA256": "63cf2ebcdeeee46867d5cd0a24c61b065cd54ef27a81a21d4410bef45697f833",
     "interopTestsSHA256": "1a12f1e1aa010030e7dec473628a0dbe92131b03e63302be0ce94304e3c0a69b",
-    "outboundManagerSHA256": "136a9fda16384db9a6b18ecdc6003cb4e84935e666f83e83e36e336003450e8c",
+    "outboundManagerSHA256": "e7322823ff1129212799154b9774599177bdca9a1cfa545a3fb4743e3820f805",
     "proxyManagerSHA256": "560fc42d699f21cf5a3801f587f6c76ddb1fce90bbe7a7b0a2eb69cf00ad9548",
-    "selectorSourceSHA256": "b1092a6558910c5ab19e62eb613cdde72fe692a284d2b50f269b582fa25fc332"
+    "selectorSourceSHA256": "165b8e1e7a0b492a45b96f9e204e8aa1122a110e10042abde2a63b3c0cb9dbcb"
   }
 }

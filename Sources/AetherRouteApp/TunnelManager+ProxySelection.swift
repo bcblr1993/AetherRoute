@@ -314,7 +314,11 @@ extension TunnelManager {
                             _ = try? await client.select(group: "GLOBAL", member: groupName)
                         }
                         if previous.selectedMember != requestedMember {
-                            await closeConnectionsAfterProxySwitch(group: groupName)
+                            await closeConnectionsAfterProxySwitch(
+                                group: groupName,
+                                previousMember: previous.selectedMember,
+                                newMember: requestedMember
+                            )
                         }
                     } catch {
                         if let previousMember = previous.selectedMember,

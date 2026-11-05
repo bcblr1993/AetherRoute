@@ -595,11 +595,20 @@ extension TunnelManager {
     func startLiveReviewTelemetryIfRequested() {
         guard ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_LIVE"] == "1"
         else { return }
+        realtimeTelemetrySources.insert("live-review")
+        isRealtimeTelemetryPreferred = true
+        for connection in telemetryViewModel.snapshot.connections.prefix(32) {
+            let presentation = SourceAppDirectory.shared.presentation(for: connection)
+            _ = SourceAppDirectory.shared.icon(for: presentation)
+        }
         Task { @MainActor [weak self] in
             var tick: UInt64 = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
-                guard let self else { return }
+                while UIResponsivenessProbe.shouldDeferLiveTelemetryTick && !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(20))
+                }
+                guard let self, !Task.isCancelled else { return }
                 tick &+= 1
                 self.publishTelemetry(
                     Self.advancedReviewSnapshot(self.telemetryViewModel.snapshot, tick: tick)

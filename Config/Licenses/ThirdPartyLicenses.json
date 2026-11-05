@@ -2678,8 +2678,8 @@
     }
   ],
   "coreArtifacts": {
-    "packetTunnel": "2bda14b7a6d139a9ede852d6a401db6fe20d965d591af0fce56b54ef762ad28f",
-    "transparentProxy": "11e7f38c56ab1b1268101d350e5b0c65f0e3fb137b731fd90fa259b1e230fbf5"
+    "packetTunnel": "b798d003ef3c282820c95d9dc6f412e6cd9a1c074704be76ffc094e8cc69d8e9",
+    "transparentProxy": "99026a294d0e5189bb70a42a41487e19ecb7b9d4fe4d588f576f13f0e7cbe168"
   },
   "licenses": [
     {

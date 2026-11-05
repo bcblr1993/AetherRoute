@@ -289,4 +289,153 @@ final class ProfileOverrideCompilerTests: XCTestCase {
         XCTAssertEqual(result.customGroupMembers["Auto HK"]?.count, 600)
         XCTAssertLessThan(elapsed, .milliseconds(1_500), "3,000 nodes took \(elapsed)")
     }
+
+    func testChainedCustomNodeIsInjectedAndListedInParentGroup() throws {
+        let landing = AetherNode(
+            name: "🇺🇸 美国住宅 IP",
+            protocolID: .socks5,
+            server: "198.51.100.42",
+            port: 1080,
+            username: "res-user",
+            password: "res-password",
+            dialerProxy: "香港自动"
+        )
+        let override = try ProfileOverride(
+            groups: [
+                CustomProxyGroup(name: "香港自动", regions: ["HK"], excludeKeywords: ["游戏"], parentGroup: "节点选择", position: .top),
+            ],
+            chainedProxies: [
+                ChainedProxyOverride(
+                    name: "🇺🇸 美国住宅 IP",
+                    dialerProxy: "香港自动",
+                    target: .customNode(landing),
+                    parentGroup: "节点选择",
+                    position: .top
+                ),
+            ]
+        ).validated()
+
+        let result = ProfileOverrideCompiler.apply(override, to: blockProfile)
+        XCTAssertEqual(result.diagnostics, [])
+        XCTAssertEqual(result.chainedProxies["🇺🇸 美国住宅 IP"], "香港自动")
+
+        let summary = ProfileConfigurationInspector.inspect(yaml: result.yaml)
+        XCTAssertEqual(summary.proxyCount, 5)
+        let injected = try XCTUnwrap(summary.proxies.first { $0.name == "🇺🇸 美国住宅 IP" })
+        XCTAssertEqual(injected.protocolName.lowercased(), "socks5")
+        XCTAssertEqual(injected.dialerProxy, "香港自动")
+
+        let parent = try XCTUnwrap(group("节点选择", in: result.yaml))
+        XCTAssertTrue(parent.members.contains("🇺🇸 美国住宅 IP"))
+        XCTAssertTrue(parent.members.contains("香港自动"))
+        try ProfileImportValidator.validate(data: Data(result.yaml.utf8))
+    }
+
+    func testChainedExistingNodeClonesTargetAcrossBlockFlowAndJSON() throws {
+        let override = try ProfileOverride(
+            chainedProxies: [
+                ChainedProxyOverride(
+                    name: "🔗 日本东京（香港中转）",
+                    dialerProxy: "🇭🇰 Hong Kong 01",
+                    target: .existingNode(name: "日本 东京 03"),
+                    parentGroup: "节点选择",
+                    position: .bottom
+                ),
+            ]
+        ).validated()
+
+        // 1. Block YAML
+        let blockResult = ProfileOverrideCompiler.apply(override, to: blockProfile)
+        XCTAssertEqual(blockResult.diagnostics, [])
+        let blockSummary = ProfileConfigurationInspector.inspect(yaml: blockResult.yaml)
+        XCTAssertEqual(blockSummary.proxyCount, 5)
+        XCTAssertNil(blockSummary.proxies.first { $0.name == "日本 东京 03" }?.dialerProxy)
+        XCTAssertEqual(
+            blockSummary.proxies.first { $0.name == "🔗 日本东京（香港中转）" }?.dialerProxy,
+            "🇭🇰 Hong Kong 01"
+        )
+        XCTAssertEqual(group("节点选择", in: blockResult.yaml)?.members.last, "🔗 日本东京（香港中转）")
+
+        // 2. Flow YAML with nested ws-opts
+        let flowYAML = """
+        proxies:
+          - {name: "🇭🇰 Hong Kong 01", type: ss, server: hk1.example.com, port: 443, cipher: aes-128-gcm, password: secret}
+          - {name: "日本 东京 03", type: vmess, server: jp.example.com, port: 443, uuid: 11111111-2222-3333-4444-555555555555, alterId: 0, cipher: auto, network: ws, ws-opts: {path: /ws, headers: {Host: jp.example.com}}}
+        proxy-groups:
+          - {name: 节点选择, type: select, proxies: ["🇭🇰 Hong Kong 01", "日本 东京 03"]}
+        rules:
+          - MATCH,节点选择
+        """
+        let flowResult = ProfileOverrideCompiler.apply(override, to: flowYAML)
+        XCTAssertEqual(flowResult.diagnostics, [])
+        let flowSummary = ProfileConfigurationInspector.inspect(yaml: flowResult.yaml)
+        XCTAssertEqual(flowSummary.proxyCount, 3)
+        let clonedFlow = try XCTUnwrap(flowSummary.proxies.first { $0.name == "🔗 日本东京（香港中转）" })
+        XCTAssertEqual(clonedFlow.dialerProxy, "🇭🇰 Hong Kong 01")
+        XCTAssertEqual(clonedFlow.effectiveTransportName, "WS")
+
+        // 3. JSON profile
+        let json = """
+        {"proxies":[{"name":"🇭🇰 Hong Kong 01","type":"socks5","server":"127.0.0.1","port":1080},{"name":"日本 东京 03","type":"socks5","server":"127.0.0.1","port":1081}],
+         "proxy-groups":[{"name":"节点选择","type":"select","proxies":["🇭🇰 Hong Kong 01","日本 东京 03"]}],
+         "rules":["MATCH,节点选择"]}
+        """
+        let jsonResult = ProfileOverrideCompiler.apply(override, to: json)
+        XCTAssertEqual(jsonResult.diagnostics, [])
+        let jsonSummary = ProfileConfigurationInspector.inspect(yaml: jsonResult.yaml)
+        XCTAssertEqual(jsonSummary.proxyCount, 3)
+        XCTAssertEqual(
+            jsonSummary.proxies.first { $0.name == "🔗 日本东京（香港中转）" }?.dialerProxy,
+            "🇭🇰 Hong Kong 01"
+        )
+        XCTAssertEqual(group("节点选择", in: jsonResult.yaml)?.members.last, "🔗 日本东京（香港中转）")
+    }
+
+    func testChainedProxyDiagnosticsAndValidation() throws {
+        let missingDialer = try ProfileOverride(
+            chainedProxies: [
+                ChainedProxyOverride(
+                    name: "Chain Missing Dialer",
+                    dialerProxy: "Gone Dialer",
+                    target: .existingNode(name: "日本 东京 03"),
+                    parentGroup: "节点选择"
+                ),
+                ChainedProxyOverride(
+                    name: "Chain Missing Target",
+                    dialerProxy: "🇭🇰 Hong Kong 01",
+                    target: .existingNode(name: "Gone Target"),
+                    parentGroup: "节点选择"
+                ),
+            ]
+        ).validated()
+        let result = ProfileOverrideCompiler.apply(missingDialer, to: blockProfile)
+        XCTAssertTrue(result.diagnostics.contains(.dialerProxyMissing(chain: "Chain Missing Dialer", dialer: "Gone Dialer")))
+        XCTAssertTrue(result.diagnostics.contains(.targetNodeMissing(chain: "Chain Missing Target", target: "Gone Target")))
+        XCTAssertEqual(ProfileConfigurationInspector.inspect(yaml: result.yaml).proxyCount, 4)
+
+        // Self-reference, parent == dialer loop, and cycle between two chained proxies must fail validation
+        XCTAssertThrowsError(try ChainedProxyOverride(
+            name: "Same",
+            dialerProxy: "Same",
+            target: .existingNode(name: "日本 东京 03")
+        ).validated())
+        XCTAssertThrowsError(try ChainedProxyOverride(
+            name: "Loop via Parent",
+            dialerProxy: "节点选择",
+            target: .existingNode(name: "日本 东京 03"),
+            parentGroup: "节点选择"
+        ).validated())
+        XCTAssertThrowsError(try ProfileOverride(
+            chainedProxies: [
+                ChainedProxyOverride(name: "Chain A", dialerProxy: "Chain B", target: .existingNode(name: "日本 东京 03")),
+                ChainedProxyOverride(name: "Chain B", dialerProxy: "Chain A", target: .existingNode(name: "🇭🇰 Hong Kong 01")),
+            ]
+        ).validated())
+
+        // FormatVersion 1 JSON without chainedProxies key decodes cleanly
+        let legacyJSON = #"{"formatVersion":1,"groups":[],"hiddenNodeKeywords":["Expire"]}"#
+        let decoded = try JSONDecoder().decode(ProfileOverride.self, from: Data(legacyJSON.utf8))
+        XCTAssertTrue(decoded.chainedProxies.isEmpty)
+        XCTAssertEqual(decoded.hiddenNodeKeywords, ["Expire"])
+    }
 }

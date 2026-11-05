@@ -1824,6 +1824,13 @@ final class TunnelManager: ObservableObject {
             else { return }
             routingMode = applied
             sessionRoutingMode = applied
+            if let closeRequest = ProxySelectionHotSwitchPolicy.routingModeCloseRequest(
+                previousMode: previousMode,
+                newMode: applied,
+                closesConnectionsOnSwitch: closesConnectionsOnProxySwitch
+            ) {
+                await closeConnections(closeRequest)
+            }
             routingModeMessage = AppLocalization.string(
                 "Routing mode updated without disconnecting."
             )

@@ -297,14 +297,22 @@ struct ContentView: View {
     /// probe can time navigation on a Mac where the XCUITest runner cannot
     /// run the gate (its sandbox cannot write evidence there), then quits.
     private func cycleSectionsForResponsiveness(seconds: Double) async {
-        let deadline = Date().addingTimeInterval(seconds)
         // AETHERROUTE_UI_RESPONSIVENESS_AUTOCYCLE_SECTIONS=overview,dns
         // narrows the cycle to the pages being profiled.
         let requested = ProcessInfo.processInfo.environment[
             "AETHERROUTE_UI_RESPONSIVENESS_AUTOCYCLE_SECTIONS"
         ]?.split(separator: ",").compactMap { AppSection(rawValue: String($0)) } ?? []
         let sections = requested.isEmpty ? Array(AppSection.allCases.reversed()) : requested
-        try? await Task.sleep(for: .seconds(2))
+        UIResponsivenessProbe.setWarmup(true)
+        try? await Task.sleep(for: .seconds(1))
+        for _ in 0..<2 {
+            for section in sections {
+                selectSection(section)
+                try? await Task.sleep(for: .milliseconds(350))
+            }
+        }
+        UIResponsivenessProbe.setWarmup(false)
+        let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
             for section in sections {
                 selectSection(section)

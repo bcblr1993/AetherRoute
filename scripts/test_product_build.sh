@@ -15,6 +15,11 @@ if ! xcodebuild -version >/dev/null 2>&1; then
   exit 0
 fi
 
+XCODE_MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)
+if [ -n "$XCODE_MACOS_SDK" ]; then
+  export SDKROOT="$XCODE_MACOS_SDK"
+fi
+
 xcodebuild \
   -project "$ROOT/AetherRoute.xcodeproj" \
   -scheme AetherRouteUnitTests \

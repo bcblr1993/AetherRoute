@@ -92,6 +92,62 @@ ditto \"\$M/AetherRoute.app\" /Applications/AetherRoute.app
 hdiutil detach \"\$M\" -quiet; rmdir \"\$M\"
 test \"\$(defaults read /Applications/AetherRoute.app/Contents/Info CFBundleVersion)\" = $BUILD"
 
+if [ -n "${TARGET_VM:-}" ]; then
+  needs_reprime=$($SSH "$HOST" '
+    for id in com.aetherroute.desktop.tunnel com.aetherroute.desktop.transparent-proxy; do
+      bundled="/Applications/AetherRoute.app/Contents/Library/SystemExtensions/$id.systemextension/Contents/MacOS/$id"
+      matched=0
+      for staged in /Library/SystemExtensions/*/"$id.systemextension/Contents/MacOS/$id"; do
+        if [ -f "$staged" ] && cmp -s "$staged" "$bundled"; then matched=1; break; fi
+      done
+      if [ "$matched" -ne 1 ]; then echo yes; exit 0; fi
+    done
+    echo no
+  ')
+  if [ "$needs_reprime" = yes ]; then
+    echo "Re-staging notarized system extensions for build $BUILD on $EVIDENCE_HOST"
+    $SSH "$HOST" "set -e
+PREF=$PREF
+$QUIT
+sudo killall -9 com.aetherroute.desktop.tunnel com.aetherroute.desktop.transparent-proxy 2>/dev/null || true
+sudo python3 - <<'PY'
+import plistlib
+from pathlib import Path
+p = Path('/Library/SystemExtensions/db.plist')
+if p.is_file():
+    data = plistlib.loads(p.read_bytes())
+    data['developerMode'] = True
+    for ext in data.get('extensions', []):
+        if ext.get('identifier', '').startswith('com.aetherroute.desktop.'):
+            ext['bundleVersion']['CFBundleVersion'] = '0'
+    p.write_bytes(plistlib.dumps(data, fmt=plistlib.FMT_BINARY))
+PY
+sudo killall -9 sysextd 2>/dev/null || true
+sleep 2
+for eng in tun transparent; do
+  defaults write \"\$PREF\" AetherRoute.NetworkEngineMode -string \$eng
+  defaults write \"\$PREF\" AetherRoute.LastConnectionIntent -bool false
+  open -a /Applications/AetherRoute.app
+  sleep 8
+  $QUIT
+done"
+    tart stop "$TARGET_VM" >/dev/null 2>&1 || true
+    sleep 2
+    nohup tart run "$TARGET_VM" --no-graphics >/dev/null 2>&1 &
+    VM_IP=""
+    for _ in $(seq 1 40); do
+      VM_IP=$(tart ip "$TARGET_VM" 2>/dev/null || true)
+      if [ -n "$VM_IP" ] && $SSH "$VM_USER@$VM_IP" 'pgrep -x Dock >/dev/null && pgrep -x WindowServer >/dev/null' 2>/dev/null; then
+        break
+      fi
+      VM_IP=""
+      sleep 2
+    done
+    test -n "$VM_IP" || { echo "Tart VM $TARGET_VM did not return after system extension reboot" >&2; exit 1; }
+    HOST="$VM_USER@$VM_IP"
+  fi
+fi
+
 for ENGINE in tun transparent; do
   $SSH "$HOST" "PREF=$PREF
 $QUIT

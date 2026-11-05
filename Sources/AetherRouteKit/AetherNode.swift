@@ -962,26 +962,7 @@ public enum AetherNodeProfileCompiler {
         ]
 
         for node in nodes {
-            lines.append(contentsOf: [
-                "  - name: \(scalar(node.name))",
-                "    type: \(scalar(node.protocolID.coreType))",
-                "    server: \(scalar(node.server))",
-            ])
-            if node.protocolID == .mieru,
-               !node.mieruPortRange.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                field("port-range", node.mieruPortRange.trimmingCharacters(in: .whitespacesAndNewlines), to: &lines)
-            } else {
-                lines.append("    port: \(node.port)")
-            }
-            appendProtocolFields(node, to: &lines)
-            appendTransport(node, to: &lines)
-            if node.fastOpen && node.protocolID != .tuic {
-                field("tfo", true, to: &lines)
-            }
-            if let dialer = node.dialerProxy?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !dialer.isEmpty {
-                field("dialer-proxy", dialer, to: &lines)
-            }
+            lines.append(contentsOf: Self.rawProxyLines(for: node))
         }
         lines.append(contentsOf: [
             "proxy-groups:",
@@ -999,6 +980,71 @@ public enum AetherNodeProfileCompiler {
         let yaml = lines.joined(separator: "\n")
         try ProfileImportValidator.validate(data: Data(yaml.utf8))
         return yaml
+    }
+
+    public static func compileProxyLines(
+        node: AetherNode,
+        indent: Int = 2
+    ) throws -> [String] {
+        let validated = try node.validated()
+        let raw = rawProxyLines(for: validated)
+        guard indent != 2 else { return raw }
+        let pad = String(repeating: " ", count: max(0, indent))
+        return raw.map { line in
+            if line.hasPrefix("  ") {
+                return pad + String(line.dropFirst(2))
+            }
+            return pad + line
+        }
+    }
+
+    public static func compileProxyJSONObject(
+        node: AetherNode
+    ) throws -> [String: Any] {
+        let validated = try node.validated()
+        var obj: [String: Any] = [
+            "name": validated.name,
+            "type": validated.protocolID.coreType,
+            "server": validated.server,
+            "port": Int(validated.port),
+            "udp": validated.udp,
+        ]
+        if !validated.username.isEmpty { obj["username"] = validated.username }
+        if !validated.password.isEmpty { obj["password"] = validated.password }
+        if !validated.uuid.isEmpty { obj["uuid"] = validated.uuid.lowercased() }
+        if !validated.cipher.isEmpty { obj["cipher"] = validated.cipher }
+        if validated.tls.enabled { obj["tls"] = true }
+        if !validated.tls.serverName.isEmpty { obj["sni"] = validated.tls.serverName }
+        obj["skip-cert-verify"] = validated.tls.skipCertificateVerification
+        if let dialer = validated.dialerProxy?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !dialer.isEmpty {
+            obj["dialer-proxy"] = dialer
+        }
+        return obj
+    }
+
+    private static func rawProxyLines(for node: AetherNode) -> [String] {
+        var lines = [
+            "  - name: \(scalar(node.name))",
+            "    type: \(scalar(node.protocolID.coreType))",
+            "    server: \(scalar(node.server))",
+        ]
+        if node.protocolID == .mieru,
+           !node.mieruPortRange.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            field("port-range", node.mieruPortRange.trimmingCharacters(in: .whitespacesAndNewlines), to: &lines)
+        } else {
+            lines.append("    port: \(node.port)")
+        }
+        appendProtocolFields(node, to: &lines)
+        appendTransport(node, to: &lines)
+        if node.fastOpen && node.protocolID != .tuic {
+            field("tfo", true, to: &lines)
+        }
+        if let dialer = node.dialerProxy?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !dialer.isEmpty {
+            field("dialer-proxy", dialer, to: &lines)
+        }
+        return lines
     }
 
     private static func appendProtocolFields(

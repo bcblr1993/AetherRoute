@@ -251,6 +251,7 @@ public struct ProxyConfigurationSummary: Identifiable, Equatable, Sendable {
     public let name: String
     public let protocolName: String
     public let transportName: String?
+    public let dialerProxy: String?
     public let recognition: Recognition
 
     public init(
@@ -258,12 +259,14 @@ public struct ProxyConfigurationSummary: Identifiable, Equatable, Sendable {
         name: String,
         protocolName: String,
         transportName: String? = nil,
+        dialerProxy: String? = nil,
         recognition: Recognition
     ) {
         self.id = id
         self.name = name
         self.protocolName = protocolName
         self.transportName = transportName
+        self.dialerProxy = dialerProxy
         self.recognition = recognition
     }
 
@@ -292,6 +295,7 @@ public struct ProxyConfigurationSummary: Identifiable, Equatable, Sendable {
         lhs.id == rhs.id
             && lhs.name == rhs.name
             && lhs.protocolName == rhs.protocolName
+            && lhs.dialerProxy == rhs.dialerProxy
             && lhs.recognition == rhs.recognition
             && (lhs.transportName == nil || rhs.transportName == nil || lhs.transportName == rhs.transportName)
     }
@@ -785,6 +789,7 @@ private struct Parser {
         var network = ""
         var plugin = ""
         var encryption = ""
+        var dialerProxy: String?
         var members: [String] = []
         var includeAll = false
         var filterPattern: String?
@@ -1070,6 +1075,12 @@ private struct Parser {
                 if destination == .proxies {
                     item?.server = Self.jsonString(fields["server"])
                     item?.port = Self.jsonPort(fields["port"])
+                    let dialer = Self.jsonString(fields["dialer-proxy"]).isEmpty
+                        ? Self.jsonString(fields["connect-via"])
+                        : Self.jsonString(fields["dialer-proxy"])
+                    if !dialer.isEmpty {
+                        item?.dialerProxy = dialer
+                    }
                     for key in Self.compatibilityKeys {
                         guard let value = fields[key] else { continue }
                         if let options = value as? [String: Any] {
@@ -1398,6 +1409,10 @@ private struct Parser {
         case "port" where section == .proxies:
             item?.port = Self.scalar(value)
             readingMembers = false
+        case let key where section == .proxies && (key == "dialer-proxy" || key == "connect-via"):
+            let dialer = Self.scalar(value)
+            if !dialer.isEmpty { item?.dialerProxy = dialer }
+            readingMembers = false
         case let key where section == .proxies && Self.compatibilityKeys.contains(key):
             recordCompatibilityField(key, value: value)
             readingMembers = false
@@ -1444,6 +1459,9 @@ private struct Parser {
                 item?.server = Self.scalar(value)
             case "port" where section == .proxies:
                 item?.port = Self.scalar(value)
+            case let key where section == .proxies && (key == "dialer-proxy" || key == "connect-via"):
+                let dialer = Self.scalar(value)
+                if !dialer.isEmpty { item?.dialerProxy = dialer }
             case let key where section == .proxies && Self.compatibilityKeys.contains(key):
                 recordCompatibilityField(key, value: value)
             case let key where section == .proxyGroups
@@ -1514,6 +1532,7 @@ private struct Parser {
                     name: name,
                     protocolName: type,
                     transportName: explicitTransport,
+                    dialerProxy: item.dialerProxy,
                     recognition: recognition
                 )
             )

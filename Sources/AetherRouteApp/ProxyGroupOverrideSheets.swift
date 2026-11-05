@@ -663,6 +663,791 @@ struct HiddenNodesSheet: View {
     }
 }
 
+// MARK: - Chained proxy
+
+struct ChainedProxySheet: View {
+    enum LandingMode: String, CaseIterable, Hashable {
+        case customNode
+        case existingNode
+    }
+
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var tunnel: TunnelManager
+
+    let initial: ChainedProxyOverride?
+
+    @State private var name: String
+    @State private var dialerProxy: String
+    @State private var landingMode: LandingMode
+    @State private var existingNodeName: String
+    @State private var customNode: AetherNode
+    @State private var portText: String
+    @State private var parentGroup: String
+    @State private var position: CustomProxyGroup.Position
+    @State private var showsFullNodeEditor = false
+    @State private var pasteFeedback: (message: String, isError: Bool)?
+    @State private var isSaving = false
+    @State private var saveFailed = false
+    @State private var requestsCancel = false
+    @State private var confirmsDelete = false
+
+    private static let noParent = ""
+
+    init(initial: ChainedProxyOverride? = nil, defaultParent: String? = nil) {
+        self.initial = initial
+        _name = State(initialValue: initial?.name ?? "")
+        _dialerProxy = State(initialValue: initial?.dialerProxy ?? "")
+        _parentGroup = State(
+            initialValue: initial.map { $0.parentGroup ?? Self.noParent } ?? defaultParent ?? Self.noParent
+        )
+        _position = State(initialValue: initial?.position ?? .top)
+
+        switch initial?.target {
+        case let .existingNode(targetName):
+            _landingMode = State(initialValue: .existingNode)
+            _existingNodeName = State(initialValue: targetName)
+            let seed = Self.defaultCustomNode()
+            _customNode = State(initialValue: seed)
+            _portText = State(initialValue: String(seed.port))
+        case let .customNode(node):
+            _landingMode = State(initialValue: .customNode)
+            _existingNodeName = State(initialValue: "")
+            _customNode = State(initialValue: node)
+            _portText = State(initialValue: String(node.port))
+        case nil:
+            _landingMode = State(initialValue: .customNode)
+            _existingNodeName = State(initialValue: "")
+            let seed = Self.defaultCustomNode()
+            _customNode = State(initialValue: seed)
+            _portText = State(initialValue: String(seed.port))
+        }
+    }
+
+    private static func defaultCustomNode() -> AetherNode {
+        AetherNode(
+            name: "Landing Node",
+            protocolID: .socks5,
+            server: "",
+            port: 1080,
+            tls: .init(enabled: false)
+        )
+    }
+
+    private var syncedCustomNode: AetherNode {
+        var copy = customNode
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.name = trimmedName.isEmpty ? "Landing Node" : trimmedName
+        copy.server = copy.server.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let parsedPort = UInt16(portText.trimmingCharacters(in: .whitespacesAndNewlines)), parsedPort > 0 {
+            copy.port = parsedPort
+        } else {
+            copy.port = 0
+        }
+        copy.dialerProxy = nil
+        return copy
+    }
+
+    private var candidate: ChainedProxyOverride {
+        let target: ChainedProxyOverride.Target = switch landingMode {
+        case .customNode:
+            .customNode(syncedCustomNode)
+        case .existingNode:
+            .existingNode(name: existingNodeName)
+        }
+        return ChainedProxyOverride(
+            id: initial?.id ?? UUID(),
+            name: name,
+            dialerProxy: dialerProxy,
+            target: target,
+            parentGroup: parentGroup == Self.noParent ? nil : parentGroup,
+            position: position
+        )
+    }
+
+    private var proposed: Result<ProfileOverride, Error> {
+        Result {
+            if landingMode == .customNode {
+                guard let parsedPort = UInt16(portText.trimmingCharacters(in: .whitespacesAndNewlines)), parsedPort > 0 else {
+                    throw ProfileOverrideError.invalidChainedProxy
+                }
+                _ = parsedPort
+            }
+            var overrides = tunnel.activeProfileOverrides
+            let item = try candidate.validated()
+            if let initial, let index = overrides.chainedProxies.firstIndex(where: { $0.id == initial.id }) {
+                overrides.chainedProxies[index] = item
+            } else {
+                overrides.chainedProxies.append(item)
+            }
+            return try overrides.validated()
+        }
+    }
+
+    private var diagnosticsForCandidate: [ProfileOverrideDiagnostic] {
+        guard case let .success(overrides) = proposed,
+              let result = tunnel.activeOverrideResult(overrides) else { return [] }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return result.diagnostics.filter { diagnostic in
+            switch diagnostic {
+            case let .nameConflict(group):
+                return group == trimmed
+            case let .dialerProxyMissing(chainedProxy, _),
+                 let .targetNodeMissing(chainedProxy, _):
+                return chainedProxy == trimmed
+            case .parentGroupMissing, .noMatchingNodes, .groupNotEditable, .unsupportedProfileLayout:
+                return false
+            }
+        }
+    }
+
+    private var profileGroups: [String] {
+        (tunnel.activeProfileSummary?.proxyGroups ?? [])
+            .map(\.name)
+            .filter { $0 != parentGroup }
+    }
+
+    private var profileNodes: [String] {
+        let editingName = initial?.name
+        return (tunnel.activeProfileSummary?.proxies ?? [])
+            .map(\.name)
+            .filter { $0 != editingName }
+    }
+
+    private var parentOptions: [String] {
+        let custom = Set(tunnel.activeProfileOverrides.groups.map(\.name))
+        return (tunnel.activeProfileSummary?.proxyGroups ?? [])
+            .filter { $0.strategy.caseInsensitiveCompare("select") == .orderedSame && !custom.contains($0.name) }
+            .map(\.name)
+    }
+
+    private var hasChanges: Bool {
+        guard let initial else {
+            return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !customNode.server.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return candidate != initial
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            AetherSheetHeader(
+                symbol: "link.badge.plus",
+                title: initial == nil
+                    ? AppLocalization.string("New chained proxy")
+                    : AppLocalization.string("Edit chained proxy"),
+                subtitle: AppLocalization.string("Route traffic through a first-hop proxy or group before reaching the landing node, while keeping your subscription untouched."),
+                tint: AppSection.proxies.tileColor
+            )
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: AetherVisual.s4) {
+                    chainDiagramCard
+                    firstHopSection
+                    secondHopSection
+                    placementSection
+                    statusSection
+                }
+            }
+            .frame(
+                minHeight: AetherVisual.sheetFormMinHeight,
+                idealHeight: AetherVisual.sheetFormIdealHeight,
+                maxHeight: AetherVisual.sheetFormMaxHeight
+            )
+
+            if saveFailed, let message = tunnel.profileMessage {
+                AetherInlineMessage(text: message)
+            }
+
+            footer
+        }
+        .padding(AetherVisual.dialogPadding)
+        .aetherLargeSheetFrame()
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: landingMode)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: parentGroup)
+        .disabled(isSaving)
+        .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
+        .onAppear(perform: seedDefaultSelectionsIfNeeded)
+        .sheet(isPresented: $showsFullNodeEditor) {
+            ManualNodeEditorSheet(
+                initialNode: syncedCustomNode,
+                save: { updated in
+                    customNode = updated
+                    portText = String(updated.port)
+                    if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       updated.name != "Landing Node" {
+                        name = updated.name
+                    }
+                    return true
+                }
+            )
+            .environmentObject(tunnel)
+        }
+        .confirmationDialog(
+            String.localizedStringWithFormat(
+                AppLocalization.string("Delete the chained proxy %@?"),
+                initial?.name ?? ""
+            ),
+            isPresented: $confirmsDelete
+        ) {
+            Button(AppLocalization.string("Delete Chained Proxy"), role: .destructive) { delete() }
+                .accessibilityIdentifier("chained-proxy-confirm-delete")
+        } message: {
+            Text(AppLocalization.string("Groups that list it no longer do. The subscription itself is not changed."))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("chained-proxy-sheet")
+    }
+
+    private var chainDiagramCard: some View {
+        HStack(spacing: AetherVisual.s3) {
+            chainHopStep(
+                symbol: "laptopcomputer",
+                tint: .secondary,
+                label: AppLocalization.string("This Mac"),
+                value: AppLocalization.string("Local apps")
+            )
+            Image(systemName: "arrow.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(AetherVisual.tertiaryText)
+                .accessibilityHidden(true)
+            chainHopStep(
+                symbol: "bolt.horizontal.fill",
+                tint: AppSection.proxies.tileColor,
+                label: AppLocalization.string("First hop (entry)"),
+                value: dialerProxy.isEmpty ? "—" : dialerProxy
+            )
+            Image(systemName: "arrow.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(AetherVisual.tertiaryText)
+                .accessibilityHidden(true)
+            chainHopStep(
+                symbol: "globe",
+                tint: AetherVisual.manualNodesTint,
+                label: AppLocalization.string("Second hop (landing)"),
+                value: secondHopSummary
+            )
+        }
+        .padding(AetherVisual.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .aetherPanel()
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("chained-proxy-flow-diagram")
+    }
+
+    private func chainHopStep(
+        symbol: String,
+        tint: Color,
+        label: String,
+        value: String
+    ) -> some View {
+        HStack(spacing: AetherVisual.s2) {
+            AetherIconTile(symbol: symbol, color: tint, size: AetherVisual.rowTileSize)
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                Text(verbatim: label)
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .lineLimit(1)
+                Text(verbatim: value)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var secondHopSummary: String {
+        switch landingMode {
+        case .customNode:
+            let host = customNode.server.trimmingCharacters(in: .whitespacesAndNewlines)
+            if host.isEmpty {
+                return customNode.protocolID.displayName
+            }
+            return "\(customNode.protocolID.displayName) · \(host)"
+        case .existingNode:
+            return existingNodeName.isEmpty ? "—" : existingNodeName
+        }
+    }
+
+    private var firstHopSection: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            AetherSectionHeader(title: AppLocalization.string("Step 1 · First hop (entry proxy)"))
+            VStack(spacing: 0) {
+                OverrideFormRow(AppLocalization.string("Dial through")) {
+                    Picker(AppLocalization.string("Dial through"), selection: $dialerProxy) {
+                        if !profileGroups.isEmpty {
+                            Section(AppLocalization.string("Proxy groups")) {
+                                ForEach(profileGroups, id: \.self) { groupName in
+                                    Text(verbatim: groupName).tag(groupName)
+                                }
+                            }
+                        }
+                        if !profileNodes.isEmpty {
+                            Section(AppLocalization.string("Nodes")) {
+                                ForEach(profileNodes, id: \.self) { nodeName in
+                                    Text(verbatim: nodeName).tag(nodeName)
+                                }
+                            }
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 280, alignment: .trailing)
+                    .accessibilityIdentifier("chained-proxy-dialer-picker")
+                }
+            }
+            .aetherPanel()
+        }
+    }
+
+    private var secondHopSection: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            AetherSectionHeader(title: AppLocalization.string("Step 2 · Second hop (landing node)"))
+            VStack(spacing: 0) {
+                OverrideFormRow(AppLocalization.string("Landing source")) {
+                    AetherSegmentedPicker(
+                        selection: $landingMode,
+                        options: [
+                            .init(value: .customNode, title: AppLocalization.string("External node")),
+                            .init(value: .existingNode, title: AppLocalization.string("Node in profile")),
+                        ],
+                        accessibilityLabel: AppLocalization.string("Landing source"),
+                        accessibilityIdentifier: "chained-proxy-landing-mode"
+                    )
+                    .fixedSize()
+                }
+                Divider().padding(.leading, AetherVisual.s4)
+
+                switch landingMode {
+                case .customNode:
+                    customLandingFields
+                case .existingNode:
+                    OverrideFormRow(AppLocalization.string("Target node")) {
+                        Picker(AppLocalization.string("Target node"), selection: $existingNodeName) {
+                            ForEach(profileNodes, id: \.self) { nodeName in
+                                Text(verbatim: nodeName).tag(nodeName)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 280, alignment: .trailing)
+                        .accessibilityIdentifier("chained-proxy-existing-node-picker")
+                    }
+                }
+            }
+            .aetherPanel()
+
+            if let pasteFeedback {
+                if pasteFeedback.isError {
+                    AetherInlineMessage(
+                        text: pasteFeedback.message,
+                        kind: .warning,
+                        isCompact: true
+                    )
+                    .padding(.horizontal, AetherVisual.sectionHeaderInset)
+                } else {
+                    Label(pasteFeedback.message, systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(AetherReadableTint(color: .green))
+                        .padding(.horizontal, AetherVisual.sectionHeaderInset)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var customLandingFields: some View {
+        OverrideFormRow(AppLocalization.string("Protocol")) {
+            Picker(
+                AppLocalization.string("Protocol"),
+                selection: Binding(
+                    get: { customNode.protocolID },
+                    set: { newProtocol in
+                        guard customNode.protocolID != newProtocol else { return }
+                        customNode.protocolID = newProtocol
+                        applyProtocolDefaults(for: newProtocol)
+                    }
+                )
+            ) {
+                ForEach(AetherNodeProtocol.allCases, id: \.self) { protocolID in
+                    Text(verbatim: protocolID.displayName).tag(protocolID)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .accessibilityIdentifier("chained-proxy-protocol-picker")
+        }
+        Divider().padding(.leading, AetherVisual.s4)
+        OverrideFormRow(AppLocalization.string("Server")) {
+            TextField(AppLocalization.string("Host or IP address"), text: $customNode.server)
+                .textFieldStyle(.plain)
+                .multilineTextAlignment(.trailing)
+                .accessibilityLabel(AppLocalization.string("Server"))
+                .accessibilityIdentifier("chained-proxy-server-field")
+        }
+        Divider().padding(.leading, AetherVisual.s4)
+        OverrideFormRow(AppLocalization.string("Port")) {
+            TextField(AppLocalization.string("Port"), text: $portText)
+                .textFieldStyle(.plain)
+                .multilineTextAlignment(.trailing)
+                .monospacedDigit()
+                .accessibilityLabel(AppLocalization.string("Port"))
+                .accessibilityIdentifier("chained-proxy-port-field")
+        }
+        Divider().padding(.leading, AetherVisual.s4)
+        quickCredentialsRows
+        Divider().padding(.leading, AetherVisual.s4)
+        HStack(spacing: AetherVisual.s2) {
+            Button {
+                pasteShareLinkFromClipboard()
+            } label: {
+                Label(AppLocalization.string("Paste Node Link"), systemImage: "doc.on.clipboard")
+            }
+            .aetherButton()
+            .controlSize(.small)
+            .accessibilityIdentifier("chained-proxy-paste-link")
+
+            Spacer(minLength: AetherVisual.s2)
+
+            Button {
+                showsFullNodeEditor = true
+            } label: {
+                Label(AppLocalization.string("TLS & Transport…"), systemImage: "slider.horizontal.3")
+            }
+            .aetherButton()
+            .controlSize(.small)
+            .accessibilityIdentifier("chained-proxy-advanced-editor")
+        }
+        .padding(.horizontal, AetherVisual.s4)
+        .frame(minHeight: AetherVisual.compactRowHeight)
+    }
+
+    @ViewBuilder
+    private var quickCredentialsRows: some View {
+        switch customNode.protocolID {
+        case .http, .socks5:
+            OverrideFormRow(AppLocalization.string("Username (optional)")) {
+                TextField(AppLocalization.string("Username (optional)"), text: $customNode.username)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel(AppLocalization.string("Username (optional)"))
+                    .accessibilityIdentifier("chained-proxy-username-field")
+            }
+            Divider().padding(.leading, AetherVisual.s4)
+            OverrideFormRow(AppLocalization.string("Password (optional)")) {
+                SecureField(AppLocalization.string("Password (optional)"), text: $customNode.password)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel(AppLocalization.string("Password (optional)"))
+                    .accessibilityIdentifier("chained-proxy-password-field")
+            }
+        case .vmess, .vless:
+            OverrideFormRow(AppLocalization.string("UUID")) {
+                TextField(AppLocalization.string("UUID"), text: $customNode.uuid)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel(AppLocalization.string("UUID"))
+                    .accessibilityIdentifier("chained-proxy-uuid-field")
+            }
+        case .shadowsocks, .shadowsocksR:
+            OverrideFormRow(AppLocalization.string("Cipher")) {
+                TextField(AppLocalization.string("Cipher"), text: $customNode.cipher)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel(AppLocalization.string("Cipher"))
+            }
+            Divider().padding(.leading, AetherVisual.s4)
+            OverrideFormRow(AppLocalization.string("Password")) {
+                SecureField(AppLocalization.string("Password"), text: $customNode.password)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel(AppLocalization.string("Password"))
+            }
+        case .trojan, .hysteria, .hysteria2, .anyTLS, .snell:
+            OverrideFormRow(AppLocalization.string("Password")) {
+                SecureField(AppLocalization.string("Password"), text: $customNode.password)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel(AppLocalization.string("Password"))
+                    .accessibilityIdentifier("chained-proxy-password-field")
+            }
+        case .tuic:
+            OverrideFormRow(AppLocalization.string("UUID")) {
+                TextField(AppLocalization.string("UUID"), text: $customNode.uuid)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel(AppLocalization.string("UUID"))
+            }
+            Divider().padding(.leading, AetherVisual.s4)
+            OverrideFormRow(AppLocalization.string("Password")) {
+                SecureField(AppLocalization.string("Password"), text: $customNode.password)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel(AppLocalization.string("Password"))
+            }
+        case .mieru, .ssh:
+            OverrideFormRow(AppLocalization.string("Username")) {
+                TextField(AppLocalization.string("Username"), text: $customNode.username)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel(AppLocalization.string("Username"))
+            }
+            Divider().padding(.leading, AetherVisual.s4)
+            OverrideFormRow(AppLocalization.string("Password")) {
+                SecureField(AppLocalization.string("Password"), text: $customNode.password)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel(AppLocalization.string("Password"))
+            }
+        case .wireGuard:
+            OverrideFormRow(AppLocalization.string("Peer public key")) {
+                TextField(AppLocalization.string("Peer public key"), text: $customNode.publicKey)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel(AppLocalization.string("Peer public key"))
+            }
+        case .shadowQUIC:
+            OverrideFormRow(AppLocalization.string("Username")) {
+                TextField(AppLocalization.string("Username"), text: $customNode.username)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel(AppLocalization.string("Username"))
+            }
+            Divider().padding(.leading, AetherVisual.s4)
+            OverrideFormRow(AppLocalization.string("Password")) {
+                SecureField(AppLocalization.string("Password"), text: $customNode.password)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel(AppLocalization.string("Password"))
+            }
+        }
+    }
+
+    private var placementSection: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            AetherSectionHeader(title: AppLocalization.string("Name & group placement"))
+            VStack(spacing: 0) {
+                OverrideFormRow(AppLocalization.string("Name")) {
+                    TextField(AppLocalization.string("e.g. 🇺🇸 US Static Residential"), text: $name)
+                        .textFieldStyle(.plain)
+                        .multilineTextAlignment(.trailing)
+                        .accessibilityLabel(AppLocalization.string("Name"))
+                        .accessibilityIdentifier("chained-proxy-name-field")
+                }
+                Divider().padding(.leading, AetherVisual.s4)
+                OverrideFormRow(AppLocalization.string("Show in")) {
+                    Picker(AppLocalization.string("Show in"), selection: $parentGroup) {
+                        Text(AppLocalization.string("No other group")).tag(Self.noParent)
+                        ForEach(parentOptions, id: \.self) { Text(verbatim: $0).tag($0) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityIdentifier("chained-proxy-parent")
+                }
+                if parentGroup != Self.noParent {
+                    Divider().padding(.leading, AetherVisual.s4)
+                    OverrideFormRow(AppLocalization.string("Position")) {
+                        AetherSegmentedPicker(
+                            selection: $position,
+                            options: [
+                                .init(value: .top, title: AppLocalization.string("First")),
+                                .init(value: .bottom, title: AppLocalization.string("Last")),
+                            ],
+                            accessibilityLabel: AppLocalization.string("Position")
+                        )
+                        .fixedSize()
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .aetherPanel()
+        }
+    }
+
+    @ViewBuilder
+    private var statusSection: some View {
+        switch proposed {
+        case let .failure(error) where hasChanges:
+            AetherInlineMessage(text: error.overrideMessage, kind: .warning, isCompact: true)
+                .padding(.horizontal, AetherVisual.sectionHeaderInset)
+        case .failure:
+            EmptyView()
+        case .success:
+            if diagnosticsForCandidate.contains(where: {
+                if case .nameConflict = $0 { return true }
+                return false
+            }) {
+                AetherInlineMessage(
+                    text: AppLocalization.string("A node or group in this profile already has this name."),
+                    kind: .warning,
+                    isCompact: true
+                )
+                .padding(.horizontal, AetherVisual.sectionHeaderInset)
+            } else if diagnosticsForCandidate.contains(where: {
+                if case .dialerProxyMissing = $0 { return true }
+                if case .targetNodeMissing = $0 { return true }
+                return false
+            }) {
+                AetherInlineMessage(
+                    text: AppLocalization.string("The chosen first-hop or target node is not in the current profile."),
+                    kind: .warning,
+                    isCompact: true
+                )
+                .padding(.horizontal, AetherVisual.sectionHeaderInset)
+            }
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: AetherVisual.s2) {
+            if initial != nil {
+                Button(AppLocalization.string("Delete Chained Proxy"), role: .destructive) {
+                    confirmsDelete = true
+                }
+                .aetherButton()
+                .accessibilityIdentifier("chained-proxy-delete")
+            }
+            Spacer()
+            Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
+                .aetherButton()
+                .keyboardShortcut(.cancelAction)
+            Button {
+                save()
+            } label: {
+                AetherProgressButtonLabel(AppLocalization.string("Save"), isWorking: isSaving)
+            }
+            .aetherButton(prominent: true)
+            .keyboardShortcut(.defaultAction)
+            .disabled(!canSave)
+            .accessibilityIdentifier("chained-proxy-save")
+        }
+        .controlSize(.large)
+    }
+
+    private var canSave: Bool {
+        guard case .success = proposed else { return false }
+        let hasConflict = diagnosticsForCandidate.contains {
+            if case .nameConflict = $0 { return true }
+            return false
+        }
+        return !hasConflict && hasChanges
+    }
+
+    private func seedDefaultSelectionsIfNeeded() {
+        if dialerProxy.isEmpty {
+            dialerProxy = profileGroups.first ?? profileNodes.first ?? ""
+        }
+        if existingNodeName.isEmpty {
+            existingNodeName = profileNodes.first { $0 != dialerProxy } ?? profileNodes.first ?? ""
+        }
+    }
+
+    private func applyProtocolDefaults(for protocolID: AetherNodeProtocol) {
+        customNode.transport.kind = .tcp
+        switch protocolID {
+        case .http:
+            customNode.tls.enabled = false
+            portText = "8080"
+        case .socks5:
+            customNode.tls.enabled = false
+            portText = "1080"
+        case .shadowsocks:
+            customNode.tls.enabled = false
+            customNode.cipher = customNode.cipher.isEmpty ? "aes-128-gcm" : customNode.cipher
+            portText = "8388"
+        case .shadowsocksR:
+            customNode.tls.enabled = false
+            customNode.cipher = customNode.cipher.isEmpty ? "aes-256-cfb" : customNode.cipher
+            customNode.ssrProtocol = customNode.ssrProtocol.isEmpty ? "origin" : customNode.ssrProtocol
+            customNode.ssrObfs = customNode.ssrObfs.isEmpty ? "plain" : customNode.ssrObfs
+            portText = "8388"
+        case .snell:
+            customNode.tls.enabled = false
+            customNode.snellVersion = customNode.snellVersion ?? 4
+            portText = "6160"
+        case .mieru:
+            customNode.tls.enabled = false
+            customNode.mieruTransport = customNode.mieruTransport.isEmpty ? "TCP" : customNode.mieruTransport
+            portText = "8443"
+        case .ssh:
+            customNode.tls.enabled = false
+            portText = "22"
+        case .wireGuard:
+            customNode.tls.enabled = false
+            portText = "51820"
+        default:
+            customNode.tls.enabled = [
+                .vmess, .vless, .trojan, .hysteria, .hysteria2, .tuic, .anyTLS, .shadowQUIC,
+            ].contains(protocolID)
+            portText = "443"
+        }
+    }
+
+    private func pasteShareLinkFromClipboard() {
+        guard let raw = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            pasteFeedback = (
+                AppLocalization.string("Clipboard is empty. Copy a vless://, ss://, hy2:// or socks5:// link first."),
+                true
+            )
+            return
+        }
+        do {
+            let parsed = try SubscriptionPayloadNormalizer.nodes(fromShareText: raw)
+            guard let first = parsed.nodes.first else {
+                pasteFeedback = (
+                    AppLocalization.string("No valid node link was found in the clipboard."),
+                    true
+                )
+                return
+            }
+            var imported = first
+            imported.dialerProxy = nil
+            customNode = imported
+            portText = String(imported.port)
+            if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                name = imported.name
+            }
+            pasteFeedback = (
+                String.localizedStringWithFormat(
+                    AppLocalization.string("Filled %@ (%@:%lld) from clipboard."),
+                    imported.protocolID.displayName,
+                    imported.server,
+                    Int64(imported.port)
+                ),
+                false
+            )
+        } catch {
+            pasteFeedback = (
+                AppLocalization.string("No valid node link was found in the clipboard."),
+                true
+            )
+        }
+    }
+
+    private func save() {
+        guard case let .success(overrides) = proposed else { return }
+        isSaving = true
+        saveFailed = false
+        Task {
+            let saved = await tunnel.setProfileOverrides(overrides)
+            isSaving = false
+            if saved { dismiss() } else { saveFailed = true }
+        }
+    }
+
+    private func delete() {
+        guard let initial else { return }
+        var overrides = tunnel.activeProfileOverrides
+        overrides.chainedProxies.removeAll { $0.id == initial.id }
+        isSaving = true
+        Task {
+            let saved = await tunnel.setProfileOverrides(overrides)
+            isSaving = false
+            if saved { dismiss() } else { saveFailed = true }
+        }
+    }
+}
+
 // MARK: - Shared pieces
 
 /// A grouped-card row: the name leading, the control trailing.
@@ -840,6 +1625,15 @@ extension ProfileOverrideError {
             String.localizedStringWithFormat(AppLocalization.string("Another custom group is already named %@."), name)
         case .groupHasNoSource:
             AppLocalization.string("Choose regions, keywords or nodes for the group.")
+        case .tooManyChainedProxies:
+            String.localizedStringWithFormat(
+                AppLocalization.string("A profile can have at most %lld chained proxies."),
+                Int64(ProfileOverride.maximumChainedProxyCount)
+            )
+        case .invalidChainedProxy:
+            AppLocalization.string("Choose a valid first-hop dialer proxy and landing node.")
+        case .chainedProxyCycle:
+            AppLocalization.string("The first-hop and second-hop proxies cannot form a loop.")
         }
     }
 }

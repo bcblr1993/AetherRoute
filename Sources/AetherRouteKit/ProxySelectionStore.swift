@@ -412,6 +412,47 @@ public enum ProxySelectionHotSwitchPolicy {
         return intent.behavior == .automatic
             || result.member == requestedMember
     }
+
+    /// Which active connections to close when a group's selected member changes
+    /// (manual node switch or switching a group to fastest/failover mode).
+    ///
+    /// Targeting `previousMember` instead of the whole `group` drops only
+    /// connections that still run through the old node/subgroup, without
+    /// killing new connections that already opened on `newMember` while the
+    /// hot-switch readiness check was running. Built-in pseudo-routes like
+    /// `DIRECT` are never closed by member name because unrelated rules share
+    /// them; if `previousMember` is nil or not a route candidate, we fall back
+    /// to closing by `group`.
+    public static func closeRequest(
+        group: String,
+        previousMember: String?,
+        newMember: String,
+        closesConnectionsOnSwitch: Bool
+    ) -> ConnectionCloseRequest? {
+        guard closesConnectionsOnSwitch,
+              previousMember != newMember
+        else { return nil }
+        if let previousMember,
+           InitialProxySelectionPolicy.isRouteCandidate(previousMember) {
+            return .proxyChainMember(previousMember)
+        }
+        let trimmedGroup = group.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedGroup.isEmpty else { return nil }
+        return .proxyChainMember(trimmedGroup)
+    }
+
+    /// Which active connections to close when the session routing mode changes
+    /// (`Rule` ↔ `Global` ↔ `Direct`) while connected.
+    public static func routingModeCloseRequest(
+        previousMode: RoutingMode,
+        newMode: RoutingMode,
+        closesConnectionsOnSwitch: Bool
+    ) -> ConnectionCloseRequest? {
+        guard closesConnectionsOnSwitch,
+              previousMode != newMode
+        else { return nil }
+        return .all
+    }
 }
 
 /// Resolves the adjacent member for keyboard-driven node switching. The

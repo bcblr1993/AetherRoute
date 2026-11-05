@@ -666,6 +666,69 @@ final class ProxySelectionStoreTests: XCTestCase {
         )
     }
 
+    func testHotSwitchCloseRequestTargetsPreviousNodeInsteadOfEntireGroupAndCoversRoutingModeSwitches() {
+        // Switching from HK 01 -> US 01 closes only HK 01 so new connections on US 01 are preserved.
+        XCTAssertEqual(
+            ProxySelectionHotSwitchPolicy.closeRequest(
+                group: "Proxy",
+                previousMember: "HK 01",
+                newMember: "US 01",
+                closesConnectionsOnSwitch: true
+            ),
+            .proxyChainMember("HK 01")
+        )
+        // Same member or disabled setting never closes connections.
+        XCTAssertNil(
+            ProxySelectionHotSwitchPolicy.closeRequest(
+                group: "Proxy",
+                previousMember: "HK 01",
+                newMember: "HK 01",
+                closesConnectionsOnSwitch: true
+            )
+        )
+        XCTAssertNil(
+            ProxySelectionHotSwitchPolicy.closeRequest(
+                group: "Proxy",
+                previousMember: "HK 01",
+                newMember: "US 01",
+                closesConnectionsOnSwitch: false
+            )
+        )
+        // Switching away from DIRECT inside a group closes by group name so unrelated DIRECT rules are untouched.
+        XCTAssertEqual(
+            ProxySelectionHotSwitchPolicy.closeRequest(
+                group: "Proxy",
+                previousMember: "DIRECT",
+                newMember: "US 01",
+                closesConnectionsOnSwitch: true
+            ),
+            .proxyChainMember("Proxy")
+        )
+        // Routing mode switches (Rule <-> Global <-> Direct) close stale route connections when enabled.
+        XCTAssertEqual(
+            ProxySelectionHotSwitchPolicy.routingModeCloseRequest(
+                previousMode: .rule,
+                newMode: .global,
+                closesConnectionsOnSwitch: true
+            ),
+            .all
+        )
+        XCTAssertNil(
+            ProxySelectionHotSwitchPolicy.routingModeCloseRequest(
+                previousMode: .rule,
+                newMode: .rule,
+                closesConnectionsOnSwitch: true
+            )
+        )
+        XCTAssertNil(
+            ProxySelectionHotSwitchPolicy.routingModeCloseRequest(
+                previousMode: .rule,
+                newMode: .direct,
+                closesConnectionsOnSwitch: false
+            )
+        )
+    }
+
     func testAutomaticCandidatesExcludePseudoRoutesDeduplicateAndBound() {
         let candidates = ProxyConnectionReadinessPolicy
             .orderedRouteCandidates(

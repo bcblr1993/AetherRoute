@@ -10,6 +10,7 @@ struct ProxiesView: View {
     @State private var showsNewGroup = false
     @State private var showsRegionGroups = false
     @State private var showsHiddenNodes = false
+    @State private var showsChainedProxy = false
 
     var body: some View {
         Group {
@@ -38,6 +39,7 @@ struct ProxiesView: View {
             case "new-group": showsNewGroup = true
             case "region-groups": showsRegionGroups = true
             case "hidden-nodes": showsHiddenNodes = true
+            case "chained-proxy": showsChainedProxy = true
             default: break
             }
         }
@@ -125,6 +127,10 @@ struct ProxiesView: View {
             CustomProxyGroupSheet(defaultParent: catchAll)
         }
         Menu {
+            Button(AppLocalization.string("Chained Proxy…"), systemImage: "link.badge.plus") {
+                showsChainedProxy = true
+            }
+            .accessibilityIdentifier("proxies-chained-proxy")
             Button(AppLocalization.string("Groups by Region…"), systemImage: "globe.asia.australia") {
                 showsRegionGroups = true
             }
@@ -141,6 +147,9 @@ struct ProxiesView: View {
         .fixedSize()
         .disabled(!canEditOverrides)
         .accessibilityIdentifier("proxies-more-menu")
+        .sheet(isPresented: $showsChainedProxy) {
+            ChainedProxySheet(defaultParent: catchAll)
+        }
         .sheet(isPresented: $showsRegionGroups) {
             RegionGroupsSheet(defaultParent: catchAll)
         }
@@ -171,6 +180,12 @@ struct ProxiesView: View {
                 transports: Dictionary(
                     summary.proxies.compactMap { proxy in
                         proxy.transportName.map { (proxy.name, $0) }
+                    },
+                    uniquingKeysWith: { first, _ in first }
+                ),
+                dialers: Dictionary(
+                    summary.proxies.compactMap { proxy in
+                        proxy.dialerProxy.map { (proxy.name, $0) }
                     },
                     uniquingKeysWith: { first, _ in first }
                 )
@@ -359,9 +374,11 @@ private struct ActiveProxyGroupView: View {
     @State private var showsNextConnectionNote = false
     @State private var showsSwitchHistory = false
     @State private var editsCustomGroup = false
+    @State private var chainedProxyToEdit: ChainedProxyOverride?
     let group: ProxyGroupConfigurationSummary
     let protocols: [String: String]
     var transports: [String: String] = [:]
+    var dialers: [String: String] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -432,6 +449,9 @@ private struct ActiveProxyGroupView: View {
             guard showsNextConnectionNote else { return }
             try? await Task.sleep(for: .seconds(4))
             showsNextConnectionNote = false
+        }
+        .sheet(item: $chainedProxyToEdit) { item in
+            ChainedProxySheet(initial: item)
         }
     }
 
@@ -664,6 +684,9 @@ private struct ActiveProxyGroupView: View {
                     },
                     onTest: {
                         Task { await tunnel.testSingleProxyLatency(group: group.name, member: row.member) }
+                    },
+                    onEditChained: row.chainedOverride.map { item in
+                        { chainedProxyToEdit = item }
                     }
                 )
             }
@@ -707,6 +730,8 @@ private struct ActiveProxyGroupView: View {
                 member: member,
                 protocolName: memberType(member),
                 transportName: transports[member],
+                dialerProxy: dialers[member],
+                chainedOverride: tunnel.chainedProxyOverride(named: member),
                 status: status(for: member),
                 isSelected: member == selectedMember,
                 isBusy: isBusy,
@@ -796,6 +821,7 @@ private struct ProxyNodeRow: View {
     let measuredAt: Date?
     let onSelect: () -> Void
     let onTest: () -> Void
+    var onEditChained: (() -> Void)? = nil
     @State private var isHovered = false
 
     var body: some View {
@@ -814,6 +840,17 @@ private struct ProxyNodeRow: View {
                 rowContent
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
+            }
+
+            if let onEditChained {
+                Button(action: onEditChained) {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .aetherButton()
+                .controlSize(.small)
+                .help(AppLocalization.string("Edit chained proxy"))
+                .accessibilityLabel(AppLocalization.string("Edit chained proxy"))
+                .accessibilityIdentifier("proxy-edit-chained-\(row.member)")
             }
 
             Group {
@@ -849,6 +886,10 @@ private struct ProxyNodeRow: View {
             if row.showsLatency {
                 Button(AppLocalization.string("Test latency"), action: onTest)
             }
+            if let onEditChained {
+                Divider()
+                Button(AppLocalization.string("Edit Chained Proxy…"), action: onEditChained)
+            }
             Divider()
             Button(AppLocalization.string("Copy node name")) {
                 NSPasteboard.general.clearContents()
@@ -874,6 +915,28 @@ private struct ProxyNodeRow: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .help(row.member)
+            if let dialer = row.dialerProxy {
+                HStack(spacing: AetherVisual.sMicro) {
+                    Image(systemName: "link")
+                        .font(.caption2.weight(.semibold))
+                    Text(
+                        String.localizedStringWithFormat(
+                            AppLocalization.string("via %@"),
+                            dialer
+                        )
+                    )
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+                }
+                .foregroundStyle(AetherVisual.secondaryText)
+                .padding(.horizontal, AetherVisual.s1)
+                .padding(.vertical, AetherVisual.sMicro)
+                .background(
+                    AetherVisual.neutralFill,
+                    in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+                )
+                .accessibilityIdentifier("proxy-node-dialer-badge-\(row.member)")
+            }
             if let badge = row.badge {
                 ProxyNodeBadge(badge: badge)
                     .transition(.opacity)
@@ -921,6 +984,8 @@ private struct ProxyMemberTableItem: Identifiable {
     let member: String
     let protocolName: String?
     var transportName: String? = nil
+    var dialerProxy: String? = nil
+    var chainedOverride: ChainedProxyOverride? = nil
     let status: ProxyLatencyStatus
     let isSelected: Bool
     let isBusy: Bool

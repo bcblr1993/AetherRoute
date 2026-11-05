@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 2.1.0 (Build 2026110502)</title>
-            <pubDate>Thu, 05 Nov 2026 13:24:16 +0800</pubDate>
-            <sparkle:version>2026110502</sparkle:version>
-            <sparkle:shortVersionString>2.1.0</sparkle:shortVersionString>
+            <title>Version 2.2.0 (Build 2026110503)</title>
+            <pubDate>Fri, 06 Nov 2026 05:10:59 +0800</pubDate>
+            <sparkle:version>2026110503</sparkle:version>
+            <sparkle:shortVersionString>2.2.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/2.1.0/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/2.2.0/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,32 +120,40 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 2.1.0 更新要点</span>
-  <span class="release-badge">Build 2026110502 · 正式发布</span>
+  <span class="release-title">AetherRoute 2.2.0 更新要点</span>
+  <span class="release-badge">Build 2026110503 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🚀 核心功能：应用与内核实时物理内存全景可视化</span>
+  <span class="section-tag tag-feature">🚀 核心功能：全面兼容 Shadowsocks 混淆插件</span>
   <ul>
-    <li><strong>概览页黄金分割双拼卡片</strong>：在不增加纵向高度与不打破 Bento 网格的前提下，将概览顶栏升级为 <code>1.35 : 1</code> 双拼布局——左侧展示实时上下行速率与 60s 流量波形，右侧下沉材质面板实时展示内核（Core）与宿主应用（App）物理内存（<code>TASK_VM_INFO.phys_footprint</code>）、对齐活动监视器的合计总占用及 30s 三次 Hermite 平滑曲线。</li>
-    <li><strong>连接页会话栏与菜单栏弹窗底栏</strong>：连接页状态栏新增 <code>Core · App</code> 实时内存胶囊，菜单栏状态弹窗底部新增单行内存底栏与双色比例进度条，无需打开主窗口即可掌握内存脉搏。</li>
+    <li><strong>内置混淆插件安全放行</strong>：全面支持 <code>plugin: obfs</code> / <code>plugin-opts</code>、<code>v2ray-plugin</code> 及 <code>shadow-tls</code>。升级预检白名单准入机制，彻底解决导入 Clash Verge 等主流客户端混淆订阅时触发的误报拦截。</li>
+    <li><strong>内存级协议转换防护</strong>：严格保持对外部可执行文件、未知命令及脚本注入的拦截，所有受支持插件均由纯 Rust 内存协议转换引擎安全驱动。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">✨ 渲染隔离与统一无打扰发布验收架构</span>
+  <span class="section-tag tag-fix">🐞 稳定性与长稳加固</span>
   <ul>
-    <li><strong>高频遥测作用域隔离与零泄漏保障</strong>：1 Hz 内存采样严格隔离在叶子视图作用域并采用 <code>.contentTransition(.identity)</code>，杜绝可变字体缓存累积。</li>
-    <li><strong>全量隔离环境验收通过</strong>：<code>test_fast_lane.sh</code>、完整 <code>test.sh</code>（820 项测试）及 <code>vm:macos27</code> 双引擎（TUN / 透明代理）50s 空闲复用、2 MiB 大请求上传与 3 轮 6 次网卡断连切换自愈 100% 通过。</li>
+    <li><strong>控制面与系统扩展超时防护</strong>：优化宿主 App 与系统扩展通信超时机制及冷启动 DNS 边界，杜绝瞬时假死。</li>
+    <li><strong>短连接与 UDP 吞吐优化</strong>：增加短连接流关闭主动短路与 UDP 微批处理写机制，规避内核套接字写缓冲耗尽。</li>
+    <li><strong>流量图表重绘节流</strong>：流量波形刷新率优化至 12 FPS，显著减少堆内存分配与界面渲染开销。</li>
+  </ul>
+</div>
+<div class="section">
+  <span class="section-tag tag-improve">✨ 严苛真机与多环境验证</span>
+  <ul>
+    <li><strong>全量隔离环境验收通过</strong>：Apple Silicon 隔离环境全量测试门禁、空闲长连接复用与网络切换自愈 100% 通过。</li>
+    <li><strong>UI 卡顿与内存预算双 Profile 达标</strong>：常规流与万条规则/500节点重载切页 p95 均保持在 132 ms 左右，内存占用平稳控制在 66-84 MB 预算内。</li>
   </ul>
 </div>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/2.1.0/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/2.2.0/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v2.1.0/AetherRoute-2.1.0-build-2026110502-arm64.dmg"
-                sparkle:edSignature="tFc0vmJe6ASFZznxhupDN5M5ulKgxvow2UI1WvmRCWVYNJ7+XyRCATS2CmVbqmxFFDjGBo8n3Kbn1q8azr9DDA=="
-                length="28232922"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v2.2.0/AetherRoute-2.2.0-build-2026110503-arm64.dmg"
+                sparkle:edSignature="pcbxcBMXRiulR8mPTOW70Hw8ckzBlq9mM62PNrmwglU4YRfMOphtX0TUMb7/rE/oE7VHNwUxM8s+pkZWKGGQAg=="
+                length="28954184"
                 type="application/octet-stream" />
         </item>
     </channel>

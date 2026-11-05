@@ -97,9 +97,7 @@ struct NativeProfileEditorSheet: View {
                         Text(node.name)
                             .font(.body.weight(.medium))
                             .lineLimit(1)
-                        Text(
-                            verbatim: "\(node.protocolID.displayName) · \(node.transportDisplayName) · \(node.server):\(node.port)"
-                        )
+                        Text(verbatim: nodeSubtitle(for: node))
                             .font(.caption)
                             .foregroundStyle(AetherVisual.secondaryText)
                             .lineLimit(1)
@@ -232,6 +230,15 @@ struct NativeProfileEditorSheet: View {
         }
         nodes = candidate
         return true
+    }
+
+    private func nodeSubtitle(for node: AetherNode) -> String {
+        let base = "\(node.protocolID.displayName) · \(node.transportDisplayName) · \(node.server):\(node.port)"
+        guard let rawDialer = node.dialerProxy else { return base }
+        let dialer = rawDialer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !dialer.isEmpty else { return base }
+        let via = String.localizedStringWithFormat(AppLocalization.string("via %@"), dialer)
+        return "\(base) · \(via)"
     }
 }
 

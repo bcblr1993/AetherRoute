@@ -15,6 +15,10 @@ extension TunnelManager {
         activeProfile?.overrides?.groups.first { $0.name == name }
     }
 
+    func chainedProxyOverride(named name: String) -> ChainedProxyOverride? {
+        activeProfile?.overrides?.chainedProxies.first { $0.name == name }
+    }
+
     /// What the override does to the active profile right now: each custom
     /// group's members and the diagnostics, for the editor and the cards.
     func activeOverrideResult(_ overrides: ProfileOverride? = nil) -> ProfileOverrideResult? {
@@ -67,7 +71,7 @@ extension TunnelManager {
             refreshActiveProfileSummary()
             applyCustomGroupModes(removing: previousCustomGroups)
             Self.runtimeLogger.info(
-                "stage=profileOverrides saved groups=\(validated?.groups.count ?? 0, privacy: .public) hidden=\(validated?.hiddenNodeKeywords.count ?? 0, privacy: .public)"
+                "stage=profileOverrides saved groups=\(validated?.groups.count ?? 0, privacy: .public) chains=\(validated?.chainedProxies.count ?? 0, privacy: .public) hidden=\(validated?.hiddenNodeKeywords.count ?? 0, privacy: .public)"
             )
             if reloadsRunningProfile {
                 await reloadCustomRulesLive()

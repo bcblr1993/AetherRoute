@@ -14,6 +14,15 @@ enum ProfileOverrideFixtureGenerator {
         let output = URL(fileURLWithPath: arguments[1], isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
 
+        let residential = AetherNode(
+            name: "🇺🇸 美国住宅落地",
+            protocolID: .socks5,
+            server: "127.0.0.1",
+            port: 1082,
+            username: "res",
+            password: "secret",
+            dialerProxy: "🇭🇰 香港自动"
+        )
         let override = try ProfileOverride(
             groups: [
                 CustomProxyGroup(name: "🇭🇰 香港自动", regions: ["HK"], excludeKeywords: ["游戏"], parentGroup: "节点选择", position: .top),
@@ -21,7 +30,23 @@ enum ProfileOverrideFixtureGenerator {
                 CustomProxyGroup(name: "Picked", manualNodes: ["SG 03", "Missing"], parentGroup: "自动选择"),
                 CustomProxyGroup(name: "Nobody", regions: ["BR"]),
             ],
-            hiddenNodeKeywords: ["剩余流量", "Expire"]
+            hiddenNodeKeywords: ["剩余流量", "Expire"],
+            chainedProxies: [
+                ChainedProxyOverride(
+                    name: "🇺🇸 美国住宅落地",
+                    dialerProxy: "🇭🇰 香港自动",
+                    target: .customNode(residential),
+                    parentGroup: "节点选择",
+                    position: .top
+                ),
+                ChainedProxyOverride(
+                    name: "🔗 新加坡（香港中转）",
+                    dialerProxy: "🇭🇰 HK 01",
+                    target: .existingNode(name: "SG 03"),
+                    parentGroup: "节点选择",
+                    position: .bottom
+                ),
+            ]
         ).validated()
 
         var count = 0
@@ -39,6 +64,13 @@ enum ProfileOverrideFixtureGenerator {
             for group in ["🇭🇰 香港自动", "Japan, Tokyo", "Picked", "Nobody"] {
                 guard summary.proxyGroups.contains(where: { $0.name == group }) else {
                     fputs("\(name): \(group) missing\n", stderr)
+                    exit(1)
+                }
+            }
+            for (chainName, expectedDialer) in [("🇺🇸 美国住宅落地", "🇭🇰 香港自动"), ("🔗 新加坡（香港中转）", "🇭🇰 HK 01")] {
+                guard let proxy = summary.proxies.first(where: { $0.name == chainName }),
+                      proxy.dialerProxy == expectedDialer else {
+                    fputs("\(name): chained proxy \(chainName) missing or wrong dialer\n", stderr)
                     exit(1)
                 }
             }

@@ -161,13 +161,30 @@ run_profile() {
       --env AETHERROUTE_UI_REVIEW_LANGUAGE=zh-Hans --env AETHERROUTE_UI_REVIEW_APPEARANCE=light \
       --env AETHERROUTE_UI_REVIEW_WINDOW=1050x700 --env AETHERROUTE_UI_REVIEW_SETTINGS_TAB=- \
       '$REMOTE_DIR/AetherRoute.app' --args -ApplePersistenceIgnoreState YES; \
-    sleep 6; limit=\$(( $SECONDS_PER_PROFILE + 90 )); waited=0; \
-    while app=\$(pgrep -f '$REMOTE_DIR/AetherRoute.app/Contents/MacOS/AetherRoute' | head -1) && [ -n \"\$app\" ]; do \
-      f=\$(footprint -p \$app 2>/dev/null | sed -n 2p | sed -n 's/.*Footprint: \\([0-9]*\\) MB.*/\\1/p'); \
-      [ -n \"\$f\" ] && echo \$f >> '$REMOTE_DIR/footprint.txt'; \
-      sleep 5; waited=\$((waited + 5)); \
-      if [ \$waited -gt \$limit ]; then kill \$app; echo 'timed out' >> '$REMOTE_DIR/app.log'; fi; \
-    done; true"
+    sleep 6; python3 -c \"
+import ctypes, os, subprocess, time
+l = ctypes.CDLL('/usr/lib/libproc.dylib')
+b = (ctypes.c_uint64 * 64)()
+out = subprocess.run(['pgrep', '-f', '$REMOTE_DIR/AetherRoute.app/Contents/MacOS/AetherRoute'], capture_output=True, text=True).stdout.split()
+pid = int(out[0]) if out else 0
+waited, limit = 0, $SECONDS_PER_PROFILE + 90
+while pid > 0:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        break
+    if l.proc_pid_rusage(pid, 4, ctypes.byref(b)) == 0:
+        with open('$REMOTE_DIR/footprint.txt', 'a') as f:
+            f.write(f'{round(b[9] / 1048576)}\\n')
+    time.sleep(5)
+    waited += 5
+    if waited > limit:
+        try: os.kill(pid, 9)
+        except OSError: pass
+        with open('$REMOTE_DIR/app.log', 'a') as f:
+            f.write('timed out\\n')
+        break
+\"; true"
   rsync -a -e "$SSH" "$REMOTE:$REMOTE_DIR/Home/samples.csv" \
     "$REMOTE:$REMOTE_DIR/footprint.txt" "$REMOTE:$REMOTE_DIR/app.log" \
     "$evidence/" 2>/dev/null || true

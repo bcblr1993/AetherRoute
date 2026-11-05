@@ -170,8 +170,9 @@ extension TunnelManager {
             automaticReadinessGroupNames.insert(groupName)
             return
         }
+        let previousSelectedMember = proxySelections[groupName]?.selectedMember
         do {
-            _ = try await selectFastestAvailableProxy(
+            let selected = try await selectFastestAvailableProxy(
                 group: group,
                 client: makeProxySelectionProviderClient(),
                 preferredMember: mode == .failover
@@ -179,6 +180,13 @@ extension TunnelManager {
                     : nil
             )
             automaticReadinessGroupNames.insert(groupName)
+            if let newMember = selected.selectedMember {
+                await closeConnectionsAfterProxySwitch(
+                    group: groupName,
+                    previousMember: previousSelectedMember,
+                    newMember: newMember
+                )
+            }
         } catch {
             if isCustom {
                 _ = await persistCustomGroupMode(previous, group: groupName)

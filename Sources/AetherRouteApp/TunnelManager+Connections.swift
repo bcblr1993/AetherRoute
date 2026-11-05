@@ -47,12 +47,22 @@ extension TunnelManager {
         }
     }
 
-    /// After a group's node changed, drops what still runs through the group
-    /// so new traffic and reconnecting apps use the new node. Best effort: a
-    /// failure leaves those connections on the old node until they end.
-    func closeConnectionsAfterProxySwitch(group groupName: String) async {
-        guard closesConnectionsOnProxySwitch else { return }
-        await closeConnections(.proxyChainMember(groupName))
+    /// After a group's node changed, drops what still runs through the old
+    /// member (or the group when the previous member was a pseudo-route like
+    /// `DIRECT`) so new traffic and reconnecting apps use the new node without
+    /// interrupting connections that already opened on `newMember`.
+    func closeConnectionsAfterProxySwitch(
+        group groupName: String,
+        previousMember: String? = nil,
+        newMember: String
+    ) async {
+        guard let request = ProxySelectionHotSwitchPolicy.closeRequest(
+            group: groupName,
+            previousMember: previousMember,
+            newMember: newMember,
+            closesConnectionsOnSwitch: closesConnectionsOnProxySwitch
+        ) else { return }
+        await closeConnections(request)
     }
 
     /// Tests a group's latency because the Proxies page showed it, if the

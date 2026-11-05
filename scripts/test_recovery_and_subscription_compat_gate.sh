@@ -48,6 +48,32 @@ struct RecoveryAndSubscriptionCompatVerifier {
                 "A real failure must still reclaim only the failed node's connections"
             )
         }
+        assertTrue(
+            ProxySelectionHotSwitchPolicy.closeRequest(
+                group: "Proxy",
+                previousMember: "HK 01",
+                newMember: "US 01",
+                closesConnectionsOnSwitch: true
+            ) == .proxyChainMember("HK 01"),
+            "Hot-switch close must target the previous member instead of killing new connections on the whole group"
+        )
+        assertTrue(
+            ProxySelectionHotSwitchPolicy.closeRequest(
+                group: "Proxy",
+                previousMember: "DIRECT",
+                newMember: "US 01",
+                closesConnectionsOnSwitch: true
+            ) == .proxyChainMember("Proxy"),
+            "Switching away from DIRECT inside a group must scope close to the group"
+        )
+        assertTrue(
+            ProxySelectionHotSwitchPolicy.routingModeCloseRequest(
+                previousMode: .rule,
+                newMode: .global,
+                closesConnectionsOnSwitch: true
+            ) == .all,
+            "Routing mode switch must close stale connections when closesConnectionsOnSwitch is enabled"
+        )
 
         // 1. Recovery state-machine deadlock guards
         assertTrue(
