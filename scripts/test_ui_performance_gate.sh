@@ -9,24 +9,28 @@
 # never changed, so it saw neither.
 #
 # This gate builds the Release UI-review app with the responsiveness probe,
-# runs it on a real Mac in its GUI session (default: the Mac mini, so this
-# Mac's tunnel is never touched), and has the app switch pages on its own with
-# live, once-a-second telemetry. Each switch is timed from the selection until
-# the main thread has laid out and committed the page. The physical footprint
-# (Activity Monitor's "Memory") is sampled throughout.
+# runs it inside the headless Tart VM's GUI session (default: `vm:macos27`, so
+# this Mac's screen, focus, and tunnel are never touched), and has the app
+# switch pages on its own with live, once-a-second telemetry. Each switch is
+# timed from the selection until the main thread has laid out and committed the
+# page. The physical footprint (Activity Monitor's "Memory") is sampled
+# throughout.
 #
 # usage: scripts/test_ui_performance_gate.sh /absolute/evidence-directory
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 OUTPUT=${1:-}
-REMOTE=${AETHERROUTE_PERF_REMOTE:-chenxu@100.64.0.3}
+VM_NAME=${AETHERROUTE_VM_NAME:-macos27}
+VM_USER=${AETHERROUTE_VM_USER:-chenxu}
+SSH_KEY=${AETHERROUTE_VM_SSH_KEY:-$HOME/.ssh/id_ed25519}
+REMOTE=${AETHERROUTE_PERF_REMOTE:-vm:$VM_NAME}
 SECONDS_PER_PROFILE=${AETHERROUTE_PERF_SECONDS:-300}
 # The fixtures: "showcase" is everyday use (a dozen flows), "large" a heavy
 # profile (500 nodes, 10,000 rules, 2,000 flows).
 PROFILES=${AETHERROUTE_PERF_PROFILES:-showcase large}
 
-# Budgets, set from 1.5.1 on the Mac mini with about 20% headroom: page
+# Budgets, set from 1.5.1 with about 20% headroom: page
 # switch p95 152-153 ms and slowest 188-201 ms on both profiles; footprint
 # median 67-70 MB, peak 74 MB, growth +0-2 MB. 1.5.0 measured p95 226-414 ms,
 # slowest 805 ms and grew to 212 MB, so it fails every one of them. Loosen a
@@ -75,14 +79,42 @@ for command in python3 rsync ssh; do
   }
 done
 
-SSH="ssh -o BatchMode=yes -o ConnectTimeout=10"
+SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
+if [ -f "$SSH_KEY" ]; then
+  SSH_OPTS="$SSH_OPTS -o IdentitiesOnly=yes -i $SSH_KEY"
+fi
+SSH="ssh $SSH_OPTS"
+SCP="scp -q $SSH_OPTS"
 # The probe writes only under an isolated HOME named like the UI test homes.
 REMOTE_DIR=/tmp/aetherroute-ui-tests.performance
 TEMP=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-ui-performance.XXXXXX")
 trap 'find "$TEMP" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 
-$SSH "$REMOTE" true || {
-  echo "UI performance gate cannot reach $REMOTE" >&2
+case "$REMOTE" in
+  vm|vm:*)
+    TARGET_VM=${REMOTE#vm:}
+    [ "$TARGET_VM" != vm ] || TARGET_VM=$VM_NAME
+    state=$(tart list 2>/dev/null | awk -v v="$TARGET_VM" '$2 == v {print $NF}')
+    test -n "$state" || { echo "UI performance gate: unknown Tart VM $TARGET_VM" >&2; exit 1; }
+    if [ "$state" != running ]; then
+      nohup tart run "$TARGET_VM" --no-graphics >/dev/null 2>&1 &
+    fi
+    vm_ip=""
+    for _ in $(seq 1 30); do
+      vm_ip=$(tart ip "$TARGET_VM" 2>/dev/null || true)
+      if [ -n "$vm_ip" ] && $SSH "$VM_USER@$vm_ip" true 2>/dev/null; then
+        break
+      fi
+      vm_ip=""
+      sleep 2
+    done
+    test -n "$vm_ip" || { echo "UI performance gate cannot reach Tart VM $TARGET_VM" >&2; exit 1; }
+    REMOTE="$VM_USER@$vm_ip"
+    ;;
+esac
+
+$SSH "$REMOTE" 'pgrep -x Dock >/dev/null' || {
+  echo "UI performance gate cannot reach a logged-in GUI session on $REMOTE" >&2
   exit 1
 }
 mkdir -p "$OUTPUT"
@@ -100,11 +132,11 @@ fi
 APP=$(find "$TEMP/products" -maxdepth 4 -name AetherRoute.app -type d | head -1)
 [ -n "$APP" ] || { echo "The export has no AetherRoute.app" >&2; exit 1; }
 
-echo "==> Packaging review app for fast remote transfer over Tailscale"
+echo "==> Packaging review app for transfer to $REMOTE"
 APP_ZIP="$TEMP/AetherRouteReview.zip"
 ditto -c -k --keepParent "$APP" "$APP_ZIP"
 $SSH "$REMOTE" "pkill -f '$REMOTE_DIR' 2>/dev/null; find '$REMOTE_DIR' -depth -delete 2>/dev/null; mkdir -p '$REMOTE_DIR'"
-scp -q -o BatchMode=yes -o ConnectTimeout=8 "$APP_ZIP" "$REMOTE:$REMOTE_DIR/app.zip"
+$SCP "$APP_ZIP" "$REMOTE:$REMOTE_DIR/app.zip"
 $SSH "$REMOTE" "ditto -x -k '$REMOTE_DIR/app.zip' '$REMOTE_DIR/' && rm -f '$REMOTE_DIR/app.zip'"
 
 run_profile() {

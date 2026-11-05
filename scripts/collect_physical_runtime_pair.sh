@@ -1,16 +1,19 @@
 #!/bin/sh
-# Installs a notarized candidate DMG on the dedicated Mac mini, collects the
-# TUN and Transparent Proxy runtime receipts package_release_dmg.sh requires,
-# and restores the Mac mini's own preferences afterwards.
+# Installs a notarized candidate DMG in the isolated Tart VM (`macos27`),
+# collects the TUN and Transparent Proxy runtime receipts package_release_dmg.sh
+# requires, and restores the VM's preferences afterwards.
 #
 # Usage: AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES \
 #   collect_physical_runtime_pair.sh /absolute/candidate.dmg [/absolute/evidence-dir]
 #
-# Interface switching disrupts the Mac mini: never run this while the remote
-# or UI performance gate uses it.
+# Interface switching disrupts the VM's uplinks: run this after the VM matrix,
+# remote ARM64 source gate, and UI performance gate have finished.
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-HOST=chenxu@100.64.0.3
+VM_NAME=${AETHERROUTE_VM_NAME:-macos27}
+VM_USER=${AETHERROUTE_VM_USER:-chenxu}
+SSH_KEY=${AETHERROUTE_VM_SSH_KEY:-$HOME/.ssh/id_ed25519}
+EVIDENCE_HOST=${AETHERROUTE_REMOTE_HOST:-vm:$VM_NAME}
 DMG=${1:-}
 case "$DMG" in
   /*.dmg) ;;
@@ -18,7 +21,7 @@ case "$DMG" in
 esac
 test -f "$DMG" || { echo "candidate DMG not found: $DMG" >&2; exit 66; }
 test "${AETHERROUTE_ALLOW_PHYSICAL_RUNTIME:-}" = YES || {
-  echo "requires AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES for the dedicated test Mac" >&2
+  echo "requires AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES for the dedicated test VM" >&2
   exit 64
 }
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-physical-pair.XXXXXX")
@@ -30,7 +33,39 @@ VERSION=$(defaults read "$MOUNT/AetherRoute.app/Contents/Info" CFBundleShortVers
 BUILD=$(defaults read "$MOUNT/AetherRoute.app/Contents/Info" CFBundleVersion)
 hdiutil detach "$MOUNT" -quiet
 OUT=${2:-"$ROOT/outputs/physical-runtime-$VERSION-$BUILD"}
-SSH="ssh -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=10"
+
+SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=10 -o StrictHostKeyChecking=accept-new"
+if [ -f "$SSH_KEY" ]; then
+  SSH_OPTS="$SSH_OPTS -o IdentitiesOnly=yes -i $SSH_KEY"
+fi
+SSH="ssh $SSH_OPTS"
+SCP="scp -q $SSH_OPTS"
+
+VM_IP=""
+case "$EVIDENCE_HOST" in
+  vm:*)
+    TARGET_VM=${EVIDENCE_HOST#vm:}
+    state=$(tart list 2>/dev/null | awk -v v="$TARGET_VM" '$2 == v {print $NF}')
+    test -n "$state" || { echo "unknown Tart VM: $TARGET_VM" >&2; exit 66; }
+    if [ "$state" != running ]; then
+      nohup tart run "$TARGET_VM" --no-graphics >/dev/null 2>&1 &
+    fi
+    for _ in $(seq 1 30); do
+      VM_IP=$(tart ip "$TARGET_VM" 2>/dev/null || true)
+      if [ -n "$VM_IP" ] && $SSH "$VM_USER@$VM_IP" true 2>/dev/null; then
+        break
+      fi
+      VM_IP=""
+      sleep 2
+    done
+    test -n "$VM_IP" || { echo "Tart VM $TARGET_VM is not reachable over SSH" >&2; exit 1; }
+    HOST="$VM_USER@$VM_IP"
+    ;;
+  *)
+    HOST="$EVIDENCE_HOST"
+    ;;
+esac
+
 PREF='$HOME/Library/Containers/com.aetherroute.desktop/Data/Library/Preferences/com.aetherroute.desktop'
 QUIT='osascript -e "tell application \"AetherRoute\" to quit" >/dev/null 2>&1 || true
 i=0; while pgrep -x AetherRoute >/dev/null; do i=$((i+1)); [ $i -ge 20 ] && { pkill -9 -x AetherRoute || true; sleep 2; break; }; sleep 1; done'
@@ -44,8 +79,8 @@ echo \"restored engine=\$(defaults read \"\$PREF\" AetherRoute.NetworkEngineMode
 }
 trap 'restore; find "$WORK" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 
-echo "Installing $VERSION ($BUILD) on $HOST"
-scp -q -o BatchMode=yes "$DMG" "$HOST:/tmp/aetherroute-candidate-$BUILD.dmg"
+echo "Installing $VERSION ($BUILD) on $EVIDENCE_HOST ($HOST)"
+$SCP "$DMG" "$HOST:/tmp/aetherroute-candidate-$BUILD.dmg"
 $SSH "$HOST" "set -e
 PREF=$PREF; BK=\$HOME/aetherroute-prefs-backup-$BUILD.plist
 test -e \"\$BK\" || defaults export \"\$PREF\" \"\$BK\"
@@ -61,6 +96,9 @@ for ENGINE in tun transparent; do
   $SSH "$HOST" "PREF=$PREF
 $QUIT
 defaults write \"\$PREF\" AetherRoute.NetworkEngineMode -string $ENGINE
+defaults write \"\$PREF\" defaultRoutingMode -string rule
+JSON='{\"version\":1,\"isEnabled\":true,\"httpPort\":7890,\"socksPort\":7891}'
+defaults write \"\$PREF\" AetherRoute.LocalProxySettings -data \"\$(printf '%s' \"\$JSON\" | xxd -p | tr -d '\n')\"
 defaults write \"\$PREF\" AetherRoute.LastConnectionIntent -bool true
 open -a /Applications/AetherRoute.app"
   ready=0
@@ -71,9 +109,10 @@ open -a /Applications/AetherRoute.app"
     fi
     sleep 5
   done
-  test "$ready" = 1 || { echo "$ENGINE did not connect on $HOST" >&2; exit 1; }
+  test "$ready" = 1 || { echo "$ENGINE did not connect on $EVIDENCE_HOST" >&2; exit 1; }
   echo "$ENGINE connected; collecting receipts"
-  PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/collect_physical_runtime_evidence.py" \
-    "$DMG" "$HOST" "$ENGINE" "$OUT"
+  AETHERROUTE_VM_IP="$VM_IP" \
+    PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/collect_physical_runtime_evidence.py" \
+    "$DMG" "$EVIDENCE_HOST" "$ENGINE" "$OUT"
 done
-echo "Physical evidence complete: $OUT"
+echo "Runtime evidence complete: $OUT"

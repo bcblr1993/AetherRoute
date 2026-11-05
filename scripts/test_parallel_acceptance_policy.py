@@ -26,7 +26,7 @@ class AcceptancePolicyTests(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.evidence = self.base / "evidence"
         self.evidence.mkdir()
-        self.identity = {"build": "2026101701", "host": "chenxu@100.64.0.3",
+        self.identity = {"build": "2026101701", "host": "vm:macos27",
                          "candidate_sha256": "a" * 64}
         self.records = {}
         for engine in ("tun", "transparent"):
@@ -102,24 +102,24 @@ class AcceptancePolicyTests(unittest.TestCase):
         self.assertFalse(output.exists())
         return [line for line in result.stdout.splitlines() if line.startswith("plan ")]
 
-    def test_default_plan_moves_remote_gate_to_the_vm(self):
-        # The Mac mini keeps only what needs its GUI session or notarized
-        # system extensions; the source gate follows the matrix on the VM and
-        # the notarized candidate builds alongside both.
+    def test_default_plan_consolidates_all_guest_gates_on_the_vm(self):
+        # All disruptive and GUI gates (matrix, remote source gate, UI
+        # performance gate, and notarized candidate runtime receipts) run inside
+        # the headless Tart VM while the notarized candidate builds alongside.
         self.assertEqual(self.plan(), [
-            "plan track1: vm-matrix macos27 -> remote-arm64 vm fast",
-            "plan track2: ui-perf chenxu@100.64.0.3 300s",
-            "plan track3: notarized-candidate stable AetherRoute-Notary",
-            "plan then: physical-runtime chenxu@100.64.0.3 tun transparent",
+            "plan track1: vm-matrix macos27 -> remote-arm64 vm fast -> ui-perf vm:macos27 300s",
+            "plan track2: notarized-candidate stable AetherRoute-Notary",
+            "plan then: physical-runtime vm:macos27 tun transparent",
             "plan then: verify-physical-evidence",
         ])
 
-    def test_plan_can_keep_remote_gate_on_the_mac_mini(self):
-        plan = self.plan({"AETHERROUTE_REMOTE_GATE_HOST": "chenxu@100.64.0.3",
+    def test_plan_can_use_an_explicit_external_host_override(self):
+        plan = self.plan({"AETHERROUTE_REMOTE_HOST": "chenxu@remote-test.local",
+                          "AETHERROUTE_REMOTE_GATE_HOST": "chenxu@remote-test.local",
                           "AETHERROUTE_NOTARY_PROFILE": "Other-Profile"})
         self.assertEqual(plan[:3], [
             "plan track1: vm-matrix macos27",
-            "plan track2: remote-arm64 chenxu@100.64.0.3 fast -> ui-perf chenxu@100.64.0.3 300s",
+            "plan track2: remote-arm64 chenxu@remote-test.local fast -> ui-perf chenxu@remote-test.local 300s",
             "plan track3: notarized-candidate stable Other-Profile",
         ])
 
@@ -199,10 +199,24 @@ class AcceptancePolicyTests(unittest.TestCase):
     def test_collector_requires_explicit_dedicated_hardware_opt_in(self):
         env = {k: v for k, v in os.environ.items() if not k.startswith("AETHERROUTE_")}
         result = subprocess.run(["python3", str(ROOT / "scripts/collect_physical_runtime_evidence.py"),
-                                 "candidate.dmg", "chenxu@100.64.0.3", "tun", str(self.evidence)],
+                                 "candidate.dmg", "vm:macos27", "tun", str(self.evidence)],
                                 env=env, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES", result.stderr)
+
+    def test_vm_single_uplink_two_phase_switch_passes(self):
+        vm_switch = "\n".join(
+            f"cycle {cycle}: Ethernet {phase} off -> en0 recovered in 2s"
+            for cycle in range(1, 4) for phase in ("primary", "secondary")
+        ) + "\nPASS: interface switch recovered (3 cycles, deadline 15s)\n"
+        self.rewrite_log("tun", "switch", vm_switch)
+        self.assertEqual(self.run_policy("evidence").returncode, 0)
+        duplicate_phase = "\n".join(
+            f"cycle {cycle}: Ethernet primary off -> en0 recovered in 2s"
+            for cycle in range(1, 4) for _ in (0, 1)
+        ) + "\nPASS: interface switch recovered (3 cycles, deadline 15s)\n"
+        self.rewrite_log("tun", "switch", duplicate_phase)
+        self.assertNotEqual(self.run_policy("evidence").returncode, 0)
 
     def test_complete_candidate_bound_evidence_passes(self):
         result = self.run_policy("evidence")

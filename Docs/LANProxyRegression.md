@@ -32,56 +32,57 @@ temporary fixtures. It does not contact SSH or start a VM. It rejects shortened
 profiles, skipped ARM64 checks, incomplete matrices, missing engines, stale
 candidate identity, modified logs, undersized transfers and incomplete switches.
 
-## Physical runtime evidence
+## Candidate runtime evidence
 
 The parallel runner's source tests and UI fixtures do not establish that the
-signed candidate transports real traffic on physical hardware. Release packaging
-therefore requires six successful runtime checks on the dedicated Mac mini: idle
-reuse, 2 MiB upload and interface switch, each with TUN and Transparent Proxy.
+signed notarized candidate transports real traffic end-to-end. Release packaging
+therefore requires six successful runtime checks in the isolated headless Tart VM
+(`vm:macos27`): idle reuse, 2 MiB upload and interface switch recovery, each
+with TUN and Transparent Proxy.
 
-The evidence is bound to the **notarized candidate DMG** (AGENTS.md step 5), not
-the QA ZIP: the Mac mini's system extensions only load notarized builds, and the
-QA ZIP only runs in the VM's developer mode. `package_release_dmg.sh` copies the
-app out of that DMG unchanged, so the published app is the one tested on hardware.
+The evidence is bound to the **notarized candidate DMG** (AGENTS.md step 5).
+`package_release_dmg.sh` copies the app out of that DMG unchanged, so the
+published app is the exact binary verified by the runtime gate.
 
-1. Run the parallel runner (VM matrix, remote ARM64 gate, UI performance). It no
-   longer checks physical evidence and says so when it passes.
-2. Build the stable notarized candidate. Do not start or stop the Tart VM while it
-   builds: the candidate's network-state check fails when the VM's interfaces change.
-3. After the remote ARM64 and UI performance gates have finished (interface
-   switching disrupts the same Mac mini), install the candidate DMG's app on the
-   Mac mini, connect in TUN mode and collect, then reconnect in Transparent Proxy
-   mode and collect again (commands below). The default evidence directory is
+1. Run the parallel runner (`run_release_acceptance_parallel.sh`). It runs the
+   VM matrix, remote ARM64 gate, and UI performance gate sequentially inside the
+   headless `macos27` VM while building the notarized candidate DMG on the host,
+   then installs the notarized DMG in `macos27`, connects in TUN mode and
+   collects, reconnects in Transparent Proxy mode and collects again, and
+   verifies the evidence against the DMG's SHA-256.
+2. When collecting manually, install the candidate DMG's app in `macos27`,
+   connect in TUN mode and collect, then reconnect in Transparent Proxy mode and
+   collect again (commands below). The default evidence directory is
    `outputs/physical-runtime-<VERSION>-<BUILD>`.
-4. Run `package_release_dmg.sh` on that same DMG. It accepts only a `.dmg` source
-   and verifies the evidence against the DMG's SHA-256, build and host before any
-   signing or notarization; `AETHERROUTE_PHYSICAL_RUNTIME_EVIDENCE` overrides the
-   directory.
+3. Run `package_release_dmg.sh` on that same DMG. It accepts only a `.dmg` source
+   and verifies the evidence against the DMG's SHA-256, build and `vm:macos27`
+   before any signing or notarization; `AETHERROUTE_PHYSICAL_RUNTIME_EVIDENCE`
+   overrides the directory.
 
 The collector mounts the DMG read-only, checks the installed app's executable and
 both embedded extension executables against it, and checks active provider
 readiness before and after each test. It never installs, launches, disconnects,
 or changes the selected engine. Interface-switch testing deliberately interrupts
-the remote test Mac's uplinks; explicit opt-in is required, and the collector
-refuses the local hardware UUID or a host other than the SOP Mac mini.
+the VM's uplinks; explicit opt-in is required, and the collector refuses the
+local hardware UUID or any non-VM target.
 
 ```sh
 AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES python3 scripts/collect_physical_runtime_evidence.py \
-  /absolute/path/to/notarized-candidate.dmg chenxu@100.64.0.3 tun /absolute/path/to/physical-runtime
+  /absolute/path/to/notarized-candidate.dmg vm:macos27 tun /absolute/path/to/physical-runtime
 # Connect the candidate in Transparent Proxy mode before the second invocation.
 AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES python3 scripts/collect_physical_runtime_evidence.py \
-  /absolute/path/to/notarized-candidate.dmg chenxu@100.64.0.3 transparent /absolute/path/to/physical-runtime
+  /absolute/path/to/notarized-candidate.dmg vm:macos27 transparent /absolute/path/to/physical-runtime
 ```
 
-Receipts are bound to the DMG SHA-256, build, host and engine. Each records the
-exit status and hash of its full test output. A failed attempt retains its logs;
-use a fresh directory for a new attempt. Skipped and inconclusive results fail.
-To check the evidence on its own:
+Receipts are bound to the DMG SHA-256, build, `vm:macos27` and engine. Each
+records the exit status and hash of its full test output. A failed attempt
+retains its logs; use a fresh directory for a new attempt. Skipped and
+inconclusive results fail. To check the evidence on its own:
 
 ```sh
 python3 scripts/verify_parallel_acceptance.py evidence \
-  /absolute/path/to/physical-runtime BUILD chenxu@100.64.0.3 DMG_SHA256
+  /absolute/path/to/physical-runtime BUILD vm:macos27 DMG_SHA256
 ```
 
-This verifies only the physical runtime evidence. It does not substitute for the
+This verifies only the candidate runtime evidence. It does not substitute for the
 VM matrix, protocol interoperability, signing, notarization or publication checks.

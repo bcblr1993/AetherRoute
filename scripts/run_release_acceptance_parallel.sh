@@ -3,20 +3,19 @@ set -eu
 
 # Parallel Release Acceptance Orchestrator
 #
-# Concurrently drives the heavy verification stages of AetherRoute:
-# 1. Tart VM Acceptance Matrix (6-dimension engine x routing tests in isolated VM,
-#    including transparent UDP, LAN bypass, raw traffic, burst concurrency, SNI recovery,
-#    idle keep-alive reuse, and large upload checks), then the remote arm64
-#    source gate on the same VM (AETHERROUTE_REMOTE_GATE_HOST=vm, the default).
-# 2. UI Performance & Memory Budget Gate in the Mac mini's live GUI session
-#    (preceded by the remote arm64 gate when AETHERROUTE_REMOTE_GATE_HOST names
-#    a host instead of the VM).
-# 3. The notarized stable candidate DMG on this Mac.
-# Afterwards, with the Mac mini free again, the TUN and Transparent Proxy
-# runtime receipts are collected on that DMG and verified against it.
+# Concurrently drives the heavy verification stages of AetherRoute without
+# touching the host Mac's running apps, UI focus, or network:
+# 1. Headless Tart VM (`macos27`): 6-dimension engine x routing matrix (including
+#    transparent UDP, LAN bypass, raw traffic, burst concurrency, SNI recovery,
+#    idle keep-alive reuse, and large upload checks), followed sequentially on
+#    the same VM by the remote arm64 source gate and the UI Performance & Memory
+#    Budget Gate in the VM's GUI session.
+# 2. The notarized stable candidate DMG built concurrently in the background on
+#    this Mac.
+# Afterwards, with the Tart VM free and the notarized DMG ready, the TUN and
+# Transparent Proxy runtime receipts are collected on that DMG inside the VM
+# and verified against its SHA-256.
 #
-# The tracks run concurrently on separate machines, slashing the total
-# qualification time without lowering any quality gates or mutating the host.
 # AETHERROUTE_ACCEPTANCE_PLAN_ONLY=1 prints the plan and exits before any
 # build, SSH, or VM operation.
 
@@ -26,9 +25,10 @@ BUILD_NUMBER=${2:-}
 OUTPUT_DIR=${3:-}
 SIGNING_CONFIG=${AETHERROUTE_SIGNING_CONFIG:-"$ROOT/Config/Signing.json"}
 VM_NAME=${AETHERROUTE_VM_NAME:-macos27}
-REMOTE_HOST=${AETHERROUTE_REMOTE_HOST:-chenxu@100.64.0.3}
+REMOTE_HOST=${AETHERROUTE_REMOTE_HOST:-vm:$VM_NAME}
 REMOTE_GATE_HOST=${AETHERROUTE_REMOTE_GATE_HOST:-vm}
 VM_USER=${AETHERROUTE_VM_USER:-chenxu}
+SSH_KEY=${AETHERROUTE_VM_SSH_KEY:-$HOME/.ssh/id_ed25519}
 NOTARY_PROFILE=${AETHERROUTE_NOTARY_PROFILE:-AetherRoute-Notary}
 PERF_SECONDS=${AETHERROUTE_PERF_SECONDS:-300}
 export AETHERROUTE_IDLE_REUSE_HOST=${AETHERROUTE_IDLE_REUSE_HOST:-httpbin.org}
@@ -54,17 +54,30 @@ if [ -z "$BUILD_NUMBER" ]; then
   BUILD_NUMBER=$(grep -m1 'CURRENT_PROJECT_VERSION:' "$ROOT/project.yml" | awk -F'"' '{print $2}')
 fi
 
-if [ "$REMOTE_GATE_HOST" = vm ]; then
-  track1_plan="vm-matrix $VM_NAME -> remote-arm64 vm fast"
-  track2_plan="ui-perf $REMOTE_HOST ${PERF_SECONDS}s"
-else
-  track1_plan="vm-matrix $VM_NAME"
-  track2_plan="remote-arm64 $REMOTE_GATE_HOST fast -> ui-perf $REMOTE_HOST ${PERF_SECONDS}s"
-fi
+case "$REMOTE_HOST" in
+  vm|vm:*)
+    track1_plan="vm-matrix $VM_NAME -> remote-arm64 vm fast -> ui-perf $REMOTE_HOST ${PERF_SECONDS}s"
+    track2_plan="notarized-candidate stable $NOTARY_PROFILE"
+    track3_plan=""
+    ;;
+  *)
+    if [ "$REMOTE_GATE_HOST" = vm ]; then
+      track1_plan="vm-matrix $VM_NAME -> remote-arm64 vm fast"
+      track2_plan="ui-perf $REMOTE_HOST ${PERF_SECONDS}s"
+    else
+      track1_plan="vm-matrix $VM_NAME"
+      track2_plan="remote-arm64 $REMOTE_GATE_HOST fast -> ui-perf $REMOTE_HOST ${PERF_SECONDS}s"
+    fi
+    track3_plan="notarized-candidate stable $NOTARY_PROFILE"
+    ;;
+esac
+
 if [ "${AETHERROUTE_ACCEPTANCE_PLAN_ONLY:-}" = 1 ]; then
   echo "plan track1: $track1_plan"
   echo "plan track2: $track2_plan"
-  echo "plan track3: notarized-candidate stable $NOTARY_PROFILE"
+  if [ -n "$track3_plan" ]; then
+    echo "plan track3: $track3_plan"
+  fi
   echo "plan then: physical-runtime $REMOTE_HOST tun transparent"
   echo "plan then: verify-physical-evidence"
   exit 0
@@ -99,7 +112,9 @@ log " Version: $VERSION (Build $BUILD_NUMBER)"
 log " Output : $OUTPUT_DIR"
 log " Track 1: $track1_plan"
 log " Track 2: $track2_plan"
-log " Track 3: notarized-candidate stable $NOTARY_PROFILE"
+if [ -n "$track3_plan" ]; then
+  log " Track 3: $track3_plan"
+fi
 log "================================================================================"
 
 # ---------------------------------------------------------------- Preflight ---
@@ -121,7 +136,7 @@ if tart list 2>/dev/null | grep -E "^local[[:space:]]+$VM_NAME[[:space:]].*runni
   sleep 1
 fi
 
-log "[Preflight] Starting Tart VM '$VM_NAME'..."
+log "[Preflight] Starting Tart VM '$VM_NAME' headless..."
 tart run "$VM_NAME" --no-graphics >/dev/null 2>&1 &
 sleep 5
 vm_ip=
@@ -136,12 +151,16 @@ if [ -z "$vm_ip" ]; then
 fi
 log "[Preflight] Tart VM '$VM_NAME' reachable at $vm_ip"
 
-# Verify Remote Mac mini
-ssh -o BatchMode=yes -o ConnectTimeout=5 "$REMOTE_HOST" 'uname -m' >/dev/null 2>&1 || {
-  log "Remote host '$REMOTE_HOST' unreachable via SSH" >&2
-  exit 1
-}
-log "[Preflight] Remote host '$REMOTE_HOST' reachable via SSH"
+case "$REMOTE_HOST" in
+  vm|vm:*) ;;
+  *)
+    ssh -o BatchMode=yes -o ConnectTimeout=5 "$REMOTE_HOST" 'uname -m' >/dev/null 2>&1 || {
+      log "Remote host '$REMOTE_HOST' unreachable via SSH" >&2
+      exit 1
+    }
+    log "[Preflight] Remote host '$REMOTE_HOST' reachable via SSH"
+    ;;
+esac
 
 # Verify forbidden network mutation commands in scripts
 if grep -R -E -n --exclude=test_interface_switch_recovery.sh \
@@ -197,8 +216,8 @@ log ""
 log "[Dispatch] Launching parallel execution tracks..."
 START_TIME=$(date +%s)
 
-# Track 1: Tart VM Acceptance Matrix, then the remote arm64 gate on the VM.
-# The gate runs after the matrix so the two never share the VM.
+# Track 1: Tart VM Acceptance Matrix, then the remote arm64 gate and UI
+# performance gate sequentially on the same VM when REMOTE_HOST is vm:*.
 log "  -> [Track 1] $track1_plan"
 (
   set -e
@@ -214,32 +233,47 @@ log "  -> [Track 1] $track1_plan"
       >"$VM_REMOTE_LOG" 2>&1
     log "[Track 1] Remote arm64 gate passed on the VM."
   fi
+  case "$REMOTE_HOST" in
+    vm|vm:*)
+      log "[Track 1] Starting UI performance and memory budget gate on $REMOTE_HOST..."
+      AETHERROUTE_PERF_SECONDS="$PERF_SECONDS" \
+      AETHERROUTE_PERF_REMOTE="$REMOTE_HOST" \
+        "$ROOT/scripts/test_ui_performance_gate.sh" "$UI_PERF_DIR" \
+        >"$UI_PERF_LOG" 2>&1
+      log "[Track 1] UI performance gate completed successfully on the VM."
+      ;;
+  esac
 ) &
 VM_PID=$!
 
-# Track 2: Mac mini UI Performance Gate (after the remote gate when it runs there)
-log "  -> [Track 2] $track2_plan"
-(
-  set -e
-  if [ "$REMOTE_GATE_HOST" != vm ] && [ "$RUN_REMOTE_ARM64" = YES ]; then
-    log "[Track 2] Starting remote arm64 gate on $REMOTE_GATE_HOST..."
-    AETHERROUTE_ALLOW_REMOTE_GATE=YES \
-      "$ROOT/scripts/test_remote_arm64.sh" "$REMOTE_GATE_HOST" fast \
-      >"$REMOTE_LOG" 2>&1
-    log "[Track 2] Remote arm64 gate passed."
-  fi
-  log "[Track 2] Starting UI performance and memory budget gate on $REMOTE_HOST..."
-  AETHERROUTE_PERF_SECONDS="$PERF_SECONDS" \
-  AETHERROUTE_PERF_REMOTE="$REMOTE_HOST" \
-    "$ROOT/scripts/test_ui_performance_gate.sh" "$UI_PERF_DIR" \
-    >"$UI_PERF_LOG" 2>&1
-  log "[Track 2] UI performance gate completed successfully."
-) &
-REMOTE_PID=$!
+remote_status=0
+case "$REMOTE_HOST" in
+  vm|vm:*)
+    log "  -> [Track 2] notarized-candidate stable $NOTARY_PROFILE"
+    ;;
+  *)
+    log "  -> [Track 2] $track2_plan"
+    (
+      set -e
+      if [ "$REMOTE_GATE_HOST" != vm ] && [ "$RUN_REMOTE_ARM64" = YES ]; then
+        log "[Track 2] Starting remote arm64 gate on $REMOTE_GATE_HOST..."
+        AETHERROUTE_ALLOW_REMOTE_GATE=YES \
+          "$ROOT/scripts/test_remote_arm64.sh" "$REMOTE_GATE_HOST" fast \
+          >"$REMOTE_LOG" 2>&1
+        log "[Track 2] Remote arm64 gate passed."
+      fi
+      log "[Track 2] Starting UI performance and memory budget gate on $REMOTE_HOST..."
+      AETHERROUTE_PERF_SECONDS="$PERF_SECONDS" \
+      AETHERROUTE_PERF_REMOTE="$REMOTE_HOST" \
+        "$ROOT/scripts/test_ui_performance_gate.sh" "$UI_PERF_DIR" \
+        >"$UI_PERF_LOG" 2>&1
+      log "[Track 2] UI performance gate completed successfully."
+    ) &
+    REMOTE_PID=$!
+    log "  -> [Track 3] notarized-candidate stable $NOTARY_PROFILE"
+    ;;
+esac
 
-# Track 3: notarized stable candidate. Its before/after network snapshot
-# ignores the Tart VM's bridge, so it can build while the VM runs.
-log "  -> [Track 3] notarized-candidate stable $NOTARY_PROFILE"
 AETHERROUTE_CANDIDATE_CHANNEL=stable AETHERROUTE_TEST_CORE_VARIANT=normal \
   "$ROOT/scripts/build_notarized_test_candidate.sh" \
   "$SIGNING_CONFIG" "$NOTARY_PROFILE" "$VERSION" "$BUILD_NUMBER" "$NOTARIZED_DIR" \
@@ -253,18 +287,20 @@ wait "$VM_PID" || vm_status=$?
 VM_PID=
 log "[Monitor] Track 1 (Tart VM) exited with status $vm_status"
 
-remote_status=0
-wait "$REMOTE_PID" || remote_status=$?
-REMOTE_PID=
-log "[Monitor] Track 2 (Mac mini) exited with status $remote_status"
+if [ -n "$REMOTE_PID" ]; then
+  wait "$REMOTE_PID" || remote_status=$?
+  REMOTE_PID=
+  log "[Monitor] Track 2 (External Host) exited with status $remote_status"
+fi
 
 notarized_status=0
 wait "$NOTARIZED_PID" || notarized_status=$?
 NOTARIZED_PID=
-log "[Monitor] Track 3 (notarized candidate) exited with status $notarized_status"
+log "[Monitor] Notarized candidate track exited with status $notarized_status"
 
-# The Mac mini is free once track 2 is done; interface switching would have
-# disturbed the UI performance gate, so the receipts are collected only now.
+# Once the VM matrix, remote source gate, UI performance gate, and notarized DMG
+# build have all finished, collect the TUN and Transparent Proxy receipts on the
+# notarized DMG inside the target guest.
 physical_status=1
 PHYSICAL_DIR="$OUTPUT_DIR/physical-runtime"
 PHYSICAL_LOG="$OUTPUT_DIR/physical_runtime.log"
@@ -272,9 +308,10 @@ CANDIDATE_DMG=
 if [ "$vm_status" -eq 0 ] && [ "$remote_status" -eq 0 ] && [ "$notarized_status" -eq 0 ]; then
   CANDIDATE_DMG=$(find "$NOTARIZED_DIR" -maxdepth 1 -name '*.dmg' | head -n 1)
   if [ -n "$CANDIDATE_DMG" ]; then
-    log "[Physical] Collecting TUN and Transparent Proxy receipts on $REMOTE_HOST..."
+    log "[Runtime Evidence] Collecting TUN and Transparent Proxy receipts on $REMOTE_HOST..."
     physical_status=0
     AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES \
+    AETHERROUTE_REMOTE_HOST="$REMOTE_HOST" \
       "$ROOT/scripts/collect_physical_runtime_pair.sh" "$CANDIDATE_DMG" "$PHYSICAL_DIR" \
       >"$PHYSICAL_LOG" 2>&1 || physical_status=$?
     if [ "$physical_status" -eq 0 ]; then
@@ -284,10 +321,10 @@ if [ "$vm_status" -eq 0 ] && [ "$remote_status" -eq 0 ] && [ "$notarized_status"
         >>"$PHYSICAL_LOG" 2>&1 || physical_status=$?
     fi
   else
-    log "[Physical] No notarized candidate DMG in $NOTARIZED_DIR"
+    log "[Runtime Evidence] No notarized candidate DMG in $NOTARIZED_DIR"
   fi
 fi
-log "[Monitor] Physical runtime evidence exited with status $physical_status"
+log "[Monitor] Runtime evidence exited with status $physical_status"
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
@@ -331,16 +368,16 @@ else
 fi
 
 log ""
-# Summary Track 2
-log "Track 2: Remote Physical Mac mini Validation"
-if [ "$remote_status" -eq 0 ]; then
+# Summary UI Performance & Remote Gate
+log "UI Performance & Memory Budget Gate ($REMOTE_HOST)"
+if [ "$vm_status" -eq 0 ] && [ "$remote_status" -eq 0 ]; then
   log "  Result: PASS"
   if [ -f "$UI_PERF_DIR/result.txt" ]; then
     log "  UI Performance & Memory Footprint:"
     sed 's/^/    /' "$UI_PERF_DIR/result.txt"
   fi
 else
-  log "  Result: FAIL (Exit $remote_status)"
+  log "  Result: FAIL"
   if [ -f "$REMOTE_LOG" ]; then
     log "  Tail of Remote Gate log ($REMOTE_LOG):"
     tail -n 25 "$REMOTE_LOG" | sed 's/^/    /'
@@ -353,7 +390,7 @@ else
 fi
 
 log ""
-log "Track 3: Notarized stable candidate"
+log "Notarized stable candidate"
 if [ "$notarized_status" -eq 0 ]; then
   log "  Result: PASS ($CANDIDATE_DMG)"
 else
@@ -363,7 +400,7 @@ else
 fi
 
 log ""
-log "Physical runtime evidence (TUN / Transparent Proxy on the notarized DMG)"
+log "Candidate runtime evidence (TUN / Transparent Proxy on the notarized DMG)"
 if [ "$physical_status" -eq 0 ]; then
   log "  Result: PASS ($PHYSICAL_DIR)"
 else

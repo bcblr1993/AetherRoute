@@ -6,6 +6,25 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-05
+
+### Added
+
+- **Real-time Core & App physical memory telemetry across Overview, Connections, and Menu Bar**:
+  - Redesigned the Overview page's top telemetry strip into a golden-ratio split `TrafficCard` (`Sources/AetherRouteApp/ContentView.swift`, `Sources/AetherRouteApp/AetherRouteVisualSystem.swift`): the left pane displays live uplink/downlink throughput and 60-second area curves, while the right `LiveMemoryWell` displays Core (Network Extension) and App Mach `TASK_VM_INFO.phys_footprint` (`ProcessMemoryFootprint`) alongside Activity Monitor–aligned total footprint (`Core + App`) and 30-second smooth cubic Hermite `AetherMemorySparkline` curves.
+  - Added a compact Core + App memory summary capsule to the Connections page `SessionBar` (`Sources/AetherRouteApp/ConnectionsPageView.swift`) and a single-row `MenuMemoryFooter` with proportional dual-segment progress gauge to the Menu Bar popover (`Sources/AetherRouteApp/AetherRouteApp.swift`).
+  - Added localized strings (`zh-Hans`, `en`) in `Sources/AetherRouteApp/Localizable.xcstrings` and strict observation-scope isolation (`scripts/test_telemetry_observation_scope.sh`, `Tests/TrafficHistory/main.swift`) so 1 Hz memory sampling only refreshes leaf telemetry views.
+
+### Changed
+
+- **Unified zero-external-hardware release acceptance architecture (`vm:macos27`)**:
+  - Retired the external physical Mac mini (`chenxu@100.64.0.3`) dependency across all release qualification scripts (`scripts/run_release_acceptance_parallel.sh`, `scripts/test_ui_performance_gate.sh`, `scripts/collect_physical_runtime_evidence.py`, `scripts/collect_physical_runtime_pair.sh`, `scripts/test_interface_switch_recovery.sh`, `scripts/test_remote_interface_switch.sh`, `scripts/verify_parallel_acceptance.py`, `scripts/package_release_dmg.sh`, `scripts/compare_subscription_with_mihomo.sh`, `scripts/generate_sparkle_appcast.sh`) and SOP documentation (`AGENTS.md`, `Docs/LANProxyRegression.md`).
+  - Consolidated all guest/GUI/network-disruptive gates (6-dimension engine × routing matrix, remote arm64 full test suite, 300s UI responsiveness & memory budget gate, and candidate DMG runtime evidence with 3-cycle / 6-phase NIC uplink down/address-loss/up recovery) into the local headless Tart VM (`macos27`, `--no-graphics`), ensuring zero host window popups, zero focus stealing, and zero interference with running host applications.
+  - Extended `scripts/test_parallel_acceptance_policy.py` (16 unit tests) to verify the consolidated VM orchestration plan and two-phase single-uplink recovery verifier.
+- **Validation & Release Qualification**:
+  - Fast lane passed all 14 steps in 60s (`outputs/fast-lane-20261105T032838Z`). Full `scripts/test.sh` regression passed with zero compiler warnings: 576 XCTest + 121 Swift Testing + 99 transparent proxy + 24 bridge tests (820 total) plus all script gates.
+  - Isolated `vm:macos27` runtime evidence (`outputs/physical-runtime-2.1.0-2026110502`) bound to notarized stable candidate DMG (`864b8520242cd072b51c052bdc517c92d9772fbd62a7bff6da1e49b1506ab54e`, App notary submission `6fc7df94-dde2-4e20-953d-53a3f8904a7e`, DMG notary submission `60e262b6-af85-4a9d-a9f0-6bc489479b27`) passed all 6 checks: 50s TLS idle keep-alive reuse (`both requests answered after 50s idle`), 2 MiB upload (TUN `3.047027s`, Transparent Proxy `3.122896s`), and 3-cycle / 6-phase NIC uplink switch recovery (TUN: `0/0/2/0/0/1 s`; Transparent Proxy: `2/2/0/0/0/2 s`; deadline 15s, zero manual reconnects). See `Docs/ReleaseExceptions/2.1.0.md`.
+
 ## [2.0.7] - 2026-11-05
 
 ### Fixed

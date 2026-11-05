@@ -287,7 +287,7 @@ let defaultNotesContent = """
 <div class="section">
   <span class="section-tag tag-improve">✨ 严苛真机与多环境验证</span>
   <ul>
-    <li><strong>物理真机 Mac mini 全量通过</strong>：Apple Silicon 真机环境全量 182 项测试门禁、空闲长连接复用与网络切换自愈 100% 通过。</li>
+    <li><strong>全量隔离环境验收通过</strong>：Apple Silicon 隔离环境全量测试门禁、空闲长连接复用与网络切换自愈 100% 通过。</li>
     <li><strong>UI 卡顿与内存预算双 Profile 达标</strong>：常规流与万条规则/500节点重载切页 p95 均保持在 132 ms 左右，内存占用平稳控制在 66-84 MB 预算内。</li>
   </ul>
 </div>

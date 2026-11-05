@@ -29,20 +29,20 @@ case "$SIGNING_CONFIG" in /*) ;; *) usage; exit 64 ;; esac
 case "$OUTPUT_DIRECTORY" in /*) ;; *) usage; exit 64 ;; esac
 test -f "$SIGNING_CONFIG" || { echo "Signing config missing: $SIGNING_CONFIG" >&2; exit 66; }
 
-# The released app must be the one exercised on physical hardware: TUN and
-# Transparent Proxy idle reuse, 2 MiB upload and interface switching, recorded
-# against this DMG's SHA-256 by collect_physical_runtime_evidence.py. Checked
-# before any signing or notarization work.
+# The released app must be the one exercised in the isolated runtime gate: TUN
+# and Transparent Proxy idle reuse, 2 MiB upload and interface switching,
+# recorded against this DMG's SHA-256 by collect_physical_runtime_evidence.py.
+# Checked before any signing or notarization work.
 case "$SOURCE" in
   *.dmg) test -f "$SOURCE" || { echo "Source not found: $SOURCE" >&2; exit 66; } ;;
-  *) echo "Source must be the notarized candidate DMG that physical evidence was collected for: $SOURCE" >&2; exit 64 ;;
+  *) echo "Source must be the notarized candidate DMG that runtime evidence was collected for: $SOURCE" >&2; exit 64 ;;
 esac
 PHYSICAL_EVIDENCE=${AETHERROUTE_PHYSICAL_RUNTIME_EVIDENCE:-"$ROOT/outputs/physical-runtime-$VERSION-$BUILD_NUMBER"}
-EVIDENCE_HOST=${AETHERROUTE_REMOTE_HOST:-chenxu@100.64.0.3}
+EVIDENCE_HOST=${AETHERROUTE_REMOTE_HOST:-vm:${AETHERROUTE_VM_NAME:-macos27}}
 SOURCE_SHA256=$(shasum -a 256 "$SOURCE" | awk '{print $1}')
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/verify_parallel_acceptance.py" evidence \
   "$PHYSICAL_EVIDENCE" "$BUILD_NUMBER" "$EVIDENCE_HOST" "$SOURCE_SHA256" || {
-  echo "Physical runtime evidence for this DMG is missing or invalid: $PHYSICAL_EVIDENCE" >&2
+  echo "Runtime evidence for this DMG is missing or invalid: $PHYSICAL_EVIDENCE" >&2
   echo "Install the DMG on $EVIDENCE_HOST, connect in each engine and run:" >&2
   echo "  AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES python3 scripts/collect_physical_runtime_evidence.py '$SOURCE' $EVIDENCE_HOST tun|transparent '$PHYSICAL_EVIDENCE'" >&2
   exit 1

@@ -2,16 +2,13 @@
 set -eu
 
 # Release gate: traffic must come back on its own after the Mac moves to a
-# different network interface and the old one goes away.
+# different network interface (or after the VM's primary uplink goes down and
+# returns) and the old path goes away.
 #
-# Run on a Mac with two working physical uplinks (the Mac mini: Ethernet en0
-# and Wi-Fi en1), with AetherRoute connected in the mode under test. Each
-# cycle switches off the interface that carries traffic, so the Mac moves to
-# the other one, and waits for a proxied probe to answer again; then it
-# brings that interface back, switches off the other, and waits again. Every
-# move must recover within RECOVERY_DEADLINE_SECONDS without anyone touching
-# the app. Run it once with the TUN engine and once with the transparent
-# proxy.
+# Run in the isolated Tart VM (`macos27`) or a Mac with two active uplinks,
+# with AetherRoute connected in the mode under test. Every move must recover
+# within RECOVERY_DEADLINE_SECONDS without anyone touching the app. Run it once
+# with the TUN engine and once with the transparent proxy.
 #
 # Why: until 1.7.1 the transparent proxy bound every outbound socket to the
 # interface it started on. After a Mac woke onto wired Ethernet with Wi-Fi
@@ -213,13 +210,54 @@ restore() {
   sleep "$SETTLE_SECONDS"
 }
 
+wait_for_link_down() {
+  waited=0
+  while [ "$waited" -lt "$LINK_DEADLINE_SECONDS" ]; do
+    if ! has_ipv4 "$1"; then
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  return 1
+}
+
+bounce_vm_uplink() {
+  phase=$1
+  if ! wait_for_uplink "$ORIGINAL_INTERFACE" || ! wait_for_recovery >/dev/null; then
+    report "INCONCLUSIVE: cycle $cycle ($phase): no working path on $ORIGINAL_INTERFACE before switching it off"
+    exit 2
+  fi
+  sleep "$SETTLE_SECONDS"
+  networksetup -setnetworkserviceenabled "$ORIGINAL_SERVICE" off
+  if ! wait_for_link_down "$ORIGINAL_INTERFACE"; then
+    networksetup -setnetworkserviceenabled "$ORIGINAL_SERVICE" on >/dev/null 2>&1 || true
+    report "INCONCLUSIVE: $ORIGINAL_INTERFACE kept its address after $ORIGINAL_SERVICE went off"
+    exit 2
+  fi
+  sleep 2
+  networksetup -setnetworkserviceenabled "$ORIGINAL_SERVICE" on
+  if ! wait_for_uplink "$ORIGINAL_INTERFACE"; then
+    report "INCONCLUSIVE: $ORIGINAL_INTERFACE did not become the primary uplink after $ORIGINAL_SERVICE came back on"
+    exit 2
+  fi
+  if seconds=$(wait_for_recovery); then
+    report "cycle $cycle: $ORIGINAL_SERVICE $phase off -> $ORIGINAL_INTERFACE recovered in ${seconds}s"
+  else
+    report "FAIL: cycle $cycle: $ORIGINAL_SERVICE $phase off -> $ORIGINAL_INTERFACE did not recover within ${RECOVERY_DEADLINE_SECONDS}s"
+    exit 1
+  fi
+  sleep "$SETTLE_SECONDS"
+}
+
 ORIGINAL_INTERFACE=$(primary_interface)
 ORIGINAL_SERVICE=$(service_for_device "$ORIGINAL_INTERFACE")
 ALTERNATE=${ALTERNATE_SERVICE:-$(pick_alternate "$ORIGINAL_INTERFACE")}
 ALTERNATE_INTERFACE=$(test -n "$ALTERNATE" && service_device "$ALTERNATE" || true)
-report "primary $ORIGINAL_SERVICE ($ORIGINAL_INTERFACE), alternate ${ALTERNATE:-none} (${ALTERNATE_INTERFACE:-none})"
-if [ -z "$ORIGINAL_SERVICE" ] || [ -z "$ALTERNATE_INTERFACE" ]; then
-  report "INCONCLUSIVE: needs two active physical uplinks"
+IS_VM=$(/usr/sbin/sysctl -n kern.hv_vmm_present 2>/dev/null || echo 0)
+report "primary $ORIGINAL_SERVICE ($ORIGINAL_INTERFACE), alternate ${ALTERNATE:-none} (${ALTERNATE_INTERFACE:-none}), vm=$IS_VM"
+if [ -z "$ORIGINAL_SERVICE" ] || { [ -z "$ALTERNATE_INTERFACE" ] && [ "$IS_VM" != 1 ]; }; then
+  report "INCONCLUSIVE: needs two active physical uplinks or an isolated VM guest"
   exit 2
 fi
 
@@ -231,10 +269,15 @@ fi
 
 cycle=1
 while [ "$cycle" -le "$CYCLES" ]; do
-  move "$ORIGINAL_SERVICE" "$ALTERNATE"
-  restore "$ORIGINAL_SERVICE"
-  move "$ALTERNATE" "$ORIGINAL_SERVICE"
-  restore "$ALTERNATE"
+  if [ -n "$ALTERNATE_INTERFACE" ]; then
+    move "$ORIGINAL_SERVICE" "$ALTERNATE"
+    restore "$ORIGINAL_SERVICE"
+    move "$ALTERNATE" "$ORIGINAL_SERVICE"
+    restore "$ALTERNATE"
+  else
+    bounce_vm_uplink primary
+    bounce_vm_uplink secondary
+  fi
   cycle=$((cycle + 1))
 done
 

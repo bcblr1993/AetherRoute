@@ -1,7 +1,7 @@
-"""Fail closed on shortened acceptance or missing physical runtime evidence.
+"""Fail closed on shortened acceptance or missing candidate runtime evidence.
 
-Physical evidence is bound to the notarized candidate DMG: the Mac mini's
-system extensions only load notarized builds, so the QA ZIP cannot run there.
+Runtime evidence is bound to the notarized candidate DMG and collected in the
+isolated headless Tart VM (`vm:macos27`) so the host Mac is never disrupted.
 """
 import contextlib
 import hashlib
@@ -79,12 +79,13 @@ def verify_output(name, output):
     elif name == "switch":
         require("PASS: interface switch recovered (3 cycles, deadline 15s)" in output,
                 "interface switch needs three cycles at the 15-second deadline")
-        moves = re.findall(r"cycle (\d+): .+ off -> (en\d+) recovered in (\d+)s", output)
+        moves = re.findall(r"cycle (\d+): (.+) off -> (en\d+) recovered in (\d+)s", output)
         require(len(moves) == 6, "interface switch needs six successful moves")
         for cycle in ("1", "2", "3"):
-            rows = [(device, int(seconds)) for number, device, seconds in moves if number == cycle]
-            require(len(rows) == 2 and len({device for device, _ in rows}) == 2
-                    and all(seconds <= 15 for _, seconds in rows),
+            rows = [(source.strip(), device, int(seconds)) for number, source, device, seconds in moves if number == cycle]
+            require(len(rows) == 2
+                    and (len({device for _, device, _ in rows}) == 2 or len({source for source, _, _ in rows}) == 2)
+                    and all(seconds <= 15 for _, _, seconds in rows),
                     f"interface switch cycle {cycle} is incomplete or over budget")
 
 

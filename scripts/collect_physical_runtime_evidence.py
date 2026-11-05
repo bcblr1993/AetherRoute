@@ -1,10 +1,10 @@
-"""Collect one engine's runtime receipts on the dedicated, already connected Mac.
+"""Collect one engine's runtime receipts in the isolated Tart VM (`vm:macos27`).
 
-The candidate is the notarized candidate DMG installed on that Mac; the same
+The candidate is the notarized candidate DMG installed in that VM; the same
 DMG is later packaged, and package_release_dmg.sh refuses it without receipts.
 
 Never installs, launches, or changes the candidate's mode. Interface switching
-does disrupt the designated remote Mac, hence the explicit hardware opt-in.
+disrupts the guest VM's uplinks, hence the explicit opt-in and guest UUID check.
 """
 import hashlib
 import json
@@ -21,19 +21,40 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 
 
+def resolve_ssh_target(host):
+    if host.startswith("vm:"):
+        vm_name = host.split(":", 1)[1]
+        require(re.fullmatch(r"[A-Za-z0-9._-]+", vm_name), "invalid Tart VM name")
+        vm_user = os.environ.get("AETHERROUTE_VM_USER", "chenxu")
+        vm_ip = os.environ.get("AETHERROUTE_VM_IP", "").strip()
+        if not vm_ip:
+            result = subprocess.run(["tart", "ip", vm_name], capture_output=True, text=True, timeout=15)
+            vm_ip = result.stdout.strip()
+        require(re.fullmatch(r"[0-9.]+", vm_ip), f"cannot resolve IP for Tart VM {vm_name}")
+        return f"{vm_user}@{vm_ip}"
+    return host
+
+
 def collect(candidate, host, engine, directory):
     require(os.environ.get("AETHERROUTE_ALLOW_PHYSICAL_RUNTIME") == "YES",
-            "requires AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES for the dedicated test Mac")
-    # Keep this disruptive gate pinned to the SOP's hardware, never this Mac,
+            "requires AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES for the dedicated test VM")
+    # Keep this disruptive gate pinned to the isolated Tart VM, never this Mac,
     # a loopback alias, or an arbitrary user-supplied SSH endpoint.
-    require(host == "chenxu@100.64.0.3", "physical gate only supports the designated Mac mini")
+    expected_vm = f"vm:{os.environ.get('AETHERROUTE_VM_NAME', 'macos27')}"
+    require(host == expected_vm, f"runtime gate only supports the designated Tart VM ({expected_vm})")
     require(engine in ("tun", "transparent"), "engine must be tun or transparent")
     candidate = Path(candidate)
     build, hashes = read_candidate(candidate)
     digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+    ssh_target = resolve_ssh_target(host)
+    ssh_key = Path(os.environ.get("AETHERROUTE_VM_SSH_KEY", str(Path.home() / ".ssh/id_ed25519")))
+    ssh_base = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
+                "-o", "StrictHostKeyChecking=accept-new"]
+    if ssh_key.is_file():
+        ssh_base += ["-o", "IdentitiesOnly=yes", "-i", str(ssh_key)]
 
     def remote(command, script=None, timeout=30):
-        return subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host, command],
+        return subprocess.run([*ssh_base, ssh_target, command],
                               input=script, capture_output=True, text=True, timeout=timeout)
 
     def identity():
@@ -43,7 +64,9 @@ def collect(candidate, host, engine, directory):
         pattern = r'"IOPlatformUUID"\s*=\s*"([^"]+)"'
         remote_uuid = re.search(pattern, hardware.stdout)
         local_uuid = re.search(pattern, local.stdout)
-        require(remote_uuid and local_uuid and remote_uuid[1] != local_uuid[1], "refusing the current Mac or unverified hardware")
+        require(remote_uuid and local_uuid and remote_uuid[1] != local_uuid[1], "refusing the current Mac or unverified guest")
+        vmm = remote("/usr/sbin/sysctl -n kern.hv_vmm_present")
+        require(vmm.returncode == 0 and vmm.stdout.strip() == "1", "refusing a non-VM host")
         for name, expected in hashes.items():
             result = remote("shasum -a 256 " + shlex.quote("/Applications/" + name))
             require(result.returncode == 0 and result.stdout.split()[0] == expected,
@@ -67,7 +90,7 @@ def collect(candidate, host, engine, directory):
         identity()
         if name == "switch":
             env = {key: value for key, value in os.environ.items() if not key.startswith("AETHERROUTE_SWITCH_")}
-            result = subprocess.run(["sh", str(SCRIPTS / script), host], env=env,
+            result = subprocess.run(["sh", str(SCRIPTS / script), ssh_target], env=env,
                                     capture_output=True, text=True, timeout=timeout)
         else:
             result = remote("sh -s", (SCRIPTS / script).read_text(), timeout=timeout)
@@ -80,7 +103,7 @@ def collect(candidate, host, engine, directory):
         record["checks"][name] = {"exit_status": result.returncode, "log": log.name,
                                   "sha256": hashlib.sha256(log.read_bytes()).hexdigest()}
     record_path.write_text(json.dumps(record, indent=2) + "\n")
-    print(f"Physical {engine} evidence saved: {record_path}")
+    print(f"Runtime {engine} evidence saved: {record_path}")
 
 
 if __name__ == "__main__":

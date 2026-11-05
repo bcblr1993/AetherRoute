@@ -47,6 +47,15 @@ if [ -n "$MIHOMO_SHA256" ]; then
   test "$actual" = "$MIHOMO_SHA256" || { echo "mihomo archive checksum mismatch" >&2; exit 1; }
 fi
 REMOTE=${AETHER_DIFFERENTIAL_HOST:-}
+case "$REMOTE" in
+  vm|vm:*)
+    TARGET_VM=${REMOTE#vm:}
+    [ "$TARGET_VM" != vm ] || TARGET_VM=${AETHERROUTE_VM_NAME:-macos27}
+    vm_ip=$(tart ip "$TARGET_VM" 2>/dev/null || true)
+    test -n "$vm_ip" || { echo "cannot resolve IP for Tart VM $TARGET_VM" >&2; exit 69; }
+    REMOTE="${AETHERROUTE_VM_USER:-chenxu}@$vm_ip"
+    ;;
+esac
 # A full tunnel owns the default route through a utun; a transparent proxy
 # keeps the physical default route, but its running provider shows.
 tunnel_active() {
@@ -56,7 +65,7 @@ tunnel_active() {
 }
 if [ -z "$REMOTE" ] && [ "${AETHER_DIFFERENTIAL_ALLOW_TUNNEL:-0}" != 1 ] && tunnel_active; then
   echo "a VPN, AetherRoute tunnel or transparent proxy is active; its routing would skew the comparison." >&2
-  echo "set AETHER_DIFFERENTIAL_HOST=user@host to run on a clean machine, or AETHER_DIFFERENTIAL_ALLOW_TUNNEL=1" >&2
+  echo "set AETHER_DIFFERENTIAL_HOST=vm:macos27 to run in the clean Tart VM, or AETHER_DIFFERENTIAL_ALLOW_TUNNEL=1" >&2
   exit 69
 fi
 

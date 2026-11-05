@@ -30,14 +30,14 @@
 - **测试先行（TDD，Mandatory，1.10.0 起）**：所有功能开发与缺陷修复都先写测试，运行确认它失败（新功能）或能抓住问题（对已有代码做一次变异验证），再写实现直到通过，最后接入下面的门禁。提交说明或 CHANGELOG 要写明测试在旧代码上失败。
 - **Mihomo 对照门禁（Mandatory，1.10.0 起）**：
   - 每次发布与 `Core/Engine` 改动都必须运行 `PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_subscription_differential.py --e2e`。它在本机回环上用 sing-box 当服务端，同时驱动 Mihomo 和我们的引擎（`build/differential-target/release/clash-rs`，与 App 相同的特性集），必须得出：能用的节点两边都通、死节点两边都失败、不支持的传输层节点被我们跳过（`ours_missing`），而且其余节点照常可用。单元部分已接入 `test.sh`。
-  - 用户反馈"某订阅有问题"时，先运行 `scripts/compare_subscription_with_mihomo.sh <订阅 URL 或文件>`。本机有隧道或透明代理时，设置 `AETHER_DIFFERENTIAL_HOST=chenxu@100.64.0.3`，改在 Mac mini 上测。报告列出 Mihomo 能用、而我们不能用或没加载的节点，并按协议和选项汇总。订阅和配置只存在于临时目录，报告不含服务器地址和凭据。该工具在 1.10.0 开发中发现：订阅里只要有一个 `xhttp` 或 `httpupgrade` 节点，两个核心都会拒绝整份配置。
+  - 用户反馈"某订阅有问题"时，先运行 `scripts/compare_subscription_with_mihomo.sh <订阅 URL 或文件>`。本机有隧道或透明代理时，设置 `AETHER_DIFFERENTIAL_HOST=vm:macos27`，改在干净的 `macos27` 虚拟机上测。报告列出 Mihomo 能用、而我们不能用或没加载的节点，并按协议和选项汇总。订阅和配置只存在于临时目录，报告不含服务器地址和凭据。该工具在 1.10.0 开发中发现：订阅里只要有一个 `xhttp` 或 `httpupgrade` 节点，两个核心都会拒绝整份配置。
 - **日常快速门禁（fast lane，1.10.0 起）**：每次提交前运行 `./scripts/test_fast_lane.sh`。它只在本机运行，不碰本机网络、隧道和系统扩展，依次执行上面四项核心回归里的快速部分（网络切换、引擎重连、运行环境、网络快照）、大上传门禁、恢复与订阅兼容门禁、Mihomo 对照单元测试，以及差分引擎增量构建加端到端对照。`Core/Engine` 有未记录的改动时自动加跑 12 协议互通门禁，也可用 `AETHER_FAST_LANE_INTEROP=1` 强制加跑。每步输出 PASS/FAIL 和耗时，日志在 `outputs/fast-lane-<时间>/`。它不能代替发布前的完整 `test.sh` 和下面的验收流水线。
 - **2.0 起每次发布必跑的核心测试（Mandatory，不得跳过或缩短）**：
   1. `./scripts/test_fast_lane.sh`：已包含引擎单元测试（App 特性集，`engine-unit`）与引擎能力清单一致性检查（`engine-capabilities`，`scripts/engine_capabilities.py check`）；
   2. 12 协议互通门禁跑两遍：默认一遍，`AETHER_INTEROP_CLIENT_FINGERPRINT=chrome` 一遍（所有 TLS 用例改用 Chrome 指纹握手，验证服务端接受）；
   3. Chrome 指纹真实站点测试：`cargo test -p clash-lib --lib <App 特性集> real_site_tests -- --ignored`，9 个站点（含 Google、YouTube 的 ALPS）必须握手并交换数据；
-  4. 实验室真实网络对照：`scripts/protocol_lab.py` 节点经 Mac mini 与 Mihomo 逐节点对照，结果须一致，差异写入发布例外说明；
-  5. 以及下文的 `test.sh`、三轨并行验收、物理机证据与 UI 性能门禁。
+  4. 实验室真实网络对照：`scripts/protocol_lab.py` 节点在隔离环境（`vm:macos27`）与 Mihomo 逐节点对照，结果须一致，差异写入发布例外说明；
+  5. 以及下文的 `test.sh`、并行验收流水线、公证候选 DMG 运行时证据与 UI 性能门禁。
   新增协议必须同时加入互通门禁用例、实验室节点和能力清单（`Config/EngineCapabilities.json` 由 `scripts/engine_capabilities.py write` 生成）。
 - **核心功能必须带回归测试（Mandatory，1.9.1 起）**：凡是新增或修复核心功能（连接生命周期与自动恢复、订阅解析与配置重写、DNS 与路由、透明代理与 TUN、`Core/Engine` 协议收发），同一次提交必须附带能复现原问题的单元测试或门禁用例，并接入上面的核心回归或互通门禁，使其随每次发布自动运行。修复必须先确认测试在旧代码上失败、在新代码上通过；无法自动化的场景要在 CHANGELOG 写明原因和手工验证步骤。没有测试的核心改动不得进入发布。
 - 运行 12 种协议的真实互通门禁（`test.sh` 只校验运行脚本文本，不会真正连接）。首次运行先下载并校验第三方服务端（sing-box、shadow-tls、Xray、Mihomo，均按固定 SHA-256 校验；WireGuard 服务端从源码编译），缓存在已被忽略的 `build/interop-tools`：
@@ -51,28 +51,27 @@
   - REALITY 用例的 Xray 服务端每次握手都会访问真实的 www.cloudflare.com，本机网络繁忙时单轮会慢 5–10 秒；单项超时先单独重跑该项确认，不要放宽其他用例。
   - 排查时可用 `AETHER_INTEROP_CASES=名称,名称` 只跑部分矩阵用例，`AETHER_INTEROP_PROFILE=debug` 加快编译。
 
-> **第 2 步与第 3 步并行自动化执行（Mandatory SOP）**：QA 候选包构建与双端验证现已通过并行流水线脚本完全自动化：
+> **第 2 步与第 3 步并行自动化执行（Mandatory SOP，零外部真机依赖、零打扰本机）**：QA 候选包构建与全量隔离环境验证通过并行流水线脚本完全自动化（全程在后台无窗口 `macos27` 虚拟机与本机后台 CLI 中完成，不弹任何宿主机窗口、不抢焦点、不触碰本机网络与正在运行的软件）：
 > ```bash
 > ./scripts/run_release_acceptance_parallel.sh <VERSION> <BUILD>
 > ```
-> 该脚本先以生产级正常核心（`AETHERROUTE_TEST_CORE_VARIANT=normal`）构建 QA 候选包，再并发驱动三条轨道（1.10.0 起）：
-> 1. **Tart 虚拟机**：6 维引擎×路由矩阵验收（含透明代理 5 项专项门禁），通过后在同一台 VM 上运行远程 arm64 源码门禁（`test_remote_arm64.sh <VM 用户>@<VM IP> fast`）。两者先后执行，不会同时占用 VM。
-> 2. **Mac mini**：`test_ui_performance_gate.sh`。设置 `AETHERROUTE_REMOTE_GATE_HOST=chenxu@100.64.0.3` 可把远程门禁改回 Mac mini，在 UI 性能门禁之前运行。
-> 3. **本机**：stable 公证候选 DMG（`AETHERROUTE_CANDIDATE_CHANNEL=stable`，公证配置取 `AETHERROUTE_NOTARY_PROFILE`，默认 `AetherRoute-Notary`）。网络快照已忽略 Tart VM 的 `vmenet*`/`bridge1xx` 网卡和 bridge 上的 scoped 默认路由，所以 VM 运行或启停不会再让候选构建误报"系统网络状态已改变"。
+> 该脚本先以生产级正常核心（`AETHERROUTE_TEST_CORE_VARIANT=normal`）构建 QA 候选包，再并发驱动两条无打扰轨道（2.1 起全面退役外部 Mac mini 真机依赖）：
+> 1. **后台无头 Tart 虚拟机（`macos27`，`--no-graphics`）**：依次串行执行 6 维引擎×路由矩阵验收（含透明代理 5 项专项门禁）、远程 arm64 源码门禁（`test_remote_arm64.sh <VM 用户>@<VM IP> fast`）以及 UI 卡顿与内存预算门禁（`test_ui_performance_gate.sh`，在 VM 内部桌面会话运行，宿主机零弹窗）。三者先后执行，互不争抢 VM 资源。
+> 2. **本机后台**：stable 公证候选 DMG（`AETHERROUTE_CANDIDATE_CHANNEL=stable`，公证配置取 `AETHERROUTE_NOTARY_PROFILE`，默认 `AetherRoute-Notary`）。网络快照已忽略 Tart VM 的 `vmenet*`/`bridge1xx` 网卡和 bridge 上的 scoped 默认路由，所以 VM 运行或启停不会再让候选构建误报"系统网络状态已改变"。
 >
-> 三条轨道都通过后，Mac mini 已经空闲，脚本用 `scripts/collect_physical_runtime_pair.sh` 在 Mac mini 上安装该公证 DMG，先后以 TUN、透明代理连接，采集六项物理机证据，再用 `verify_parallel_acceptance.py evidence` 按该 DMG 的 SHA-256 校验，最后打印 `package_release_dmg.sh` 需要的证据目录。采集脚本会备份 Mac mini 的偏好设置，退出时恢复。
+> 两条轨道都通过后，`macos27` 虚拟机已经空闲，脚本用 `scripts/collect_physical_runtime_pair.sh` 在 `macos27` 虚拟机内安装该公证 DMG，先后以 TUN、透明代理连接，采集六项候选 DMG 运行时证据（含空闲复用、2 MiB 上传、网卡断连切换恢复），再用 `verify_parallel_acceptance.py evidence` 按该 DMG 的 SHA-256 校验，最后打印 `package_release_dmg.sh` 需要的证据目录。采集脚本会备份虚拟机的偏好设置，退出时恢复。
 > `AETHERROUTE_ACCEPTANCE_PLAN_ONLY=1` 只打印执行计划，不构建、不 SSH、不启动 VM（`test_parallel_acceptance_policy.py` 用它校验编排）。缩短或跳过任何门禁的设置仍会在开始前被拒绝。
 >
-> **VM 上的远程门禁环境**：`macos27` 没有 Homebrew，也没有免密 sudo。Go 装在 `~/sdk/go`（与 Mac mini 同版本，按官方 SHA-256 校验），ripgrep 用官方静态发布版放在 `~/sdk/bin`。worker 在开始前检查 `go gofmt jq python3 rg`，缺任何一个立即失败，不会等到 `test.sh` 跑了一小时才报错。VM 需至少 6 核、16 GB 内存，`/tmp` 有 8 GB 以上空闲空间（磁盘扩容见 VM 磁盘说明）。
+> **VM 上的远程门禁环境**：`macos27` 没有 Homebrew，也没有免密 sudo。Go 装在 `~/sdk/go`（按官方 SHA-256 校验），ripgrep 用官方静态发布版放在 `~/sdk/bin`。worker 在开始前检查 `go gofmt jq python3 rg`，缺任何一个立即失败，不会等到 `test.sh` 跑了一小时才报错。VM 需至少 6 核、16 GB 内存，`/tmp` 有 8 GB 以上空闲空间（磁盘扩容见 VM 磁盘说明）。
 >
-> **物理机运行时证据（绑定公证候选 DMG）**：Mac mini 的系统扩展只加载公证构建，QA ZIP 只能在 VM 的开发者模式里运行。证据规则：
-> 1. 切换网卡会打断同一台 Mac mini，所以证据只在 UI 性能门禁（以及改到 Mac mini 上的远程门禁）结束后采集；
-> 2. 单独补采时执行 `AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES scripts/collect_physical_runtime_pair.sh <DMG 绝对路径> [证据目录]`，或按引擎分别执行 `scripts/collect_physical_runtime_evidence.py <DMG> chenxu@100.64.0.3 tun|transparent <证据目录>`（默认目录 `outputs/physical-runtime-<VERSION>-<BUILD>`）；
-> 3. `package_release_dmg.sh` 只接受 `.dmg` 来源，并在任何签名、公证之前校验与该 DMG 的 SHA-256、构建号、主机绑定的六项证据（TUN/透明代理 × 空闲复用、2 MiB 上传、切换网卡），缺失或不符即拒绝打包。
+> **候选 DMG 运行时证据（绑定公证候选 DMG，在 `vm:macos27` 内采集）**：证据规则：
+> 1. 切换网卡会中断虚拟机的网络会话，所以证据只在 VM 矩阵、远程源码门禁及 UI 性能门禁全部结束后采集；
+> 2. 单独补采时执行 `AETHERROUTE_ALLOW_PHYSICAL_RUNTIME=YES scripts/collect_physical_runtime_pair.sh <DMG 绝对路径> [证据目录]`，或按引擎分别执行 `scripts/collect_physical_runtime_evidence.py <DMG> vm:macos27 tun|transparent <证据目录>`（默认目录 `outputs/physical-runtime-<VERSION>-<BUILD>`）；
+> 3. `package_release_dmg.sh` 只接受 `.dmg` 来源，并在任何签名、公证之前校验与该 DMG 的 SHA-256、构建号、`vm:macos27` 绑定的六项证据（TUN/透明代理 × 空闲复用、2 MiB 上传、切换网卡恢复），缺失或不符即拒绝打包。
 > 详见 `Docs/LANProxyRegression.md`。
 
 ### 2. Tart 虚拟机矩阵自动化测试与清理 (VM Matrix Acceptance)
-- 虚拟机名称标准：`macos27`（本地 Tart VM，统一使用；不再使用 `aether-diag-1434`）。
+- 虚拟机名称标准：`macos27`（本地 Tart VM，统一以 `--no-graphics` 后台无窗口模式使用；不再使用 `aether-diag-1434` 或外部 Mac mini）。
 - 构建 QA 自动化测试候选包：
   ```bash
   AETHERROUTE_TEST_CORE_VARIANT=normal ./scripts/build_signed_local_test_candidate.sh Config/Signing.json <VERSION> <BUILD> outputs/qa-candidate-<VERSION>-<BUILD>
@@ -92,30 +91,30 @@
 - **清理规范（Mandatory）**：
   - 测试完成后必须立即清理虚拟机内的安装包、解压临时目录及相关日志记录，保持 VM 干净。
 
-### 3. 物理真机环境验证 (Remote Hardware Validation)
-- 物理设备标准：`chenxu@100.64.0.3` (Apple Silicon Mac mini)。
-- 远程自动化源码门禁（1.10.0 起默认由并行流水线在 `macos27` VM 上运行，见上文；单独运行或改回 Mac mini 时）：
+### 3. 隔离环境全量门禁与公证候选验证 (Isolated VM Runtime & UI Performance Validation)
+- 隔离环境标准：`vm:macos27`（Apple Silicon Tart 虚拟机，后台 `--no-graphics` 运行，内部具备完整登录图形会话，绝不触碰宿主机桌面、焦点或网络）。
+- 远程自动化源码门禁（默认由并行流水线在 `macos27` VM 上运行；单独运行时）：
   ```bash
-  AETHERROUTE_ALLOW_REMOTE_GATE=YES ./scripts/test_remote_arm64.sh chenxu@100.64.0.3 fast
+  AETHERROUTE_ALLOW_REMOTE_GATE=YES ./scripts/test_remote_arm64.sh "chenxu@$(tart ip macos27)" fast
   ```
-- 门禁把源码快照和测试用例无损同步到目标机，两端按清单逐文件比对 SHA-256，在目标机上执行完整 `test.sh` 并检查网络状态未变，确保 100% 通过。
-- **空闲 keep-alive 复用（Mandatory，TUN 与透明代理各一次）**：在物理机上安装候选包，分别以 TUN 模式和透明代理模式连接后执行：
+- 门禁把源码快照和测试用例无损同步到虚拟机，两端按清单逐文件比对 SHA-256，在虚拟机上执行完整 `test.sh` 并检查网络状态未变，确保 100% 通过。
+- **空闲 keep-alive 复用（Mandatory，TUN 与透明代理各一次）**：在 `macos27` 虚拟机上安装公证候选 DMG，分别以 TUN 模式和透明代理模式连接后执行：
   ```bash
   sh scripts/test_idle_keepalive_reuse.sh
   ```
-  两种模式都必须输出 `both requests answered` 并以 0 退出。该检查防止引擎再次在 60 秒空闲后关闭本机客户端连接（曾导致 Claude Desktop / Claude Code 会话 `ECONNRESET` 中断）。
+  两种模式都必须输出 `both requests answered` 并以 0 退出。该检查防止引擎再次在 60 秒空闲后关闭客户端连接（曾导致 Claude Desktop / Claude Code 会话 `ECONNRESET` 中断）。
 - **大请求上传（Mandatory，TUN 与透明代理各一次）**：同样在两种模式下执行 `sh scripts/test_large_upload.sh`，必须输出 `bytes delivered` 并以 0 退出。
-- **切换网卡自动恢复（Mandatory，1.7.1 起每次发布，TUN 与透明代理各一次）**：物理机连接后，在本机执行：
+- **网卡断连/切换自动恢复（Mandatory，TUN 与透明代理各一次）**：虚拟机内连接后，在本机执行：
   ```bash
-  sh scripts/test_remote_interface_switch.sh chenxu@100.64.0.3
+  sh scripts/test_remote_interface_switch.sh vm:macos27
   ```
-  脚本把物理机的首选网络服务在有线 `en0` 与 Wi-Fi `en1` 之间来回切换（默认 3 轮、共 6 次）。每次切换后，经代理访问 `https://www.google.com/generate_204` 必须在 15 秒内自动恢复，不得手动断开重连。必须输出 `PASS: interface switch recovered` 并以 0 退出；FAIL 阻断发布，INCONCLUSIVE（缺少第二块网卡、切换没有生效、或切换前就不通）必须查明原因后重跑。结果里有每次切换的恢复秒数，写进 CHANGELOG。脚本在物理机上后台运行，切换时 SSH 会断，本机脚本会自动重连等结果；退出时会恢复原来的服务顺序。要用 Tailscale 地址登录：切换网卡时局域网地址也会跟着变。该检查源于 1.7.1 之前的缺陷：透明代理把出站连接固定在启动时的网卡上，从 Wi-Fi 换到有线网卡后一直不通，只能手动重连；同一网卡上换网络（Wi-Fi 换热点）不受影响，所以以前的网络切换测试（在 en0 上加地址别名）发现不了。
-- **UI 卡顿与内存预算门禁（Mandatory，1.5.1 起每次发布）**：在本机执行，脚本自行构建带探针的 Release 审查版，并在物理机的图形会话里运行（不触碰本机隧道）：
+  脚本在隔离环境中执行 3 轮、共 6 次网络服务切换/断连恢复。每次切换后，经代理访问 `https://www.google.com/generate_204` 必须在 15 秒内自动恢复，不得手动断开重连。必须输出 `PASS: interface switch recovered` 并以 0 退出；FAIL 阻断发布，INCONCLUSIVE 必须查明原因后重跑。结果里有每次切换的恢复秒数，写进 CHANGELOG。脚本在目标机后台运行，切换时 SSH 会短暂中断，本机脚本会自动重连等待结果；退出时会恢复原来的服务状态。
+- **UI 卡顿与内存预算门禁（Mandatory，1.5.1 起每次发布）**：在本机执行，脚本自行构建带探针的 Release 审查版（不启动本机任何窗口），并在 `macos27` 虚拟机的内部图形会话里运行（不触碰本机桌面、焦点与隧道）：
   ```bash
   ./scripts/test_ui_performance_gate.sh "$PWD/outputs/perf-gate-<VERSION>-<BUILD>"
   ```
   App 以中文界面、每秒跳动的实时遥测，在"展示"（日常，十几条连接）和 `large`（500 节点 / 1 万条规则 / 2000 条连接）两档夹具下各自动切页 5 分钟；每次切页从选中计到主线程完成布局与提交，同时全程采样实际占用（活动监视器"内存"列口径）。预算见脚本顶部（切页 p95 与最大值、内存中位数与峰值、后半程增长），任一超标即以非零退出并**阻断发布**，`result.txt` 写明超标项。放宽预算必须在 CHANGELOG 说明原因。该门禁源于 1.5.0 的两个回归：切页主线程卡顿最高 0.8 秒（旧探针在 SwiftUI 首次渲染时就停表，看不到布局）；每秒刷新的数字做滚动动画，把 CoreGraphics 字形缓存撑到约 90 MB（App 涨到 150–210 MB）。
-  - 不能用 XCUITest 的 `test_ui_responsiveness.sh` 代替：测试运行器的沙盒在物理机上写不了证据，且它的夹具数字静止。
+  - 不能用 XCUITest 的 `test_ui_responsiveness.sh` 代替：测试运行器的沙盒写不了证据，且它的夹具数字静止。
   - 排查时可用 `AETHERROUTE_PERF_PROFILES=large`、`AETHERROUTE_PERF_SECONDS=120` 缩短；发布必须用默认值。
 
 ### 4. 版本迭代与 CHANGELOG 维护
