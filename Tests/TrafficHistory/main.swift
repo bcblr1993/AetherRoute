@@ -39,6 +39,48 @@ import Foundation
         precondition(!idleHistory.hasActiveTraffic, "Zero-rate history samples must report no active traffic so 12 FPS TimelineView pauses")
         idleHistory.append(download: 512, upload: 0, at: origin.addingTimeInterval(6))
         precondition(idleHistory.hasActiveTraffic, "Non-zero rate sample must activate traffic history animation")
-        print("Traffic history passed: 1s/3s/10s samples, 30s retention, time axis, gaps, coalescing, clock rollback, active-traffic detection.")
+
+        // Memory telemetry history, peak tracking, sparkline normalization, and host footprint reader.
+        let hostFootprint = ProcessMemoryFootprint.currentBytes()
+        precondition(hostFootprint > 512 * 1_024, "Host process physical footprint (\(hostFootprint)) must be positive")
+
+        var memoryHistory = TrafficHistory()
+        memoryHistory.append(
+            download: 1_000,
+            upload: 500,
+            coreMemoryBytes: 14_000_000,
+            appMemoryBytes: 48_000_000,
+            at: origin
+        )
+        memoryHistory.append(
+            download: 2_000,
+            upload: 800,
+            coreMemoryBytes: 15_500_000,
+            appMemoryBytes: 51_200_000,
+            at: origin.addingTimeInterval(3)
+        )
+        memoryHistory.append(
+            download: 1_500,
+            upload: 600,
+            coreMemoryBytes: 14_800_000,
+            appMemoryBytes: 49_500_000,
+            at: origin.addingTimeInterval(6)
+        )
+        let visibleMemory = memoryHistory.visible(at: origin.addingTimeInterval(6))
+        precondition(visibleMemory.count == 3)
+        precondition(TrafficHistory.peakCoreMemory(in: visibleMemory) == 15_500_000)
+        precondition(TrafficHistory.peakAppMemory(in: visibleMemory) == 51_200_000)
+
+        let normalizedCore = TrafficHistory.normalizedMemorySeries(
+            visibleMemory.map(\.coreMemoryBytes)
+        )
+        precondition(normalizedCore.count == 3)
+        precondition(normalizedCore.allSatisfy { (0.15...0.85).contains($0) }, "Normalized memory sparkline must stay within breathing-room bounds: \(normalizedCore)")
+        precondition(normalizedCore[1] > normalizedCore[0] && normalizedCore[1] > normalizedCore[2], "Peak sample must sit highest on the sparkline")
+
+        let flatSeries = TrafficHistory.normalizedMemorySeries([48_000_000, 48_000_000, 48_000_000])
+        precondition(flatSeries == [0.5, 0.5, 0.5], "Steady memory must render centered rather than pinned to 0 or 1")
+
+        print("Traffic history passed: 1s/3s/10s samples, 30s retention, time axis, gaps, coalescing, clock rollback, active-traffic detection, memory telemetry.")
     }
 }

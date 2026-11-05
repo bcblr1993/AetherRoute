@@ -616,7 +616,7 @@ extension TunnelManager {
         let wave = UInt64((tick &* 7_919) % 1_000)
         let down = 180_000 + wave * 4_311
         let up = 24_000 + wave * 613
-        let connections = snapshot.connections.enumerated().map { index, flow in
+        var connections = snapshot.connections.enumerated().map { index, flow in
             let step = UInt64(index % 7 + 1)
             return ConnectionTelemetry(
                 transport: flow.transport,
@@ -632,12 +632,29 @@ extension TunnelManager {
                 sourceAppPath: flow.sourceAppPath
             )
         }
+        if tick.isMultiple(of: 2) {
+            connections.removeAll { $0.destination == "review-transient-flow.example" }
+        } else if !connections.contains(where: { $0.destination == "review-transient-flow.example" }) {
+            connections.append(
+                ConnectionTelemetry(
+                    transport: .tcp,
+                    destination: "review-transient-flow.example",
+                    destinationPort: 443,
+                    uploadTotal: up,
+                    downloadTotal: down,
+                    startedAtUnixMilliseconds: 1_700_000_000_000 &+ tick &* 1_000,
+                    rule: "MATCH",
+                    rulePayload: "",
+                    proxyChain: "Proxy"
+                )
+            )
+        }
         return NetworkTelemetrySnapshot(
             uploadBytesPerSecond: up,
             downloadBytesPerSecond: down,
             uploadTotal: snapshot.uploadTotal &+ up,
             downloadTotal: snapshot.downloadTotal &+ down,
-            memoryBytes: snapshot.memoryBytes,
+            memoryBytes: 12_240_000 &+ (wave % 400) &* 1_024,
             connections: connections,
             trafficTotals: snapshot.trafficTotals,
             reportsTrafficTotals: snapshot.reportsTrafficTotals

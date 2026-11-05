@@ -48,14 +48,17 @@ extension ButtonStyle where Self == AetherPressableButtonStyle {
 }
 
 private struct AetherNumericValueModifier<Value: Equatable>: ViewModifier {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let value: Value
     let countsDown: Bool
 
     func body(content: Content) -> some View {
+        // CoreGraphics caches a distinct interpolated variable-font CGFont in
+        // CGFontCacheGetLocalCache.local_font_cache for every intermediate
+        // animation frame of .numericText and never evicts it (~15.6 MB/hour on
+        // sidebar ConnectionCountBadge and latency badges). Swap digits in
+        // place with .identity while keeping .monospacedDigit() at call sites.
         content
-            .contentTransition(.numericText(countsDown: countsDown))
-            .animation(reduceMotion ? nil : AetherVisual.valueChange, value: value)
+            .contentTransition(.identity)
     }
 }
 

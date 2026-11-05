@@ -6,6 +6,31 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.0.7] - 2026-11-05
+
+### Fixed
+
+- **Main App `CGFontCache` 204–378 MB sawtooth memory leak & UI performance gate blind spot (`P1_CRITICAL`)**:
+  - Replace `.contentTransition(.numericText(countsDown: countsDown))` with `.contentTransition(.identity)` in `AetherNumericValueModifier` (`Sources/AetherRouteApp/AetherMotion.swift`). Continuous 8.5-hour (1,020 samples at 30s intervals) runtime telemetry proved that SwiftUI's rolling digit glyph interpolation on `ConnectionCountBadge`, `ProxyLatencyText`, and `DNSPageView` leaked ~2,048–2,560 B variable-font `CGFont` instances inside `CGFontCacheGetLocalCache.local_font_cache` (`libFontRegistry.dylib`), driving main App `Physical Footprint` from `174 MB` to `378 MB` (`Malloc Small` `58.9 -> 244.6 MB`, `heap non-object` `26,340 -> 96,498` nodes) at `+42.5 MB/hour` before partial cache eviction.
+  - Update `advancedReviewSnapshot` in `Sources/AetherRouteApp/TunnelManager+Telemetry.swift` so `AETHERROUTE_UI_REVIEW_LIVE=1` toggles a transient connection (`review-transient-flow.example`) on odd/even ticks, ensuring `connections.count` oscillates `N <-> N+1` during automated UI performance runs instead of remaining static.
+- **Secondary Fake-IP reverse mapping persistence & HTTP/MMTLS Host recovery (`P2_WARNING`)**:
+  - Update `FakeDns::restore_if_unmapped` (`Core/Engine/clash-lib/src/app/dns/fakeip/mod.rs`), `InMemStore` (`mem_store.rs`), and `EncryptedFileStore` (`encrypted_store.rs`) so when a domain `host` already has a newer primary forward IP `new_ip`, restoring an older secondary Fake-IP `old_ip -> host` still inserts and persists the reverse mapping in `ip_to_host` without clobbering `host -> new_ip`.
+  - Add `sniff_client_hello_or_http_host` in `Core/Engine/clash-lib/src/app/dispatcher/fake_ip_sni.rs` and wire it into `Dispatcher::dispatch_stream` (`dispatcher_impl.rs`) on ports 443 and 80 so both TLS ClientHello SNI and plaintext HTTP / WeChat MMTLS (`POST /mmtls/...` `Host:` headers) recover the hostname and self-heal unmapped Fake-IPs before `reverse_lookup`.
+- **Tunnel startup CoreFoundation notification storm (`182.818 notifications/sec`) & runtime resource inode preservation (`P2_WARNING`)**:
+  - Update `RoutingResourceStore` (`Sources/AetherRouteKit/RoutingResources.swift`) and `TransparentProxyRuntimeInput` (`Sources/AetherRouteTransparentProxySupport/TransparentProxyRuntimeInput.swift`) to skip `excludeFromBackup` on temporary `.staging-<UUID>` directories, short-circuit `setResourceValues` when `getxattr(..., "com.apple.metadata:com_apple_backup_excludeItem", ..., XATTR_NOFOLLOW) > 0` already holds on disk, and skip redundant `.atomic` rewrites in `writeProtected` when existing file bytes already match.
+- **Main App startup AppKit layout recursion (`_NSDetectedLayoutRecursion`) (`P2_WARNING`)**:
+  - Coalesce and defer `WindowChromeView.applyWindowChrome` onto the next main-runloop turn via `scheduleApplyWindowChrome()` (`Sources/AetherRouteApp/AetherRouteApp.swift`) instead of mutating `NSWindow` / `NSToolbar` properties synchronously inside `NSViewRepresentable.updateNSView` and `viewDidMoveToWindow` during active `NSWindow.layoutIfNeeded()` passes.
+- **Real-time Core & App physical memory telemetry display**:
+  - Sample the host app's Mach `TASK_VM_INFO` `phys_footprint` (`ProcessMemoryFootprint`) alongside the engine core footprint in `TrafficHistory` and `NetworkTelemetryViewModel`, surfacing live Core and App memory curves and summary badges across the menu bar popover, Overview, and Connections session bar (`Tests/TrafficHistory/main.swift`).
+- **Tests first (TDD)**:
+  - Three new Rust unit tests (`test_restore_if_unmapped_preserves_primary_ip_while_restoring_secondary_reverse_mapping`, `secondary_restored_mapping_survives_encrypted_store_reload_without_clobbering_primary`, `client_hello_or_http_host_recovers_both_tls_sni_and_mmtls_http_host`) failed on old code (`0 passed; 3 failed`) and pass now.
+  - New XCTest `testPrepareRuntimeResourcesPreservesUnchangedRuntimeInodesAndBackupExclusion` in `RoutingResourceStoreTests` failed on old code (replaces runtime inodes on every launch) and passes now.
+  - Extended `scripts/test_motion_guards.sh`, `scripts/test_telemetry_observation_scope.sh`, and `Tests/WindowVisibility/run.sh` failed on old code and pass now.
+- **Validation & Release Qualification**:
+  - Fast lane passed all 15 steps (`outputs/fast-lane-20261105T003012Z`). Full `scripts/test.sh` regression passed with zero compiler warnings: 576 XCTest + 121 Swift Testing + 99 transparent proxy + 24 bridge tests (820 total) plus all script gates.
+  - Default and Chrome fingerprint 12-protocol interop gates each passed all 11 suites (68 matrix case passes and 34 certificate rejections each; `outputs/interop-chrome-2.0.7-2026110501`); 9 real sites (including Google/YouTube ALPS and Cloudflare ECH) and the 43-node Mihomo differential on Mac mini passed (`both_ok=43`, all failure/missing buckets `0`; `outputs/protocol-lab-diff-2.0.7-2026110501/report.md`).
+  - Physical Mac mini UI performance and memory budget gate (`outputs/acceptance-2.0.7-2026110501/ui-perf/result.txt`) passed both full 300-second profiles with live oscillating `connections.count`: `showcase` switch latency p95/max `152.2 / 199.2 ms` (2.0.6: `144.9 / 190.2 ms`), memory median/peak `68 / 81 MB` (vs. 8.5h field leak peak `378 MB`), latter-half growth `-0 MB`; `large` switch latency p95/max `148.4 / 207.5 ms` (2.0.6: `144.7 / 195.5 ms`), memory median/peak `67 / 83 MB`, latter-half growth `+2 MB`. See `Docs/ReleaseExceptions/2.0.7.md`.
+
 ## [2.0.6] - 2026-11-04
 
 ### Fixed

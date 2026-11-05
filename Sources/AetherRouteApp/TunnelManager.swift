@@ -182,8 +182,19 @@ final class TrafficStatisticsModel: ObservableObject {
 @MainActor
 final class NetworkTelemetryViewModel: ObservableObject {
     @Published var snapshot: NetworkTelemetrySnapshot = .empty
+    private(set) var appMemoryBytes: UInt64 = NetworkTelemetryViewModel.measuredAppMemoryBytes()
     private(set) var history = TrafficHistory()
     private(set) var recentlyClosed = RecentlyClosedConnectionBuffer()
+
+    private static func measuredAppMemoryBytes() -> UInt64 {
+#if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
+        if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] != nil,
+           ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_LIVE"] != "1" {
+            return 48_640_000
+        }
+#endif
+        return ProcessMemoryFootprint.currentBytes()
+    }
 
 #if DEBUG
     /// Review mode only: a fixed 30-second history, so screenshots show the
@@ -191,9 +202,13 @@ final class NetworkTelemetryViewModel: ObservableObject {
     func seedReviewHistory(endingAt end: Date) {
         for second in stride(from: 29, through: 1, by: -1) {
             let phase = Double(30 - second)
+            let coreWave = UInt64(max(0, 620_000 * sin(phase * 0.35)))
+            let appWave = UInt64(max(0, 940_000 * cos(phase * 0.28)))
             history.append(
                 download: 2_400_000 * (0.7 + 0.25 * sin(phase * 0.45) + 0.12 * sin(phase * 1.3)),
                 upload: 384_000 * (0.7 + 0.3 * sin(phase * 0.6 + 1) + 0.1 * sin(phase * 1.7)),
+                coreMemoryBytes: 11_800_000 + coreWave,
+                appMemoryBytes: 47_800_000 + appWave,
                 at: end.addingTimeInterval(-Double(second))
             )
         }
@@ -201,9 +216,13 @@ final class NetworkTelemetryViewModel: ObservableObject {
 #endif
 
     func update(_ snapshot: NetworkTelemetrySnapshot) {
+        let currentAppMemory = Self.measuredAppMemoryBytes()
+        appMemoryBytes = currentAppMemory
         history.append(
             download: Double(snapshot.downloadBytesPerSecond),
             upload: Double(snapshot.uploadBytesPerSecond),
+            coreMemoryBytes: snapshot.memoryBytes,
+            appMemoryBytes: currentAppMemory,
             at: Date()
         )
         recentlyClosed.record(active: snapshot.connections)
@@ -212,6 +231,7 @@ final class NetworkTelemetryViewModel: ObservableObject {
     }
 
     func reset() {
+        appMemoryBytes = Self.measuredAppMemoryBytes()
         history = TrafficHistory()
         recentlyClosed.reset()
         snapshot = .empty

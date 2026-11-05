@@ -255,6 +255,16 @@ public enum TransparentProxyRuntimeInputLoader {
     }
 
     private static func excludeFromBackup(_ url: URL) throws {
+        if getxattr(
+            url.path,
+            "com.apple.metadata:com_apple_backup_excludeItem",
+            nil,
+            0,
+            0,
+            XATTR_NOFOLLOW
+        ) > 0 {
+            return
+        }
         var resourceURL = url
         var values = URLResourceValues()
         values.isExcludedFromBackup = true

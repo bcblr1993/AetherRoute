@@ -31,11 +31,19 @@ test "$(grep -Fc '@ObservedObject var telemetry: NetworkTelemetryViewModel' \
   "$APP")" -eq 1 || fail "menu must have exactly one telemetry observer"
 grep -F 'MenuTrafficGraph(model: telemetry, isLive: isMenuVisible)' "$APP" \
   >/dev/null || fail "menu traffic graph must own its telemetry observation"
+grep -F 'MenuMemoryFooter(telemetry: telemetry, isLive: isMenuVisible)' "$APP" \
+  >/dev/null || fail "menu memory footer must pass telemetry to leaf observers"
 
 grep -F 'ConnectionsView(telemetry: tunnel.telemetryViewModel)' "$CONTENT" \
   >/dev/null || fail "connections telemetry must be page-scoped"
 grep -F 'LiveTelemetryMetricValue(' "$CONTENT" \
   >/dev/null || fail "overview values must own telemetry observation"
+grep -F 'LiveMemoryWellValue(' "$CONTENT" \
+  >/dev/null || fail "overview memory well values must own leaf telemetry observation"
+grep -F 'LiveMemoryWellSparkline(' "$CONTENT" \
+  >/dev/null || fail "overview memory sparklines must own leaf telemetry observation"
+grep -F 'LiveMemoryTotalFooter(' "$CONTENT" \
+  >/dev/null || fail "overview memory total footer must own leaf telemetry observation"
 # The overview's metric values and the sidebar's connection-count badge are
 # the only two observers; both are leaf views, never the window or a page.
 test "$(grep -Fc '@ObservedObject var telemetry: NetworkTelemetryViewModel' \
@@ -115,5 +123,12 @@ telemetry_size_queries=$(grep -Fhc 'nil,' "$FLOW_ABI" "$PACKET_CORE" \
   | awk '{total+=$1} END{print total+0}')
 test "$telemetry_size_queries" -ge 2 \
   || fail "both engines must perform telemetry size queries"
+
+# The live review fixture (AETHERROUTE_UI_REVIEW_LIVE=1) must vary
+# connections.count across ticks so ConnectionCountBadge in the sidebar is
+# exercised on every tick during test_ui_performance_gate.sh.
+TELEMETRY_EXT="$ROOT/Sources/AetherRouteApp/TunnelManager+Telemetry.swift"
+grep -F 'review-transient-flow' "$TELEMETRY_EXT" >/dev/null \
+  || fail "advancedReviewSnapshot must toggle a transient connection across ticks so ConnectionCountBadge updates during live review"
 
 echo "Telemetry observation scope guards passed."

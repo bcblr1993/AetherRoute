@@ -1877,6 +1877,7 @@ private struct LiveTelemetryMetric: View {
                     Circle().fill(dot).frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
                 }
                 Text(label)
+                    .lineLimit(1)
             }
             .font(.caption)
             .foregroundStyle(AetherVisual.secondaryText)
@@ -1932,7 +1933,7 @@ private struct LiveTelemetryMetricValue: View {
         let parts = split(value)
         HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s1) {
             Text(parts.number)
-                .font(.largeTitle.weight(.semibold))
+                .font(.title.weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(isConnected ? AnyShapeStyle(Color.primary) : AnyShapeStyle(AetherVisual.secondaryText))
                 .aetherLiveValue()
@@ -1962,15 +1963,257 @@ private struct LiveTelemetryMetricValue: View {
     }
 }
 
-/// Download, upload and connection count above the last 30 seconds of
-/// traffic. While disconnected it keeps its place and says what will appear.
+private enum LiveMemoryMetricKind {
+    case core
+    case app
+}
+
+/// One memory well (Core or App) with its current footprint, 30-second peak,
+/// and a dedicated smooth sparkline.
+private struct LiveMemoryWell: View {
+    let kind: LiveMemoryMetricKind
+    let isConnected: Bool
+    let isRealtime: Bool
+    let telemetry: NetworkTelemetryViewModel
+
+    private var title: String {
+        switch kind {
+        case .core: AppLocalization.string("Core memory")
+        case .app: AppLocalization.string("App memory")
+        }
+    }
+
+    private var tint: Color {
+        switch kind {
+        case .core: .mint
+        case .app: .indigo
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: AetherVisual.s2) {
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                HStack(spacing: AetherVisual.sCompact) {
+                    Circle()
+                        .fill(tint)
+                        .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
+                    Text(title)
+                        .lineLimit(1)
+                }
+                .font(.caption)
+                .foregroundStyle(AetherVisual.secondaryText)
+
+                LiveMemoryWellValue(
+                    kind: kind,
+                    isConnected: isConnected,
+                    model: telemetry
+                )
+            }
+            Spacer(minLength: AetherVisual.s1)
+            LiveMemoryWellSparkline(
+                kind: kind,
+                isConnected: isConnected,
+                isRealtime: isRealtime,
+                tint: tint,
+                model: telemetry
+            )
+            .frame(width: 68, height: 34)
+        }
+        .padding(.horizontal, AetherVisual.s3)
+        .padding(.vertical, AetherVisual.s2)
+        .background(
+            AetherVisual.subtleFill,
+            in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(kind == .core ? "overview-core-memory" : "overview-app-memory")
+    }
+}
+
+private struct LiveMemoryWellValue: View {
+    let kind: LiveMemoryMetricKind
+    let isConnected: Bool
+    @ObservedObject var model: NetworkTelemetryViewModel
+
+    var body: some View {
+        let parts = split(primaryText)
+        VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s1) {
+                Text(parts.number)
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(isAvailable ? AnyShapeStyle(Color.primary) : AnyShapeStyle(AetherVisual.secondaryText))
+                    .aetherLiveValue()
+                if let unit = parts.unit {
+                    Text(unit)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(AetherVisual.secondaryText)
+                }
+            }
+            Text(subtitleText)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(AetherVisual.secondaryText)
+                .lineLimit(1)
+                .aetherLiveValue()
+        }
+    }
+
+    private var isAvailable: Bool {
+        switch kind {
+        case .core: isConnected && model.snapshot.memoryBytes > 0
+        case .app: model.appMemoryBytes > 0
+        }
+    }
+
+    private var primaryText: String {
+        switch kind {
+        case .core:
+            guard isConnected, model.snapshot.memoryBytes > 0 else { return "—" }
+            return formattedBytes(model.snapshot.memoryBytes)
+        case .app:
+            guard model.appMemoryBytes > 0 else { return "—" }
+            return formattedBytes(model.appMemoryBytes)
+        }
+    }
+
+    private var subtitleText: String {
+        let samples = model.history.samples
+        switch kind {
+        case .core:
+            guard isConnected, model.snapshot.memoryBytes > 0 else {
+                return AppLocalization.string("Connect to measure")
+            }
+            let peak = max(model.snapshot.memoryBytes, TrafficHistory.peakCoreMemory(in: samples))
+            return String.localizedStringWithFormat(
+                AppLocalization.string("Peak %@"),
+                formattedBytes(peak)
+            )
+        case .app:
+            let peak = max(model.appMemoryBytes, TrafficHistory.peakAppMemory(in: samples))
+            return String.localizedStringWithFormat(
+                AppLocalization.string("Peak %@"),
+                formattedBytes(peak)
+            )
+        }
+    }
+
+    private func split(_ text: String) -> (number: String, unit: String?) {
+        guard let space = text.lastIndex(of: " ") else { return (text, nil) }
+        return (String(text[..<space]), String(text[text.index(after: space)...]))
+    }
+}
+
+private struct LiveMemoryWellSparkline: View {
+    let kind: LiveMemoryMetricKind
+    let isConnected: Bool
+    let isRealtime: Bool
+    let tint: Color
+    @ObservedObject var model: NetworkTelemetryViewModel
+
+    private static let entryLag = TimeInterval(
+        TunnelStartupTimingPolicy.activeTelemetryPollingIntervalSeconds
+    )
+
+    var body: some View {
+        let lastSample = model.history.samples.last?.date ?? .now
+        let now = isRealtime
+            ? Date.now.addingTimeInterval(-Self.entryLag)
+            : lastSample
+        let visible = model.history.visible(at: now)
+        let rawValues: [UInt64] = switch kind {
+        case .core:
+            isConnected ? visible.map(\.coreMemoryBytes) : []
+        case .app:
+            visible.isEmpty && model.appMemoryBytes > 0
+                ? [model.appMemoryBytes, model.appMemoryBytes]
+                : visible.map(\.appMemoryBytes)
+        }
+        let positions: [Double] = visible.isEmpty && rawValues.count == 2
+            ? [0, 1]
+            : visible.map { TrafficHistory.position(of: $0, at: now) }
+        AetherMemorySparkline(
+            normalizedSamples: TrafficHistory.normalizedMemorySeries(rawValues),
+            samplePositions: positions,
+            tint: tint,
+            height: 34
+        )
+    }
+}
+
+private struct LiveMemoryTotalFooter: View {
+    let isConnected: Bool
+    @ObservedObject var model: NetworkTelemetryViewModel
+
+    var body: some View {
+        HStack {
+            Text(AppLocalization.string("Activity Monitor metric"))
+                .lineLimit(1)
+            Spacer(minLength: AetherVisual.s2)
+            Text(summaryText)
+                .monospacedDigit()
+                .lineLimit(1)
+                .aetherLiveValue()
+        }
+        .font(.caption)
+        .foregroundStyle(AetherVisual.secondaryText)
+    }
+
+    private var summaryText: String {
+        if isConnected, model.snapshot.memoryBytes > 0 {
+            let total = model.snapshot.memoryBytes + model.appMemoryBytes
+            return String.localizedStringWithFormat(
+                AppLocalization.string("Total %@"),
+                formattedBytes(total)
+            )
+        }
+        return String.localizedStringWithFormat(
+            AppLocalization.string("App %@"),
+            formattedBytes(model.appMemoryBytes)
+        )
+    }
+}
+
+/// Download, upload and connection count alongside live Core and App memory
+/// footprints in a single split card. While disconnected the traffic side says
+/// what will appear while App memory continues to report live.
 private struct TrafficCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let isConnected: Bool
     let isRealtime: Bool
     let isBackground: Bool
     let telemetry: NetworkTelemetryViewModel
 
+    private var usesStackedLayout: Bool {
+        dynamicTypeSize >= .xxxLarge
+            || UserDefaults.standard.bool(forKey: "NSDoubleLocalizedStrings")
+    }
+
     var body: some View {
+        Group {
+            if usesStackedLayout {
+                VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                    trafficSection
+                    Divider()
+                    memorySection
+                }
+            } else {
+                HStack(alignment: .top, spacing: AetherVisual.s4) {
+                    trafficSection
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Divider()
+                    memorySection
+                        .frame(width: 216, alignment: .leading)
+                }
+            }
+        }
+        .padding(AetherVisual.cardPadding)
+        .aetherPanel()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("overview-traffic")
+        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: isConnected)
+    }
+
+    private var trafficSection: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
             HStack(alignment: .firstTextBaseline) {
                 Text(AppLocalization.string("Live traffic"))
@@ -1984,7 +2227,7 @@ private struct TrafficCard: View {
                 // sample and must not observe TunnelManager itself.
                 TrafficStatisticsButton()
             }
-            HStack(alignment: .bottom, spacing: AetherVisual.s6 * 2) {
+            HStack(alignment: .bottom, spacing: AetherVisual.s4) {
                 LiveTelemetryMetric(
                     label: AppLocalization.string("Download"),
                     dot: .cyan,
@@ -2023,11 +2266,38 @@ private struct TrafficCard: View {
                     .transition(.opacity)
             }
         }
-        .padding(AetherVisual.cardPadding)
-        .aetherPanel()
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("overview-traffic")
-        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: isConnected)
+    }
+
+    private var memorySection: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(AppLocalization.string("Live memory"))
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: AetherVisual.s1)
+                Text(AppLocalization.string("Physical footprint"))
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .lineLimit(1)
+            }
+            LiveMemoryWell(
+                kind: .core,
+                isConnected: isConnected,
+                isRealtime: isRealtime,
+                telemetry: telemetry
+            )
+            LiveMemoryWell(
+                kind: .app,
+                isConnected: isConnected,
+                isRealtime: isRealtime,
+                telemetry: telemetry
+            )
+            Spacer(minLength: 0)
+            LiveMemoryTotalFooter(
+                isConnected: isConnected,
+                model: telemetry
+            )
+        }
     }
 }
 

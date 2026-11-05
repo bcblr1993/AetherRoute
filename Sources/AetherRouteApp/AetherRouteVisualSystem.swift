@@ -1229,7 +1229,7 @@ public struct AetherTrafficMiniGraph: View {
         .accessibilityHidden(true)
     }
 
-    private func smoothPoints(samples: [Double], width: CGFloat, height: CGFloat, maxVal: Double) -> [CGPoint] {
+    fileprivate func smoothPoints(samples: [Double], width: CGFloat, height: CGFloat, maxVal: Double) -> [CGPoint] {
         guard !samples.isEmpty else { return [] }
         let count = samples.count
 
@@ -1344,7 +1344,7 @@ public struct AetherTrafficMiniGraph: View {
         }
     }
 
-    private func smoothWaveformPath(points: [CGPoint], height: CGFloat) -> Path {
+    fileprivate func smoothWaveformPath(points: [CGPoint], height: CGFloat) -> Path {
         var path = Path()
         guard points.count > 1 else { return path }
 
@@ -1356,13 +1356,65 @@ public struct AetherTrafficMiniGraph: View {
         return path
     }
 
-    private func smoothWaveformLine(points: [CGPoint]) -> Path {
+    fileprivate func smoothWaveformLine(points: [CGPoint]) -> Path {
         var path = Path()
         guard points.count > 1 else { return path }
 
         path.move(to: points[0])
         appendSmoothWaveformCurves(to: &path, points: points)
         return path
+    }
+}
+
+/// Smooth single-series sparkline for live memory footprint wells.
+struct AetherMemorySparkline: View {
+    let normalizedSamples: [Double]
+    let samplePositions: [Double]
+    let tint: Color
+    var height: CGFloat = 38
+
+    var body: some View {
+        let graph = AetherTrafficMiniGraph(
+            downloadSamples: normalizedSamples,
+            uploadSamples: [],
+            samplePositions: samplePositions,
+            height: height
+        )
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let actualHeight = proxy.size.height
+            let points = normalizedSamples.count > 1
+                ? graph.smoothPoints(
+                    samples: normalizedSamples,
+                    width: width,
+                    height: actualHeight,
+                    maxVal: 1.0
+                )
+                : []
+            ZStack {
+                VStack {
+                    Spacer()
+                    Divider().opacity(0.14)
+                }
+                if points.count > 1 {
+                    graph.smoothWaveformPath(points: points, height: actualHeight)
+                        .fill(
+                            LinearGradient(
+                                colors: [tint.opacity(0.22), tint.opacity(0.0)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    graph.smoothWaveformLine(points: points)
+                        .stroke(
+                            tint,
+                            style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
+                        )
+                }
+            }
+        }
+        .frame(height: height)
+        .accessibilityHidden(true)
     }
 }
 

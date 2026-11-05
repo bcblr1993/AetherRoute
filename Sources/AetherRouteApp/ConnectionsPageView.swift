@@ -774,6 +774,27 @@ private struct SessionBar: View {
             rate(symbol: "arrow.up", value: uploadText, tint: .purple)
                 .accessibilityIdentifier("connections-upload-title")
 
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: AetherVisual.s2) {
+                    Divider().frame(height: AetherVisual.inlineSeparatorHeight)
+                    HStack(spacing: AetherVisual.s1) {
+                        Image(systemName: "memorychip")
+                            .font(.caption2)
+                            .foregroundStyle(.mint)
+                            .accessibilityHidden(true)
+                        Text(memorySummaryText)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(AetherVisual.secondaryText)
+                            .lineLimit(1)
+                            .fixedSize()
+                            .aetherLiveValue()
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("connections-memory-title")
+                }
+                Color.clear.frame(width: 0, height: 0)
+            }
+
             Spacer(minLength: AetherVisual.s3)
 
             if let outlet {
@@ -835,6 +856,20 @@ private struct SessionBar: View {
         tunnel.isConnected
             ? formattedRate(telemetry.snapshot.uploadBytesPerSecond)
             : "—"
+    }
+
+    private var memorySummaryText: String {
+        if tunnel.isConnected, telemetry.snapshot.memoryBytes > 0 {
+            return String.localizedStringWithFormat(
+                AppLocalization.string("Core %@ · App %@"),
+                formattedBytes(telemetry.snapshot.memoryBytes),
+                formattedBytes(telemetry.appMemoryBytes)
+            )
+        }
+        return String.localizedStringWithFormat(
+            AppLocalization.string("App %@"),
+            formattedBytes(telemetry.appMemoryBytes)
+        )
     }
 
     private var outlet: String? {

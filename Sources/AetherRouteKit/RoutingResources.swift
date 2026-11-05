@@ -356,7 +356,11 @@ public struct RoutingResourceStore: Sendable {
         )
         let committed: RoutingResourceRecord
         do {
-            try preparePrivateDirectory(stagingDirectory, fileManager: fileManager)
+            try preparePrivateDirectory(
+                stagingDirectory,
+                fileManager: fileManager,
+                excludeFromBackup: false
+            )
             try writeProtected(data, to: stagedData, fileManager: fileManager)
             try writeProtected(metadata, to: stagedMetadata, fileManager: fileManager)
             let prepared = try loadVerifiedResource(
@@ -685,7 +689,8 @@ public struct RoutingResourceStore: Sendable {
 
     private func preparePrivateDirectory(
         _ url: URL,
-        fileManager: FileManager
+        fileManager: FileManager,
+        excludeFromBackup shouldExcludeFromBackup: Bool = true
     ) throws {
         guard url.isFileURL, url.path.hasPrefix("/"), url.path != "/" else {
             throw RoutingResourceError.invalidApplicationSupportDirectory
@@ -712,7 +717,9 @@ public struct RoutingResourceStore: Sendable {
             ],
             ofItemAtPath: url.path
         )
-        try excludeFromBackup(url)
+        if shouldExcludeFromBackup {
+            try excludeFromBackup(url)
+        }
     }
 
     private func verifyRuntimeHierarchy(
@@ -736,11 +743,16 @@ public struct RoutingResourceStore: Sendable {
         to url: URL,
         fileManager: FileManager
     ) throws {
-        if try pathExists(url) {
+        let exists = try pathExists(url)
+        if exists {
             try rejectSymlinkOrNonRegularFile(url)
         }
         do {
-            try data.write(to: url, options: [.atomic])
+            let matchesExisting = exists
+                && (try? Data(contentsOf: url, options: [.mappedIfSafe])) == data
+            if !matchesExisting {
+                try data.write(to: url, options: [.atomic])
+            }
             try fileManager.setAttributes(
                 [
                     .posixPermissions: 0o600,
@@ -782,7 +794,20 @@ public struct RoutingResourceStore: Sendable {
         return false
     }
 
+    private static let backupExcludeXattrName =
+        "com.apple.metadata:com_apple_backup_excludeItem"
+
     private func excludeFromBackup(_ url: URL) throws {
+        if getxattr(
+            url.path,
+            Self.backupExcludeXattrName,
+            nil,
+            0,
+            0,
+            XATTR_NOFOLLOW
+        ) > 0 {
+            return
+        }
         var resourceURL = url
         var values = URLResourceValues()
         values.isExcludedFromBackup = true

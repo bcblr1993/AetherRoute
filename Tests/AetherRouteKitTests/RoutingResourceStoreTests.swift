@@ -73,6 +73,77 @@ final class RoutingResourceStoreTests: XCTestCase {
         }
     }
 
+    func testPrepareRuntimeResourcesPreservesUnchangedRuntimeInodesAndBackupExclusion() throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let support = root.appendingPathComponent("Application Support")
+        let store = RoutingResourceStore(
+            applicationSupportDirectory: support
+        )
+        let installedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let mmdb = validMMDB()
+        let geoSite = validGeoSite()
+
+        _ = try store.installVerified(
+            data: mmdb,
+            kind: .countryMMDB,
+            expectedSHA256: digest(mmdb),
+            installedAt: installedAt
+        )
+        _ = try store.installVerified(
+            data: geoSite,
+            kind: .geoSite,
+            expectedSHA256: digest(geoSite),
+            installedAt: installedAt
+        )
+
+        let profile = """
+        rules:
+          - GEOIP,CN,DIRECT,no-resolve
+          - GEOSITE,private,DIRECT
+        """
+        _ = try store.prepareRuntimeResources(for: profile, now: installedAt)
+
+        let runtimeMMDB = support.appendingPathComponent("Runtime/Country.mmdb")
+        let flowMMDB = support.appendingPathComponent("Runtime/FlowCore/Country.mmdb")
+        let firstRuntimeInode = try FileManager.default.attributesOfItem(
+            atPath: runtimeMMDB.path
+        )[.systemFileNumber] as? NSNumber
+        let firstFlowInode = try FileManager.default.attributesOfItem(
+            atPath: flowMMDB.path
+        )[.systemFileNumber] as? NSNumber
+        XCTAssertNotNil(firstRuntimeInode)
+        XCTAssertNotNil(firstFlowInode)
+        XCTAssertEqual(
+            try runtimeMMDB.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup,
+            true
+        )
+
+        // Re-running prepareRuntimeResources on subsequent tunnel starts with
+        // identical verified databases must not atomically replace the runtime
+        // files or re-trigger CSBackupSetItemExcluded notification storms.
+        _ = try store.prepareRuntimeResources(
+            for: profile,
+            now: installedAt.addingTimeInterval(30)
+        )
+        let secondRuntimeInode = try FileManager.default.attributesOfItem(
+            atPath: runtimeMMDB.path
+        )[.systemFileNumber] as? NSNumber
+        let secondFlowInode = try FileManager.default.attributesOfItem(
+            atPath: flowMMDB.path
+        )[.systemFileNumber] as? NSNumber
+        XCTAssertEqual(
+            secondRuntimeInode,
+            firstRuntimeInode,
+            "Unchanged runtime routing databases must not be atomically rewritten on every tunnel start"
+        )
+        XCTAssertEqual(
+            secondFlowInode,
+            firstFlowInode,
+            "Unchanged FlowCore routing databases must not be atomically rewritten on every tunnel start"
+        )
+    }
+
     func testUserProvidedResourceIsRecordedAndBecomesStale() throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

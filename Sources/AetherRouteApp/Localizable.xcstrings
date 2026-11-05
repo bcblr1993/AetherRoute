@@ -6780,6 +6780,96 @@
         }
       }
     },
+    "Live memory": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时内存"
+          }
+        }
+      }
+    },
+    "Physical footprint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "物理内存足迹"
+          }
+        }
+      }
+    },
+    "Core memory": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内核内存"
+          }
+        }
+      }
+    },
+    "App memory": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用内存"
+          }
+        }
+      }
+    },
+    "Activity Monitor metric": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "活动监视器口径"
+          }
+        }
+      }
+    },
+    "Total %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合计 %@"
+          }
+        }
+      }
+    },
+    "App %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用 %@"
+          }
+        }
+      }
+    },
+    "Connect to measure": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接后统计"
+          }
+        }
+      }
+    },
+    "Core %@ · App %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内核 %@ · 应用 %@"
+          }
+        }
+      }
+    },
     "Loading the local network extension configuration": {
       "localizations": {
         "zh-Hans": {

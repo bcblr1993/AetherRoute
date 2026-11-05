@@ -258,6 +258,7 @@ final class WindowChromeView: NSView {
     private var showsWindowTitle = true
     private var isMainWindow = false
     private var usesNativeToolbar = false
+    private var chromeUpdateScheduled = false
     private weak var observedWindow: NSWindow?
     private let visibilityCoordinator = WindowVisibilityCoordinator()
 
@@ -266,7 +267,7 @@ final class WindowChromeView: NSView {
         showsWindowTitle = showsTitle
         self.isMainWindow = isMainWindow
         self.usesNativeToolbar = usesNativeToolbar
-        applyWindowChrome()
+        scheduleApplyWindowChrome()
         if isMainWindow, let window {
             AppWindowManager.shared.registerMainWindow(window)
         }
@@ -292,11 +293,21 @@ final class WindowChromeView: NSView {
             name: NSToolbar.willAddItemNotification,
             object: window?.toolbar
         )
-        applyWindowChrome()
+        scheduleApplyWindowChrome()
         Task { @MainActor [weak self] in
             await Task.yield()
             self?.applyWindowChrome()
             self?.visibilityCoordinator.recoverIfNeeded()
+        }
+    }
+
+    private func scheduleApplyWindowChrome() {
+        guard !chromeUpdateScheduled else { return }
+        chromeUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.chromeUpdateScheduled = false
+            self.applyWindowChrome()
         }
     }
 
@@ -829,6 +840,7 @@ private struct MenuBarContent: View {
                         MenuLiveTrafficMetric(title: "Connections", dot: nil, metric: .connections, telemetry: telemetry, isLive: isMenuVisible)
                     }
                     MenuTrafficGraph(model: telemetry, isLive: isMenuVisible)
+                    MenuMemoryFooter(telemetry: telemetry, isLive: isMenuVisible)
                 }
                 .padding(AetherVisual.s3)
                 .aetherGlass(in: RoundedRectangle(cornerRadius: Self.groupRadius, style: .continuous))
@@ -1699,6 +1711,8 @@ private enum MenuLiveTrafficMetricKind {
     case download
     case upload
     case connections
+    case coreMemory
+    case appMemory
 }
 
 private struct MenuLiveTrafficMetric: View {
@@ -1749,6 +1763,12 @@ private struct MenuLiveTrafficValue: View {
             return formattedRate(telemetry.snapshot.uploadBytesPerSecond)
         case .connections:
             return String(telemetry.snapshot.connections.count)
+        case .coreMemory:
+            let bytes = telemetry.snapshot.memoryBytes
+            return bytes > 0 ? formattedBytes(bytes) : "—"
+        case .appMemory:
+            let bytes = telemetry.appMemoryBytes
+            return bytes > 0 ? formattedBytes(bytes) : "—"
         }
     }
 }
@@ -1796,6 +1816,7 @@ private struct MenuTrafficGraph: View {
 private struct MenuStaticTrafficValue: View {
     let metric: MenuLiveTrafficMetricKind
     let snapshot: NetworkTelemetrySnapshot
+    var appMemoryBytes: UInt64 = 0
 
     var body: some View {
         Text(value)
@@ -1811,7 +1832,58 @@ private struct MenuStaticTrafficValue: View {
             return formattedRate(snapshot.uploadBytesPerSecond)
         case .connections:
             return String(snapshot.connections.count)
+        case .coreMemory:
+            let bytes = snapshot.memoryBytes
+            return bytes > 0 ? formattedBytes(bytes) : "—"
+        case .appMemory:
+            return appMemoryBytes > 0 ? formattedBytes(appMemoryBytes) : "—"
         }
+    }
+}
+
+private struct MenuMemoryFooter: View {
+    let telemetry: NetworkTelemetryViewModel
+    var isLive: Bool = true
+
+    var body: some View {
+        HStack(spacing: AetherVisual.s2) {
+            HStack(spacing: AetherVisual.s1) {
+                Circle()
+                    .fill(Color.mint)
+                    .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
+                Text(AppLocalization.string("Core memory"))
+                if isLive {
+                    MenuLiveTrafficValue(metric: .coreMemory, telemetry: telemetry)
+                        .foregroundStyle(.primary)
+                } else {
+                    MenuStaticTrafficValue(metric: .coreMemory, snapshot: telemetry.snapshot)
+                        .foregroundStyle(.primary)
+                }
+            }
+            Spacer(minLength: AetherVisual.s2)
+            HStack(spacing: AetherVisual.s1) {
+                Circle()
+                    .fill(Color.indigo)
+                    .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
+                Text(AppLocalization.string("App memory"))
+                if isLive {
+                    MenuLiveTrafficValue(metric: .appMemory, telemetry: telemetry)
+                        .foregroundStyle(.primary)
+                } else {
+                    MenuStaticTrafficValue(
+                        metric: .appMemory,
+                        snapshot: telemetry.snapshot,
+                        appMemoryBytes: telemetry.appMemoryBytes
+                    )
+                    .foregroundStyle(.primary)
+                }
+            }
+        }
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(AetherVisual.secondaryText)
+        .lineLimit(1)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("menu-memory-summary")
     }
 }
 

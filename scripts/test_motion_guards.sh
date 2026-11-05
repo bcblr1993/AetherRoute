@@ -40,3 +40,14 @@ else
   echo "Hand-tuned animations are forbidden; add a token to AetherVisual (AetherMotion.swift) and use it." >&2
   exit 1
 fi
+
+# .contentTransition(.numericText(...)) interpolates variable-font CGFont
+# instances on every roll into CGFontCacheGetLocalCache.local_font_cache,
+# which CoreGraphics never evicts (+15.6 MB/hour on ConnectionCountBadge and
+# latency badges). All numeric text updates must use .contentTransition(.identity).
+if grep -rn 'contentTransition([[:space:]]*\.numericText' "$ROOT/Sources/AetherRouteApp" >/dev/null 2>&1; then
+  echo ".contentTransition(.numericText) is forbidden in AetherRouteApp because it leaks variable-font CGFont instances in CGFontCacheGetLocalCache.local_font_cache." >&2
+  exit 1
+else
+  echo "Motion guards passed: no .numericText transitions leak into CGFontCache."
+fi
