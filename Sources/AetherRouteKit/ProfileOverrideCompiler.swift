@@ -111,7 +111,8 @@ public enum ProfileOverrideCompiler {
         let output = document.render(
             replacingGroups: rewritten,
             insertingGroups: plan.customGroupLines,
-            insertingProxies: plan.chainedProxyLines
+            insertingProxies: plan.chainedProxyLines,
+            insertingHosts: plan.customHosts
         )
         // The result must show every group and proxy the profile had plus the
         // custom ones; anything else means the edit went wrong.
@@ -164,6 +165,7 @@ public enum ProfileOverrideCompiler {
         private(set) var emittedChainedProxies: [String] = []
         private(set) var chainedProxyLines: [String] = []
         private(set) var standaloneChainedProxyGroupName: String?
+        private(set) var customHosts: [(domain: String, ip: String)] = []
         let hiddenNodes: [String]
         private let hidden: Set<String>
         /// Parent group → custom groups / chained proxies to add (top, bottom).
@@ -304,6 +306,13 @@ public enum ProfileOverrideCompiler {
                         + "]}"
                 )
             }
+
+            for host in override.customHosts where host.isEnabled {
+                let domain = host.domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let ip = host.ip.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !domain.isEmpty, !ip.isEmpty else { continue }
+                customHosts.append((domain: domain, ip: ip))
+            }
         }
 
         /// A group's member tokens after hiding nodes and adding custom
@@ -383,6 +392,13 @@ public enum ProfileOverrideCompiler {
             ])
         }
         root["proxy-groups"] = added + groups
+        if !plan.customHosts.isEmpty {
+            var hostsDict = (root["hosts"] as? [String: Any]) ?? [:]
+            for entry in plan.customHosts {
+                hostsDict[entry.domain] = entry.ip
+            }
+            root["hosts"] = hostsDict
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys]),
               let output = String(data: data, encoding: .utf8) else {
             return ProfileOverrideResult(yaml: json, diagnostics: [.unsupportedProfileLayout], customGroupMembers: [:], hiddenNodes: [])
@@ -455,6 +471,9 @@ struct YAMLDocument {
     private var groupsHeader: Int?
     private var groupItemIndent = 2
     private var rulesHeader: Int?
+    private var hostsHeader: Int?
+    private var hostsItemIndent = 2
+    private var existingHostLineByDomain: [String: Int] = [:]
 
     init(_ text: String) {
         lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
@@ -506,6 +525,29 @@ struct YAMLDocument {
                         fields: item.fields,
                         lineRange: range
                     )
+                }
+            case "hosts":
+                let strippedInline = Self.stripComment(inline)
+                guard strippedInline.isEmpty || strippedInline == "{}" else {
+                    isEditable = false
+                    return
+                }
+                hostsHeader = section.start
+                var detectedIndent: Int?
+                for index in (section.start + 1)..<end {
+                    let line = lines[index]
+                    let trimmed = Self.stripComment(line.trimmingCharacters(in: .whitespaces))
+                    guard !trimmed.isEmpty, !trimmed.hasPrefix("-") else { continue }
+                    let indent = Self.indent(of: line)
+                    if detectedIndent == nil, indent > 0 {
+                        detectedIndent = indent
+                    }
+                    if let (key, _) = Self.keyValue(trimmed) {
+                        existingHostLineByDomain[key.lowercased()] = index
+                    }
+                }
+                if let detectedIndent {
+                    hostsItemIndent = detectedIndent
                 }
             case "rules":
                 rulesHeader = section.start
@@ -736,21 +778,39 @@ struct YAMLDocument {
         return result
     }
 
-    /// The document with some groups replaced and custom groups / proxies added.
+    /// The document with some groups replaced and custom groups / proxies / hosts added.
     func render(
         replacingGroups: [Int: String],
         insertingGroups: [String],
-        insertingProxies: [String] = []
+        insertingProxies: [String] = [],
+        insertingHosts: [(domain: String, ip: String)] = []
     ) -> String {
         let pad = String(repeating: " ", count: groupItemIndent)
+        let hostPad = String(repeating: " ", count: hostsItemIndent)
+        let hostLines = insertingHosts.map { entry in
+            "\(hostPad)\(Self.quote(entry.domain)): \(Self.quote(entry.ip))"
+        }
+        let overriddenHostLineIndices = Set(
+            insertingHosts.compactMap { existingHostLineByDomain[$0.domain] }
+        )
+        let firstMajorHeader = [proxiesHeader, groupsHeader, rulesHeader].compactMap { $0 }.min()
+        var wroteHostsSection = hostsHeader != nil || hostLines.isEmpty
         var output: [String] = []
-        output.reserveCapacity(lines.count + insertingGroups.count + insertingProxies.count + 4)
+        output.reserveCapacity(
+            lines.count + insertingGroups.count + insertingProxies.count + hostLines.count + 6
+        )
         let replacedStarts = Dictionary(uniqueKeysWithValues: replacingGroups.map {
             (groups[$0.key].lineRange.lowerBound, (groups[$0.key].lineRange, $0.value))
         })
         var skipUntil = -1
         for (index, line) in lines.enumerated() {
             if index < skipUntil { continue }
+            if overriddenHostLineIndices.contains(index) { continue }
+            if !wroteHostsSection, index == firstMajorHeader {
+                output.append("hosts:")
+                output.append(contentsOf: hostLines)
+                wroteHostsSection = true
+            }
             if let (range, replacement) = replacedStarts[index] {
                 output.append(pad + "- " + replacement)
                 skipUntil = range.upperBound
@@ -770,6 +830,11 @@ struct YAMLDocument {
                     output.append(contentsOf: insertingGroups.map { "  - " + $0 })
                 }
             }
+            if index == hostsHeader, !hostLines.isEmpty {
+                output.append("hosts:")
+                output.append(contentsOf: hostLines)
+                continue
+            }
             output.append(line)
             if index == proxiesHeader, !insertingProxies.isEmpty {
                 output.append(contentsOf: insertingProxies)
@@ -777,6 +842,13 @@ struct YAMLDocument {
             if index == groupsHeader {
                 output.append(contentsOf: insertingGroups.map { pad + "- " + $0 })
             }
+        }
+        if !wroteHostsSection {
+            if output.last == "" { output.removeLast() }
+            output.append("hosts:")
+            output.append(contentsOf: hostLines)
+            output.append("")
+            wroteHostsSection = true
         }
         if groupsHeader == nil, rulesHeader == nil, !insertingGroups.isEmpty {
             if output.last == "" { output.removeLast() }

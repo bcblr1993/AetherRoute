@@ -23,6 +23,9 @@ final class AppAutomationController: ObservableObject {
     @Published private(set) var shortcutPreferences: GlobalShortcutPreferences
     @Published private(set) var shortcutState: GlobalShortcutRegistrationState = .disabled
     @Published private(set) var shortcutMessage: String?
+    @Published private(set) var networkAutomationPreferences: NetworkAutomationPreferences
+    @Published private(set) var currentNetworkEnvironment: NetworkEnvironmentSnapshot?
+    @Published private(set) var networkAutomationMessage: String?
     @Published private(set) var notificationsEnabled: Bool
     @Published private(set) var notificationPermission: NotificationPermissionState
     @Published private(set) var subscriptionNotificationsEnabled: Bool
@@ -48,6 +51,7 @@ final class AppAutomationController: ObservableObject {
     private let tunnel: TunnelManager
     private let distribution: IndependentDistributionController
     private let shortcutStore: AppAutomationPreferenceStore
+    private let networkAutomationStore: NetworkAutomationPreferenceStore
     private let userDefaults: UserDefaults
     private let notificationCenter: UNUserNotificationCenter
     private let isUIReviewMode: Bool
@@ -58,6 +62,8 @@ final class AppAutomationController: ObservableObject {
     private var subscriptionObservation: AnyCancellable?
     private var proxySwitchObservation: AnyCancellable?
     private var licenseRefreshTask: Task<Void, Never>?
+    private var networkEnvironmentTask: Task<Void, Never>?
+    private var lastEvaluatedEnvironment: NetworkEnvironmentSnapshot?
     private var previousTunnelState: TunnelManager.State
 
     init(
@@ -72,6 +78,7 @@ final class AppAutomationController: ObservableObject {
         self.userDefaults = userDefaults
         self.notificationCenter = notificationCenter
         shortcutStore = AppAutomationPreferenceStore(defaults: userDefaults)
+        networkAutomationStore = NetworkAutomationPreferenceStore(defaults: userDefaults)
 #if AETHERROUTE_PERFORMANCE_MEASUREMENT
         isUIReviewMode = environment["AETHERROUTE_UI_REVIEW"] != nil
             || environment["AETHERROUTE_PERFORMANCE_MEASUREMENT"] != nil
@@ -85,6 +92,7 @@ final class AppAutomationController: ObservableObject {
         if isUIReviewMode,
            environment["AETHERROUTE_UI_REVIEW_AUTOMATION"] == "1" {
             shortcutPreferences = GlobalShortcutPreferences(isEnabled: true)
+            networkAutomationPreferences = NetworkAutomationPreferences()
             notificationsEnabled = true
             notificationPermission = .authorized
             shortcutState = .active
@@ -92,6 +100,7 @@ final class AppAutomationController: ObservableObject {
             proxySwitchNotificationsEnabled = false
         } else {
             shortcutPreferences = shortcutStore.load()
+            networkAutomationPreferences = networkAutomationStore.load()
             notificationsEnabled = userDefaults.bool(
                 forKey: Self.notificationsPreferenceKey
             )
@@ -143,11 +152,14 @@ final class AppAutomationController: ObservableObject {
 
         guard !isUIReviewMode else { return }
         applyGlobalShortcuts()
+        refreshCurrentNetworkEnvironment()
+        updateNetworkEnvironmentMonitoring()
         Task { await refreshNotificationAuthorization() }
     }
 
     deinit {
         licenseRefreshTask?.cancel()
+        networkEnvironmentTask?.cancel()
     }
 
     func setGlobalShortcutsEnabled(_ isEnabled: Bool) {
@@ -163,6 +175,112 @@ final class AppAutomationController: ObservableObject {
         var updated = shortcutPreferences
         updated.assign(key, to: action)
         persistAndApply(updated)
+    }
+
+    func refreshCurrentNetworkEnvironment() {
+        guard !isUIReviewMode else { return }
+        currentNetworkEnvironment = PhysicalUplinkDetector.currentNetworkEnvironment()
+    }
+
+    func setNetworkAutomationEnabled(_ isEnabled: Bool) {
+        var updated = networkAutomationPreferences
+        updated.isEnabled = isEnabled
+        persistAndApplyNetworkAutomation(updated, evaluateImmediately: isEnabled)
+    }
+
+    @discardableResult
+    func addOrUpdateNetworkRule(_ rule: NetworkAutomationRule) -> Bool {
+        do {
+            let validatedRule = try rule.validated()
+            var updated = networkAutomationPreferences
+            if let existingIndex = updated.rules.firstIndex(where: { $0.id == validatedRule.id }) {
+                updated.rules[existingIndex] = validatedRule
+            } else {
+                updated.rules.append(validatedRule)
+            }
+            return persistAndApplyNetworkAutomation(updated, evaluateImmediately: true)
+        } catch {
+            networkAutomationMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func removeNetworkRule(id: UUID) {
+        var updated = networkAutomationPreferences
+        updated.rules.removeAll { $0.id == id }
+        persistAndApplyNetworkAutomation(updated, evaluateImmediately: false)
+    }
+
+    func setNetworkRuleEnabled(id: UUID, isEnabled: Bool) {
+        var updated = networkAutomationPreferences
+        guard let index = updated.rules.firstIndex(where: { $0.id == id }) else { return }
+        updated.rules[index].isEnabled = isEnabled
+        persistAndApplyNetworkAutomation(updated, evaluateImmediately: isEnabled)
+    }
+
+    @discardableResult
+    private func persistAndApplyNetworkAutomation(
+        _ preferences: NetworkAutomationPreferences,
+        evaluateImmediately: Bool
+    ) -> Bool {
+        do {
+            let validated = try preferences.validated()
+            try networkAutomationStore.save(validated)
+            networkAutomationPreferences = validated
+            networkAutomationMessage = nil
+            updateNetworkEnvironmentMonitoring()
+            if evaluateImmediately {
+                evaluateNetworkAutomationIfNeeded(force: true)
+            }
+            return true
+        } catch {
+            networkAutomationMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    private func updateNetworkEnvironmentMonitoring() {
+        networkEnvironmentTask?.cancel()
+        networkEnvironmentTask = nil
+        guard !isUIReviewMode, networkAutomationPreferences.isEnabled else { return }
+        networkEnvironmentTask = Task { [weak self] in
+            guard let self else { return }
+            self.evaluateNetworkAutomationIfNeeded(force: false)
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(10))
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                self.evaluateNetworkAutomationIfNeeded(force: false)
+            }
+        }
+    }
+
+    private func evaluateNetworkAutomationIfNeeded(force: Bool) {
+        guard !isUIReviewMode else { return }
+        let snapshot = PhysicalUplinkDetector.currentNetworkEnvironment()
+        currentNetworkEnvironment = snapshot
+        guard networkAutomationPreferences.isEnabled, let snapshot else { return }
+        if !force, lastEvaluatedEnvironment == snapshot {
+            return
+        }
+        lastEvaluatedEnvironment = snapshot
+        guard let action = networkAutomationPreferences.matchedAction(for: snapshot) else {
+            return
+        }
+        switch action {
+        case let .setRoutingMode(mode):
+            guard tunnel.routingMode != mode, tunnel.canChangeRoutingMode else { return }
+            Task { await tunnel.setRoutingMode(mode) }
+        case .connect:
+            guard !tunnel.isEnabled, tunnel.canPerformPrimaryAction else { return }
+            Task { await tunnel.setEnabled(true) }
+        case .disconnect:
+            guard tunnel.isEnabled, tunnel.canPerformPrimaryAction else { return }
+            Task { await tunnel.setEnabled(false) }
+        }
     }
 
     /// Optional, off by default: permission is only requested when the

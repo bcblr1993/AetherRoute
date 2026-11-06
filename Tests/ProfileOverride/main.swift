@@ -52,6 +52,10 @@ enum ProfileOverrideFixtureGenerator {
                     target: .existingNode(name: "日本 东京"),
                     parentGroup: nil
                 ),
+            ],
+            customHosts: [
+                CustomHostMapping(domain: "nas.home.lan", ip: "192.168.50.10", isEnabled: true),
+                CustomHostMapping(domain: "+.corp.example", ip: "fd00::1", isEnabled: true),
             ]
         ).validated()
 
@@ -83,6 +87,12 @@ enum ProfileOverrideFixtureGenerator {
                     fputs("\(name): chained proxy \(chainName) missing or wrong dialer\n", stderr)
                     exit(1)
                 }
+            }
+            let parsedHosts = ProfileHostsInspector.inspect(yaml: result.yaml)
+            guard parsedHosts["nas.home.lan"] == "192.168.50.10",
+                  parsedHosts["+.corp.example"] == "fd00::1" else {
+                fputs("\(name): custom hosts missing in \(parsedHosts)\n", stderr)
+                exit(1)
             }
             try result.yaml.write(
                 to: output.appendingPathComponent("\(name).yaml"),

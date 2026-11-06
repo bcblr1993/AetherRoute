@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Changes the person made to a profile without touching the profile itself
@@ -11,6 +12,7 @@ public struct ProfileOverride: Codable, Equatable, Sendable {
     public static let currentFormatVersion = 1
     public static let maximumGroupCount = 32
     public static let maximumChainedProxyCount = 32
+    public static let maximumCustomHostCount = 64
     public static let maximumKeywordCount = 32
     public static let maximumKeywordLength = 64
     public static let maximumNameLength = 64
@@ -30,23 +32,29 @@ public struct ProfileOverride: Codable, Equatable, Sendable {
     /// Chained proxies added to the profile, routing through a first-hop
     /// dialer proxy into an exit node.
     public var chainedProxies: [ChainedProxyOverride]
+    /// Local host overrides merged into the profile's `hosts` map without
+    /// mutating the original subscription text.
+    public var customHosts: [CustomHostMapping]
 
     private enum CodingKeys: String, CodingKey {
         case formatVersion
         case groups
         case hiddenNodeKeywords
         case chainedProxies
+        case customHosts
     }
 
     public init(
         groups: [CustomProxyGroup] = [],
         hiddenNodeKeywords: [String] = [],
-        chainedProxies: [ChainedProxyOverride] = []
+        chainedProxies: [ChainedProxyOverride] = [],
+        customHosts: [CustomHostMapping] = []
     ) {
         formatVersion = Self.currentFormatVersion
         self.groups = groups
         self.hiddenNodeKeywords = hiddenNodeKeywords
         self.chainedProxies = chainedProxies
+        self.customHosts = customHosts
     }
 
     public init(from decoder: Decoder) throws {
@@ -55,10 +63,14 @@ public struct ProfileOverride: Codable, Equatable, Sendable {
         groups = try container.decode([CustomProxyGroup].self, forKey: .groups)
         hiddenNodeKeywords = try container.decode([String].self, forKey: .hiddenNodeKeywords)
         chainedProxies = try container.decodeIfPresent([ChainedProxyOverride].self, forKey: .chainedProxies) ?? []
+        customHosts = try container.decodeIfPresent([CustomHostMapping].self, forKey: .customHosts) ?? []
     }
 
     public var isEmpty: Bool {
-        groups.isEmpty && hiddenNodeKeywords.isEmpty && chainedProxies.isEmpty
+        groups.isEmpty
+            && hiddenNodeKeywords.isEmpty
+            && chainedProxies.isEmpty
+            && customHosts.isEmpty
     }
 
     /// Trims and bounds every field; throws on what cannot be fixed.
@@ -72,10 +84,20 @@ public struct ProfileOverride: Codable, Equatable, Sendable {
         guard chainedProxies.count <= Self.maximumChainedProxyCount else {
             throw ProfileOverrideError.tooManyChainedProxies
         }
+        guard customHosts.count <= Self.maximumCustomHostCount else {
+            throw ProfileOverrideError.tooManyCustomHosts
+        }
         var copy = self
         copy.hiddenNodeKeywords = try Self.keywords(hiddenNodeKeywords)
         copy.groups = try groups.map { try $0.validated() }
         copy.chainedProxies = try chainedProxies.map { try $0.validated() }
+        copy.customHosts = try customHosts.map { try $0.validated() }
+        var seenHostDomains = Set<String>()
+        for entry in copy.customHosts {
+            guard seenHostDomains.insert(entry.domain).inserted else {
+                throw ProfileOverrideError.duplicateCustomHost(entry.domain)
+            }
+        }
         var seen = Set<String>()
         for group in copy.groups {
             guard seen.insert(group.name).inserted else {
@@ -326,17 +348,100 @@ public struct ChainedProxyOverride: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+/// A local host mapping (`domain` → `ip`) merged into the profile's top-level
+/// `hosts` table when enabled. Supports exact domains (`nas.home.lan`),
+/// single-label wildcards (`*.dev.internal`), and domain-suffix wildcards
+/// (`+.corp.example`).
+public struct CustomHostMapping: Codable, Equatable, Sendable, Identifiable {
+    public var id: UUID
+    public var domain: String
+    public var ip: String
+    public var isEnabled: Bool
+
+    public init(
+        id: UUID = UUID(),
+        domain: String,
+        ip: String,
+        isEnabled: Bool = true
+    ) {
+        self.id = id
+        self.domain = domain
+        self.ip = ip
+        self.isEnabled = isEnabled
+    }
+
+    public func validated() throws -> CustomHostMapping {
+        var copy = self
+        copy.domain = domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        copy.ip = ip.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.isValidDomainPattern(copy.domain),
+              Self.isValidIPAddressLiteral(copy.ip)
+        else {
+            throw ProfileOverrideError.invalidCustomHost
+        }
+        return copy
+    }
+
+    private static func isValidDomainPattern(_ pattern: String) -> Bool {
+        guard !pattern.isEmpty,
+              pattern.count <= 253,
+              !pattern.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }),
+              !pattern.contains(where: { $0.isWhitespace || "\"'\\:#[]{}".contains($0) })
+        else {
+            return false
+        }
+        let body: Substring
+        if pattern.hasPrefix("*.") || pattern.hasPrefix("+.") {
+            body = pattern.dropFirst(2)
+        } else {
+            body = pattern[...]
+        }
+        guard !body.isEmpty, !body.hasPrefix("."), !body.hasSuffix(".") else {
+            return false
+        }
+        let labels = body.split(separator: ".", omittingEmptySubsequences: false)
+        guard !labels.isEmpty else { return false }
+        for label in labels {
+            guard !label.isEmpty,
+                  label.count <= 63,
+                  !label.hasPrefix("-"),
+                  !label.hasSuffix("-"),
+                  label.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
+            else {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func isValidIPAddressLiteral(_ value: String) -> Bool {
+        guard !value.isEmpty, value.utf8.count <= 64 else { return false }
+        var addr4 = in_addr()
+        if value.withCString({ inet_pton(AF_INET, $0, &addr4) }) == 1 {
+            return true
+        }
+        var addr6 = in6_addr()
+        if value.withCString({ inet_pton(AF_INET6, $0, &addr6) }) == 1 {
+            return true
+        }
+        return false
+    }
+}
+
 public enum ProfileOverrideError: LocalizedError, Equatable, Sendable {
     case unsupportedFormat(Int)
     case tooManyGroups
     case tooManyChainedProxies
+    case tooManyCustomHosts
     case tooManyKeywords
     case tooManyNodes
     case invalidKeyword
     case invalidGroupName
     case invalidChainedProxy
+    case invalidCustomHost
     case chainedProxyCycle
     case duplicateGroupName(String)
+    case duplicateCustomHost(String)
     case groupHasNoSource
 
     public var errorDescription: String? {
@@ -347,6 +452,8 @@ public enum ProfileOverrideError: LocalizedError, Equatable, Sendable {
             "A profile can have at most \(ProfileOverride.maximumGroupCount) custom groups."
         case .tooManyChainedProxies:
             "A profile can have at most \(ProfileOverride.maximumChainedProxyCount) chained proxies."
+        case .tooManyCustomHosts:
+            "A profile can have at most \(ProfileOverride.maximumCustomHostCount) custom host mappings."
         case .tooManyKeywords:
             "Use at most \(ProfileOverride.maximumKeywordCount) keywords."
         case .tooManyNodes:
@@ -357,10 +464,14 @@ public enum ProfileOverrideError: LocalizedError, Equatable, Sendable {
             "Enter a group name of up to \(ProfileOverride.maximumNameLength) characters that is not a built-in outlet."
         case .invalidChainedProxy:
             "Choose a valid first-hop dialer proxy and landing node."
+        case .invalidCustomHost:
+            "Enter a valid domain pattern (e.g. nas.local, *.dev.internal, +.corp.example) and IPv4/IPv6 address."
         case .chainedProxyCycle:
             "A chained proxy cannot route through itself or through the group that lists it."
         case let .duplicateGroupName(name):
             "Two custom groups are named \(name)."
+        case let .duplicateCustomHost(domain):
+            "Two custom host mappings use \(domain)."
         case .groupHasNoSource:
             "Choose regions, keywords or nodes for the group."
         }

@@ -1152,6 +1152,31 @@ private struct ConnectionInspector: View {
                     LabeledContent(AppLocalization.string("Download"), value: bytes(connection.downloadTotal))
                     LabeledContent(AppLocalization.string("Upload"), value: bytes(connection.uploadTotal))
                 }
+                if let timing = ConnectionTimingBreakdown.resolve(for: connection) {
+                    Section(AppLocalization.string("Timing")) {
+                        LabeledContent(
+                            AppLocalization.string("DNS lookup"),
+                            value: String.localizedStringWithFormat(
+                                AppLocalization.string("%lld ms"),
+                                Int64(timing.dnsMilliseconds)
+                            )
+                        )
+                        LabeledContent(
+                            AppLocalization.string("Outbound handshake"),
+                            value: String.localizedStringWithFormat(
+                                AppLocalization.string("%lld ms"),
+                                Int64(timing.connectMilliseconds)
+                            )
+                        )
+                        LabeledContent(
+                            AppLocalization.string("Total setup"),
+                            value: String.localizedStringWithFormat(
+                                AppLocalization.string("%lld ms"),
+                                Int64(timing.totalMilliseconds)
+                            )
+                        )
+                    }
+                }
             }
             .aetherSettingsForm(isSheet: true)
             .textSelection(.enabled)

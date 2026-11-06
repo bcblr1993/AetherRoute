@@ -543,4 +543,50 @@ final class ProfileOverrideCompilerTests: XCTestCase {
             ]
         ).validated())
     }
+
+    func testCustomHostMappingsCompileIntoYAMLAndJSONAndResolveWildcards() throws {
+        let override = try ProfileOverride(
+            customHosts: [
+                CustomHostMapping(domain: "  NAS.Home.LAN  ", ip: " 192.168.50.10 ", isEnabled: true),
+                CustomHostMapping(domain: "*.dev.internal", ip: "10.0.0.8", isEnabled: true),
+                CustomHostMapping(domain: "+.corp.example", ip: "fd00::1", isEnabled: true),
+                CustomHostMapping(domain: "disabled.local", ip: "127.0.0.1", isEnabled: false),
+            ]
+        ).validated()
+
+        XCTAssertEqual(override.customHosts.count, 4)
+        XCTAssertEqual(override.customHosts[0].domain, "nas.home.lan")
+        XCTAssertEqual(override.customHosts[0].ip, "192.168.50.10")
+
+        // 1. Block YAML without existing hosts section
+        let blockResult = ProfileOverrideCompiler.apply(override, to: blockProfile)
+        XCTAssertEqual(blockResult.diagnostics, [])
+        let parsedBlockHosts = ProfileHostsInspector.inspect(yaml: blockResult.yaml)
+        XCTAssertEqual(parsedBlockHosts["nas.home.lan"], "192.168.50.10")
+        XCTAssertEqual(parsedBlockHosts["*.dev.internal"], "10.0.0.8")
+        XCTAssertEqual(parsedBlockHosts["+.corp.example"], "fd00::1")
+        XCTAssertNil(parsedBlockHosts["disabled.local"])
+
+        // Wildcard and suffix resolution via ProfileHostsInspector
+        XCTAssertEqual(ProfileHostsInspector.resolveAlias("NAS.home.lan", in: parsedBlockHosts), "192.168.50.10")
+        XCTAssertEqual(ProfileHostsInspector.resolveAlias("api.dev.internal", in: parsedBlockHosts), "10.0.0.8")
+        XCTAssertEqual(ProfileHostsInspector.resolveAlias("corp.example", in: parsedBlockHosts), "fd00::1")
+        XCTAssertEqual(ProfileHostsInspector.resolveAlias("git.corp.example", in: parsedBlockHosts), "fd00::1")
+
+        // 2. JSON profile
+        let json = """
+        {"proxies":[{"name":"🇭🇰 Hong Kong 01","type":"socks5","server":"127.0.0.1","port":1080}],
+         "proxy-groups":[{"name":"节点选择","type":"select","proxies":["🇭🇰 Hong Kong 01"]}],
+         "rules":["MATCH,节点选择"]}
+        """
+        let jsonResult = ProfileOverrideCompiler.apply(override, to: json)
+        XCTAssertEqual(jsonResult.diagnostics, [])
+        let parsedJSONHosts = ProfileHostsInspector.inspect(yaml: jsonResult.yaml)
+        XCTAssertEqual(parsedJSONHosts["nas.home.lan"], "192.168.50.10")
+        XCTAssertEqual(parsedJSONHosts["+.corp.example"], "fd00::1")
+
+        // 3. Invalid domain or non-IP literal must be rejected
+        XCTAssertThrowsError(try CustomHostMapping(domain: "", ip: "127.0.0.1").validated())
+        XCTAssertThrowsError(try CustomHostMapping(domain: "nas.local", ip: "not-an-ip").validated())
+    }
 }

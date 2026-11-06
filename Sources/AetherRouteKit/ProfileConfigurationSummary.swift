@@ -346,6 +346,11 @@ public enum ProfileHostsInspector {
                 hops += 1
                 continue
             }
+            if let rootPlus = hosts["+." + current] {
+                current = rootPlus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                hops += 1
+                continue
+            }
             if let dotIndex = current.firstIndex(of: ".") {
                 let wildcard = "*" + current[dotIndex...]
                 if let target = hosts[wildcard] {
@@ -353,6 +358,21 @@ public enum ProfileHostsInspector {
                     hops += 1
                     continue
                 }
+            }
+            var suffixCursor = current[...]
+            var matchedPlusTarget: String?
+            while let dotIndex = suffixCursor.firstIndex(of: ".") {
+                let plusPattern = "+" + suffixCursor[dotIndex...]
+                if let target = hosts[plusPattern] {
+                    matchedPlusTarget = target
+                    break
+                }
+                suffixCursor = suffixCursor[suffixCursor.index(after: dotIndex)...]
+            }
+            if let target = matchedPlusTarget {
+                current = target.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                hops += 1
+                continue
             }
             break
         }

@@ -2615,6 +2615,23 @@ private struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(AetherVisual.secondaryText)
 
+            Toggle(
+                AppLocalization.string("Network environment rules"),
+                isOn: Binding(
+                    get: { automation.networkAutomationPreferences.isEnabled },
+                    set: { enabled in
+                        automation.setNetworkAutomationEnabled(enabled)
+                    }
+                )
+            )
+            .accessibilityIdentifier("network-automation-toggle")
+            .help(AppLocalization.string("Automatically switch routing mode or connect/disconnect when joining a specific router gateway, wired Ethernet, or Wi-Fi network."))
+
+            if automation.networkAutomationPreferences.isEnabled {
+                NetworkAutomationRulesEditor()
+                    .environmentObject(automation)
+            }
+
         } header: {
             Text(AppLocalization.string("Automation"))
         } footer: {
@@ -2764,6 +2781,152 @@ private struct ShortcutAssignmentRow: View {
         }
         .padding(AetherVisual.s2)
         .frame(width: 230)
+    }
+}
+
+private struct NetworkAutomationRulesEditor: View {
+    @EnvironmentObject private var automation: AppAutomationController
+    @State private var triggerKind: NetworkTriggerKind = .gatewayAddress
+    @State private var triggerValue = ""
+    @State private var selectedAction: NetworkAutomationAction = .setRoutingMode(.direct)
+
+    private static let allActions: [NetworkAutomationAction] = [
+        .setRoutingMode(.rule),
+        .setRoutingMode(.global),
+        .setRoutingMode(.direct),
+        .connect,
+        .disconnect,
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            HStack(spacing: AetherVisual.s2) {
+                Picker(AppLocalization.string("Condition"), selection: $triggerKind) {
+                    Text(AppLocalization.string("Router gateway")).tag(NetworkTriggerKind.gatewayAddress)
+                    Text(AppLocalization.string("Wired Ethernet")).tag(NetworkTriggerKind.ethernet)
+                    Text(AppLocalization.string("Wi-Fi SSID")).tag(NetworkTriggerKind.wifiSSID)
+                }
+                .labelsHidden()
+                .frame(width: 140)
+                .accessibilityIdentifier("network-automation-trigger-picker")
+
+                if triggerKind != .ethernet {
+                    TextField(
+                        triggerKind == .gatewayAddress
+                            ? AppLocalization.string("e.g. 192.168.50.1")
+                            : AppLocalization.string("e.g. Office-5G"),
+                        text: $triggerValue
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(.callout.monospaced())
+                    .accessibilityIdentifier("network-automation-value-field")
+
+                    if triggerKind == .gatewayAddress,
+                       let currentGateway = automation.currentNetworkEnvironment?.gatewayAddress,
+                       !currentGateway.isEmpty {
+                        Button(AppLocalization.string("Use current")) {
+                            triggerValue = currentGateway
+                        }
+                        .aetherButton()
+                        .controlSize(.small)
+                    }
+                }
+
+                Picker(AppLocalization.string("Action"), selection: $selectedAction) {
+                    ForEach(Array(Self.allActions.enumerated()), id: \.offset) { _, action in
+                        Text(actionTitle(action)).tag(action)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 140)
+                .accessibilityIdentifier("network-automation-action-picker")
+
+                Button(AppLocalization.string("Add")) {
+                    let rule = NetworkAutomationRule(
+                        isEnabled: true,
+                        triggerKind: triggerKind,
+                        matchValue: triggerKind == .ethernet ? "" : triggerValue,
+                        action: selectedAction
+                    )
+                    if automation.addOrUpdateNetworkRule(rule) {
+                        triggerValue = ""
+                    }
+                }
+                .aetherButton(prominent: true)
+                .disabled(
+                    triggerKind != .ethernet
+                        && triggerValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+                .accessibilityIdentifier("network-automation-add-button")
+            }
+
+            if let message = automation.networkAutomationMessage {
+                AetherInlineMessage(text: message, isCompact: true)
+            }
+
+            ForEach(automation.networkAutomationPreferences.rules) { rule in
+                HStack(spacing: AetherVisual.s2) {
+                    Toggle(
+                        isOn: Binding(
+                            get: { rule.isEnabled },
+                            set: { isOn in
+                                automation.setNetworkRuleEnabled(id: rule.id, isEnabled: isOn)
+                            }
+                        )
+                    ) {
+                        HStack(spacing: AetherVisual.s2) {
+                            Text(verbatim: triggerSummary(rule))
+                                .font(.callout.monospaced())
+                            Image(systemName: "arrow.right")
+                                .font(.caption)
+                                .foregroundStyle(AetherVisual.secondaryText)
+                                .accessibilityHidden(true)
+                            Text(actionTitle(rule.action))
+                                .font(.callout.weight(.medium))
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                    Spacer(minLength: AetherVisual.s2)
+                    Button(role: .destructive) {
+                        automation.removeNetworkRule(id: rule.id)
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(AetherVisual.secondaryText)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(AppLocalization.string("Delete"))
+                }
+            }
+        }
+        .onAppear {
+            automation.refreshCurrentNetworkEnvironment()
+        }
+    }
+
+    private func triggerSummary(_ rule: NetworkAutomationRule) -> String {
+        switch rule.triggerKind {
+        case .ethernet:
+            AppLocalization.string("Wired Ethernet")
+        case .gatewayAddress:
+            "\(AppLocalization.string("Gateway")) \(rule.matchValue)"
+        case .wifiSSID:
+            "Wi-Fi \(rule.matchValue)"
+        }
+    }
+
+    private func actionTitle(_ action: NetworkAutomationAction) -> String {
+        switch action {
+        case .setRoutingMode(.rule):
+            AppLocalization.string("Rule mode")
+        case .setRoutingMode(.global):
+            AppLocalization.string("Global mode")
+        case .setRoutingMode(.direct):
+            AppLocalization.string("Direct mode")
+        case .connect:
+            AppLocalization.string("Connect")
+        case .disconnect:
+            AppLocalization.string("Disconnect")
+        }
     }
 }
 

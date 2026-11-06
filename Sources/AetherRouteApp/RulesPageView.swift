@@ -674,12 +674,41 @@ struct RulesView: View {
     private func performMatch(rules: [RuleConfigurationSummary], totalRuleCount: Int) {
         hasAttemptedMatch = true
         testResult = nil
-        switch RouteMatchEngine.assess(
+        var assessment = RouteMatchEngine.assess(
             destination: testQuery,
             against: rules,
             totalRuleCount: totalRuleCount,
             geoSiteData: tunnel.bundledGeoSiteData
-        ) {
+        )
+        let customHosts = Dictionary(
+            tunnel.activeProfileOverrides.customHosts
+                .filter(\.isEnabled)
+                .map { ($0.domain.lowercased(), $0.ip) },
+            uniquingKeysWith: { _, last in last }
+        )
+        if !customHosts.isEmpty {
+            let trimmedQuery = testQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let resolvedHost = ProfileHostsInspector.resolveAlias(trimmedQuery, in: customHosts)
+            if resolvedHost != trimmedQuery {
+                let aliasAssessment = RouteMatchEngine.assess(
+                    destination: resolvedHost,
+                    against: rules,
+                    totalRuleCount: totalRuleCount,
+                    geoSiteData: tunnel.bundledGeoSiteData
+                )
+                if case let .matched(aliasMatch) = aliasAssessment {
+                    switch assessment {
+                    case let .matched(directMatch) where aliasMatch.order < directMatch.order:
+                        assessment = aliasAssessment
+                    case .indeterminate, .noMatch:
+                        assessment = aliasAssessment
+                    default:
+                        break
+                    }
+                }
+            }
+        }
+        switch assessment {
         case let .matched(result): testResult = result
         case let .indeterminate(ruleOrder?):
             // A GEOSITE/GEOIP or similar rule needs the core's databases; say

@@ -756,6 +756,16 @@
         }
       }
     },
+    "A profile can have at most %lld custom host mappings.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单个配置最多可添加 %lld 条自定义 Hosts 映射。"
+          }
+        }
+      }
+    },
     "A profile encryption key could not be created. Quit and reopen AetherRoute, then try again. If the problem continues, export diagnostics.": {
       "localizations": {
         "zh-Hans": {
@@ -966,6 +976,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加自定义分流规则"
+          }
+        }
+      }
+    },
+    "Add Host": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加映射"
           }
         }
       }
@@ -1735,6 +1755,16 @@
         }
       }
     },
+    "Another custom host mapping already uses %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已存在使用 %@ 的自定义 Hosts 映射。"
+          }
+        }
+      }
+    },
     "Another network extension is already controlling this traffic. Turn off the conflicting proxy or VPN extension, then retry.": {
       "localizations": {
         "zh-Hans": {
@@ -2061,6 +2091,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "在登录 macOS 时自动启动 AetherRoute。若退出或关机前处于连接状态，启动后将自动恢复连接。"
+          }
+        }
+      }
+    },
+    "Automatically switch routing mode or connect/disconnect when joining a specific router gateway, wired Ethernet, or Wi-Fi network.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接入指定路由器网关、有线以太网或 Wi-Fi 网络时，自动切换分流模式或启停连接。"
           }
         }
       }
@@ -3085,6 +3125,16 @@
         }
       }
     },
+    "Condition": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "触发条件"
+          }
+        }
+      }
+    },
     "Configured": {
       "localizations": {
         "zh-Hans": {
@@ -3790,6 +3840,16 @@
         }
       }
     },
+    "Custom host mappings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义 Hosts 映射"
+          }
+        }
+      }
+    },
     "Custom routing rules": {
       "localizations": {
         "zh-Hans": {
@@ -3948,6 +4008,16 @@
         }
       }
     },
+    "DNS lookup": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DNS 解析"
+          }
+        }
+      }
+    },
     "DNS overrides will apply on the next TUN connection.": {
       "localizations": {
         "zh-Hans": {
@@ -4028,6 +4098,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "默认"
+          }
+        }
+      }
+    },
+    "Delete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
           }
         }
       }
@@ -4482,6 +4562,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dock 与菜单栏"
+          }
+        }
+      }
+    },
+    "Domain (e.g. nas.local, *.dev.internal)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "域名（例如 nas.local、*.dev.internal）"
           }
         }
       }
@@ -4993,6 +5083,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "请输入有效的 HTTPS 订阅地址，地址中不能包含内嵌凭据或片段。"
+          }
+        }
+      }
+    },
+    "Enter a valid domain pattern (e.g. nas.local, *.dev.internal, +.corp.example) and IPv4 or IPv6 address.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入有效的域名规则（如 nas.local、*.dev.internal、+.corp.example）以及合法的 IPv4 或 IPv6 地址。"
           }
         }
       }
@@ -5585,6 +5685,16 @@
         }
       }
     },
+    "Gateway": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网关"
+          }
+        }
+      }
+    },
     "Gauge": {
       "localizations": {
         "zh-Hans": {
@@ -6016,6 +6126,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "怎么选"
+          }
+        }
+      }
+    },
+    "IPv4 or IPv6 address": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IPv4 或 IPv6 地址"
           }
         }
       }
@@ -7691,6 +7811,16 @@
         }
       }
     },
+    "Network environment rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络环境自动化"
+          }
+        }
+      }
+    },
     "Network extension": {
       "extractionState": "manual",
       "localizations": {
@@ -9122,6 +9252,16 @@
         }
       }
     },
+    "Outbound handshake": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点握手"
+          }
+        }
+      }
+    },
     "Outbound proxy handshake latency is high. Consider switching to a lower latency node in Proxies.": {
       "localizations": {
         "zh-Hans": {
@@ -9627,6 +9767,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "配置中有 DNS，但未开启"
+          }
+        }
+      }
+    },
+    "Preserved across subscription updates": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随配置加密保存，订阅更新不会覆盖"
           }
         }
       }
@@ -11271,6 +11421,16 @@
         }
       }
     },
+    "Router gateway": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路由器网关"
+          }
+        }
+      }
+    },
     "Routing": {
       "localizations": {
         "zh-Hans": {
@@ -12220,16 +12380,6 @@
         }
       }
     },
-    "Standalone \"Chained Proxies\" group": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "独立「链式代理」分组"
-          }
-        }
-      }
-    },
     "Show in Finder": {
       "localizations": {
         "zh-Hans": {
@@ -12593,6 +12743,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正式版本"
+          }
+        }
+      }
+    },
+    "Standalone \"Chained Proxies\" group": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "独立「链式代理」分组"
           }
         }
       }
@@ -15288,6 +15448,16 @@
         }
       }
     },
+    "Timing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建连耗时"
+          }
+        }
+      }
+    },
     "Today": {
       "extractionState": "manual",
       "localizations": {
@@ -15305,6 +15475,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "合计 %@"
+          }
+        }
+      }
+    },
+    "Total setup": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建连总耗时"
           }
         }
       }
@@ -16061,6 +16241,16 @@
         }
       }
     },
+    "Use current": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "填入当前"
+          }
+        }
+      }
+    },
     "Username": {
       "localizations": {
         "zh-Hans": {
@@ -16536,6 +16726,26 @@
         }
       }
     },
+    "Wi-Fi SSID": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wi-Fi 名称"
+          }
+        }
+      }
+    },
+    "Wired Ethernet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有线以太网"
+          }
+        }
+      }
+    },
     "With Transparent Proxy, apps use the system DNS. Switch to TUN to adjust the resolution mode, IPv6 and more here.": {
       "localizations": {
         "zh-Hans": {
@@ -16705,6 +16915,16 @@
         }
       }
     },
+    "e.g. 192.168.50.1": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如 192.168.50.1"
+          }
+        }
+      }
+    },
     "e.g. 443, 80 or 853": {
       "localizations": {
         "zh-Hans": {
@@ -16752,6 +16972,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "例如：香港自动"
+          }
+        }
+      }
+    },
+    "e.g. Office-5G": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如 Office-5G"
           }
         }
       }

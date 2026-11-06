@@ -1669,6 +1669,18 @@ extension ProfileOverrideError {
             AppLocalization.string("Choose a valid first-hop dialer proxy and landing node.")
         case .chainedProxyCycle:
             AppLocalization.string("The first-hop and second-hop proxies cannot form a loop.")
+        case .tooManyCustomHosts:
+            String.localizedStringWithFormat(
+                AppLocalization.string("A profile can have at most %lld custom host mappings."),
+                Int64(ProfileOverride.maximumCustomHostCount)
+            )
+        case .invalidCustomHost:
+            AppLocalization.string("Enter a valid domain pattern (e.g. nas.local, *.dev.internal, +.corp.example) and IPv4 or IPv6 address.")
+        case let .duplicateCustomHost(domain):
+            String.localizedStringWithFormat(
+                AppLocalization.string("Another custom host mapping already uses %@."),
+                domain
+            )
         }
     }
 }

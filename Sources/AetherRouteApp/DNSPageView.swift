@@ -5,6 +5,9 @@ struct DNSView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var showsAdvancedDNS = false
     @State private var tailscale = TailscalePresence.absent
+    @State private var newHostDomain = ""
+    @State private var newHostIP = ""
+    @State private var hostOverrideErrorMessage: String?
 
     var body: some View {
         Group {
@@ -25,6 +28,7 @@ struct DNSView: View {
                         } else {
                             systemResolverContent
                         }
+                        customHostsSection
                     }
                     .aetherPageContent(.wide)
                     .accessibilityElement(children: .contain)
@@ -722,6 +726,150 @@ struct DNSView: View {
         }
         .padding(AetherVisual.cardPadding)
         .aetherPanel()
+    }
+
+    // MARK: - Custom host mappings
+
+    private var customHostsSection: some View {
+        let mappings = tunnel.activeProfileOverrides.customHosts
+        return VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            AetherSectionHeader(
+                title: AppLocalization.string("Custom host mappings"),
+                note: AppLocalization.string("Preserved across subscription updates")
+            )
+
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: AetherVisual.s2) {
+                    TextField(
+                        AppLocalization.string("Domain (e.g. nas.local, *.dev.internal)"),
+                        text: $newHostDomain
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(.callout.monospaced())
+                    .onSubmit { addCustomHost() }
+                    .accessibilityIdentifier("dns-custom-host-domain-field")
+
+                    TextField(
+                        AppLocalization.string("IPv4 or IPv6 address"),
+                        text: $newHostIP
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(.callout.monospaced())
+                    .frame(maxWidth: 180)
+                    .onSubmit { addCustomHost() }
+                    .accessibilityIdentifier("dns-custom-host-ip-field")
+
+                    Button(AppLocalization.string("Add Host")) {
+                        addCustomHost()
+                    }
+                    .aetherButton(prominent: true)
+                    .disabled(
+                        newHostDomain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || newHostIP.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                    .accessibilityIdentifier("dns-custom-host-add-button")
+                }
+                .padding(AetherVisual.s4)
+
+                if let hostOverrideErrorMessage {
+                    Divider().padding(.horizontal, AetherVisual.s4)
+                    AetherInlineMessage(text: hostOverrideErrorMessage, isCompact: true)
+                        .padding(.horizontal, AetherVisual.s4)
+                        .padding(.vertical, AetherVisual.s2)
+                }
+
+                if !mappings.isEmpty {
+                    Divider().padding(.horizontal, AetherVisual.s4)
+                    ForEach(Array(mappings.enumerated()), id: \.element.id) { index, mapping in
+                        if index > 0 {
+                            Divider().padding(.leading, AetherVisual.s4)
+                        }
+                        HStack(spacing: AetherVisual.s3) {
+                            Toggle(
+                                isOn: Binding(
+                                    get: { mapping.isEnabled },
+                                    set: { isOn in
+                                        setCustomHostEnabled(id: mapping.id, isEnabled: isOn)
+                                    }
+                                )
+                            ) {
+                                HStack(spacing: AetherVisual.s2) {
+                                    Text(verbatim: mapping.domain)
+                                        .font(.body.monospaced())
+                                        .lineLimit(1)
+                                    Image(systemName: "arrow.right")
+                                        .font(.caption)
+                                        .foregroundStyle(AetherVisual.secondaryText)
+                                        .accessibilityHidden(true)
+                                    Text(verbatim: mapping.ip)
+                                        .font(.callout.monospaced())
+                                        .foregroundStyle(AetherVisual.secondaryText)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .toggleStyle(.checkbox)
+                            Spacer(minLength: AetherVisual.s2)
+                            Button(role: .destructive) {
+                                removeCustomHost(id: mapping.id)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel(AppLocalization.string("Delete"))
+                        }
+                        .frame(minHeight: AetherVisual.tableRowHeight)
+                        .padding(.horizontal, AetherVisual.s4)
+                    }
+                }
+            }
+            .aetherPanel()
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("dns-custom-hosts-section")
+        }
+    }
+
+    private func addCustomHost() {
+        do {
+            let entry = try CustomHostMapping(
+                domain: newHostDomain,
+                ip: newHostIP,
+                isEnabled: true
+            ).validated()
+            var overrides = tunnel.activeProfileOverrides
+            overrides.customHosts.append(entry)
+            let validated = try overrides.validated()
+            hostOverrideErrorMessage = nil
+            newHostDomain = ""
+            newHostIP = ""
+            Task {
+                let saved = await tunnel.setProfileOverrides(validated)
+                if !saved, let message = tunnel.profileMessage {
+                    hostOverrideErrorMessage = message
+                }
+            }
+        } catch {
+            hostOverrideErrorMessage = error.overrideMessage
+        }
+    }
+
+    private func setCustomHostEnabled(id: UUID, isEnabled: Bool) {
+        var overrides = tunnel.activeProfileOverrides
+        guard let index = overrides.customHosts.firstIndex(where: { $0.id == id }) else { return }
+        overrides.customHosts[index].isEnabled = isEnabled
+        hostOverrideErrorMessage = nil
+        Task {
+            _ = await tunnel.setProfileOverrides(overrides)
+        }
+    }
+
+    private func removeCustomHost(id: UUID) {
+        var overrides = tunnel.activeProfileOverrides
+        overrides.customHosts.removeAll { $0.id == id }
+        hostOverrideErrorMessage = nil
+        Task {
+            _ = await tunnel.setProfileOverrides(overrides)
+        }
     }
 
     private func modeTitle(_ mode: DNSResolutionMode) -> String {

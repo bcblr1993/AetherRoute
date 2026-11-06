@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public enum GlobalShortcutAction: String, CaseIterable, Codable, Sendable {
@@ -119,6 +120,169 @@ public struct GlobalShortcutPreferences: Codable, Equatable, Sendable {
 public enum AppAutomationPreferencesError: Error, Equatable, Sendable {
     case unsupportedVersion
     case duplicateShortcut
+    case invalidNetworkRule
+    case tooManyNetworkRules
+}
+
+public enum NetworkTriggerKind: String, CaseIterable, Codable, Equatable, Sendable {
+    case wifiSSID
+    case gatewayAddress
+    case ethernet
+}
+
+public enum NetworkAutomationAction: Codable, Equatable, Hashable, Sendable {
+    case setRoutingMode(RoutingMode)
+    case connect
+    case disconnect
+}
+
+public struct NetworkAutomationRule: Codable, Equatable, Sendable, Identifiable {
+    public static let maximumValueLength = 128
+
+    public var id: UUID
+    public var isEnabled: Bool
+    public var triggerKind: NetworkTriggerKind
+    public var matchValue: String
+    public var action: NetworkAutomationAction
+
+    public init(
+        id: UUID = UUID(),
+        isEnabled: Bool = true,
+        triggerKind: NetworkTriggerKind,
+        matchValue: String = "",
+        action: NetworkAutomationAction
+    ) {
+        self.id = id
+        self.isEnabled = isEnabled
+        self.triggerKind = triggerKind
+        self.matchValue = matchValue
+        self.action = action
+    }
+
+    public func validated() throws -> NetworkAutomationRule {
+        var copy = self
+        let trimmed = matchValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count <= Self.maximumValueLength,
+              !trimmed.unicodeScalars.contains(where: { $0.properties.generalCategory == .control })
+        else {
+            throw AppAutomationPreferencesError.invalidNetworkRule
+        }
+        switch triggerKind {
+        case .wifiSSID:
+            guard !trimmed.isEmpty else {
+                throw AppAutomationPreferencesError.invalidNetworkRule
+            }
+            copy.matchValue = trimmed
+        case .gatewayAddress:
+            guard Self.isValidIPAddress(trimmed) else {
+                throw AppAutomationPreferencesError.invalidNetworkRule
+            }
+            copy.matchValue = trimmed
+        case .ethernet:
+            copy.matchValue = ""
+        }
+        return copy
+    }
+
+    public func matches(_ environment: NetworkEnvironmentSnapshot) -> Bool {
+        guard isEnabled else { return false }
+        switch triggerKind {
+        case .wifiSSID:
+            guard let ssid = environment.wifiSSID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !ssid.isEmpty else { return false }
+            return ssid.caseInsensitiveCompare(matchValue.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+        case .gatewayAddress:
+            guard let gw = environment.gatewayAddress?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !gw.isEmpty else { return false }
+            return gw.caseInsensitiveCompare(matchValue.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+        case .ethernet:
+            return environment.isEthernet
+        }
+    }
+
+    static func isValidIPAddress(_ value: String) -> Bool {
+        guard !value.isEmpty else { return false }
+        var ipv4 = in_addr()
+        if value.withCString({ inet_pton(AF_INET, $0, &ipv4) }) == 1 {
+            return true
+        }
+        var ipv6 = in6_addr()
+        if value.withCString({ inet_pton(AF_INET6, $0, &ipv6) }) == 1 {
+            return true
+        }
+        return false
+    }
+}
+
+public struct NetworkAutomationPreferences: Codable, Equatable, Sendable {
+    public static let currentVersion = 1
+    public static let maximumRuleCount = 32
+
+    public var version: Int
+    public var isEnabled: Bool
+    public var rules: [NetworkAutomationRule]
+
+    public init(
+        version: Int = Self.currentVersion,
+        isEnabled: Bool = false,
+        rules: [NetworkAutomationRule] = []
+    ) {
+        self.version = version
+        self.isEnabled = isEnabled
+        self.rules = rules
+    }
+
+    public func validated() throws -> NetworkAutomationPreferences {
+        guard version == Self.currentVersion else {
+            throw AppAutomationPreferencesError.unsupportedVersion
+        }
+        guard rules.count <= Self.maximumRuleCount else {
+            throw AppAutomationPreferencesError.tooManyNetworkRules
+        }
+        var copy = self
+        copy.rules = try rules.map { try $0.validated() }
+        return copy
+    }
+
+    public func matchedAction(for environment: NetworkEnvironmentSnapshot) -> NetworkAutomationAction? {
+        guard isEnabled else { return nil }
+        return rules.first(where: { $0.matches(environment) })?.action
+    }
+}
+
+public struct NetworkAutomationPreferenceStore {
+    public static let storageKey = "AetherRoute.NetworkAutomationPreferences"
+
+    private let defaults: UserDefaults
+    private let key: String
+
+    public init(
+        defaults: UserDefaults = .standard,
+        key: String = Self.storageKey
+    ) {
+        self.defaults = defaults
+        self.key = key
+    }
+
+    public func load() -> NetworkAutomationPreferences {
+        guard let data = defaults.data(forKey: key),
+              let decoded = try? PropertyListDecoder().decode(
+                  NetworkAutomationPreferences.self,
+                  from: data
+              ),
+              let validated = try? decoded.validated() else {
+            return NetworkAutomationPreferences()
+        }
+        return validated
+    }
+
+    public func save(_ preferences: NetworkAutomationPreferences) throws {
+        let preferences = try preferences.validated()
+        defaults.set(
+            try PropertyListEncoder().encode(preferences),
+            forKey: key
+        )
+    }
 }
 
 public struct AppAutomationPreferenceStore {

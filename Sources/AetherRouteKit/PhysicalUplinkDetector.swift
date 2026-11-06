@@ -18,6 +18,25 @@ public struct PhysicalUplink: Equatable, Hashable, Sendable, CustomStringConvert
     }
 }
 
+public struct NetworkEnvironmentSnapshot: Equatable, Sendable {
+    public let interfaceName: String
+    public let isEthernet: Bool
+    public let wifiSSID: String?
+    public let gatewayAddress: String?
+
+    public init(
+        interfaceName: String = "",
+        isEthernet: Bool = false,
+        wifiSSID: String? = nil,
+        gatewayAddress: String? = nil
+    ) {
+        self.interfaceName = interfaceName
+        self.isEthernet = isEthernet
+        self.wifiSSID = wifiSSID
+        self.gatewayAddress = gatewayAddress
+    }
+}
+
 /// Detects, filters and prioritizes physical network uplinks on macOS.
 ///
 /// Ensures virtual interfaces (Docker/OrbStack `feth`, VM bridges, VPN `utun`)
@@ -189,5 +208,64 @@ public enum PhysicalUplinkDetector {
         let addresses = physicalAddresses(store: store, interfaceName: uplink.name)
         guard !addresses.isEmpty else { return "offline" }
         return "\(uplink.name):\(uplink.index)|" + addresses.sorted().joined(separator: ",")
+    }
+
+    /// Reads the active physical network environment (interface, wired Ethernet vs Wi-Fi,
+    /// and router gateway address) from `SCDynamicStore` without requiring Location permissions.
+    public static func currentNetworkEnvironment(
+        store: SCDynamicStore? = SCDynamicStoreCreate(nil, "AetherRoute.NetworkEnvironment" as CFString, nil, nil),
+        wifiSSIDProvider: () -> String? = { nil }
+    ) -> NetworkEnvironmentSnapshot? {
+        guard let store,
+              let uplink = currentPhysicalUplink(store: store) else { return nil }
+        let isWifi = isWiFiInterface(uplink.name)
+        let gateway = routerAddress(store: store, interfaceName: uplink.name)
+        let ssid = isWifi ? wifiSSIDProvider() : nil
+        return NetworkEnvironmentSnapshot(
+            interfaceName: uplink.name,
+            isEthernet: !isWifi && uplink.name.hasPrefix("en"),
+            wifiSSID: ssid,
+            gatewayAddress: gateway
+        )
+    }
+
+    public static func isWiFiInterface(_ bsdName: String) -> Bool {
+        guard let interfaces = SCNetworkInterfaceCopyAll() as? [SCNetworkInterface] else {
+            return false
+        }
+        for iface in interfaces {
+            guard let name = SCNetworkInterfaceGetBSDName(iface) as String?,
+                  name == bsdName,
+                  let type = SCNetworkInterfaceGetInterfaceType(iface) as String? else {
+                continue
+            }
+            if type == (kSCNetworkInterfaceTypeIEEE80211 as String) {
+                return true
+            }
+        }
+        return false
+    }
+
+    public static func routerAddress(
+        store: SCDynamicStore,
+        interfaceName: String
+    ) -> String? {
+        if let ifaceIPv4 = SCDynamicStoreCopyValue(
+            store,
+            "State:/Network/Interface/\(interfaceName)/IPv4" as CFString
+        ) as? [String: Any],
+           let router = ifaceIPv4["Router"] as? String,
+           !router.isEmpty {
+            return router
+        }
+        if let globalIPv4 = SCDynamicStoreCopyValue(
+            store,
+            "State:/Network/Global/IPv4" as CFString
+        ) as? [String: Any],
+           let router = globalIPv4["Router"] as? String,
+           !router.isEmpty {
+            return router
+        }
+        return nil
     }
 }

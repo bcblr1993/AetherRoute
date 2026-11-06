@@ -285,6 +285,66 @@ final class NetworkTelemetryTests: XCTestCase {
         XCTAssertTrue(buffer.connections.isEmpty)
     }
 
+    func testART5CarriesConnectionTimingAndTimingBreakdownComputesShares() throws {
+        let timedFlow = ConnectionTelemetry(
+            transport: .tcp,
+            destination: "api.anthropic.com",
+            destinationPort: 443,
+            uploadTotal: 1_024,
+            downloadTotal: 4_096,
+            startedAtUnixMilliseconds: 1_775_000_000_000,
+            rule: "DomainSuffix",
+            rulePayload: "anthropic.com",
+            proxyChain: "AI → US Edge",
+            sourceAppIdentifier: "com.anthropic.claudefordesktop",
+            sourceAppPath: "/Applications/Claude.app/Contents/MacOS/Claude",
+            dnsDurationMilliseconds: 14,
+            connectDurationMilliseconds: 66
+        )
+        let snapshot = NetworkTelemetrySnapshot(
+            uploadBytesPerSecond: 100,
+            downloadBytesPerSecond: 200,
+            uploadTotal: 1_024,
+            downloadTotal: 4_096,
+            memoryBytes: 8_192,
+            connections: [timedFlow],
+            trafficTotals: [
+                TrafficTotalTelemetry(
+                    sourceAppIdentifier: "com.anthropic.claudefordesktop",
+                    sourceAppPath: "/Applications/Claude.app/Contents/MacOS/Claude",
+                    proxyChain: "AI → US Edge",
+                    uploadTotal: 1_024,
+                    downloadTotal: 4_096,
+                    incarnation: 3
+                ),
+            ],
+            trafficTotalWatermark: 5
+        )
+
+        let data = try NetworkTelemetryCodec.encode(snapshot, version: .v5)
+        XCTAssertEqual(Array(data.prefix(4)), [0x41, 0x52, 0x54, 0x35])
+        let decoded = try NetworkTelemetryCodec.decode(data)
+        XCTAssertEqual(decoded, snapshot)
+        XCTAssertEqual(decoded.connections[0].dnsDurationMilliseconds, 14)
+        XCTAssertEqual(decoded.connections[0].connectDurationMilliseconds, 66)
+
+        let breakdown = try XCTUnwrap(
+            ConnectionTimingBreakdown.resolve(for: decoded.connections[0], fallbackNodeLatencyMs: 90)
+        )
+        XCTAssertEqual(breakdown.dnsMilliseconds, 14)
+        XCTAssertEqual(breakdown.connectMilliseconds, 66)
+        XCTAssertEqual(breakdown.totalMilliseconds, 80)
+        XCTAssertEqual(breakdown.dnsFraction, 14.0 / 80.0, accuracy: 0.001)
+
+        // When engine timing is absent (ART4), fallbackNodeLatencyMs supplies a synthesized breakdown
+        let untimedFlow = sampleTelemetry().connections[0]
+        let fallbackBreakdown = try XCTUnwrap(
+            ConnectionTimingBreakdown.resolve(for: untimedFlow, fallbackNodeLatencyMs: 75)
+        )
+        XCTAssertEqual(fallbackBreakdown.connectMilliseconds, 75)
+        XCTAssertGreaterThan(fallbackBreakdown.totalMilliseconds, 0)
+    }
+
     private func sampleTelemetry(
         sourceAppIdentifier: String = "",
         sourceAppPath: String = ""

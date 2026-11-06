@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public enum NetworkTelemetryTransport: UInt8, Sendable, Equatable {
@@ -20,6 +21,10 @@ public struct ConnectionTelemetry: Sendable, Equatable {
     public let sourceAppIdentifier: String
     /// The originating executable's path. Empty when unknown.
     public let sourceAppPath: String
+    /// DNS resolution time in milliseconds when measured (`ART5`).
+    public let dnsDurationMilliseconds: UInt32?
+    /// Outbound dial and handshake time in milliseconds when measured (`ART5`).
+    public let connectDurationMilliseconds: UInt32?
 
     public init(
         transport: NetworkTelemetryTransport,
@@ -32,7 +37,9 @@ public struct ConnectionTelemetry: Sendable, Equatable {
         rulePayload: String,
         proxyChain: String,
         sourceAppIdentifier: String = "",
-        sourceAppPath: String = ""
+        sourceAppPath: String = "",
+        dnsDurationMilliseconds: UInt32? = nil,
+        connectDurationMilliseconds: UInt32? = nil
     ) {
         self.transport = transport
         self.destination = destination
@@ -45,6 +52,85 @@ public struct ConnectionTelemetry: Sendable, Equatable {
         self.proxyChain = proxyChain
         self.sourceAppIdentifier = sourceAppIdentifier
         self.sourceAppPath = sourceAppPath
+        self.dnsDurationMilliseconds = dnsDurationMilliseconds
+        self.connectDurationMilliseconds = connectDurationMilliseconds
+    }
+}
+
+/// Phase-level handshake timing breakdown for a single connection.
+public struct ConnectionTimingBreakdown: Sendable, Equatable {
+    public let dnsMilliseconds: UInt32
+    public let connectMilliseconds: UInt32
+    public let isMeasuredByEngine: Bool
+
+    public init(
+        dnsMilliseconds: UInt32,
+        connectMilliseconds: UInt32,
+        isMeasuredByEngine: Bool = true
+    ) {
+        self.dnsMilliseconds = dnsMilliseconds
+        self.connectMilliseconds = connectMilliseconds
+        self.isMeasuredByEngine = isMeasuredByEngine
+    }
+
+    public var totalMilliseconds: UInt32 {
+        dnsMilliseconds &+ connectMilliseconds
+    }
+
+    public var dnsFraction: Double {
+        let total = Double(max(totalMilliseconds, 1))
+        return Double(dnsMilliseconds) / total
+    }
+
+    public var connectFraction: Double {
+        let total = Double(max(totalMilliseconds, 1))
+        return Double(connectMilliseconds) / total
+    }
+
+    /// Resolves a connection's handshake timing from `ART5` engine fields, or
+    /// synthesizes an estimate when a route RTT is available.
+    public static func resolve(
+        for connection: ConnectionTelemetry,
+        fallbackNodeLatencyMs: UInt16? = nil
+    ) -> ConnectionTimingBreakdown? {
+        if connection.dnsDurationMilliseconds != nil || connection.connectDurationMilliseconds != nil {
+            return ConnectionTimingBreakdown(
+                dnsMilliseconds: connection.dnsDurationMilliseconds ?? 0,
+                connectMilliseconds: connection.connectDurationMilliseconds ?? 0,
+                isMeasuredByEngine: true
+            )
+        }
+        let upperChain = connection.proxyChain.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if upperChain == "REJECT" || upperChain == "REJECT-DROP" {
+            return nil
+        }
+        if let fallbackNodeLatencyMs, fallbackNodeLatencyMs > 0 {
+            let isIP = Self.isIPLiteral(connection.destination)
+            let dnsMs: UInt32 = isIP ? 0 : min(12, max(1, UInt32(fallbackNodeLatencyMs) / 8))
+            return ConnectionTimingBreakdown(
+                dnsMilliseconds: dnsMs,
+                connectMilliseconds: UInt32(fallbackNodeLatencyMs),
+                isMeasuredByEngine: false
+            )
+        }
+        if upperChain == "DIRECT" {
+            let isIP = Self.isIPLiteral(connection.destination)
+            return ConnectionTimingBreakdown(
+                dnsMilliseconds: isIP ? 0 : 2,
+                connectMilliseconds: 8,
+                isMeasuredByEngine: false
+            )
+        }
+        return nil
+    }
+
+    private static func isIPLiteral(_ host: String) -> Bool {
+        let cleaned = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        var v4 = in_addr()
+        if cleaned.withCString({ inet_pton(AF_INET, $0, &v4) }) == 1 { return true }
+        var v6 = in6_addr()
+        if cleaned.withCString({ inet_pton(AF_INET6, $0, &v6) }) == 1 { return true }
+        return false
     }
 }
 
@@ -230,6 +316,7 @@ public enum NetworkTelemetryCodec {
         case v2
         case v3
         case v4
+        case v5
     }
 
     public static let maximumConnections = 128
@@ -244,11 +331,13 @@ public enum NetworkTelemetryCodec {
     private static let magicV2: [UInt8] = [0x41, 0x52, 0x54, 0x32]
     private static let magicV3: [UInt8] = [0x41, 0x52, 0x54, 0x33]
     private static let magicV4: [UInt8] = [0x41, 0x52, 0x54, 0x34]
+    private static let magicV5: [UInt8] = [0x41, 0x52, 0x54, 0x35]
     private static let trafficTotalHeaderBytes = 28
     private static let incarnationBytes = 8
     private static let headerBytes = 48
     private static let recordHeaderBytes = 44
     private static let sourceAppHeaderBytes = 8
+    private static let connectionTimingHeaderBytes = 8
 
     public static func encode(
         _ snapshot: NetworkTelemetrySnapshot,
@@ -256,19 +345,25 @@ public enum NetworkTelemetryCodec {
     ) throws -> Data {
         // By default a snapshot is written in the newest form that keeps
         // everything it holds.
+        let hasConnectionTiming = snapshot.connections.contains {
+            $0.dnsDurationMilliseconds != nil || $0.connectDurationMilliseconds != nil
+        }
         let version = version ?? (
-            snapshot.trafficTotalWatermark != nil ? .v4
+            hasConnectionTiming ? .v5
+                : snapshot.trafficTotalWatermark != nil ? .v4
                 : snapshot.reportsTrafficTotals ? .v3 : .v2
         )
         guard snapshot.connections.count <= maximumConnections else {
             throw NetworkTelemetryCodecError.tooLarge
         }
         let includesSourceApp = version != .v1
+        let includesConnectionTiming = version == .v5
         let headerMagic: [UInt8] = switch version {
         case .v1: magic
         case .v2: magicV2
         case .v3: magicV3
         case .v4: magicV4
+        case .v5: magicV5
         }
         var output = Data(headerMagic)
         for value in [
@@ -308,6 +403,10 @@ public enum NetworkTelemetryCodec {
             for value in strings {
                 appendUInt32(UInt32(value.count), to: &output)
             }
+            if includesConnectionTiming {
+                appendUInt32(connection.dnsDurationMilliseconds ?? UInt32.max, to: &output)
+                appendUInt32(connection.connectDurationMilliseconds ?? UInt32.max, to: &output)
+            }
             for value in strings {
                 output.append(value)
             }
@@ -320,7 +419,7 @@ public enum NetworkTelemetryCodec {
             break
         case .v3:
             try appendTrafficTotals(snapshot.trafficTotals, includesIncarnation: false, to: &output)
-        case .v4:
+        case .v4, .v5:
             appendUInt64(snapshot.trafficTotalWatermark ?? 0, to: &output)
             try appendTrafficTotals(snapshot.trafficTotals, includesIncarnation: true, to: &output)
         }
@@ -385,14 +484,22 @@ public enum NetworkTelemetryCodec {
         else { throw NetworkTelemetryCodecError.tooLarge }
         let bytes = [UInt8](data)
         let header = Array(bytes[0..<4])
-        guard header == magic || header == magicV2 || header == magicV3 || header == magicV4 else {
+        guard
+            header == magic
+                || header == magicV2
+                || header == magicV3
+                || header == magicV4
+                || header == magicV5
+        else {
             throw NetworkTelemetryCodecError.malformed
         }
-        let includesIncarnations = header == magicV4
+        let includesConnectionTiming = header == magicV5
+        let includesIncarnations = header == magicV4 || includesConnectionTiming
         let includesTrafficTotals = header == magicV3 || includesIncarnations
         let includesSourceApp = header != magic
         let recordBytes = recordHeaderBytes
             + (includesSourceApp ? sourceAppHeaderBytes : 0)
+            + (includesConnectionTiming ? connectionTimingHeaderBytes : 0)
         guard
             let uploadRate = readUInt64(bytes, at: 4),
             let downloadRate = readUInt64(bytes, at: 12),
@@ -429,6 +536,16 @@ public enum NetworkTelemetryCodec {
                 else { throw NetworkTelemetryCodecError.malformed }
                 appIdentifierLength = identifier
                 appPathLength = path
+            }
+            var dnsDurationMilliseconds: UInt32?
+            var connectDurationMilliseconds: UInt32?
+            if includesConnectionTiming {
+                guard
+                    let rawDNS = readUInt32(bytes, at: offset + 52),
+                    let rawConnect = readUInt32(bytes, at: offset + 56)
+                else { throw NetworkTelemetryCodecError.malformed }
+                dnsDurationMilliseconds = rawDNS == .max ? nil : rawDNS
+                connectDurationMilliseconds = rawConnect == .max ? nil : rawConnect
             }
             offset += recordBytes
             let destination = try readString(
@@ -481,7 +598,9 @@ public enum NetworkTelemetryCodec {
                     rulePayload: payload,
                     proxyChain: chain,
                     sourceAppIdentifier: appIdentifier,
-                    sourceAppPath: appPath
+                    sourceAppPath: appPath,
+                    dnsDurationMilliseconds: dnsDurationMilliseconds,
+                    connectDurationMilliseconds: connectDurationMilliseconds
                 )
             )
         }
