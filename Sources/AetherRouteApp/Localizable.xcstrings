@@ -444,6 +444,17 @@
         }
       }
     },
+    "%lld profiles · %@ · from %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld 个配置 · %2$@ · 来自 %3$@"
+          }
+        }
+      }
+    },
     "%lld resolvers": {
       "localizations": {
         "en": {
@@ -725,6 +736,16 @@
         }
       }
     },
+    "A profile can have at most %lld chained proxies.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单个配置最多可添加 %lld 个链式代理。"
+          }
+        }
+      }
+    },
     "A profile can have at most %lld custom groups.": {
       "localizations": {
         "zh-Hans": {
@@ -905,6 +926,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "活动连接"
+          }
+        }
+      }
+    },
+    "Activity Monitor metric": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "活动监视器口径"
           }
         }
       }
@@ -1754,6 +1785,26 @@
         }
       }
     },
+    "App %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用 %@"
+          }
+        }
+      }
+    },
+    "App memory": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用内存"
+          }
+        }
+      }
+    },
     "App, build, macOS, and Apple silicon version": {
       "localizations": {
         "zh-Hans": {
@@ -2429,6 +2480,16 @@
         }
       }
     },
+    "Chained Proxy…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "链式代理…"
+          }
+        }
+      }
+    },
     "Change the filter, or clear the search field.": {
       "localizations": {
         "zh-Hans": {
@@ -2690,6 +2751,16 @@
         }
       }
     },
+    "Choose a valid first-hop dialer proxy and landing node.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请填写完整的链式代理名称、前置代理与落地节点配置。"
+          }
+        }
+      }
+    },
     "Choose an App…": {
       "localizations": {
         "zh-Hans": {
@@ -2864,6 +2935,16 @@
         }
       }
     },
+    "Clipboard is empty. Copy a vless://, ss://, hy2:// or socks5:// link first.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剪贴板为空。请先复制 vless://、ss://、hy2:// 或 socks5:// 节点链接。"
+          }
+        }
+      }
+    },
     "Close": {
       "extractionState": "manual",
       "localizations": {
@@ -2947,6 +3028,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "云朵"
+          }
+        }
+      }
+    },
+    "Cloud Archive:": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "云端归档："
           }
         }
       }
@@ -3069,6 +3161,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "请先连接网络扩展，再选择代理。"
+          }
+        }
+      }
+    },
+    "Connect to measure": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接后统计"
           }
         }
       }
@@ -3455,6 +3557,16 @@
         }
       }
     },
+    "Core %@ · App %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内核 %@ · 应用 %@"
+          }
+        }
+      }
+    },
     "Core check": {
       "localizations": {
         "zh-Hans": {
@@ -3471,6 +3583,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "核心默认值"
+          }
+        }
+      }
+    },
+    "Core memory": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内核内存"
           }
         }
       }
@@ -3910,6 +4032,16 @@
         }
       }
     },
+    "Delete Chained Proxy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除链式代理"
+          }
+        }
+      }
+    },
     "Delete Group": {
       "localizations": {
         "zh-Hans": {
@@ -3926,6 +4058,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除规则"
+          }
+        }
+      }
+    },
+    "Delete the chained proxy %@?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确定要删除链式代理“%@”吗？"
           }
         }
       }
@@ -3987,6 +4129,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "在为正式版本配置签名授权服务前，开发版本保持可用。"
+          }
+        }
+      }
+    },
+    "Devices signed into the same Apple ID with iCloud Keychain enabled display the exact same pairing code.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录同一 Apple ID 且开启 iCloud 钥匙串的设备会显示完全相同的配对码。"
           }
         }
       }
@@ -4059,6 +4212,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "诊断结果存在不确定项，建议重新执行一次体检。"
+          }
+        }
+      }
+    },
+    "Dial through": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前置代理"
           }
         }
       }
@@ -4510,6 +4673,16 @@
         }
       }
     },
+    "Edit Chained Proxy…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑链式代理…"
+          }
+        }
+      }
+    },
     "Edit Custom Routing Rule": {
       "localizations": {
         "zh-Hans": {
@@ -4546,6 +4719,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "编辑节点…"
+          }
+        }
+      }
+    },
+    "Edit chained proxy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑链式代理"
           }
         }
       }
@@ -4650,6 +4833,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "已将本机配置加密上传至 iCloud（%lld 个配置）。"
+          }
+        }
+      }
+    },
+    "Encrypted archive · %@ · from %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加密归档 · %1$@ · 来自 %2$@"
           }
         }
       }
@@ -5014,6 +5208,16 @@
         }
       }
     },
+    "External node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外部落地节点"
+          }
+        }
+      }
+    },
     "Failover": {
       "localizations": {
         "zh-Hans": {
@@ -5105,6 +5309,16 @@
         }
       }
     },
+    "Filled %@ (%@:%lld) from clipboard.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已从剪贴板填入 %@ (%@:%lld)。"
+          }
+        }
+      }
+    },
     "Filter": {
       "localizations": {
         "zh-Hans": {
@@ -5152,6 +5366,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "最前"
+          }
+        }
+      }
+    },
+    "First hop (entry)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第一跳（前置）"
           }
         }
       }
@@ -5720,6 +5944,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Host 请求头（可选）"
+          }
+        }
+      }
+    },
+    "Host or IP address": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "域名或 IP 地址"
           }
         }
       }
@@ -6412,6 +6646,16 @@
         }
       }
     },
+    "Landing source": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "落地节点来源"
+          }
+        }
+      }
+    },
     "Language": {
       "localizations": {
         "zh-Hans": {
@@ -6770,16 +7014,6 @@
         }
       }
     },
-    "Live traffic": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "实时流量"
-          }
-        }
-      }
-    },
     "Live memory": {
       "localizations": {
         "zh-Hans": {
@@ -6790,82 +7024,12 @@
         }
       }
     },
-    "Physical footprint": {
+    "Live traffic": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "物理内存足迹"
-          }
-        }
-      }
-    },
-    "Core memory": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "内核内存"
-          }
-        }
-      }
-    },
-    "App memory": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "应用内存"
-          }
-        }
-      }
-    },
-    "Activity Monitor metric": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "活动监视器口径"
-          }
-        }
-      }
-    },
-    "Total %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "合计 %@"
-          }
-        }
-      }
-    },
-    "App %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "应用 %@"
-          }
-        }
-      }
-    },
-    "Connect to measure": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接后统计"
-          }
-        }
-      }
-    },
-    "Core %@ · App %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "内核 %@ · 应用 %@"
+            "value": "实时流量"
           }
         }
       }
@@ -6906,6 +7070,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "本地网络断开 / 处于门户认证状态"
+          }
+        }
+      }
+    },
+    "Local apps": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机应用"
           }
         }
       }
@@ -7388,6 +7562,16 @@
         }
       }
     },
+    "Name & group placement": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称与分组位置"
+          }
+        }
+      }
+    },
     "Name contains": {
       "localizations": {
         "zh-Hans": {
@@ -7585,6 +7769,16 @@
         }
       }
     },
+    "New chained proxy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建链式代理"
+          }
+        }
+      }
+    },
     "New group": {
       "localizations": {
         "zh-Hans": {
@@ -7720,6 +7914,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "还没有应用规则。想让某个应用无论访问什么都直连或走代理，可在这里添加，或在“连接”页右键该应用。"
+          }
+        }
+      }
+    },
+    "No archive in iCloud yet": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iCloud 中暂无归档"
           }
         }
       }
@@ -8118,6 +8323,16 @@
         }
       }
     },
+    "No valid node link was found in the clipboard.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剪贴板中未找到有效的节点链接。"
+          }
+        }
+      }
+    },
     "No valid node link was found. Paste links such as vless://, ss:// or hy2://, one per line.": {
       "extractionState": "manual",
       "localizations": {
@@ -8135,6 +8350,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "节点"
+          }
+        }
+      }
+    },
+    "Node in profile": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅内现有节点"
           }
         }
       }
@@ -8333,6 +8558,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "未配置"
+          }
+        }
+      }
+    },
+    "Not signed in to iCloud": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未登录 iCloud"
           }
         }
       }
@@ -8756,6 +8992,17 @@
         }
       }
     },
+    "Open System iCloud Settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开系统 iCloud 设置"
+          }
+        }
+      }
+    },
     "Open-Source Licenses": {
       "extractionState": "manual",
       "localizations": {
@@ -8970,6 +9217,17 @@
         }
       }
     },
+    "Pairing Code %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对码 %@"
+          }
+        }
+      }
+    },
     "Paperplane (Default)": {
       "localizations": {
         "zh-Hans": {
@@ -9163,6 +9421,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "未获得添加配置的授权。请点按“重试”，然后在弹出的对话框中选择“允许”。"
+          }
+        }
+      }
+    },
+    "Physical footprint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "物理内存足迹"
           }
         }
       }
@@ -10848,6 +11116,17 @@
         }
       }
     },
+    "Reveal Local Sync Folder": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在访达中打开存储位置"
+          }
+        }
+      }
+    },
     "Review Network Privacy": {
       "localizations": {
         "zh-Hans": {
@@ -10961,6 +11240,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "线路检查未完成"
+          }
+        }
+      }
+    },
+    "Route traffic through a first-hop proxy or group before reaching the landing node, while keeping your subscription untouched.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先经由前置节点或策略组建立隧道，再转发至目标落地节点；订阅更新后依然自动保留。"
           }
         }
       }
@@ -11629,6 +11918,16 @@
         }
       }
     },
+    "Second hop (landing)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第二跳（落地）"
+          }
+        }
+      }
+    },
     "Secure random data could not be generated.": {
       "localizations": {
         "zh-Hans": {
@@ -11921,6 +12220,16 @@
         }
       }
     },
+    "Standalone \"Chained Proxies\" group": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "独立「链式代理」分组"
+          }
+        }
+      }
+    },
     "Show in Finder": {
       "localizations": {
         "zh-Hans": {
@@ -12044,6 +12353,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "查看…"
+          }
+        }
+      }
+    },
+    "Signed in · Key generated on first upload": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已登录 · 首次上传时生成密钥"
+          }
+        }
+      }
+    },
+    "Signed in · Keychain ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已登录 · 钥匙串已就绪"
           }
         }
       }
@@ -12393,6 +12724,16 @@
         }
       }
     },
+    "Step 1 · First hop (entry proxy)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 1 步 · 选择前置代理（入口）"
+          }
+        }
+      }
+    },
     "Step 2 of 2": {
       "extractionState": "manual",
       "localizations": {
@@ -12400,6 +12741,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "第 2 步，共 2 步"
+          }
+        }
+      }
+    },
+    "Step 2 · Second hop (landing node)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 2 步 · 配置落地节点（出口）"
           }
         }
       }
@@ -13098,6 +13449,16 @@
         }
       }
     },
+    "TLS & Transport…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TLS 与传输层…"
+          }
+        }
+      }
+    },
     "TLS is required by this protocol": {
       "localizations": {
         "zh-Hans": {
@@ -13215,6 +13576,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "按应用接管网络连接，最省心。"
+          }
+        }
+      }
+    },
+    "Target node": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标节点"
           }
         }
       }
@@ -13452,6 +13823,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法验证应用内的许可文件。请重新安装 AetherRoute 或联系支持。"
+          }
+        }
+      }
+    },
+    "The chosen first-hop or target node is not in the current profile.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选的前置代理或目标节点不在当前配置中。"
           }
         }
       }
@@ -13695,6 +14076,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "不允许使用可执行配置键“%@”。"
+          }
+        }
+      }
+    },
+    "The first-hop and second-hop proxies cannot form a loop.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前置代理与落地节点不能相同或构成环路。"
           }
         }
       }
@@ -14689,6 +15080,16 @@
         }
       }
     },
+    "This Mac": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Mac"
+          }
+        }
+      }
+    },
     "This Mac must stay awake while sharing the proxy connection.": {
       "localizations": {
         "zh-Hans": {
@@ -14894,6 +15295,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "今天"
+          }
+        }
+      }
+    },
+    "Total %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合计 %@"
           }
         }
       }
@@ -16429,6 +16840,16 @@
         }
       }
     },
+    "e.g. 🇺🇸 US Static Residential": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如：🇺🇸 美国静态家宽"
+          }
+        }
+      }
+    },
     "example.com or 192.168.0.0/16": {
       "localizations": {
         "zh-Hans": {
@@ -16455,6 +16876,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "条显式规则"
+          }
+        }
+      }
+    },
+    "iCloud Account:": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iCloud 账户："
           }
         }
       }
@@ -16595,6 +17027,16 @@
         }
       }
     },
+    "via %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经由 %@"
+          }
+        }
+      }
+    },
     "“Follow profile” keeps whatever the profile file says.": {
       "extractionState": "manual",
       "localizations": {
@@ -16602,306 +17044,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择“跟随配置”表示沿用配置文件中的设置。"
-          }
-        }
-      }
-    },
-    "A profile can have at most %lld chained proxies.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "单个配置最多可添加 %lld 个链式代理。"
-          }
-        }
-      }
-    },
-    "Chained Proxy…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "链式代理…"
-          }
-        }
-      }
-    },
-    "Choose a valid first-hop dialer proxy and landing node.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请填写完整的链式代理名称、前置代理与落地节点配置。"
-          }
-        }
-      }
-    },
-    "Clipboard is empty. Copy a vless://, ss://, hy2:// or socks5:// link first.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "剪贴板为空。请先复制 vless://、ss://、hy2:// 或 socks5:// 节点链接。"
-          }
-        }
-      }
-    },
-    "Delete Chained Proxy": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "删除链式代理"
-          }
-        }
-      }
-    },
-    "Delete the chained proxy %@?": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "确定要删除链式代理“%@”吗？"
-          }
-        }
-      }
-    },
-    "Dial through": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前置代理"
-          }
-        }
-      }
-    },
-    "Edit Chained Proxy…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "编辑链式代理…"
-          }
-        }
-      }
-    },
-    "Edit chained proxy": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "编辑链式代理"
-          }
-        }
-      }
-    },
-    "External node": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "外部落地节点"
-          }
-        }
-      }
-    },
-    "Filled %@ (%@:%lld) from clipboard.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已从剪贴板填入 %@ (%@:%lld)。"
-          }
-        }
-      }
-    },
-    "First hop (entry)": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "第一跳（前置）"
-          }
-        }
-      }
-    },
-    "Host or IP address": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "域名或 IP 地址"
-          }
-        }
-      }
-    },
-    "Landing source": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "落地节点来源"
-          }
-        }
-      }
-    },
-    "Local apps": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "本机应用"
-          }
-        }
-      }
-    },
-    "Name & group placement": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "名称与分组位置"
-          }
-        }
-      }
-    },
-    "New chained proxy": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新建链式代理"
-          }
-        }
-      }
-    },
-    "No valid node link was found in the clipboard.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "剪贴板中未找到有效的节点链接。"
-          }
-        }
-      }
-    },
-    "Node in profile": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "订阅内现有节点"
-          }
-        }
-      }
-    },
-    "Route traffic through a first-hop proxy or group before reaching the landing node, while keeping your subscription untouched.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "先经由前置节点或策略组建立隧道，再转发至目标落地节点；订阅更新后依然自动保留。"
-          }
-        }
-      }
-    },
-    "Second hop (landing)": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "第二跳（落地）"
-          }
-        }
-      }
-    },
-    "Step 1 · First hop (entry proxy)": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "第 1 步 · 选择前置代理（入口）"
-          }
-        }
-      }
-    },
-    "Step 2 · Second hop (landing node)": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "第 2 步 · 配置落地节点（出口）"
-          }
-        }
-      }
-    },
-    "TLS & Transport…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "TLS 与传输层…"
-          }
-        }
-      }
-    },
-    "Target node": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "目标节点"
-          }
-        }
-      }
-    },
-    "The chosen first-hop or target node is not in the current profile.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "所选的前置代理或目标节点不在当前配置中。"
-          }
-        }
-      }
-    },
-    "The first-hop and second-hop proxies cannot form a loop.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前置代理与落地节点不能相同或构成环路。"
-          }
-        }
-      }
-    },
-    "This Mac": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此 Mac"
-          }
-        }
-      }
-    },
-    "e.g. 🇺🇸 US Static Residential": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "例如：🇺🇸 美国静态家宽"
-          }
-        }
-      }
-    },
-    "via %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "经由 %@"
           }
         }
       }

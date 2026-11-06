@@ -19,7 +19,8 @@ fi
 TEST_TEMP=$(mktemp -d "${TMPDIR:-/tmp}/aetherroute-sparkle-debounce.XXXXXX")
 trap 'find "$TEST_TEMP" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 
-swiftc -swift-version 6 -warnings-as-errors -D DEBUG -parse-as-library \
+SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
+xcrun --sdk macosx swiftc -sdk "$SDK_PATH" -swift-version 6 -warnings-as-errors -D DEBUG -parse-as-library \
   -F "$AETHERROUTE_PRODUCTS_DIR" -I "$AETHERROUTE_PRODUCTS_DIR" \
   -Xlinker -rpath -Xlinker "$AETHERROUTE_PRODUCTS_DIR" \
   -framework Sparkle -framework AetherRouteKit \

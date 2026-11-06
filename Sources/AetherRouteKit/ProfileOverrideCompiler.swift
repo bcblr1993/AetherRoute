@@ -30,19 +30,23 @@ public struct ProfileOverrideResult: Equatable, Sendable {
     public let hiddenNodes: [String]
     /// Each emitted chained proxy's name → its first-hop `dialerProxy`.
     public let chainedProxies: [String: String]
+    /// Auto-generated `select` group holding chained proxies with `parentGroup == nil`.
+    public let standaloneChainedProxyGroupName: String?
 
     public init(
         yaml: String,
         diagnostics: [ProfileOverrideDiagnostic],
         customGroupMembers: [String: [String]],
         hiddenNodes: [String],
-        chainedProxies: [String: String] = [:]
+        chainedProxies: [String: String] = [:],
+        standaloneChainedProxyGroupName: String? = nil
     ) {
         self.yaml = yaml
         self.diagnostics = diagnostics
         self.customGroupMembers = customGroupMembers
         self.hiddenNodes = hiddenNodes
         self.chainedProxies = chainedProxies
+        self.standaloneChainedProxyGroupName = standaloneChainedProxyGroupName
     }
 }
 
@@ -125,7 +129,8 @@ public enum ProfileOverrideCompiler {
                 diagnostics: [.unsupportedProfileLayout],
                 customGroupMembers: plan.customGroupMembers,
                 hiddenNodes: plan.hiddenNodes,
-                chainedProxies: plan.chainedProxies
+                chainedProxies: plan.chainedProxies,
+                standaloneChainedProxyGroupName: plan.standaloneChainedProxyGroupName
             )
         }
         return ProfileOverrideResult(
@@ -133,7 +138,8 @@ public enum ProfileOverrideCompiler {
             diagnostics: diagnostics,
             customGroupMembers: plan.customGroupMembers,
             hiddenNodes: plan.hiddenNodes,
-            chainedProxies: plan.chainedProxies
+            chainedProxies: plan.chainedProxies,
+            standaloneChainedProxyGroupName: plan.standaloneChainedProxyGroupName
         )
     }
 
@@ -157,6 +163,7 @@ public enum ProfileOverrideCompiler {
         private(set) var chainedProxies: [String: String] = [:]
         private(set) var emittedChainedProxies: [String] = []
         private(set) var chainedProxyLines: [String] = []
+        private(set) var standaloneChainedProxyGroupName: String?
         let hiddenNodes: [String]
         private let hidden: Set<String>
         /// Parent group → custom groups / chained proxies to add (top, bottom).
@@ -191,18 +198,7 @@ public enum ProfileOverrideCompiler {
                 taken.insert(group.name)
                 let members = visible.filter(group.matches)
                 customGroupMembers[group.name] = members
-                if members.isEmpty {
-                    diagnostics.append(.noMatchingNodes(group: group.name))
-                }
                 emittedCustomGroups.append(group.name)
-                customGroupLines.append(
-                    "{name: \(YAMLDocument.quote(group.name)), type: select, proxies: ["
-                        + (members.isEmpty ? ["DIRECT"] : members.map {
-                            YAMLDocument.flowToken(name: $0, written: nodeTokens[$0])
-                        })
-                            .joined(separator: ", ")
-                        + "]}"
-                )
                 if let parent = group.parentGroup {
                     guard groupNames.contains(parent) else {
                         diagnostics.append(.parentGroupMissing(group: group.name, parent: parent))
@@ -217,10 +213,12 @@ public enum ProfileOverrideCompiler {
                 }
             }
 
+            let emittedCustomGroupSet = Set(emittedCustomGroups)
             let visibleSet = Set(visible)
             var availableDialers = visibleSet
                 .union(groupNames)
                 .union(emittedCustomGroups)
+            var standaloneChainedProxies: [String] = []
 
             for chain in override.chainedProxies {
                 guard !taken.contains(chain.name) else {
@@ -259,17 +257,52 @@ public enum ProfileOverrideCompiler {
                 chainedProxyLines.append(contentsOf: compiledLines)
 
                 if let parent = chain.parentGroup {
-                    guard groupNames.contains(parent) else {
+                    if groupNames.contains(parent) {
+                        var entry = insertions[parent] ?? ([], [])
+                        switch chain.position {
+                        case .top: entry.top.append(YAMLDocument.quote(chain.name))
+                        case .bottom: entry.bottom.append(YAMLDocument.quote(chain.name))
+                        }
+                        insertions[parent] = entry
+                    } else if emittedCustomGroupSet.contains(parent) {
+                        var currentMembers = customGroupMembers[parent] ?? []
+                        switch chain.position {
+                        case .top: currentMembers.insert(chain.name, at: 0)
+                        case .bottom: currentMembers.append(chain.name)
+                        }
+                        customGroupMembers[parent] = currentMembers
+                    } else {
                         diagnostics.append(.parentGroupMissing(group: chain.name, parent: parent))
-                        continue
                     }
-                    var entry = insertions[parent] ?? ([], [])
-                    switch chain.position {
-                    case .top: entry.top.append(YAMLDocument.quote(chain.name))
-                    case .bottom: entry.bottom.append(YAMLDocument.quote(chain.name))
-                    }
-                    insertions[parent] = entry
+                } else {
+                    standaloneChainedProxies.append(chain.name)
                 }
+            }
+
+            for groupName in emittedCustomGroups {
+                if (customGroupMembers[groupName] ?? []).isEmpty {
+                    diagnostics.append(.noMatchingNodes(group: groupName))
+                }
+            }
+
+            if !standaloneChainedProxies.isEmpty,
+               let autoGroupName = ProfileOverride.standaloneChainedProxyGroupCandidates.first(where: { !taken.contains($0) }) {
+                taken.insert(autoGroupName)
+                standaloneChainedProxyGroupName = autoGroupName
+                customGroupMembers[autoGroupName] = standaloneChainedProxies
+                emittedCustomGroups.insert(autoGroupName, at: 0)
+            }
+
+            for groupName in emittedCustomGroups {
+                let members = customGroupMembers[groupName] ?? []
+                customGroupLines.append(
+                    "{name: \(YAMLDocument.quote(groupName)), type: select, proxies: ["
+                        + (members.isEmpty ? ["DIRECT"] : members.map {
+                            YAMLDocument.flowToken(name: $0, written: nodeTokens[$0])
+                        })
+                            .joined(separator: ", ")
+                        + "]}"
+                )
             }
         }
 
@@ -359,7 +392,8 @@ public enum ProfileOverrideCompiler {
             diagnostics: plan.diagnostics,
             customGroupMembers: plan.customGroupMembers,
             hiddenNodes: plan.hiddenNodes,
-            chainedProxies: plan.chainedProxies
+            chainedProxies: plan.chainedProxies,
+            standaloneChainedProxyGroupName: plan.standaloneChainedProxyGroupName
         )
     }
 }

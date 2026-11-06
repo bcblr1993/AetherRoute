@@ -19,6 +19,10 @@ extension TunnelManager {
         activeProfile?.overrides?.chainedProxies.first { $0.name == name }
     }
 
+    var standaloneChainedProxyGroupName: String? {
+        activeOverrideResult()?.standaloneChainedProxyGroupName
+    }
+
     /// What the override does to the active profile right now: each custom
     /// group's members and the diagnostics, for the editor and the cards.
     func activeOverrideResult(_ overrides: ProfileOverride? = nil) -> ProfileOverrideResult? {

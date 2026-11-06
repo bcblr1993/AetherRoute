@@ -438,4 +438,109 @@ final class ProfileOverrideCompilerTests: XCTestCase {
         XCTAssertTrue(decoded.chainedProxies.isEmpty)
         XCTAssertEqual(decoded.hiddenNodeKeywords, ["Expire"])
     }
+
+    func testDefaultParentGroupFindsSelectGroupWithOver64Members() {
+        var lines = ["proxies:"]
+        var members: [String] = []
+        for index in 1...100 {
+            let name = "节点 \(index)"
+            members.append(name)
+            lines.append("  - {name: \"\(name)\", type: socks5, server: 127.0.0.1, port: \(10000 + index)}")
+        }
+        lines.append("proxy-groups:")
+        lines.append("  - {name: 香港自动, type: select, proxies: [\"节点 1\"]}")
+        lines.append("  - {name: 赛博云, type: select, proxies: [\(members.map { "\"\($0)\"" }.joined(separator: ", "))]}")
+        lines.append("rules:")
+        lines.append("  - MATCH,赛博云")
+        let summary = ProfileConfigurationInspector.inspect(yaml: lines.joined(separator: "\n"))
+
+        // Readiness probing intentionally skips >64-member groups, which previously left catchAll nil.
+        XCTAssertEqual(ProxyConnectionReadinessPolicy.groupsToVerify(summary: summary).map(\.name), ["香港自动"])
+        XCTAssertEqual(
+            ProfileOverrideSuggestions.defaultParentGroup(in: summary, excluding: ["香港自动"]),
+            "赛博云"
+        )
+    }
+
+    func testStandaloneChainedProxyWithoutParentGroupCreatesChainedProxyGroup() throws {
+        let landing = AetherNode(
+            name: "🇺🇸 美国静态家宽",
+            protocolID: .socks5,
+            server: "198.51.100.88",
+            port: 1080,
+            dialerProxy: "节点选择"
+        )
+        let override = try ProfileOverride(
+            chainedProxies: [
+                ChainedProxyOverride(
+                    name: "🇺🇸 美国静态家宽",
+                    dialerProxy: "节点选择",
+                    target: .customNode(landing),
+                    parentGroup: nil
+                ),
+            ]
+        ).validated()
+
+        // 1. Block YAML
+        let blockResult = ProfileOverrideCompiler.apply(override, to: blockProfile)
+        XCTAssertEqual(blockResult.diagnostics, [])
+        XCTAssertEqual(blockResult.standaloneChainedProxyGroupName, "链式代理")
+        let standaloneGroup = try XCTUnwrap(group("链式代理", in: blockResult.yaml))
+        XCTAssertEqual(standaloneGroup.strategy, "select")
+        XCTAssertEqual(standaloneGroup.members, ["🇺🇸 美国静态家宽"])
+
+        // 2. JSON profile
+        let json = """
+        {"proxies":[{"name":"🇭🇰 Hong Kong 01","type":"socks5","server":"127.0.0.1","port":1080}],
+         "proxy-groups":[{"name":"节点选择","type":"select","proxies":["🇭🇰 Hong Kong 01"]}],
+         "rules":["MATCH,节点选择"]}
+        """
+        let jsonResult = ProfileOverrideCompiler.apply(override, to: json)
+        XCTAssertEqual(jsonResult.diagnostics, [])
+        XCTAssertEqual(jsonResult.standaloneChainedProxyGroupName, "链式代理")
+        XCTAssertEqual(group("链式代理", in: jsonResult.yaml)?.members, ["🇺🇸 美国静态家宽"])
+    }
+
+    func testChainedProxyCanJoinCustomProxyGroupAndDetectsGrandparentCycle() throws {
+        let landing = AetherNode(
+            name: "🇺🇸 专线落地",
+            protocolID: .socks5,
+            server: "198.51.100.99",
+            port: 1080,
+            dialerProxy: "日本 东京 03"
+        )
+        let override = try ProfileOverride(
+            groups: [
+                CustomProxyGroup(name: "香港自动", regions: ["HK"], excludeKeywords: ["游戏"], parentGroup: "节点选择", position: .top),
+            ],
+            chainedProxies: [
+                ChainedProxyOverride(
+                    name: "🇺🇸 专线落地",
+                    dialerProxy: "日本 东京 03",
+                    target: .customNode(landing),
+                    parentGroup: "香港自动",
+                    position: .top
+                ),
+            ]
+        ).validated()
+
+        let result = ProfileOverrideCompiler.apply(override, to: blockProfile)
+        XCTAssertEqual(result.diagnostics, [])
+        XCTAssertEqual(group("香港自动", in: result.yaml)?.members, ["🇺🇸 专线落地", "🇭🇰 Hong Kong 01"])
+
+        // Grandparent cycle: 节点选择 -> 香港自动 -> LoopChain -> 节点选择 must be rejected
+        XCTAssertThrowsError(try ProfileOverride(
+            groups: [
+                CustomProxyGroup(name: "香港自动", regions: ["HK"], parentGroup: "节点选择"),
+            ],
+            chainedProxies: [
+                ChainedProxyOverride(
+                    name: "LoopChain",
+                    dialerProxy: "节点选择",
+                    target: .existingNode(name: "日本 东京 03"),
+                    parentGroup: "香港自动"
+                ),
+            ]
+        ).validated())
+    }
 }

@@ -9,6 +9,65 @@ public extension Notification.Name {
     static let aetherRouteCloudSyncDidUpdateUserRules = Notification.Name("com.aetherroute.cloudSyncDidUpdateUserRules")
 }
 
+public protocol CloudKeyValueStoring: AnyObject, Sendable {
+    @discardableResult
+    func synchronize() -> Bool
+    func data(forKey defaultName: String) -> Data?
+    func set(_ value: Any?, forKey defaultName: String)
+}
+
+extension NSUbiquitousKeyValueStore: CloudKeyValueStoring {}
+
+public struct CloudSyncArchiveSummary: Equatable, Sendable {
+    public let profileCount: Int?
+    public let payloadByteCount: Int
+    public let updatedAt: Date
+    public let sourceDeviceIdentifier: String
+    public let sourceDeviceName: String
+    public let isFromCurrentDevice: Bool
+
+    public init(
+        profileCount: Int?,
+        payloadByteCount: Int,
+        updatedAt: Date,
+        sourceDeviceIdentifier: String,
+        sourceDeviceName: String,
+        isFromCurrentDevice: Bool
+    ) {
+        self.profileCount = profileCount
+        self.payloadByteCount = payloadByteCount
+        self.updatedAt = updatedAt
+        self.sourceDeviceIdentifier = sourceDeviceIdentifier
+        self.sourceDeviceName = sourceDeviceName
+        self.isFromCurrentDevice = isFromCurrentDevice
+    }
+}
+
+public struct CloudSyncDiagnosticsSnapshot: Equatable, Sendable {
+    public let isICloudAccountSignedIn: Bool
+    public let isEncryptionKeyAvailable: Bool
+    public let pairingFingerprint: String?
+    public let currentDeviceName: String
+    public let remoteArchive: CloudSyncArchiveSummary?
+    public let localStorageDirectoryPath: String?
+
+    public init(
+        isICloudAccountSignedIn: Bool,
+        isEncryptionKeyAvailable: Bool,
+        pairingFingerprint: String?,
+        currentDeviceName: String,
+        remoteArchive: CloudSyncArchiveSummary?,
+        localStorageDirectoryPath: String?
+    ) {
+        self.isICloudAccountSignedIn = isICloudAccountSignedIn
+        self.isEncryptionKeyAvailable = isEncryptionKeyAvailable
+        self.pairingFingerprint = pairingFingerprint
+        self.currentDeviceName = currentDeviceName
+        self.remoteArchive = remoteArchive
+        self.localStorageDirectoryPath = localStorageDirectoryPath
+    }
+}
+
 public struct CloudSyncUserRulesSnapshot: Codable, Sendable, Equatable {
     public static let currentVersion = 1
     public let version: Int
@@ -42,19 +101,29 @@ public struct CloudSyncPayload: Codable, Sendable, Equatable {
     public let version: Int
     public let updatedAtUnixMilliseconds: UInt64
     public let deviceIdentifier: String
+    public let deviceName: String?
     public let encryptedData: Data
     public let sha256: String
+
+    public var displayDeviceName: String {
+        if let trimmed = deviceName?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
+            return trimmed
+        }
+        return deviceIdentifier
+    }
 
     public init(
         version: Int = Self.currentVersion,
         updatedAtUnixMilliseconds: UInt64 = UInt64(max(0, Int64(Date().timeIntervalSince1970 * 1000))),
         deviceIdentifier: String,
+        deviceName: String? = nil,
         encryptedData: Data,
         sha256: String
     ) {
         self.version = version
         self.updatedAtUnixMilliseconds = updatedAtUnixMilliseconds
         self.deviceIdentifier = deviceIdentifier
+        self.deviceName = deviceName
         self.encryptedData = encryptedData
         self.sha256 = sha256
     }
@@ -125,9 +194,11 @@ public final class ProfileCloudSyncManager: ObservableObject {
     public static let shared = ProfileCloudSyncManager()
     private static let logger = AppLog.logger(category: AppLog.Category.cloudSync)
 
-    private let kvStore: NSUbiquitousKeyValueStore
+    private let kvStore: any CloudKeyValueStoring
     private let keyStore: any ProfileKeyStoring
+    private let injectedCatalogStore: ProfileCatalogStore?
     private let deviceID: String
+    private let deviceName: String
     private let observerToken = ObserverToken()
 
     private final class ObserverToken: @unchecked Sendable {
@@ -148,6 +219,7 @@ public final class ProfileCloudSyncManager: ObservableObject {
     @Published public var isCloudSyncEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isCloudSyncEnabled, forKey: "isCloudSyncEnabled")
+            refreshDiagnostics()
             if isCloudSyncEnabled {
                 startObserving()
                 Task { try? await sync() }
@@ -157,11 +229,23 @@ public final class ProfileCloudSyncManager: ObservableObject {
         }
     }
     @Published public var status: CloudSyncStatus?
+    @Published public private(set) var diagnostics: CloudSyncDiagnosticsSnapshot = CloudSyncDiagnosticsSnapshot(
+        isICloudAccountSignedIn: false,
+        isEncryptionKeyAvailable: false,
+        pairingFingerprint: nil,
+        currentDeviceName: "Mac",
+        remoteArchive: nil,
+        localStorageDirectoryPath: nil
+    )
 
     public init(
-        kvStore: NSUbiquitousKeyValueStore = .default,
-        keyStore: (any ProfileKeyStoring)? = nil
+        kvStore: any CloudKeyValueStoring = NSUbiquitousKeyValueStore.default,
+        keyStore: (any ProfileKeyStoring)? = nil,
+        catalogStore: ProfileCatalogStore? = nil,
+        deviceIdentifier: String? = nil,
+        deviceName: String? = nil
     ) {
+        self.injectedCatalogStore = catalogStore
         self.kvStore = kvStore
         if let keyStore {
             self.keyStore = keyStore
@@ -175,7 +259,9 @@ public final class ProfileCloudSyncManager: ObservableObject {
         }
 
         // Retrieve or generate unique device ID
-        if let stored = UserDefaults.standard.string(forKey: "aetherroute.device_id") {
+        if let explicitID = deviceIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !explicitID.isEmpty {
+            self.deviceID = explicitID
+        } else if let stored = UserDefaults.standard.string(forKey: "aetherroute.device_id") {
             self.deviceID = stored
         } else {
             let newID = UUID().uuidString
@@ -183,12 +269,24 @@ public final class ProfileCloudSyncManager: ObservableObject {
             self.deviceID = newID
         }
 
+        let resolvedDeviceName: String
+        if let explicitName = deviceName?.trimmingCharacters(in: .whitespacesAndNewlines), !explicitName.isEmpty {
+            resolvedDeviceName = explicitName
+        } else if let hostName = Host.current().localizedName?.trimmingCharacters(in: .whitespacesAndNewlines), !hostName.isEmpty {
+            resolvedDeviceName = hostName
+        } else {
+            let fallbackHost = ProcessInfo.processInfo.hostName.trimmingCharacters(in: .whitespacesAndNewlines)
+            resolvedDeviceName = fallbackHost.isEmpty ? "Mac" : fallbackHost
+        }
+        self.deviceName = resolvedDeviceName
+
         self.isCloudSyncEnabled = UserDefaults.standard.bool(forKey: "isCloudSyncEnabled")
         let savedTime = UserDefaults.standard.double(forKey: "lastCloudSyncTime")
         if savedTime > 0 {
             self.lastSyncedAt = Date(timeIntervalSince1970: savedTime)
         }
 
+        self.diagnostics = self.inspectDiagnostics()
         if isCloudSyncEnabled {
             startObserving()
         }
@@ -231,11 +329,14 @@ public final class ProfileCloudSyncManager: ObservableObject {
         guard !isSyncing else { return false }
 
         isSyncing = true
-        defer { isSyncing = false }
+        defer {
+            isSyncing = false
+            refreshDiagnostics()
+        }
         self.status = .syncing
 
-        let catalogStore = try ProfileCatalogStore.applicationGroup()
-        let localCatalog = try catalogStore.loadOrMigrate()
+        let catalogStore = try injectedCatalogStore ?? ProfileCatalogStore.applicationGroup()
+        let localCatalog = (try? catalogStore.loadOrMigrate()) ?? ProfileCatalog()
 
         // Synchronize lightweight rule providers alongside profiles
         await syncRuleProviders()
@@ -309,7 +410,10 @@ public final class ProfileCloudSyncManager: ObservableObject {
         }
         guard !isSyncing else { return false }
         isSyncing = true
-        defer { isSyncing = false }
+        defer {
+            isSyncing = false
+            refreshDiagnostics()
+        }
         self.status = .pulling
 
         kvStore.synchronize()
@@ -319,7 +423,7 @@ public final class ProfileCloudSyncManager: ObservableObject {
             return false
         }
         do {
-            let catalogStore = try ProfileCatalogStore.applicationGroup()
+            let catalogStore = try injectedCatalogStore ?? ProfileCatalogStore.applicationGroup()
             let (applied, _) = try await applyRemotePayload(remotePayload, to: catalogStore)
             if let remoteRuleData = kvStore.data(forKey: RuleProviderSyncPayload.storageKey) {
                 let updatedProviders = await RuleProviderEngine.shared.mergeCloudSyncPayload(remoteRuleData)
@@ -350,7 +454,10 @@ public final class ProfileCloudSyncManager: ObservableObject {
         }
         guard !isSyncing else { return false }
         isSyncing = true
-        defer { isSyncing = false }
+        defer {
+            isSyncing = false
+            refreshDiagnostics()
+        }
         self.status = .pushing
 
         if let localRulePayload = await RuleProviderEngine.shared.exportCloudSyncPayload(deviceIdentifier: deviceID) {
@@ -359,8 +466,8 @@ public final class ProfileCloudSyncManager: ObservableObject {
         }
         pushLocalUserRulesToCloudIfAvailable()
 
-        let catalogStore = try ProfileCatalogStore.applicationGroup()
-        let localCatalog = try catalogStore.loadOrMigrate()
+        let catalogStore = try injectedCatalogStore ?? ProfileCatalogStore.applicationGroup()
+        let localCatalog = (try? catalogStore.loadOrMigrate()) ?? ProfileCatalog()
         guard !localCatalog.profiles.isEmpty else {
             self.status = .nothingToUpload
             return false
@@ -559,6 +666,70 @@ public final class ProfileCloudSyncManager: ObservableObject {
     /// Synchronizable through iCloud Keychain: shared by the user's devices.
     nonisolated public static let cloudSyncService = "com.aetherroute.profile-encryption.cloud-sync"
 
+    /// Domain-separated, non-reversible 8-hex-character pairing code (`#XXXX-XXXX`)
+    /// derived from the 32-byte iCloud Keychain synchronization master key.
+    /// Devices signed into the same Apple ID with iCloud Keychain enabled display
+    /// the exact same pairing fingerprint without exposing raw key material.
+    nonisolated public static func keyFingerprint(for keyData: Data) -> String? {
+        guard keyData.count == 32 else { return nil }
+        var input = Data("aetherroute.cloud-sync.pairing-fingerprint.v1:".utf8)
+        input.append(keyData)
+        let digest = Array(SHA256.hash(data: input))
+        return String(
+            format: "#%02X%02X-%02X%02X",
+            digest[0], digest[1], digest[2], digest[3]
+        )
+    }
+
+    public func localStorageDirectoryURL() -> URL? {
+        if let injectedCatalogStore {
+            return injectedCatalogStore.directoryURL
+        }
+        return (try? ProfileCatalogStore.applicationGroup())?.directoryURL
+    }
+
+    public func refreshDiagnostics(ubiquityIdentityAvailable: Bool? = nil) {
+        self.diagnostics = inspectDiagnostics(ubiquityIdentityAvailable: ubiquityIdentityAvailable)
+    }
+
+    public func inspectDiagnostics(ubiquityIdentityAvailable: Bool? = nil) -> CloudSyncDiagnosticsSnapshot {
+        let isSignedIn = ubiquityIdentityAvailable ?? (FileManager.default.ubiquityIdentityToken != nil)
+        let localKey = (try? keyStore.loadKey(keyID: Self.cloudSyncKeyID)).flatMap { $0.count == 32 ? $0 : nil }
+        let fingerprint = localKey.flatMap { Self.keyFingerprint(for: $0) }
+
+        var remoteSummary: CloudSyncArchiveSummary?
+        if let remoteData = kvStore.data(forKey: CloudSyncPayload.storageKey),
+           let remotePayload = try? JSONDecoder().decode(CloudSyncPayload.self, from: remoteData) {
+            var decodedCount: Int?
+            if let localKey {
+                let actualSHA = SHA256.hash(data: remotePayload.encryptedData).map { String(format: "%02x", $0) }.joined()
+                if actualSHA.caseInsensitiveCompare(remotePayload.sha256) == .orderedSame,
+                   let box = try? AES.GCM.SealedBox(combined: remotePayload.encryptedData),
+                   let plain = try? AES.GCM.open(box, using: SymmetricKey(data: localKey)),
+                   let catalog = try? JSONDecoder().decode(ProfileCatalog.self, from: plain) {
+                    decodedCount = catalog.profiles.count
+                }
+            }
+            remoteSummary = CloudSyncArchiveSummary(
+                profileCount: decodedCount,
+                payloadByteCount: remoteData.count,
+                updatedAt: Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0),
+                sourceDeviceIdentifier: remotePayload.deviceIdentifier,
+                sourceDeviceName: remotePayload.displayDeviceName,
+                isFromCurrentDevice: remotePayload.deviceIdentifier == deviceID
+            )
+        }
+
+        return CloudSyncDiagnosticsSnapshot(
+            isICloudAccountSignedIn: isSignedIn,
+            isEncryptionKeyAvailable: localKey != nil,
+            pairingFingerprint: fingerprint,
+            currentDeviceName: deviceName,
+            remoteArchive: remoteSummary,
+            localStorageDirectoryPath: localStorageDirectoryURL()?.path
+        )
+    }
+
     // MARK: - Encryption & Cloud Push/Pull
     private func pushLocalToCloud(_ catalog: ProfileCatalog) async throws {
         let catalogData = try JSONEncoder().encode(catalog)
@@ -574,6 +745,7 @@ public final class ProfileCloudSyncManager: ObservableObject {
         let sha256 = SHA256.hash(data: encryptedCombined).map { String(format: "%02x", $0) }.joined()
         let payload = CloudSyncPayload(
             deviceIdentifier: deviceID,
+            deviceName: deviceName,
             encryptedData: encryptedCombined,
             sha256: sha256
         )

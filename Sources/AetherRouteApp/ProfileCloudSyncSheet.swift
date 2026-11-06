@@ -1,4 +1,5 @@
 import AetherRouteKit
+import AppKit
 import SwiftUI
 
 struct ProfileCloudSyncSheet: View {
@@ -24,6 +25,10 @@ struct ProfileCloudSyncSheet: View {
                     .font(.caption)
                     .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
+
+                Divider()
+
+                accountDiagnosticsSection
             }
             .padding(AetherVisual.s4)
             .background(AetherVisual.subtleFill, in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
@@ -126,7 +131,29 @@ struct ProfileCloudSyncSheet: View {
                 .background(AetherVisual.subtleFill, in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
             }
 
-            HStack {
+            HStack(spacing: AetherVisual.s3) {
+                Button {
+                    revealLocalStorageFolder()
+                } label: {
+                    HStack(spacing: AetherVisual.sCompact) {
+                        Image(systemName: "folder")
+                        Text(AppLocalization.string("Reveal Local Sync Folder"))
+                    }
+                }
+                .aetherButton()
+                .accessibilityIdentifier("icloud-reveal-folder-button")
+
+                Button {
+                    openSystemICloudSettings()
+                } label: {
+                    HStack(spacing: AetherVisual.sCompact) {
+                        Image(systemName: "gearshape")
+                        Text(AppLocalization.string("Open System iCloud Settings"))
+                    }
+                }
+                .aetherButton()
+                .accessibilityIdentifier("icloud-open-settings-button")
+
                 Spacer()
                 Button(AppLocalization.string("Done")) {
                     dismiss()
@@ -140,6 +167,91 @@ struct ProfileCloudSyncSheet: View {
         .padding(AetherVisual.dialogPadding)
         .aetherSheetFrame()
         .interactiveDismissDisabled(cloudSync.isSyncing)
+        .onAppear {
+            cloudSync.refreshDiagnostics()
+        }
+    }
+
+    private var accountDiagnosticsSection: some View {
+        let diag = cloudSync.diagnostics
+        return VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            HStack(alignment: .center, spacing: AetherVisual.s2) {
+                Circle()
+                    .fill(diag.isICloudAccountSignedIn ? AnyShapeStyle(Color.mint) : AnyShapeStyle(AetherVisual.tertiaryText))
+                    .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
+                Text(AppLocalization.string("iCloud Account:"))
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                Text(accountStatusText(for: diag))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: AetherVisual.s2)
+                if let fingerprint = diag.pairingFingerprint {
+                    Text(AppLocalization.format("Pairing Code %@", fingerprint))
+                        .font(.caption2.monospaced().weight(.semibold))
+                        .foregroundStyle(AetherVisual.iCloudTint)
+                        .padding(.horizontal, AetherVisual.s2)
+                        .padding(.vertical, AetherVisual.sMicro)
+                        .background(
+                            AetherVisual.neutralFill,
+                            in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+                        )
+                        .help(AppLocalization.string("Devices signed into the same Apple ID with iCloud Keychain enabled display the exact same pairing code."))
+                        .accessibilityIdentifier("icloud-pairing-code")
+                }
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
+                Text(AppLocalization.string("Cloud Archive:"))
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                Text(archiveSummaryText(for: diag))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("icloud-account-diagnostics")
+    }
+
+    private func accountStatusText(for diag: CloudSyncDiagnosticsSnapshot) -> String {
+        guard diag.isICloudAccountSignedIn else {
+            return AppLocalization.string("Not signed in to iCloud")
+        }
+        if diag.isEncryptionKeyAvailable {
+            return AppLocalization.string("Signed in · Keychain ready")
+        }
+        return AppLocalization.string("Signed in · Key generated on first upload")
+    }
+
+    private func archiveSummaryText(for diag: CloudSyncDiagnosticsSnapshot) -> String {
+        guard let archive = diag.remoteArchive else {
+            return AppLocalization.string("No archive in iCloud yet")
+        }
+        let sizeText = ByteCountFormatter.string(fromByteCount: Int64(archive.payloadByteCount), countStyle: .file)
+        if let count = archive.profileCount {
+            return AppLocalization.format("%lld profiles · %@ · from %@", Int64(count), sizeText, archive.sourceDeviceName)
+        }
+        return AppLocalization.format("Encrypted archive · %@ · from %@", sizeText, archive.sourceDeviceName)
+    }
+
+    private func revealLocalStorageFolder() {
+        guard let folderURL = cloudSync.localStorageDirectoryURL() else { return }
+        try? FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folderURL.path)
+    }
+
+    private func openSystemICloudSettings() {
+        let candidates = [
+            "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings",
+            "x-apple.systempreferences:"
+        ]
+        for raw in candidates {
+            if let url = URL(string: raw), NSWorkspace.shared.open(url) {
+                return
+            }
+        }
     }
 }
 

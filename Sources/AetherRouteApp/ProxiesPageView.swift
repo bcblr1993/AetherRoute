@@ -112,8 +112,12 @@ struct ProxiesView: View {
     /// profile (1.7.0); the subscription is never edited.
     @ViewBuilder
     private func overrideActions(summary: ProfileConfigurationSummary) -> some View {
-        let catchAll = ProxyConnectionReadinessPolicy.groupsToVerify(summary: summary)
-            .first { tunnel.customProxyGroup(named: $0.name) == nil }?.name
+        let excludedParentGroups = Set(tunnel.activeProfileOverrides.groups.map(\.name))
+            .union(tunnel.standaloneChainedProxyGroupName.map { [$0] } ?? [])
+        let catchAll = ProfileOverrideSuggestions.defaultParentGroup(
+            in: summary,
+            excluding: excludedParentGroups
+        )
         Button {
             showsNewGroup = true
         } label: {

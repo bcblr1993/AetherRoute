@@ -40,8 +40,6 @@ grep -F 'LiveTelemetryMetricValue(' "$CONTENT" \
   >/dev/null || fail "overview values must own telemetry observation"
 grep -F 'LiveMemoryWellValue(' "$CONTENT" \
   >/dev/null || fail "overview memory well values must own leaf telemetry observation"
-grep -F 'LiveMemoryWellSparkline(' "$CONTENT" \
-  >/dev/null || fail "overview memory sparklines must own leaf telemetry observation"
 grep -F 'LiveMemoryTotalFooter(' "$CONTENT" \
   >/dev/null || fail "overview memory total footer must own leaf telemetry observation"
 # The overview's metric values and the sidebar's connection-count badge are

@@ -36,4 +36,35 @@ public enum ProfileOverrideSuggestions {
             nodes.contains { $0.localizedCaseInsensitiveContains(keyword) }
         }
     }
+
+    /// The primary `select` group to list new custom groups or chained proxies
+    /// in by default, without the 64-member probing cap of
+    /// `ProxyConnectionReadinessPolicy.groupsToVerify`.
+    public static func defaultParentGroup(
+        in summary: ProfileConfigurationSummary,
+        excluding excludedNames: Set<String> = []
+    ) -> String? {
+        let selectable = summary.proxyGroups.filter {
+            $0.strategy.caseInsensitiveCompare("select") == .orderedSame
+                && !excludedNames.contains($0.name)
+        }
+        guard !selectable.isEmpty else { return nil }
+        let byName = Dictionary(
+            selectable.map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let ruleSource = summary.allRules.isEmpty ? summary.rules : summary.allRules
+        if let catchAll = ruleSource.last(where: {
+            $0.kind.caseInsensitiveCompare("MATCH") == .orderedSame
+                && byName[$0.target] != nil
+        })?.target {
+            return catchAll
+        }
+        for rule in ruleSource {
+            if byName[rule.target] != nil {
+                return rule.target
+            }
+        }
+        return selectable.first?.name
+    }
 }

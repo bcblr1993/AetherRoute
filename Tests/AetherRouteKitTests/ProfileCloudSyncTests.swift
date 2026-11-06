@@ -321,4 +321,120 @@ final class ProfileCloudSyncTests: XCTestCase {
         try store.save([second, first])
         XCTAssertEqual(store.loadSyncMetadata().modifiedAt[first.id.uuidString], stamped)
     }
+
+    // MARK: - Cross-Device Account Fingerprint & Cloud Archive Diagnostics (2.2.1)
+
+    func testKeyFingerprintDeterministicAndDomainSeparated() {
+        let keyA = Data((0..<32).map { UInt8($0) })
+        let keyB = Data((0..<32).map { UInt8(255 - $0) })
+        let shortKey = Data([1, 2, 3, 4])
+
+        let fingerprintA1 = ProfileCloudSyncManager.keyFingerprint(for: keyA)
+        let fingerprintA2 = ProfileCloudSyncManager.keyFingerprint(for: keyA)
+        let fingerprintB = ProfileCloudSyncManager.keyFingerprint(for: keyB)
+
+        XCTAssertNotNil(fingerprintA1)
+        XCTAssertEqual(fingerprintA1, fingerprintA2)
+        XCTAssertNotEqual(fingerprintA1, fingerprintB)
+        XCTAssertNil(ProfileCloudSyncManager.keyFingerprint(for: shortKey))
+        XCTAssertTrue(
+            fingerprintA1?.range(of: #"^#[0-9A-F]{4}-[0-9A-F]{4}$"#, options: .regularExpression) != nil,
+            "Expected #XXXX-XXXX pairing code format, got \(String(describing: fingerprintA1))"
+        )
+    }
+
+    func testCloudSyncPayloadPreservesDeviceNameAndBackwardCompatibility() throws {
+        let payloadWithName = CloudSyncPayload(
+            version: 1,
+            updatedAtUnixMilliseconds: 1_700_000_123_000,
+            deviceIdentifier: "device-uuid-1",
+            deviceName: "ChenXu's MacBook Pro",
+            encryptedData: Data("cipher".utf8),
+            sha256: "abc"
+        )
+        let data = try JSONEncoder().encode(payloadWithName)
+        let decoded = try JSONDecoder().decode(CloudSyncPayload.self, from: data)
+        XCTAssertEqual(decoded.deviceName, "ChenXu's MacBook Pro")
+        XCTAssertEqual(decoded.displayDeviceName, "ChenXu's MacBook Pro")
+
+        let legacyJSON = """
+        {
+          "version": 1,
+          "updatedAtUnixMilliseconds": 1700000123000,
+          "deviceIdentifier": "legacy-device-id",
+          "encryptedData": "Y2lwaGVy",
+          "sha256": "abc"
+        }
+        """.data(using: .utf8)!
+        let legacyDecoded = try JSONDecoder().decode(CloudSyncPayload.self, from: legacyJSON)
+        XCTAssertNil(legacyDecoded.deviceName)
+        XCTAssertEqual(legacyDecoded.displayDeviceName, "legacy-device-id")
+    }
+
+    @MainActor
+    func testDiagnosticsSnapshotReflectsAccountKeyFingerprintAndRemoteArchive() async throws {
+        final class InMemoryKVS: CloudKeyValueStoring, @unchecked Sendable {
+            private var storage: [String: Data] = [:]
+            func synchronize() -> Bool { true }
+            func data(forKey defaultName: String) -> Data? { storage[defaultName] }
+            func set(_ value: Any?, forKey defaultName: String) {
+                storage[defaultName] = value as? Data
+            }
+        }
+
+        let kvs = InMemoryKVS()
+        let sharedKeyStore = InMemoryProfileKeyStore()
+        let macDir = FileManager.default.temporaryDirectory.appendingPathComponent("mac-\(UUID().uuidString)")
+        let iosDir = FileManager.default.temporaryDirectory.appendingPathComponent("ios-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: macDir)
+            try? FileManager.default.removeItem(at: iosDir)
+        }
+
+        let macCatalogStore = ProfileCatalogStore(directoryURL: macDir, keyStore: sharedKeyStore)
+        let iosCatalogStore = ProfileCatalogStore(directoryURL: iosDir, keyStore: sharedKeyStore)
+        let validYAML = "proxies:\n  - {name: Edge-1, type: ss, server: 1.1.1.1, port: 443, cipher: aes-128-gcm, password: test}\n"
+        let profile1 = ManagedProfile(profile: ActiveProfile(name: "Tokyo", yaml: validYAML))
+        let profile2 = ManagedProfile(profile: ActiveProfile(name: "Singapore", yaml: validYAML))
+        try macCatalogStore.replaceCatalog(
+            ProfileCatalog(
+                activeProfileID: profile1.id,
+                profiles: [profile1, profile2]
+            )
+        )
+
+        let macManager = ProfileCloudSyncManager(
+            kvStore: kvs,
+            keyStore: sharedKeyStore,
+            catalogStore: macCatalogStore,
+            deviceIdentifier: "mac-id-01",
+            deviceName: "MacBook Pro"
+        )
+        macManager.isCloudSyncEnabled = true
+        let pushed = try await macManager.forcePushToCloud()
+        XCTAssertTrue(pushed)
+
+        let iosManager = ProfileCloudSyncManager(
+            kvStore: kvs,
+            keyStore: sharedKeyStore,
+            catalogStore: iosCatalogStore,
+            deviceIdentifier: "ios-id-02",
+            deviceName: "iPhone 16 Pro"
+        )
+        let macDiag = macManager.inspectDiagnostics(ubiquityIdentityAvailable: true)
+        let iosDiag = iosManager.inspectDiagnostics(ubiquityIdentityAvailable: true)
+
+        XCTAssertTrue(iosDiag.isICloudAccountSignedIn)
+        XCTAssertTrue(iosDiag.isEncryptionKeyAvailable)
+        XCTAssertNotNil(iosDiag.pairingFingerprint)
+        XCTAssertEqual(macDiag.pairingFingerprint, iosDiag.pairingFingerprint)
+        XCTAssertEqual(iosDiag.localStorageDirectoryPath, iosDir.path)
+
+        let archive = try XCTUnwrap(iosDiag.remoteArchive)
+        XCTAssertEqual(archive.profileCount, 2)
+        XCTAssertEqual(archive.sourceDeviceIdentifier, "mac-id-01")
+        XCTAssertEqual(archive.sourceDeviceName, "MacBook Pro")
+        XCTAssertFalse(archive.isFromCurrentDevice)
+        XCTAssertTrue(archive.payloadByteCount > 0)
+    }
 }

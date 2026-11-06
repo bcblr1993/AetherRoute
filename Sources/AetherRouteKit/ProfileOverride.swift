@@ -15,6 +15,11 @@ public struct ProfileOverride: Codable, Equatable, Sendable {
     public static let maximumKeywordLength = 64
     public static let maximumNameLength = 64
     public static let maximumManualNodeCount = 512
+    public static let standaloneChainedProxyGroupCandidates = [
+        "链式代理",
+        "🔗 链式代理",
+        "Chained Proxies",
+    ]
 
     public var formatVersion: Int
     /// Groups added to the profile, in the order they appear.
@@ -85,11 +90,23 @@ public struct ProfileOverride: Codable, Equatable, Sendable {
         let dialerByName = Dictionary(
             uniqueKeysWithValues: copy.chainedProxies.map { ($0.name, $0.dialerProxy) }
         )
+        let customParentByName = Dictionary(
+            uniqueKeysWithValues: copy.groups.compactMap { group in
+                group.parentGroup.map { (group.name, $0) }
+            }
+        )
         for chain in copy.chainedProxies {
+            var forbidden: Set<String> = [chain.name]
+            if let parent = chain.parentGroup {
+                forbidden.insert(parent)
+                if let grandParent = customParentByName[parent] {
+                    forbidden.insert(grandParent)
+                }
+            }
             var visited: Set<String> = [chain.name]
             var cursor: String? = chain.dialerProxy
             while let current = cursor {
-                guard visited.insert(current).inserted else {
+                if forbidden.contains(current) || !visited.insert(current).inserted {
                     throw ProfileOverrideError.chainedProxyCycle
                 }
                 cursor = dialerByName[current]

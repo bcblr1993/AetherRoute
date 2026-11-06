@@ -46,6 +46,12 @@ enum ProfileOverrideFixtureGenerator {
                     parentGroup: "节点选择",
                     position: .bottom
                 ),
+                ChainedProxyOverride(
+                    name: "🔗 独立日本链式",
+                    dialerProxy: "节点选择",
+                    target: .existingNode(name: "日本 东京"),
+                    parentGroup: nil
+                ),
             ]
         ).validated()
 
@@ -61,13 +67,17 @@ enum ProfileOverrideFixtureGenerator {
                 exit(1)
             }
             let summary = ProfileConfigurationInspector.inspect(yaml: result.yaml)
-            for group in ["🇭🇰 香港自动", "Japan, Tokyo", "Picked", "Nobody"] {
+            for group in ["链式代理", "🇭🇰 香港自动", "Japan, Tokyo", "Picked", "Nobody"] {
                 guard summary.proxyGroups.contains(where: { $0.name == group }) else {
                     fputs("\(name): \(group) missing\n", stderr)
                     exit(1)
                 }
             }
-            for (chainName, expectedDialer) in [("🇺🇸 美国住宅落地", "🇭🇰 香港自动"), ("🔗 新加坡（香港中转）", "🇭🇰 HK 01")] {
+            for (chainName, expectedDialer) in [
+                ("🇺🇸 美国住宅落地", "🇭🇰 香港自动"),
+                ("🔗 新加坡（香港中转）", "🇭🇰 HK 01"),
+                ("🔗 独立日本链式", "节点选择"),
+            ] {
                 guard let proxy = summary.proxies.first(where: { $0.name == chainName }),
                       proxy.dialerProxy == expectedDialer else {
                     fputs("\(name): chained proxy \(chainName) missing or wrong dialer\n", stderr)

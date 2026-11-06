@@ -801,9 +801,11 @@ struct ChainedProxySheet: View {
     }
 
     private var profileGroups: [String] {
-        (tunnel.activeProfileSummary?.proxyGroups ?? [])
+        let standalone = tunnel.standaloneChainedProxyGroupName
+        let grandParent = tunnel.customProxyGroup(named: parentGroup)?.parentGroup
+        return (tunnel.activeProfileSummary?.proxyGroups ?? [])
             .map(\.name)
-            .filter { $0 != parentGroup }
+            .filter { $0 != parentGroup && $0 != standalone && $0 != grandParent }
     }
 
     private var profileNodes: [String] {
@@ -814,9 +816,12 @@ struct ChainedProxySheet: View {
     }
 
     private var parentOptions: [String] {
-        let custom = Set(tunnel.activeProfileOverrides.groups.map(\.name))
+        let standalone = tunnel.standaloneChainedProxyGroupName
         return (tunnel.activeProfileSummary?.proxyGroups ?? [])
-            .filter { $0.strategy.caseInsensitiveCompare("select") == .orderedSame && !custom.contains($0.name) }
+            .filter {
+                $0.strategy.caseInsensitiveCompare("select") == .orderedSame
+                    && $0.name != standalone
+            }
             .map(\.name)
     }
 
@@ -867,6 +872,11 @@ struct ChainedProxySheet: View {
         .disabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
         .onAppear(perform: seedDefaultSelectionsIfNeeded)
+        .onChange(of: parentGroup) { _, newParent in
+            if !profileGroups.contains(dialerProxy) && !profileNodes.contains(dialerProxy) {
+                dialerProxy = defaultDialerProxy(forParent: newParent)
+            }
+        }
         .sheet(isPresented: $showsFullNodeEditor) {
             ManualNodeEditorSheet(
                 initialNode: syncedCustomNode,
@@ -1236,8 +1246,8 @@ struct ChainedProxySheet: View {
                 Divider().padding(.leading, AetherVisual.s4)
                 OverrideFormRow(AppLocalization.string("Show in")) {
                     Picker(AppLocalization.string("Show in"), selection: $parentGroup) {
-                        Text(AppLocalization.string("No other group")).tag(Self.noParent)
                         ForEach(parentOptions, id: \.self) { Text(verbatim: $0).tag($0) }
+                        Text(AppLocalization.string("Standalone \"Chained Proxies\" group")).tag(Self.noParent)
                     }
                     .labelsHidden()
                     .fixedSize()
@@ -1332,12 +1342,37 @@ struct ChainedProxySheet: View {
         return !hasConflict && hasChanges
     }
 
+    private func defaultDialerProxy(forParent parent: String) -> String {
+        let standalone = tunnel.standaloneChainedProxyGroupName
+        let grandParent = tunnel.customProxyGroup(named: parent)?.parentGroup
+        let groups = (tunnel.activeProfileSummary?.proxyGroups ?? [])
+            .map(\.name)
+            .filter { $0 != parent && $0 != standalone && $0 != grandParent }
+        if let firstGroup = groups.first {
+            return firstGroup
+        }
+        if !parent.isEmpty,
+           let selected = tunnel.proxySelections[parent]?.selectedMember,
+           profileNodes.contains(selected),
+           InitialProxySelectionPolicy.isRouteCandidate(selected) {
+            return selected
+        }
+        return profileNodes.first(where: InitialProxySelectionPolicy.isRouteCandidate)
+            ?? profileNodes.first
+            ?? ""
+    }
+
     private func seedDefaultSelectionsIfNeeded() {
-        if dialerProxy.isEmpty {
-            dialerProxy = profileGroups.first ?? profileNodes.first ?? ""
+        if initial == nil, parentGroup == Self.noParent, let firstParent = parentOptions.first {
+            parentGroup = firstParent
+        }
+        if dialerProxy.isEmpty || (!profileGroups.contains(dialerProxy) && !profileNodes.contains(dialerProxy)) {
+            dialerProxy = defaultDialerProxy(forParent: parentGroup)
         }
         if existingNodeName.isEmpty {
-            existingNodeName = profileNodes.first { $0 != dialerProxy } ?? profileNodes.first ?? ""
+            existingNodeName = profileNodes.first {
+                $0 != dialerProxy && InitialProxySelectionPolicy.isRouteCandidate($0)
+            } ?? profileNodes.first { $0 != dialerProxy } ?? profileNodes.first ?? ""
         }
     }
 
