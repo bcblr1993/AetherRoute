@@ -3681,6 +3681,23 @@
         }
       }
     },
+    "Copy PAC Script": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy PAC Script"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制 PAC 脚本"
+          }
+        }
+      }
+    },
     "Copy Proxy": {
       "localizations": {
         "zh-Hans": {
@@ -9758,6 +9775,23 @@
         }
       }
     },
+    "Other Shells & PAC": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other Shells & PAC"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他终端与 PAC"
+          }
+        }
+      }
+    },
     "Other devices on this Wi-Fi can connect to this proxy.": {
       "localizations": {
         "zh-Hans": {
@@ -9879,6 +9913,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "线路"
+          }
+        }
+      }
+    },
+    "PAC script copied.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PAC script copied."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已复制 PAC 脚本。"
           }
         }
       }
@@ -14573,6 +14624,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "终端"
+          }
+        }
+      }
+    },
+    "Terminal shell": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal shell"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终端类型"
           }
         }
       }

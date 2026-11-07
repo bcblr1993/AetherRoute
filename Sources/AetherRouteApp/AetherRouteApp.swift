@@ -1214,6 +1214,21 @@ private struct MenuBarContent: View {
                 }
                 .disabled(!tunnel.canCopyTerminalProxyCommand)
                 .accessibilityIdentifier("copy-terminal-proxy-button")
+                Menu {
+                    ForEach(TerminalShellDialect.allCases) { dialect in
+                        Button(dialect.displayTitle) {
+                            copy(terminalProxyCommand(for: dialect))
+                        }
+                    }
+                    Divider()
+                    Button(AppLocalization.string("Copy PAC Script")) {
+                        copy(terminalPACScript)
+                    }
+                } label: {
+                    Label(AppLocalization.string("Other Shells & PAC"), systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+                .disabled(!tunnel.canCopyTerminalProxyCommand)
+                .accessibilityIdentifier("menu-other-shells-pac")
 #if AETHERROUTE_INDEPENDENT
                 if !tunnel.canCopyTerminalProxyCommand {
                     Text(
@@ -1250,17 +1265,29 @@ private struct MenuBarContent: View {
     }
 
     private var terminalProxyCommand: String {
-        (try? tunnel.localProxySettings.shellEnvironmentCommand())
-            ?? [
-                "export HTTP_PROXY=http://127.0.0.1:\(tunnel.localProxySettings.httpPort)",
-                "export HTTPS_PROXY=http://127.0.0.1:\(tunnel.localProxySettings.httpPort)",
-                "export ALL_PROXY=socks5h://127.0.0.1:\(tunnel.localProxySettings.socksPort)",
-                "export http_proxy=\"$HTTP_PROXY\"",
-                "export https_proxy=\"$HTTPS_PROXY\"",
-                "export all_proxy=\"$ALL_PROXY\"",
-                "export NO_PROXY=localhost,127.0.0.1,::1",
-                "export no_proxy=\"$NO_PROXY\"",
-            ].joined(separator: "; ")
+        terminalProxyCommand(for: .zshBash)
+    }
+
+    private func terminalProxyCommand(for dialect: TerminalShellDialect) -> String {
+        (try? tunnel.localProxySettings.shellEnvironmentCommand(dialect: dialect))
+            ?? TerminalProxyEnvGenerator.shellCommand(
+                dialect: dialect,
+                host: "127.0.0.1",
+                httpPort: tunnel.localProxySettings.httpPort,
+                socksPort: tunnel.localProxySettings.socksPort
+            )
+    }
+
+    private var terminalPACScript: String {
+        let host = tunnel.localProxySettings.allowLAN
+            ? LANProxyServerController.shared.currentLANIP
+            : "127.0.0.1"
+        return (try? tunnel.localProxySettings.pacScript(host: host))
+            ?? TerminalProxyEnvGenerator.pacScript(
+                host: host,
+                httpPort: tunnel.localProxySettings.httpPort,
+                socksPort: tunnel.localProxySettings.socksPort
+            )
     }
 
     private func copy(_ command: String) {
@@ -1952,6 +1979,7 @@ private struct SettingsView: View {
     @EnvironmentObject private var menuBarTrafficController: MenuBarTrafficController
     @EnvironmentObject private var startup: AppStartupController
     @State private var localProxyCopyMessage: String?
+    @State private var selectedShellDialect: TerminalShellDialect = .zshBash
     @State private var selectedTab: SettingsTab?
 
     init() {
@@ -2441,6 +2469,17 @@ private struct SettingsView: View {
             }
             .disabled(!canEditLocalProxyPorts)
 
+            LabeledContent(AppLocalization.string("Terminal shell")) {
+                AetherSegmentedPicker(
+                    selection: $selectedShellDialect,
+                    options: TerminalShellDialect.allCases.map {
+                        .init(value: $0, title: $0.displayTitle)
+                    },
+                    accessibilityLabel: AppLocalization.string("Terminal shell"),
+                    accessibilityIdentifier: "local-proxy-shell-dialect-picker"
+                )
+            }
+
             HStack {
                 AetherCopyButton(
                     title: Text(AppLocalization.string("Copy Shell Environment")),
@@ -2455,7 +2494,9 @@ private struct SettingsView: View {
                     systemImage: "xmark.circle"
                 ) {
                     copyToPasteboard(
-                        LocalProxySettings.clearShellEnvironmentCommand
+                        TerminalProxyEnvGenerator.unsetCommand(
+                            dialect: selectedShellDialect
+                        )
                     )
                     localProxyCopyMessage = AppLocalization.string(
                         "Clear command copied."
@@ -2463,6 +2504,14 @@ private struct SettingsView: View {
                     return true
                 }
                 .accessibilityIdentifier("copy-clear-proxy-button")
+
+                AetherCopyButton(
+                    title: Text(AppLocalization.string("Copy PAC Script")),
+                    systemImage: "doc.text",
+                    action: copyLocalProxyPACScript
+                )
+                .disabled(!canCopyLocalProxyEnvironment)
+                .accessibilityIdentifier("copy-pac-script-button")
 
                 Spacer(minLength: AetherVisual.s3)
 
@@ -2512,10 +2561,30 @@ private struct SettingsView: View {
     private func copyLocalProxyShellEnvironment() -> Bool {
         do {
             copyToPasteboard(
-                try tunnel.localProxySettings.shellEnvironmentCommand()
+                try tunnel.localProxySettings.shellEnvironmentCommand(
+                    dialect: selectedShellDialect
+                )
             )
             localProxyCopyMessage = AppLocalization.string(
                 "Shell environment copied."
+            )
+            return true
+        } catch {
+            localProxyCopyMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    private func copyLocalProxyPACScript() -> Bool {
+        do {
+            let host = tunnel.localProxySettings.allowLAN
+                ? LANProxyServerController.shared.currentLANIP
+                : "127.0.0.1"
+            copyToPasteboard(
+                try tunnel.localProxySettings.pacScript(host: host)
+            )
+            localProxyCopyMessage = AppLocalization.string(
+                "PAC script copied."
             )
             return true
         } catch {

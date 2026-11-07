@@ -6,6 +6,25 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-11-08
+
+### Added
+
+- **Multi-Shell Terminal Proxy Environment Generator & PAC Auto-Proxy Script (`TerminalProxyEnvGenerator`)**:
+  - Added `TerminalShellDialect` (`.zshBash`, `.fish`, `.nushell`, `.powershell`) and `TerminalProxyEnvGenerator` (`Sources/AetherRouteKit/TerminalProxyEnvGenerator.swift`) benchmarking Surge 5 (`Copy Shell Export Command`) and Clash Verge Rev (`Copy Env` + PAC script).
+  - Supports `shellCommand(dialect:host:httpPort:socksPort:bypassHosts:)`, `unsetCommand(dialect:)`, and RFC-compliant `pacScript(host:httpPort:socksPort:)` (`FindProxyForURL(url, host)` bypassing plain hostnames, `localhost`, `*.localhost`, `*.local`, `*.lan`, `127.0.0.0/8`, RFC 1918 private networks, and `169.254.0.0/16` to `DIRECT`).
+  - Integrated into Settings › Network › Local proxy (`Terminal shell` segmented picker and `Copy PAC Script` button) and the Menu Bar overflow menu (`Other Shells & PAC` submenu) in `Sources/AetherRouteApp/AetherRouteApp.swift`.
+- **Tests first (TDD)**:
+  - Unit and gate tests in `Tests/AetherRouteKitTests/ProfileConfigurationSummaryTests.swift` (`testTerminalProxyEnvGeneratorSupportsAllShellDialectsAndPACScript`) and `scripts/test_recovery_and_subscription_compat_gate.sh` were written first and verified to fail on old code before implementation.
+
+### Changed
+
+- **Validation & Release Qualification (`2.6.0` / `2026110802`)**:
+  - Fast lane passed all 14 steps in 63s (`outputs/fast-lane-20261107T172019Z`), including `engine-unit`, `engine-capabilities`, and `differential-e2e`.
+  - Full `scripts/test.sh` regression, 6-dimension Tart VM matrix (`outputs/acceptance-2.6.0-2026110802-20261108-013843/vm-acceptance`: 210 checks, 158 PASS, 0 FAIL, 52 SKIP across `tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`, including 50s TLS idle keep-alive reuse, 2 MiB large uploads, and all 5 transparent proxy gates), and remote arm64 source gate (`vm:macos27`) all passed with zero warnings.
+  - UI responsiveness & memory budget gate (`outputs/acceptance-2.6.0-2026110802-20261108-013843/ui-perf/result.txt`, 300s `showcase` + 300s `large` on `vm:macos27`) passed all budgets: `showcase` (414 switches) `p50=77.0 ms`, `p95=115.3 ms` (`<= 180 ms`, vs. 2.5.0 `120.2 ms`), `max=130.0 ms` (`<= 300 ms`, vs. 2.5.0 `149.2 ms`), memory `median 67 MB / max 81 MB / growth +1 MB` (`<= 90 / 110 / +8 MB`); `large` (414 switches, 500 nodes / 10,000 rules / 2,000 connections) `p50=75.6 ms`, `p95=115.0 ms` (`<= 180 ms`, vs. 2.5.0 `120.1 ms`), `max=147.5 ms` (`<= 300 ms`, vs. 2.5.0 `163.2 ms`), memory `median 65 MB / max 79 MB / growth +2 MB` (`<= 90 / 110 / +8 MB`).
+  - Isolated `vm:macos27` runtime evidence (`outputs/acceptance-2.6.0-2026110802-20261108-013843/physical-runtime`) bound to notarized stable candidate DMG (`09354599428dd864817b1c25c68b56c6fe91727b80038360d844f3942d1e9304`, App notary submission `4d360e93-f8d1-4e26-ad51-561ee625ca79`, DMG notary submission `b8edf001-e57f-49e1-9f9d-a94e3edb75e2`) passed all 6 checks: 50s TLS idle keep-alive reuse (`both requests answered after 50s idle`), 2 MiB upload (TUN `0.871856s`, Transparent Proxy `0.916003s`), and 3-cycle / 6-phase NIC uplink switch recovery (TUN: `0/1/4/1/2/3 s`; Transparent Proxy: `2/2/2/2/2/2 s`; deadline 15s, zero manual reconnects). See `Docs/ReleaseExceptions/2.6.0.md`.
+
 ## [2.5.0] - 2026-11-08
 
 ### Added

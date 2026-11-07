@@ -1274,4 +1274,59 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
         )
     }
 
+    func testTerminalProxyEnvGeneratorSupportsAllShellDialectsAndPACScript() throws {
+        let zshCmd = TerminalProxyEnvGenerator.shellCommand(
+            dialect: .zshBash,
+            host: "127.0.0.1",
+            httpPort: 7890,
+            socksPort: 7891
+        )
+        XCTAssertTrue(zshCmd.contains("export HTTP_PROXY=http://127.0.0.1:7890"))
+        XCTAssertTrue(zshCmd.contains("export ALL_PROXY=socks5h://127.0.0.1:7891"))
+        XCTAssertTrue(zshCmd.contains("export NO_PROXY=localhost,127.0.0.1,::1"))
+
+        let fishCmd = TerminalProxyEnvGenerator.shellCommand(
+            dialect: .fish,
+            host: "127.0.0.1",
+            httpPort: 7890,
+            socksPort: 7891
+        )
+        XCTAssertTrue(fishCmd.contains("set -gx HTTP_PROXY http://127.0.0.1:7890"))
+        XCTAssertTrue(fishCmd.contains("set -gx ALL_PROXY socks5h://127.0.0.1:7891"))
+        XCTAssertTrue(fishCmd.contains("set -gx NO_PROXY localhost,127.0.0.1,::1"))
+
+        let nuCmd = TerminalProxyEnvGenerator.shellCommand(
+            dialect: .nushell,
+            host: "127.0.0.1",
+            httpPort: 7890,
+            socksPort: 7891
+        )
+        XCTAssertTrue(nuCmd.contains("$env.HTTP_PROXY = \"http://127.0.0.1:7890\""))
+        XCTAssertTrue(nuCmd.contains("$env.ALL_PROXY = \"socks5h://127.0.0.1:7891\""))
+
+        let pwshCmd = TerminalProxyEnvGenerator.shellCommand(
+            dialect: .powershell,
+            host: "192.168.1.50",
+            httpPort: 7890,
+            socksPort: 7891
+        )
+        XCTAssertTrue(pwshCmd.contains("$env:HTTP_PROXY=\"http://192.168.1.50:7890\""))
+        XCTAssertTrue(pwshCmd.contains("$env:NO_PROXY=\"localhost,127.0.0.1,::1,192.168.1.50\""))
+
+        XCTAssertTrue(TerminalProxyEnvGenerator.unsetCommand(dialect: .zshBash).contains("unset HTTP_PROXY"))
+        XCTAssertTrue(TerminalProxyEnvGenerator.unsetCommand(dialect: .fish).contains("set -e HTTP_PROXY"))
+        XCTAssertTrue(TerminalProxyEnvGenerator.unsetCommand(dialect: .nushell).contains("hide-env -i"))
+        XCTAssertTrue(TerminalProxyEnvGenerator.unsetCommand(dialect: .powershell).contains("Remove-Item Env:"))
+
+        let pac = TerminalProxyEnvGenerator.pacScript(
+            host: "127.0.0.1",
+            httpPort: 7890,
+            socksPort: 7891
+        )
+        XCTAssertTrue(pac.contains("function FindProxyForURL(url, host)"))
+        XCTAssertTrue(pac.contains("isPlainHostName(host)"))
+        XCTAssertTrue(pac.contains("127.0.0.0"))
+        XCTAssertTrue(pac.contains("PROXY 127.0.0.1:7890; SOCKS5 127.0.0.1:7891; SOCKS 127.0.0.1:7891; DIRECT"))
+    }
+
 }

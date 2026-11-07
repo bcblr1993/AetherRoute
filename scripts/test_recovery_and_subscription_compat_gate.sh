@@ -664,6 +664,23 @@ struct RecoveryAndSubscriptionCompatVerifier {
             "ConnectionTrafficAggregator must extract terminal outbound hop"
         )
 
+        // 3c. Verify TerminalProxyEnvGenerator multi-shell commands and PAC script
+        let fishCmd = TerminalProxyEnvGenerator.shellCommand(dialect: .fish, host: "127.0.0.1", httpPort: 7890, socksPort: 7891)
+        assertTrue(
+            fishCmd.contains("set -gx HTTP_PROXY http://127.0.0.1:7890") && fishCmd.contains("set -gx ALL_PROXY socks5h://127.0.0.1:7891"),
+            "TerminalProxyEnvGenerator must generate Fish shell proxy export commands"
+        )
+        let nuCmd = TerminalProxyEnvGenerator.shellCommand(dialect: .nushell, host: "127.0.0.1", httpPort: 7890, socksPort: 7891)
+        assertTrue(
+            nuCmd.contains("$env.HTTP_PROXY = \"http://127.0.0.1:7890\""),
+            "TerminalProxyEnvGenerator must generate Nushell proxy export commands"
+        )
+        let pac = TerminalProxyEnvGenerator.pacScript(host: "127.0.0.1", httpPort: 7890, socksPort: 7891)
+        assertTrue(
+            pac.contains("function FindProxyForURL(url, host)") && pac.contains("PROXY 127.0.0.1:7890; SOCKS5 127.0.0.1:7891; SOCKS 127.0.0.1:7891; DIRECT"),
+            "TerminalProxyEnvGenerator must generate a valid FindProxyForURL PAC script"
+        )
+
         let outputPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "/tmp/compat_profile.yaml"
         try! Data(optimizedYAML.utf8).write(to: URL(fileURLWithPath: outputPath))
         print("PASS: Swift recovery state-machine & subscription compatibility checks passed cleanly")
