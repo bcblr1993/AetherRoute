@@ -681,6 +681,32 @@ struct RecoveryAndSubscriptionCompatVerifier {
             "TerminalProxyEnvGenerator must generate a valid FindProxyForURL PAC script"
         )
 
+        // 3d. Verify NetworkDiagnosticDoctor 6-point evaluation and Markdown report
+        let diagReport = NetworkDiagnosticDoctor.evaluate(
+            snapshot: NetworkDiagnosticInputSnapshot(
+                isConnected: true,
+                engineMode: "tun",
+                routingMode: "rule",
+                localProxyEnabled: true,
+                localProxyPort: 7890,
+                localProxyListening: true,
+                loopbackBypassIntact: true,
+                dnsEnhancedMode: "fake-ip",
+                dnsResolvedCount: 2,
+                dnsLatencyMilliseconds: 9,
+                domesticLatencyMilliseconds: 22,
+                proxyLatencyMilliseconds: 88,
+                activeProfileNodeCount: 25,
+                ruleProviderCount: 2,
+                staleRuleProviderCount: 0
+            ),
+            generatedAtUnixSeconds: 1_700_000_000
+        )
+        assertTrue(
+            diagReport.overallStatus == .passed && diagReport.passedCount == 6 && diagReport.formattedMarkdownReport().contains("proxy_outbound_connectivity: PASSED (88 ms)"),
+            "NetworkDiagnosticDoctor must evaluate all 6 diagnostic checks and render Markdown summary"
+        )
+
         let outputPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "/tmp/compat_profile.yaml"
         try! Data(optimizedYAML.utf8).write(to: URL(fileURLWithPath: outputPath))
         print("PASS: Swift recovery state-machine & subscription compatibility checks passed cleanly")

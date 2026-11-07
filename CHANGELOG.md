@@ -6,6 +6,24 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-11-08
+
+### Added
+
+- **One-Click Network Diagnostic Doctor & Sanitized Markdown Report (`NetworkDiagnosticDoctor` & `DNSView`)**:
+  - Added `DiagnosticCheckKind` (`.localProxyListener`, `.loopbackDirectBypass`, `.dnsResolutionHealth`, `.domesticDirectConnectivity`, `.proxyOutboundConnectivity`, `.subscriptionAndRuleProviderHealth`), `DiagnosticCheckStatus` (`.passed`, `.warning`, `.failed`, `.skipped`), `DiagnosticCheckResult`, `NetworkDiagnosticInputSnapshot`, `NetworkDiagnosticReport`, and `NetworkDiagnosticDoctor` (`Sources/AetherRouteKit/NetworkDiagnosticDoctor.swift`) benchmarking Surge 5 `Diagnostics` and Clash Verge Rev `NetCheck`.
+  - Added a `Network diagnostics` (`网络诊断检查`) section to `DNSView` (`Sources/AetherRouteApp/DNSPageView.swift`) enabling one-click 6-point health verification and one-click `Copy diagnostic report` (`复制诊断报告`) with zero private server addresses or credentials.
+- **Tests first (TDD)**:
+  - Unit and gate tests in `Tests/AetherRouteKitTests/ProfileConfigurationSummaryTests.swift` (`testNetworkDiagnosticDoctorEvaluatesHealthyDegradedAndFailedSnapshotsWithoutLeakingSecrets`) and `scripts/test_recovery_and_subscription_compat_gate.sh` were written first and verified to fail on old code before implementation.
+
+### Changed
+
+- **Validation & Release Qualification (`2.7.0` / `2026110803`)**:
+  - Fast lane passed all 14 steps in 61s (`outputs/fast-lane-20261107T184019Z`), including `engine-unit`, `engine-capabilities`, and `differential-e2e`.
+  - Full `scripts/test.sh` regression, 6-dimension Tart VM matrix (`outputs/acceptance-2.7.0-2026110803-20261108-032203/vm-acceptance`: 210 checks, 158 PASS, 0 FAIL, 52 SKIP across `tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`, including 50s TLS idle keep-alive reuse, 2 MiB large uploads, and all 5 transparent proxy gates), and remote arm64 source gate (`vm:macos27`) all passed with zero warnings.
+  - UI responsiveness & memory budget gate (`outputs/acceptance-2.7.0-2026110803-20261108-032203/ui-perf/result.txt`, 300s `showcase` + 300s `large` on `vm:macos27`) passed all budgets: `showcase` (414 switches) `p50=78.2 ms`, `p95=115.5 ms` (`<= 180 ms`), `max=155.4 ms` (`<= 300 ms`), memory `median 68 MB / max 82 MB / growth +1 MB` (`<= 90 / 110 / +8 MB`); `large` (414 switches, 500 nodes / 10,000 rules / 2,000 connections) `p50=79.9 ms`, `p95=118.2 ms` (`<= 180 ms`), `max=128.6 ms` (`<= 300 ms`, vs. 2.6.0 `147.5 ms`), memory `median 65 MB / max 80 MB / growth +2 MB` (`<= 90 / 110 / +8 MB`).
+  - Isolated `vm:macos27` runtime evidence (`outputs/acceptance-2.7.0-2026110803-20261108-032203/physical-runtime`) bound to notarized stable candidate DMG (`a5102d9433e96a17a530560bd457a79202ffccb4ce4dee6f64f0aa3d0f7f2d2a`, App notary submission `be9dba5c-9780-48fb-9e90-dda98cddd0e6`, DMG notary submission `4d0da5ea-9144-4586-9481-375619036bb8`) passed all 6 checks: 50s TLS idle keep-alive reuse (`both requests answered after 50s idle`), 2 MiB upload (TUN `0.864443s`, Transparent Proxy `0.862722s`), and 3-cycle / 6-phase NIC uplink switch recovery (TUN: `0/1/0/2/3/2 s`; Transparent Proxy: `2/1/2/3/3/2 s`; deadline 15s, zero manual reconnects). See `Docs/ReleaseExceptions/2.7.0.md`.
+
 ## [2.6.0] - 2026-11-08
 
 ### Added

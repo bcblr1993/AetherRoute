@@ -3774,6 +3774,23 @@
         }
       }
     },
+    "Copy diagnostic report": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy diagnostic report"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制诊断报告"
+          }
+        }
+      }
+    },
     "Copy node name": {
       "localizations": {
         "zh-Hans": {
@@ -4254,6 +4271,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "DNS 查询超时或无法解析目标主机，请检查 DNS 设置或重新开关连接以刷新解析器。"
+          }
+        }
+      }
+    },
+    "DNS resolution & Fake-IP health": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DNS resolution & Fake-IP health"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DNS 解析与 Fake-IP 状态"
           }
         }
       }
@@ -4813,6 +4847,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "国内直连"
+          }
+        }
+      }
+    },
+    "Domestic direct reachability": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Domestic direct reachability"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "国内直连连通性"
           }
         }
       }
@@ -5619,6 +5670,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "外部落地节点"
+          }
+        }
+      }
+    },
+    "Failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "异常"
           }
         }
       }
@@ -7669,6 +7737,23 @@
         }
       }
     },
+    "Local proxy listener": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local proxy listener"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地代理端口监听"
+          }
+        }
+      }
+    },
     "Locate": {
       "localizations": {
         "zh-Hans": {
@@ -7713,6 +7798,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "日志"
+          }
+        }
+      }
+    },
+    "Loopback & localhost direct protection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loopback & localhost direct protection"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地回环与 localhost 直连防线"
           }
         }
       }
@@ -8228,6 +8330,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "网络配置"
+          }
+        }
+      }
+    },
+    "Network diagnostics": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network diagnostics"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络诊断检查"
           }
         }
       }
@@ -9550,6 +9669,23 @@
         }
       }
     },
+    "One-click health check for local proxy listeners, loopback direct protection, DNS resolution, domestic direct reachability, and active subscription rules.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One-click health check for local proxy listeners, loopback direct protection, DNS resolution, domestic direct reachability, and active subscription rules."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一键检查本地代理监听、回环直连保护、DNS 解析、国内直连可达性与活跃订阅规则状态。"
+          }
+        }
+      }
+    },
     "Only connections from %@": {
       "localizations": {
         "zh-Hans": {
@@ -9973,6 +10109,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "经典纸飞机 (默认)"
+          }
+        }
+      }
+    },
+    "Passed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正常"
           }
         }
       }
@@ -11089,6 +11242,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "代理节点"
+          }
+        }
+      }
+    },
+    "Proxy outbound connectivity": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Proxy outbound connectivity"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理出站连通性"
           }
         }
       }
@@ -12557,6 +12727,7 @@
       }
     },
     "Run Diagnostics": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -12567,7 +12738,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "运行诊断"
+            "value": "开始诊断"
           }
         }
       }
@@ -12584,6 +12755,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "运行端到端网络连接诊断。"
+          }
+        }
+      }
+    },
+    "Running diagnostics…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running diagnostics…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在诊断…"
           }
         }
       }
@@ -13384,6 +13572,23 @@
         }
       }
     },
+    "Skipped": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skipped"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已跳过"
+          }
+        }
+      }
+    },
     "Smart TV / Apple TV / Switch: Enter the same IP and port in network proxy settings.": {
       "localizations": {
         "zh-Hans": {
@@ -13888,6 +14093,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "订阅配置"
+          }
+        }
+      }
+    },
+    "Subscription & rule providers": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subscription & rule providers"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "活跃订阅与规则集状态"
           }
         }
       }
@@ -17597,6 +17819,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "等待你操作"
+          }
+        }
+      }
+    },
+    "Warning": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warning"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提示"
           }
         }
       }

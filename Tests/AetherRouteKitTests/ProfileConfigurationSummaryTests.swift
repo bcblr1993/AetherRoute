@@ -1329,4 +1329,64 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
         XCTAssertTrue(pac.contains("PROXY 127.0.0.1:7890; SOCKS5 127.0.0.1:7891; SOCKS 127.0.0.1:7891; DIRECT"))
     }
 
+    func testNetworkDiagnosticDoctorEvaluatesHealthyDegradedAndFailedSnapshotsWithoutLeakingSecrets() {
+        let healthySnapshot = NetworkDiagnosticInputSnapshot(
+            isConnected: true,
+            engineMode: "tun",
+            routingMode: "rule",
+            localProxyEnabled: true,
+            localProxyPort: 7890,
+            localProxyListening: true,
+            loopbackBypassIntact: true,
+            dnsEnhancedMode: "fake-ip",
+            dnsResolvedCount: 2,
+            dnsLatencyMilliseconds: 8,
+            domesticLatencyMilliseconds: 24,
+            proxyLatencyMilliseconds: 95,
+            activeProfileNodeCount: 42,
+            ruleProviderCount: 4,
+            staleRuleProviderCount: 0
+        )
+        let healthyReport = NetworkDiagnosticDoctor.evaluate(
+            snapshot: healthySnapshot,
+            generatedAtUnixSeconds: 1_700_000_000
+        )
+        XCTAssertEqual(healthyReport.overallStatus, .passed)
+        XCTAssertEqual(healthyReport.checks.count, 6)
+        XCTAssertEqual(healthyReport.passedCount, 6)
+        XCTAssertEqual(healthyReport.warningCount, 0)
+        XCTAssertEqual(healthyReport.failedCount, 0)
+
+        let markdown = healthyReport.formattedMarkdownReport()
+        XCTAssertTrue(markdown.contains("# AetherRoute Network Diagnostic Report"))
+        XCTAssertTrue(markdown.contains("local_proxy_listener: PASSED"))
+        XCTAssertTrue(markdown.contains("loopback_direct_bypass: PASSED"))
+        XCTAssertTrue(markdown.contains("proxy_outbound_connectivity: PASSED (95 ms)"))
+
+        let degradedSnapshot = NetworkDiagnosticInputSnapshot(
+            isConnected: true,
+            engineMode: "transparent",
+            routingMode: "global",
+            localProxyEnabled: false,
+            localProxyPort: 7890,
+            localProxyListening: false,
+            loopbackBypassIntact: true,
+            dnsEnhancedMode: "redir-host",
+            dnsResolvedCount: 1,
+            dnsLatencyMilliseconds: 15,
+            domesticLatencyMilliseconds: 40,
+            proxyLatencyMilliseconds: nil,
+            activeProfileNodeCount: 12,
+            ruleProviderCount: 3,
+            staleRuleProviderCount: 1
+        )
+        let degradedReport = NetworkDiagnosticDoctor.evaluate(
+            snapshot: degradedSnapshot,
+            generatedAtUnixSeconds: 1_700_000_100
+        )
+        XCTAssertEqual(degradedReport.overallStatus, .failed)
+        XCTAssertEqual(degradedReport.failedCount, 1)
+        XCTAssertEqual(degradedReport.warningCount, 1)
+    }
+
 }

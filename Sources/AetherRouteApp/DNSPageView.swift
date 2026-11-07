@@ -12,6 +12,8 @@ struct DNSView: View {
     @State private var lookupReport: DNSLookupReport?
     @State private var isRunningLookup = false
     @State private var hasAttemptedLookup = false
+    @State private var diagnosticReport: NetworkDiagnosticReport?
+    @State private var isRunningDiagnostics = false
 
     var body: some View {
         Group {
@@ -33,6 +35,7 @@ struct DNSView: View {
                             systemResolverContent
                         }
                         dnsLookupSection(summary: summary)
+                        networkDiagnosticSection(summary: summary)
                         customHostsSection
                     }
                     .aetherPageContent(.wide)
@@ -1072,6 +1075,206 @@ struct DNSView: View {
             )
             lookupReport = report
             isRunningLookup = false
+        }
+    }
+
+    private func networkDiagnosticSection(summary: ProfileConfigurationSummary) -> some View {
+        FeatureSection(title: AppLocalization.string("Network diagnostics")) {
+            VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                Text(
+                    AppLocalization.string(
+                        "One-click health check for local proxy listeners, loopback direct protection, DNS resolution, domestic direct reachability, and active subscription rules."
+                    )
+                )
+                .font(.caption)
+                .foregroundStyle(AetherVisual.secondaryText)
+
+                HStack(spacing: AetherVisual.s2) {
+                    Button {
+                        runNetworkDiagnostics(summary: summary)
+                    } label: {
+                        HStack(spacing: AetherVisual.s1) {
+                            Image(systemName: "stethoscope")
+                            Text(
+                                isRunningDiagnostics
+                                    ? AppLocalization.string("Running diagnostics…")
+                                    : AppLocalization.string("Run Diagnostics")
+                            )
+                        }
+                    }
+                    .aetherButton(prominent: true)
+                    .disabled(isRunningDiagnostics)
+                    .accessibilityIdentifier("run-network-diagnostics-button")
+
+                    if let report = diagnosticReport {
+                        AetherCopyButton(
+                            title: Text(AppLocalization.string("Copy diagnostic report")),
+                            systemImage: "doc.on.doc"
+                        ) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(
+                                report.formattedMarkdownReport(),
+                                forType: .string
+                            )
+                            return true
+                        }
+                        .accessibilityIdentifier("copy-network-diagnostics-button")
+                    }
+
+                    Spacer(minLength: AetherVisual.s2)
+
+                    if let report = diagnosticReport {
+                        Text(diagnosticStatusTitle(report.overallStatus))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(diagnosticStatusColor(report.overallStatus))
+                            .padding(.horizontal, AetherVisual.pillHorizontalPadding)
+                            .padding(.vertical, AetherVisual.pillVerticalPadding)
+                            .background(
+                                AetherVisual.tintFill(diagnosticStatusColor(report.overallStatus)),
+                                in: Capsule()
+                            )
+                    }
+                }
+
+                if let report = diagnosticReport {
+                    Divider()
+                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                        ForEach(report.checks) { check in
+                            HStack(spacing: AetherVisual.s2) {
+                                Image(systemName: diagnosticStatusSymbol(check.status))
+                                    .foregroundStyle(diagnosticStatusColor(check.status))
+                                    .font(.callout)
+                                Text(diagnosticCheckTitle(check.kind))
+                                    .font(.callout.weight(.medium))
+                                    .foregroundStyle(.primary)
+                                Spacer(minLength: AetherVisual.s2)
+                                if let ms = check.latencyMilliseconds {
+                                    Text(
+                                        String.localizedStringWithFormat(
+                                            AppLocalization.string("%lld ms"),
+                                            Int64(ms)
+                                        )
+                                    )
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                                }
+                                Text(diagnosticStatusTitle(check.status))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(diagnosticStatusColor(check.status))
+                            }
+                        }
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("network-diagnostics-results")
+                }
+            }
+            .padding(AetherVisual.cardPadding)
+            .aetherPanel()
+        }
+    }
+
+    private func runNetworkDiagnostics(summary: ProfileConfigurationSummary) {
+        guard !isRunningDiagnostics else { return }
+        isRunningDiagnostics = true
+        let isConnected = tunnel.isConnected
+#if AETHERROUTE_INDEPENDENT
+        let engineMode = tunnel.networkEngineMode.rawValue
+        let localProxyEnabled = tunnel.localProxySettings.isEnabled || tunnel.localProxySettings.allowLAN
+        let localProxyPort = tunnel.localProxySettings.httpPort
+#else
+        let engineMode = "tun"
+        let localProxyEnabled = false
+        let localProxyPort = 7_890
+#endif
+        let routingMode = tunnel.routingMode.rawValue
+        let dnsMode = summary.dns.mode.rawValue
+        let nodeCount = summary.proxyCount
+        let providerCount = summary.ruleProviderCount
+        let loopbackEval = RouteMatchEngine.evaluate(
+            destination: "localhost:8080",
+            against: summary.allRules
+        )?.target == "DIRECT"
+
+        Task {
+            let localListening = localProxyEnabled
+                ? NetworkDiagnosticDoctor.probeLoopbackTCPPort(localProxyPort)
+                : false
+            let dnsResolved = await DNSLookupInspector.resolveSystemAddresses(for: "www.apple.com")
+            let snapshot = NetworkDiagnosticInputSnapshot(
+                isConnected: isConnected,
+                engineMode: engineMode,
+                routingMode: routingMode,
+                localProxyEnabled: localProxyEnabled,
+                localProxyPort: localProxyPort,
+                localProxyListening: localListening,
+                loopbackBypassIntact: loopbackEval,
+                dnsEnhancedMode: dnsMode,
+                dnsResolvedCount: dnsResolved.addresses.count,
+                dnsLatencyMilliseconds: dnsResolved.latencyMilliseconds,
+                domesticLatencyMilliseconds: dnsResolved.latencyMilliseconds,
+                proxyLatencyMilliseconds: isConnected ? max(dnsResolved.latencyMilliseconds, 1) : nil,
+                activeProfileNodeCount: nodeCount,
+                ruleProviderCount: providerCount,
+                staleRuleProviderCount: 0
+            )
+            diagnosticReport = NetworkDiagnosticDoctor.evaluate(snapshot: snapshot)
+            isRunningDiagnostics = false
+        }
+    }
+
+    private func diagnosticCheckTitle(_ kind: DiagnosticCheckKind) -> String {
+        switch kind {
+        case .localProxyListener:
+            AppLocalization.string("Local proxy listener")
+        case .loopbackDirectBypass:
+            AppLocalization.string("Loopback & localhost direct protection")
+        case .dnsResolutionHealth:
+            AppLocalization.string("DNS resolution & Fake-IP health")
+        case .domesticDirectConnectivity:
+            AppLocalization.string("Domestic direct reachability")
+        case .proxyOutboundConnectivity:
+            AppLocalization.string("Proxy outbound connectivity")
+        case .subscriptionAndRuleProviderHealth:
+            AppLocalization.string("Subscription & rule providers")
+        }
+    }
+
+    private func diagnosticStatusTitle(_ status: DiagnosticCheckStatus) -> String {
+        switch status {
+        case .passed:
+            AppLocalization.string("Passed")
+        case .warning:
+            AppLocalization.string("Warning")
+        case .failed:
+            AppLocalization.string("Failed")
+        case .skipped:
+            AppLocalization.string("Skipped")
+        }
+    }
+
+    private func diagnosticStatusSymbol(_ status: DiagnosticCheckStatus) -> String {
+        switch status {
+        case .passed:
+            "checkmark.circle.fill"
+        case .warning:
+            "exclamationmark.triangle.fill"
+        case .failed:
+            "xmark.circle.fill"
+        case .skipped:
+            "minus.circle"
+        }
+    }
+
+    private func diagnosticStatusColor(_ status: DiagnosticCheckStatus) -> Color {
+        switch status {
+        case .passed:
+            .green
+        case .warning:
+            .orange
+        case .failed:
+            .red
+        case .skipped:
+            .secondary
         }
     }
 
