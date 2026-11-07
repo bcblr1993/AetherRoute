@@ -463,6 +463,53 @@ struct RecoveryAndSubscriptionCompatVerifier {
         assertTrue(optimizedYAML.contains("'+.wechat.com': 119.29.29.29"), "WeChat wechat.com domains must be pinned to domestic resolver in nameserver-policy")
         assertTrue(optimizedYAML.contains("- DOMAIN-SUFFIX,servicewechat.com,DIRECT"), "WeChat servicewechat.com must bypass proxy at high priority")
 
+        // Verify loopback protection rules precede custom AETHER-APP / PROCESS-NAME rules
+        // and RFC 6761 +.localhost / +.local Fake-IP filters are injected.
+        let appRule = CustomRule(
+            kind: .application,
+            value: "com.openai.chat;/Applications/ChatGPT.app",
+            target: .proxy("节点选择")
+        )
+        let appRuleString = appRule.toClashRuleString()
+        let optimizedWithAppRule = DomesticRoutingOptimizer.optimizedProfile(
+            for: normalizedYAML,
+            customRules: [appRule]
+        )
+        assertTrue(optimizedWithAppRule.contains("- '+.localhost'"), "Fake-IP filter must contain RFC 6761 '+.localhost'")
+        assertTrue(optimizedWithAppRule.contains("- '+.local'"), "Fake-IP filter must contain mDNS '+.local'")
+        guard let appRuleRange = optimizedWithAppRule.range(of: "- \(appRuleString)") else {
+            fputs("FAILED: Custom application rule missing from optimizedYAML\n", stderr)
+            exit(1)
+        }
+        for loopbackRule in [
+            "- DOMAIN,localhost,DIRECT",
+            "- DOMAIN-SUFFIX,localhost,DIRECT",
+            "- IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
+            "- IP-CIDR6,::1/128,DIRECT,no-resolve",
+        ] {
+            guard let loopbackRange = optimizedWithAppRule.range(of: loopbackRule) else {
+                fputs("FAILED: Missing mandatory loopback rule \(loopbackRule)\n", stderr)
+                exit(1)
+            }
+            assertTrue(
+                loopbackRange.lowerBound < appRuleRange.lowerBound,
+                "Loopback rule \(loopbackRule) must precede custom application rule \(appRuleString)"
+            )
+        }
+
+        // Verify RouteMatchEngine always assesses loopback & RFC 6761 localhost as DIRECT
+        let trapRules = [
+            RuleConfigurationSummary(id: 0, order: 1, kind: "DOMAIN-SUFFIX", criteria: "localhost", target: "节点选择"),
+            RuleConfigurationSummary(id: 1, order: 2, kind: "IP-CIDR", criteria: "127.0.0.0/8", target: "节点选择", noResolve: true),
+            RuleConfigurationSummary(id: 2, order: 3, kind: "MATCH", criteria: nil, target: "节点选择"),
+        ]
+        for loopbackTarget in ["127.0.0.1:8080", "[::1]:5173", "localhost:3000", "https://api.localhost:8443/v1"] {
+            assertTrue(
+                RouteMatchEngine.evaluate(destination: loopbackTarget, against: trapRules)?.target == "DIRECT",
+                "Loopback target \(loopbackTarget) must evaluate as DIRECT even when profile rules point to proxy"
+            )
+        }
+
         // Verify large subscription live-reload payload compression (>512 KiB raw YAML)
         var bulkRules: [String] = []
         bulkRules.reserveCapacity(10_000)

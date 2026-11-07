@@ -391,4 +391,86 @@ final class DomesticRoutingOptimizerTests: XCTestCase {
 
         try ProfileImportValidator.validate(data: Data(output.utf8))
     }
+
+    func testLoopbackProtectionRulesPrecedeCustomApplicationRulesAndIncludeRFC6761FakeIPFilters() throws {
+        let input = """
+        mode: rule
+        dns:
+          enable: true
+          enhanced-mode: fake-ip
+          nameserver:
+            - 223.5.5.5
+        proxies:
+          - name: S1
+            type: socks5
+            server: 198.51.100.10
+            port: 1080
+        proxy-groups:
+          - name: G1
+            type: select
+            proxies:
+              - S1
+        rules:
+          - MATCH,G1
+        """
+
+        let appRule = CustomRule(
+            kind: .application,
+            value: "com.openai.chat;/Applications/ChatGPT.app",
+            target: .proxy("G1")
+        )
+        let appRuleString = appRule.toClashRuleString()
+        let output = DomesticRoutingOptimizer.optimizedProfile(
+            for: input,
+            customRules: [appRule]
+        )
+
+        XCTAssertTrue(output.contains("- '+.localhost'"))
+        XCTAssertTrue(output.contains("- '+.local'"))
+
+        let expectedLoopbackRules = [
+            "- DOMAIN,localhost,DIRECT",
+            "- DOMAIN-SUFFIX,localhost,DIRECT",
+            "- IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
+            "- IP-CIDR6,::1/128,DIRECT,no-resolve",
+        ]
+        let appRuleRange = try XCTUnwrap(output.range(of: "- \(appRuleString)"))
+        for loopbackRule in expectedLoopbackRules {
+            let loopbackRange = try XCTUnwrap(
+                output.range(of: loopbackRule),
+                "Missing mandatory loopback rule \(loopbackRule)"
+            )
+            XCTAssertLessThan(
+                loopbackRange.lowerBound,
+                appRuleRange.lowerBound,
+                "Loopback protection rule \(loopbackRule) must precede custom application rule \(appRuleString)"
+            )
+        }
+
+        let disabledDomesticWithAppOutput = DomesticRoutingOptimizer.optimizedProfile(
+            for: input,
+            customRules: [appRule],
+            enableDomesticDirect: false
+        )
+        XCTAssertNoThrow(try ProviderLaunchSnapshot(
+            profileYAML: disabledDomesticWithAppOutput,
+            routingMode: .rule,
+            bypassPolicy: .empty,
+            dnsPolicy: .inherited,
+            proxySelections: [:],
+            routingResources: [:]
+        ))
+
+        let disabledDomesticOutput = DomesticRoutingOptimizer.optimizedProfile(
+            for: input,
+            enableDomesticDirect: false
+        )
+        for loopbackRule in expectedLoopbackRules {
+            XCTAssertTrue(
+                disabledDomesticOutput.contains(loopbackRule),
+                "Loopback rule \(loopbackRule) must still be injected when enableDomesticDirect is false"
+            )
+        }
+        try ProfileImportValidator.validate(data: Data(disabledDomesticOutput.utf8))
+    }
 }

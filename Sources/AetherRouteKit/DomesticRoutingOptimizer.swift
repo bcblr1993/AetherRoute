@@ -34,7 +34,21 @@ public enum DomesticRoutingOptimizer {
 
     // MARK: - Predefined Rule Lists
 
+    /// Mandatory loopback protection rules injected at the very top of `rules:`
+    /// (ahead of `AETHER-APP` / `PROCESS-NAME` and custom destination rules) so
+    /// local loopback traffic (`127.0.0.0/8`, `::1`, `localhost`, `*.localhost`)
+    /// is never sent to a remote proxy server even when an application rule
+    /// routes a whole desktop client through a proxy group.
+    public static let loopbackProtectionRules: [String] = [
+        "DOMAIN,localhost,DIRECT",
+        "DOMAIN-SUFFIX,localhost,DIRECT",
+        "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
+        "IP-CIDR6,::1/128,DIRECT,no-resolve",
+    ]
+
     public static let highPriorityBypassRules: [String] = [
+        "DOMAIN,localhost,DIRECT",
+        "DOMAIN-SUFFIX,localhost,DIRECT",
         "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
         "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
         "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
@@ -111,12 +125,16 @@ public enum DomesticRoutingOptimizer {
     public static let fallbackDirectRule = "GEOIP,CN,DIRECT"
 
     public static let fakeIPFilterDomains: [String] = [
+        "+.lan",
         "*.lan",
+        "+.localdomain",
         "*.localdomain",
         "*.example",
         "*.invalid",
+        "+.localhost",
         "*.localhost",
         "*.test",
+        "+.local",
         "*.local",
         "*.home.arpa",
         "*.tailscale.com",
@@ -242,11 +260,13 @@ public enum DomesticRoutingOptimizer {
 
     /// Optimizes the provided raw YAML configuration for domestic download speed and
     /// Apple services acceleration while preserving proxy routing for foreign domains,
-    /// with user custom rules injected at top priority.
+    /// with mandatory loopback protection rules injected at priority #1 and user
+    /// custom rules injected immediately after.
     public static func optimizedProfile(
         for yaml: String,
         customRules: [CustomRule] = [],
-        remoteRules: [String] = []
+        remoteRules: [String] = [],
+        enableDomesticDirect: Bool = true
     ) -> String {
         guard !yaml.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return yaml }
         let lines = ProfileRuntimeYAML.canonicalize(yaml).components(separatedBy: "\n")
@@ -256,23 +276,28 @@ public enum DomesticRoutingOptimizer {
 
         var resultLines: [String] = []
 
-        let optimizedDNSLines = optimizeDNSSection(sections["dns"], customRules: customRules)
+        let optimizedDNSLines: [String]? = enableDomesticDirect
+            ? optimizeDNSSection(sections["dns"], customRules: customRules)
+            : sections["dns"]
         let optimizedRuleLines = optimizeRulesSection(
             sections["rules"],
             customRules: customRules,
-            remoteRules: remoteRules
+            remoteRules: remoteRules,
+            enableDomesticDirect: enableDomesticDirect
         )
 
         var emittedSections = Set<String>()
 
         for (key, sectionLines) in sections.orderedSections {
             if key == "dns" {
-                resultLines.append(contentsOf: optimizedDNSLines)
+                if let optimizedDNSLines {
+                    resultLines.append(contentsOf: optimizedDNSLines)
+                }
                 emittedSections.insert("dns")
             } else if key == "rules" {
                 continue
             } else if key == "proxies" || key == "proxy-groups" || key == "proxy-providers" || key == "rule-providers" {
-                if !emittedSections.contains("dns") {
+                if !emittedSections.contains("dns"), let optimizedDNSLines {
                     resultLines.append(contentsOf: optimizedDNSLines)
                     emittedSections.insert("dns")
                 }
@@ -284,7 +309,7 @@ public enum DomesticRoutingOptimizer {
             }
         }
 
-        if !emittedSections.contains("dns") {
+        if !emittedSections.contains("dns"), let optimizedDNSLines {
             resultLines.insert(contentsOf: optimizedDNSLines, at: 0)
             emittedSections.insert("dns")
         }
@@ -665,7 +690,8 @@ public enum DomesticRoutingOptimizer {
     private static func optimizeRulesSection(
         _ existingLines: [String]?,
         customRules: [CustomRule] = [],
-        remoteRules: [String] = []
+        remoteRules: [String] = [],
+        enableDomesticDirect: Bool = true
     ) -> [String] {
         var rawRules: [String] = []
 
@@ -690,9 +716,20 @@ public enum DomesticRoutingOptimizer {
         var seenNormalized = Set<String>()
         var newRules: [String] = []
 
-        // 1. User rules at top priority: application rules first (they name
-        //    the app outright, so they outrank any destination rule), then
-        //    custom rules in the user's order.
+        // 0. Mandatory loopback protection rules at priority #1 (ahead of
+        //    application and custom destination rules) so local 127.0.0.0/8,
+        //    ::1, and localhost/RFC 6761 traffic never leaks to a proxy node.
+        for rule in loopbackProtectionRules {
+            let norm = normalizedRuleString(rule)
+            if !seenNormalized.contains(norm) {
+                newRules.append(rule)
+                seenNormalized.insert(norm)
+            }
+        }
+
+        // 1. User rules: application rules first (they name the app outright,
+        //    so they outrank any non-loopback destination rule), then custom
+        //    rules in the user's order.
         let orderedCustomRules = customRules.filter { $0.kind == .application }
             + customRules.filter { $0.kind != .application }
         for rule in orderedCustomRules where rule.isEnabled {
@@ -714,11 +751,13 @@ public enum DomesticRoutingOptimizer {
         }
 
         // 3. High priority domestic / VPN bypass rules
-        for rule in highPriorityBypassRules {
-            let norm = normalizedRuleString(rule)
-            if !seenNormalized.contains(norm) {
-                newRules.append(rule)
-                seenNormalized.insert(norm)
+        if enableDomesticDirect {
+            for rule in highPriorityBypassRules {
+                let norm = normalizedRuleString(rule)
+                if !seenNormalized.contains(norm) {
+                    newRules.append(rule)
+                    seenNormalized.insert(norm)
+                }
             }
         }
 
@@ -740,16 +779,20 @@ public enum DomesticRoutingOptimizer {
 
         newRules.append(contentsOf: preMatchRules)
 
-        let normFallback = normalizedRuleString(fallbackDirectRule)
-        if !seenNormalized.contains(normFallback) {
-            newRules.append(fallbackDirectRule)
-            seenNormalized.insert(normFallback)
+        if enableDomesticDirect {
+            let normFallback = normalizedRuleString(fallbackDirectRule)
+            if !seenNormalized.contains(normFallback) {
+                newRules.append(fallbackDirectRule)
+                seenNormalized.insert(normFallback)
+            }
         }
 
         newRules.append(contentsOf: matchRules)
 
         if newRules.isEmpty {
-            newRules = highPriorityBypassRules + [fallbackDirectRule, "MATCH,DIRECT"]
+            newRules = enableDomesticDirect
+                ? (highPriorityBypassRules + [fallbackDirectRule, "MATCH,DIRECT"])
+                : (loopbackProtectionRules + ["MATCH,DIRECT"])
         }
 
         var output: [String] = ["rules:"]

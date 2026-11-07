@@ -85,6 +85,8 @@ public struct ConnectionRouteDecisionTrace: Equatable, Sendable {
         let hops = parsedHops.isEmpty && !connection.proxyChain.isEmpty ? [connection.proxyChain] : parsedHops
 
         // Step 1: Routing Mode
+        let isLoopbackTarget = RouteMatchEngine.isLoopbackOrLocalhostDestination(targetDestination)
+            || (!host.isEmpty && RouteMatchEngine.isLoopbackOrLocalhostDestination(host))
         let modeStep: ConnectionRouteDecisionStep
         switch routingMode {
         case .rule:
@@ -92,14 +94,18 @@ public struct ConnectionRouteDecisionTrace: Equatable, Sendable {
                 stage: .routingMode,
                 status: .passed,
                 summary: "Rule mode",
-                detail: "Evaluates local hosts, custom rules, and profile rules in order"
+                detail: isLoopbackTarget
+                    ? "Loopback / RFC 6761 localhost traffic is pinned to DIRECT before user rules"
+                    : "Evaluates local hosts, custom rules, and profile rules in order"
             )
         case .global:
             modeStep = ConnectionRouteDecisionStep(
                 stage: .routingMode,
                 status: .matched,
-                summary: "Global mode",
-                detail: "All traffic routes through the global proxy group without consulting rules"
+                summary: isLoopbackTarget ? "Global mode (Loopback DIRECT)" : "Global mode",
+                detail: isLoopbackTarget
+                    ? "Loopback / RFC 6761 localhost traffic stays on DIRECT and never enters the global proxy group"
+                    : "All traffic routes through the global proxy group without consulting rules"
             )
         case .direct:
             modeStep = ConnectionRouteDecisionStep(

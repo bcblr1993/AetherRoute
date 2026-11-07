@@ -733,9 +733,12 @@ extension TunnelManager {
         let rawProfileYAML = activeProfile.yaml
         let baseProfileYAML = activeProfile.runtimeYAML
         let remoteRules = await RuleProviderEngine.shared.compileActiveRules()
-        let profileYAML = isDomesticOptimizationEnabled
-            ? DomesticRoutingOptimizer.optimizedProfile(for: baseProfileYAML, customRules: customRules, remoteRules: remoteRules)
-            : (customRules.isEmpty && remoteRules.isEmpty ? baseProfileYAML : DomesticRoutingOptimizer.optimizedProfile(for: baseProfileYAML, customRules: customRules, remoteRules: remoteRules))
+        let profileYAML = DomesticRoutingOptimizer.optimizedProfile(
+            for: baseProfileYAML,
+            customRules: customRules,
+            remoteRules: remoteRules,
+            enableDomesticDirect: isDomesticOptimizationEnabled
+        )
 #if AETHERROUTE_QA_AUTOMATION
         if let appGroupDir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup)?
             .appendingPathComponent("Library/Application Support/AetherRoute", isDirectory: true) {

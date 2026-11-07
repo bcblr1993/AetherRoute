@@ -1148,4 +1148,29 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
         XCTAssertFalse(DNSLookupInspector.isFakeIPAddress("2606:4700:4700::1111"))
     }
 
+    func testLoopbackAndRFC6761LocalhostAlwaysAssessAndTraceAsDirectAcrossAllModes() {
+        let rules = [
+            RuleConfigurationSummary(id: 0, order: 1, kind: "DOMAIN-SUFFIX", criteria: "localhost", target: "Proxy"),
+            RuleConfigurationSummary(id: 1, order: 2, kind: "IP-CIDR", criteria: "127.0.0.0/8", target: "Proxy", noResolve: true),
+            RuleConfigurationSummary(id: 2, order: 3, kind: "MATCH", criteria: nil, target: "Proxy"),
+        ]
+        for target in [
+            "127.0.0.1:8080",
+            "127.255.255.254",
+            "[::1]:5173",
+            "localhost:3000",
+            "https://api.localhost:8443/v1/models",
+        ] {
+            let result = RouteMatchEngine.evaluate(
+                destination: target,
+                against: rules
+            )
+            XCTAssertEqual(
+                result?.target,
+                "DIRECT",
+                "Loopback target \(target) must always evaluate as DIRECT even when profile rules point to Proxy"
+            )
+        }
+    }
+
 }

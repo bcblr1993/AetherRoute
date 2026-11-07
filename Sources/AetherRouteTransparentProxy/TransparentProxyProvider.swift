@@ -101,9 +101,10 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     decoding: input.profile,
                     as: UTF8.self
                 )
-                let profileYAML = DomesticRoutingOptimizer.isEnabled
-                    ? DomesticRoutingOptimizer.optimizedProfile(for: rawYAML)
-                    : rawYAML
+                let profileYAML = DomesticRoutingOptimizer.optimizedProfile(
+                    for: rawYAML,
+                    enableDomesticDirect: DomesticRoutingOptimizer.isEnabled
+                )
                 let engineProfile = Data(profileYAML.utf8)
                 let engine = try FlowCoreEngine(
                     profile: engineProfile,
@@ -1130,7 +1131,15 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 direction: .outbound
             ),
         ]
-        var exclusions = bypassPlan.domainSuffixes.map { domain in
+        var excludedDomainSuffixes: [String] = []
+        var seenExcludedDomains = Set<String>()
+        for domain in ["localhost", "local"] + bypassPlan.domainSuffixes {
+            let normalized = domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !normalized.isEmpty, seenExcludedDomains.insert(normalized).inserted {
+                excludedDomainSuffixes.append(domain)
+            }
+        }
+        var exclusions = excludedDomainSuffixes.map { domain in
             NENetworkRule(
                 destinationHostEndpoint: .hostPort(
                     host: .name(domain, nil),

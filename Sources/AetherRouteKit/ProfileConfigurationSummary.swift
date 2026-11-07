@@ -559,6 +559,69 @@ public enum RouteMatchEngine {
         return nil
     }
 
+    public static func isLoopbackOrLocalhostDestination(_ destination: String) -> Bool {
+        guard let parsed = destinationHostAndPort(destination) else { return false }
+        let host = parsed.host
+        let address = addressBytes(host)
+        return isLoopbackHostOrAddress(host: host, address: address)
+    }
+
+    private static func isLoopbackHostOrAddress(host: String, address: [UInt8]?) -> Bool {
+        if let address {
+            if address.count == 4 {
+                return address[0] == 127 || address == [0, 0, 0, 0]
+            }
+            if address.count == 16 {
+                let isLoopbackOrUnspecified = address.dropLast().allSatisfy({ $0 == 0 })
+                    && (address[15] == 0 || address[15] == 1)
+                let isIPv4MappedLoopbackOrUnspecified = address.prefix(10).allSatisfy({ $0 == 0 })
+                    && address[10] == 0xff
+                    && address[11] == 0xff
+                    && (address[12] == 127
+                        || (address[12] == 0 && address[13] == 0 && address[14] == 0 && address[15] == 0))
+                return isLoopbackOrUnspecified || isIPv4MappedLoopbackOrUnspecified
+            }
+            return false
+        }
+        let normalized = host.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .lowercased()
+        return normalized == "localhost" || normalized.hasSuffix(".localhost")
+    }
+
+    private static func syntheticLoopbackResult(host: String, address: [UInt8]?) -> RouteMatchResult {
+        let kind: String
+        let criteria: String
+        let noResolve: Bool
+        if let address {
+            kind = address.count == 16 ? "IP-CIDR6" : "IP-CIDR"
+            criteria = address.count == 16 ? "::1/128" : "127.0.0.0/8"
+            noResolve = true
+        } else if host.lowercased() == "localhost" {
+            kind = "DOMAIN"
+            criteria = "localhost"
+            noResolve = false
+        } else {
+            kind = "DOMAIN-SUFFIX"
+            criteria = "localhost"
+            noResolve = false
+        }
+        return RouteMatchResult(
+            matchedRule: RuleConfigurationSummary(
+                id: -1,
+                order: 0,
+                kind: kind,
+                criteria: criteria,
+                target: "DIRECT",
+                isCustom: false,
+                noResolve: noResolve
+            ),
+            reason: "Built-in loopback protection (RFC 6761 / 127.0.0.0/8 / ::1)",
+            order: 0,
+            target: "DIRECT"
+        )
+    }
+
     public static func assess(
         destination: String,
         against rules: [RuleConfigurationSummary],
@@ -569,6 +632,7 @@ public enum RouteMatchEngine {
         let host = parsed.host
         let port = parsed.port
         let address = addressBytes(host)
+        let isLoopback = isLoopbackHostOrAddress(host: host, address: address)
         for rule in rules {
             let kind = rule.kind.uppercased()
             let criteria = rule.criteria?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -582,7 +646,9 @@ public enum RouteMatchEngine {
                 matches = false
             case "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD":
                 guard let criteria, !criteria.isEmpty else {
-                    return .indeterminate(ruleOrder: rule.order)
+                    return isLoopback
+                        ? .matched(syntheticLoopbackResult(host: host, address: address))
+                        : .indeterminate(ruleOrder: rule.order)
                 }
                 if address != nil { matches = false }
                 else if kind == "DOMAIN" { matches = host == criteria }
@@ -591,11 +657,15 @@ public enum RouteMatchEngine {
                 } else { matches = host.contains(criteria) }
             case "IP-CIDR", "IP-CIDR6":
                 guard let criteria, isValidCIDR(criteria) else {
-                    return .indeterminate(ruleOrder: rule.order)
+                    return isLoopback
+                        ? .matched(syntheticLoopbackResult(host: host, address: address))
+                        : .indeterminate(ruleOrder: rule.order)
                 }
                 if let address {
                     guard let result = matchesCIDR(address: address, cidr: criteria) else {
-                        return .indeterminate(ruleOrder: rule.order)
+                        return isLoopback
+                            ? .matched(syntheticLoopbackResult(host: host, address: address))
+                            : .indeterminate(ruleOrder: rule.order)
                     }
                     matches = result
                 } else if rule.noResolve {
@@ -605,32 +675,44 @@ public enum RouteMatchEngine {
                 } else {
                     // Without `no-resolve`, a hostname may resolve into this
                     // subnet at runtime.
-                    return .indeterminate(ruleOrder: rule.order)
+                    return isLoopback
+                        ? .matched(syntheticLoopbackResult(host: host, address: address))
+                        : .indeterminate(ruleOrder: rule.order)
                 }
             case "GEOIP":
                 guard let criteria, !criteria.isEmpty else {
-                    return .indeterminate(ruleOrder: rule.order)
+                    return isLoopback
+                        ? .matched(syntheticLoopbackResult(host: host, address: address))
+                        : .indeterminate(ruleOrder: rule.order)
                 }
                 if let address {
                     if criteria == "private" || criteria == "lan" {
                         matches = isPrivateAddress(address)
                     } else {
-                        return .indeterminate(ruleOrder: rule.order)
+                        return isLoopback
+                            ? .matched(syntheticLoopbackResult(host: host, address: address))
+                            : .indeterminate(ruleOrder: rule.order)
                     }
                 } else if rule.noResolve {
                     matches = false
                 } else {
-                    return .indeterminate(ruleOrder: rule.order)
+                    return isLoopback
+                        ? .matched(syntheticLoopbackResult(host: host, address: address))
+                        : .indeterminate(ruleOrder: rule.order)
                 }
             case "DST-PORT":
                 guard let criteria, let rulePort = UInt16(criteria), rulePort > 0,
                       let destinationPort = port else {
-                    return .indeterminate(ruleOrder: rule.order)
+                    return isLoopback
+                        ? .matched(syntheticLoopbackResult(host: host, address: address))
+                        : .indeterminate(ruleOrder: rule.order)
                 }
                 matches = destinationPort == rulePort
             case "GEOSITE":
                 guard let criteria, !criteria.isEmpty else {
-                    return .indeterminate(ruleOrder: rule.order)
+                    return isLoopback
+                        ? .matched(syntheticLoopbackResult(host: host, address: address))
+                        : .indeterminate(ruleOrder: rule.order)
                 }
                 if address != nil {
                     matches = false
@@ -642,13 +724,21 @@ public enum RouteMatchEngine {
                           ) {
                     matches = result
                 } else {
-                    return .indeterminate(ruleOrder: rule.order)
+                    return isLoopback
+                        ? .matched(syntheticLoopbackResult(host: host, address: address))
+                        : .indeterminate(ruleOrder: rule.order)
                 }
             default:
                 // An earlier unsupported rule could win in the real core.
-                return .indeterminate(ruleOrder: rule.order)
+                return isLoopback
+                    ? .matched(syntheticLoopbackResult(host: host, address: address))
+                    : .indeterminate(ruleOrder: rule.order)
             }
             if matches {
+                let normalizedTarget = rule.target.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                if isLoopback && normalizedTarget != "DIRECT" && normalizedTarget != "REJECT" {
+                    return .matched(syntheticLoopbackResult(host: host, address: address))
+                }
                 let reason = rule.isCustom
                     ? "命中用户自定义规则 (优先级最高)"
                     : "Matched destination preview rule"
@@ -659,6 +749,9 @@ public enum RouteMatchEngine {
                     target: rule.target
                 ))
             }
+        }
+        if isLoopback {
+            return .matched(syntheticLoopbackResult(host: host, address: address))
         }
         if let totalRuleCount, totalRuleCount > rules.count {
             return .indeterminate(ruleOrder: nil)

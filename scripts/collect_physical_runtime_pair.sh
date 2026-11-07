@@ -166,6 +166,12 @@ open -a /Applications/AetherRoute.app"
     sleep 5
   done
   test "$ready" = 1 || { echo "$ENGINE did not connect on $EVIDENCE_HOST" >&2; exit 1; }
+  for _ in $(seq 1 10); do
+    if $SSH "$HOST" 'curl -sS --max-time 8 -o /dev/null https://api.anthropic.com/v1/messages' >/dev/null 2>&1; then
+      break
+    fi
+    sleep 2
+  done
   echo "$ENGINE connected; collecting receipts"
   AETHERROUTE_VM_IP="$VM_IP" \
     PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/collect_physical_runtime_evidence.py" \

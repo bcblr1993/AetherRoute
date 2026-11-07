@@ -183,12 +183,14 @@ final class RuleProviderEngineTests: XCTestCase {
         XCTAssertTrue(enhanced.contains("- DOMAIN-SUFFIX,adservice.google.com,REJECT"))
         XCTAssertTrue(enhanced.contains("- DOMAIN,openai.com,AI-Group"))
 
-        // Priority order: customRules -> remoteRules -> highPriorityBypass -> original rules
+        // Priority order: loopbackProtection -> customRules -> remoteRules -> highPriorityBypass -> original rules
+        let loopbackRange = enhanced.range(of: "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve")!
         let customRange = enhanced.range(of: "DOMAIN,special.internal,DIRECT")!
         let remoteRange = enhanced.range(of: "DOMAIN-SUFFIX,adservice.google.com,REJECT")!
-        let bypassRange = enhanced.range(of: "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve")!
+        let bypassRange = enhanced.range(of: "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve")!
         let originalRange = enhanced.range(of: "DOMAIN-SUFFIX,example.com,DIRECT")!
 
+        XCTAssertTrue(loopbackRange.lowerBound < customRange.lowerBound)
         XCTAssertTrue(customRange.lowerBound < remoteRange.lowerBound)
         XCTAssertTrue(remoteRange.lowerBound < bypassRange.lowerBound)
         XCTAssertTrue(bypassRange.lowerBound < originalRange.lowerBound)
