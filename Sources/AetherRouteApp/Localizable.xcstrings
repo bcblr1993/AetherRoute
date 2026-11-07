@@ -6120,6 +6120,40 @@
         }
       }
     },
+    "Group by host": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group by host"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按域名聚合"
+          }
+        }
+      }
+    },
+    "Group by outbound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group by outbound"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按出站聚合"
+          }
+        }
+      }
+    },
     "Groups": {
       "localizations": {
         "zh-Hans": {
@@ -9505,6 +9539,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "仅显示 %@ 的连接"
+          }
+        }
+      }
+    },
+    "Only connections to %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only connections to %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅显示访问 %@ 的连接"
+          }
+        }
+      }
+    },
+    "Only connections via %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only connections via %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅显示经由 %@ 的连接"
           }
         }
       }
@@ -12954,6 +13022,23 @@
         }
       }
     },
+    "Share": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "占比"
+          }
+        }
+      }
+    },
     "Shell environment copied.": {
       "localizations": {
         "zh-Hans": {
@@ -13017,6 +13102,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示全部应用"
+          }
+        }
+      }
+    },
+    "Show all connections": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show all connections"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示全部连接"
           }
         }
       }

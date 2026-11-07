@@ -16,11 +16,20 @@ struct ConnectionsView: View {
     @State private var pausedConnections: [ConnectionTelemetry]?
     @State private var inspectedConnection: ConnectionTableItem?
     @State private var groupsByApp = false
+    @State private var groupingDimension: ConnectionTrafficDimension?
     @State private var showsRecentlyClosed = false
     /// Limits the list to one app (`SourceAppPresentation.groupingKey`).
     @State private var appFilter: AppFilter?
+    /// Limits the list to one host or outbound hop selected from the leaderboard.
+    @State private var dimensionFilter: DimensionFilter?
 
     private struct AppFilter: Equatable {
+        let key: String
+        let name: String
+    }
+
+    private struct DimensionFilter: Equatable {
+        let dimension: ConnectionTrafficDimension
         let key: String
         let name: String
     }
@@ -106,6 +115,8 @@ struct ConnectionsView: View {
                 pausedConnections = nil
                 showsRecentlyClosed = false
                 appFilter = nil
+                dimensionFilter = nil
+                groupingDimension = nil
             }
         }
     }
@@ -193,6 +204,9 @@ struct ConnectionsView: View {
             if let appFilter {
                 appFilterBar(appFilter)
             }
+            if let dimensionFilter {
+                dimensionFilterBar(dimensionFilter)
+            }
 
             if rows.isEmpty {
                 ContentUnavailableView.search(text: searchText)
@@ -200,6 +214,13 @@ struct ConnectionsView: View {
             }
             if let apps {
                 appTable(apps)
+            } else if let dimension = groupingDimension, dimension != .application {
+                let summary = ConnectionTrafficAggregator.summarize(
+                    connections: rows.map(\.connection),
+                    dimension: dimension,
+                    limit: 100
+                )
+                leaderboardTable(summary.entries, dimension: dimension)
             } else {
                 connectionTable(rows)
             }
@@ -231,6 +252,33 @@ struct ConnectionsView: View {
         .padding(.bottom, AetherVisual.s2)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("connections-app-filter")
+    }
+
+    private func dimensionFilterBar(_ filter: DimensionFilter) -> some View {
+        let formatKey = filter.dimension == .host
+            ? "Only connections to %@"
+            : "Only connections via %@"
+        return HStack(spacing: AetherVisual.s2) {
+            Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+            Text(AppLocalization.format(formatKey, filter.name))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            Button(AppLocalization.string("Show all connections")) {
+                withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                    dimensionFilter = nil
+                }
+            }
+            .buttonStyle(.link)
+            .accessibilityIdentifier("connections-clear-dimension-filter")
+        }
+        .font(.callout)
+        .padding(.horizontal, AetherVisual.s4)
+        .padding(.bottom, AetherVisual.s2)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("connections-dimension-filter")
     }
 
     // Ideal widths sum to what fits the narrowest window inside the glass
@@ -340,6 +388,97 @@ struct ConnectionsView: View {
         .accessibilityLabel(AppLocalization.string("Apps"))
         .accessibilityIdentifier("connections-app-table")
         .scrollIndicators(.hidden, axes: .horizontal)
+    }
+
+    private func leaderboardTable(
+        _ entries: [ConnectionTrafficEntry],
+        dimension: ConnectionTrafficDimension
+    ) -> some View {
+        let primaryColumnTitle = dimension == .host
+            ? AppLocalization.string("Destination")
+            : AppLocalization.string("Outlet")
+        return Table(entries) {
+            TableColumn(primaryColumnTitle) { entry in
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                    Text(verbatim: entry.displayName)
+                        .font(.body)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if !entry.subtitle.isEmpty, entry.subtitle != entry.displayName {
+                        Text(verbatim: entry.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(AetherVisual.secondaryText)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: AetherVisual.tableRowHeight)
+                .contextMenu {
+                    Button(AppLocalization.format("Show only %@", entry.displayName)) {
+                        showOnlyDimension(entry)
+                    }
+                    if dimension == .host {
+                        Button(AppLocalization.string("Copy destination")) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(entry.displayName, forType: .string)
+                        }
+                        Divider()
+                        destinationRuleMenu(for: entry.sampleConnection)
+                    }
+                }
+                .onTapGesture(count: 2) {
+                    showOnlyDimension(entry)
+                }
+            }
+            .width(min: 140, ideal: 220, max: 520)
+            TableColumn(AppLocalization.string("Connections")) { entry in
+                Text(verbatim: "\(entry.connectionCount)")
+                    .font(.body.monospacedDigit())
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .frame(height: AetherVisual.tableRowHeight)
+            }
+            .width(min: 72, ideal: 84, max: 120)
+            .alignment(.numeric)
+            TableColumn(AppLocalization.string("Share")) { entry in
+                let percent = Int((entry.shareOfTotal * 100).rounded())
+                Text(verbatim: "\(percent)%")
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .frame(height: AetherVisual.tableRowHeight)
+            }
+            .width(min: 56, ideal: 68, max: 100)
+            .alignment(.numeric)
+            TableColumn(AppLocalization.string("Traffic")) { entry in
+                VStack(alignment: .trailing, spacing: AetherVisual.s1) {
+                    Text(verbatim: "↓ \(formattedBytes(entry.downloadTotal))")
+                    Text(verbatim: "↑ \(formattedBytes(entry.uploadTotal))")
+                }
+                .font(.body.monospacedDigit())
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .frame(height: AetherVisual.tableRowHeight)
+            }
+            .width(min: 64, ideal: 80, max: 120)
+            .alignment(.numeric)
+        }
+        .tableStyle(.inset(alternatesRowBackgrounds: false))
+        .scrollContentBackground(.hidden)
+        .accessibilityLabel(primaryColumnTitle)
+        .accessibilityIdentifier("connections-leaderboard-table")
+        .scrollIndicators(.hidden, axes: .horizontal)
+    }
+
+    private func showOnlyDimension(_ entry: ConnectionTrafficEntry) {
+        withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+            dimensionFilter = DimensionFilter(
+                dimension: entry.dimension,
+                key: entry.key,
+                name: entry.displayName
+            )
+            groupsByApp = false
+            groupingDimension = nil
+        }
     }
 
     @ViewBuilder
@@ -544,12 +683,37 @@ struct ConnectionsView: View {
                 set: { value in
                     withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
                         groupsByApp = value
+                        groupingDimension = value ? .application : nil
                     }
                 }
             )) {
                 Label(AppLocalization.string("Group by app"), systemImage: "square.stack.3d.up")
             }
             .accessibilityIdentifier("connections-group-by-app")
+            Toggle(isOn: Binding(
+                get: { groupingDimension == .host },
+                set: { value in
+                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                        groupsByApp = false
+                        groupingDimension = value ? .host : nil
+                    }
+                }
+            )) {
+                Label(AppLocalization.string("Group by host"), systemImage: "globe")
+            }
+            .accessibilityIdentifier("connections-group-by-host")
+            Toggle(isOn: Binding(
+                get: { groupingDimension == .outbound },
+                set: { value in
+                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                        groupsByApp = false
+                        groupingDimension = value ? .outbound : nil
+                    }
+                }
+            )) {
+                Label(AppLocalization.string("Group by outbound"), systemImage: "point.3.connected.trianglepath.dotted")
+            }
+            .accessibilityIdentifier("connections-group-by-outbound")
             Toggle(isOn: Binding(
                 get: { showsRecentlyClosed },
                 set: { value in
@@ -573,7 +737,7 @@ struct ConnectionsView: View {
         } label: {
             Label(
                 AppLocalization.string("View"),
-                systemImage: (groupsByApp || showsRecentlyClosed)
+                systemImage: (groupsByApp || groupingDimension != nil || showsRecentlyClosed)
                     ? "line.3.horizontal.decrease.circle.fill"
                     : "line.3.horizontal.decrease.circle"
             )
@@ -654,6 +818,11 @@ struct ConnectionsView: View {
                 let app = directory.presentation(for: $0.connection)
                 return ConnectionOutlet(proxyChain: $0.connection.proxyChain).matches(filter)
                     && (appFilter == nil || appFilter?.key == app.groupingKey)
+                    && (dimensionFilter == nil || ConnectionTrafficAggregator.matchesFilter(
+                        $0.connection,
+                        dimension: dimensionFilter!.dimension,
+                        key: dimensionFilter!.key
+                    ))
                     && (searchText.isEmpty
                         || app.displayName.localizedCaseInsensitiveContains(searchText)
                         || $0.connection.destination.localizedCaseInsensitiveContains(searchText)

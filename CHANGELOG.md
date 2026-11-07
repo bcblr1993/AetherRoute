@@ -6,6 +6,26 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-11-08
+
+### Added
+
+- **Multi-Dimensional Traffic Leaderboard & One-Click Filter Linkage (`ConnectionTrafficAggregator` & `ConnectionsPageView`)**:
+  - Added `ConnectionTrafficDimension` (`.application`, `.host`, `.outbound`), `ConnectionTrafficEntry`, `ConnectionTrafficSummary`, and `ConnectionTrafficAggregator.summarize(_:dimension:limit:)` (`Sources/AetherRouteKit/ConnectionTrafficAggregator.swift`) benchmarking Surge 5 `Traffic` and Clash Verge Rev multi-dimensional traffic statistics.
+  - Added an interactive `Traffic Leaderboard` (`流量排行榜`) card to `ConnectionsView` (`Sources/AetherRouteApp/ConnectionsPageView.swift`) displaying top processes, destination hosts, and outbound policy/node traffic rankings with upload/download/total bytes, connection counts, proportional progress bars (`AetherVisualTokens`), and one-click filter linkage to the live/history connection list.
+- **Hedged Retryable Outbound Connect Timeout (`Core/Engine`)**:
+  - Added `PROXY_RETRYABLE_ATTEMPT_TIMEOUT = Duration::from_secs(3)` and `outbound_connect_attempt_timeout(attempt, attempt_limit)` in `Core/Engine/clash-lib/src/app/dispatcher/dispatcher_impl.rs` (`df30585e7265e5dea2149e29fbc94e1fa5888f57`) so retryable outbound proxy handshake attempts (`attempt < attempt_limit`) fail over after 3 seconds instead of waiting the full 10-second socket connect timeout when a SYN/TLS packet drops under burst concurrency, while preserving the full timeout budget on the final attempt.
+- **Tests first (TDD)**:
+  - Swift unit and gate tests in `Tests/AetherRouteKitTests/ProfileConfigurationSummaryTests.swift` (`testConnectionTrafficAggregatorSummarizesByAppHostAndOutbound`) and `scripts/test_recovery_and_subscription_compat_gate.sh`, plus Rust unit tests in `Core/Engine/clash-lib/src/app/dispatcher/dispatcher_impl.rs` (`proxy_connect_retryable_attempts_have_hedged_timeout_before_final_attempt`), were written first and verified to fail on old code before implementation.
+
+### Changed
+
+- **Validation & Release Qualification (`2.5.0` / `2026110801`)**:
+  - Fast lane passed all 15 steps (`outputs/fast-lane-20261107T145319Z`), including `engine-unit`, `engine-capabilities`, `differential-e2e`, and `protocol-interop`. Default fingerprint (`outputs/interop-20261107T142933Z`) and Chrome fingerprint (`outputs/interop-20261107T144330Z`) 12-protocol interop gates each passed all 11 suites (68 matrix case passes and 34 certificate rejections each), and Chrome fingerprint 9 real sites + Cloudflare ECH (`real_site_tests`: 2 passed, 0 failed) passed.
+  - Full `scripts/test.sh` regression, 6-dimension Tart VM matrix (`outputs/acceptance-2.5.0-2026110801-20261108-001228/vm-acceptance`: 210 checks, 157 PASS, 0 FAIL, 53 SKIP across `tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`, including 50s TLS idle keep-alive reuse, 2 MiB large uploads, and all 5 transparent proxy gates), and remote arm64 source gate (`vm:macos27`) all passed with zero warnings.
+  - UI responsiveness & memory budget gate (`outputs/acceptance-2.5.0-2026110801-20261108-001228/ui-perf/result.txt`, 300s `showcase` + 300s `large` on `vm:macos27`) passed all budgets: `showcase` (414 switches) `p50=77.6 ms`, `p95=120.2 ms` (`<= 180 ms`), `max=149.2 ms` (`<= 300 ms`), memory `median 67 MB / max 81 MB / growth +1 MB` (`<= 90 / 110 / +8 MB`); `large` (420 switches, 500 nodes / 10,000 rules / 2,000 connections) `p50=72.0 ms`, `p95=120.1 ms` (`<= 180 ms`), `max=163.2 ms` (`<= 300 ms`), memory `median 65 MB / max 79 MB / growth +1 MB` (`<= 90 / 110 / +8 MB`).
+  - Isolated `vm:macos27` runtime evidence (`outputs/acceptance-2.5.0-2026110801-20261108-001228/physical-runtime`) bound to notarized stable candidate DMG (`724ddb05ab5d7742f2fb0bb873ed0f2275c52c9c53117635784e06acafe46a8a`, App notary submission `997bf041-eb0c-449c-b09f-d816bbeab64b`, DMG notary submission `a067620b-64b6-40ec-9e1f-063780930845`) passed all 6 checks: 50s TLS idle keep-alive reuse (`both requests answered after 50s idle`), 2 MiB upload (TUN `1.274578s`, Transparent Proxy `0.971840s`), and 3-cycle / 6-phase NIC uplink switch recovery (TUN: `2/2/0/5/1/3 s`; Transparent Proxy: `7/4/3/3/2/1 s`; deadline 15s, zero manual reconnects). See `Docs/ReleaseExceptions/2.5.0.md`.
+
 ## [2.4.1] - 2026-11-07
 
 ### Fixed

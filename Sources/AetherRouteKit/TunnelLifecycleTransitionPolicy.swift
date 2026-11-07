@@ -49,4 +49,41 @@ public enum TunnelLifecycleTransitionPolicy {
     ) -> DisconnectionWatchdogResolution {
         hostIsDisconnectingAfterReconciliation ? .timedOut : .completed
     }
+
+    public static func shouldAwaitProviderActivation(
+        currentIsTerminal: Bool,
+        previousWasActive: Bool,
+        connectionRequestPending: Bool,
+        connectionAttemptPending: Bool,
+        disconnectionAttemptPending: Bool
+    ) -> Bool {
+        currentIsTerminal
+            && !previousWasActive
+            && !disconnectionAttemptPending
+            && (connectionRequestPending || connectionAttemptPending)
+    }
+
+    public static func shouldReloadAfterConfigurationChange(
+        isUIReviewMode: Bool,
+        isPreparing: Bool = false,
+        isPersistingConfiguration: Bool,
+        isReloadingConfiguration: Bool,
+        isSwitchingNetworkEngine: Bool,
+        hostIsTransitioning: Bool = false,
+        connectionRequestPending: Bool = false,
+        connectionAttemptPending: Bool = false,
+        disconnectionAttemptPending: Bool = false,
+        providerIsActive: Bool = false
+    ) -> Bool {
+        !isUIReviewMode
+            && !isPreparing
+            && !isPersistingConfiguration
+            && !isReloadingConfiguration
+            && !isSwitchingNetworkEngine
+            && !hostIsTransitioning
+            && !connectionRequestPending
+            && !connectionAttemptPending
+            && !disconnectionAttemptPending
+            && !providerIsActive
+    }
 }

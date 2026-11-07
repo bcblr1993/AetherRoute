@@ -149,4 +149,107 @@ struct TunnelLifecycleTransitionPolicyTests {
                 ) == .timedOut
         )
     }
+
+    @Test("pre-activation terminal status preserves connecting state while request or attempt is pending")
+    func preActivationTerminalStatusAwaitsProviderActivation() {
+        #expect(
+            TunnelLifecycleTransitionPolicy.shouldAwaitProviderActivation(
+                currentIsTerminal: true,
+                previousWasActive: false,
+                connectionRequestPending: true,
+                connectionAttemptPending: false,
+                disconnectionAttemptPending: false
+            )
+        )
+        #expect(
+            TunnelLifecycleTransitionPolicy.shouldAwaitProviderActivation(
+                currentIsTerminal: true,
+                previousWasActive: false,
+                connectionRequestPending: false,
+                connectionAttemptPending: true,
+                disconnectionAttemptPending: false
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.shouldAwaitProviderActivation(
+                currentIsTerminal: true,
+                previousWasActive: true,
+                connectionRequestPending: false,
+                connectionAttemptPending: true,
+                disconnectionAttemptPending: false
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.shouldAwaitProviderActivation(
+                currentIsTerminal: true,
+                previousWasActive: false,
+                connectionRequestPending: true,
+                connectionAttemptPending: true,
+                disconnectionAttemptPending: true
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.shouldAwaitProviderActivation(
+                currentIsTerminal: true,
+                previousWasActive: false,
+                connectionRequestPending: false,
+                connectionAttemptPending: false,
+                disconnectionAttemptPending: false
+            )
+        )
+    }
+
+    @Test("configuration change reload is suppressed while connecting, transitioning, or active")
+    func configurationChangeReloadSuppressedDuringConnectionLifecycle() {
+        #expect(
+            TunnelLifecycleTransitionPolicy.shouldReloadAfterConfigurationChange(
+                isUIReviewMode: false,
+                isPreparing: false,
+                isPersistingConfiguration: false,
+                isReloadingConfiguration: false,
+                isSwitchingNetworkEngine: false,
+                hostIsTransitioning: false,
+                connectionRequestPending: false,
+                connectionAttemptPending: false,
+                disconnectionAttemptPending: false,
+                providerIsActive: false
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.shouldReloadAfterConfigurationChange(
+                isUIReviewMode: false,
+                isPersistingConfiguration: false,
+                isReloadingConfiguration: false,
+                isSwitchingNetworkEngine: false,
+                connectionRequestPending: true
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.shouldReloadAfterConfigurationChange(
+                isUIReviewMode: false,
+                isPersistingConfiguration: false,
+                isReloadingConfiguration: false,
+                isSwitchingNetworkEngine: false,
+                connectionAttemptPending: true
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.shouldReloadAfterConfigurationChange(
+                isUIReviewMode: false,
+                isPersistingConfiguration: false,
+                isReloadingConfiguration: false,
+                isSwitchingNetworkEngine: false,
+                hostIsTransitioning: true
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.shouldReloadAfterConfigurationChange(
+                isUIReviewMode: false,
+                isPersistingConfiguration: false,
+                isReloadingConfiguration: false,
+                isSwitchingNetworkEngine: false,
+                providerIsActive: true
+            )
+        )
+    }
 }

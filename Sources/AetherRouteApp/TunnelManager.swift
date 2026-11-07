@@ -1409,6 +1409,7 @@ final class TunnelManager: ObservableObject {
                 }
             }
             resetConnectionReadiness()
+            lastObservedProviderStatus = manager?.connection.status
             connectionStage = .systemAuthorization
             state = .connecting
         } else {

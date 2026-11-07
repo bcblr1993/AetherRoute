@@ -7,9 +7,10 @@ public enum ProviderTerminationPolicy {
         connectionAttemptPending: Bool,
         disconnectionAttemptPending: Bool
     ) -> Bool {
-        currentIsTerminal
+        _ = connectionAttemptPending
+        return currentIsTerminal
             && !disconnectionAttemptPending
-            && (connectionAttemptPending || previousWasActive)
+            && previousWasActive
     }
 }
 

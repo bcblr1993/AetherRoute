@@ -128,6 +128,64 @@ struct RecoveryAndSubscriptionCompatVerifier {
             ),
             "Unexpected termination after an established session must trigger auto-reconnect"
         )
+        assertTrue(
+            !ProviderTerminationPolicy.isUnexpectedTerminalState(
+                currentIsTerminal: true,
+                previousWasActive: false,
+                connectionAttemptPending: true,
+                disconnectionAttemptPending: false
+            ),
+            "First-run configuration enablement (.invalid -> .disconnected) before provider becomes active must not be classified as unexpected termination"
+        )
+        assertTrue(
+            ProviderTerminationPolicy.isUnexpectedTerminalState(
+                currentIsTerminal: true,
+                previousWasActive: true,
+                connectionAttemptPending: true,
+                disconnectionAttemptPending: false
+            ),
+            "Provider returning to terminal state after entering .connecting must be classified as unexpected termination"
+        )
+        assertTrue(
+            TunnelLifecycleTransitionPolicy.shouldAwaitProviderActivation(
+                currentIsTerminal: true,
+                previousWasActive: false,
+                connectionRequestPending: true,
+                connectionAttemptPending: false,
+                disconnectionAttemptPending: false
+            ),
+            "Pre-activation terminal status during connection preparation must preserve .connecting state"
+        )
+        assertTrue(
+            TunnelLifecycleTransitionPolicy.shouldAwaitProviderActivation(
+                currentIsTerminal: true,
+                previousWasActive: false,
+                connectionRequestPending: false,
+                connectionAttemptPending: true,
+                disconnectionAttemptPending: false
+            ),
+            "Pre-activation terminal status while awaiting provider .connecting must preserve .connecting state and watchdog"
+        )
+        assertTrue(
+            !TunnelLifecycleTransitionPolicy.shouldReloadAfterConfigurationChange(
+                isUIReviewMode: false,
+                isPersistingConfiguration: false,
+                isReloadingConfiguration: false,
+                isSwitchingNetworkEngine: false,
+                connectionAttemptPending: true
+            ),
+            "Configuration change notification must not reload and replace NEVPNManager while a connection attempt is pending"
+        )
+        assertTrue(
+            !TunnelLifecycleTransitionPolicy.shouldReloadAfterConfigurationChange(
+                isUIReviewMode: false,
+                isPersistingConfiguration: false,
+                isReloadingConfiguration: false,
+                isSwitchingNetworkEngine: false,
+                connectionRequestPending: true
+            ),
+            "Configuration change notification must not reload and replace NEVPNManager while a connection request is preparing"
+        )
 
         // 1b. Menu bar real-time traffic polling schedule when windows are closed/backgrounded
         assertTrue(
@@ -566,6 +624,46 @@ struct RecoveryAndSubscriptionCompatVerifier {
             "include-all + filter in 自动选择 must expand matching nodes (got \(autoGroup.memberCount))"
         )
 
+        // 3c. Verify ConnectionTrafficAggregator across host, outbound, and application dimensions
+        let sampleConnections = [
+            ConnectionTelemetry(
+                transport: .tcp,
+                destination: "API.ANTHROPIC.COM:443",
+                destinationPort: 443,
+                uploadTotal: 300_000,
+                downloadTotal: 1_200_000,
+                startedAtUnixMilliseconds: 1000,
+                rule: "DOMAIN-SUFFIX",
+                rulePayload: "anthropic.com",
+                proxyChain: "AI → Tokyo 01",
+                sourceAppIdentifier: "com.anthropic.claudefordesktop",
+                sourceAppPath: "/Applications/Claude.app/Contents/MacOS/Claude"
+            ),
+            ConnectionTelemetry(
+                transport: .tcp,
+                destination: "api.anthropic.com",
+                destinationPort: 443,
+                uploadTotal: 100_000,
+                downloadTotal: 400_000,
+                startedAtUnixMilliseconds: 2000,
+                rule: "DOMAIN-SUFFIX",
+                rulePayload: "anthropic.com",
+                proxyChain: "AI → Tokyo 01",
+                sourceAppIdentifier: "com.anthropic.claudefordesktop",
+                sourceAppPath: "/Applications/Claude.app/Contents/MacOS/Claude"
+            ),
+        ]
+        let hostSummary = ConnectionTrafficAggregator.summarize(connections: sampleConnections, dimension: .host)
+        assertTrue(
+            hostSummary.entries.count == 1 && hostSummary.entries.first?.key == "api.anthropic.com" && hostSummary.entries.first?.totalBytes == 2_000_000,
+            "ConnectionTrafficAggregator must merge normalized hosts and sum bytes"
+        )
+        let outboundSummary = ConnectionTrafficAggregator.summarize(connections: sampleConnections, dimension: .outbound)
+        assertTrue(
+            outboundSummary.entries.first?.key == "Tokyo 01" && outboundSummary.entries.first?.shareOfTotal == 1.0,
+            "ConnectionTrafficAggregator must extract terminal outbound hop"
+        )
+
         let outputPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "/tmp/compat_profile.yaml"
         try! Data(optimizedYAML.utf8).write(to: URL(fileURLWithPath: outputPath))
         print("PASS: Swift recovery state-machine & subscription compatibility checks passed cleanly")
@@ -594,6 +692,14 @@ if ! grep -Fq 'Self.refreshProbeSession()' "$ROOT/Sources/AetherRouteApp/TunnelM
 fi
 if ! awk '/struct AetherProgressButtonLabel/,/^}/' "$ROOT/Sources/AetherRouteApp/AetherRouteVisualSystem.swift" | grep -A3 'ProgressView()' | grep -Fq '.transition(.opacity)'; then
   echo "FAIL: ProgressView in AetherProgressButtonLabel must use .transition(.opacity) (avoiding AppKitProgressView min<=max layout constraint fault)" >&2
+  exit 1
+fi
+if ! grep -Fq 'TunnelLifecycleTransitionPolicy.shouldAwaitProviderActivation(' "$ROOT/Sources/AetherRouteApp/TunnelManager+ProviderManagement.swift"; then
+  echo "FAIL: updateState in TunnelManager+ProviderManagement.swift must use TunnelLifecycleTransitionPolicy.shouldAwaitProviderActivation" >&2
+  exit 1
+fi
+if ! grep -Fq 'TunnelLifecycleTransitionPolicy.shouldReloadAfterConfigurationChange(' "$ROOT/Sources/AetherRouteApp/TunnelManager+ProviderManagement.swift"; then
+  echo "FAIL: TunnelManager+ProviderManagement.swift must guard configuration reloads with TunnelLifecycleTransitionPolicy.shouldReloadAfterConfigurationChange" >&2
   exit 1
 fi
 

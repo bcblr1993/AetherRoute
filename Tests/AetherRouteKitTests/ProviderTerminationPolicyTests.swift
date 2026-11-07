@@ -40,6 +40,23 @@ struct ProviderTerminationPolicyTests {
         )
     }
 
+    @Test("pre-activation terminal status while connection attempt is pending is not a termination")
+    func preActivationTerminalStateDuringFirstEnableIsNormal() {
+        // First-run setup saves configurations with isEnabled = false (.invalid).
+        // Enabling the configuration on the first Connect transitions status
+        // from .invalid to .disconnected before the provider enters .connecting
+        // (previousWasActive == false). That enablement transition must not be
+        // misclassified as an unexpected provider termination.
+        #expect(
+            !ProviderTerminationPolicy.isUnexpectedTerminalState(
+                currentIsTerminal: true,
+                previousWasActive: false,
+                connectionAttemptPending: true,
+                disconnectionAttemptPending: false
+            )
+        )
+    }
+
     @Test("a nonterminal provider status is never a termination")
     func activeStateIsNotTermination() {
         #expect(

@@ -266,6 +266,13 @@ extension TunnelManager {
             Self.runtimeLogger.error("stage=persistConfiguration failed reason=verification")
             throw TunnelManagerError.configurationDidNotPersist
         }
+        if manager.connection.status == .invalid {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+            while manager.connection.status == .invalid, ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(25))
+            }
+        }
+        lastObservedProviderStatus = manager.connection.status
         Self.runtimeLogger.info("stage=persistConfiguration verification success")
     }
 
@@ -404,6 +411,7 @@ extension TunnelManager {
         }
         resetManagerScopedLifecycleState()
         self.manager = manager
+        lastObservedProviderStatus = manager.connection.status
         observeStatus()
     }
 
@@ -431,8 +439,29 @@ extension TunnelManager {
             object: manager.connection,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.updateState() }
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    self?.updateState()
+                }
+            } else {
+                Task { @MainActor in self?.updateState() }
+            }
         }
+    }
+
+    var canReloadAfterConfigurationChange: Bool {
+        TunnelLifecycleTransitionPolicy.shouldReloadAfterConfigurationChange(
+            isUIReviewMode: isUIReviewMode,
+            isPreparing: isPreparing,
+            isPersistingConfiguration: isPersistingConfiguration,
+            isReloadingConfiguration: isReloadingConfiguration,
+            isSwitchingNetworkEngine: isSwitchingNetworkEngine,
+            hostIsTransitioning: isTransitioning,
+            connectionRequestPending: connectionRequestID != nil,
+            connectionAttemptPending: connectionAttemptID != nil,
+            disconnectionAttemptPending: disconnectionAttemptID != nil,
+            providerIsActive: managerConnectionIsActive
+        )
     }
 
     func observeConfigurationChanges() {
@@ -442,6 +471,12 @@ extension TunnelManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            if Thread.isMainThread {
+                let shouldReload = MainActor.assumeIsolated {
+                    self?.canReloadAfterConfigurationChange ?? false
+                }
+                guard shouldReload else { return }
+            }
             Task { @MainActor in
                 await self?.reloadAfterConfigurationChange()
             }
@@ -449,10 +484,7 @@ extension TunnelManager {
     }
 
     func reloadAfterConfigurationChange() async {
-        guard !isUIReviewMode,
-              !isPersistingConfiguration,
-              !isReloadingConfiguration,
-              !isSwitchingNetworkEngine else {
+        guard canReloadAfterConfigurationChange else {
             Self.runtimeLogger.info("stage=configurationChange ignored reason=busyOrReview")
             return
         }
@@ -462,9 +494,24 @@ extension TunnelManager {
 
         do {
             guard let reloaded = try await loadExistingManager() else {
+                guard !isTransitioning,
+                      connectionRequestID == nil,
+                      connectionAttemptID == nil,
+                      !isPersistingConfiguration else {
+                    Self.runtimeLogger.info("stage=configurationChange reload skippedAfterAwait reason=transitionStarted")
+                    return
+                }
                 Self.runtimeLogger.info("stage=configurationChange reload result=missing")
                 invalidateCachedManager()
                 state = .disconnected
+                return
+            }
+            guard !isTransitioning,
+                  connectionRequestID == nil,
+                  connectionAttemptID == nil,
+                  !isPersistingConfiguration,
+                  !managerConnectionIsActive else {
+                Self.runtimeLogger.info("stage=configurationChange reload skippedAfterAwait reason=transitionOrActive")
                 return
             }
             installManager(reloaded)
@@ -580,18 +627,21 @@ extension TunnelManager {
         Self.runtimeLogger.info(
             "stage=updateState status=\(status.rawValue, privacy: .public)"
         )
+        let currentIsTerminal = Self.isTerminalProviderStatus(status)
+        let previousWasActive = previousProviderStatus.map {
+            Self.isActiveProviderStatus($0)
+        } ?? false
+        let effectiveDisconnectionPending = disconnectionAttemptID != nil
+            && disconnectionWasSelfInitiated
         if ProviderTerminationPolicy.isUnexpectedTerminalState(
-            currentIsTerminal: Self.isTerminalProviderStatus(status),
-            previousWasActive: previousProviderStatus.map {
-                Self.isActiveProviderStatus($0)
-            } ?? false,
+            currentIsTerminal: currentIsTerminal,
+            previousWasActive: previousWasActive,
             connectionAttemptPending: connectionAttemptID != nil,
             // Only a stop this host requested makes a terminal status expected.
             // Adopting the provider's own `.disconnecting` also arms the
             // watchdog, and counting that as a pending request is what used to
             // classify a macOS-killed extension as a normal disconnect.
-            disconnectionAttemptPending: disconnectionAttemptID != nil
-                && disconnectionWasSelfInitiated
+            disconnectionAttemptPending: effectiveDisconnectionPending
         ) {
             Self.runtimeLogger.error(
                 "stage=updateState unexpectedTerminal status=\(status.rawValue, privacy: .public) previous=\(previousProviderStatus?.rawValue ?? -1, privacy: .public)"
@@ -600,6 +650,19 @@ extension TunnelManager {
                 connection,
                 previousProviderStatus: previousProviderStatus
             )
+            return
+        }
+        if TunnelLifecycleTransitionPolicy.shouldAwaitProviderActivation(
+            currentIsTerminal: currentIsTerminal,
+            previousWasActive: previousWasActive,
+            connectionRequestPending: connectionRequestID != nil,
+            connectionAttemptPending: connectionAttemptID != nil,
+            disconnectionAttemptPending: effectiveDisconnectionPending
+        ) {
+            Self.runtimeLogger.info(
+                "stage=updateState awaitingProviderActivation status=\(status.rawValue, privacy: .public) previous=\(previousProviderStatus?.rawValue ?? -1, privacy: .public)"
+            )
+            state = .connecting
             return
         }
         // Once the provider reports connected its network settings are

@@ -1173,4 +1173,105 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
         }
     }
 
+    func testConnectionTrafficAggregatorSummarizesByAppHostAndOutboundAndFilters() {
+        let connections: [ConnectionTelemetry] = [
+            ConnectionTelemetry(
+                transport: .tcp,
+                destination: "api.anthropic.com",
+                destinationPort: 443,
+                uploadTotal: 200_000,
+                downloadTotal: 800_000,
+                startedAtUnixMilliseconds: 1_000,
+                rule: "DOMAIN-SUFFIX",
+                rulePayload: "anthropic.com",
+                proxyChain: "AI Group → Tokyo 01",
+                sourceAppIdentifier: "com.anthropic.claudefordesktop",
+                sourceAppPath: "/Applications/Claude.app/Contents/MacOS/Claude"
+            ),
+            ConnectionTelemetry(
+                transport: .tcp,
+                destination: "API.ANTHROPIC.COM:443",
+                destinationPort: 443,
+                uploadTotal: 100_000,
+                downloadTotal: 400_000,
+                startedAtUnixMilliseconds: 2_000,
+                rule: "DOMAIN-SUFFIX",
+                rulePayload: "anthropic.com",
+                proxyChain: "AI Group → Tokyo 01",
+                sourceAppIdentifier: "com.anthropic.claudefordesktop",
+                sourceAppPath: "/Applications/Claude.app/Contents/MacOS/Claude"
+            ),
+            ConnectionTelemetry(
+                transport: .udp,
+                destination: "[2606:4700:4700::1111]:53",
+                destinationPort: 53,
+                uploadTotal: 50_000,
+                downloadTotal: 450_000,
+                startedAtUnixMilliseconds: 3_000,
+                rule: "IP-CIDR6",
+                rulePayload: "2606:4700::/32",
+                proxyChain: "DIRECT",
+                sourceAppIdentifier: "com.apple.Safari",
+                sourceAppPath: "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari"
+            ),
+        ]
+
+        let byHost = ConnectionTrafficAggregator.summarize(
+            connections: connections,
+            dimension: .host,
+            limit: 10
+        )
+        XCTAssertEqual(byHost.totalConnectionCount, 3)
+        XCTAssertEqual(byHost.totalBytes, 2_000_000)
+        XCTAssertEqual(byHost.entries.count, 2)
+        XCTAssertEqual(byHost.entries[0].key, "api.anthropic.com")
+        XCTAssertEqual(byHost.entries[0].connectionCount, 2)
+        XCTAssertEqual(byHost.entries[0].totalBytes, 1_500_000)
+        XCTAssertEqual(byHost.entries[0].shareOfTotal, 0.75, accuracy: 0.0001)
+        XCTAssertEqual(byHost.entries[1].key, "2606:4700:4700::1111")
+        XCTAssertEqual(byHost.entries[1].totalBytes, 500_000)
+        XCTAssertEqual(byHost.entries[1].shareOfTotal, 0.25, accuracy: 0.0001)
+
+        let byOutbound = ConnectionTrafficAggregator.summarize(
+            connections: connections,
+            dimension: .outbound,
+            limit: 10
+        )
+        XCTAssertEqual(byOutbound.entries.map(\.key), ["Tokyo 01", "DIRECT"])
+        XCTAssertEqual(byOutbound.entries[0].totalBytes, 1_500_000)
+        XCTAssertEqual(byOutbound.entries[0].subtitle, "AI Group → Tokyo 01")
+
+        let byApp = ConnectionTrafficAggregator.summarize(
+            connections: connections,
+            dimension: .application,
+            limit: 10
+        )
+        XCTAssertEqual(byApp.entries.count, 2)
+        XCTAssertEqual(byApp.entries[0].key, "com.anthropic.claudefordesktop")
+        XCTAssertEqual(byApp.entries[0].displayName, "Claude")
+        XCTAssertEqual(byApp.entries[0].totalBytes, 1_500_000)
+
+        XCTAssertTrue(
+            ConnectionTrafficAggregator.matchesFilter(
+                connections[0],
+                dimension: .host,
+                key: "api.anthropic.com"
+            )
+        )
+        XCTAssertFalse(
+            ConnectionTrafficAggregator.matchesFilter(
+                connections[2],
+                dimension: .outbound,
+                key: "Tokyo 01"
+            )
+        )
+        XCTAssertTrue(
+            ConnectionTrafficAggregator.matchesFilter(
+                connections[2],
+                dimension: .outbound,
+                key: "DIRECT"
+            )
+        )
+    }
+
 }
