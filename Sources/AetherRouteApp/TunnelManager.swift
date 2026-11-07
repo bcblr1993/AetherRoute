@@ -327,6 +327,13 @@ final class TunnelManager: ObservableObject {
     @Published var customRuleMessage: String?
     @Published var customRuleMessageIsError = false
     @Published var isUpdatingCustomRules = false
+    @Published var customRuleProviders: [RuleProviderMetadata] = []
+    @Published var refreshingRuleProviderIDs: Set<UUID> = []
+    @Published var isRefreshingAllRuleProviders = false
+    @Published var ruleProviderMessage: String?
+    @Published var ruleProviderMessageIsError = false
+    var compiledRemoteRulesCache: [String] = []
+    @Published var pendingRuleTestDestination: String?
     @Published var dnsRuntimePolicy: DNSRuntimePolicy = .inherited
     @Published var dnsRuntimePolicyMessage: String?
     @Published var dnsRuntimePolicyMessageIsError = false
@@ -908,7 +915,9 @@ final class TunnelManager: ObservableObject {
                 }
                 // Synced rules used to show on the Rules page but route
                 // nothing until the next connect; apply them like a local edit.
-                if self.customRules != previousRules {
+                let previousProviders = self.customRuleProviders
+                await self.reloadCustomRuleProvidersFromEngine()
+                if self.customRules != previousRules || self.customRuleProviders != previousProviders {
                     self.refreshActiveProfileSummary()
                     await self.reloadCustomRulesLive()
                 }
@@ -973,6 +982,7 @@ final class TunnelManager: ObservableObject {
                     }
                 }
             }
+            await reloadCustomRuleProvidersFromEngine()
             installProfileProjection(startup.profileProjection)
             try await systemExtensionActivator.activate(
                 identifier: networkEngineMode.providerBundleIdentifier

@@ -303,6 +303,32 @@ public actor RuleProviderEngine {
         return parseRawRuleContent(content, behavior: provider.behavior, format: provider.format)
     }
 
+    public func searchRules(
+        for id: UUID,
+        query: String = "",
+        limit: Int = 200
+    ) throws -> [RemoteRuleItem] {
+        let all = try loadRules(for: id)
+        let cappedLimit = max(0, limit)
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return Array(all.prefix(cappedLimit))
+        }
+        var results: [RemoteRuleItem] = []
+        results.reserveCapacity(min(all.count, cappedLimit))
+        for item in all {
+            if item.payload.localizedCaseInsensitiveContains(trimmed)
+                || item.type.localizedCaseInsensitiveContains(trimmed)
+                || item.target.localizedCaseInsensitiveContains(trimmed) {
+                results.append(item)
+                if results.count >= cappedLimit {
+                    break
+                }
+            }
+        }
+        return results
+    }
+
     // MARK: - Internal Download & Parse
     private func fetchAndParse(provider: RuleProviderMetadata, force: Bool) async throws -> Int {
         var request = URLRequest(url: provider.url)

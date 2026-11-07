@@ -723,6 +723,8 @@ private struct ActiveProxyGroupView: View {
             protocolByName: Dictionary(
                 uniqueKeysWithValues: sorted.map { ($0, memberType($0)) }
             ),
+            transportByName: transports,
+            dialerByName: dialers,
             query: searchText,
             hideTimedOut: hidesTimedOutNodes,
             isTimedOut: { status(for: $0) == .timedOut },

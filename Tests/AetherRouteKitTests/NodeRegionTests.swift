@@ -126,4 +126,48 @@ struct NodeRegionTests {
         )
         #expect(jpSelectedTimedOut == ["Tokyo Direct", "日本 02"])
     }
+
+    @Test("filterMembers supports multi-token query across region, protocol, transport, and dialer proxy")
+    func filterMembersSupportsMultiTokenAndTransportAndDialer() {
+        let members = ["HK-01", "Tokyo Direct", "日本 02", "SG-Edge"]
+        let protocols = [
+            "HK-01": "vless",
+            "Tokyo Direct": "hysteria2",
+            "日本 02": "vless",
+            "SG-Edge": "trojan",
+        ]
+        let transports = [
+            "HK-01": "ws",
+            "日本 02": "grpc",
+        ]
+        let dialers = [
+            "SG-Edge": "HK-01",
+        ]
+
+        // Multi-token: Chinese region "日本" + protocol "vless" + transport "grpc"
+        let jpGrpc = NodeRegion.filterMembers(
+            members,
+            protocolByName: protocols,
+            transportByName: transports,
+            dialerByName: dialers,
+            query: "日本 vless grpc",
+            hideTimedOut: false,
+            isTimedOut: { _ in false },
+            selectedMember: nil
+        )
+        #expect(jpGrpc == ["日本 02"])
+
+        // Search by dialer proxy name
+        let dialerMatched = NodeRegion.filterMembers(
+            members,
+            protocolByName: protocols,
+            transportByName: transports,
+            dialerByName: dialers,
+            query: "SG HK-01",
+            hideTimedOut: false,
+            isTimedOut: { _ in false },
+            selectedMember: nil
+        )
+        #expect(dialerMatched == ["SG-Edge"])
+    }
 }

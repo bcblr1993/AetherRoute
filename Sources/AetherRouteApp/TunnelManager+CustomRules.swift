@@ -225,12 +225,24 @@ extension TunnelManager {
     func refreshActiveProfileSummary() {
         guard let activeProfile else { return }
         let rawProfileYAML = activeProfile.runtimeYAML
+        let remoteRules = compiledRemoteRulesCache
         let profileYAML = isDomesticOptimizationEnabled
-            ? DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML, customRules: customRules)
-            : (customRules.isEmpty ? rawProfileYAML : DomesticRoutingOptimizer.optimizedProfile(for: rawProfileYAML, customRules: customRules))
+            ? DomesticRoutingOptimizer.optimizedProfile(
+                for: rawProfileYAML,
+                customRules: customRules,
+                remoteRules: remoteRules
+            )
+            : (customRules.isEmpty && remoteRules.isEmpty
+                ? rawProfileYAML
+                : DomesticRoutingOptimizer.optimizedProfile(
+                    for: rawProfileYAML,
+                    customRules: customRules,
+                    remoteRules: remoteRules
+                ))
         activeProfileSummary = ProfileConfigurationInspector.inspect(
             yaml: profileYAML,
-            customRules: customRules
+            customRules: customRules,
+            remoteRules: remoteRules
         )
     }
 }

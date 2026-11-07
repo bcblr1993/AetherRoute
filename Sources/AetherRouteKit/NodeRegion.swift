@@ -31,34 +31,72 @@ public struct NodeRegion: Equatable, Sendable {
     }
 
     /// Evaluates whether a proxy group member matches a user search query by
-    /// node name, protocol name, or resolved region aliases (flag, ISO code,
-    /// Latin/CJK place names), without false-positive partial word matches.
+    /// node name, protocol name, transport name, dialer proxy, or resolved
+    /// region aliases (flag, ISO code, Latin/CJK place names), without
+    /// false-positive partial word matches.
     public static func matchesSearch(
         member: String,
         protocolName: String? = nil,
+        transportName: String? = nil,
+        dialerProxy: String? = nil,
         query: String
     ) -> Bool {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return true }
-        if member.localizedCaseInsensitiveContains(trimmed) {
+        if matchesSingleToken(
+            member: member,
+            protocolName: protocolName,
+            transportName: transportName,
+            dialerProxy: dialerProxy,
+            token: trimmed
+        ) {
             return true
         }
-        if let protocolName, protocolName.localizedCaseInsensitiveContains(trimmed) {
+        let tokens = trimmed.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard tokens.count > 1 else { return false }
+        return tokens.allSatisfy { token in
+            matchesSingleToken(
+                member: member,
+                protocolName: protocolName,
+                transportName: transportName,
+                dialerProxy: dialerProxy,
+                token: token
+            )
+        }
+    }
+
+    private static func matchesSingleToken(
+        member: String,
+        protocolName: String?,
+        transportName: String?,
+        dialerProxy: String?,
+        token: String
+    ) -> Bool {
+        if member.localizedCaseInsensitiveContains(token) {
+            return true
+        }
+        if let protocolName, protocolName.localizedCaseInsensitiveContains(token) {
+            return true
+        }
+        if let transportName, transportName.localizedCaseInsensitiveContains(token) {
+            return true
+        }
+        if let dialerProxy, dialerProxy.localizedCaseInsensitiveContains(token) {
             return true
         }
         guard let region = resolve(from: member) else { return false }
-        if region.code.localizedCaseInsensitiveContains(trimmed) || region.flag.contains(trimmed) {
+        if region.code.localizedCaseInsensitiveContains(token) || region.flag.contains(token) {
             return true
         }
         if let entry = catalog.first(where: { $0.region.code == region.code }) {
-            if entry.cjkNames.contains(where: { $0.localizedCaseInsensitiveContains(trimmed) }) {
+            if entry.cjkNames.contains(where: { $0.localizedCaseInsensitiveContains(token) }) {
                 return true
             }
-            if entry.aliasCodes.contains(where: { $0.localizedCaseInsensitiveContains(trimmed) }) {
+            if entry.aliasCodes.contains(where: { $0.localizedCaseInsensitiveContains(token) }) {
                 return true
             }
             if entry.latinNames.contains(where: {
-                $0.joined(separator: " ").localizedCaseInsensitiveContains(trimmed)
+                $0.joined(separator: " ").localizedCaseInsensitiveContains(token)
             }) {
                 return true
             }
@@ -69,6 +107,8 @@ public struct NodeRegion: Equatable, Sendable {
     public static func filterMembers(
         _ members: [String],
         protocolByName: [String: String] = [:],
+        transportByName: [String: String] = [:],
+        dialerByName: [String: String] = [:],
         query: String,
         hideTimedOut: Bool,
         isTimedOut: (String) -> Bool,
@@ -81,6 +121,8 @@ public struct NodeRegion: Equatable, Sendable {
             return matchesSearch(
                 member: member,
                 protocolName: protocolByName[member],
+                transportName: transportByName[member],
+                dialerProxy: dialerByName[member],
                 query: query
             )
         }

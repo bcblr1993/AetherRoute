@@ -1184,11 +1184,18 @@ extension TunnelManager {
         profiles = projection.catalog.profiles
         activeProfileID = projection.catalog.activeProfileID
         activeProfile = projection.catalog.activeProfile?.profile
-        if let active = projection.catalog.activeProfile?.profile, !customRules.isEmpty {
-            let optimized = isDomesticOptimizationEnabled
-                ? DomesticRoutingOptimizer.optimizedProfile(for: active.runtimeYAML, customRules: customRules)
-                : DomesticRoutingOptimizer.optimizedProfile(for: active.runtimeYAML, customRules: customRules)
-            activeProfileSummary = ProfileConfigurationInspector.inspect(yaml: optimized, customRules: customRules)
+        if let active = projection.catalog.activeProfile?.profile,
+           (!customRules.isEmpty || !compiledRemoteRulesCache.isEmpty) {
+            let optimized = DomesticRoutingOptimizer.optimizedProfile(
+                for: active.runtimeYAML,
+                customRules: customRules,
+                remoteRules: compiledRemoteRulesCache
+            )
+            activeProfileSummary = ProfileConfigurationInspector.inspect(
+                yaml: optimized,
+                customRules: customRules,
+                remoteRules: compiledRemoteRulesCache
+            )
         } else {
             activeProfileSummary = projection.summary
         }

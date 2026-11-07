@@ -952,4 +952,200 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
         XCTAssertNil(matchRule.makeCustomRuleOverride(target: .direct))
     }
 
+    func testProviderSummaryExtractsBehaviorFormatIntervalAndRuleSetTargetsInYAMLAndJSON() throws {
+        let yaml = """
+        rule-providers:
+          Apple:
+            type: http
+            behavior: domain
+            format: yaml
+            interval: 86400
+            url: https://example.com/apple.yaml
+          RejectInline: {type: file, behavior: classical, format: text, interval: 3600, path: ./reject.list}
+        rules:
+          - RULE-SET,Apple,DIRECT
+          - RULE-SET,Apple,Proxy
+          - RULE-SET,RejectInline,REJECT
+          - MATCH,Proxy
+        """
+        let yamlSummary = ProfileConfigurationInspector.inspect(yaml: yaml)
+        XCTAssertEqual(yamlSummary.ruleProviders.count, 2)
+        XCTAssertEqual(yamlSummary.ruleProviders[0].name, "Apple")
+        XCTAssertEqual(yamlSummary.ruleProviders[0].sourceType, "http")
+        XCTAssertEqual(yamlSummary.ruleProviders[0].behavior, "domain")
+        XCTAssertEqual(yamlSummary.ruleProviders[0].format, "yaml")
+        XCTAssertEqual(yamlSummary.ruleProviders[0].intervalSeconds, 86_400)
+        XCTAssertEqual(yamlSummary.ruleProviders[0].referencedRuleCount, 2)
+        XCTAssertEqual(yamlSummary.ruleProviders[0].referencedTargets, ["DIRECT", "Proxy"])
+
+        XCTAssertEqual(yamlSummary.ruleProviders[1].name, "RejectInline")
+        XCTAssertEqual(yamlSummary.ruleProviders[1].sourceType, "file")
+        XCTAssertEqual(yamlSummary.ruleProviders[1].behavior, "classical")
+        XCTAssertEqual(yamlSummary.ruleProviders[1].format, "text")
+        XCTAssertEqual(yamlSummary.ruleProviders[1].intervalSeconds, 3_600)
+        XCTAssertEqual(yamlSummary.ruleProviders[1].referencedRuleCount, 1)
+        XCTAssertEqual(yamlSummary.ruleProviders[1].referencedTargets, ["REJECT"])
+
+        let json = """
+        {
+          "rule-providers": {
+            "OpenAI": {
+              "type": "http",
+              "behavior": "domain",
+              "format": "mrs",
+              "interval": 43200
+            }
+          },
+          "rules": [
+            "RULE-SET,OpenAI,AI-Group",
+            "MATCH,DIRECT"
+          ]
+        }
+        """
+        let jsonSummary = ProfileConfigurationInspector.inspect(yaml: json)
+        XCTAssertEqual(jsonSummary.ruleProviders.count, 1)
+        XCTAssertEqual(jsonSummary.ruleProviders[0].name, "OpenAI")
+        XCTAssertEqual(jsonSummary.ruleProviders[0].behavior, "domain")
+        XCTAssertEqual(jsonSummary.ruleProviders[0].format, "mrs")
+        XCTAssertEqual(jsonSummary.ruleProviders[0].intervalSeconds, 43_200)
+        XCTAssertEqual(jsonSummary.ruleProviders[0].referencedRuleCount, 1)
+        XCTAssertEqual(jsonSummary.ruleProviders[0].referencedTargets, ["AI-Group"])
+    }
+
+    func testConnectionRouteDecisionTraceInRuleGlobalAndDirectModes() {
+        let yaml = """
+        proxies:
+          - {name: "HK Entry", type: ss, server: hk.example.com, port: 443, cipher: aes-128-gcm, password: p}
+          - {name: "US Exit", type: vless, server: us.example.com, port: 443, uuid: 00000000-0000-0000-0000-000000000001, dialer-proxy: "HK Entry"}
+        proxy-groups:
+          - {name: "Proxy", type: select, proxies: ["US Exit", "DIRECT"]}
+        rules:
+          - DOMAIN-SUFFIX,internal.corp,DIRECT
+          - DOMAIN-SUFFIX,openai.com,Proxy
+          - MATCH,DIRECT
+        """
+        let customRules = [
+            CustomRule(
+                kind: .application,
+                value: "com.apple.Terminal;/System/Applications/Utilities/Terminal.app",
+                target: .direct,
+                isEnabled: true
+            ),
+            CustomRule(
+                kind: .domainSuffix,
+                value: "github.com",
+                target: .proxy("Proxy"),
+                isEnabled: true
+            ),
+        ]
+        let customHosts = [
+            CustomHostMapping(domain: "*.openai.com", ip: "104.18.33.45", isEnabled: true),
+        ]
+        let summary = ProfileConfigurationInspector.inspect(yaml: yaml, customRules: customRules)
+
+        let connection = ConnectionTelemetry(
+            transport: .tcp,
+            destination: "api.openai.com",
+            destinationPort: 443,
+            uploadTotal: 1_024,
+            downloadTotal: 4_096,
+            startedAtUnixMilliseconds: 1_700_000_000_000,
+            rule: "DomainSuffix",
+            rulePayload: "openai.com",
+            proxyChain: "Proxy → HK Entry → US Exit",
+            sourceAppIdentifier: "com.Safari",
+            sourceAppPath: "/Applications/Safari.app",
+            dnsDurationMilliseconds: 14,
+            connectDurationMilliseconds: 62
+        )
+
+        let trace = ConnectionRouteDecisionTrace.evaluate(
+            connection: connection,
+            routingMode: .rule,
+            customHosts: customHosts,
+            customRules: customRules,
+            summary: summary
+        )
+        XCTAssertEqual(trace.steps.count, 6)
+        XCTAssertEqual(trace.steps[0].stage, .routingMode)
+        XCTAssertEqual(trace.steps[0].status, .passed)
+        XCTAssertEqual(trace.steps[1].stage, .hostsResolution)
+        XCTAssertEqual(trace.steps[1].status, .matched)
+        XCTAssertEqual(trace.resolvedHostAlias, "104.18.33.45")
+        XCTAssertEqual(trace.steps[2].stage, .applicationRule)
+        XCTAssertEqual(trace.steps[2].status, .passed)
+        XCTAssertEqual(trace.steps[3].stage, .customDestinationRule)
+        XCTAssertEqual(trace.steps[3].status, .passed)
+        XCTAssertEqual(trace.steps[4].stage, .profileRule)
+        XCTAssertEqual(trace.steps[4].status, .matched)
+        XCTAssertEqual(trace.matchedRuleOrder, 4)
+        XCTAssertEqual(trace.steps[5].stage, .outboundChain)
+        XCTAssertEqual(trace.steps[5].status, .matched)
+        XCTAssertEqual(trace.outboundHops, ["Proxy", "HK Entry", "US Exit"])
+
+        let globalTrace = ConnectionRouteDecisionTrace.evaluate(
+            connection: connection,
+            routingMode: .global,
+            customHosts: customHosts,
+            customRules: customRules,
+            summary: summary
+        )
+        XCTAssertEqual(globalTrace.steps[0].stage, .routingMode)
+        XCTAssertEqual(globalTrace.steps[0].status, .matched)
+        XCTAssertEqual(globalTrace.steps[4].status, .skipped)
+    }
+
+    func testDNSLookupInspectorEvaluatesHostsFakeIPRouteAndAddresses() {
+        let yaml = """
+        dns:
+          enable: true
+          enhanced-mode: fake-ip
+          respect-rules: true
+          nameserver:
+            - https://dns.alidns.com/dns-query
+          proxy-server-nameserver:
+            - https://1.1.1.1/dns-query
+        rules:
+          - DOMAIN-SUFFIX,dev.internal,DIRECT
+          - DOMAIN-SUFFIX,openai.com,Proxy
+          - MATCH,DIRECT
+        """
+        let summary = ProfileConfigurationInspector.inspect(yaml: yaml)
+        let customHosts = [
+            CustomHostMapping(domain: "*.dev.internal", ip: "10.10.20.30", isEnabled: true),
+        ]
+
+        let hostHitReport = DNSLookupInspector.evaluate(
+            query: "https://api.dev.internal:8443/v1/health",
+            summary: summary,
+            customHosts: customHosts,
+            resolvedAddresses: ["10.10.20.30"],
+            latencyMilliseconds: 2
+        )
+        XCTAssertEqual(hostHitReport?.normalizedHost, "api.dev.internal")
+        XCTAssertEqual(hostHitReport?.matchedCustomHostIP, "10.10.20.30")
+        XCTAssertEqual(hostHitReport?.effectiveMode, .fakeIP)
+        XCTAssertEqual(hostHitReport?.matchedRouteTarget, "DIRECT")
+        XCTAssertFalse(hostHitReport?.containsFakeIPAddress ?? true)
+
+        let fakeIPReport = DNSLookupInspector.evaluate(
+            query: "chat.openai.com",
+            summary: summary,
+            customHosts: customHosts,
+            resolvedAddresses: ["198.18.0.42"],
+            latencyMilliseconds: 8
+        )
+        XCTAssertEqual(fakeIPReport?.normalizedHost, "chat.openai.com")
+        XCTAssertNil(fakeIPReport?.matchedCustomHostIP)
+        XCTAssertEqual(fakeIPReport?.matchedRouteTarget, "Proxy")
+        XCTAssertEqual(fakeIPReport?.matchedRuleOrder, 2)
+        XCTAssertTrue(fakeIPReport?.containsFakeIPAddress ?? false)
+
+        XCTAssertTrue(DNSLookupInspector.isFakeIPAddress("198.18.0.1"))
+        XCTAssertTrue(DNSLookupInspector.isFakeIPAddress("198.19.255.254"))
+        XCTAssertFalse(DNSLookupInspector.isFakeIPAddress("198.20.0.1"))
+        XCTAssertTrue(DNSLookupInspector.isFakeIPAddress("fc00::1234"))
+        XCTAssertFalse(DNSLookupInspector.isFakeIPAddress("2606:4700:4700::1111"))
+    }
+
 }

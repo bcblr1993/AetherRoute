@@ -409,11 +409,40 @@ public struct ProviderConfigurationSummary: Identifiable, Equatable, Sendable {
     public let id: Int
     public let name: String
     public let sourceType: String
+    public let behavior: String?
+    public let format: String?
+    public let intervalSeconds: Int?
+    public let referencedRuleCount: Int
+    public let referencedTargets: [String]
 
-    public init(id: Int, name: String, sourceType: String) {
+    public init(
+        id: Int,
+        name: String,
+        sourceType: String,
+        behavior: String? = nil,
+        format: String? = nil,
+        intervalSeconds: Int? = nil,
+        referencedRuleCount: Int = 0,
+        referencedTargets: [String] = []
+    ) {
         self.id = id
         self.name = name
         self.sourceType = sourceType
+        self.behavior = behavior
+        self.format = format
+        self.intervalSeconds = intervalSeconds
+        self.referencedRuleCount = referencedRuleCount
+        self.referencedTargets = referencedTargets
+    }
+
+    public static func == (lhs: ProviderConfigurationSummary, rhs: ProviderConfigurationSummary) -> Bool {
+        lhs.id == rhs.id
+            && lhs.name == rhs.name
+            && lhs.sourceType == rhs.sourceType
+            && (lhs.behavior == nil || rhs.behavior == nil || lhs.behavior == rhs.behavior)
+            && (lhs.format == nil || rhs.format == nil || lhs.format == rhs.format)
+            && (lhs.intervalSeconds == nil || rhs.intervalSeconds == nil || lhs.intervalSeconds == rhs.intervalSeconds)
+            && (lhs.referencedTargets.isEmpty || rhs.referencedTargets.isEmpty || lhs.referencedTargets == rhs.referencedTargets)
     }
 }
 
@@ -727,8 +756,16 @@ public enum ProfileConfigurationInspector {
     public static let maximumDisplayedItemsPerSection = 500
     public static let maximumEvaluatedRules = 16_384
 
-    public static func inspect(yaml: String, customRules: [CustomRule] = []) -> ProfileConfigurationSummary {
-        var parser = Parser(yaml: yaml, customRules: customRules)
+    public static func inspect(
+        yaml: String,
+        customRules: [CustomRule] = [],
+        remoteRules: [String] = []
+    ) -> ProfileConfigurationSummary {
+        var parser = Parser(
+            yaml: yaml,
+            customRules: customRules,
+            remoteRules: remoteRules
+        )
         return parser.parse()
     }
 }
@@ -810,6 +847,9 @@ private struct Parser {
         var plugin = ""
         var encryption = ""
         var dialerProxy: String?
+        var behavior: String?
+        var format: String?
+        var intervalSeconds: Int?
         var members: [String] = []
         var includeAll = false
         var filterPattern: String?
@@ -914,13 +954,31 @@ private struct Parser {
     private var allowsIPv6 = false
     private var compatibility = CompatibilityBuilder()
     private let customRuleSignatures: Set<String>
+    private let prependedRules: [String]
+    private var ruleSetReferences: [String: (count: Int, targets: [String])] = [:]
 
-    init(yaml: String, customRules: [CustomRule] = []) {
+    init(yaml: String, customRules: [CustomRule] = [], remoteRules: [String] = []) {
         var sigs = Set<String>()
+        var prepended: [String] = []
+        let compactYAML = yaml.filter { !$0.isWhitespace }.uppercased()
         for rule in customRules where rule.isEnabled {
-            sigs.insert(rule.toClashRuleString().filter { !$0.isWhitespace }.uppercased())
+            let line = rule.toClashRuleString()
+            let sig = line.filter { !$0.isWhitespace }.uppercased()
+            sigs.insert(sig)
+            if !compactYAML.contains(sig) {
+                prepended.append(line)
+            }
+        }
+        for remote in remoteRules {
+            let trimmed = remote.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let sig = trimmed.filter { !$0.isWhitespace }.uppercased()
+            if !compactYAML.contains(sig) {
+                prepended.append(trimmed)
+            }
         }
         self.customRuleSignatures = sigs
+        self.prependedRules = prepended
 
         // A complete JSON mapping is also a valid profile. Decode it before
         // the line-oriented YAML projection so compact and pretty JSON have
@@ -961,6 +1019,9 @@ private struct Parser {
     }
 
     private mutating func parseDocument() {
+        for prepended in prependedRules {
+            appendRule(prepended)
+        }
         if let jsonObject {
             parseJSONDocument(jsonObject)
             return
@@ -1049,6 +1110,7 @@ private struct Parser {
         finishPendingItem()
         finishPendingProvider()
         resolveDeferredGroupFilters()
+        resolveRuleProviderReferences()
     }
 
     private mutating func parseJSONDocument(_ object: [String: Any]) {
@@ -1139,16 +1201,26 @@ private struct Parser {
             // deterministic without changing ordered proxy/group/rule arrays.
             for name in fields.keys.sorted() {
                 guard let values = fields[name] as? [String: Any] else { continue }
-                provider = Item(
+                var item = Item(
                     name: String(name.prefix(160)),
                     type: Self.jsonString(values["type"])
                 )
+                let behavior = Self.jsonString(values["behavior"]).lowercased()
+                if !behavior.isEmpty { item.behavior = behavior }
+                let format = Self.jsonString(values["format"]).lowercased()
+                if !format.isEmpty { item.format = format }
+                if let intervalStr = Self.jsonScalar(values["interval"]),
+                   let interval = Int(intervalStr), interval > 0 {
+                    item.intervalSeconds = interval
+                }
+                provider = item
                 finishPendingProvider()
             }
         }
         for rule in object["rules"] as? [String] ?? [] {
             appendRule(rule)
         }
+        resolveRuleProviderReferences()
         if let jsonHosts = object["hosts"] as? [String: Any] {
             for (key, val) in jsonHosts {
                 let k = key.trimmingCharacters(in: .whitespaces).lowercased()
@@ -1654,17 +1726,38 @@ private struct Parser {
                     String(value.dropFirst().dropLast()),
                     separator: ","
                 ) {
-                    if let (fieldKey, fieldValue) = Self.keyValue(in: field),
-                       fieldKey.lowercased() == "type" {
-                        provider?.type = Self.scalar(fieldValue)
+                    if let (fieldKey, fieldValue) = Self.keyValue(in: field) {
+                        applyProviderField(key: fieldKey, value: fieldValue)
                     }
                 }
             }
         } else if indent > (providerIndent ?? -1) {
             if providerFieldIndent == nil { providerFieldIndent = indent }
-            if indent == providerFieldIndent, key.lowercased() == "type" {
-                provider?.type = Self.scalar(value)
+            if indent == providerFieldIndent {
+                applyProviderField(key: key, value: value)
             }
+        }
+    }
+
+    private mutating func applyProviderField(key: String, value: String) {
+        let scalarValue = Self.scalar(value)
+        switch key.lowercased() {
+        case "type":
+            provider?.type = scalarValue
+        case "behavior":
+            if !scalarValue.isEmpty {
+                provider?.behavior = scalarValue.lowercased()
+            }
+        case "format":
+            if !scalarValue.isEmpty {
+                provider?.format = scalarValue.lowercased()
+            }
+        case "interval":
+            if let seconds = Int(scalarValue), seconds > 0 {
+                provider?.intervalSeconds = seconds
+            }
+        default:
+            break
         }
     }
 
@@ -1693,9 +1786,31 @@ private struct Parser {
             ProviderConfigurationSummary(
                 id: index,
                 name: provider.name.isEmpty ? "Unnamed provider" : provider.name,
-                sourceType: provider.type.isEmpty ? "Unknown" : provider.type
+                sourceType: provider.type.isEmpty ? "Unknown" : provider.type,
+                behavior: provider.behavior,
+                format: provider.format,
+                intervalSeconds: provider.intervalSeconds
             )
         )
+    }
+
+    private mutating func resolveRuleProviderReferences() {
+        guard !ruleSetReferences.isEmpty, !ruleProviders.isEmpty else { return }
+        for index in ruleProviders.indices {
+            let existing = ruleProviders[index]
+            let key = existing.name.lowercased()
+            guard let ref = ruleSetReferences[key] else { continue }
+            ruleProviders[index] = ProviderConfigurationSummary(
+                id: existing.id,
+                name: existing.name,
+                sourceType: existing.sourceType,
+                behavior: existing.behavior,
+                format: existing.format,
+                intervalSeconds: existing.intervalSeconds,
+                referencedRuleCount: ref.count,
+                referencedTargets: ref.targets
+            )
+        }
     }
 
     private mutating func parseRule(line: String, indent: Int) {
@@ -1777,6 +1892,16 @@ private struct Parser {
         }
         let criteriaFields = targetIndex.map { fields[1..<$0] } ?? []
         let criteria = criteriaFields.isEmpty ? nil : criteriaFields.joined(separator: ", ")
+        if kind.uppercased() == "RULE-SET",
+           let setKey = criteria?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           !setKey.isEmpty {
+            var entry = ruleSetReferences[setKey] ?? (0, [])
+            entry.count += 1
+            if !entry.targets.contains(target) {
+                entry.targets.append(target)
+            }
+            ruleSetReferences[setKey] = entry
+        }
         let order = allRules.count + 1
         let compactValue = value.filter { !$0.isWhitespace }.uppercased()
         let synthesizedKey = [kind, criteria ?? "", target].filter { !$0.isEmpty }.joined(separator: ",").filter { !$0.isWhitespace }.uppercased()

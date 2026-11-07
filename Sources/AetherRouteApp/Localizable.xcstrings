@@ -194,6 +194,22 @@
         }
       }
     },
+    "%lld cached rules · showing up to 200 matches": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld cached rules · showing up to 200 matches"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已缓存 %lld 条规则 · 最多显示 200 条匹配项"
+          }
+        }
+      }
+    },
     "%lld chosen": {
       "localizations": {
         "zh-Hans": {
@@ -601,12 +617,44 @@
         }
       }
     },
+    "12 hours": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "12 hours"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "12 小时"
+          }
+        }
+      }
+    },
     "2. Scroll to the bottom and tap Configure Proxy › Manual.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "2. 滑动到最底部，点击【配置代理】并选择【手动】。"
+          }
+        }
+      }
+    },
+    "24 hours": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "24 hours"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "24 小时"
           }
         }
       }
@@ -642,6 +690,22 @@
         }
       }
     },
+    "6 hours": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "6 hours"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "6 小时"
+          }
+        }
+      }
+    },
     "7 Days": {
       "extractionState": "manual",
       "localizations": {
@@ -649,6 +713,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "7 天"
+          }
+        }
+      }
+    },
+    "72 hours": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "72 hours"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "72 小时"
           }
         }
       }
@@ -1037,6 +1117,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加规则"
+          }
+        }
+      }
+    },
+    "Add Rule Set": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Rule Set"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加规则集"
           }
         }
       }
@@ -1835,6 +1931,22 @@
         }
       }
     },
+    "App · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App · %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用 · %@"
+          }
+        }
+      }
+    },
     "App, build, macOS, and Apple silicon version": {
       "localizations": {
         "zh-Hans": {
@@ -1872,6 +1984,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "应用语言"
+          }
+        }
+      }
+    },
+    "Application rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Application rule"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用分流规则"
           }
         }
       }
@@ -2163,6 +2291,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "备用中"
+          }
+        }
+      }
+    },
+    "Behavior": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Behavior"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匹配行为"
           }
         }
       }
@@ -2898,6 +3042,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Clash 格式规则文本"
+          }
+        }
+      }
+    },
+    "Classical": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Classical"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复合规则 (Classical)"
           }
         }
       }
@@ -3860,6 +4020,22 @@
         }
       }
     },
+    "Custom rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom rule"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义分流规则"
+          }
+        }
+      }
+    },
     "Custom rule added and active at top priority": {
       "localizations": {
         "zh-Hans": {
@@ -3876,6 +4052,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "自定义规则已删除"
+          }
+        }
+      }
+    },
+    "Custom rule providers": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom rule providers"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义规则集"
           }
         }
       }
@@ -4566,6 +4758,22 @@
         }
       }
     },
+    "Domain": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Domain"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "域名 (Domain)"
+          }
+        }
+      }
+    },
     "Domain (e.g. nas.local, *.dev.internal)": {
       "localizations": {
         "zh-Hans": {
@@ -4813,6 +5021,22 @@
         }
       }
     },
+    "Edit Rule Set": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit Rule Set"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑规则集"
+          }
+        }
+      }
+    },
     "Edit chained proxy": {
       "localizations": {
         "zh-Hans": {
@@ -4880,6 +5104,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "启用 iCloud 同步"
+          }
+        }
+      }
+    },
+    "Enable rule set %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable rule set %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用规则集 %@"
+          }
+        }
+      }
+    },
+    "Enabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enabled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已启用"
           }
         }
       }
@@ -5041,6 +5297,22 @@
         }
       }
     },
+    "Enter a domain to inspect Hosts, Fake-IP, and resolved addresses": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a domain to inspect Hosts, Fake-IP, and resolved addresses"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入域名以查看 Hosts 映射、Fake-IP 模式与实际解析地址"
+          }
+        }
+      }
+    },
     "Enter a license key to activate this Mac. The key is cleared from memory after the request.": {
       "localizations": {
         "zh-Hans": {
@@ -5083,6 +5355,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "请输入有效的 HTTPS 订阅地址，地址中不能包含内嵌凭据或片段。"
+          }
+        }
+      }
+    },
+    "Enter a valid domain name (such as example.com) to inspect DNS resolution.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a valid domain name (such as example.com) to inspect DNS resolution."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入有效域名（例如 example.com）以检查 DNS 解析结果。"
           }
         }
       }
@@ -5624,6 +5912,22 @@
         }
       }
     },
+    "Format": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Format"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件格式"
+          }
+        }
+      }
+    },
     "Forwards each app's connections": {
       "localizations": {
         "zh-Hans": {
@@ -5896,6 +6200,38 @@
         }
       }
     },
+    "HTTPS URL": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTPS URL"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTPS 地址"
+          }
+        }
+      }
+    },
+    "HTTPS rule lists compiled after custom rules": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTPS rule lists compiled after custom rules"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在自定义规则之后优先生效的 HTTPS 远程规则列表"
+          }
+        }
+      }
+    },
     "HTTPS subscription": {
       "localizations": {
         "zh-Hans": {
@@ -6089,6 +6425,38 @@
         }
       }
     },
+    "Hosts override": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hosts override"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hosts 映射"
+          }
+        }
+      }
+    },
+    "Hosts: %@ -> %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hosts: %@ -> %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hosts：%1$@ -> %2$@"
+          }
+        }
+      }
+    },
     "How do I use LAN shared proxy?": {
       "localizations": {
         "zh-Hans": {
@@ -6126,6 +6494,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "怎么选"
+          }
+        }
+      }
+    },
+    "IP-CIDR": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IP-CIDR"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IP 段 (IP-CIDR)"
           }
         }
       }
@@ -7244,6 +7628,22 @@
         }
       }
     },
+    "Locate in Rules": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Locate in Rules"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在规则页定位"
+          }
+        }
+      }
+    },
     "Login item": {
       "extractionState": "manual",
       "localizations": {
@@ -8079,6 +8479,22 @@
         }
       }
     },
+    "No custom rule sets yet. Subscribe to an HTTPS domain, IP-CIDR, or classical rule list to apply rules across profiles.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No custom rule sets yet. Subscribe to an HTTPS domain, IP-CIDR, or classical rule list to apply rules across profiles."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚无自定义规则集。可订阅 HTTPS 域名、IP-CIDR 或经典规则列表并跨配置生效。"
+          }
+        }
+      }
+    },
     "No custom rules yet. To always send a site direct or through the proxy, add a rule here.": {
       "localizations": {
         "zh-Hans": {
@@ -8188,6 +8604,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "未找到匹配节点"
+          }
+        }
+      }
+    },
+    "No matching rules": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No matching rules"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无匹配规则"
           }
         }
       }
@@ -8428,6 +8860,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有匹配的规则。换个筛选条件，或清空搜索。"
+          }
+        }
+      }
+    },
+    "No system DNS address returned for this host.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No system DNS address returned for this host."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统 DNS 未返回此主机名的解析地址。"
           }
         }
       }
@@ -8699,6 +9147,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "未登录 iCloud"
+          }
+        }
+      }
+    },
+    "Not updated yet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not updated yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未更新"
           }
         }
       }
@@ -9248,6 +9712,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "代理出口路径"
+          }
+        }
+      }
+    },
+    "Outbound chain": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Outbound chain"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最终出站链路"
           }
         }
       }
@@ -9811,6 +10291,22 @@
         }
       }
     },
+    "Preview rules": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview rules"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预览规则"
+          }
+        }
+      }
+    },
     "Previous node stopped answering": {
       "localizations": {
         "zh-Hans": {
@@ -10173,6 +10669,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "配置已重命名。"
+          }
+        }
+      }
+    },
+    "Profile rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profile rule"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅配置规则"
           }
         }
       }
@@ -10553,6 +11065,22 @@
         }
       }
     },
+    "Quick rule actions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick rule actions"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快捷分流规则"
+          }
+        }
+      }
+    },
     "Quit": {
       "localizations": {
         "zh-Hans": {
@@ -10821,6 +11349,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "降低 RTT（0-RTT）"
+          }
+        }
+      }
+    },
+    "Referenced by %lld rules": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Referenced by %lld rules"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被 %lld 条规则引用"
           }
         }
       }
@@ -11137,6 +11681,22 @@
         }
       }
     },
+    "Resolve": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolve"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解析"
+          }
+        }
+      }
+    },
     "Resolves real addresses while retaining enhanced host routing.": {
       "localizations": {
         "zh-Hans": {
@@ -11390,6 +11950,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "线路检查未完成"
+          }
+        }
+      }
+    },
+    "Route decision trace": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Route decision trace"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路由决策回放"
           }
         }
       }
@@ -11702,6 +12278,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "规则内容、代理链和账户标识"
+          }
+        }
+      }
+    },
+    "Rule provider added (%lld rules loaded)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rule provider added (%lld rules loaded)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已添加规则集（已加载 %lld 条规则）"
+          }
+        }
+      }
+    },
+    "Rule provider removed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rule provider removed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则集已移除"
+          }
+        }
+      }
+    },
+    "Rule provider updated": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rule provider updated"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则集已更新"
+          }
+        }
+      }
+    },
+    "Rule provider updated (%lld rules)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rule provider updated (%lld rules)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则集已更新（%lld 条规则）"
           }
         }
       }
@@ -12078,6 +12718,22 @@
         }
       }
     },
+    "Search rules in this set": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search rules in this set"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此规则集中搜索"
+          }
+        }
+      }
+    },
     "Second hop (landing)": {
       "localizations": {
         "zh-Hans": {
@@ -12258,6 +12914,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "重新设置权限"
+          }
+        }
+      }
+    },
+    "Set rule…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set rule…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置规则…"
           }
         }
       }
@@ -13041,6 +13713,22 @@
         }
       }
     },
+    "Subscribe to an HTTPS rule provider list.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subscribe to an HTTPS rule provider list."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅外部 HTTPS 规则集列表。"
+          }
+        }
+      }
+    },
     "Subscribed profile": {
       "localizations": {
         "zh-Hans": {
@@ -13736,6 +14424,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "按应用接管网络连接，最省心。"
+          }
+        }
+      }
+    },
+    "Target": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Target"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分流策略"
           }
         }
       }
@@ -16032,6 +16736,22 @@
         }
       }
     },
+    "Update All": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update All"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部更新"
+          }
+        }
+      }
+    },
     "Update Now": {
       "localizations": {
         "zh-Hans": {
@@ -16053,6 +16773,22 @@
         }
       }
     },
+    "Update interval": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update interval"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新间隔"
+          }
+        }
+      }
+    },
     "Update recommended · %@": {
       "localizations": {
         "zh-Hans": {
@@ -16069,6 +16805,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "需要更新 · %@"
+          }
+        }
+      }
+    },
+    "Update rule set": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update rule set"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新规则集"
+          }
+        }
+      }
+    },
+    "Update the rule set or try another search keyword.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update the rule set or try another search keyword."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请更新规则集或尝试其他搜索关键词。"
           }
         }
       }
@@ -16095,6 +16863,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "更新于"
+          }
+        }
+      }
+    },
+    "Updated %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updated %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新于 %@"
+          }
+        }
+      }
+    },
+    "Updated %lld rule providers": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updated %lld rule providers"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已更新 %lld 个规则集"
           }
         }
       }

@@ -43,15 +43,49 @@ struct ProviderRow: View {
             AetherIconTile(symbol: "shippingbox.fill", color: tint, size: AetherVisual.rowTileSize)
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
                 Text(provider.name).fontWeight(.medium)
-                Text(provider.sourceType.uppercased())
+                Text(subtitle)
                     .font(.caption.monospaced())
                     .foregroundStyle(AetherVisual.secondaryText)
             }
-            Spacer()
+            Spacer(minLength: AetherVisual.s2)
+            if !provider.referencedTargets.isEmpty {
+                HStack(spacing: AetherVisual.s2) {
+                    ForEach(Array(provider.referencedTargets.prefix(3)), id: \.self) { target in
+                        RuleTargetLabel(target: target)
+                    }
+                    if provider.referencedTargets.count > 3 {
+                        Text(verbatim: "+\(provider.referencedTargets.count - 3)")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(AetherVisual.secondaryText)
+                    }
+                }
+            }
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s3)
         .accessibilityElement(children: .combine)
+    }
+
+    private var subtitle: String {
+        var parts = [provider.sourceType.uppercased()]
+        if let behavior = provider.behavior, !behavior.isEmpty {
+            parts.append(behavior.uppercased())
+        }
+        if let format = provider.format, !format.isEmpty {
+            parts.append(format.uppercased())
+        }
+        if let interval = provider.intervalSeconds, interval > 0 {
+            parts.append(AppLocalization.duration(TimeInterval(interval), includesSeconds: false))
+        }
+        if provider.referencedRuleCount > 0 {
+            parts.append(
+                String.localizedStringWithFormat(
+                    AppLocalization.string("Referenced by %lld rules"),
+                    Int64(provider.referencedRuleCount)
+                )
+            )
+        }
+        return parts.joined(separator: " · ")
     }
 }
 

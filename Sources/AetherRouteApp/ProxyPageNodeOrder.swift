@@ -64,4 +64,36 @@ enum ProxyPageNodeOrder {
             }
         }
     }
+
+    /// 对节点列表按关键词（支持空格分词多条件与匹配节点名、协议、传输层、前置代理）进行筛选。
+    static func filtered(
+        members: [String],
+        query: String,
+        protocols: [String: String] = [:],
+        transports: [String: String] = [:],
+        dialers: [String: String] = [:]
+    ) -> [String] {
+        let tokens = query
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(whereSeparator: \.isWhitespace)
+            .map { $0.lowercased() }
+        guard !tokens.isEmpty else {
+            return members
+        }
+
+        return members.filter { member in
+            let searchableFields = [
+                member,
+                protocols[member] ?? "",
+                transports[member] ?? "",
+                dialers[member] ?? "",
+            ].map { $0.lowercased() }
+
+            return tokens.allSatisfy { token in
+                searchableFields.contains { field in
+                    field.contains(token)
+                }
+            }
+        }
+    }
 }

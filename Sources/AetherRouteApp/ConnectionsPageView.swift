@@ -99,6 +99,7 @@ struct ConnectionsView: View {
 #endif
         .sheet(item: $inspectedConnection) { row in
             ConnectionInspector(connection: row.connection)
+                .environmentObject(tunnel)
         }
         .onChange(of: tunnel.isConnected) { _, connected in
             if !connected {
@@ -1109,12 +1110,28 @@ private struct ConnectionDurationCell: View {
 }
 
 private struct ConnectionInspector: View {
+    @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.dismiss) private var dismiss
     let connection: ConnectionTelemetry
 
     private var destination: String { connection.destinationAddress }
     private var app: SourceAppPresentation {
         SourceAppDirectory.shared.presentation(for: connection)
+    }
+
+    private var decisionSteps: [ConnectionRouteDecisionStep] {
+        ConnectionRouteDecisionTrace.evaluate(
+            connection: connection,
+            routingMode: tunnel.sessionRoutingMode ?? tunnel.routingMode,
+            customHosts: tunnel.activeProfileOverrides.customHosts,
+            customRules: tunnel.customRules,
+            summary: tunnel.activeProfileSummary
+        ).steps
+    }
+
+    private var quickRuleTargets: [CustomRuleTarget] {
+        let groups = (tunnel.activeProfileSummary?.proxyGroups ?? []).map(\.name)
+        return [.direct] + groups.prefix(8).map { .proxy($0) } + [.reject]
     }
 
     var body: some View {
@@ -1148,6 +1165,27 @@ private struct ConnectionInspector: View {
                     LabeledContent(AppLocalization.string("Matched rule"), value: connection.ruleSummary)
                     LabeledContent(AppLocalization.string("Outlet chain"), value: connection.proxyChain)
                 }
+                Section(AppLocalization.string("Route decision trace")) {
+                    ForEach(decisionSteps) { step in
+                        LabeledContent {
+                            HStack(spacing: AetherVisual.s1) {
+                                Image(systemName: decisionStepSymbol(step.status))
+                                    .foregroundStyle(decisionStepColor(step.status))
+                                    .accessibilityHidden(true)
+                                Text(step.summary)
+                                    .font(.callout.monospaced())
+                                    .foregroundStyle(
+                                        step.status == .skipped
+                                            ? AnyShapeStyle(AetherVisual.secondaryText)
+                                            : AnyShapeStyle(.primary)
+                                    )
+                            }
+                        } label: {
+                            Text(decisionStageTitle(step.stage))
+                        }
+                    }
+                }
+                quickRulesSection
                 Section(AppLocalization.string("Traffic")) {
                     LabeledContent(AppLocalization.string("Download"), value: bytes(connection.downloadTotal))
                     LabeledContent(AppLocalization.string("Upload"), value: bytes(connection.uploadTotal))
@@ -1189,11 +1227,23 @@ private struct ConnectionInspector: View {
                 maxHeight: AetherVisual.sheetFormMaxHeight
             )
 
-            HStack {
+            HStack(spacing: AetherVisual.s2) {
                 AetherCopyButton(title: Text(AppLocalization.string("Copy destination"))) {
                     NSPasteboard.general.clearContents()
                     return NSPasteboard.general.setString(connection.destinationAddress, forType: .string)
                 }
+                Button {
+                    tunnel.pendingRuleTestDestination = connection.destinationHost
+                    dismiss()
+                    NotificationCenter.default.post(
+                        name: .aetherRouteNavigateToSection,
+                        object: AppSection.rules.rawValue
+                    )
+                } label: {
+                    Label(AppLocalization.string("Locate in Rules"), systemImage: "scope")
+                }
+                .aetherButton()
+                .accessibilityIdentifier("connection-inspector-locate-in-rules")
                 Spacer()
                 Button(AppLocalization.string("Done")) { dismiss() }
                     .aetherButton(prominent: true)
@@ -1202,6 +1252,135 @@ private struct ConnectionInspector: View {
             .padding([.horizontal, .bottom], AetherVisual.dialogPadding)
         }
         .aetherSheetFrame()
+    }
+
+    @ViewBuilder
+    private var quickRulesSection: some View {
+        let candidates = ConnectionDestinationRulePlanner.candidates(for: connection.destination)
+        let appSubject = SourceAppDirectory.shared.ruleSubject(for: app)
+        if !candidates.isEmpty || appSubject != nil {
+            Section(AppLocalization.string("Quick rule actions")) {
+                ForEach(candidates, id: \.self) { candidate in
+                    let existing = tunnel.destinationRule(kind: candidate.kind, value: candidate.value)
+                    LabeledContent {
+                        Menu {
+                            ForEach(quickRuleTargets, id: \.rawString) { target in
+                                Button {
+                                    Task {
+                                        let saved = await tunnel.setDestinationRule(
+                                            kind: candidate.kind,
+                                            value: candidate.value,
+                                            noResolve: candidate.noResolve,
+                                            target: target
+                                        )
+                                        if saved, tunnel.isConnected {
+                                            await tunnel.closeConnections(.init(row: connection))
+                                        }
+                                    }
+                                } label: {
+                                    if existing?.target == target {
+                                        Label(quickTargetTitle(target), systemImage: "checkmark")
+                                    } else {
+                                        Text(quickTargetTitle(target))
+                                    }
+                                }
+                            }
+                            if let existing {
+                                Divider()
+                                Button(AppLocalization.string("Remove rule"), role: .destructive) {
+                                    Task {
+                                        let deleted = await tunnel.deleteCustomRule(id: existing.id)
+                                        if deleted, tunnel.isConnected {
+                                            await tunnel.closeConnections(.init(row: connection))
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            Text(existing.map { quickTargetTitle($0.target) } ?? AppLocalization.string("Set rule…"))
+                        }
+                        .fixedSize()
+                    } label: {
+                        Text(verbatim: "\(candidate.kind.rawValue) · \(candidate.value)")
+                            .font(.callout.monospaced())
+                    }
+                }
+                if let subject = appSubject {
+                    let existing = tunnel.applicationRule(
+                        bundleIdentifier: subject.bundleIdentifier,
+                        bundlePath: subject.bundlePath
+                    )
+                    LabeledContent {
+                        Menu {
+                            ForEach(quickRuleTargets, id: \.rawString) { target in
+                                Button {
+                                    Task {
+                                        await tunnel.setApplicationRule(
+                                            bundleIdentifier: subject.bundleIdentifier,
+                                            bundlePath: subject.bundlePath,
+                                            displayName: app.displayName,
+                                            target: target
+                                        )
+                                    }
+                                } label: {
+                                    if existing?.target == target {
+                                        Label(quickTargetTitle(target), systemImage: "checkmark")
+                                    } else {
+                                        Text(quickTargetTitle(target))
+                                    }
+                                }
+                            }
+                            if let existing {
+                                Divider()
+                                Button(AppLocalization.string("Remove rule"), role: .destructive) {
+                                    Task { await tunnel.deleteCustomRule(id: existing.id) }
+                                }
+                            }
+                        } label: {
+                            Text(existing.map { quickTargetTitle($0.target) } ?? AppLocalization.string("Set rule…"))
+                        }
+                        .fixedSize()
+                    } label: {
+                        Text(AppLocalization.format("App · %@", app.displayName))
+                    }
+                }
+            }
+        }
+    }
+
+    private func decisionStageTitle(_ stage: ConnectionRouteDecisionStage) -> String {
+        switch stage {
+        case .routingMode: AppLocalization.string("Routing mode")
+        case .hostsResolution: AppLocalization.string("Hosts override")
+        case .applicationRule: AppLocalization.string("Application rule")
+        case .customDestinationRule: AppLocalization.string("Custom rule")
+        case .profileRule: AppLocalization.string("Profile rule")
+        case .outboundChain: AppLocalization.string("Outbound chain")
+        }
+    }
+
+    private func decisionStepSymbol(_ status: ConnectionRouteDecisionStatus) -> String {
+        switch status {
+        case .matched: "checkmark.circle.fill"
+        case .passed: "arrow.right.circle.fill"
+        case .skipped: "minus.circle"
+        }
+    }
+
+    private func decisionStepColor(_ status: ConnectionRouteDecisionStatus) -> AnyShapeStyle {
+        switch status {
+        case .matched: AnyShapeStyle(AetherReadableTint(color: .green))
+        case .passed: AnyShapeStyle(AetherReadableTint(color: .indigo))
+        case .skipped: AnyShapeStyle(AetherVisual.secondaryText)
+        }
+    }
+
+    private func quickTargetTitle(_ target: CustomRuleTarget) -> String {
+        switch target {
+        case .direct: AppLocalization.string("Always connect directly")
+        case .reject: AppLocalization.string("Always block")
+        case let .proxy(group): AppLocalization.format("Always use %@", group)
+        }
     }
 
     private func bytes(_ value: UInt64) -> String {

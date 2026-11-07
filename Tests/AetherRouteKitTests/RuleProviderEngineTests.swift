@@ -219,4 +219,57 @@ final class RuleProviderEngineTests: XCTestCase {
         XCTAssertEqual(merged.first?.defaultTarget, "REJECT")
         XCTAssertTrue(merged.first?.isEnabled ?? false)
     }
+
+    func testSearchRulesAndInspectSummaryWithRemoteRuleProviders() async throws {
+        let engine = RuleProviderEngine(directoryURL: tempDir)
+        let id = UUID()
+        let metadata = RuleProviderMetadata(
+            id: id,
+            name: "AI Suite",
+            url: URL(string: "https://example.com/ai.yaml")!,
+            behavior: .domain,
+            format: .yaml,
+            defaultTarget: "AI-Proxy",
+            isEnabled: true
+        )
+        try await engine.registerProvider(metadata)
+
+        let cacheFile = tempDir.appendingPathComponent("\(id.uuidString).dat")
+        let yamlPayload = """
+        payload:
+          - openai.com
+          - anthropic.com
+          - DOMAIN,claude.ai,Claude-Direct
+        """
+        try yamlPayload.data(using: .utf8)!.write(to: cacheFile)
+
+        let filtered = try await engine.searchRules(for: id, query: "claude", limit: 50)
+        XCTAssertEqual(filtered.count, 1)
+        XCTAssertEqual(filtered[0].type, "DOMAIN")
+        XCTAssertEqual(filtered[0].payload, "claude.ai")
+        XCTAssertEqual(filtered[0].target, "Claude-Direct")
+
+        let compiledRemote = await engine.compileActiveRules()
+        let baseYAML = """
+        proxies:
+          - {name: "Node-1", type: ss, server: s.example.com, port: 443, cipher: aes-128-gcm, password: p}
+        proxy-groups:
+          - {name: "AI-Proxy", type: select, proxies: ["Node-1"]}
+        rules:
+          - MATCH,DIRECT
+        """
+        let summary = ProfileConfigurationInspector.inspect(
+            yaml: baseYAML,
+            customRules: [],
+            remoteRules: compiledRemote
+        )
+        let match = RouteMatchEngine.evaluate(
+            destination: "api.anthropic.com",
+            against: summary.allRules,
+            totalRuleCount: summary.ruleCount
+        )
+        XCTAssertEqual(match?.target, "AI-Proxy")
+        XCTAssertEqual(match?.matchedRule.kind, "DOMAIN-SUFFIX")
+        XCTAssertEqual(match?.matchedRule.criteria, "anthropic.com")
+    }
 }

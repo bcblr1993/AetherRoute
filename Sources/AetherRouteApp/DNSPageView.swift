@@ -8,6 +8,10 @@ struct DNSView: View {
     @State private var newHostDomain = ""
     @State private var newHostIP = ""
     @State private var hostOverrideErrorMessage: String?
+    @State private var lookupQuery = ""
+    @State private var lookupReport: DNSLookupReport?
+    @State private var isRunningLookup = false
+    @State private var hasAttemptedLookup = false
 
     var body: some View {
         Group {
@@ -28,6 +32,7 @@ struct DNSView: View {
                         } else {
                             systemResolverContent
                         }
+                        dnsLookupSection(summary: summary)
                         customHostsSection
                     }
                     .aetherPageContent(.wide)
@@ -869,6 +874,204 @@ struct DNSView: View {
         hostOverrideErrorMessage = nil
         Task {
             _ = await tunnel.setProfileOverrides(overrides)
+        }
+    }
+
+    // MARK: - Interactive DNS Lookup
+
+    private func dnsLookupSection(summary: ProfileConfigurationSummary) -> some View {
+        FeatureSection(title: AppLocalization.string("DNS lookup")) {
+            VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                HStack(spacing: AetherVisual.s2) {
+                    HStack(spacing: AetherVisual.s2) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(AetherVisual.secondaryText)
+                            .accessibilityHidden(true)
+                        TextField(
+                            AppLocalization.string("Enter a domain to inspect Hosts, Fake-IP, and resolved addresses"),
+                            text: $lookupQuery
+                        )
+                        .textFieldStyle(.plain)
+                        .font(.body)
+                        .onSubmit { runDNSLookup(summary: summary) }
+                        .accessibilityIdentifier("dns-lookup-field")
+                        if !lookupQuery.isEmpty {
+                            Button {
+                                lookupQuery = ""
+                                lookupReport = nil
+                                hasAttemptedLookup = false
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(AppLocalization.string("Clear"))
+                        }
+                    }
+                    .padding(.horizontal, AetherVisual.s3 + AetherVisual.sMicro)
+                    .frame(minHeight: AetherVisual.tableRowHeight)
+                    .background(AetherVisual.neutralFill, in: Capsule())
+
+                    Button {
+                        runDNSLookup(summary: summary)
+                    } label: {
+                        AetherProgressButtonLabel(
+                            AppLocalization.string("Resolve"),
+                            isWorking: isRunningLookup
+                        )
+                    }
+                    .aetherButton(prominent: true)
+                    .controlSize(.large)
+                    .disabled(lookupQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRunningLookup)
+                    .accessibilityIdentifier("dns-lookup-button")
+                }
+
+                if let report = lookupReport {
+                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                        HStack(spacing: AetherVisual.s2) {
+                            StatePill(
+                                title: modeTitle(report.effectiveMode),
+                                color: modeColor(report.effectiveMode),
+                                symbol: modeSymbol(report.effectiveMode)
+                            )
+                            if let hostIP = report.matchedCustomHostIP {
+                                Label(
+                                    String.localizedStringWithFormat(
+                                        AppLocalization.string("Hosts: %@ -> %@"),
+                                        report.normalizedHost,
+                                        hostIP
+                                    ),
+                                    systemImage: "pin.fill"
+                                )
+                                .font(.caption.monospaced())
+                                .foregroundStyle(AetherReadableTint(color: .teal))
+                            }
+                            if let ruleSummary = report.matchedRuleSummary,
+                               let target = report.matchedRouteTarget {
+                                Text(verbatim: ruleSummary)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                                Image(systemName: "arrow.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                                    .accessibilityHidden(true)
+                                RuleTargetLabel(target: target)
+                            }
+                            Spacer(minLength: AetherVisual.s2)
+                            if let ms = report.latencyMilliseconds {
+                                Text(
+                                    String.localizedStringWithFormat(
+                                        AppLocalization.string("%lld ms"),
+                                        Int64(ms)
+                                    )
+                                )
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(AetherVisual.secondaryText)
+                            }
+                        }
+
+                        if report.resolvedAddresses.isEmpty {
+                            Label(
+                                AppLocalization.string("No system DNS address returned for this host."),
+                                systemImage: "info.circle"
+                            )
+                            .font(.callout)
+                            .foregroundStyle(AetherVisual.secondaryText)
+                        } else {
+                            HStack(spacing: AetherVisual.s2) {
+                                ForEach(Array(report.resolvedAddresses.prefix(4)), id: \.self) { address in
+                                    HStack(spacing: AetherVisual.s1) {
+                                        Text(verbatim: address)
+                                            .font(.callout.monospaced())
+                                            .textSelection(.enabled)
+                                        if DNSLookupInspector.isFakeIPAddress(address) {
+                                            Text(AppLocalization.string("Fake-IP"))
+                                                .font(.caption2.weight(.semibold))
+                                                .foregroundStyle(Color.accentColor)
+                                                .padding(.horizontal, AetherVisual.s1)
+                                                .padding(.vertical, AetherVisual.sMicro)
+                                                .background(
+                                                    AetherVisual.tintFill(.accentColor),
+                                                    in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+                                                )
+                                        }
+                                    }
+                                    .padding(.horizontal, AetherVisual.s2)
+                                    .padding(.vertical, AetherVisual.s1)
+                                    .background(
+                                        AetherVisual.neutralFill,
+                                        in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("dns-lookup-result")
+                    .transition(AetherVisual.insertion)
+                } else if hasAttemptedLookup && !isRunningLookup {
+                    Label(
+                        AppLocalization.string("Enter a valid domain name (such as example.com) to inspect DNS resolution."),
+                        systemImage: "info.circle"
+                    )
+                    .font(.callout)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                } else {
+                    HStack(spacing: AetherVisual.s1) {
+                        Text(AppLocalization.string("Try:"))
+                            .font(.caption)
+                            .foregroundStyle(AetherVisual.secondaryText)
+                        ForEach(["google.com", "apple.com", "github.com", "bilibili.com"], id: \.self) { domain in
+                            Button(domain) {
+                                lookupQuery = domain
+                                runDNSLookup(summary: summary)
+                            }
+                            .buttonStyle(.aetherPressable)
+                            .font(.caption)
+                            .padding(.horizontal, AetherVisual.s2)
+                            .padding(.vertical, AetherVisual.sMicro)
+                            .background(AetherVisual.neutralFill, in: Capsule())
+                        }
+                    }
+                }
+            }
+            .padding(AetherVisual.cardPadding)
+            .aetherPanel()
+            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: lookupReport)
+        }
+    }
+
+    private func runDNSLookup(summary: ProfileConfigurationSummary) {
+        let query = lookupQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+        hasAttemptedLookup = true
+        guard let normalized = DNSLookupInspector.normalizeHost(query) else {
+            lookupReport = nil
+            return
+        }
+        isRunningLookup = true
+        let customHosts = tunnel.activeProfileOverrides.customHosts
+        let dnsModeOverride: DNSResolutionMode? = switch tunnel.dnsRuntimePolicy.resolutionMode {
+        case .inherit: nil
+        case .normal: .normal
+        case .fakeIP: .fakeIP
+        case .redirHost: .redirHost
+        }
+        let geoSiteData = tunnel.bundledGeoSiteData
+
+        Task {
+            let resolved = await DNSLookupInspector.resolveSystemAddresses(for: normalized)
+            let report = DNSLookupInspector.evaluate(
+                query: normalized,
+                summary: summary,
+                customHosts: customHosts,
+                dnsModeOverride: dnsModeOverride,
+                geoSiteData: geoSiteData,
+                resolvedAddresses: resolved.addresses,
+                latencyMilliseconds: resolved.latencyMilliseconds
+            )
+            lookupReport = report
+            isRunningLookup = false
         }
     }
 

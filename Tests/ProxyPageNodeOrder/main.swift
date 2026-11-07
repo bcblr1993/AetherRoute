@@ -13,6 +13,7 @@ struct ProxyPageNodeOrderTests {
         testNameSort()
         testEdgeCases()
         testSortCases()
+        testFilteredByQueryProtocolTransportAndDialer()
         print("ProxyPageNodeOrder tests passed: source configuration order strictly preserved in default mode; latency and name sorting verified.")
     }
 
@@ -113,5 +114,70 @@ struct ProxyPageNodeOrderTests {
         for item in cases {
             precondition(!item.localizedTitle.isEmpty)
         }
+    }
+
+    private static func testFilteredByQueryProtocolTransportAndDialer() {
+        let members = ["HK-Edge-01", "JP-Tokyo-02", "US-West-03", "SG-Chain-04"]
+        let protocols = [
+            "HK-Edge-01": "vless",
+            "JP-Tokyo-02": "hysteria2",
+            "US-West-03": "ss",
+            "SG-Chain-04": "trojan",
+        ]
+        let transports = [
+            "HK-Edge-01": "XHTTP",
+            "JP-Tokyo-02": "QUIC",
+            "US-West-03": "WS",
+            "SG-Chain-04": "gRPC",
+        ]
+        let dialers = [
+            "SG-Chain-04": "HK-Edge-01",
+        ]
+
+        precondition(
+            ProxyPageNodeOrder.filtered(
+                members: members,
+                query: "   ",
+                protocols: protocols,
+                transports: transports,
+                dialers: dialers
+            ) == members
+        )
+        precondition(
+            ProxyPageNodeOrder.filtered(
+                members: members,
+                query: "tokyo",
+                protocols: protocols,
+                transports: transports,
+                dialers: dialers
+            ) == ["JP-Tokyo-02"]
+        )
+        precondition(
+            ProxyPageNodeOrder.filtered(
+                members: members,
+                query: "xhttp",
+                protocols: protocols,
+                transports: transports,
+                dialers: dialers
+            ) == ["HK-Edge-01"]
+        )
+        precondition(
+            ProxyPageNodeOrder.filtered(
+                members: members,
+                query: "vless",
+                protocols: protocols,
+                transports: transports,
+                dialers: dialers
+            ) == ["HK-Edge-01"]
+        )
+        precondition(
+            ProxyPageNodeOrder.filtered(
+                members: members,
+                query: "trojan grpc",
+                protocols: protocols,
+                transports: transports,
+                dialers: dialers
+            ) == ["SG-Chain-04"]
+        )
     }
 }

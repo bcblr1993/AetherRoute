@@ -92,6 +92,9 @@ struct RulesView: View {
     @State private var showsAllProfileRules: Bool = false
     @State private var showAddRuleSheet: Bool = false
     @State private var editingRule: CustomRule? = nil
+    @State private var showRuleProviderEditorSheet: Bool = false
+    @State private var editingRuleProvider: RuleProviderMetadata? = nil
+    @State private var previewingRuleProvider: RuleProviderMetadata? = nil
     @State private var routingResourceImportKind: RoutingResourceKind?
     @State private var isResourceImporterPresented = false
 
@@ -141,6 +144,8 @@ struct RulesView: View {
 
                             customRulesSection(summary: summary)
 
+                            customRuleProvidersSection(summary: summary)
+
                             if !summary.ruleProviders.isEmpty {
                                 section(title: AppLocalization.string("Rule providers"), note: nil) {
                                     VStack(spacing: 0) {
@@ -178,8 +183,15 @@ struct RulesView: View {
                         }
                         .aetherPageContent(.wide)
                         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.customRuleMessage)
+                        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.ruleProviderMessage)
                         .accessibilityElement(children: .contain)
                         .accessibilityLabel(AppLocalization.string("Routing rules content"))
+                    }
+                    .onAppear {
+                        consumePendingRuleTestDestination(summary: summary, scrollProxy: scrollProxy)
+                    }
+                    .onChange(of: tunnel.pendingRuleTestDestination) { _, _ in
+                        consumePendingRuleTestDestination(summary: summary, scrollProxy: scrollProxy)
                     }
                 }
             } else {
@@ -216,6 +228,27 @@ struct RulesView: View {
                     return await tunnel.addCustomRule(rule)
                 }
             )
+            .environmentObject(tunnel)
+        }
+        .sheet(isPresented: $showRuleProviderEditorSheet) {
+            RuleProviderEditorSheet(
+                initialProvider: editingRuleProvider,
+                onSave: { provider in
+                    if editingRuleProvider != nil {
+                        return await tunnel.updateCustomRuleProvider(provider)
+                    }
+                    return await tunnel.addCustomRuleProvider(provider)
+                }
+            )
+            .environmentObject(tunnel)
+        }
+        .sheet(item: $previewingRuleProvider) { provider in
+            RuleProviderPreviewSheet(provider: provider) { sample in
+                testQuery = sample
+                if let summary = tunnel.activeProfileSummary {
+                    performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
+                }
+            }
             .environmentObject(tunnel)
         }
         .fileImporter(
@@ -465,6 +498,129 @@ struct RulesView: View {
                 || rule.value.lowercased().contains(query)
                 || rule.target.rawString.lowercased().contains(query)
                 || (rule.comment?.lowercased().contains(query) ?? false)
+        }
+    }
+
+    private func consumePendingRuleTestDestination(
+        summary: ProfileConfigurationSummary,
+        scrollProxy: ScrollViewProxy
+    ) {
+        guard let pending = tunnel.pendingRuleTestDestination?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !pending.isEmpty
+        else { return }
+        tunnel.pendingRuleTestDestination = nil
+        testQuery = pending
+        performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
+        if let matchedRuleID = testResult?.matchedRule.id {
+            withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) {
+                highlightedRuleID = matchedRuleID
+                scrollProxy.scrollTo(matchedRuleID, anchor: .center)
+            }
+        }
+    }
+
+    // MARK: Custom rule providers
+
+    private func customRuleProvidersSection(summary: ProfileConfigurationSummary) -> some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            AetherSectionHeader(
+                title: AppLocalization.string("Custom rule providers"),
+                note: AppLocalization.string("HTTPS rule lists compiled after custom rules")
+            ) {
+                HStack(spacing: AetherVisual.s2) {
+                    if !tunnel.customRuleProviders.isEmpty {
+                        Button {
+                            Task { await tunnel.refreshAllCustomRuleProviders() }
+                        } label: {
+                            AetherProgressButtonLabel(
+                                AppLocalization.string("Update All"),
+                                systemImage: "arrow.clockwise",
+                                isWorking: tunnel.isRefreshingAllRuleProviders
+                            )
+                        }
+                        .aetherButton()
+                        .controlSize(.small)
+                        .disabled(tunnel.isRefreshingAllRuleProviders)
+                        .accessibilityIdentifier("refresh-all-rule-providers")
+                    }
+                    Button {
+                        editingRuleProvider = nil
+                        showRuleProviderEditorSheet = true
+                    } label: {
+                        Label(AppLocalization.string("Add Rule Set"), systemImage: "plus")
+                    }
+                    .aetherButton()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("add-custom-rule-provider")
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 0) {
+                if let msg = tunnel.ruleProviderMessage {
+                    Label(
+                        msg,
+                        systemImage: tunnel.ruleProviderMessageIsError
+                            ? "exclamationmark.triangle.fill"
+                            : "checkmark.circle.fill"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(
+                        tunnel.ruleProviderMessageIsError
+                            ? AnyShapeStyle(Color.red)
+                            : AnyShapeStyle(AetherVisual.secondaryText)
+                    )
+                    .padding(.horizontal, AetherVisual.s4)
+                    .padding(.top, AetherVisual.s3)
+                    .transition(AetherVisual.insertion)
+                }
+
+                if tunnel.customRuleProviders.isEmpty {
+                    HStack(spacing: AetherVisual.s3) {
+                        Text(AppLocalization.string("No custom rule sets yet. Subscribe to an HTTPS domain, IP-CIDR, or classical rule list to apply rules across profiles."))
+                            .font(.subheadline)
+                            .foregroundStyle(AetherVisual.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: AetherVisual.s2)
+                        Button(AppLocalization.string("Add")) {
+                            editingRuleProvider = nil
+                            showRuleProviderEditorSheet = true
+                        }
+                        .aetherButton()
+                        .controlSize(.small)
+                    }
+                    .padding(AetherVisual.s4)
+                } else {
+                    LazyVStack(spacing: AetherVisual.sCompact) {
+                        ForEach(tunnel.customRuleProviders) { provider in
+                            CustomRuleProviderRow(
+                                provider: provider,
+                                isRefreshing: tunnel.refreshingRuleProviderIDs.contains(provider.id),
+                                onToggle: {
+                                    Task { await tunnel.toggleCustomRuleProvider(id: provider.id) }
+                                },
+                                onRefresh: {
+                                    Task { await tunnel.refreshCustomRuleProvider(id: provider.id) }
+                                },
+                                onPreview: {
+                                    previewingRuleProvider = provider
+                                },
+                                onEdit: {
+                                    editingRuleProvider = provider
+                                    showRuleProviderEditorSheet = true
+                                },
+                                onDelete: {
+                                    Task { await tunnel.deleteCustomRuleProvider(id: provider.id) }
+                                }
+                            )
+                            .transition(AetherVisual.insertion)
+                        }
+                    }
+                    .padding(AetherVisual.listCardInset)
+                }
+            }
+            .aetherPanel()
+            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.customRuleProviders.map(\.id))
         }
     }
 
@@ -1682,6 +1838,383 @@ struct CustomRuleEditorSheet: View {
             testExplanation = AppLocalization.string("No match found for simulated destination; please verify rule.")
         case .invalidDestination:
             testExplanation = AppLocalization.string("Invalid simulated destination address.")
+        }
+    }
+}
+
+private struct CustomRuleProviderRow: View {
+    let provider: RuleProviderMetadata
+    let isRefreshing: Bool
+    let onToggle: () -> Void
+    let onRefresh: () -> Void
+    let onPreview: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: AetherVisual.s3) {
+            Toggle(
+                AppLocalization.string("Enabled"),
+                isOn: Binding(
+                    get: { provider.isEnabled },
+                    set: { _ in onToggle() }
+                )
+            )
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .accessibilityLabel(
+                String.localizedStringWithFormat(
+                    AppLocalization.string("Enable rule set %@"),
+                    provider.name
+                )
+            )
+
+            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                HStack(spacing: AetherVisual.s2) {
+                    Text(provider.name)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(
+                            provider.isEnabled
+                                ? AnyShapeStyle(.primary)
+                                : AnyShapeStyle(AetherVisual.secondaryText)
+                        )
+                    RuleKindTag(kind: provider.behavior.rawValue)
+                    RuleKindTag(kind: provider.format.rawValue)
+                }
+                Text(subtitle)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: AetherVisual.s2)
+
+            RuleTargetLabel(target: provider.defaultTarget)
+                .opacity(provider.isEnabled ? 1.0 : 0.6)
+
+            HStack(spacing: AetherVisual.s1) {
+                Button(action: onPreview) {
+                    Image(systemName: "magnifyingglass")
+                }
+                .aetherButton()
+                .controlSize(.small)
+                .help(AppLocalization.string("Preview rules"))
+                .accessibilityLabel(AppLocalization.string("Preview rules"))
+
+                Button(action: onRefresh) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .aetherButton()
+                .controlSize(.small)
+                .disabled(isRefreshing)
+                .help(AppLocalization.string("Update rule set"))
+                .accessibilityLabel(AppLocalization.string("Update rule set"))
+
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                }
+                .aetherButton()
+                .controlSize(.small)
+                .help(AppLocalization.string("Edit"))
+                .accessibilityLabel(AppLocalization.string("Edit"))
+
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "trash")
+                }
+                .aetherButton()
+                .controlSize(.small)
+                .help(AppLocalization.string("Delete"))
+                .accessibilityLabel(AppLocalization.string("Delete"))
+            }
+        }
+        .padding(.horizontal, AetherVisual.s3)
+        .padding(.vertical, AetherVisual.s2)
+        .background(
+            AetherVisual.cardFill,
+            in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+        )
+        .contextMenu {
+            Button(AppLocalization.string("Preview rules"), action: onPreview)
+            Button(AppLocalization.string("Update rule set"), action: onRefresh)
+            Button(AppLocalization.string("Edit"), action: onEdit)
+            Divider()
+            Button(AppLocalization.string("Delete"), role: .destructive, action: onDelete)
+        }
+    }
+
+    private var subtitle: String {
+        var parts = [
+            String.localizedStringWithFormat(
+                AppLocalization.string("%lld rules"),
+                Int64(provider.ruleCount)
+            ),
+        ]
+        if let updatedAt = provider.lastUpdatedAt {
+            parts.append(
+                String.localizedStringWithFormat(
+                    AppLocalization.string("Updated %@"),
+                    updatedAt.formatted(date: .abbreviated, time: .shortened)
+                )
+            )
+        } else {
+            parts.append(AppLocalization.string("Not updated yet"))
+        }
+        if let host = provider.url.host, !host.isEmpty {
+            parts.append(host)
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+private struct RuleProviderEditorSheet: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+    @Environment(\.dismiss) private var dismiss
+
+    let initialProvider: RuleProviderMetadata?
+    let onSave: (RuleProviderMetadata) async -> Bool
+
+    @State private var name: String = ""
+    @State private var urlString: String = ""
+    @State private var behavior: RuleProviderBehavior = .domain
+    @State private var format: RuleProviderFormat = .text
+    @State private var defaultTarget: String = "PROXY"
+    @State private var intervalHours: Int = 24
+    @State private var isSaving: Bool = false
+    @State private var errorMessage: String?
+
+    init(
+        initialProvider: RuleProviderMetadata?,
+        onSave: @escaping (RuleProviderMetadata) async -> Bool
+    ) {
+        self.initialProvider = initialProvider
+        self.onSave = onSave
+        if let initialProvider {
+            _name = State(initialValue: initialProvider.name)
+            _urlString = State(initialValue: initialProvider.url.absoluteString)
+            _behavior = State(initialValue: initialProvider.behavior)
+            _format = State(initialValue: initialProvider.format)
+            _defaultTarget = State(initialValue: initialProvider.defaultTarget)
+            _intervalHours = State(initialValue: max(1, Int(initialProvider.intervalSeconds / 3_600)))
+        }
+    }
+
+    private var availableTargets: [String] {
+        let groups = (tunnel.activeProfileSummary?.proxyGroups ?? []).map(\.name)
+        var list = ["DIRECT", "REJECT"]
+        for group in groups where !list.contains(group) {
+            list.append(group)
+        }
+        if !list.contains("PROXY") {
+            list.insert("PROXY", at: 1)
+        }
+        if !defaultTarget.isEmpty, !list.contains(defaultTarget) {
+            list.append(defaultTarget)
+        }
+        return list
+    }
+
+    private var isValid: Bool {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty,
+              let url = URL(string: trimmedURL),
+              url.scheme?.lowercased() == "https",
+              url.host != nil
+        else { return false }
+        return true
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            AetherSheetHeader(
+                symbol: "shippingbox.fill",
+                title: initialProvider == nil
+                    ? AppLocalization.string("Add Rule Set")
+                    : AppLocalization.string("Edit Rule Set"),
+                subtitle: AppLocalization.string("Subscribe to an HTTPS rule provider list."),
+                tint: AppSection.rules.tileColor
+            )
+
+            Form {
+                Section {
+                    TextField(AppLocalization.string("Name"), text: $name)
+                        .accessibilityIdentifier("rule-provider-name-field")
+                    TextField(AppLocalization.string("HTTPS URL"), text: $urlString)
+                        .font(.body.monospaced())
+                        .accessibilityIdentifier("rule-provider-url-field")
+                    Picker(AppLocalization.string("Behavior"), selection: $behavior) {
+                        Text(AppLocalization.string("Domain")).tag(RuleProviderBehavior.domain)
+                        Text(AppLocalization.string("IP-CIDR")).tag(RuleProviderBehavior.ipcidr)
+                        Text(AppLocalization.string("Classical")).tag(RuleProviderBehavior.classical)
+                    }
+                    Picker(AppLocalization.string("Format"), selection: $format) {
+                        Text(verbatim: "Text").tag(RuleProviderFormat.text)
+                        Text(verbatim: "YAML").tag(RuleProviderFormat.yaml)
+                    }
+                    Picker(AppLocalization.string("Target"), selection: $defaultTarget) {
+                        ForEach(availableTargets, id: \.self) { target in
+                            Text(verbatim: target).tag(target)
+                        }
+                    }
+                    Picker(AppLocalization.string("Update interval"), selection: $intervalHours) {
+                        Text(AppLocalization.string("6 hours")).tag(6)
+                        Text(AppLocalization.string("12 hours")).tag(12)
+                        Text(AppLocalization.string("24 hours")).tag(24)
+                        Text(AppLocalization.string("72 hours")).tag(72)
+                    }
+                }
+            }
+            .aetherSettingsForm(isSheet: true)
+
+            if let errorMessage {
+                AetherInlineMessage(text: errorMessage, kind: .warning)
+            }
+
+            HStack(spacing: AetherVisual.s2) {
+                Spacer()
+                Button(AppLocalization.string("Cancel"), role: .cancel) {
+                    dismiss()
+                }
+                .aetherButton()
+                .disabled(isSaving)
+                .keyboardShortcut(.cancelAction)
+
+                Button {
+                    save()
+                } label: {
+                    AetherProgressButtonLabel(AppLocalization.string("Save"), isWorking: isSaving)
+                }
+                .aetherButton(prominent: true)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!isValid || isSaving)
+                .accessibilityIdentifier("save-rule-provider-button")
+            }
+        }
+        .padding(AetherVisual.dialogPadding)
+        .aetherSheetFrame()
+    }
+
+    private func save() {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmedURL), url.scheme?.lowercased() == "https" else {
+            errorMessage = RuleProviderError.insecureScheme.localizedDescription
+            return
+        }
+        isSaving = true
+        errorMessage = nil
+        let provider = RuleProviderMetadata(
+            id: initialProvider?.id ?? UUID(),
+            name: trimmedName,
+            url: url,
+            behavior: behavior,
+            format: format,
+            defaultTarget: defaultTarget,
+            isEnabled: initialProvider?.isEnabled ?? true,
+            intervalSeconds: UInt32(max(1, intervalHours) * 3_600),
+            lastUpdatedAt: initialProvider?.lastUpdatedAt,
+            ruleCount: initialProvider?.ruleCount ?? 0,
+            etag: initialProvider?.etag,
+            sha256: initialProvider?.sha256
+        )
+        Task {
+            let ok = await onSave(provider)
+            isSaving = false
+            if ok {
+                dismiss()
+            } else {
+                errorMessage = tunnel.ruleProviderMessage
+            }
+        }
+    }
+}
+
+private struct RuleProviderPreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let provider: RuleProviderMetadata
+    let onTestSample: (String) -> Void
+
+    @State private var query: String = ""
+    @State private var items: [RemoteRuleItem] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            AetherSheetHeader(
+                symbol: "list.bullet.rectangle",
+                title: provider.name,
+                subtitle: String.localizedStringWithFormat(
+                    AppLocalization.string("%lld cached rules · showing up to 200 matches"),
+                    Int64(provider.ruleCount)
+                ),
+                tint: AppSection.rules.tileColor
+            )
+
+            AetherSearchField(
+                text: $query,
+                prompt: AppLocalization.string("Search rules in this set"),
+                accessibilityIdentifier: "rule-provider-preview-search"
+            )
+
+            if items.isEmpty {
+                FeatureEmptyState(
+                    symbol: "magnifyingglass",
+                    title: AppLocalization.string("No matching rules"),
+                    detail: AppLocalization.string("Update the rule set or try another search keyword.")
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(items) { item in
+                            HStack(spacing: AetherVisual.s2) {
+                                RuleKindTag(kind: item.type)
+                                Text(verbatim: item.payload)
+                                    .font(.body.monospaced())
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer(minLength: AetherVisual.s2)
+                                RuleTargetLabel(
+                                    target: item.target.isEmpty ? provider.defaultTarget : item.target
+                                )
+                                Button(AppLocalization.string("Test")) {
+                                    let sample = item.payload.split(separator: "/").first.map(String.init) ?? item.payload
+                                    onTestSample(sample)
+                                    dismiss()
+                                }
+                                .aetherButton()
+                                .controlSize(.small)
+                            }
+                            .padding(.horizontal, AetherVisual.s3)
+                            .padding(.vertical, AetherVisual.s2)
+                            Divider().padding(.leading, AetherVisual.s3)
+                        }
+                    }
+                }
+                .frame(
+                    minHeight: AetherVisual.sheetFormMinHeight,
+                    idealHeight: AetherVisual.sheetFormIdealHeight,
+                    maxHeight: AetherVisual.sheetFormMaxHeight
+                )
+                .aetherPanel()
+            }
+
+            HStack {
+                Spacer()
+                Button(AppLocalization.string("Done")) {
+                    dismiss()
+                }
+                .aetherButton(prominent: true)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(AetherVisual.dialogPadding)
+        .aetherSheetFrame()
+        .task(id: query) {
+            items = (try? await RuleProviderEngine.shared.searchRules(
+                for: provider.id,
+                query: query,
+                limit: 200
+            )) ?? []
         }
     }
 }
