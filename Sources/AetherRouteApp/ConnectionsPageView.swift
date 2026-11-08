@@ -208,10 +208,6 @@ struct ConnectionsView: View {
                 dimensionFilterBar(dimensionFilter)
             }
 
-            if rows.isEmpty {
-                ContentUnavailableView.search(text: searchText)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
             if let apps {
                 appTable(apps)
             } else if let dimension = groupingDimension, dimension != .application {
@@ -812,11 +808,17 @@ struct ConnectionsView: View {
     }
 
     private var connectionRows: [ConnectionTableItem] {
-        let identified = ConnectionTableItem.identify(displayedConnections)
+        let usesLiveSnapshot = pausedConnections == nil && !showsRecentlyClosed
         let hasActiveFilter = filter != .all
             || appFilter != nil
             || dimensionFilter != nil
             || !searchText.isEmpty
+        if usesLiveSnapshot && !hasActiveFilter && sort == .traffic {
+            return telemetry.trafficSortedSnapshotConnections()
+        }
+        let identified = usesLiveSnapshot
+            ? telemetry.identifiedSnapshotConnections()
+            : ConnectionTableItem.identify(displayedConnections)
         let filtered: [ConnectionTableItem]
         if !hasActiveFilter {
             filtered = identified
@@ -904,7 +906,9 @@ struct ConnectionsView: View {
 
     /// Flows per outlet, in one pass over the list.
     private var outletCounts: [ConnectionOutletFilter: Int] {
-        let tallied = ConnectionOutletClassifier.counts(for: displayedConnections)
+        let tallied = (pausedConnections == nil && !showsRecentlyClosed)
+            ? telemetry.snapshotOutletCounts()
+            : ConnectionOutletClassifier.counts(for: displayedConnections)
         return [
             .all: tallied.all,
             .proxied: tallied.proxied,
@@ -1141,9 +1145,10 @@ private struct ConnectionDestinationCell: View {
     let connection: ConnectionTelemetry
 
     var body: some View {
+        let rejected = isRejected
         // The host name leads the cell so it lines up with the column
         // heading; the status dot marks the transport line beneath it.
-        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+        return VStack(alignment: .leading, spacing: AetherVisual.s1) {
             // The registrable domain sits at the right of a host name,
             // so truncate from the left and keep the port whole:
             // "…logs.datadoghq.com:443", not "http-intake.logs….com:443".
@@ -1158,7 +1163,7 @@ private struct ConnectionDestinationCell: View {
             .font(.body.weight(.medium))
             HStack(spacing: AetherVisual.s1) {
                 Circle()
-                    .fill(isRejected ? Color.red : Color.green)
+                    .fill(rejected ? Color.red : Color.green)
                     .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
                     .accessibilityHidden(true)
                 Text(verbatim: connection.transport == .tcp ? "TCP" : "UDP")
@@ -1171,7 +1176,7 @@ private struct ConnectionDestinationCell: View {
         .foregroundStyle(.primary)
         // Only a rejected flow is tinted; a filled background on every
         // destination cell made one column look unlike the rest of the row.
-        .background(isRejected ? AetherVisual.tintWash(.red) : Color.clear)
+        .background(rejected ? AetherVisual.tintWash(.red) : Color.clear)
         .accessibilityElement(children: .contain)
     }
 

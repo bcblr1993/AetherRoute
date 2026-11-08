@@ -16,6 +16,9 @@ extension TunnelManager {
            now.timeIntervalSince(last.at) < Self.proxySelectionRefreshInterval {
             return
         }
+        if state != .connected, proxySelections[groupName] != nil {
+            return
+        }
         await performProxySelectionRequest(
             group: groupName,
             requestedMember: nil
@@ -243,8 +246,10 @@ extension TunnelManager {
         group groupName: String,
         requestedMember: String?
     ) async {
+        let isPassiveSnapshot = requestedMember == nil
         guard let group = selectableProxyGroup(named: groupName),
-              !proxySelectionRequests.contains(groupName) else {
+              !proxySelectionRequests.contains(groupName),
+              !(isPassiveSnapshot && proxySnapshotRefreshRequests.contains(groupName)) else {
             return
         }
         if state != .connected {
@@ -254,16 +259,22 @@ extension TunnelManager {
             )
             return
         }
-        proxySelectionRequests.insert(groupName)
+        if isPassiveSnapshot {
+            proxySnapshotRefreshRequests.insert(groupName)
+        } else {
+            proxySelectionRequests.insert(groupName)
+        }
         let connectionID = providerConnectionID
         Self.runtimeLogger.debug(
             "stage=proxySelection request operation=\(requestedMember == nil ? "snapshot" : "select", privacy: .public)"
         )
-        if proxySelectionMessages[groupName] != nil {
+        if !isPassiveSnapshot, proxySelectionMessages[groupName] != nil {
             proxySelectionMessages[groupName] = nil
         }
         defer {
-            if providerConnectionID == connectionID {
+            if isPassiveSnapshot {
+                proxySnapshotRefreshRequests.remove(groupName)
+            } else if providerConnectionID == connectionID {
                 proxySelectionRequests.remove(groupName)
             }
         }
@@ -347,8 +358,12 @@ extension TunnelManager {
 
             guard state == .connected, providerConnectionID == connectionID
             else { return }
-            if proxySelections[groupName] != snapshot {
+            let didChangeSelection = proxySelections[groupName] != snapshot
+            if didChangeSelection {
                 proxySelections[groupName] = snapshot
+            }
+            if isPassiveSnapshot, proxySelectionMessages[groupName] != nil {
+                proxySelectionMessages[groupName] = nil
             }
             if let selectedMember = snapshot.selectedMember,
                let summary = activeProfileSummary {
@@ -361,19 +376,27 @@ extension TunnelManager {
                     )
                 if intent.behavior == .automatic {
                     automaticReadinessGroupNames.insert(groupName)
-                    automaticReadinessChildGroups[groupName] =
-                        intent.automaticGroup?.name
+                    let childGroup = intent.automaticGroup?.name
+                    if automaticReadinessChildGroups[groupName] != childGroup {
+                        automaticReadinessChildGroups[groupName] = childGroup
+                    }
                 } else {
-                    automaticReadinessGroupNames.remove(groupName)
-                    automaticReadinessChildGroups[groupName] = nil
-                    automaticRouteFailureCounts[groupName] = nil
-                    updateAutomaticRouteRecoveryPresentation()
+                    let hadAutomaticState = automaticReadinessGroupNames.contains(groupName)
+                        || automaticReadinessChildGroups[groupName] != nil
+                        || automaticRouteFailureCounts[groupName] != nil
+                    if hadAutomaticState {
+                        automaticReadinessGroupNames.remove(groupName)
+                        automaticReadinessChildGroups[groupName] = nil
+                        automaticRouteFailureCounts[groupName] = nil
+                        updateAutomaticRouteRecoveryPresentation()
+                    }
                 }
             }
             Self.runtimeLogger.debug(
                 "stage=proxySelection success members=\(snapshot.members.count, privacy: .public) selected=\(snapshot.selectedMember == nil ? "none" : "present", privacy: .public)"
             )
             guard !isUIReviewMode,
+                  (!isPassiveSnapshot || didChangeSelection),
                   snapshot.selectedMember != nil,
                   let yaml = activeProfile?.yaml else {
                 return
@@ -416,16 +439,32 @@ extension TunnelManager {
         }
         guard mayEdit, canModifyProfiles,
               let profileYAML = activeProfile?.yaml else { return }
-        proxySelectionRequests.insert(group.name)
-        proxySelectionMessages[group.name] = nil
-        defer { proxySelectionRequests.remove(group.name) }
+        let isPassiveSnapshot = requestedMember == nil
+        if isPassiveSnapshot {
+            proxySnapshotRefreshRequests.insert(group.name)
+        } else {
+            proxySelectionRequests.insert(group.name)
+            if proxySelectionMessages[group.name] != nil {
+                proxySelectionMessages[group.name] = nil
+            }
+        }
+        defer {
+            if isPassiveSnapshot {
+                proxySnapshotRefreshRequests.remove(group.name)
+            } else {
+                proxySelectionRequests.remove(group.name)
+            }
+        }
 
         do {
             if isUIReviewMode {
-                proxySelections[group.name] = try reviewSelectionSnapshot(
+                let updated = try reviewSelectionSnapshot(
                     group: group,
                     requestedMember: requestedMember
                 )
+                if proxySelections[group.name] != updated {
+                    proxySelections[group.name] = updated
+                }
                 return
             }
             let store = try ProxySelectionStore.applicationGroup()
@@ -447,10 +486,13 @@ extension TunnelManager {
                 summary: activeProfileSummary ?? ProfileConfigurationInspector
                     .inspect(yaml: profileYAML)
             )[group.name]
-            proxySelections[group.name] = ProxySelectionState(
+            let newState = ProxySelectionState(
                 selectedMember: selected,
                 members: group.members
             )
+            if proxySelections[group.name] != newState {
+                proxySelections[group.name] = newState
+            }
             Self.runtimeLogger.debug(
                 "stage=proxySelection offline success selected=\(selected == nil ? "none" : "present", privacy: .public)"
             )

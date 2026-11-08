@@ -12,9 +12,28 @@ public struct NodeRegion: Equatable, Sendable {
     public let code: String
     public let flag: String
 
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var resolvedCache: [String: NodeRegion?] = [:]
+    private static let maxCacheEntries = 2_048
+
     /// Resolves the region named by `name`, or `nil` when the name does not
     /// clearly name one.
     public static func resolve(from name: String) -> NodeRegion? {
+        guard !name.isEmpty else { return nil }
+        if let cached = cacheLock.withLock({ resolvedCache[name] }) {
+            return cached
+        }
+        let resolved = computeRegion(from: name)
+        cacheLock.withLock {
+            if resolvedCache.count >= maxCacheEntries {
+                resolvedCache.removeAll(keepingCapacity: true)
+            }
+            resolvedCache[name] = resolved
+        }
+        return resolved
+    }
+
+    private static func computeRegion(from name: String) -> NodeRegion? {
         if let embedded = embeddedFlag(in: name) {
             return embedded
         }
@@ -114,16 +133,21 @@ public struct NodeRegion: Equatable, Sendable {
         isTimedOut: (String) -> Bool,
         selectedMember: String?
     ) -> [String] {
-        members.filter { member in
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedQuery.isEmpty && !hideTimedOut {
+            return members
+        }
+        return members.filter { member in
             if hideTimedOut && member != selectedMember && isTimedOut(member) {
                 return false
             }
+            guard !trimmedQuery.isEmpty else { return true }
             return matchesSearch(
                 member: member,
                 protocolName: protocolByName[member],
                 transportName: transportByName[member],
                 dialerProxy: dialerByName[member],
-                query: query
+                query: trimmedQuery
             )
         }
     }
@@ -162,8 +186,9 @@ public struct NodeRegion: Equatable, Sendable {
             current = ""
         }
         for scalar in name.unicodeScalars {
-            let isLetter = scalar.isASCII && CharacterSet.letters.contains(scalar)
-            let isDigit = scalar.isASCII && CharacterSet.decimalDigits.contains(scalar)
+            let v = scalar.value
+            let isLetter = (v >= 0x41 && v <= 0x5A) || (v >= 0x61 && v <= 0x7A)
+            let isDigit = v >= 0x30 && v <= 0x39
             if isLetter || isDigit {
                 if !current.isEmpty, isDigit != currentIsDigit { flush() }
                 currentIsDigit = isDigit
@@ -179,7 +204,7 @@ public struct NodeRegion: Equatable, Sendable {
     private static func containsPhrase(_ phrase: [String], in words: [String]) -> Bool {
         guard !phrase.isEmpty, words.count >= phrase.count else { return false }
         for start in 0...(words.count - phrase.count)
-            where Array(words[start..<(start + phrase.count)]) == phrase {
+            where words[start..<(start + phrase.count)].elementsEqual(phrase) {
             return true
         }
         return false

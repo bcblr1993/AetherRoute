@@ -6,6 +6,38 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-11-08
+
+### Added
+
+- **Batch Automatic Group Leaf Resolution & Deduplication (`GroupLeafResolver` & `TunnelManager+Telemetry`)**:
+  - Added `GroupLeafResolver.leaves(forGroups:chains:)` (`Sources/AetherRouteKit/GroupLeafResolver.swift`) with unique-chain deduplication and single-pass `O(L)` tie-breaking, replacing repeated `O(G * N)` string splitting and `O(L^2)` `firstIndex(of:)` scans across 2,000 live connections on every telemetry sample.
+- **Dialer Proxy Reference Propagation When Renaming Native Nodes (`AetherNode.replacing(_:in:)` & `NativeProfileEditorView`)**:
+  - Added `AetherNode.replacing(_:in:)` (`Sources/AetherRouteKit/AetherNode.swift`) and wired `NativeProfileEditorSheet.replace(_:)` (`Sources/AetherRouteApp/NativeProfileEditorView.swift`) so renaming a node in a multi-node native profile automatically updates sibling nodes' `dialerProxy` references instead of stranding them with an invalid reference.
+- **Tests first (TDD)**:
+  - Unit tests in `Tests/AetherRouteKitTests/TCPFlowStateMachineTests.swift` (`testFirstDownstreamWriteClosedAfterClientRequestAndEOFIsNotCountedAsFailure`), `Tests/AetherRouteKitTests/GroupLeafResolverTests.swift` (`testBatchLeavesResolvesMultipleGroupsAndPreservesFirstSeenTieBreak`), and `Tests/AetherRouteKitTests/AetherNodeTests.swift` (`testRenamingNodePropagatesDialerProxyReferencesToSiblingNodes`) were written first and verified to fail on old code before implementation.
+
+### Fixed
+
+- **Transparent Proxy False-Positive `outcome=failed` Error Logs on First Downstream Write After Client Request + EOF (`TCPFlowStateMachine`)**:
+  - Fixed `TCPFlowStateMachine.completeFlowWrite` and `completeBridgeWrite` (`Sources/AetherRouteKit/TransparentFlow/TCPFlowStateMachine.swift`) so that when a peer has already transferred request/response bytes (`flowWrittenBytes > 0 || bridgeWrittenBytes > 0`) and closed its input stream (`flowInputEnded` / `bridgeInputEnded`), a subsequent `.closed` error on the opposite write completes cleanly via `finishAfterPeerClosedPostEOF()` (`outcome=finished`, `sessionsFailed=0`) instead of logging a false-positive `stage=tcpTermination ... outcome=failed error=closed` error record.
+- **Passive Proxy Selection Refresh Double Window Re-Layout (`TunnelManager+ProxySelection` & `TunnelManager`)**:
+  - Separated passive read-only selection snapshot refreshes (`requestedMember == nil` on `Overview` and `Proxies` tab appearances) into a non-`@Published` `proxySnapshotRefreshRequests` set, skipped redundant offline disk reads when `proxySelections[groupName]` is already populated, and guarded unchanged state/disk mutations, eliminating two unnecessary `TunnelManager.objectWillChange` broadcasts per tab visit.
+- **Live iCloud Sync Observer for Standalone Custom `rule-providers` (`TunnelManager`)**:
+  - Added `cloudSyncRuleProvidersObserver` in `TunnelManager` (`Sources/AetherRouteApp/TunnelManager.swift`) to observe `.aetherRouteCloudSyncDidUpdateRuleProviders`, reloading custom rule providers, refreshing `activeProfileSummary`, and live-reloading the active tunnel when remote rule providers sync via iCloud without accompanying custom rule changes.
+- **ICU Formatter & Region Cache, Single-Pass `ActiveProxyGroupView`, & Cached Snapshot Connections (`AppLanguageController`, `NodeRegion`, `ProxiesPageView`, `ConnectionsPageView`, `ProfilesPageView`, `SourceAppDirectory`, `ApplicationRulesSection`, `TunnelManager+CustomRules`, `ContentView`)**:
+  - Cached `Locale`, `DateComponentsFormatter` instances (`includesSeconds: true/false`), and localized region names inside `AppLocalization`, and routed `ProxiesPageView` date formatting through `AppLocalization.date(_:date:time:)`.
+  - Added a bounded 2,048-entry static cache and ASCII scalar word-boundary fast-path to `NodeRegion.resolve(from:)`, an `O(1)` unfiltered fast-path to `NodeRegion.filterMembers`, a fast-path to `TunnelManager.standaloneChainedProxyGroupName`, and single-pass `computeMemberRows(from:)` evaluation in `ActiveProxyGroupView.body`.
+  - Cached `identifiedSnapshotConnections()`, `trafficSortedSnapshotConnections()`, and `snapshotOutletCounts()` on `NetworkTelemetryViewModel` for `ConnectionsView`, removed duplicate empty-state view construction in `ConnectionsView.connectionList`, guarded `!customRules.isEmpty` in `destinationRule`/`applicationRule`, cached app icons and bundle IDs in `SourceAppDirectory`, and read `ProfileNodeCountCache` synchronously in `ManagedProfileRow`.
+
+### Changed
+
+- **Validation & Release Qualification (`2.9.0` / `2026110805`)**:
+  - Fast lane passed all 14 steps in 65s (`outputs/fast-lane-20261108T030139Z`), including `engine-unit`, `engine-capabilities`, and `differential-e2e`.
+  - Full `scripts/test.sh` regression, 6-dimension Tart VM matrix (`outputs/acceptance-2.9.0-2026110805-20261108-111940/vm-acceptance`: 210 checks, 160 PASS, 0 FAIL, 50 SKIP across `tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`, with `error-level log lines (10m) = 0` across all 6 dimensions, 50s TLS idle keep-alive reuse, 2 MiB large uploads, and all 5 transparent proxy gates), and remote arm64 source gate (`vm:macos27`) all passed with zero warnings.
+  - UI responsiveness & memory budget gate (`outputs/acceptance-2.9.0-2026110805-20261108-111940/ui-perf/result.txt`, 300s `showcase` + 300s `large` on `vm:macos27`) passed all budgets: `showcase` (414 switches) `p50=79.9 ms`, `p95=116.5 ms` (`<= 180 ms`), `max=157.5 ms` (`<= 300 ms`), with `main.proxies` `p95=80.1 ms / max=81.9 ms` and `main.profiles` `p95=84.8 ms / max=86.9 ms`, memory `median 68 MB / max 82 MB / growth +1 MB` (`<= 90 / 110 / +8 MB`); `large` (414 switches, 500 nodes / 10,000 rules / 2,000 connections) `p50=79.2 ms`, `p95=115.0 ms` (`<= 180 ms`), `max=125.6 ms` (`<= 300 ms`), with `main.overview` `max=115.6 ms` (down from `120.7 ms`), `main.profiles` `p95=84.6 ms / max=88.6 ms` (down from `90.2 ms`), `main.dns` `p95=77.4 ms / max=79.5 ms`, memory `median 65 MB / max 80 MB / growth +1 MB` (`<= 90 / 110 / +8 MB`).
+  - Isolated `vm:macos27` runtime evidence (`outputs/acceptance-2.9.0-2026110805-20261108-111940/physical-runtime`) bound to notarized stable candidate DMG (`fba523a9715ad9aa7cea234fa8c4adca4e9c0205646cbe2e5e701d32862f4937`, App notary submission `495518e8-8637-4591-b1f0-8f29ebfa71f5`, DMG notary submission `31c35d89-75bf-4172-b78f-9629ad5014fb`) passed all 6 checks: 50s TLS idle keep-alive reuse (`both requests answered after 50s idle`), 2 MiB upload (TUN `0.897178s`, Transparent Proxy `0.893715s`), and 3-cycle / 6-phase NIC uplink switch recovery (TUN: `0/2/2/2/2/1 s`; Transparent Proxy: `3/2/3/3/3/2 s`; deadline 15s, zero manual reconnects). See `Docs/ReleaseExceptions/2.9.0.md`.
+
 ## [2.8.0] - 2026-11-08
 
 ### Added

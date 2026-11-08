@@ -2095,22 +2095,20 @@ private struct LiveMemoryTotalFooter: View {
     }
 
     var body: some View {
-        HStack(spacing: AetherVisual.s2) {
-            GeometryReader { proxy in
-                let width = proxy.size.width
-                let coreWidth = width * coreFraction
-                HStack(spacing: 0) {
-                    if coreWidth > 0 {
-                        Rectangle()
-                            .fill(Color.mint)
-                            .frame(width: coreWidth)
-                    }
+        let barWidth: CGFloat = 72
+        let coreWidth = barWidth * min(max(coreFraction, 0), 1)
+        return HStack(spacing: AetherVisual.s2) {
+            HStack(spacing: 0) {
+                if coreWidth > 0 {
                     Rectangle()
-                        .fill(Color.indigo)
-                        .frame(maxWidth: .infinity)
+                        .fill(Color.mint)
+                        .frame(width: coreWidth)
                 }
+                Rectangle()
+                    .fill(Color.indigo)
+                    .frame(maxWidth: .infinity)
             }
-            .frame(width: 72, height: 6)
+            .frame(width: barWidth, height: 6)
             .background(AetherVisual.neutralFill)
             .clipShape(Capsule())
             .accessibilityHidden(true)

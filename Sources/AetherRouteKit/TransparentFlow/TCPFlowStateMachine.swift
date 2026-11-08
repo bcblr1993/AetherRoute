@@ -348,8 +348,8 @@ public actor TCPFlowStateMachine {
         case let .failure(error):
             if error == .closed,
                bridgeInputEnded,
-               flowOutputFinished,
-               bridgeWrittenBytes > 0 {
+               flowOutputFinished || flowFinishToken != nil,
+               bridgeWrittenBytes > 0 || flowWrittenBytes > 0 {
                 finishAfterPeerClosedPostEOF()
                 return
             }
@@ -391,8 +391,8 @@ public actor TCPFlowStateMachine {
         case let .failure(error):
             if error == .closed,
                flowInputEnded,
-               bridgeOutputFinished,
-               flowWrittenBytes > 0 {
+               bridgeOutputFinished || bridgeFinishToken != nil,
+               flowWrittenBytes > 0 || bridgeWrittenBytes > 0 {
                 finishAfterPeerClosedPostEOF()
                 return
             }

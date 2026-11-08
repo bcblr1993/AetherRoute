@@ -132,6 +132,7 @@ extension TunnelManager {
         kind: CustomRuleKind,
         value: String
     ) -> CustomRule? {
+        guard !customRules.isEmpty else { return nil }
         let normalized = CustomRule(kind: kind, value: value, target: .direct).value
         return customRules.first { rule in
             rule.kind == kind && rule.value == normalized
@@ -166,7 +167,8 @@ extension TunnelManager {
         bundleIdentifier: String?,
         bundlePath: String?
     ) -> CustomRule? {
-        customRules.first { rule in
+        guard !customRules.isEmpty else { return nil }
+        return customRules.first { rule in
             guard let match = rule.applicationMatch else { return false }
             if let bundlePath, let path = match.bundlePath {
                 return path == bundlePath

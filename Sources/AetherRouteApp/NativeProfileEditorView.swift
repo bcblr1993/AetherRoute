@@ -135,9 +135,10 @@ struct NativeProfileEditorSheet: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            if let validationMessage {
-                AetherInlineMessage(text: validationMessage, kind: .warning)
+        let currentValidationMessage = validationMessage
+        return VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            if let currentValidationMessage {
+                AetherInlineMessage(text: currentValidationMessage, kind: .warning)
             } else {
                 Label(
                     AppLocalization.format(
@@ -185,7 +186,7 @@ struct NativeProfileEditorSheet: View {
                 .aetherButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
-                    validationMessage != nil
+                    currentValidationMessage != nil
                         || !tunnel.canModifyProfile(id: profile.id)
                         || tunnel.isUpdatingProfiles
                         || isSaving
@@ -220,11 +221,10 @@ struct NativeProfileEditorSheet: View {
     }
 
     private func replace(_ node: AetherNode) -> Bool {
-        guard let index = nodes.firstIndex(where: { $0.id == node.id }) else {
+        guard nodes.contains(where: { $0.id == node.id }) else {
             return false
         }
-        var candidate = nodes
-        candidate[index] = node
+        let candidate = AetherNode.replacing(node, in: nodes)
         guard (try? AetherNodeProfileCompiler.compile(nodes: candidate)) != nil else {
             return false
         }

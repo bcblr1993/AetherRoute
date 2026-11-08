@@ -544,6 +544,31 @@ public extension AetherNode {
         return self
     }
 
+    static func replacing(_ updated: AetherNode, in nodes: [AetherNode]) -> [AetherNode] {
+        var copy = nodes
+        guard let index = copy.firstIndex(where: { $0.id == updated.id }) else {
+            return copy
+        }
+        let previousName = copy[index].name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newName = updated.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy[index] = updated
+        guard !previousName.isEmpty,
+              !newName.isEmpty,
+              previousName != newName,
+              !copy.enumerated().contains(where: { offset, item in
+                  offset != index && item.name.trimmingCharacters(in: .whitespacesAndNewlines) == previousName
+              })
+        else {
+            return copy
+        }
+        for siblingIndex in copy.indices where siblingIndex != index {
+            if copy[siblingIndex].dialerProxy?.trimmingCharacters(in: .whitespacesAndNewlines) == previousName {
+                copy[siblingIndex].dialerProxy = newName
+            }
+        }
+        return copy
+    }
+
     private func validateProtocolRequirements() throws {
         switch protocolID {
         case .http, .socks5:

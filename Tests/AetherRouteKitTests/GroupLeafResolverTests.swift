@@ -28,4 +28,26 @@ final class GroupLeafResolverTests: XCTestCase {
     func testEmptyInput() {
         XCTAssertNil(GroupLeafResolver.leaf(throughGroup: "Auto", chains: []))
     }
+
+    func testBatchLeavesResolvesMultipleGroupsAndPreservesFirstSeenTieBreak() {
+        let chains = [
+            "Proxy → Auto → Tokyo",
+            "Proxy → Auto → Tokyo",
+            "Proxy → Auto → Seoul",
+            "Streaming → Fallback → Osaka",
+            "Streaming → Fallback → Singapore",
+            "DIRECT",
+        ]
+        let resolved = GroupLeafResolver.leaves(
+            forGroups: ["Auto", "Fallback", "Unused"],
+            chains: chains
+        )
+        XCTAssertEqual(
+            resolved,
+            [
+                "Auto": "Tokyo",
+                "Fallback": "Osaka",
+            ]
+        )
+    }
 }

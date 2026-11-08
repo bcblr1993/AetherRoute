@@ -70,6 +70,9 @@ struct ApplicationRulesSection: View {
         var seen = Set<String>()
         var result: [(SourceAppPresentation, String?, String?)] = []
         for connection in tunnel.telemetry.connections {
+            guard !connection.sourceAppIdentifier.isEmpty || !connection.sourceAppPath.isEmpty else {
+                continue
+            }
             let app = directory.presentation(for: connection)
             guard
                 seen.insert(app.groupingKey).inserted,
@@ -235,16 +238,6 @@ private struct ApplicationRuleRow: View {
     }
 
     private var icon: NSImage {
-        if let path = match?.bundlePath {
-            return NSWorkspace.shared.icon(forFile: path)
-        }
-        // WebKit loads pages for Safari; show the app people know.
-        let identifier = match?.bundleIdentifier == "com.apple.WebKit.Networking"
-            ? "com.apple.Safari" : match?.bundleIdentifier
-        if let identifier,
-           let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier) {
-            return NSWorkspace.shared.icon(forFile: url.path)
-        }
-        return NSWorkspace.shared.icon(for: .application)
+        SourceAppDirectory.shared.icon(forMatch: match)
     }
 }

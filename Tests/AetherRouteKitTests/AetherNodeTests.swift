@@ -170,6 +170,31 @@ final class AetherNodeTests: XCTestCase {
         XCTAssertNoThrow(try node.validated())
     }
 
+    func testRenamingNodePropagatesDialerProxyReferencesToSiblingNodes() throws {
+        let entry = AetherNode(
+            name: "Relay-HK",
+            protocolID: .socks5,
+            server: "hk.example",
+            port: 1080
+        )
+        let landing = AetherNode(
+            name: "Exit-US",
+            protocolID: .socks5,
+            server: "us.example",
+            port: 1080,
+            dialerProxy: "Relay-HK"
+        )
+        var renamedEntry = entry
+        renamedEntry.name = "Relay-HK-01"
+
+        let updatedNodes = AetherNode.replacing(renamedEntry, in: [entry, landing])
+        XCTAssertEqual(updatedNodes[0].name, "Relay-HK-01")
+        XCTAssertEqual(updatedNodes[1].dialerProxy, "Relay-HK-01")
+        XCTAssertNoThrow(try AetherNodeProfileCompiler.validateDialerProxies(in: updatedNodes))
+        let yaml = try AetherNodeProfileCompiler.compile(nodes: updatedNodes)
+        XCTAssertTrue(yaml.contains("dialer-proxy: 'Relay-HK-01'"))
+    }
+
     func testOpenSSHPrivateKeyDocumentIsBoundedAndNeverAcceptsAPath() throws {
         let decoded = try AetherSSHPrivateKeyDocument.decode(
             data: Data(openSSHPrivateKey.utf8)

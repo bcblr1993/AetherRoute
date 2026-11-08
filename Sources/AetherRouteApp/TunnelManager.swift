@@ -181,10 +181,53 @@ final class TrafficStatisticsModel: ObservableObject {
 /// sample from invalidating the complete navigation, icon and panel tree.
 @MainActor
 final class NetworkTelemetryViewModel: ObservableObject {
-    @Published var snapshot: NetworkTelemetrySnapshot = .empty
+    @Published var snapshot: NetworkTelemetrySnapshot = .empty {
+        didSet {
+            invalidateConnectionCaches()
+        }
+    }
     private(set) var appMemoryBytes: UInt64 = NetworkTelemetryViewModel.measuredAppMemoryBytes()
     private(set) var history = TrafficHistory()
     private(set) var recentlyClosed = RecentlyClosedConnectionBuffer()
+    private var cachedIdentifiedSnapshotConnections: [ConnectionTableItem]?
+    private var cachedTrafficSortedSnapshotConnections: [ConnectionTableItem]?
+    private var cachedSnapshotOutletCounts: ConnectionOutletClassifier.Counts?
+
+    private func invalidateConnectionCaches() {
+        cachedIdentifiedSnapshotConnections = nil
+        cachedTrafficSortedSnapshotConnections = nil
+        cachedSnapshotOutletCounts = nil
+    }
+
+    func identifiedSnapshotConnections() -> [ConnectionTableItem] {
+        if let cached = cachedIdentifiedSnapshotConnections {
+            return cached
+        }
+        let identified = ConnectionTableItem.identify(snapshot.connections)
+        cachedIdentifiedSnapshotConnections = identified
+        return identified
+    }
+
+    func trafficSortedSnapshotConnections() -> [ConnectionTableItem] {
+        if let cached = cachedTrafficSortedSnapshotConnections {
+            return cached
+        }
+        let sorted = identifiedSnapshotConnections().sorted {
+            $0.connection.downloadTotal + $0.connection.uploadTotal
+                > $1.connection.downloadTotal + $1.connection.uploadTotal
+        }
+        cachedTrafficSortedSnapshotConnections = sorted
+        return sorted
+    }
+
+    func snapshotOutletCounts() -> ConnectionOutletClassifier.Counts {
+        if let cached = cachedSnapshotOutletCounts {
+            return cached
+        }
+        let counts = ConnectionOutletClassifier.counts(for: snapshot.connections)
+        cachedSnapshotOutletCounts = counts
+        return counts
+    }
 
     private static func measuredAppMemoryBytes() -> UInt64 {
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
@@ -407,6 +450,9 @@ final class TunnelManager: ObservableObject {
     @Published var automaticGroupLeaves: [String: String] = [:]
     @Published var proxySelectionMessages: [String: String] = [:]
     @Published var proxySelectionRequests: Set<String> = []
+    /// Non-published tracking for passive read-only selection snapshots so
+    /// visiting Overview/Proxies does not trigger two full-window re-layouts.
+    var proxySnapshotRefreshRequests: Set<String> = []
     /// When each group's selection was last read, and on which connection.
     var proxySelectionRefreshedAt: [String: (connectionID: UUID?, at: Date)] = [:]
     /// Groups that switch nodes on their own: every `select` group whose
@@ -492,6 +538,7 @@ final class TunnelManager: ObservableObject {
     var configurationObserver: NSObjectProtocol?
     nonisolated(unsafe) var cloudSyncObserver: (any NSObjectProtocol)?
     nonisolated(unsafe) var cloudSyncUserRulesObserver: (any NSObjectProtocol)?
+    nonisolated(unsafe) var cloudSyncRuleProvidersObserver: (any NSObjectProtocol)?
     var isPreparing = false
     var isPersistingConfiguration = false
     var isReloadingConfiguration = false
@@ -923,6 +970,21 @@ final class TunnelManager: ObservableObject {
                 }
             }
         }
+        cloudSyncRuleProvidersObserver = NotificationCenter.default.addObserver(
+            forName: .aetherRouteCloudSyncDidUpdateRuleProviders,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, !self.isUIReviewMode else { return }
+                let previousProviders = self.customRuleProviders
+                await self.reloadCustomRuleProvidersFromEngine()
+                if self.customRuleProviders != previousProviders {
+                    self.refreshActiveProfileSummary()
+                    await self.reloadCustomRulesLive()
+                }
+            }
+        }
         if !isUIReviewMode {
             LANProxyServerController.shared.updateConfiguration(settings: localProxySettings)
             MenuBarTrafficController.shared.onEnabledChanged = { [weak self] enabled in
@@ -937,6 +999,9 @@ final class TunnelManager: ObservableObject {
         }
         if let cloudSyncUserRulesObserver {
             NotificationCenter.default.removeObserver(cloudSyncUserRulesObserver)
+        }
+        if let cloudSyncRuleProvidersObserver {
+            NotificationCenter.default.removeObserver(cloudSyncRuleProvidersObserver)
         }
     }
 

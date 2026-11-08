@@ -385,7 +385,9 @@ private struct ActiveProxyGroupView: View {
     var dialers: [String: String] = [:]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let allMembers = members
+        let rows = computeMemberRows(from: allMembers)
+        return VStack(alignment: .leading, spacing: 0) {
             header
                 .padding(.horizontal, AetherVisual.s4)
                 .padding(.vertical, AetherVisual.s3)
@@ -414,13 +416,13 @@ private struct ActiveProxyGroupView: View {
                     .transition(AetherVisual.insertion)
             }
 
-            if members.isEmpty {
+            if allMembers.isEmpty {
                 Text(AppLocalization.string("This group has no nodes."))
                     .font(.subheadline)
                     .foregroundStyle(AetherVisual.secondaryText)
                     .padding(AetherVisual.s4)
             } else {
-                if members.count > 8 {
+                if allMembers.count > 8 {
                     AetherSearchField(
                         text: $searchText,
                         prompt: AppLocalization.string("Search nodes"),
@@ -429,14 +431,14 @@ private struct ActiveProxyGroupView: View {
                     .padding(.horizontal, AetherVisual.s4)
                     .padding(.top, AetherVisual.s3)
                 }
-                if memberRows.isEmpty {
+                if rows.isEmpty {
                     Text(AppLocalization.string("No matching nodes"))
                         .font(.subheadline)
                         .foregroundStyle(AetherVisual.secondaryText)
                         .frame(maxWidth: .infinity)
                         .padding(AetherVisual.s4)
                 } else {
-                    nodeList
+                    nodeList(rows: rows)
                         .padding(AetherVisual.listCardInset)
                 }
             }
@@ -601,7 +603,7 @@ private struct ActiveProxyGroupView: View {
         }
         return String.localizedStringWithFormat(
             AppLocalization.string("Last tested at %@"),
-            latest.formatted(date: .omitted, time: .standard)
+            AppLocalization.date(latest, date: .omitted, time: .standard)
         )
     }
 
@@ -669,10 +671,10 @@ private struct ActiveProxyGroupView: View {
 
     // MARK: Nodes
 
-    private var nodeList: some View {
+    private func nodeList(rows: [ProxyMemberTableItem]) -> some View {
         // Lazy: a group can hold hundreds of nodes.
         LazyVStack(spacing: AetherVisual.sMicro) {
-            ForEach(memberRows) { row in
+            ForEach(rows) { row in
                 ProxyNodeRow(
                     row: row,
                     canSelect: isManuallySelectable && !isAutomaticSelectionMode,
@@ -695,7 +697,7 @@ private struct ActiveProxyGroupView: View {
                 )
             }
         }
-        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: memberRows.map(\.id))
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: rows.map(\.id))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AppLocalization.string("Proxy group members"))
         .accessibilityIdentifier("proxy-group-members-table")
@@ -714,8 +716,7 @@ private struct ActiveProxyGroupView: View {
         }
     }
 
-    private var memberRows: [ProxyMemberTableItem] {
-        let uniqueMembers = members
+    private func computeMemberRows(from uniqueMembers: [String]) -> [ProxyMemberTableItem] {
         guard !uniqueMembers.isEmpty else { return [] }
 
         let groupNameSet = Set(tunnel.activeProfileSummary?.proxyGroups.map(\.name) ?? [])
@@ -1009,7 +1010,7 @@ private struct ProxyNodeRow: View {
         guard let measuredAt else { return AppLocalization.string("Test latency") }
         return String.localizedStringWithFormat(
             AppLocalization.string("Last tested at %@"),
-            measuredAt.formatted(date: .omitted, time: .standard)
+            AppLocalization.date(measuredAt, date: .omitted, time: .standard)
         )
     }
 }
@@ -1125,7 +1126,7 @@ private struct FailoverBackupBanner: View {
                 AppLocalization.string("%1$@ stopped answering, so %2$@ took over at %3$@. Traffic returns to %1$@ once it answers again."),
                 preferred,
                 backup,
-                since.formatted(date: .omitted, time: .shortened)
+                AppLocalization.date(since, date: .omitted, time: .shortened)
             )
         }
         return String.localizedStringWithFormat(
@@ -1174,7 +1175,7 @@ private struct ProxySwitchHistoryView: View {
 
     private func row(_ event: ProxySwitchEvent) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s3) {
-            Text(event.date.formatted(date: .omitted, time: .standard))
+            Text(AppLocalization.date(event.date, date: .omitted, time: .standard))
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(AetherVisual.secondaryText)
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {

@@ -10,23 +10,59 @@ public enum GroupLeafResolver {
     /// nil when no live connection passes through it. Ties go to the node
     /// seen first, which keeps the answer stable between refreshes.
     public static func leaf(throughGroup group: String, chains: [String]) -> String? {
-        var counts: [String: Int] = [:]
-        var firstSeen: [String] = []
-        for chain in chains {
-            let hops = hops(in: chain)
-            guard let index = hops.firstIndex(of: group),
-                  index < hops.count - 1,
-                  let leaf = hops.last
-            else { continue }
-            if counts[leaf] == nil { firstSeen.append(leaf) }
-            counts[leaf, default: 0] += 1
+        leaves(forGroups: [group], chains: chains)[group]
+    }
+
+    public static func leaves(
+        forGroups groups: Set<String>,
+        chains: [String]
+    ) -> [String: String] {
+        guard !groups.isEmpty, !chains.isEmpty else { return [:] }
+        var chainCounts: [String: Int] = [:]
+        var uniqueChains: [String] = []
+        uniqueChains.reserveCapacity(min(chains.count, 128))
+        for chain in chains where !chain.isEmpty {
+            if chainCounts[chain] == nil {
+                uniqueChains.append(chain)
+            }
+            chainCounts[chain, default: 0] += 1
         }
-        return firstSeen.max { lhs, rhs in
-            let l = counts[lhs, default: 0], r = counts[rhs, default: 0]
-            if l != r { return l < r }
-            // Equal counts: prefer the earlier one.
-            return firstSeen.firstIndex(of: lhs)! > firstSeen.firstIndex(of: rhs)!
+        guard !uniqueChains.isEmpty else { return [:] }
+
+        var countsByGroup: [String: [String: Int]] = [:]
+        var firstSeenByGroup: [String: [String]] = [:]
+        for chain in uniqueChains {
+            let weight = chainCounts[chain, default: 1]
+            let parsedHops = hops(in: chain)
+            guard parsedHops.count >= 2, let leaf = parsedHops.last else { continue }
+            for index in 0..<(parsedHops.count - 1) {
+                let hop = parsedHops[index]
+                guard groups.contains(hop) else { continue }
+                if countsByGroup[hop]?[leaf] == nil {
+                    firstSeenByGroup[hop, default: []].append(leaf)
+                }
+                countsByGroup[hop, default: [:]][leaf, default: 0] += weight
+            }
         }
+
+        var result: [String: String] = [:]
+        result.reserveCapacity(firstSeenByGroup.count)
+        for (group, firstSeen) in firstSeenByGroup {
+            guard let counts = countsByGroup[group] else { continue }
+            var bestLeaf: String?
+            var bestCount = 0
+            for candidate in firstSeen {
+                let count = counts[candidate, default: 0]
+                if count > bestCount {
+                    bestCount = count
+                    bestLeaf = candidate
+                }
+            }
+            if let bestLeaf {
+                result[group] = bestLeaf
+            }
+        }
+        return result
     }
 
     /// Splits "Proxy → Auto → Tokyo" (or the ASCII "->" form) into hops.

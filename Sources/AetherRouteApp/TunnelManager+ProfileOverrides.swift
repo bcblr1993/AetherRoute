@@ -20,7 +20,10 @@ extension TunnelManager {
     }
 
     var standaloneChainedProxyGroupName: String? {
-        activeOverrideResult()?.standaloneChainedProxyGroupName
+        guard let chained = activeProfile?.overrides?.chainedProxies,
+              chained.contains(where: { ($0.parentGroup ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        else { return nil }
+        return activeOverrideResult()?.standaloneChainedProxyGroupName
     }
 
     /// What the override does to the active profile right now: each custom

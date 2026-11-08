@@ -682,16 +682,18 @@ extension TunnelManager {
             upload: snapshot.uploadBytesPerSecond,
             download: snapshot.downloadBytesPerSecond
         )
-        let automaticGroups = (activeProfileSummary?.proxyGroups ?? [])
-            .filter { $0.strategy.lowercased() != "select" }
-            .map(\.name)
-        let chains = snapshot.connections.map(\.proxyChain)
-        var leaves: [String: String] = [:]
-        for group in automaticGroups {
-            if let leaf = GroupLeafResolver.leaf(throughGroup: group, chains: chains) {
-                leaves[group] = leaf
-            }
-        }
+        let automaticGroups = Set(
+            (activeProfileSummary?.proxyGroups ?? [])
+                .lazy
+                .filter { $0.strategy.lowercased() != "select" }
+                .map(\.name)
+        )
+        let leaves = automaticGroups.isEmpty
+            ? [:]
+            : GroupLeafResolver.leaves(
+                forGroups: automaticGroups,
+                chains: snapshot.connections.map(\.proxyChain)
+            )
         if leaves != automaticGroupLeaves {
             automaticGroupLeaves = leaves
         }

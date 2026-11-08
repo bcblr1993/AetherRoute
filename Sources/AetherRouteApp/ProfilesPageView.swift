@@ -1224,12 +1224,15 @@ private struct ManagedProfileRow: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("activate-profile-\(managed.id.uuidString)")
-        .task(id: managed.profile.yaml) {
+        .task(id: ProfileNodeCountCache.key(for: managed)) {
             // Parsed once per profile version, not on every visit: a large
             // profile took over 100 ms to inspect each time the page opened.
+            guard managed.profile.nativeNodes == nil else { return }
             let key = ProfileNodeCountCache.key(for: managed)
             if let cached = ProfileNodeCountCache.counts[key] {
-                inspectedNodeCount = cached
+                if inspectedNodeCount != cached {
+                    inspectedNodeCount = cached
+                }
                 return
             }
             let yaml = managed.profile.yaml
@@ -1308,7 +1311,9 @@ private struct ManagedProfileRow: View {
             " · " + AppLocalization.string("Updated") + " "
                 + AppLocalization.date($0, date: .abbreviated, time: .shortened)
         } ?? ""
-        let count = managed.profile.nativeNodes?.count ?? inspectedNodeCount
+        let count = managed.profile.nativeNodes?.count
+            ?? inspectedNodeCount
+            ?? ProfileNodeCountCache.counts[ProfileNodeCountCache.key(for: managed)]
         let nodeDetail = count.map { " · " + AppLocalization.format("%lld nodes", Int64($0)) } ?? ""
         return "\(source) · \(importedAt)\(nodeDetail)\(updateDetail)"
     }
@@ -1535,11 +1540,9 @@ struct SubscriptionUsageLine: View {
                     Capsule()
                         .fill(AetherVisual.neutralFill)
                         .overlay(alignment: .leading) {
-                            GeometryReader { proxy in
-                                Capsule()
-                                    .fill(tint(for: alert))
-                                    .frame(width: max(4, proxy.size.width * fraction))
-                            }
+                            Capsule()
+                                .fill(tint(for: alert))
+                                .frame(width: max(4, 96 * min(max(fraction, 0), 1)))
                         }
                         .frame(width: 96, height: 5)
                         .accessibilityHidden(true)

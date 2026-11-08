@@ -27,6 +27,7 @@ final class SourceAppDirectory {
 
     private var presentations: [RawKey: SourceAppPresentation] = [:]
     private var icons: [String: NSImage] = [:]
+    private var bundleIdentifiersByPath: [String: String?] = [:]
     /// Bounds memory if a long session sees many short-lived tools.
     private let limit = 1_024
 
@@ -55,6 +56,27 @@ final class SourceAppDirectory {
         return image
     }
 
+    func icon(forMatch match: ApplicationRuleMatch?) -> NSImage {
+        let key = "match:\(match?.bundleIdentifier ?? "")|\(match?.bundlePath ?? "")"
+        if let cached = icons[key] { return cached }
+        let image: NSImage
+        if let path = match?.bundlePath {
+            image = NSWorkspace.shared.icon(forFile: path)
+        } else {
+            let identifier = match?.bundleIdentifier == "com.apple.WebKit.Networking"
+                ? "com.apple.Safari" : match?.bundleIdentifier
+            if let identifier,
+               let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier) {
+                image = NSWorkspace.shared.icon(forFile: url.path)
+            } else {
+                image = NSWorkspace.shared.icon(for: .application)
+            }
+        }
+        if icons.count >= limit { icons.removeAll() }
+        icons[key] = image
+        return image
+    }
+
     /// What an application rule for this app should match: the bundle's own
     /// identifier (read from its Info.plist, so a helper seen first does not
     /// name the rule) and the bundle path, or the executable for a tool.
@@ -65,8 +87,18 @@ final class SourceAppDirectory {
         switch identity.kind {
         case .application:
             if let path = identity.bundlePath {
-                let identifier = Bundle(path: path)?.bundleIdentifier
-                    ?? identity.bundleIdentifier
+                let cachedBundleID: String?
+                if let existing = bundleIdentifiersByPath[path] {
+                    cachedBundleID = existing
+                } else {
+                    let resolved = Bundle(path: path)?.bundleIdentifier
+                    if bundleIdentifiersByPath.count >= limit {
+                        bundleIdentifiersByPath.removeAll()
+                    }
+                    bundleIdentifiersByPath[path] = resolved
+                    cachedBundleID = resolved
+                }
+                let identifier = cachedBundleID ?? identity.bundleIdentifier
                 return (identifier, path)
             }
             return identity.bundleIdentifier.map { ($0, nil) }

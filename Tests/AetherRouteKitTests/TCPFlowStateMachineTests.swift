@@ -620,6 +620,60 @@ final class TCPFlowStateMachineTests: XCTestCase, @unchecked Sendable {
         XCTAssertFalse(text.contains("outcome=failed"), "Must not log failure record: \(text)")
     }
 
+    func testFirstDownstreamWriteClosedAfterClientRequestAndEOFIsNotCountedAsFailure() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aetherroute-first-write-close-after-request-eof-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let sink = RotatingLogSink(configuration: .init(directoryURL: dir, baseName: "tp"))
+        let log = DiagnosticLog(category: "test", sink: sink, levelProvider: { .standard })
+        let aggregate = DiagnosticAggregator(log: log)
+        DiagnosticFlowOpenObserver.shared.attach(aggregate)
+        defer { DiagnosticFlowOpenObserver.shared.detach() }
+
+        let flow = FakeTCPFlow()
+        let source = FakeRustTCPSource()
+        let bridge = FakeRustTCPSink()
+        let machine = try TCPFlowStateMachine(
+            flow: flow,
+            bridgeSource: source,
+            bridgeSink: bridge,
+            diagnosticLog: log
+        )
+        DiagnosticFlowOpenObserver.shared.record(.tcpOpened)
+        try await machine.start()
+
+        // 1. Client sends a 1545-byte request (bridgeWrittenBytes = 1545), then closes its socket (flowRead EOF).
+        XCTAssertTrue(flow.completeNextRead(.success(.bytes(Data(repeating: 0x47, count: 1545)))))
+        let bridgeWrite1 = await eventually { bridge.writeCallCount == 1 }
+        XCTAssertTrue(bridgeWrite1)
+        XCTAssertTrue(bridge.completeNextWrite(.success(())))
+        let flowRead2 = await eventually { flow.readCallCount == 2 }
+        XCTAssertTrue(flowRead2)
+
+        XCTAssertTrue(flow.completeNextRead(.success(.endOfStream)))
+        let bridgeFinishing = await eventually { bridge.finishCallCount == 1 }
+        XCTAssertTrue(bridgeFinishing)
+        XCTAssertTrue(bridge.completeNextFinish(.success(())))
+
+        // 2. Server delivers its first 4591-byte response chunk (flowWrittenBytes == 0),
+        // which fails flow.write with .closed because the client already closed its fd after sending the request.
+        XCTAssertTrue(source.completeNextRead(.success(.bytes(Data(repeating: 0x48, count: 4591)))))
+        let flowWrite1 = await eventually { flow.writeCallCount == 1 }
+        XCTAssertTrue(flowWrite1)
+        XCTAssertTrue(flow.completeNextWrite(.failure(.closed)))
+
+        let finished = await eventually(machine) { $0.lifecycle == .finished }
+        XCTAssertTrue(finished, "First downstream write (.closed) after client sent request + EOF must finish cleanly")
+
+        aggregate.emit()
+        let flushed = expectation(description: "firstDownstreamWriteClosedAfterClientRequestAndEOF flushed")
+        sink.flush { flushed.fulfill() }
+        await fulfillment(of: [flushed], timeout: 5)
+        let text = sink.tail(maximumBytes: 8192)
+        XCTAssertTrue(text.contains("sessionsFailed=0"), "Expected sessionsFailed=0, got: \(text)")
+        XCTAssertFalse(text.contains("outcome=failed"), "Must not log failure record: \(text)")
+    }
+
     private func makeMachine(
         onTermination: @escaping FlowTerminationHandler = { _ in }
     ) throws -> (
