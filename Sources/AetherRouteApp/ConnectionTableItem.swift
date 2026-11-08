@@ -17,7 +17,9 @@ struct ConnectionTableItem: Identifiable {
     let connection: ConnectionTelemetry
 
     static func identify(_ connections: [ConnectionTelemetry]) -> [Self] {
+        guard !connections.isEmpty else { return [] }
         var occurrences: [ID: Int] = [:]
+        occurrences.reserveCapacity(connections.count)
         return connections.map { connection in
             let key = ID(
                 transport: connection.transport.rawValue,
@@ -39,6 +41,91 @@ struct ConnectionTableItem: Identifiable {
                 connection: connection
             )
         }
+    }
+}
+
+/// Zero-allocation classifier and leaf extractor for connection `proxyChain` strings.
+///
+/// Called thousands of times per render pass on the 2,000-row connection table;
+/// avoids allocating `[String]` arrays via `components(separatedBy:)` or `.uppercased()`.
+enum ConnectionOutletClassifier {
+    enum Kind: Equatable, Sendable {
+        case proxied
+        case direct
+        case rejected
+    }
+
+    struct Counts: Equatable, Sendable {
+        let all: Int
+        let proxied: Int
+        let direct: Int
+        let rejected: Int
+    }
+
+    static func classify(_ proxyChain: String) -> Kind {
+        let trimmed = trimSpaces(proxyChain[...])
+        if trimmed.isEmpty {
+            return .direct
+        }
+        if trimmed.caseInsensitiveCompare("DIRECT") == .orderedSame {
+            return .direct
+        }
+        if trimmed.caseInsensitiveCompare("REJECT") == .orderedSame
+            || trimmed.caseInsensitiveCompare("REJECT-DROP") == .orderedSame {
+            return .rejected
+        }
+        return .proxied
+    }
+
+    static func leafOutletName(_ proxyChain: String) -> String {
+        var slice = trimSpaces(proxyChain[...])
+        if let unicodeArrow = slice.range(of: "→", options: .backwards) {
+            slice = slice[unicodeArrow.upperBound...]
+        }
+        if let asciiArrow = slice.range(of: "->", options: .backwards) {
+            slice = slice[asciiArrow.upperBound...]
+        }
+        let leaf = trimSpaces(slice)
+        if !leaf.isEmpty {
+            return String(leaf)
+        }
+        return String(trimSpaces(proxyChain[...]))
+    }
+
+    static func counts(for connections: [ConnectionTelemetry]) -> Counts {
+        var proxied = 0
+        var direct = 0
+        var rejected = 0
+        for connection in connections {
+            switch classify(connection.proxyChain) {
+            case .proxied:
+                proxied += 1
+            case .direct:
+                direct += 1
+            case .rejected:
+                rejected += 1
+            }
+        }
+        return Counts(
+            all: connections.count,
+            proxied: proxied,
+            direct: direct,
+            rejected: rejected
+        )
+    }
+
+    private static func trimSpaces(_ substring: Substring) -> Substring {
+        var start = substring.startIndex
+        var end = substring.endIndex
+        while start < end, substring[start].isWhitespace {
+            start = substring.index(after: start)
+        }
+        while end > start {
+            let prev = substring.index(before: end)
+            guard substring[prev].isWhitespace else { break }
+            end = prev
+        }
+        return substring[start..<end]
     }
 }
 

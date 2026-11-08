@@ -706,6 +706,41 @@ struct RecoveryAndSubscriptionCompatVerifier {
             diagReport.overallStatus == .passed && diagReport.passedCount == 6 && diagReport.formattedMarkdownReport().contains("proxy_outbound_connectivity: PASSED (88 ms)"),
             "NetworkDiagnosticDoctor must evaluate all 6 diagnostic checks and render Markdown summary"
         )
+        let nowDate = Date(timeIntervalSince1970: 1_700_100_000)
+        let staleProviders = [
+            RuleProviderMetadata(name: "Fresh", url: URL(string: "https://example.com/1.yaml")!, isEnabled: true, intervalSeconds: 3600, lastUpdatedAt: nowDate.addingTimeInterval(-600), ruleCount: 10),
+            RuleProviderMetadata(name: "Stale", url: URL(string: "https://example.com/2.yaml")!, isEnabled: true, intervalSeconds: 3600, lastUpdatedAt: nowDate.addingTimeInterval(-7200), ruleCount: 10),
+            RuleProviderMetadata(name: "Never", url: URL(string: "https://example.com/3.yaml")!, isEnabled: true, intervalSeconds: 3600, lastUpdatedAt: nil, ruleCount: 0),
+        ]
+        assertTrue(
+            NetworkDiagnosticDoctor.countStaleRuleProviders(staleProviders, now: nowDate) == 2,
+            "NetworkDiagnosticDoctor.countStaleRuleProviders must detect expired and never-updated enabled providers"
+        )
+
+        // 3e. Verify TransparentProxyUpstreamEndpointResolver deduplication & bounded DNS deadline
+        let resolverYAML = """
+        proxies:
+          - {name: Hanging, type: vless, server: slow-dns.example.com, port: 443}
+          - {name: Hanging2, type: vless, server: SLOW-DNS.example.com, port: 8443}
+          - {name: Healthy, type: trojan, server: fast-dns.example.com, port: 443}
+        """
+        let resolverStart = CFAbsoluteTimeGetCurrent()
+        let resolvedExclusions = try! TransparentProxyUpstreamEndpointResolver.resolve(
+            profileYAML: resolverYAML,
+            maxResolutionDurationSeconds: 0.12,
+            hostResolver: { host, _ in
+                if host == "slow-dns.example.com" {
+                    Thread.sleep(forTimeInterval: 1.0)
+                    return [("198.51.100.99", .ipv4)]
+                }
+                return [("203.0.113.77", .ipv4)]
+            }
+        )
+        let resolverElapsed = CFAbsoluteTimeGetCurrent() - resolverStart
+        assertTrue(
+            resolverElapsed < 0.6 && resolvedExclusions == [TransparentProxyUpstreamExclusion(address: "203.0.113.77", port: 443, addressFamily: .ipv4)],
+            "TransparentProxyUpstreamEndpointResolver must bound hanging DNS lookups and preserve healthy exclusions"
+        )
 
         let outputPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "/tmp/compat_profile.yaml"
         try! Data(optimizedYAML.utf8).write(to: URL(fileURLWithPath: outputPath))
@@ -716,6 +751,7 @@ EOF
 
 swiftc -swift-version 6 -parse-as-library \
   "$ROOT"/Sources/AetherRouteKit/*.swift \
+  "$ROOT/Sources/AetherRouteTransparentProxySupport/TransparentProxyUpstreamEndpointResolver.swift" \
   "$TEMP_DIR/verifier.swift" \
   -o "$TEMP_DIR/compat_verifier"
 

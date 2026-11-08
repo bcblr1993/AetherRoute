@@ -701,13 +701,13 @@ private struct ActiveProxyGroupView: View {
         .accessibilityIdentifier("proxy-group-members-table")
     }
 
-    private func memberType(_ member: String) -> String {
+    private func memberType(_ member: String, groupNames: Set<String>) -> String {
         switch member.uppercased() {
         case "DIRECT": return AppLocalization.string("Direct")
         case "REJECT", "REJECT-DROP": return AppLocalization.string("Reject")
         default:
             if let protocolName = protocols[member] { return protocolName.uppercased() }
-            if tunnel.activeProfileSummary?.proxyGroups.contains(where: { $0.name == member }) == true {
+            if groupNames.contains(member) {
                 return AppLocalization.string("Proxy group")
             }
             return AppLocalization.string("Unknown")
@@ -715,36 +715,69 @@ private struct ActiveProxyGroupView: View {
     }
 
     private var memberRows: [ProxyMemberTableItem] {
-        let sorted = ProxyPageNodeOrder.sorted(members: members, by: sort) {
-            latencyRank(status(for: $0))
+        let uniqueMembers = members
+        guard !uniqueMembers.isEmpty else { return [] }
+
+        let groupNameSet = Set(tunnel.activeProfileSummary?.proxyGroups.map(\.name) ?? [])
+        let groupIsTesting = tunnel.proxyLatencyRequests.contains(group.name)
+        let resultByMember: [String: UInt32?] = Dictionary(
+            (tunnel.proxyLatencies[group.name]?.results ?? []).map { ($0.member, $0.delayMilliseconds) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let statusByMember: [String: ProxyLatencyStatus] = Dictionary(
+            uniqueMembers.map { member in
+                let isMemberTesting = groupIsTesting
+                    || tunnel.isTestingLatency(group: group.name, member: member)
+                let resolvedStatus: ProxyLatencyStatus
+                if let measured = resultByMember[member] {
+                    resolvedStatus = measured.map(ProxyLatencyStatus.responded) ?? .timedOut
+                } else {
+                    resolvedStatus = isMemberTesting ? .testing : .untested
+                }
+                return (member, resolvedStatus)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let typeByMember: [String: String] = Dictionary(
+            uniqueMembers.map { ($0, memberType($0, groupNames: groupNameSet)) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let chainedByName: [String: ChainedProxyOverride] = Dictionary(
+            tunnel.activeProfileOverrides.chainedProxies.map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        let sorted = ProxyPageNodeOrder.sorted(members: uniqueMembers, by: sort) {
+            latencyRank(statusByMember[$0] ?? .untested)
         }
         let ordered = NodeRegion.filterMembers(
             sorted,
-            protocolByName: Dictionary(
-                uniqueKeysWithValues: sorted.map { ($0, memberType($0)) }
-            ),
+            protocolByName: typeByMember,
             transportByName: transports,
             dialerByName: dialers,
             query: searchText,
             hideTimedOut: hidesTimedOutNodes,
-            isTimedOut: { status(for: $0) == .timedOut },
+            isTimedOut: { statusByMember[$0] == .timedOut },
             selectedMember: selectedMember
         )
         let isBusy = tunnel.proxySelectionRequests.contains(group.name)
+        let currentSelected = selectedMember
+        let currentPreferred = preferredMember
+        let currentBackup = backupMember
         return ordered.map { member in
             ProxyMemberTableItem(
                 member: member,
-                protocolName: memberType(member),
+                protocolName: typeByMember[member],
                 transportName: transports[member],
                 dialerProxy: dialers[member],
-                chainedOverride: tunnel.chainedProxyOverride(named: member),
-                status: status(for: member),
-                isSelected: member == selectedMember,
+                chainedOverride: chainedByName[member],
+                status: statusByMember[member] ?? .untested,
+                isSelected: member == currentSelected,
                 isBusy: isBusy,
                 showsLatency: !isBuiltInOutlet(member),
-                badge: member == preferredMember
+                badge: member == currentPreferred
                     ? .preferred
-                    : (member == backupMember ? .backupInUse : nil)
+                    : (member == currentBackup ? .backupInUse : nil)
             )
         }
     }
@@ -782,7 +815,9 @@ private struct ActiveProxyGroupView: View {
     }
 
     private var members: [String] {
-        tunnel.proxySelections[group.name]?.members ?? group.members
+        ProxyPageNodeOrder.uniqueMembersPreservingOrder(
+            tunnel.proxySelections[group.name]?.members ?? group.members
+        )
     }
 
     private func latencyRank(_ status: ProxyLatencyStatus) -> Int {

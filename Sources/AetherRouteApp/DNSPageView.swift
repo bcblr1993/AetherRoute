@@ -1189,7 +1189,11 @@ struct DNSView: View {
         let routingMode = tunnel.routingMode.rawValue
         let dnsMode = summary.dns.mode.rawValue
         let nodeCount = summary.proxyCount
-        let providerCount = summary.ruleProviderCount
+        let customProviders = tunnel.customRuleProviders
+        let providerCount = summary.ruleProviderCount + customProviders.count
+        let staleProviders = NetworkDiagnosticDoctor.countStaleRuleProviders(customProviders)
+        let isUIReview = tunnel.isUIReviewMode
+        let shouldProbeProxy = isConnected && tunnel.routingMode != .direct
         let loopbackEval = RouteMatchEngine.evaluate(
             destination: "localhost:8080",
             against: summary.allRules
@@ -1200,6 +1204,23 @@ struct DNSView: View {
                 ? NetworkDiagnosticDoctor.probeLoopbackTCPPort(localProxyPort)
                 : false
             let dnsResolved = await DNSLookupInspector.resolveSystemAddresses(for: "www.apple.com")
+            let domesticMs: Int?
+            let proxyMs: Int?
+            if isUIReview {
+                domesticMs = dnsResolved.latencyMilliseconds
+                proxyMs = shouldProbeProxy ? max(dnsResolved.latencyMilliseconds, 1) : nil
+            } else {
+                async let domesticProbe = NetworkDiagnosticDoctor.probeHTTPConnectivity(
+                    url: URL(string: "https://captive.apple.com/hotspot-detect.html")!
+                )
+                async let proxyProbe: Int? = shouldProbeProxy
+                    ? NetworkDiagnosticDoctor.probeHTTPConnectivity(
+                        url: URL(string: "https://www.google.com/generate_204")!
+                    )
+                    : nil
+                domesticMs = await domesticProbe
+                proxyMs = await proxyProbe
+            }
             let snapshot = NetworkDiagnosticInputSnapshot(
                 isConnected: isConnected,
                 engineMode: engineMode,
@@ -1211,11 +1232,11 @@ struct DNSView: View {
                 dnsEnhancedMode: dnsMode,
                 dnsResolvedCount: dnsResolved.addresses.count,
                 dnsLatencyMilliseconds: dnsResolved.latencyMilliseconds,
-                domesticLatencyMilliseconds: dnsResolved.latencyMilliseconds,
-                proxyLatencyMilliseconds: isConnected ? max(dnsResolved.latencyMilliseconds, 1) : nil,
+                domesticLatencyMilliseconds: domesticMs,
+                proxyLatencyMilliseconds: proxyMs,
                 activeProfileNodeCount: nodeCount,
                 ruleProviderCount: providerCount,
-                staleRuleProviderCount: 0
+                staleRuleProviderCount: staleProviders
             )
             diagnosticReport = NetworkDiagnosticDoctor.evaluate(snapshot: snapshot)
             isRunningDiagnostics = false

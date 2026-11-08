@@ -6,6 +6,37 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-11-08
+
+### Added
+
+- **Zero-Allocation Connection Outlet Classifier & 2,000-Row Table Fast-Path (`ConnectionOutletClassifier`, `ConnectionTableItem`, `ProxyNodeStatus`, `ConnectionsPageView`)**:
+  - Added `ConnectionOutletClassifier` (`classify(_:)`, `leafOutletName(_:)`, `counts(for:)`) in `Sources/AetherRouteApp/ConnectionTableItem.swift` using slice scanning and backward arrow range lookup instead of allocating `[String]` arrays via `components(separatedBy:)` or `.uppercased()`.
+  - Pre-sized `occurrences` hash capacity in `ConnectionTableItem.identify(_:)`, added an unfiltered fast-path in `ConnectionsView.connectionRows` (skipping 2,000 `SourceAppDirectory.presentation(for:)` lookups when no app/search filter is active), and cached outlet state in `ConnectionDestinationCell` and `ConnectionOutletCell`.
+- **Bounded Concurrent Upstream DNS Resolution for Transparent Proxy (`TransparentProxyUpstreamEndpointResolver`)**:
+  - Enhanced `TransparentProxyUpstreamEndpointResolver.resolve(profileYAML:maxResolutionDurationSeconds:hostResolver:)` (`Sources/AetherRouteTransparentProxySupport/TransparentProxyUpstreamEndpointResolver.swift`) with case-insensitive hostname deduplication, concurrent DNS resolution, and a bounded total deadline (`defaultMaxResolutionDurationSeconds = 3.5s`) so unresponsive or hanging proxy server DNS domains never stall `TransparentProxyProvider.startProxy` past the 25-second connection watchdog.
+- **Live HTTP Probes & Stale Rule-Provider Detection in DNS Network Doctor (`NetworkDiagnosticDoctor` & `DNSPageView`)**:
+  - Added `NetworkDiagnosticDoctor.countStaleRuleProviders(_:now:)` and `NetworkDiagnosticDoctor.probeHTTPConnectivity(url:timeoutSeconds:)` (`Sources/AetherRouteKit/NetworkDiagnosticDoctor.swift`), wiring `DNSView.runNetworkDiagnostics` (`Sources/AetherRouteApp/DNSPageView.swift`) to perform concurrent domestic and proxy HTTP reachability probes and report expired custom rule providers.
+- **Tests first (TDD)**:
+  - Regression and unit tests in `Tests/ConnectionRows/main.swift`, `Tests/ProxyPageNodeOrder/main.swift`, `Tests/AetherRouteTransparentProxyTests/TransparentProxyUpstreamEndpointResolverTests.swift`, `Tests/AetherRouteKitTests/ProfileConfigurationSummaryTests.swift`, and `scripts/test_recovery_and_subscription_compat_gate.sh` were written first and verified to fail on old code before implementation.
+
+### Fixed
+
+- **Duplicate Proxy Group Member Crash Prevention & `O(1)` Node Table Indexing (`ProxyPageNodeOrder`, `ProxiesPageView`)**:
+  - Added `ProxyPageNodeOrder.uniqueMembersPreservingOrder(_:)` and pre-indexed `statusByMember`, `typeByMember`, `groupNameSet`, and `chainedByName` dictionaries with `uniquingKeysWith: { first, _ in first }` in `ActiveProxyGroupView.memberRows`, preventing `Dictionary(uniqueKeysWithValues:)` runtime traps on subscriptions with duplicate group member names and reducing 500-node table construction from `O(N^2)` to `O(N)`.
+- **`REJECT-DROP` Rule Action Filter Parity & Unfiltered Rule List Fast-Path (`RulesPageView`)**:
+  - Fixed `RuleActionFilter.accepts(_:)` so `.reject` matches `"REJECT-DROP"` and `.proxy` excludes `"REJECT-DROP"` (matching `ProfileConfigurationSummary.rejectRuleCount` and `RuleTargetLabel`), and added an `O(1)` fast-path when `selectedAction == .all && searchText.isEmpty`.
+- **LaunchServices `-600` (`procNotFound`) Relaunch Race in Runtime Evidence Collection (`scripts/collect_physical_runtime_pair.sh`)**:
+  - Replaced bare `open -a /Applications/AetherRoute.app` immediately after process termination with retry-backed `open -n -a /Applications/AetherRoute.app`.
+
+### Changed
+
+- **Validation & Release Qualification (`2.8.0` / `2026110804`)**:
+  - Fast lane passed all 14 steps in 68s (`outputs/fast-lane-20261107T225718Z`), including `engine-unit`, `engine-capabilities`, and `differential-e2e`.
+  - Full `scripts/test.sh` regression, 6-dimension Tart VM matrix (`outputs/acceptance-2.8.0-2026110804-20261108-073423/vm-acceptance`: 210 checks, 157 PASS, 0 FAIL, 53 SKIP across `tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`, including 50s TLS idle keep-alive reuse, 2 MiB large uploads, and all 5 transparent proxy gates), and remote arm64 source gate (`vm:macos27`) all passed with zero warnings.
+  - UI responsiveness & memory budget gate (`outputs/acceptance-2.8.0-2026110804-20261108-073423/ui-perf/result.txt`, 300s `showcase` + 300s `large` on `vm:macos27`) passed all budgets with across-the-board improvements over 2.7.0: `showcase` (414 switches) `p50=76.3 ms` (vs. 2.7.0 `78.2 ms`), `p95=114.5 ms` (`<= 180 ms`, vs. 2.7.0 `115.5 ms`), `max=129.1 ms` (`<= 300 ms`, vs. 2.7.0 `155.4 ms`, `-26.3 ms`), memory `median 68 MB / max 82 MB / growth +1 MB` (`<= 90 / 110 / +8 MB`); `large` (414 switches, 500 nodes / 10,000 rules / 2,000 connections) `p50=74.3 ms` (vs. 2.7.0 `79.9 ms`, `-5.6 ms`), `p95=111.5 ms` (`<= 180 ms`, vs. 2.7.0 `118.2 ms`, `-6.7 ms`), `max=121.1 ms` (`<= 300 ms`, vs. 2.7.0 `128.6 ms`, `-7.5 ms`), with `main.connections` dropping from `p50=115.4 ms / p95=124.8 ms / max=128.6 ms` to `p50=106.3 ms / p95=118.1 ms / max=121.1 ms`, memory `median 65 MB / max 80 MB / growth +1 MB` (vs. 2.7.0 `+2 MB`, budget `<= 90 / 110 / +8 MB`).
+  - Isolated `vm:macos27` runtime evidence (`outputs/acceptance-2.8.0-2026110804-20261108-073423/physical-runtime`) bound to notarized stable candidate DMG (`60f1e663deaae117ce984115ebb76bc427a325c2a4cdfa680bfaa5ede3504c7b`, App notary submission `3ad98e38-4044-4f08-9fb7-e13a26a6ca74`, DMG notary submission `a29e4a3a-5049-487e-834a-5859b326b5b8`) passed all 6 checks: 50s TLS idle keep-alive reuse (`both requests answered after 50s idle`), 2 MiB upload (TUN `0.903726s`, Transparent Proxy `0.918441s`), and 3-cycle / 6-phase NIC uplink switch recovery (TUN: `1/1/2/2/3/0 s`; Transparent Proxy: `2/2/1/3/0/2 s`; deadline 15s, zero manual reconnects). See `Docs/ReleaseExceptions/2.8.0.md`.
+
 ## [2.7.0] - 2026-11-08
 
 ### Added

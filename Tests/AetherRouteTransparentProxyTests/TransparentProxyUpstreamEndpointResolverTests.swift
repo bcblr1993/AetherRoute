@@ -128,4 +128,95 @@ final class TransparentProxyUpstreamEndpointResolverTests: XCTestCase {
             )
         }
     }
+
+    private final class LookupCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var counts: [String: Int] = [:]
+
+        func increment(_ host: String) {
+            lock.lock()
+            counts[host, default: 0] += 1
+            lock.unlock()
+        }
+
+        func count(for host: String) -> Int? {
+            lock.lock()
+            defer { lock.unlock() }
+            return counts[host]
+        }
+    }
+
+    func testDeduplicatesFailedHostLookupsAcrossMultiplePorts() throws {
+        let yaml = """
+        proxies:
+          - {name: Dead1, type: vless, server: dead-node.example.com, port: 443}
+          - {name: Dead2, type: vless, server: dead-node.example.com, port: 8443}
+          - {name: Dead3, type: vless, server: DEAD-NODE.example.com, port: 2053}
+          - {name: Healthy, type: trojan, server: healthy-node.example.com, port: 443}
+        """
+
+        let counter = LookupCounter()
+        let exclusions = try TransparentProxyUpstreamEndpointResolver.resolve(
+            profileYAML: yaml,
+            maxResolutionDurationSeconds: 1.0,
+            hostResolver: { host, index in
+                counter.increment(host)
+                if host == "healthy-node.example.com" {
+                    return [("198.51.100.42", .ipv4)]
+                }
+                throw TransparentProxyUpstreamEndpointResolutionError.unresolvedEndpoint(index: index)
+            }
+        )
+
+        XCTAssertEqual(counter.count(for: "dead-node.example.com"), 1)
+        XCTAssertEqual(counter.count(for: "healthy-node.example.com"), 1)
+        XCTAssertEqual(
+            exclusions,
+            [
+                TransparentProxyUpstreamExclusion(
+                    address: "198.51.100.42",
+                    port: 443,
+                    addressFamily: .ipv4
+                )
+            ]
+        )
+    }
+
+    func testHangingDNSLookupIsBoundedByDeadlineAndPreservesHealthyExclusions() throws {
+        let yaml = """
+        proxies:
+          - {name: Hanging, type: vless, server: slow-dns.example.com, port: 443}
+          - {name: Fast, type: trojan, server: fast-dns.example.com, port: 8443}
+        """
+
+        let start = CFAbsoluteTimeGetCurrent()
+        let exclusions = try TransparentProxyUpstreamEndpointResolver.resolve(
+            profileYAML: yaml,
+            maxResolutionDurationSeconds: 0.15,
+            hostResolver: { host, _ in
+                if host == "slow-dns.example.com" {
+                    Thread.sleep(forTimeInterval: 1.5)
+                    return [("198.51.100.99", .ipv4)]
+                }
+                return [("203.0.113.77", .ipv4)]
+            }
+        )
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+
+        XCTAssertLessThan(
+            elapsed,
+            0.75,
+            "Resolution must not block past maxResolutionDurationSeconds when a DNS server hangs"
+        )
+        XCTAssertEqual(
+            exclusions,
+            [
+                TransparentProxyUpstreamExclusion(
+                    address: "203.0.113.77",
+                    port: 8443,
+                    addressFamily: .ipv4
+                )
+            ]
+        )
+    }
 }

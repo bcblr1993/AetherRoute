@@ -812,43 +812,65 @@ struct ConnectionsView: View {
     }
 
     private var connectionRows: [ConnectionTableItem] {
-        let directory = SourceAppDirectory.shared
-        return ConnectionTableItem.identify(displayedConnections)
-            .filter {
-                let app = directory.presentation(for: $0.connection)
-                return ConnectionOutlet(proxyChain: $0.connection.proxyChain).matches(filter)
-                    && (appFilter == nil || appFilter?.key == app.groupingKey)
-                    && (dimensionFilter == nil || ConnectionTrafficAggregator.matchesFilter(
-                        $0.connection,
-                        dimension: dimensionFilter!.dimension,
-                        key: dimensionFilter!.key
-                    ))
-                    && (searchText.isEmpty
-                        || app.displayName.localizedCaseInsensitiveContains(searchText)
-                        || $0.connection.destination.localizedCaseInsensitiveContains(searchText)
-                        || $0.connection.rule.localizedCaseInsensitiveContains(searchText)
-                        || $0.connection.ruleSummary.localizedCaseInsensitiveContains(searchText)
-                        || $0.connection.rulePayload.localizedCaseInsensitiveContains(searchText)
-                        || $0.connection.proxyChain.localizedCaseInsensitiveContains(searchText))
-            }
-            .sorted { lhs, rhs in
-                switch sort {
-                case .traffic:
-                    return lhs.connection.downloadTotal + lhs.connection.uploadTotal
-                        > rhs.connection.downloadTotal + rhs.connection.uploadTotal
-                case .newest:
-                    if lhs.connection.startedAtUnixMilliseconds != rhs.connection.startedAtUnixMilliseconds {
-                        return lhs.connection.startedAtUnixMilliseconds > rhs.connection.startedAtUnixMilliseconds
-                    }
-                    return lhs.connection.downloadTotal + lhs.connection.uploadTotal
-                        > rhs.connection.downloadTotal + rhs.connection.uploadTotal
-                case .destination:
-                    return lhs.connection.destination.localizedStandardCompare(
-                        rhs.connection.destination
-                    )
-                        == .orderedAscending
+        let identified = ConnectionTableItem.identify(displayedConnections)
+        let hasActiveFilter = filter != .all
+            || appFilter != nil
+            || dimensionFilter != nil
+            || !searchText.isEmpty
+        let filtered: [ConnectionTableItem]
+        if !hasActiveFilter {
+            filtered = identified
+        } else {
+            let directory = SourceAppDirectory.shared
+            let needsAppPresentation = appFilter != nil || !searchText.isEmpty
+            filtered = identified.filter { item in
+                guard ConnectionOutlet.matches(proxyChain: item.connection.proxyChain, filter: filter) else {
+                    return false
                 }
+                if let dimensionFilter,
+                   !ConnectionTrafficAggregator.matchesFilter(
+                       item.connection,
+                       dimension: dimensionFilter.dimension,
+                       key: dimensionFilter.key
+                   ) {
+                    return false
+                }
+                guard needsAppPresentation else {
+                    return true
+                }
+                let app = directory.presentation(for: item.connection)
+                if let appFilter, appFilter.key != app.groupingKey {
+                    return false
+                }
+                guard !searchText.isEmpty else {
+                    return true
+                }
+                return app.displayName.localizedCaseInsensitiveContains(searchText)
+                    || item.connection.destination.localizedCaseInsensitiveContains(searchText)
+                    || item.connection.rule.localizedCaseInsensitiveContains(searchText)
+                    || item.connection.ruleSummary.localizedCaseInsensitiveContains(searchText)
+                    || item.connection.rulePayload.localizedCaseInsensitiveContains(searchText)
+                    || item.connection.proxyChain.localizedCaseInsensitiveContains(searchText)
             }
+        }
+        return filtered.sorted { lhs, rhs in
+            switch sort {
+            case .traffic:
+                return lhs.connection.downloadTotal + lhs.connection.uploadTotal
+                    > rhs.connection.downloadTotal + rhs.connection.uploadTotal
+            case .newest:
+                if lhs.connection.startedAtUnixMilliseconds != rhs.connection.startedAtUnixMilliseconds {
+                    return lhs.connection.startedAtUnixMilliseconds > rhs.connection.startedAtUnixMilliseconds
+                }
+                return lhs.connection.downloadTotal + lhs.connection.uploadTotal
+                    > rhs.connection.downloadTotal + rhs.connection.uploadTotal
+            case .destination:
+                return lhs.connection.destination.localizedStandardCompare(
+                    rhs.connection.destination
+                )
+                    == .orderedAscending
+            }
+        }
     }
 
     private func copyDestination(_ connection: ConnectionTelemetry) {
@@ -882,15 +904,13 @@ struct ConnectionsView: View {
 
     /// Flows per outlet, in one pass over the list.
     private var outletCounts: [ConnectionOutletFilter: Int] {
-        var counts: [ConnectionOutletFilter: Int] = [.all: displayedConnections.count]
-        for connection in displayedConnections {
-            switch ConnectionOutlet(proxyChain: connection.proxyChain) {
-            case .proxied: counts[.proxied, default: 0] += 1
-            case .direct: counts[.direct, default: 0] += 1
-            case .rejected: counts[.rejected, default: 0] += 1
-            }
-        }
-        return counts
+        let tallied = ConnectionOutletClassifier.counts(for: displayedConnections)
+        return [
+            .all: tallied.all,
+            .proxied: tallied.proxied,
+            .direct: tallied.direct,
+            .rejected: tallied.rejected,
+        ]
     }
 }
 
@@ -1138,7 +1158,7 @@ private struct ConnectionDestinationCell: View {
             .font(.body.weight(.medium))
             HStack(spacing: AetherVisual.s1) {
                 Circle()
-                    .fill(outlet == .rejected ? Color.red : Color.green)
+                    .fill(isRejected ? Color.red : Color.green)
                     .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
                     .accessibilityHidden(true)
                 Text(verbatim: connection.transport == .tcp ? "TCP" : "UDP")
@@ -1151,12 +1171,12 @@ private struct ConnectionDestinationCell: View {
         .foregroundStyle(.primary)
         // Only a rejected flow is tinted; a filled background on every
         // destination cell made one column look unlike the rest of the row.
-        .background(outlet == .rejected ? AetherVisual.tintWash(.red) : Color.clear)
+        .background(isRejected ? AetherVisual.tintWash(.red) : Color.clear)
         .accessibilityElement(children: .contain)
     }
 
-    private var outlet: ConnectionOutlet {
-        ConnectionOutlet(proxyChain: connection.proxyChain)
+    private var isRejected: Bool {
+        ConnectionOutletClassifier.classify(connection.proxyChain) == .rejected
     }
 
 }
@@ -1194,9 +1214,11 @@ private struct ConnectionOutletCell: View {
     let connection: ConnectionTelemetry
 
     var body: some View {
+        let currentOutlet = outlet
+        let title = currentOutlet.localizedTitle
         HStack(spacing: AetherVisual.s2) {
-            AetherIconTile(symbol: outletSymbol, color: outletTint, size: AetherVisual.iconTileSize)
-            Text(outlet.localizedTitle)
+            AetherIconTile(symbol: outletSymbol(for: currentOutlet), color: outletTint(for: currentOutlet), size: AetherVisual.iconTileSize)
+            Text(title)
                 .font(.body.weight(.medium))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
@@ -1204,12 +1226,12 @@ private struct ConnectionOutletCell: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: AetherVisual.tableRowHeight)
-        .help(outlet.localizedTitle)
+        .help(title)
         .accessibilityElement(children: .combine)
     }
 
-    private var outletTint: Color {
-        switch outlet {
+    private func outletTint(for currentOutlet: ConnectionOutlet) -> Color {
+        switch currentOutlet {
         case .proxied: .indigo
         case .direct: .green
         case .rejected: .red
@@ -1220,8 +1242,8 @@ private struct ConnectionOutletCell: View {
         ConnectionOutlet(proxyChain: connection.proxyChain)
     }
 
-    private var outletSymbol: String {
-        switch outlet {
+    private func outletSymbol(for currentOutlet: ConnectionOutlet) -> String {
+        switch currentOutlet {
         case .proxied: "arrow.triangle.branch"
         case .direct: "arrow.forward"
         case .rejected: "hand.raised.fill"

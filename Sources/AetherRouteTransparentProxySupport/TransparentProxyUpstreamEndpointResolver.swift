@@ -1,4 +1,6 @@
+#if canImport(AetherRouteKit)
 import AetherRouteKit
+#endif
 import Darwin
 import Foundation
 import Network
@@ -47,18 +49,61 @@ public enum TransparentProxyUpstreamEndpointResolutionError:
 /// addresses stay in memory and must never be written to diagnostics.
 public enum TransparentProxyUpstreamEndpointResolver {
     public static let maximumResolvedAddresses = 1_024
+    public static let defaultMaxResolutionDurationSeconds: TimeInterval = 3.5
+
+    public typealias HostResolver = @Sendable (
+        String,
+        Int
+    ) throws -> [(String, TransparentProxyUpstreamExclusion.AddressFamily)]
+
+    private final class DNSResolutionBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var outcomes: [
+            String: Result<
+                [(String, TransparentProxyUpstreamExclusion.AddressFamily)],
+                TransparentProxyUpstreamEndpointResolutionError
+            >
+        ] = [:]
+
+        func store(
+            _ outcome: Result<
+                [(String, TransparentProxyUpstreamExclusion.AddressFamily)],
+                TransparentProxyUpstreamEndpointResolutionError
+            >,
+            forKey key: String
+        ) {
+            lock.lock()
+            outcomes[key] = outcome
+            lock.unlock()
+        }
+
+        func snapshot() -> [
+            String: Result<
+                [(String, TransparentProxyUpstreamExclusion.AddressFamily)],
+                TransparentProxyUpstreamEndpointResolutionError
+            >
+        ] {
+            lock.lock()
+            defer { lock.unlock() }
+            return outcomes
+        }
+    }
 
     public static func resolve(
-        profileYAML: String
+        profileYAML: String,
+        maxResolutionDurationSeconds: TimeInterval = defaultMaxResolutionDurationSeconds,
+        hostResolver: HostResolver? = nil
     ) throws -> [TransparentProxyUpstreamExclusion] {
         let endpoints = ProfileUpstreamEndpointInspector.inspect(
             yaml: profileYAML
         )
         let hosts = ProfileHostsInspector.inspect(yaml: profileYAML)
-        var results: [TransparentProxyUpstreamExclusion] = []
-        var seen: Set<TransparentProxyUpstreamExclusion> = []
         var resolvedHosts: [String: [(String, TransparentProxyUpstreamExclusion.AddressFamily)]] = [:]
-        var firstResolutionError: TransparentProxyUpstreamEndpointResolutionError?
+        var preparedEndpoints: [(hostKey: String, port: UInt16, index: Int)] = []
+        preparedEndpoints.reserveCapacity(endpoints.count)
+
+        var pendingDNSHosts: [(hostKey: String, queryHost: String, firstIndex: Int)] = []
+        var queuedHostKeys: Set<String> = []
 
         for (index, endpoint) in endpoints.enumerated() {
             var host = normalizedHost(endpoint.host)
@@ -73,35 +118,95 @@ public enum TransparentProxyUpstreamEndpointResolver {
             }
 
             host = normalizedHost(ProfileHostsInspector.resolveAlias(host, in: hosts))
+            let hostKey = host.lowercased()
+            preparedEndpoints.append((hostKey: hostKey, port: endpoint.port, index: index))
 
-            let addresses: [(String, TransparentProxyUpstreamExclusion.AddressFamily)]
-            if let cached = resolvedHosts[host] {
-                addresses = cached
+            if resolvedHosts[hostKey] != nil {
+                continue
             } else if let ipv4 = IPv4Address(host) {
-                let resolved = [(ipv4.debugDescription, TransparentProxyUpstreamExclusion.AddressFamily.ipv4)]
-                resolvedHosts[host] = resolved
-                addresses = resolved
+                resolvedHosts[hostKey] = [
+                    (ipv4.debugDescription, TransparentProxyUpstreamExclusion.AddressFamily.ipv4)
+                ]
             } else if let ipv6 = IPv6Address(host) {
-                let resolved = [(ipv6.debugDescription, TransparentProxyUpstreamExclusion.AddressFamily.ipv6)]
-                resolvedHosts[host] = resolved
-                addresses = resolved
-            } else {
-                do {
-                    let resolved = try resolveHost(host, index: index)
-                    resolvedHosts[host] = resolved
+                resolvedHosts[hostKey] = [
+                    (ipv6.debugDescription, TransparentProxyUpstreamExclusion.AddressFamily.ipv6)
+                ]
+            } else if queuedHostKeys.insert(hostKey).inserted {
+                pendingDNSHosts.append((hostKey: hostKey, queryHost: hostKey, firstIndex: index))
+            }
+        }
+
+        var dnsOutcomes: [
+            String: Result<
+                [(String, TransparentProxyUpstreamExclusion.AddressFamily)],
+                TransparentProxyUpstreamEndpointResolutionError
+            >
+        ] = [:]
+
+        if !pendingDNSHosts.isEmpty {
+            let resolver: HostResolver = hostResolver ?? { host, index in
+                try resolveHost(host, index: index)
+            }
+            let box = DNSResolutionBox()
+            let group = DispatchGroup()
+            let queue = DispatchQueue(
+                label: "com.aetherroute.transparent.endpoint-resolver",
+                qos: .userInitiated,
+                attributes: .concurrent
+            )
+
+            for item in pendingDNSHosts {
+                group.enter()
+                queue.async {
+                    defer { group.leave() }
+                    do {
+                        let addresses = try resolver(item.queryHost, item.firstIndex)
+                        box.store(.success(addresses), forKey: item.hostKey)
+                    } catch let error as TransparentProxyUpstreamEndpointResolutionError {
+                        box.store(.failure(error), forKey: item.hostKey)
+                    } catch {
+                        box.store(
+                            .failure(.unresolvedEndpoint(index: item.firstIndex)),
+                            forKey: item.hostKey
+                        )
+                    }
+                }
+            }
+
+            let budget = max(maxResolutionDurationSeconds, 0.01)
+            _ = group.wait(timeout: .now() + budget)
+            dnsOutcomes = box.snapshot()
+        }
+
+        var results: [TransparentProxyUpstreamExclusion] = []
+        var seen: Set<TransparentProxyUpstreamExclusion> = []
+        var firstResolutionError: TransparentProxyUpstreamEndpointResolutionError?
+
+        for prepared in preparedEndpoints {
+            let addresses: [(String, TransparentProxyUpstreamExclusion.AddressFamily)]
+            if let literalAddresses = resolvedHosts[prepared.hostKey] {
+                addresses = literalAddresses
+            } else if let outcome = dnsOutcomes[prepared.hostKey] {
+                switch outcome {
+                case let .success(resolved):
                     addresses = resolved
-                } catch let error as TransparentProxyUpstreamEndpointResolutionError {
+                case let .failure(error):
                     if firstResolutionError == nil {
                         firstResolutionError = error
                     }
                     continue
                 }
+            } else {
+                if firstResolutionError == nil {
+                    firstResolutionError = .unresolvedEndpoint(index: prepared.index)
+                }
+                continue
             }
 
             for (address, family) in addresses {
                 let result = TransparentProxyUpstreamExclusion(
                     address: address,
-                    port: endpoint.port,
+                    port: prepared.port,
                     addressFamily: family
                 )
                 // Past the ceiling the rest are left to the self-identity

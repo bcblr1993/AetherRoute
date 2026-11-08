@@ -14,6 +14,7 @@ struct ProxyPageNodeOrderTests {
         testEdgeCases()
         testSortCases()
         testFilteredByQueryProtocolTransportAndDialer()
+        testUniqueMembersPreservingOrderPreventsDuplicateCrash()
         print("ProxyPageNodeOrder tests passed: source configuration order strictly preserved in default mode; latency and name sorting verified.")
     }
 
@@ -178,6 +179,21 @@ struct ProxyPageNodeOrderTests {
                 transports: transports,
                 dialers: dialers
             ) == ["SG-Chain-04"]
+        )
+    }
+
+    private static func testUniqueMembersPreservingOrderPreventsDuplicateCrash() {
+        let withDuplicates = [
+            "HK-Edge-01",
+            "SG-Core-02",
+            "HK-Edge-01",
+            "JP-Tokyo-03",
+            "SG-Core-02",
+        ]
+        let deduplicated = ProxyPageNodeOrder.uniqueMembersPreservingOrder(withDuplicates)
+        precondition(
+            deduplicated == ["HK-Edge-01", "SG-Core-02", "JP-Tokyo-03"],
+            "Duplicate group members must be deduplicated in-order without trapping: got \(deduplicated)"
         )
     }
 }

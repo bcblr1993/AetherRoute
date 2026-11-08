@@ -354,4 +354,57 @@ public enum NetworkDiagnosticDoctor {
         }
         return socketError == 0
     }
+
+    /// Counts enabled custom rule providers that have never been fetched or whose
+    /// refresh interval has elapsed.
+    public static func countStaleRuleProviders(
+        _ providers: [RuleProviderMetadata],
+        now: Date = .now
+    ) -> Int {
+        var staleCount = 0
+        for provider in providers where provider.isEnabled {
+            guard let lastUpdated = provider.lastUpdatedAt else {
+                staleCount += 1
+                continue
+            }
+            let interval = Double(max(provider.intervalSeconds, 60))
+            if now.timeIntervalSince(lastUpdated) >= interval {
+                staleCount += 1
+            }
+        }
+        return staleCount
+    }
+
+    /// Ephemeral HTTP connectivity probe returning round-trip latency in milliseconds
+    /// when a 2xx/3xx response is received within `timeoutSeconds`.
+    public static func probeHTTPConnectivity(
+        url: URL,
+        timeoutSeconds: TimeInterval = 3.5
+    ) async -> Int? {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = timeoutSeconds
+        config.timeoutIntervalForResource = timeoutSeconds + 0.5
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.waitsForConnectivity = false
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+        let start = CFAbsoluteTimeGetCurrent()
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard let statusCode = (response as? HTTPURLResponse)?.statusCode,
+                  (200...399).contains(statusCode)
+            else {
+                return nil
+            }
+            let elapsedMs = Int(((CFAbsoluteTimeGetCurrent() - start) * 1_000.0).rounded())
+            return max(elapsedMs, 1)
+        } catch {
+            return nil
+        }
+    }
 }

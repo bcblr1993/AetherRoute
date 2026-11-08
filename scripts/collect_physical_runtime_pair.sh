@@ -69,6 +69,7 @@ esac
 PREF='$HOME/Library/Containers/com.aetherroute.desktop/Data/Library/Preferences/com.aetherroute.desktop'
 QUIT='osascript -e "tell application \"AetherRoute\" to quit" >/dev/null 2>&1 || true
 i=0; while pgrep -x AetherRoute >/dev/null; do i=$((i+1)); [ $i -ge 20 ] && { pkill -9 -x AetherRoute || true; sleep 2; break; }; sleep 1; done'
+LAUNCH='for _ in 1 2 3; do open -n -a /Applications/AetherRoute.app >/dev/null 2>&1 && break; sleep 1; done'
 
 restore() {
   $SSH "$HOST" "PREF=$PREF; BK=\$HOME/aetherroute-prefs-backup-$BUILD.plist
@@ -127,7 +128,7 @@ sleep 2
 for eng in tun transparent; do
   defaults write \"\$PREF\" AetherRoute.NetworkEngineMode -string \$eng
   defaults write \"\$PREF\" AetherRoute.LastConnectionIntent -bool false
-  open -a /Applications/AetherRoute.app
+  $LAUNCH
   sleep 8
   $QUIT
 done"
@@ -156,7 +157,7 @@ defaults write \"\$PREF\" defaultRoutingMode -string rule
 JSON='{\"version\":1,\"isEnabled\":true,\"httpPort\":7890,\"socksPort\":7891}'
 defaults write \"\$PREF\" AetherRoute.LocalProxySettings -data \"\$(printf '%s' \"\$JSON\" | xxd -p | tr -d '\n')\"
 defaults write \"\$PREF\" AetherRoute.LastConnectionIntent -bool true
-open -a /Applications/AetherRoute.app"
+$LAUNCH"
   ready=0
   for _ in $(seq 1 40); do
     if $SSH "$HOST" "sh -s -- ready $BUILD $ENGINE" <"$ROOT/scripts/vm_matrix_lifecycle.sh" >/dev/null 2>&1; then

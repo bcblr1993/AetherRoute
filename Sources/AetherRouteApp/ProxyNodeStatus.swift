@@ -176,23 +176,29 @@ enum ConnectionOutlet: Equatable {
     case rejected
 
     init(proxyChain: String) {
-        let trimmed = proxyChain.trimmingCharacters(in: .whitespaces)
-        let token = trimmed.uppercased()
-        if token == "REJECT" || token == "REJECT-DROP" {
+        switch ConnectionOutletClassifier.classify(proxyChain) {
+        case .rejected:
             self = .rejected
-        } else if trimmed.isEmpty || token == "DIRECT" {
+        case .direct:
             self = .direct
-        } else {
+        case .proxied:
             // Telemetry may carry the complete selector chain. The table's
             // fixed outlet column shows the leaf that actually carried the
             // flow; the strategy group is routing context, not the outlet.
-            let leaf = trimmed
-                .components(separatedBy: "→")
-                .last?
-                .components(separatedBy: "->")
-                .last?
-                .trimmingCharacters(in: .whitespaces)
-            self = .proxied(leaf.flatMap { $0.isEmpty ? nil : $0 } ?? trimmed)
+            self = .proxied(ConnectionOutletClassifier.leafOutletName(proxyChain))
+        }
+    }
+
+    static func matches(proxyChain: String, filter: ConnectionOutletFilter) -> Bool {
+        switch filter {
+        case .all:
+            true
+        case .proxied:
+            ConnectionOutletClassifier.classify(proxyChain) == .proxied
+        case .direct:
+            ConnectionOutletClassifier.classify(proxyChain) == .direct
+        case .rejected:
+            ConnectionOutletClassifier.classify(proxyChain) == .rejected
         }
     }
 

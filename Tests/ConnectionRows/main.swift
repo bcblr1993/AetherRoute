@@ -64,6 +64,38 @@ enum ConnectionRowsRegression {
             bracketed.destinationHost == "[2001:db8::1]",
             "An already bracketed IPv6 literal must not be bracketed twice."
         )
+
+        // Zero-allocation outlet classification & leaf extraction regression
+        try expect(
+            ConnectionOutletClassifier.classify("") == .direct
+                && ConnectionOutletClassifier.classify("  direct ") == .direct
+                && ConnectionOutletClassifier.classify("DIRECT") == .direct,
+            "Empty and case-insensitive DIRECT chains must classify as .direct."
+        )
+        try expect(
+            ConnectionOutletClassifier.classify("REJECT") == .rejected
+                && ConnectionOutletClassifier.classify("reject-drop") == .rejected
+                && ConnectionOutletClassifier.classify(" REJECT-DROP ") == .rejected,
+            "REJECT and REJECT-DROP chains must classify as .rejected."
+        )
+        try expect(
+            ConnectionOutletClassifier.classify("Proxy → SG-Edge-01") == .proxied
+                && ConnectionOutletClassifier.leafOutletName("Proxy → SG-Edge-01") == "SG-Edge-01"
+                && ConnectionOutletClassifier.leafOutletName("Auto -> Group -> HK-02") == "HK-02"
+                && ConnectionOutletClassifier.leafOutletName("SingleNode") == "SingleNode",
+            "Proxied chains must extract the final leaf node without allocating component arrays."
+        )
+        let mixedConnections = [
+            connection("a.example", downloaded: 10, outlet: "Proxy → SG-01"),
+            connection("b.example", downloaded: 20, outlet: "DIRECT"),
+            connection("c.example", downloaded: 30, outlet: "REJECT-DROP"),
+            connection("d.example", downloaded: 40, outlet: "Auto -> JP-02"),
+        ]
+        let counts = ConnectionOutletClassifier.counts(for: mixedConnections)
+        try expect(
+            counts.all == 4 && counts.proxied == 2 && counts.direct == 1 && counts.rejected == 1,
+            "Batch outlet counting must accurately tally all, proxied, direct, and rejected connections."
+        )
         print("Connection row regression passed: traffic reorder, filter, concurrent duplicates, transport, new session, and host formatting.")
     }
 

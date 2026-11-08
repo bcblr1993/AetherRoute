@@ -20,12 +20,13 @@ enum RuleActionFilter: String, CaseIterable, Identifiable {
     }
 
     func accepts(_ target: String) -> Bool {
+        if self == .all { return true }
         let upper = target.uppercased()
         switch self {
         case .all: return true
         case .direct: return upper == "DIRECT"
-        case .reject: return upper == "REJECT"
-        case .proxy: return upper != "DIRECT" && upper != "REJECT"
+        case .reject: return upper == "REJECT" || upper == "REJECT-DROP"
+        case .proxy: return upper != "DIRECT" && upper != "REJECT" && upper != "REJECT-DROP"
         }
     }
 }
@@ -883,10 +884,13 @@ struct RulesView: View {
     }
 
     private func filteredRules(from rules: [RuleConfigurationSummary]) -> [RuleConfigurationSummary] {
-        rules.filter { rule in
+        if selectedAction == .all, searchText.isEmpty {
+            return rules
+        }
+        let text = searchText.lowercased()
+        return rules.filter { rule in
             guard selectedAction.accepts(rule.target) else { return false }
-            if searchText.isEmpty { return true }
-            let text = searchText.lowercased()
+            if text.isEmpty { return true }
             if rule.kind.lowercased().contains(text) { return true }
             if let criteria = rule.criteria, criteria.lowercased().contains(text) { return true }
             if rule.target.lowercased().contains(text) { return true }

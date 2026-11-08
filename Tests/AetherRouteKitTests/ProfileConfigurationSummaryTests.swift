@@ -1389,4 +1389,46 @@ final class ProfileConfigurationSummaryTests: XCTestCase {
         XCTAssertEqual(degradedReport.warningCount, 1)
     }
 
+    func testNetworkDiagnosticDoctorCountsStaleRuleProvidersAndTotalProviderCount() throws {
+        let now = Date(timeIntervalSince1970: 1_700_100_000)
+        let freshProvider = RuleProviderMetadata(
+            name: "Fresh",
+            url: try XCTUnwrap(URL(string: "https://example.com/fresh.yaml")),
+            isEnabled: true,
+            intervalSeconds: 3_600,
+            lastUpdatedAt: now.addingTimeInterval(-1_200),
+            ruleCount: 50
+        )
+        let expiredProvider = RuleProviderMetadata(
+            name: "Expired",
+            url: try XCTUnwrap(URL(string: "https://example.com/expired.yaml")),
+            isEnabled: true,
+            intervalSeconds: 3_600,
+            lastUpdatedAt: now.addingTimeInterval(-7_200),
+            ruleCount: 20
+        )
+        let neverUpdatedEnabled = RuleProviderMetadata(
+            name: "NeverUpdated",
+            url: try XCTUnwrap(URL(string: "https://example.com/never.yaml")),
+            isEnabled: true,
+            intervalSeconds: 3_600,
+            lastUpdatedAt: nil,
+            ruleCount: 0
+        )
+        let disabledExpired = RuleProviderMetadata(
+            name: "DisabledExpired",
+            url: try XCTUnwrap(URL(string: "https://example.com/disabled.yaml")),
+            isEnabled: false,
+            intervalSeconds: 3_600,
+            lastUpdatedAt: nil,
+            ruleCount: 0
+        )
+
+        let staleCount = NetworkDiagnosticDoctor.countStaleRuleProviders(
+            [freshProvider, expiredProvider, neverUpdatedEnabled, disabledExpired],
+            now: now
+        )
+        XCTAssertEqual(staleCount, 2)
+    }
+
 }

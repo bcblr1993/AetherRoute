@@ -39,6 +39,18 @@ enum ProxyPageNodeOrder {
         return Int.max
     }
 
+    /// 去重策略组节点列表并严格保留首次出现的顺序，防止第三方订阅包含重复节点名时触发 Dictionary/ForEach 崩溃。
+    static func uniqueMembersPreservingOrder(_ members: [String]) -> [String] {
+        guard members.count > 1 else { return members }
+        var seen = Set<String>(minimumCapacity: members.count)
+        var result: [String] = []
+        result.reserveCapacity(members.count)
+        for member in members where seen.insert(member).inserted {
+            result.append(member)
+        }
+        return result
+    }
+
     /// 对节点列表进行排序。
     /// - Parameters:
     ///   - members: 原始节点名称列表
