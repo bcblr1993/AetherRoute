@@ -45,4 +45,31 @@ public enum SystemExtensionActivationPolicy {
                 && !$0.isAwaitingUserApproval && !$0.isUninstalling
         }
     }
+
+    /// True when the extension was deactivated in this boot session
+    /// (`[terminated waiting to uninstall on reboot]`) and no enabled copy of it
+    /// remains. Once an extension is deactivated in the current boot session,
+    /// macOS `sysextd` / `LoginItems.appex` cannot re-enable that bundle
+    /// identifier until the Mac restarts (whereas an in-place upgrade over an
+    /// already-enabled older build still has `isEnabled == true` on the older
+    /// entry and does not require a prior restart).
+    public static func requiresRebootBeforeReinstall(
+        expected: Version,
+        installations: [Installation]
+    ) -> Bool {
+        guard !expected.identifier.isEmpty,
+              !expected.build.isEmpty,
+              !expected.release.isEmpty,
+              !canReuse(expected: expected, installations: installations) else {
+            return false
+        }
+        let matching = installations.filter {
+            $0.version.identifier == expected.identifier
+        }
+        let hasActiveEnabled = matching.contains {
+            $0.isEnabled && !$0.isAwaitingUserApproval && !$0.isUninstalling
+        }
+        guard !hasActiveEnabled else { return false }
+        return matching.contains(where: \.isUninstalling)
+    }
 }

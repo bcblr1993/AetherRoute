@@ -45,7 +45,6 @@ extension TunnelManager {
     /// that are mid-request or failed keep their state so a refresh (for
     /// example when the app becomes active) does not hide an error.
     func refreshNetworkSetupStatus() async {
-        guard !isRunningNetworkSetup else { return }
         if isUIReviewMode { return }
         for mode in networkSetupEngines where networkSetupStates[mode] == nil {
             networkSetupStates[mode] = .checking
@@ -94,17 +93,25 @@ extension TunnelManager {
             "stage=networkSetup run engines=\(targets.map(\.rawValue).joined(separator: ","), privacy: .public)"
         )
 
-        // Started together so both requests are pending at once; each runs
-        // on the main actor and interleaves at its suspension points.
-        let installs = targets.map { mode in
-            (mode, Task { @MainActor in await self.installExtensionForSetup(mode) })
+        // Started together so both requests are pending at once; each engine
+        // advances to saving its configuration as soon as its own extension is
+        // enabled, without waiting on the other engine's approval. Configuration
+        // saves are still serialized so macOS shows one consent dialog at a time.
+        var lastConfigurationSave: Task<Void, Never>?
+        let flows = targets.map { mode in
+            Task { @MainActor in
+                guard await self.installExtensionForSetup(mode) else { return }
+                let previousSave = lastConfigurationSave
+                let saveTask = Task { @MainActor in
+                    await previousSave?.value
+                    await self.saveConfigurationForSetup(mode)
+                }
+                lastConfigurationSave = saveTask
+                await saveTask.value
+            }
         }
-        var installed: [NetworkEngineMode] = []
-        for (mode, install) in installs where await install.value {
-            installed.append(mode)
-        }
-        for mode in networkSetupEngines where installed.contains(mode) {
-            await saveConfigurationForSetup(mode)
+        for flow in flows {
+            await flow.value
         }
     }
 

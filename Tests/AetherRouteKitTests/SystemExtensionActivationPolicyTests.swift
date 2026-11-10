@@ -53,6 +53,43 @@ struct SystemExtensionActivationPolicyTests {
             expected: current,
             installations: [installation(uninstalling: true), installation()]
         ))
+        #expect(!SystemExtensionActivationPolicy.requiresRebootBeforeReinstall(
+            expected: current,
+            installations: [installation(uninstalling: true), installation()]
+        ))
+    }
+
+    @Test("reinstalling an extension that has a retired copy waiting for reboot removal requires restart")
+    func uninstallingCopyRequiresReboot() {
+        #expect(SystemExtensionActivationPolicy.requiresRebootBeforeReinstall(
+            expected: current,
+            installations: [installation(enabled: false, uninstalling: true)]
+        ))
+        #expect(SystemExtensionActivationPolicy.requiresRebootBeforeReinstall(
+            expected: current,
+            installations: [
+                installation(enabled: false, uninstalling: true),
+                installation(enabled: false, awaitingApproval: true),
+            ]
+        ))
+        let older = SystemExtensionActivationPolicy.Version(
+            identifier: current.identifier, build: "1469", release: "0.9.9"
+        )
+        #expect(SystemExtensionActivationPolicy.requiresRebootBeforeReinstall(
+            expected: current,
+            installations: [
+                installation(version: older, enabled: false, uninstalling: true),
+                installation(enabled: false, awaitingApproval: true),
+            ]
+        ))
+        // When an older build is still enabled, an in-place upgrade replaces it without needing a prior reboot.
+        #expect(!SystemExtensionActivationPolicy.requiresRebootBeforeReinstall(
+            expected: current,
+            installations: [
+                installation(version: older, enabled: false, uninstalling: true),
+                installation(version: older, enabled: true),
+            ]
+        ))
     }
 
     private func installation(

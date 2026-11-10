@@ -172,9 +172,13 @@ struct NetworkSetupView: View {
 
     private var unavailableEngineNote: String? {
         let unavailable = tunnel.networkSetupEngines.filter {
-            tunnel.networkSetupStates[$0]?.isBlockedPermanently ?? false
+            let state = tunnel.networkSetupStates[$0]
+            return (state?.isBlockedPermanently ?? false) || state == .rebootRequired
         }
         guard let blocked = unavailable.first else { return nil }
+        if tunnel.networkSetupStates[blocked] == .rebootRequired {
+            return AppLocalization.string("macOS finishes installing the extension after a restart. Open AetherRoute again afterwards to continue.")
+        }
         return String.localizedStringWithFormat(
             AppLocalization.string("%@ is not available on this Mac. You can still use the other engine."),
             blocked.localizedTitle

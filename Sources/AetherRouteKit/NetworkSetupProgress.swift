@@ -45,6 +45,9 @@ public enum NetworkExtensionProbe: Equatable, Sendable {
     case awaitingApproval
     case enabled(isCurrentBuild: Bool)
     case uninstalling
+    /// The exact current build was deactivated in this boot session and cannot
+    /// be re-enabled by `sysextd` until the Mac restarts.
+    case rebootRequired
     /// The system did not answer in time; treated as not yet set up.
     case unknown
 }
@@ -61,17 +64,22 @@ public enum NetworkSetupProgress {
             .awaitingApproval
         case .enabled(isCurrentBuild: true):
             hasConfiguration ? .ready : .pending
-        case .enabled(isCurrentBuild: false), .notInstalled, .uninstalling, .unknown:
+        case .rebootRequired, .uninstalling:
+            .rebootRequired
+        case .enabled(isCurrentBuild: false), .notInstalled, .unknown:
             .pending
         }
     }
 
-    /// Setup is done when every engine is ready. An engine that is blocked
-    /// for good (organisation policy) does not keep the user out as long as
-    /// another engine works; they are told which one is unavailable.
+    /// Setup is done when every engine is ready, or when at least one engine
+    /// is ready and the other is unavailable for this session (blocked by
+    /// system/organisation policy, waiting for a restart after uninstall, or
+    /// still waiting for manual System Settings approval).
     public static func canFinish(_ states: [NetworkSetupStepState]) -> Bool {
         guard !states.isEmpty, states.contains(where: \.isReady) else { return false }
-        return states.allSatisfy { $0.isReady || $0.isBlockedPermanently }
+        return states.allSatisfy {
+            $0.isReady || $0.isBlockedPermanently || $0 == .rebootRequired || $0 == .awaitingApproval
+        }
     }
 
     public enum PrimaryAction: Equatable, Sendable {

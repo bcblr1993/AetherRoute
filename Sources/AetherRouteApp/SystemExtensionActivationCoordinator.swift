@@ -27,6 +27,7 @@ final class SystemExtensionActivationCoordinator: NSObject,
     private var submittedRequest: OSSystemExtensionRequest?
     private var isCheckingProperties = false
     private var propertiesTimeout: Task<Void, Never>?
+    private var activeObserver: NSObjectProtocol?
     private var activatedIdentifiers: Set<String> = []
     private let submitRequest: @MainActor (OSSystemExtensionRequest) -> Void
     private let bundledVersion: @MainActor (String) -> SystemExtensionActivationPolicy.Version?
@@ -121,6 +122,12 @@ final class SystemExtensionActivationCoordinator: NSObject,
             ) {
                 Self.logger.info("stage=activation reuse identifier=\(expected.identifier, privacy: .public) build=\(expected.build, privacy: .public)")
                 finish(.success(()))
+            } else if SystemExtensionActivationPolicy.requiresRebootBeforeReinstall(
+                expected: expected,
+                installations: installations
+            ) {
+                Self.logger.notice("stage=activation rebootRequiredBeforeReinstall identifier=\(expected.identifier, privacy: .public) build=\(expected.build, privacy: .public)")
+                finish(.failure(SystemExtensionActivationError.rebootRequired))
             } else {
                 submitActivation()
             }
@@ -143,7 +150,42 @@ final class SystemExtensionActivationCoordinator: NSObject,
                   submittedRequest === request, !isCheckingProperties else {
                 return
             }
+            installActiveRecheckObserverIfNeeded()
             pendingActivation?.onApprovalRequired()
+        }
+    }
+
+    private func installActiveRecheckObserverIfNeeded() {
+        guard activeObserver == nil else { return }
+        activeObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("NSApplicationDidBecomeActiveNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.recheckAfterAppBecameActive()
+            }
+        }
+    }
+
+    private func recheckAfterAppBecameActive() async {
+        guard let pending = pendingActivation, !isCheckingProperties else { return }
+        let probe = await SystemExtensionStatusProbe.probe(
+            identifier: pending.identifier,
+            timeout: .seconds(2)
+        )
+        guard pendingActivation?.identifier == pending.identifier, !isCheckingProperties else {
+            return
+        }
+        switch probe {
+        case .enabled(isCurrentBuild: true):
+            Self.logger.info("stage=activation activeRecheck enabled identifier=\(pending.identifier, privacy: .public)")
+            finish(.success(()))
+        case .rebootRequired:
+            Self.logger.notice("stage=activation activeRecheck rebootRequired identifier=\(pending.identifier, privacy: .public)")
+            finish(.failure(SystemExtensionActivationError.rebootRequired))
+        default:
+            break
         }
     }
 
@@ -195,6 +237,10 @@ final class SystemExtensionActivationCoordinator: NSObject,
             activatedIdentifiers.insert(pendingActivation.identifier)
         }
         self.pendingActivation = nil
+        if let activeObserver {
+            NotificationCenter.default.removeObserver(activeObserver)
+            self.activeObserver = nil
+        }
         propertiesTimeout?.cancel()
         propertiesTimeout = nil
         isCheckingProperties = false
@@ -402,8 +448,27 @@ final class SystemExtensionStatusProbe: NSObject, OSSystemExtensionRequestDelega
         let expectedBuild = Bundle.main.bundleURL
             .appendingPathComponent("Contents/Library/SystemExtensions")
             .appendingPathComponent("\(request.identifier).systemextension")
-        let build = Bundle(url: expectedBuild)?
-            .object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let bundle = Bundle(url: expectedBuild)
+        let build = bundle?.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let release = bundle?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let expectedVersion: SystemExtensionActivationPolicy.Version? =
+            if let build, let release, !build.isEmpty, !release.isEmpty {
+                .init(identifier: request.identifier, build: build, release: release)
+            } else {
+                nil
+            }
+        let installations = properties.map {
+            SystemExtensionActivationPolicy.Installation(
+                version: .init(
+                    identifier: $0.bundleIdentifier,
+                    build: $0.bundleVersion,
+                    release: $0.bundleShortVersion
+                ),
+                isEnabled: $0.isEnabled,
+                isAwaitingUserApproval: $0.isAwaitingUserApproval,
+                isUninstalling: $0.isUninstalling
+            )
+        }
         let live = properties.filter { !$0.isUninstalling }
         let active = live.filter { $0.isEnabled && !$0.isAwaitingUserApproval }
         let result: NetworkExtensionProbe
@@ -414,6 +479,12 @@ final class SystemExtensionStatusProbe: NSObject, OSSystemExtensionRequestDelega
                 active.contains { $0.bundleVersion == build }
             } ?? true
             result = .enabled(isCurrentBuild: isCurrent)
+        } else if let expectedVersion,
+                  SystemExtensionActivationPolicy.requiresRebootBeforeReinstall(
+                      expected: expectedVersion,
+                      installations: installations
+                  ) {
+            result = .rebootRequired
         } else if live.contains(where: \.isAwaitingUserApproval) {
             result = .awaitingApproval
         } else if !properties.isEmpty && live.isEmpty {

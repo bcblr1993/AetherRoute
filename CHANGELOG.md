@@ -6,6 +6,30 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.9.2] - 2026-11-10
+
+### Added
+
+- **Cross-Version Pending-Reboot System Extension Detection & Non-Blocking First-Run Setup (`SystemExtensionActivationPolicy`, `NetworkSetupProgress`, `TunnelManager+NetworkSetup`, `SystemExtensionActivationCoordinator`)**:
+  - Updated `SystemExtensionActivationPolicy.requiresRebootBeforeReinstall(expected:installations:)` (`Sources/AetherRouteKit/SystemExtensionActivationPolicy.swift`) so that when `sysextd` has any `[terminated waiting to uninstall on reboot]` (`isUninstalling == true`) entry for `expected.identifier` across any version/build and no currently active enabled installation, it accurately reports `.rebootRequired`, while still allowing in-place version upgrades when an active enabled entry exists.
+  - Updated `NetworkSetupProgress.canFinish(_:)` (`Sources/AetherRouteKit/NetworkSetupProgress.swift`) so first-run network setup can finish (`"继续"` / `Continue`) immediately once at least one engine (`TUN` or `Transparent Proxy`) reaches `.ready` while the remaining engine is in `.ready`, `.isBlockedPermanently`, `.rebootRequired`, or `.awaitingApproval`, and `TunnelManager.finishNetworkSetup()` automatically switches `networkEngineMode` to the ready engine.
+  - Refactored `TunnelManager.runNetworkSetup()` (`Sources/AetherRouteApp/TunnelManager+NetworkSetup.swift`) to execute per-engine extension activation and NE configuration saving concurrently in independent tasks, removed the `isRunningNetworkSetup` guard in `refreshNetworkSetupStatus()`, and added an `NSApplicationDidBecomeActiveNotification` recheck observer in `SystemExtensionActivationCoordinator` (`Sources/AetherRouteApp/SystemExtensionActivationCoordinator.swift`) so returning from System Settings immediately reflects updated approval state.
+- **Tests first (TDD)**:
+  - Unit and regression tests in `Tests/AetherRouteKitTests/SystemExtensionActivationPolicyTests.swift`, `Tests/AetherRouteKitTests/NetworkSetupProgressTests.swift`, and `Tests/SystemExtensionActivation/main.swift` were written first and verified to fail on old code before implementation.
+
+### Fixed
+
+- **First-Run Network Setup Stuck on "正在等待授权..." After Previous Uninstall (`NetworkSetupView`, `TunnelManager+NetworkSetup`, `SystemExtensionActivationCoordinator`)**:
+  - Fixed a setup deadlock after in-app uninstall without restarting the Mac where `sysextd` retained `[terminated waiting to uninstall on reboot]` entries from previous builds (`2.9.0` / `2.9.1`), causing `LoginItems.appex` (`SystemExtensionsModel`) in macOS System Settings to reject the toggle with `OSSystemExtensionErrorDomain Code=4` while `NetworkSetupView` remained stuck on a disabled `"正在等待授权..."` button even after `TUN` was already approved and ready (`✅`).
+
+### Changed
+
+- **Validation & Release Qualification (`2.9.2` / `2026111004`)**:
+  - Fast lane passed all 14 steps in 64s (`outputs/fast-lane-20261110T121258Z`), including `engine-unit`, `engine-capabilities`, and `differential-e2e`; 12-protocol interop gates passed both default (`outputs/interop-20261110T100756Z`) and Chrome fingerprint (`outputs/interop-20261110T101641Z`) runs (68 case passes, 34 certificate rejections each), plus Chrome fingerprint `real_site_tests`.
+  - Full `scripts/test.sh` regression, 6-dimension Tart VM matrix (`outputs/acceptance-2.9.2-2026111004-20261110-204226/vm-acceptance`: 210 checks, 160 PASS, 0 FAIL, 50 SKIP across `tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`, including 50s TLS idle keep-alive reuse, 2 MiB large uploads, and all 5 transparent proxy gates), and remote arm64 source gate (`vm:macos27`) all passed with zero warnings.
+  - UI responsiveness & memory budget gate (`outputs/acceptance-2.9.2-2026111004-20261110-204226/ui-perf/result.txt`, 300s `showcase` + 300s `large` on `vm:macos27`) passed all budgets: `showcase` (420 switches) `p50=80.3 ms`, `p95=119.7 ms` (`<= 180 ms`), `max=131.6 ms` (`<= 300 ms`), memory `median 68 MB / max 82 MB / growth +1 MB` (`<= 90 / 110 / +8 MB`); `large` (414 switches, 500 nodes / 10,000 rules / 2,000 connections) `p50=83.3 ms`, `p95=118.3 ms` (`<= 180 ms`), `max=135.9 ms` (`<= 300 ms`), with `main.dns` `p95=74.1 ms / max=75.2 ms` (vs. 2.9.1 `75.7 ms / 77.2 ms`), `main.rules` `p95=91.0 ms / max=91.8 ms`, memory `median 67 MB / max 82 MB / growth +1 MB` (vs. 2.9.1 `+2 MB`, budget `<= 90 / 110 / +8 MB`).
+  - Isolated `vm:macos27` runtime evidence (`outputs/acceptance-2.9.2-2026111004-20261110-204226/physical-runtime`) bound to notarized stable candidate DMG (`6ce05a46e123700edc7144ab264b383a65ea9017df8acb6daafec64fa7d89f5f`, App notary submission `1fcf0822-8212-4f80-ade5-35bdb46352ea`, DMG notary submission `2f4b00d5-d0f8-49e8-aa0d-b99bee680bcb`) passed all 6 checks: 50s TLS idle keep-alive reuse (`both requests answered after 50s idle`), 2 MiB upload (TUN `3.048186s`, Transparent Proxy `2.794210s`), and 3-cycle / 6-phase NIC uplink switch recovery (TUN: `0/0/1/0/0/0 s`; Transparent Proxy: `0/0/0/0/0/1 s`; deadline 15s, zero manual reconnects). See `Docs/ReleaseExceptions/2.9.2.md`.
+
 ## [2.9.1] - 2026-11-10
 
 ### Added

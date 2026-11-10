@@ -8,16 +8,20 @@ final class NetworkSetupProgressTests: XCTestCase {
         XCTAssertEqual(NetworkSetupProgress.detectedState(extension: .enabled(isCurrentBuild: false), hasConfiguration: true), .pending)
         XCTAssertEqual(NetworkSetupProgress.detectedState(extension: .notInstalled, hasConfiguration: true), .pending)
         XCTAssertEqual(NetworkSetupProgress.detectedState(extension: .awaitingApproval, hasConfiguration: false), .awaitingApproval)
-        XCTAssertEqual(NetworkSetupProgress.detectedState(extension: .uninstalling, hasConfiguration: true), .pending)
+        XCTAssertEqual(NetworkSetupProgress.detectedState(extension: .uninstalling, hasConfiguration: true), .rebootRequired)
+        XCTAssertEqual(NetworkSetupProgress.detectedState(extension: .rebootRequired, hasConfiguration: true), .rebootRequired)
         XCTAssertEqual(NetworkSetupProgress.detectedState(extension: .unknown, hasConfiguration: true), .pending)
     }
 
-    func testFinishRequiresEveryEngineReady() {
+    func testFinishAllowsProceedingOnceAtLeastOneEngineIsReady() {
         XCTAssertTrue(NetworkSetupProgress.canFinish([.ready, .ready]))
         XCTAssertFalse(NetworkSetupProgress.canFinish([.ready, .pending]))
-        XCTAssertFalse(NetworkSetupProgress.canFinish([.ready, .awaitingApproval]))
+        XCTAssertTrue(NetworkSetupProgress.canFinish([.ready, .awaitingApproval]))
+        XCTAssertFalse(NetworkSetupProgress.canFinish([.ready, .installingExtension]))
+        XCTAssertFalse(NetworkSetupProgress.canFinish([.ready, .awaitingConfigurationConsent]))
         XCTAssertFalse(NetworkSetupProgress.canFinish([.ready, .failed(reason: "denied", isRetryable: true)]))
-        XCTAssertFalse(NetworkSetupProgress.canFinish([.ready, .rebootRequired]))
+        XCTAssertTrue(NetworkSetupProgress.canFinish([.ready, .rebootRequired]))
+        XCTAssertFalse(NetworkSetupProgress.canFinish([.rebootRequired, .rebootRequired]))
         XCTAssertFalse(NetworkSetupProgress.canFinish([]))
     }
 
@@ -39,7 +43,8 @@ final class NetworkSetupProgressTests: XCTestCase {
         XCTAssertEqual(P.primaryAction(for: [.awaitingApproval, .pending], isRunning: false), .waiting)
         XCTAssertEqual(P.primaryAction(for: [.ready, .pending], isRunning: true), .waiting)
         XCTAssertEqual(P.primaryAction(for: [.ready, .failed(reason: "denied", isRetryable: true)], isRunning: false), .retry)
-        XCTAssertEqual(P.primaryAction(for: [.ready, .rebootRequired], isRunning: false), .restartRequired)
+        XCTAssertEqual(P.primaryAction(for: [.ready, .rebootRequired], isRunning: false), .finish)
+        XCTAssertEqual(P.primaryAction(for: [.rebootRequired, .rebootRequired], isRunning: false), .restartRequired)
         XCTAssertEqual(P.primaryAction(for: [.pending, .rebootRequired], isRunning: false), .start)
         XCTAssertEqual(P.primaryAction(for: [.ready, .ready], isRunning: false), .finish)
     }

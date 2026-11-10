@@ -51,6 +51,58 @@ enum SystemExtensionActivationRegression {
                 expected: version, installations: installations
             ), "An absent, inactive, unapproved, retiring, or old extension was reused.")
         }
+        try expect(SystemExtensionActivationPolicy.requiresRebootBeforeReinstall(
+            expected: version,
+            installations: [
+                installation(enabled: false, uninstalling: true),
+                installation(enabled: false, awaiting: true),
+            ]
+        ), "Same-build uninstalling state did not require reboot before reinstall.")
+        try expect(SystemExtensionActivationPolicy.requiresRebootBeforeReinstall(
+            expected: version,
+            installations: [
+                installation(
+                    .init(identifier: version.identifier, build: "1469", release: "0.9.9"),
+                    enabled: false,
+                    uninstalling: true
+                ),
+                installation(enabled: false, awaiting: true),
+            ]
+        ), "Older build uninstalling state without an enabled copy did not require reboot before reinstall.")
+        try expect(!SystemExtensionActivationPolicy.requiresRebootBeforeReinstall(
+            expected: version,
+            installations: [
+                installation(
+                    .init(identifier: version.identifier, build: "1469", release: "0.9.9"),
+                    enabled: false,
+                    uninstalling: true
+                ),
+                installation(
+                    .init(identifier: version.identifier, build: "1469", release: "0.9.9"),
+                    enabled: true
+                ),
+            ]
+        ), "In-place upgrade over an enabled older build falsely required reboot.")
+        try expect(
+            NetworkSetupProgress.detectedState(extension: .rebootRequired, hasConfiguration: true) == .rebootRequired
+                && NetworkSetupProgress.detectedState(extension: .uninstalling, hasConfiguration: true) == .rebootRequired,
+            "Uninstalling / rebootRequired probe did not map to .rebootRequired setup state."
+        )
+        try expect(
+            NetworkSetupProgress.canFinish([.ready, .rebootRequired])
+                && NetworkSetupProgress.primaryAction(for: [.ready, .rebootRequired], isRunning: false) == .finish,
+            "A ready engine was blocked by the other engine awaiting restart."
+        )
+        try expect(
+            NetworkSetupProgress.canFinish([.ready, .awaitingApproval])
+                && NetworkSetupProgress.primaryAction(for: [.ready, .awaitingApproval], isRunning: true) == .finish,
+            "A ready engine was blocked while the other engine still waited for System Settings approval."
+        )
+        try expect(
+            !NetworkSetupProgress.canFinish([.rebootRequired, .rebootRequired])
+                && NetworkSetupProgress.primaryAction(for: [.rebootRequired, .rebootRequired], isRunning: false) == .restartRequired,
+            "Both engines awaiting restart should still require restart."
+        )
     }
 
     static func queryFailureAndStaleCallbacks() async throws {
