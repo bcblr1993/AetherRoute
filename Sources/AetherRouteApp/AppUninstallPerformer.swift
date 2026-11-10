@@ -1,5 +1,6 @@
 import AetherRouteKit
 import AppKit
+import Darwin
 import NetworkExtension
 import OSLog
 import ServiceManagement
@@ -9,6 +10,7 @@ import ServiceManagement
 @MainActor
 final class AppUninstallPerformer: UninstallStepPerforming {
     private static let logger = AppLog.logger(category: AppLog.Category.appRuntime)
+    private static var isTerminatingForUninstall = false
     private let tunnel: TunnelManager
 
     init(tunnel: TunnelManager) {
@@ -26,10 +28,7 @@ final class AppUninstallPerformer: UninstallStepPerforming {
         let outcome: UninstallStepOutcome
         switch step {
         case .disconnect:
-            tunnel.cancelStartupRestore(reason: "uninstall")
-            if tunnel.isEnabled {
-                await tunnel.setEnabled(false)
-            }
+            await tunnel.tearDownForUninstall()
             outcome = .completed
         case .removeNetworkConfigurations:
             outcome = await removeNetworkConfigurations()
@@ -57,8 +56,11 @@ final class AppUninstallPerformer: UninstallStepPerforming {
             for manager in managers {
                 try await manager.removeFromPreferences()
             }
+            tunnel.invalidateCachedManager()
+            tunnel.state = .disconnected
             return .completed
         } catch {
+            tunnel.invalidateCachedManager()
             return .failed(error.localizedDescription)
         }
     }
@@ -99,17 +101,11 @@ final class AppUninstallPerformer: UninstallStepPerforming {
             }
         }
 
-        // 2. Clean host-level caches and container residual directories
-        cleanHostResiduals(problems: &problems)
-
-        // 3. Clear persistent user defaults
+        // 2. Clear shared App Group user defaults
         UserDefaults(suiteName: AppConstants.appGroup)?
             .removePersistentDomain(forName: AppConstants.appGroup)
-        if let bundleIdentifier = Bundle.main.bundleIdentifier {
-            UserDefaults.standard.removePersistentDomain(forName: bundleIdentifier)
-        }
 
-        // 4. Delete local keychain items
+        // 3. Delete local keychain items
         for service in AppUninstaller.localKeychainServices {
             do {
                 try DataProtectionProfileKeyStore(service: service).deleteAllKeys()
@@ -121,10 +117,15 @@ final class AppUninstallPerformer: UninstallStepPerforming {
     }
 
     /// Cleans local user Library residuals (Caches, Application Support, Containers, etc.)
-    private func cleanHostResiduals(problems: inout [String]) {
+    private static func cleanHostResiduals() {
         let fileManager = FileManager.default
         let home = fileManager.homeDirectoryForCurrentUser
         let bundleID = Bundle.main.bundleIdentifier ?? "com.aetherroute.desktop"
+        if let bundleIdentifier = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: bundleIdentifier)
+        }
+        UserDefaults(suiteName: AppConstants.appGroup)?
+            .removePersistentDomain(forName: AppConstants.appGroup)
         let pathsToDelete: [URL] = [
             home.appendingPathComponent("Library/Containers/\(bundleID)"),
             home.appendingPathComponent("Library/Application Support/AetherRoute"),
@@ -143,93 +144,117 @@ final class AppUninstallPerformer: UninstallStepPerforming {
         }
     }
 
-    /// Moves the app bundle to Trash or prepares it for removal upon termination.
+    /// Defers physical `.app` bundle removal until `removeAppAndTerminate()` so
+    /// the running application keeps its bundle resources intact while
+    /// presenting the completion sheet.
     private func moveAppToTrash() async -> UninstallStepOutcome {
-        let appURL = Bundle.main.bundleURL
-        do {
-            try FileManager.default.trashItem(at: appURL, resultingItemURL: nil)
-            return .completed
-        } catch {
-            do {
-                _ = try await NSWorkspace.shared.recycle([appURL])
-                return .completed
-            } catch {
-                Self.logger.info(
-                    "stage=uninstall moveToTrash deferredToTermination reason=\(error.localizedDescription, privacy: .public)"
-                )
-                // In non-sandboxed or deferred mode, removeAppAndTerminate() guarantees complete removal
-                return .completed
-            }
-        }
+        Self.logger.info("stage=uninstall moveToTrash preparedForTermination")
+        return .completed
     }
 
-    /// Closes the application, moves it to the Trash (or deletes it), leaving no trace on the system.
+    /// Closes all windows, removes the application bundle and residual files,
+    /// and exits the process immediately without re-entering AppKit termination
+    /// hooks.
     static func removeAppAndTerminate() {
+        guard !isTerminatingForUninstall else { return }
+        isTerminatingForUninstall = true
+
         let appURL = Bundle.main.bundleURL
         let pid = ProcessInfo.processInfo.processIdentifier
         let appPath = appURL.path
 
         Self.logger.info("stage=uninstall removeAppAndTerminate begin path=\(appPath, privacy: .public)")
 
-        // 1. If moveAppToTrash() already relocated the bundle out of its launch
-        // path, or if trashing it now succeeds, we do not need Finder AppleScript.
-        var removed = !FileManager.default.fileExists(atPath: appPath)
-        if !removed {
-            do {
-                try FileManager.default.trashItem(at: appURL, resultingItemURL: nil)
-                removed = true
-                Self.logger.info("stage=uninstall removeAppAndTerminate trashItem succeeded")
-            } catch {
-                Self.logger.notice("stage=uninstall trashItem fallback reason=\(error.localizedDescription, privacy: .public)")
+        AppWindowManager.shared.isTerminating = true
+        for window in NSApplication.shared.windows {
+            window.orderOut(nil)
+        }
+        NSApplication.shared.hide(nil)
+
+        cleanHostResiduals()
+
+        AppUninstaller.finalizeUninstall(
+            appURL: appURL,
+            pid: pid,
+            fileExists: { FileManager.default.fileExists(atPath: $0) },
+            trashItem: { url in
+                do {
+                    try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+                    Self.logger.info("stage=uninstall removeAppAndTerminate trashItem succeeded")
+                } catch {
+                    Self.logger.notice("stage=uninstall trashItem fallback reason=\(error.localizedDescription, privacy: .public)")
+                    throw error
+                }
+            },
+            removeItem: { url in
+                do {
+                    try FileManager.default.removeItem(at: url)
+                    Self.logger.info("stage=uninstall removeAppAndTerminate removeItem succeeded")
+                } catch {
+                    Self.logger.notice("stage=uninstall removeItem fallback reason=\(error.localizedDescription, privacy: .public)")
+                    throw error
+                }
+            },
+            spawnDetachedCleanup: { processID, bundlePath in
+                let script = "while kill -0 \"$1\" 2>/dev/null; do sleep 0.05; done; rm -rf -- \"$2\""
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: "/bin/sh")
+                task.arguments = ["-c", script, "sh", String(processID), bundlePath]
+                task.standardInput = FileHandle.nullDevice
+                task.standardOutput = FileHandle.nullDevice
+                task.standardError = FileHandle.nullDevice
+                do {
+                    try task.run()
+                    Self.logger.info("stage=uninstall spawned detached cleanup process")
+                    return true
+                } catch {
+                    Self.logger.notice("stage=uninstall detached process launch skipped: \(error.localizedDescription, privacy: .public)")
+                    return false
+                }
+            },
+            revealInFinder: { url in
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            },
+            exitProcess: { code in
+                if code == 0 {
+                    Darwin.exit(EXIT_SUCCESS)
+                }
+                Darwin.exit(code)
             }
-        }
-
-        // 2. If the bundle still exists at its original path (e.g. Trash failed
-        // due to permissions), spawn a detached process using positional shell
-        // parameters to remove it once this process exits.
-        if !removed || FileManager.default.fileExists(atPath: appPath) {
-            let script = "while kill -0 \"$1\" 2>/dev/null; do sleep 0.05; done; rm -rf -- \"$2\""
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/bin/sh")
-            task.arguments = ["-c", script, "sh", String(pid), appPath]
-            do {
-                try task.run()
-                removed = true
-                Self.logger.info("stage=uninstall spawned detached cleanup process")
-            } catch {
-                Self.logger.notice("stage=uninstall detached process launch skipped: \(error.localizedDescription, privacy: .public)")
-            }
-        }
-
-        // 3. Fallback: reveal in Finder only if every removal path was blocked.
-        if !removed {
-            NSWorkspace.shared.activateFileViewerSelecting([appURL])
-        }
-
-        // 4. Terminate the app immediately
-        AppTermination.request()
+        )
+        Darwin._exit(EXIT_SUCCESS)
     }
 }
 
 /// Asks macOS to deactivate one system extension and waits for the answer.
 @MainActor
 final class SystemExtensionDeactivator: NSObject, OSSystemExtensionRequestDelegate {
+    private static var activeDeactivators: Set<SystemExtensionDeactivator> = []
     private var continuation: CheckedContinuation<UninstallStepOutcome, Never>?
+    private var request: OSSystemExtensionRequest?
 
     static func deactivate(identifier: String) async -> UninstallStepOutcome {
         let deactivator = SystemExtensionDeactivator()
-        return await withCheckedContinuation { continuation in
-            deactivator.continuation = continuation
+        activeDeactivators.insert(deactivator)
+        return await deactivator.run(identifier: identifier)
+    }
+
+    private func run(identifier: String) async -> UninstallStepOutcome {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
             let request = OSSystemExtensionRequest.deactivationRequest(
                 forExtensionWithIdentifier: identifier,
                 queue: .main
             )
-            request.delegate = deactivator
+            request.delegate = self
+            self.request = request
             OSSystemExtensionManager.shared.submitRequest(request)
         }
     }
 
     private func finish(_ outcome: UninstallStepOutcome) {
+        request = nil
+        Self.activeDeactivators.remove(self)
         continuation?.resume(returning: outcome)
         continuation = nil
     }

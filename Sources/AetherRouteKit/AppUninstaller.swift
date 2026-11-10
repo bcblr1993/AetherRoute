@@ -126,4 +126,50 @@ public enum AppUninstaller {
         case .disconnect, .unregisterLoginItem, .deleteUserData, .moveAppToTrash: false
         }
     }
+
+    /// Removes the application bundle (via Trash, direct deletion under
+    /// `/Applications/`, or a detached post-exit cleanup helper) and exits the
+    /// process immediately so AppKit termination hooks cannot block or cancel
+    /// uninstallation.
+    public static func finalizeUninstall(
+        appURL: URL,
+        pid: Int32,
+        fileExists: (String) -> Bool,
+        trashItem: (URL) throws -> Void,
+        removeItem: (URL) throws -> Void,
+        spawnDetachedCleanup: (Int32, String) -> Bool,
+        revealInFinder: (URL) -> Void,
+        exitProcess: (Int32) -> Void
+    ) {
+        let appPath = appURL.path
+        var removed = !fileExists(appPath)
+
+        if !removed {
+            do {
+                try trashItem(appURL)
+                removed = !fileExists(appPath)
+            } catch {
+                // Fall through to direct removal under /Applications/.
+            }
+        }
+
+        if !removed || fileExists(appPath) {
+            do {
+                try removeItem(appURL)
+                removed = !fileExists(appPath)
+            } catch {
+                // Fall through to detached post-exit cleanup.
+            }
+        }
+
+        if spawnDetachedCleanup(pid, appPath) {
+            removed = true
+        }
+
+        if !removed {
+            revealInFinder(appURL)
+        }
+
+        exitProcess(0)
+    }
 }

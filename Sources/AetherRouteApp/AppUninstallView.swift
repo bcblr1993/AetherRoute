@@ -139,8 +139,14 @@ struct AppUninstallSheet: View {
         )
         let performer = AppUninstallPerformer(tunnel: tunnel)
         Task {
-            report = await AppUninstaller.run(plan, performer: performer)
+            let result = await AppUninstaller.run(plan, performer: performer)
+            report = result
             isRunning = false
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            if !result.networkRemovalFailed {
+                try? await Task.sleep(for: .milliseconds(800))
+                AppUninstallPerformer.removeAppAndTerminate()
+            }
         }
     }
 

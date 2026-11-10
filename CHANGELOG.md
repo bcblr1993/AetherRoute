@@ -6,6 +6,31 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.9.1] - 2026-11-10
+
+### Added
+
+- **Dedicated Uninstall Tunnel Teardown & Sandbox-Compatible Finalizer (`TunnelManager.tearDownForUninstall()`, `AppUninstaller.finalizeUninstall(...)`)**:
+  - Added `TunnelManager.tearDownForUninstall()` (`Sources/AetherRouteApp/TunnelManager.swift`) to remove `configurationObserver` and `statusObserver`, cancel all reconnect tasks, health watchdogs, telemetry timers, and LAN proxy listeners, wait up to 3s for active provider teardown, clear `hasUnsavedTrafficSamples = false`, and call `invalidateCachedManager()` before network extension configurations are deleted.
+  - Added `AppUninstaller.finalizeUninstall(...)` (`Sources/AetherRouteKit/AppUninstaller.swift`) with direct bundle removal fallback (`FileManager.default.removeItem(at: appURL)`) when App Sandbox restricts moving `/Applications/AetherRoute.app` into `~/.Trash/`, backed by a detached `/bin/sh` post-exit cleanup helper and immediate process exit (`Darwin.exit(EXIT_SUCCESS)`).
+- **Tests first (TDD)**:
+  - Unit tests in `Tests/AetherRouteKitTests/AppUninstallerTests.swift` (`testFinalizeUninstallFallsBackToDirectBundleRemovalWhenTrashFailsAndExitsImmediately`, `testFinalizeUninstallRevealsInFinderOnlyWhenEveryRemovalPathFailsAndStillExitsImmediately`) and static termination guards in `scripts/test_app_termination_signal_guard.sh` were written first and verified to fail on old code before implementation.
+
+### Fixed
+
+- **Uninstall Completion Sheet Freeze & `.terminateLater` Deadlock (`AppUninstallPerformer`, `AppUninstallView`, `TunnelManager`)**:
+  - Fixed a hang on the uninstall completion dialog ("AetherRoute 卸载完成。点击“完成”将关闭并删除软件。") where `AppTermination.request()` (`NSApplication.terminate(_:)`) entered `AppDelegate.applicationShouldTerminate(_:)` while the deleted NE configuration's cached `manager.connection.status` remained stuck at `.disconnecting` and `hasUnsavedTrafficSamples` was `true`, freezing AppKit in `.terminateLater` for 30s and then cancelling termination (`reply(toApplicationShouldTerminate: false)`).
+  - Deferred self-container preference cleanup (`cleanHostResiduals()`) and app bundle deletion until `AppUninstallPerformer.removeAppAndTerminate()` after ordering out all windows (`window.orderOut(nil)`), avoiding synchronous `CFPREFERENCES_IS_WAITING_FOR_USER_CFPREFSD` stalls on the active container plist while the completion sheet is still rendered.
+  - Fixed `SystemExtensionDeactivator` strong retention (`activeDeactivators`), restored app window focus (`NSApplication.shared.activate(ignoringOtherApps: true)`) after `SecurityAgent` extension deactivation prompts dismiss, and added automatic 800ms post-completion exit in `AppUninstallSheet` alongside the "完成" (`Done`) button.
+
+### Changed
+
+- **Validation & Release Qualification (`2.9.1` / `2026111002`)**:
+  - Fast lane passed all 14 steps in 62s (`outputs/fast-lane-20261110T062757Z`), including `engine-unit`, `engine-capabilities`, and `differential-e2e`; 12-protocol interop gates passed both default (`outputs/interop-20261110T064735Z`) and Chrome fingerprint (`outputs/interop-20261110T065708Z`) runs (68 case passes, 34 certificate rejections each), plus Chrome fingerprint `real_site_tests`.
+  - Full `scripts/test.sh` regression, 6-dimension Tart VM matrix (`outputs/acceptance-2.9.1-2026111002-20261110-160333/vm-acceptance`: 210 checks, 160 PASS, 0 FAIL, 50 SKIP across `tun/rule`, `tun/global`, `tun/direct`, `transparent/rule`, `transparent/global`, `transparent/direct`, including 50s TLS idle keep-alive reuse, 2 MiB large uploads, and all 5 transparent proxy gates), and remote arm64 source gate (`vm:macos27`) all passed with zero warnings.
+  - UI responsiveness & memory budget gate (`outputs/acceptance-2.9.1-2026111002-20261110-160333/ui-perf/result.txt`, 300s `showcase` + 300s `large` on `vm:macos27`) passed all budgets: `showcase` (414 switches) `p50=81.1 ms`, `p95=115.6 ms` (`<= 180 ms`, vs. 2.9.0 `116.5 ms`), `max=129.7 ms` (`<= 300 ms`, vs. 2.9.0 `157.5 ms`, `-27.8 ms`), memory `median 67 MB / max 82 MB / growth +1 MB` (`<= 90 / 110 / +8 MB`); `large` (414 switches, 500 nodes / 10,000 rules / 2,000 connections) `p50=82.2 ms`, `p95=115.6 ms` (`<= 180 ms`), `max=127.9 ms` (`<= 300 ms`), with `main.dns` `p95=75.7 ms / max=77.2 ms`, `main.proxies` `p95=80.4 ms / max=84.9 ms`, `main.rules` `p95=89.4 ms / max=92.0 ms`, memory `median 65 MB / max 80 MB / growth +2 MB` (`<= 90 / 110 / +8 MB`).
+  - Isolated `vm:macos27` runtime evidence (`outputs/acceptance-2.9.1-2026111002-20261110-160333/physical-runtime`) bound to notarized stable candidate DMG (`736b77da87eb42ef95d3727eb96d437fe8ceceda63c315fe4ca9edefa916d8b5`, App notary submission `14a71539-980b-4a00-88fa-00065b7d77b3`, DMG notary submission `4e53fe3c-2b77-428f-8dae-ddd2c866a111`) passed all 6 checks: 50s TLS idle keep-alive reuse (`both requests answered after 50s idle`), 2 MiB upload (TUN `2.836697s`, Transparent Proxy `2.891221s`), and 3-cycle / 6-phase NIC uplink switch recovery (TUN: `1/2/0/0/1/1 s`; Transparent Proxy: `2/1/1/1/2/0 s`; deadline 15s, zero manual reconnects). See `Docs/ReleaseExceptions/2.9.1.md`.
+
 ## [2.9.0] - 2026-11-08
 
 ### Added

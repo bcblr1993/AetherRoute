@@ -1801,6 +1801,37 @@ final class TunnelManager: ObservableObject {
         return stopped
     }
 
+    /// Stops any active session and detaches cached NetworkExtension state for
+    /// uninstallation without writing new preferences or traffic statistics,
+    /// ensuring subsequent configuration removal and process exit cannot stall.
+    func tearDownForUninstall() async {
+        isApplicationTerminating = true
+        hasUnsavedTrafficSamples = false
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+            self.configurationObserver = nil
+        }
+        cancelStartupRestore(reason: "uninstall")
+        engineReconnect.cancel()
+        userIntendsToConnect = false
+        cancelAutomaticReconnect(reason: "uninstall")
+        stopTelemetryPolling()
+        cancelConnectionReadiness()
+        cancelConnectionWatchdog()
+        cancelDisconnectionWatchdog()
+        cancelRecoveryWatchdog()
+        runtimeEnvironmentResetTask?.cancel()
+        runtimeEnvironmentResetTask = nil
+        LANProxyServerController.shared.stop()
+
+        if managerConnectionIsActive || isEnabled {
+            manager?.connection.stopVPNTunnel()
+            _ = await waitForProviderToBecomeInactive(timeout: .seconds(3))
+        }
+        invalidateCachedManager()
+        state = .disconnected
+    }
+
     static let networkEngineSwitchSettleTimeout = Duration.seconds(10)
     static let networkEngineSwitchDrainTimeout = Duration.seconds(8)
 

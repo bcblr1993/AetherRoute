@@ -44,4 +44,16 @@ if grep -rnE 'DispatchQueue\.main\.async.*terminate\(|Task.*terminate\(|NSApp\.t
   exit 1
 fi
 
+UNINSTALL_PERFORMER="$ROOT/Sources/AetherRouteApp/AppUninstallPerformer.swift"
+UNINSTALL_VIEW="$ROOT/Sources/AetherRouteApp/AppUninstallView.swift"
+if grep -F 'AppTermination.request()' "$UNINSTALL_PERFORMER" >/dev/null; then
+  echo "AppUninstallPerformer must exit directly via Darwin.exit(EXIT_SUCCESS), not AppTermination.request() (which re-enters applicationShouldTerminate and hangs on .terminateLater)" >&2
+  exit 1
+fi
+require_literal "$UNINSTALL_PERFORMER" 'AppUninstaller.finalizeUninstall('
+require_literal "$UNINSTALL_PERFORMER" 'Darwin.exit(EXIT_SUCCESS)'
+require_literal "$UNINSTALL_PERFORMER" 'await tunnel.tearDownForUninstall()'
+require_literal "$TUNNEL" 'func tearDownForUninstall() async'
+require_literal "$UNINSTALL_VIEW" 'AppUninstallPerformer.removeAppAndTerminate()'
+
 echo "application termination signal guard passed"

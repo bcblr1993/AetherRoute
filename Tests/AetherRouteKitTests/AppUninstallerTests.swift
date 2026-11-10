@@ -120,4 +120,68 @@ final class AppUninstallerTests: XCTestCase {
         )
         XCTAssertTrue(network.networkRemovalFailed)
     }
+
+    func testFinalizeUninstallFallsBackToDirectBundleRemovalWhenTrashFailsAndExitsImmediately() {
+        let appURL = URL(fileURLWithPath: "/Applications/AetherRoute.app")
+        var trashed: [URL] = []
+        var removedDirectly: [URL] = []
+        var spawnedCleanup: [(pid: Int32, path: String)] = []
+        var revealed: [URL] = []
+        var exitCodes: [Int32] = []
+
+        struct SandboxTrashDenied: Error {}
+
+        AppUninstaller.finalizeUninstall(
+            appURL: appURL,
+            pid: 4242,
+            fileExists: { _ in true },
+            trashItem: { url in
+                trashed.append(url)
+                throw SandboxTrashDenied()
+            },
+            removeItem: { url in
+                removedDirectly.append(url)
+            },
+            spawnDetachedCleanup: { pid, path in
+                spawnedCleanup.append((pid, path))
+                return true
+            },
+            revealInFinder: { url in
+                revealed.append(url)
+            },
+            exitProcess: { code in
+                exitCodes.append(code)
+            }
+        )
+
+        XCTAssertEqual(trashed, [appURL])
+        XCTAssertEqual(removedDirectly, [appURL])
+        XCTAssertEqual(spawnedCleanup.count, 1)
+        XCTAssertEqual(spawnedCleanup.first?.pid, 4242)
+        XCTAssertEqual(spawnedCleanup.first?.path, appURL.path)
+        XCTAssertTrue(revealed.isEmpty)
+        XCTAssertEqual(exitCodes, [0])
+    }
+
+    func testFinalizeUninstallRevealsInFinderOnlyWhenEveryRemovalPathFailsAndStillExitsImmediately() {
+        let appURL = URL(fileURLWithPath: "/Applications/AetherRoute.app")
+        var revealed: [URL] = []
+        var exitCodes: [Int32] = []
+
+        struct RemovalBlocked: Error {}
+
+        AppUninstaller.finalizeUninstall(
+            appURL: appURL,
+            pid: 9999,
+            fileExists: { _ in true },
+            trashItem: { _ in throw RemovalBlocked() },
+            removeItem: { _ in throw RemovalBlocked() },
+            spawnDetachedCleanup: { _, _ in false },
+            revealInFinder: { url in revealed.append(url) },
+            exitProcess: { code in exitCodes.append(code) }
+        )
+
+        XCTAssertEqual(revealed, [appURL])
+        XCTAssertEqual(exitCodes, [0])
+    }
 }
