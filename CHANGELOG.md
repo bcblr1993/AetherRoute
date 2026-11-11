@@ -6,6 +6,44 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.9.4] - 2026-11-11
+
+### Added
+
+- **Unified Delay (`unified-delay`) & Benchmark Precision (`Core/Engine` `clash-lib/src/app/remote_content_manager/mod.rs`, `Sources/AetherRouteKit/LatencyTestPreferences.swift`)**:
+  - Implemented Mihomo-aligned `unified-delay`: reuse the same proxy stream with HTTP/1.1 `Connection: keep-alive` to issue two sequential probes; the first warms up the proxy server to destination link, and only the second pure tunnel RTT is recorded as latency, completely eliminating handshake and cold-connect distortion across protocols.
+  - Restored industry-standard color tiers (`<= 120ms` Fast Green, `121~300ms` Moderate Orange, `> 300ms` Slow Red) for unified delay while retaining the option to switch to full handshake latency in Settings > Advanced.
+  - Added global `url_test_permits` concurrency throttling (max 12) for UI latency checks to prevent connection storms and false-positive timeouts.
+- **Proxies Page UX Overhaul & Card Grid Layout (`Sources/AetherRouteApp/ProxiesPageView.swift`)**:
+  - Replaced the large permanent selection mode banner with a sleek header menu, freeing up vertical space.
+  - Split left proxy groups and right toolbar into sticky/independent scroll containers.
+  - Added Single-column List vs Dual-column Compact Card Grid view toggle with persistence.
+  - Added "Locate current node" (🎯 `ScrollViewReader`) quick-action button.
+  - Added subscription info notice bar at the top, cleanly extracting remaining traffic and expiration while hiding metadata dummy nodes from the testing queue.
+  - Light up current active leaf nodes for native `url-test`, `fallback`, and `load-balance` groups even with zero active connections.
+  - Pinned `GLOBAL` proxy selector in Proxies view when running in Global mode for intuitive exit switching.
+- **Optimistic Instant Proxy Switching (`Sources/AetherRouteApp/TunnelManager+ProxySelection.swift`)**:
+  - Manual proxy switching now updates UI state optimistically in sub-milliseconds, triggers instant kernel hot-switch, and cleans up old connections asynchronously without blocking on 30s probe gates or rolling back user selections.
+- **Live Subscription Hot-Reload & Background Updates (`Sources/AetherRouteApp/TunnelManager+Profiles.swift`)**:
+  - Allowed manual and periodic subscription refreshes while connected, reloading without disconnecting via `reloadActiveProfile`.
+  - Moved the background update loop into `TunnelManager` lifetime so automatic updates continue even when the main window is closed.
+  - Added individual update buttons for non-active subscriptions and an "Update All Subscriptions" action.
+
+### Fixed
+
+- **Global Mode `DIRECT` Traffic Leak Prevention (`Sources/AetherRoutePacketTunnel/CoreBridge.swift`, `Sources/AetherRouteTransparentProxy/TransparentProxyProvider.swift`)**:
+  - Eliminated dangerous fallback assigning `"GLOBAL" = "DIRECT"`, ensuring Global mode traffic strictly routes through the primary proxy group regardless of group size or rule reloads.
+- **Node Region `GB` False Positive UK Flag (`Sources/AetherRouteKit/NodeRegion.swift`)**:
+  - Fixed capacity and rate units (e.g. `154.92 GB`) erroneously triggering the UK flag (`GB`).
+- **Telemetry & Connection Page Truncation (`Sources/AetherRouteApp/ConnectionsPageView.swift`, `Core/Engine`)**:
+  - Relaxed connection telemetry cap and added live upload/download speed columns and sorting.
+  - Switched bandwidth speed sampling to monotonic delta calculation, fixing 3-second frame drop issues.
+
+### Changed
+
+- **Validation & Release Qualification (`2.9.4` / `2026111102`)**:
+  - Full regression test suites, Fast Lane, and protocol interop matrix verified.
+
 ## [2.9.3] - 2026-11-11
 
 ### Fixed
