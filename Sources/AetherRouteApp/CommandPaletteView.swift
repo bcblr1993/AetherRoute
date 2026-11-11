@@ -242,19 +242,21 @@ struct CommandPaletteView: View {
                 id: "action.latency",
                 kind: .action,
                 title: AppLocalization.string("Test latency"),
-                subtitle: group.name,
+                subtitle: proxyGroupDisplayName(group.name),
                 symbol: "bolt",
                 isEnabled: !tunnel.proxyLatencyRequests.contains(group.name),
                 perform: { Task { await tunnel.testProxyLatency(group: group.name) } }
             ))
             let selected = tunnel.proxySelections[group.name]?.selectedMember
-            let members = tunnel.proxySelections[group.name]?.members ?? group.members
+            let members = ProxyPageNodeOrder.uniqueMembersPreservingOrder(
+                tunnel.proxySelections[group.name]?.members ?? group.members
+            ).filter { !InitialProxySelectionPolicy.isSubscriptionMetadata($0) }
             for member in members {
                 items.append(CommandPaletteItem(
                     id: "node.\(group.name).\(member)",
                     kind: .node,
                     title: member,
-                    subtitle: group.name,
+                    subtitle: proxyGroupDisplayName(group.name),
                     symbol: "point.3.connected.trianglepath.dotted",
                     isCurrent: member == selected,
                     // A group picking the fastest node ignores picks; in
@@ -286,8 +288,11 @@ struct CommandPaletteView: View {
     }
 
     private var primaryGroup: ProxyGroupConfigurationSummary? {
-        let groups = tunnel.activeProfileSummary?.proxyGroups ?? []
-        return groups.first { $0.strategy.lowercased() == "select" } ?? groups.first
+        if tunnel.routingMode == .global, let global = tunnel.globalProxyGroup {
+            return global
+        }
+        guard let summary = tunnel.activeProfileSummary else { return nil }
+        return primaryProxyGroup(in: summary, tunnel: tunnel)
     }
 
     private func routingTitle(_ mode: RoutingMode) -> String {

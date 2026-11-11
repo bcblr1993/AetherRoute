@@ -26,7 +26,7 @@ struct TelemetryPollingScheduleTests {
         #expect(TelemetryCadence.resolve(realtimeSources: 0, backgroundSources: 0) == .healthOnly)
     }
 
-    @Test("menu bar real-time traffic keeps 3 s polling when windows are closed or backgrounded")
+    @Test("menu bar real-time traffic keeps 1 s polling when windows are closed or backgrounded")
     func menuBarTrafficKeepsRealtimePolling() {
         #expect(
             TelemetryCadence.resolve(
@@ -54,10 +54,10 @@ struct TelemetryPollingScheduleTests {
         )
     }
 
-    @Test("frontmost: traffic every 3 s, route health every 15 s")
+    @Test("frontmost: traffic every 1 s, route health every 15 s")
     func realtimeCadence() {
         let result = timeline(.realtime, seconds: 30)
-        #expect(result.telemetry == [3, 6, 9, 12, 15, 18, 21, 24, 27, 30])
+        #expect(result.telemetry == Array(1...30))
         #expect(result.health == [15, 30])
     }
 

@@ -10,7 +10,9 @@ import Foundation
 public enum InitialProxySelectionPolicy {
     public static func selections(
         persisted: [String: String],
-        summary: ProfileConfigurationSummary
+        summary: ProfileConfigurationSummary,
+        includeGlobal: Bool = false,
+        excludingCustomGroups: Set<String> = []
     ) -> [String: String] {
         var result = persisted
         let automaticGroups = Set(
@@ -32,32 +34,68 @@ public enum InitialProxySelectionPolicy {
                 result[group.name] = candidate
             }
         }
+        let globalName = ProxyConnectionReadinessPolicy.globalGroupName
+        let allowedGlobal = Set(globalMembers(summary: summary))
+        if let savedGlobal = result[globalName] {
+            if !allowedGlobal.contains(savedGlobal) {
+                if let fallback = defaultGlobalMember(
+                    summary: summary,
+                    excludingCustomGroups: excludingCustomGroups
+                ) {
+                    result[globalName] = fallback
+                } else {
+                    result.removeValue(forKey: globalName)
+                }
+            }
+        } else if includeGlobal,
+                  let fallback = defaultGlobalMember(
+                      summary: summary,
+                      excludingCustomGroups: excludingCustomGroups
+                  ) {
+            result[globalName] = fallback
+        }
         return result
     }
 
-    public static func isSubscriptionMetadata(_ name: String) -> Bool {
-        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        guard !normalized.isEmpty else { return true }
-
-        let metadataMarkers = [
-            "剩余流量", "流量剩余", "套餐到期", "到期时间", "过期时间",
-            "有效期", "官网地址", "官方网站", "客服邮箱", "联系邮箱",
-            "remaining traffic", "traffic remaining", "expires at",
-            "expiration date", "subscription expires", "official website",
-            "support email",
-        ]
-        if metadataMarkers.contains(where: normalized.contains) {
-            return true
+    /// Selectable targets for the core's synthetic `GLOBAL` selector: strategy
+    /// groups first, then real proxy nodes (without subscription notice
+    /// entries), followed by `DIRECT` and `REJECT`.
+    public static func globalMembers(
+        summary: ProfileConfigurationSummary
+    ) -> [String] {
+        var members: [String] = []
+        var seen = Set<String>()
+        for group in summary.proxyGroups
+        where group.name != ProxyConnectionReadinessPolicy.globalGroupName
+            && seen.insert(group.name).inserted {
+            members.append(group.name)
         }
+        for proxy in summary.proxies
+        where !isSubscriptionMetadata(proxy.name)
+            && seen.insert(proxy.name).inserted {
+            members.append(proxy.name)
+        }
+        for builtin in ["DIRECT", "REJECT"] where seen.insert(builtin).inserted {
+            members.append(builtin)
+        }
+        return members
+    }
 
-        // Treat only a whole email-like label as metadata. Node names that
-        // merely contain an @ character remain eligible.
-        let emailPattern = #"^[^\s@]+@[^\s@]+\.[^\s@]+$"#
-        return normalized.range(
-            of: emailPattern,
-            options: .regularExpression
-        ) != nil
+    public static func defaultGlobalMember(
+        summary: ProfileConfigurationSummary,
+        excludingCustomGroups: Set<String> = []
+    ) -> String? {
+        if let primary = summary.primaryOutboundGroup(excluding: excludingCustomGroups) {
+            return primary
+        }
+        if let proxy = summary.proxies.first(where: { isRouteCandidate($0.name) }) {
+            return proxy.name
+        }
+        return nil
+    }
+
+    public static func isSubscriptionMetadata(_ name: String) -> Bool {
+        SubscriptionNoticeClassifier.isNotice(name)
     }
 
     public static func isRouteCandidate(_ name: String) -> Bool {
@@ -131,14 +169,14 @@ public enum ProxyConnectionReadinessPolicy {
         let selectable = summary.proxyGroups.filter {
             $0.strategy.caseInsensitiveCompare("select") == .orderedSame
                 && !$0.members.isEmpty
-                && $0.memberCount <= maximumMembersPerVerifiedGroup
         }
         guard !selectable.isEmpty else { return [] }
 
         let byName = Dictionary(
             uniqueKeysWithValues: selectable.map { ($0.name, $0) }
         )
-        if let catchAll = summary.rules.last(where: {
+        let ruleSource = summary.allRules.isEmpty ? summary.rules : summary.allRules
+        if let catchAll = ruleSource.last(where: {
             $0.kind.caseInsensitiveCompare("MATCH") == .orderedSame
                 && byName[$0.target] != nil
         }).flatMap({ byName[$0.target] }) {
@@ -146,7 +184,7 @@ public enum ProxyConnectionReadinessPolicy {
         }
         var result: [ProxyGroupConfigurationSummary] = []
         var seen = Set<String>()
-        for rule in summary.rules {
+        for rule in ruleSource {
             guard let group = byName[rule.target],
                   seen.insert(group.name).inserted else { continue }
             result.append(group)
@@ -178,10 +216,14 @@ public enum ProxyConnectionReadinessPolicy {
     /// proxy appear healthy by silently falling back to DIRECT.
     public static func fastestResponsiveRoute(
         members: [String],
-        latency: ProxyLatencyState
+        latency: ProxyLatencyState,
+        groupNames: Set<String> = []
     ) -> String? {
         let eligible = Set(
-            members.filter(InitialProxySelectionPolicy.isRouteCandidate)
+            members.filter {
+                InitialProxySelectionPolicy.isRouteCandidate($0)
+                    && !groupNames.contains($0)
+            }
         )
         return latency.results.filter {
             $0.delayMilliseconds != nil && eligible.contains($0.member)
@@ -262,12 +304,14 @@ public enum ProxyConnectionReadinessPolicy {
         selectedMember: String?,
         summaryMembers: [String],
         snapshotMembers: [String],
-        latency: ProxyLatencyState
+        latency: ProxyLatencyState,
+        groupNames: Set<String> = []
     ) -> [String] {
         let eligible = Set(
-            (summaryMembers + snapshotMembers).filter(
-                InitialProxySelectionPolicy.isRouteCandidate
-            )
+            (summaryMembers + snapshotMembers).filter {
+                InitialProxySelectionPolicy.isRouteCandidate($0)
+                    && !groupNames.contains($0)
+            }
         )
         let responsive = latency.results.filter {
             $0.delayMilliseconds != nil && eligible.contains($0.member)

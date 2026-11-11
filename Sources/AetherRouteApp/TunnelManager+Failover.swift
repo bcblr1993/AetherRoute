@@ -307,16 +307,26 @@ extension TunnelManager {
 
         let responded: Bool
         do {
-            let latency = try await client.latency(
-                group: group,
+            let timeoutMilliseconds = TunnelStartupTimingPolicy
+                .selectorReadinessPerMemberTimeoutMilliseconds
+            let probeClient = makeLatencyProbeProviderClient(
+                timeoutMilliseconds: timeoutMilliseconds
+            )
+            let measurement = try await probeClient.displayLatency(
+                member: preferred,
                 url: Self.selectorLatencyTestURL,
-                timeoutMilliseconds: TunnelStartupTimingPolicy
-                    .selectorReadinessPerMemberTimeoutMilliseconds
+                timeoutMilliseconds: timeoutMilliseconds
+            )
+            let latency = ProxyLatencyState(
+                results: [
+                    ProxyLatencyResult(
+                        member: preferred,
+                        delayMilliseconds: measurement.delayMilliseconds
+                    )
+                ]
             )
             adoptProviderLatency(latency, forGroup: group)
-            responded = latency.results.contains {
-                $0.member == preferred && $0.delayMilliseconds != nil
-            }
+            responded = measurement.delayMilliseconds != nil
         } catch is CancellationError {
             return
         } catch {

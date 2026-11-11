@@ -5,6 +5,10 @@ import NetworkExtension
 import OSLog
 
 extension TunnelManager {
+    static var effectiveUILatencyTimeoutMilliseconds: UInt32 {
+        max(uiLatencyTimeoutMilliseconds, 5_000)
+    }
+
     public func isTestingLatency(group groupName: String, member memberName: String? = nil) -> Bool {
         if let memberName {
             return memberLatencyRequests.contains("\(groupName):\(memberName)")
@@ -12,12 +16,37 @@ extension TunnelManager {
         }
         return proxyLatencyRequests.contains(groupName)
     }
+
     func latencyGroupsSnapshot() -> [(name: String, members: [String])] {
-        (activeProfileSummary?.proxyGroups ?? []).map { group in
+        var groups = (activeProfileSummary?.proxyGroups ?? []).map { group in
             (
                 name: group.name,
                 members: proxySelections[group.name]?.members ?? group.members
             )
+        }
+        if let globalGroup = globalProxyGroup,
+           !groups.contains(where: { $0.name == globalGroup.name }) {
+            groups.insert(
+                (
+                    name: globalGroup.name,
+                    members: proxySelections[globalGroup.name]?.members ?? globalGroup.members
+                ),
+                at: 0
+            )
+        }
+        return groups
+    }
+
+    private func hasLatencyTestableGroup(
+        named groupName: String,
+        containing memberName: String? = nil
+    ) -> Bool {
+        latencyGroupsSnapshot().contains { entry in
+            guard entry.name == groupName else { return false }
+            if let memberName {
+                return entry.members.contains(memberName)
+            }
+            return true
         }
     }
 
@@ -76,6 +105,10 @@ extension TunnelManager {
 
     func flushPendingLatency() {
         lastLatencyFlushAt = ContinuousClock.now
+        let aggregated = latencyIndex.aggregateChildGroups(
+            selectedMembers: latencySelectedMembers
+        )
+        pendingLatencyFlush.formUnion(aggregated)
         for group in pendingLatencyFlush {
             proxyLatencies[group] = latencyIndex.state(for: group)
             latencyMeasuredAt[group] = latencyIndex.measurementDates(for: group)
@@ -148,16 +181,17 @@ extension TunnelManager {
     }
 
     func testProxyLatency(group groupName: String) async {
-        guard activeProfileSummary?.proxyGroups.contains(where: {
-                  $0.name == groupName
-              }) == true,
+        guard hasLatencyTestableGroup(named: groupName),
               !proxyLatencyRequests.contains(groupName) else {
             return
         }
         let runToken = prepareLatencyIndex()
         proxyLatencyRequests.insert(groupName)
+        let snapshotMembers = latencyGroupsSnapshot()
+            .first(where: { $0.name == groupName })?
+            .members ?? []
         Self.runtimeLogger.info(
-            "stage=proxyLatency request members=\(self.activeProfileSummary?.proxyGroups.first(where: { $0.name == groupName })?.memberCount ?? 0, privacy: .public)"
+            "stage=proxyLatency request members=\(snapshotMembers.count, privacy: .public)"
         )
         proxySelectionMessages[groupName] = nil
         latencyIndex.clear(group: groupName)
@@ -169,9 +203,9 @@ extension TunnelManager {
         proxyLatencies[groupName] = nil
         defer { proxyLatencyRequests.remove(groupName) }
 
-        let members = latencyGroupsSnapshot()
-            .first(where: { $0.name == groupName })?
-            .members ?? []
+        let members = snapshotMembers.filter {
+            !InitialProxySelectionPolicy.isSubscriptionMetadata($0)
+        }
 
         if isUIReviewMode {
             try? await Task.sleep(nanoseconds: 120_000_000)
@@ -232,7 +266,7 @@ extension TunnelManager {
     }
 
     func makeLatencyProbeProviderClient(
-        timeoutMilliseconds: UInt32 = TunnelManager.uiLatencyTimeoutMilliseconds
+        timeoutMilliseconds: UInt32 = TunnelManager.effectiveUILatencyTimeoutMilliseconds
     ) -> ProxySelectionProviderClient {
         let messageTimeout = Duration.milliseconds(
             Int(timeoutMilliseconds) + 2_000
@@ -259,7 +293,7 @@ extension TunnelManager {
     private static func probeVerifiedMemberLatency(
         member: String,
         client: ProxySelectionProviderClient,
-        timeoutMilliseconds: UInt32 = TunnelManager.uiLatencyTimeoutMilliseconds
+        timeoutMilliseconds: UInt32 = TunnelManager.effectiveUILatencyTimeoutMilliseconds
     ) async throws -> ProxyLatencyMeasurement {
         try await client.displayLatency(
             member: member,
@@ -279,21 +313,24 @@ extension TunnelManager {
         members: [String],
         runToken: LatencyRunToken?
     ) async -> Bool {
-        guard !members.isEmpty else { return true }
+        let testableMembers = members.filter {
+            !InitialProxySelectionPolicy.isSubscriptionMetadata($0)
+        }
+        guard !testableMembers.isEmpty else { return true }
         let selected = proxySelections[groupName]?.selectedMember
         var orderedTargets: [String] = []
-        orderedTargets.reserveCapacity(members.count)
-        if let selected, members.contains(selected) {
+        orderedTargets.reserveCapacity(testableMembers.count)
+        if let selected, testableMembers.contains(selected) {
             orderedTargets.append(selected)
         }
-        for member in members where member != selected {
+        for member in testableMembers where member != selected {
             orderedTargets.append(member)
         }
 
+        let timeoutMilliseconds = Self.effectiveUILatencyTimeoutMilliseconds
         let client = makeLatencyProbeProviderClient(
-            timeoutMilliseconds: Self.uiLatencyTimeoutMilliseconds
+            timeoutMilliseconds: timeoutMilliseconds
         )
-        let timeoutMilliseconds = Self.uiLatencyTimeoutMilliseconds
         let maxConcurrent = 8
         var anyProviderProbeSucceeded = false
         var hadRemoteProbes = false
@@ -408,6 +445,46 @@ extension TunnelManager {
         )
     }
 
+    /// Non-blocking display latency refresh after an optimistic manual switch.
+    func refreshSelectedMemberDisplayLatency(
+        group groupName: String,
+        member memberName: String,
+        connectionID: UUID?
+    ) async {
+        guard state == .connected,
+              providerConnectionID == connectionID,
+              !isUIReviewMode,
+              InitialProxySelectionPolicy.isRouteCandidate(memberName) else {
+            return
+        }
+        let runToken = prepareLatencyIndex()
+        let timeoutMilliseconds = Self.effectiveUILatencyTimeoutMilliseconds
+        let client = makeLatencyProbeProviderClient(
+            timeoutMilliseconds: timeoutMilliseconds
+        )
+        do {
+            let measurement = try await Self.probeVerifiedMemberLatency(
+                member: memberName,
+                client: client,
+                timeoutMilliseconds: timeoutMilliseconds
+            )
+            guard state == .connected,
+                  providerConnectionID == connectionID else {
+                return
+            }
+            recordLatency(
+                member: memberName,
+                measurement: measurement,
+                runToken: runToken,
+                force: true
+            )
+        } catch {
+            Self.runtimeLogger.debug(
+                "stage=proxyLatency postSwitchRefreshSkipped group=\(groupName, privacy: .public) error=\(String(reflecting: error), privacy: .public)"
+            )
+        }
+    }
+
     @discardableResult
     func verifyMemberLatency(
         group groupName: String,
@@ -416,14 +493,15 @@ extension TunnelManager {
         recordTimeoutOnFailure: Bool
     ) async -> Bool {
         guard state == .connected, !isUIReviewMode else { return false }
+        let timeoutMilliseconds = Self.effectiveUILatencyTimeoutMilliseconds
         let client = makeLatencyProbeProviderClient(
-            timeoutMilliseconds: Self.uiLatencyTimeoutMilliseconds
+            timeoutMilliseconds: timeoutMilliseconds
         )
         do {
             let measurement = try await Self.probeVerifiedMemberLatency(
                 member: memberName,
                 client: client,
-                timeoutMilliseconds: Self.uiLatencyTimeoutMilliseconds
+                timeoutMilliseconds: timeoutMilliseconds
             )
             if case .timedOut = measurement, !recordTimeoutOnFailure {
                 return true
@@ -450,9 +528,8 @@ extension TunnelManager {
 
     func testSingleProxyLatency(group groupName: String, member memberName: String) async {
         let memberKey = "\(groupName):\(memberName)"
-        guard activeProfileSummary?.proxyGroups.contains(where: {
-                  $0.name == groupName && $0.members.contains(memberName)
-              }) == true,
+        guard !InitialProxySelectionPolicy.isSubscriptionMetadata(memberName),
+              hasLatencyTestableGroup(named: groupName, containing: memberName),
               !proxyLatencyRequests.contains(groupName),
               !memberLatencyRequests.contains(memberKey) else {
             return
@@ -491,7 +568,7 @@ extension TunnelManager {
             )
             guard runToken == currentLatencyRunToken else { return }
             latencyIndex.aggregateChildGroups(selectedMembers: latencySelectedMembers)
-            let allGroups = (activeProfileSummary?.proxyGroups ?? []).map(\.name)
+            let allGroups = latencyGroupsSnapshot().map(\.name)
             publishLatency(groups: allGroups, force: true)
             return
         }
@@ -505,7 +582,7 @@ extension TunnelManager {
             ) {
                 guard runToken == currentLatencyRunToken else { return }
                 latencyIndex.aggregateChildGroups(selectedMembers: latencySelectedMembers)
-                let allGroups = (activeProfileSummary?.proxyGroups ?? []).map(\.name)
+                let allGroups = latencyGroupsSnapshot().map(\.name)
                 publishLatency(groups: allGroups, force: true)
                 return
             }
@@ -534,7 +611,7 @@ extension TunnelManager {
 
         guard runToken == currentLatencyRunToken else { return }
         latencyIndex.aggregateChildGroups(selectedMembers: latencySelectedMembers)
-        let allGroups = (activeProfileSummary?.proxyGroups ?? []).map(\.name)
+        let allGroups = latencyGroupsSnapshot().map(\.name)
         publishLatency(groups: allGroups, force: true)
     }
 
@@ -546,12 +623,15 @@ extension TunnelManager {
         members: [String],
         runToken: LatencyRunToken?
     ) async {
-        let members = members.filter { $0.uppercased() != "DIRECT" }
+        let members = members.filter {
+            $0.uppercased() != "DIRECT"
+                && !InitialProxySelectionPolicy.isSubscriptionMetadata($0)
+        }
         guard !members.isEmpty else { return }
         let endpoints = activeProfile
             .map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
         let excludeVirtual = shouldExcludeVirtualInterfaces
-        let maxConcurrent = 32
+        let maxConcurrent = 12
 
         await withTaskGroup(
             of: (member: String, measurement: ProxyLatencyMeasurement).self

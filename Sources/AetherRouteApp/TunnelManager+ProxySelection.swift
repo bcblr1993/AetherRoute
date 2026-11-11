@@ -46,11 +46,32 @@ extension TunnelManager {
         )
     }
 
+    var globalProxyGroup: ProxyGroupConfigurationSummary? {
+        guard let summary = activeProfileSummary else { return nil }
+        let globalName = ProxyConnectionReadinessPolicy.globalGroupName
+        let snapshotMembers = proxySelections[globalName]?.members ?? []
+        let fallbackMembers = InitialProxySelectionPolicy.globalMembers(summary: summary)
+        var seen: Set<String> = []
+        var merged: [String] = []
+        for member in snapshotMembers + fallbackMembers where seen.insert(member).inserted {
+            merged.append(member)
+        }
+        guard !merged.isEmpty else { return nil }
+        return ProxyGroupConfigurationSummary(
+            id: -1,
+            name: globalName,
+            strategy: "select",
+            memberCount: merged.count,
+            members: merged
+        )
+    }
+
     var canCycleManualProxySelection: Bool {
         guard let group = preferredManualProxyGroupForCycling else {
             return false
         }
-        let members = proxySelections[group.name]?.members ?? group.members
+        let members = (proxySelections[group.name]?.members ?? group.members)
+            .filter { !InitialProxySelectionPolicy.isSubscriptionMetadata($0) }
         return members.count > 1
             && !proxySelectionRequests.contains(group.name)
     }
@@ -63,7 +84,8 @@ extension TunnelManager {
             return
         }
         let snapshot = proxySelections[group.name]
-        let members = snapshot?.members ?? group.members
+        let members = (snapshot?.members ?? group.members)
+            .filter { !InitialProxySelectionPolicy.isSubscriptionMetadata($0) }
         guard let member = ProxySelectionCyclePolicy.adjacentMember(
             members: members,
             selectedMember: snapshot?.selectedMember,
@@ -92,6 +114,80 @@ extension TunnelManager {
         }
     }
 
+    /// Streams readiness probes across all leaf route candidates in `group`
+    /// without the 64-member `client.latency(group:)` cap, skipping nested
+    /// strategy groups and subscription notice pseudo-nodes.
+    func probeRouteCandidatesLatency(
+        group: ProxyGroupConfigurationSummary,
+        snapshotMembers: [String],
+        groupNames: Set<String>
+    ) async -> ProxyLatencyState {
+        var seen: Set<String> = []
+        var probeMembers: [String] = []
+        for member in snapshotMembers + group.members
+        where InitialProxySelectionPolicy.isRouteCandidate(member)
+            && !groupNames.contains(member)
+            && seen.insert(member).inserted {
+            probeMembers.append(member)
+        }
+        guard !probeMembers.isEmpty else {
+            return ProxyLatencyState(results: [])
+        }
+        let timeoutMilliseconds = TunnelStartupTimingPolicy
+            .selectorReadinessPerMemberTimeoutMilliseconds
+        let probeClient = makeLatencyProbeProviderClient(
+            timeoutMilliseconds: timeoutMilliseconds
+        )
+        let maxConcurrent = 8
+        var delaysByMember: [String: UInt32?] = [:]
+        delaysByMember.reserveCapacity(probeMembers.count)
+
+        await withTaskGroup(
+            of: (member: String, delay: UInt32?).self
+        ) { taskGroup in
+            var iterator = probeMembers.makeIterator()
+            var activeCount = 0
+
+            while activeCount < maxConcurrent, let member = iterator.next() {
+                activeCount += 1
+                taskGroup.addTask {
+                    let delay = try? await probeClient.displayLatency(
+                        member: member,
+                        url: Self.selectorLatencyTestURL,
+                        timeoutMilliseconds: timeoutMilliseconds
+                    ).delayMilliseconds
+                    return (member, delay)
+                }
+            }
+
+            while let result = await taskGroup.next() {
+                delaysByMember[result.member] = result.delay
+                if Task.isCancelled {
+                    taskGroup.cancelAll()
+                    break
+                }
+                if let nextMember = iterator.next() {
+                    taskGroup.addTask {
+                        let delay = try? await probeClient.displayLatency(
+                            member: nextMember,
+                            url: Self.selectorLatencyTestURL,
+                            timeoutMilliseconds: timeoutMilliseconds
+                        ).delayMilliseconds
+                        return (nextMember, delay)
+                    }
+                }
+            }
+        }
+
+        let results = probeMembers.map { member in
+            ProxyLatencyResult(
+                member: member,
+                delayMilliseconds: delaysByMember[member] ?? nil
+            )
+        }
+        return ProxyLatencyState(results: results)
+    }
+
     /// Selects the fastest node that passes a real 204 probe. With a
     /// preferred node (failover mode) that node is tried first and wins
     /// whenever it passes.
@@ -102,11 +198,11 @@ extension TunnelManager {
         preferredMember: String? = nil
     ) async throws -> ProxySelectionState {
         let previous = try await client.snapshot(group: group.name)
-        let latency = try await client.latency(
-            group: group.name,
-            url: Self.selectorLatencyTestURL,
-            timeoutMilliseconds: TunnelStartupTimingPolicy
-                .selectorReadinessPerMemberTimeoutMilliseconds
+        let groupNames = Set((activeProfileSummary?.proxyGroups ?? []).map(\.name))
+        let latency = await probeRouteCandidatesLatency(
+            group: group,
+            snapshotMembers: previous.members,
+            groupNames: groupNames
         )
         adoptProviderLatency(latency, forGroup: group.name)
         let responsiveMembers = Set(
@@ -120,7 +216,8 @@ extension TunnelManager {
                     selectedMember: previous.selectedMember,
                     summaryMembers: group.members,
                     snapshotMembers: previous.members,
-                    latency: latency
+                    latency: latency,
+                    groupNames: groupNames
                 )
                 .filter(responsiveMembers.contains),
             preferred: preferredMember
@@ -279,6 +376,27 @@ extension TunnelManager {
             }
         }
 
+        let previousSelectionState = proxySelections[groupName]
+        let previousSelectedMember = previousSelectionState?.selectedMember
+        if let requestedMember {
+            let baseMembers = previousSelectionState?.members ?? group.members
+            let optimisticState = ProxySelectionState(
+                selectedMember: requestedMember,
+                members: baseMembers.contains(requestedMember)
+                    ? baseMembers
+                    : baseMembers + [requestedMember]
+            )
+            if proxySelections[groupName] != optimisticState {
+                proxySelections[groupName] = optimisticState
+            }
+            let aggregated = latencyIndex.aggregateChildGroups(
+                selectedMembers: latencySelectedMembers
+            )
+            if !aggregated.isEmpty {
+                publishLatency(groups: aggregated, force: true)
+            }
+        }
+
         do {
             let snapshot: ProxySelectionState
             if isUIReviewMode {
@@ -294,62 +412,44 @@ extension TunnelManager {
                     return try await self.sendProviderMessage(data, for: connectionID)
                 }
                 if let requestedMember {
-                    let previous = try await client.snapshot(group: groupName)
-                    let candidate = try await client.select(
+                    let priorMember: String?
+                    if let previousSelectedMember {
+                        priorMember = previousSelectedMember
+                    } else {
+                        priorMember = (try? await client.snapshot(group: groupName))?.selectedMember
+                    }
+                    snapshot = try await client.select(
                         group: groupName,
                         member: requestedMember
                     )
-                    do {
-                        guard let summary = activeProfileSummary else {
-                            throw TunnelManagerError
-                                .providerSelectorUnavailable
+                    let globalName = ProxyConnectionReadinessPolicy.globalGroupName
+                    if groupName != globalName, shouldSyncGlobalSelector(to: groupName) {
+                        if let globalSnapshot = try? await client.select(
+                            group: globalName,
+                            member: groupName
+                        ), proxySelections[globalName] != nil {
+                            proxySelections[globalName] = globalSnapshot
                         }
-                        let latency = try await client.activeLatency(
-                            group: groupName,
-                            url: Self.selectorLatencyTestURL,
-                            timeoutMilliseconds: TunnelStartupTimingPolicy
-                                .selectorReadinessPerMemberTimeoutMilliseconds
-                        )
-                        guard ProxySelectionHotSwitchPolicy.accepts(
-                            requestedMember: requestedMember,
-                            summary: summary,
-                            latency: latency
-                        ) else {
-                            throw TunnelManagerError.noResponsiveProxy
-                        }
-                        try await verifyCurrentRouteDataPlane()
-                        adoptProviderLatency(latency, forGroup: groupName)
-                        snapshot = candidate
-                        if let summary = activeProfileSummary,
-                           ProxyConnectionReadinessPolicy.groupsToVerify(summary: summary).first?.name == groupName {
-                            _ = try? await client.select(group: "GLOBAL", member: groupName)
-                        }
-                        if previous.selectedMember != requestedMember {
-                            await closeConnectionsAfterProxySwitch(
+                    }
+                    if priorMember != requestedMember {
+                        Task { @MainActor [weak self] in
+                            guard let self,
+                                  self.state == .connected,
+                                  self.providerConnectionID == connectionID else { return }
+                            await self.closeConnectionsAfterProxySwitch(
                                 group: groupName,
-                                previousMember: previous.selectedMember,
+                                previousMember: priorMember,
                                 newMember: requestedMember
                             )
                         }
-                    } catch {
-                        if let previousMember = previous.selectedMember,
-                           previousMember != requestedMember {
-                            do {
-                                let restored = try await client.select(
-                                    group: groupName,
-                                    member: previousMember
-                                )
-                                proxySelections[groupName] = restored
-                                Self.runtimeLogger.info(
-                                    "stage=proxySelection hotSwitch rollback success"
-                                )
-                            } catch {
-                                Self.runtimeLogger.error(
-                                    "stage=proxySelection hotSwitch rollback failed"
-                                )
-                            }
-                        }
-                        throw TunnelManagerError.noResponsiveProxy
+                    }
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        await self.refreshSelectedMemberDisplayLatency(
+                            group: groupName,
+                            member: requestedMember,
+                            connectionID: connectionID
+                        )
                     }
                 } else {
                     snapshot = try await client.snapshot(group: groupName)
@@ -361,6 +461,12 @@ extension TunnelManager {
             let didChangeSelection = proxySelections[groupName] != snapshot
             if didChangeSelection {
                 proxySelections[groupName] = snapshot
+            }
+            let aggregated = latencyIndex.aggregateChildGroups(
+                selectedMembers: latencySelectedMembers
+            )
+            if !aggregated.isEmpty {
+                publishLatency(groups: aggregated, force: true)
             }
             if isPassiveSnapshot, proxySelectionMessages[groupName] != nil {
                 proxySelectionMessages[groupName] = nil
@@ -396,7 +502,7 @@ extension TunnelManager {
                 "stage=proxySelection success members=\(snapshot.members.count, privacy: .public) selected=\(snapshot.selectedMember == nil ? "none" : "present", privacy: .public)"
             )
             guard !isUIReviewMode,
-                  (!isPassiveSnapshot || didChangeSelection),
+                  (!isPassiveSnapshot || didChangeSelection || previousSelectionState != snapshot),
                   snapshot.selectedMember != nil,
                   let yaml = activeProfile?.yaml else {
                 return
@@ -421,11 +527,36 @@ extension TunnelManager {
         } catch {
             guard state == .connected, providerConnectionID == connectionID
             else { return }
+            if !isPassiveSnapshot {
+                if let previousSelectionState {
+                    proxySelections[groupName] = previousSelectionState
+                } else {
+                    proxySelections.removeValue(forKey: groupName)
+                }
+                let aggregated = latencyIndex.aggregateChildGroups(
+                    selectedMembers: latencySelectedMembers
+                )
+                if !aggregated.isEmpty {
+                    publishLatency(groups: aggregated, force: true)
+                }
+            }
             Self.runtimeLogger.error(
                 "stage=proxySelection failed error=\(String(reflecting: error), privacy: .public)"
             )
             proxySelectionMessages[groupName] = error.localizedDescription
         }
+    }
+
+    private func shouldSyncGlobalSelector(to groupName: String) -> Bool {
+        guard let summary = activeProfileSummary else { return false }
+        let customGroupNames = Set(activeProfileOverrides.groups.map(\.name))
+        let primary = summary.primaryOutboundGroup(excluding: customGroupNames)
+            ?? ProxyConnectionReadinessPolicy.groupsToVerify(summary: summary).first?.name
+        guard primary == groupName else { return false }
+        let currentGlobal = proxySelections[ProxyConnectionReadinessPolicy.globalGroupName]?.selectedMember
+        return currentGlobal == nil
+            || currentGlobal?.caseInsensitiveCompare("DIRECT") == .orderedSame
+            || currentGlobal == groupName
     }
 
     func performOfflineProxySelectionRequest(
@@ -481,10 +612,15 @@ extension TunnelManager {
             let persisted = try await Task.detached(priority: .utility) {
                 try store.selections(forProfileYAML: profileYAML)
             }.value
+            let summary = activeProfileSummary ?? ProfileConfigurationInspector
+                .inspect(yaml: profileYAML)
+            let customGroupNames = Set(activeProfileOverrides.groups.map(\.name))
+            let includeGlobal = group.name == ProxyConnectionReadinessPolicy.globalGroupName
             let selected = InitialProxySelectionPolicy.selections(
                 persisted: persisted,
-                summary: activeProfileSummary ?? ProfileConfigurationInspector
-                    .inspect(yaml: profileYAML)
+                summary: summary,
+                includeGlobal: includeGlobal,
+                excludingCustomGroups: customGroupNames
             )[group.name]
             let newState = ProxySelectionState(
                 selectedMember: selected,
@@ -492,6 +628,12 @@ extension TunnelManager {
             )
             if proxySelections[group.name] != newState {
                 proxySelections[group.name] = newState
+            }
+            let aggregated = latencyIndex.aggregateChildGroups(
+                selectedMembers: latencySelectedMembers
+            )
+            if !aggregated.isEmpty {
+                publishLatency(groups: aggregated, force: true)
             }
             Self.runtimeLogger.debug(
                 "stage=proxySelection offline success selected=\(selected == nil ? "none" : "present", privacy: .public)"
@@ -526,7 +668,10 @@ extension TunnelManager {
     func selectableProxyGroup(
         named name: String
     ) -> ProxyGroupConfigurationSummary? {
-        activeProfileSummary?.proxyGroups.first {
+        if name == ProxyConnectionReadinessPolicy.globalGroupName {
+            return globalProxyGroup
+        }
+        return activeProfileSummary?.proxyGroups.first {
             $0.name == name
                 && $0.strategy.lowercased() == "select"
         }
@@ -534,11 +679,24 @@ extension TunnelManager {
 
     var preferredManualProxyGroupForCycling:
         ProxyGroupConfigurationSummary? {
-        activeProfileSummary?.proxyGroups.first {
-            $0.strategy.caseInsensitiveCompare("select") == .orderedSame
-                && $0.memberCount > 1
-                && !automaticProxySelectionGroups.contains($0.name)
+        let isEligible: (ProxyGroupConfigurationSummary) -> Bool = { group in
+            group.strategy.caseInsensitiveCompare("select") == .orderedSame
+                && group.members.filter({ !InitialProxySelectionPolicy.isSubscriptionMetadata($0) }).count > 1
+                && !self.automaticProxySelectionGroups.contains(group.name)
         }
+        if routingMode == .global,
+           let global = globalProxyGroup,
+           isEligible(global) {
+            return global
+        }
+        guard let summary = activeProfileSummary else { return nil }
+        let customGroupNames = Set(activeProfileOverrides.groups.map(\.name))
+        if let primaryName = summary.primaryOutboundGroup(excluding: customGroupNames),
+           let primaryGroup = summary.proxyGroups.first(where: { $0.name == primaryName }),
+           isEligible(primaryGroup) {
+            return primaryGroup
+        }
+        return summary.proxyGroups.first(where: isEligible)
     }
 
     func reviewSelectionSnapshot(
