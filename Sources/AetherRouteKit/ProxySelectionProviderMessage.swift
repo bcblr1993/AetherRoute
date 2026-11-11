@@ -15,8 +15,8 @@ public struct ProxySelectionState: Sendable, Equatable {
 public enum ProxySelectionProviderRequest: Sendable, Equatable {
     case snapshot(group: String)
     case select(group: String, member: String)
-    case latency(group: String, url: String, timeoutMilliseconds: UInt32)
-    case activeLatency(group: String, url: String, timeoutMilliseconds: UInt32)
+    case latency(group: String, url: String, timeoutMilliseconds: UInt32, unifiedDelay: Bool = true)
+    case activeLatency(group: String, url: String, timeoutMilliseconds: UInt32, unifiedDelay: Bool = true)
     case telemetry(maximumConnections: UInt16)
     case diagnostics
     case setRoutingMode(RoutingMode)
@@ -77,7 +77,24 @@ public enum ProxySelectionProviderMessageCodec {
     public static let maximumMessageBytes = 1_048_576
     public static let minimumLatencyTimeoutMilliseconds: UInt32 = 100
     public static let maximumLatencyTimeoutMilliseconds: UInt32 = 30_000
+    public static let fullHandshakeLatencyTimeoutFlag: UInt32 = 1 << 31
     public static let maximumRecentLogKilobytes: UInt16 = 512
+
+    public static func packLatencyTimeoutMilliseconds(
+        _ timeoutMilliseconds: UInt32,
+        unifiedDelay: Bool
+    ) -> UInt32 {
+        let raw = timeoutMilliseconds & ~fullHandshakeLatencyTimeoutFlag
+        return unifiedDelay ? raw : (raw | fullHandshakeLatencyTimeoutFlag)
+    }
+
+    public static func unpackLatencyTimeoutMilliseconds(
+        _ rawTimeoutMilliseconds: UInt32
+    ) -> (timeoutMilliseconds: UInt32, unifiedDelay: Bool) {
+        let unifiedDelay = (rawTimeoutMilliseconds & fullHandshakeLatencyTimeoutFlag) == 0
+        let timeoutMilliseconds = rawTimeoutMilliseconds & ~fullHandshakeLatencyTimeoutFlag
+        return (timeoutMilliseconds, unifiedDelay)
+    }
 
     private static let requestMagic: [UInt8] = [0x41, 0x52, 0x51, 0x31]
     private static let responseMagic: [UInt8] = [0x41, 0x52, 0x50, 0x31]
@@ -128,7 +145,7 @@ public enum ProxySelectionProviderMessageCodec {
             group = try nameData(value)
             member = try nameData(selected)
             reserved = [0, 0, 0]
-        case let .latency(value, url, timeoutMilliseconds):
+        case let .latency(value, url, timeoutMilliseconds, unifiedDelay):
             guard
                 timeoutMilliseconds >= minimumLatencyTimeoutMilliseconds,
                 timeoutMilliseconds <= maximumLatencyTimeoutMilliseconds
@@ -137,11 +154,11 @@ public enum ProxySelectionProviderMessageCodec {
             group = try nameData(value)
             member = try urlData(url)
             reserved = [
-                UInt8((timeoutMilliseconds >> 16) & 0xff),
+                UInt8((timeoutMilliseconds >> 16) & 0x7f) | (unifiedDelay ? 0 : 0x80),
                 UInt8((timeoutMilliseconds >> 8) & 0xff),
                 UInt8(timeoutMilliseconds & 0xff),
             ]
-        case let .activeLatency(value, url, timeoutMilliseconds):
+        case let .activeLatency(value, url, timeoutMilliseconds, unifiedDelay):
             guard
                 timeoutMilliseconds >= minimumLatencyTimeoutMilliseconds,
                 timeoutMilliseconds <= maximumLatencyTimeoutMilliseconds
@@ -150,7 +167,7 @@ public enum ProxySelectionProviderMessageCodec {
             group = try nameData(value)
             member = try urlData(url)
             reserved = [
-                UInt8((timeoutMilliseconds >> 16) & 0xff),
+                UInt8((timeoutMilliseconds >> 16) & 0x7f) | (unifiedDelay ? 0 : 0x80),
                 UInt8((timeoutMilliseconds >> 8) & 0xff),
                 UInt8(timeoutMilliseconds & 0xff),
             ]
@@ -275,7 +292,8 @@ public enum ProxySelectionProviderMessageCodec {
                 member: try name(bytes[memberStart..<end])
             )
         case 3, 6:
-            let timeoutMilliseconds = UInt32(bytes[5]) << 16
+            let unifiedDelay = (bytes[5] & 0x80) == 0
+            let timeoutMilliseconds = UInt32(bytes[5] & 0x7f) << 16
                 | UInt32(bytes[6]) << 8
                 | UInt32(bytes[7])
             guard
@@ -288,12 +306,14 @@ public enum ProxySelectionProviderMessageCodec {
                 ? .latency(
                     group: group,
                     url: url,
-                    timeoutMilliseconds: timeoutMilliseconds
+                    timeoutMilliseconds: timeoutMilliseconds,
+                    unifiedDelay: unifiedDelay
                 )
                 : .activeLatency(
                     group: group,
                     url: url,
-                    timeoutMilliseconds: timeoutMilliseconds
+                    timeoutMilliseconds: timeoutMilliseconds,
+                    unifiedDelay: unifiedDelay
                 )
         case 4:
             let maximumConnections = UInt16(bytes[6]) << 8 | UInt16(bytes[7])

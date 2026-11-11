@@ -298,20 +298,22 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     .snapshot(try activeCore.selectorSnapshot(group: group))
                 case let .select(group, member):
                     .snapshot(try activeCore.selectProxy(group: group, member: member))
-                case let .latency(group, url, timeoutMilliseconds):
+                case let .latency(group, url, timeoutMilliseconds, unifiedDelay):
                     .latency(
                         try activeCore.testProxyLatency(
                             group: group,
                             url: url,
-                            timeoutMilliseconds: timeoutMilliseconds
+                            timeoutMilliseconds: timeoutMilliseconds,
+                            unifiedDelay: unifiedDelay
                         )
                     )
-                case let .activeLatency(group, url, timeoutMilliseconds):
+                case let .activeLatency(group, url, timeoutMilliseconds, unifiedDelay):
                     .latency(
                         try activeCore.testActiveProxyLatency(
                             group: group,
                             url: url,
-                            timeoutMilliseconds: timeoutMilliseconds
+                            timeoutMilliseconds: timeoutMilliseconds,
+                            unifiedDelay: unifiedDelay
                         )
                     )
                 case let .telemetry(maximumConnections):
@@ -657,12 +659,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 )) ?? recoveryRoutingMode
                 let resourceStore = RoutingResourceStore(applicationSupportDirectory: store.directoryURL)
                 let resources = (try? resourceStore.launchResourceSnapshot(for: activeProfile.runtimeYAML)) ?? [:]
+                let persistedSelections = (try? ProxySelectionStore.applicationGroup()
+                    .selections(forProfileYAML: activeProfile.runtimeYAML)) ?? [:]
                 snapshot = try ProviderLaunchSnapshot(
                     profileYAML: activeProfile.runtimeYAML,
                     routingMode: routingMode,
                     bypassPolicy: (try? BypassPolicyStore.applicationGroup().load()) ?? .empty,
                     dnsPolicy: .inherited,
-                    proxySelections: [:],
+                    proxySelections: persistedSelections,
                     routingResources: resources,
                     fakeIPCacheKey: fakeIPCacheKey,
                     diagnosticLogLevel: diagnosticLogLevel

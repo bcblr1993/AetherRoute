@@ -183,6 +183,12 @@ public struct NetworkTelemetrySnapshot: Sendable, Equatable {
     /// Every total incarnation below this already existed when the sample
     /// was taken (`ART4`); nil from an older engine.
     public let trafficTotalWatermark: UInt64?
+    /// True count of active connections in the engine before wire truncation
+    /// (`ART6`); falls back to `connections.count` for older formats.
+    public let totalActiveConnections: Int
+    /// Active leaf member currently chosen by each automatic strategy group
+    /// (`url-test`, `fallback`, `load-balance`, `smart`) in `ART6`.
+    public let activeGroupLeaves: [String: String]
 
     public init(
         uploadBytesPerSecond: UInt64,
@@ -193,7 +199,9 @@ public struct NetworkTelemetrySnapshot: Sendable, Equatable {
         connections: [ConnectionTelemetry],
         trafficTotals: [TrafficTotalTelemetry] = [],
         reportsTrafficTotals: Bool? = nil,
-        trafficTotalWatermark: UInt64? = nil
+        trafficTotalWatermark: UInt64? = nil,
+        totalActiveConnections: Int? = nil,
+        activeGroupLeaves: [String: String] = [:]
     ) {
         self.uploadBytesPerSecond = uploadBytesPerSecond
         self.downloadBytesPerSecond = downloadBytesPerSecond
@@ -205,6 +213,11 @@ public struct NetworkTelemetrySnapshot: Sendable, Equatable {
         self.reportsTrafficTotals = trafficTotalWatermark != nil
             || (reportsTrafficTotals ?? !trafficTotals.isEmpty)
         self.trafficTotalWatermark = trafficTotalWatermark
+        self.totalActiveConnections = max(
+            totalActiveConnections ?? connections.count,
+            connections.count
+        )
+        self.activeGroupLeaves = activeGroupLeaves
     }
 
     public static let empty = NetworkTelemetrySnapshot(
@@ -317,9 +330,11 @@ public enum NetworkTelemetryCodec {
         case v3
         case v4
         case v5
+        case v6
     }
 
-    public static let maximumConnections = 128
+    public static let maximumConnections = 512
+    public static let maximumActiveGroupLeaves = 256
     public static let maximumStringBytes = 1_024
     public static let maximumSourceAppBytes = 512
     public static let maximumMessageBytes = 1_048_576
@@ -332,6 +347,7 @@ public enum NetworkTelemetryCodec {
     private static let magicV3: [UInt8] = [0x41, 0x52, 0x54, 0x33]
     private static let magicV4: [UInt8] = [0x41, 0x52, 0x54, 0x34]
     private static let magicV5: [UInt8] = [0x41, 0x52, 0x54, 0x35]
+    private static let magicV6: [UInt8] = [0x41, 0x52, 0x54, 0x36]
     private static let trafficTotalHeaderBytes = 28
     private static let incarnationBytes = 8
     private static let headerBytes = 48
@@ -345,11 +361,14 @@ public enum NetworkTelemetryCodec {
     ) throws -> Data {
         // By default a snapshot is written in the newest form that keeps
         // everything it holds.
+        let hasExtendedMetadata = snapshot.totalActiveConnections != snapshot.connections.count
+            || !snapshot.activeGroupLeaves.isEmpty
         let hasConnectionTiming = snapshot.connections.contains {
             $0.dnsDurationMilliseconds != nil || $0.connectDurationMilliseconds != nil
         }
         let version = version ?? (
-            hasConnectionTiming ? .v5
+            hasExtendedMetadata ? .v6
+                : hasConnectionTiming ? .v5
                 : snapshot.trafficTotalWatermark != nil ? .v4
                 : snapshot.reportsTrafficTotals ? .v3 : .v2
         )
@@ -357,13 +376,17 @@ public enum NetworkTelemetryCodec {
             throw NetworkTelemetryCodecError.tooLarge
         }
         let includesSourceApp = version != .v1
-        let includesConnectionTiming = version == .v5
+        let includesConnectionTiming = version == .v5 || version == .v6
+        let connectionBudget = version == .v6
+            ? (encodedBudgetBytes - 20)
+            : encodedBudgetBytes
         let headerMagic: [UInt8] = switch version {
         case .v1: magic
         case .v2: magicV2
         case .v3: magicV3
         case .v4: magicV4
         case .v5: magicV5
+        case .v6: magicV6
         }
         var output = Data(headerMagic)
         for value in [
@@ -410,7 +433,7 @@ public enum NetworkTelemetryCodec {
             for value in strings {
                 output.append(value)
             }
-            guard output.count <= encodedBudgetBytes else {
+            guard output.count <= connectionBudget else {
                 throw NetworkTelemetryCodecError.tooLarge
             }
         }
@@ -422,6 +445,19 @@ public enum NetworkTelemetryCodec {
         case .v4, .v5:
             appendUInt64(snapshot.trafficTotalWatermark ?? 0, to: &output)
             try appendTrafficTotals(snapshot.trafficTotals, includesIncarnation: true, to: &output)
+        case .v6:
+            appendUInt64(snapshot.trafficTotalWatermark ?? UInt64.max, to: &output)
+            try appendTrafficTotals(
+                snapshot.trafficTotals,
+                includesIncarnation: true,
+                maximumBytes: encodedBudgetBytes - 8,
+                to: &output
+            )
+            let totalActive = UInt32(
+                clamping: max(snapshot.totalActiveConnections, snapshot.connections.count)
+            )
+            appendUInt32(totalActive, to: &output)
+            try appendActiveGroupLeaves(snapshot.activeGroupLeaves, to: &output)
         }
         return output
     }
@@ -431,6 +467,7 @@ public enum NetworkTelemetryCodec {
     private static func appendTrafficTotals(
         _ totals: [TrafficTotalTelemetry],
         includesIncarnation: Bool,
+        maximumBytes: Int = encodedBudgetBytes,
         to output: inout Data
     ) throws {
         let headerBytes = trafficTotalHeaderBytes + (includesIncarnation ? incarnationBytes : 0)
@@ -452,7 +489,7 @@ public enum NetworkTelemetryCodec {
                 try stringData(total.proxyChain, allowsEmpty: true),
             ]
             let recordBytes = headerBytes + strings.reduce(0) { $0 + $1.count }
-            guard output.count + recordBytes <= encodedBudgetBytes else { break }
+            guard output.count + recordBytes <= maximumBytes else { break }
             appendUInt64(total.uploadTotal, to: &output)
             appendUInt64(total.downloadTotal, to: &output)
             if includesIncarnation {
@@ -464,6 +501,42 @@ public enum NetworkTelemetryCodec {
             for value in strings {
                 output.append(value)
             }
+            count += 1
+        }
+        let countBytes: [UInt8] = [
+            UInt8((count >> 24) & 0xff),
+            UInt8((count >> 16) & 0xff),
+            UInt8((count >> 8) & 0xff),
+            UInt8(count & 0xff),
+        ]
+        output.replaceSubrange(
+            (output.startIndex + countOffset)..<(output.startIndex + countOffset + 4),
+            with: countBytes
+        )
+    }
+
+    private static func appendActiveGroupLeaves(
+        _ activeGroupLeaves: [String: String],
+        to output: inout Data
+    ) throws {
+        let countOffset = output.count
+        appendUInt32(0, to: &output)
+        guard output.count <= encodedBudgetBytes else {
+            throw NetworkTelemetryCodecError.tooLarge
+        }
+        var count: UInt32 = 0
+        for (group, leaf) in activeGroupLeaves
+            .sorted(by: { $0.key < $1.key })
+            .prefix(maximumActiveGroupLeaves)
+        {
+            let groupBytes = try stringData(group, allowsEmpty: false)
+            let leafBytes = try stringData(leaf, allowsEmpty: false)
+            let entryBytes = 8 + groupBytes.count + leafBytes.count
+            guard output.count + entryBytes <= encodedBudgetBytes else { break }
+            appendUInt32(UInt32(groupBytes.count), to: &output)
+            appendUInt32(UInt32(leafBytes.count), to: &output)
+            output.append(groupBytes)
+            output.append(leafBytes)
             count += 1
         }
         let countBytes: [UInt8] = [
@@ -490,10 +563,12 @@ public enum NetworkTelemetryCodec {
                 || header == magicV3
                 || header == magicV4
                 || header == magicV5
+                || header == magicV6
         else {
             throw NetworkTelemetryCodecError.malformed
         }
-        let includesConnectionTiming = header == magicV5
+        let isV6 = header == magicV6
+        let includesConnectionTiming = header == magicV5 || isV6
         let includesIncarnations = header == magicV4 || includesConnectionTiming
         let includesTrafficTotals = header == magicV3 || includesIncarnations
         let includesSourceApp = header != magic
@@ -610,7 +685,7 @@ public enum NetworkTelemetryCodec {
             guard let watermark = readUInt64(bytes, at: offset) else {
                 throw NetworkTelemetryCodecError.malformed
             }
-            trafficTotalWatermark = watermark
+            trafficTotalWatermark = (isV6 && watermark == UInt64.max) ? nil : watermark
             offset += incarnationBytes
         }
         let totalHeaderBytes = trafficTotalHeaderBytes
@@ -666,9 +741,44 @@ public enum NetworkTelemetryCodec {
                 ))
             }
         }
+        var totalActiveConnections = connections.count
+        var activeGroupLeaves: [String: String] = [:]
+        if isV6 {
+            guard
+                let rawTotalActive = readUInt32(bytes, at: offset),
+                let activeGroupLeafCount = readUInt32(bytes, at: offset + 4),
+                activeGroupLeafCount <= maximumActiveGroupLeaves
+            else { throw NetworkTelemetryCodecError.malformed }
+            totalActiveConnections = max(Int(rawTotalActive), connections.count)
+            offset += 8
+            activeGroupLeaves.reserveCapacity(Int(activeGroupLeafCount))
+            for _ in 0..<activeGroupLeafCount {
+                guard
+                    let groupLength = readUInt32(bytes, at: offset),
+                    let leafLength = readUInt32(bytes, at: offset + 4)
+                else { throw NetworkTelemetryCodecError.malformed }
+                offset += 8
+                let group = try readString(
+                    bytes,
+                    offset: &offset,
+                    length: groupLength,
+                    allowsEmpty: false
+                )
+                let leaf = try readString(
+                    bytes,
+                    offset: &offset,
+                    length: leafLength,
+                    allowsEmpty: false
+                )
+                activeGroupLeaves[group] = leaf
+            }
+        }
         guard offset == bytes.count else {
             throw NetworkTelemetryCodecError.malformed
         }
+        let reportsTrafficTotals = isV6
+            ? (trafficTotalWatermark != nil || !trafficTotals.isEmpty)
+            : includesTrafficTotals
         return NetworkTelemetrySnapshot(
             uploadBytesPerSecond: uploadRate,
             downloadBytesPerSecond: downloadRate,
@@ -677,8 +787,10 @@ public enum NetworkTelemetryCodec {
             memoryBytes: memoryBytes,
             connections: connections,
             trafficTotals: trafficTotals,
-            reportsTrafficTotals: includesTrafficTotals,
-            trafficTotalWatermark: trafficTotalWatermark
+            reportsTrafficTotals: reportsTrafficTotals,
+            trafficTotalWatermark: trafficTotalWatermark,
+            totalActiveConnections: totalActiveConnections,
+            activeGroupLeaves: activeGroupLeaves
         )
     }
 

@@ -447,16 +447,16 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
         engine: FlowCoreABIHandle,
         maximumConnections: UInt32
     ) -> (status: Int32, snapshot: Data?) {
-        // ART4 adds each total's incarnation to ART3's per-(app, chain)
-        // lifetime totals. The decoder also accepts ART1 through ART3, which
-        // the same engine still serves to older hosts.
+        // ART6 extends ART4 with true active connection count and automatic
+        // strategy-group active leaf mappings when bit 31 is set on the limit.
         guard let function = table.v7.telemetry_snapshot_v4 else {
             return (FlowCoreABIStatus.internalError, nil)
         }
+        let extendedMaximumConnections = maximumConnections | (1 << 31)
         var required = 0
         let queryStatus = function(
             engine.rawValue,
-            maximumConnections,
+            extendedMaximumConnections,
             nil,
             0,
             &required
@@ -478,7 +478,7 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
             let copyStatus = snapshot.withUnsafeMutableBytes { outputBytes in
                 function(
                     engine.rawValue,
-                    maximumConnections,
+                    extendedMaximumConnections,
                     outputBytes.bindMemory(to: UInt8.self).baseAddress,
                     outputBytes.count,
                     &copiedRequired

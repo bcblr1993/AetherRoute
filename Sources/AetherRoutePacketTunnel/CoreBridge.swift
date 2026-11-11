@@ -20,12 +20,14 @@ protocol CoreBridge: Sendable {
     func testProxyLatency(
         group: String,
         url: String,
-        timeoutMilliseconds: UInt32
+        timeoutMilliseconds: UInt32,
+        unifiedDelay: Bool
     ) throws -> ProxyLatencyState
     func testActiveProxyLatency(
         group: String,
         url: String,
-        timeoutMilliseconds: UInt32
+        timeoutMilliseconds: UInt32,
+        unifiedDelay: Bool
     ) throws -> ProxyLatencyState
     func telemetrySnapshot(
         maximumConnections: UInt16
@@ -39,6 +41,34 @@ protocol CoreBridge: Sendable {
     /// is safe to tear down — it does **not** wait for the engine to unwind.
     /// The join continues on a background queue; see `RustCoreBridge.stop`.
     func stop(completion: @escaping @Sendable () -> Void)
+}
+
+extension CoreBridge {
+    func testProxyLatency(
+        group: String,
+        url: String,
+        timeoutMilliseconds: UInt32
+    ) throws -> ProxyLatencyState {
+        try testProxyLatency(
+            group: group,
+            url: url,
+            timeoutMilliseconds: timeoutMilliseconds,
+            unifiedDelay: true
+        )
+    }
+
+    func testActiveProxyLatency(
+        group: String,
+        url: String,
+        timeoutMilliseconds: UInt32
+    ) throws -> ProxyLatencyState {
+        try testActiveProxyLatency(
+            group: group,
+            url: url,
+            timeoutMilliseconds: timeoutMilliseconds,
+            unifiedDelay: true
+        )
+    }
 }
 
 final class RustCoreBridge: CoreBridge, @unchecked Sendable {
@@ -136,18 +166,22 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         let dnsPolicy = snapshot.dnsPolicy
         let savedSelections = snapshot.proxySelections
         let profileSummary = ProfileConfigurationInspector.inspect(yaml: profileYAML)
+        let seededSelections = InitialProxySelectionPolicy.selections(
+            persisted: savedSelections,
+            summary: profileSummary
+        )
         let manualGroups = Set(
             profileSummary
                 .proxyGroups
                 .filter { $0.strategy.caseInsensitiveCompare("select") == .orderedSame }
                 .map(\.name)
         )
-        var restorableSelections = savedSelections.filter {
+        let restorableSelections = seededSelections.filter {
             manualGroups.contains($0.key) || $0.key == "GLOBAL"
         }
-        if restorableSelections["GLOBAL"] == nil {
-            restorableSelections["GLOBAL"] = "DIRECT"
-        }
+        let defaultGlobalOutbound = Self.resolveDefaultGlobalOutbound(
+            summary: profileSummary
+        )
         PacketCoreRuntimeLog.logger.info(
             "stage=loadSelections success saved=\(savedSelections.count, privacy: .public) restorable=\(restorableSelections.count, privacy: .public)"
         )
@@ -265,7 +299,10 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                     PacketCoreRuntimeLog.logger.info("stage=readiness success")
                     do {
                         PacketCoreRuntimeLog.logger.info("stage=restoreSelections begin")
-                        try self.restoreSelections(restorableSelections)
+                        try self.restoreSelections(
+                            restorableSelections,
+                            defaultGlobalOutbound: defaultGlobalOutbound
+                        )
                         PacketCoreRuntimeLog.logger.info("stage=restoreSelections success")
                     } catch {
                         PacketCoreRuntimeLog.logger.error(
@@ -457,7 +494,8 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
     func testProxyLatency(
         group: String,
         url: String,
-        timeoutMilliseconds: UInt32
+        timeoutMilliseconds: UInt32,
+        unifiedDelay: Bool = true
     ) throws -> ProxyLatencyState {
         let groupData = try Self.selectorNameData(group)
         let urlData = try Self.latencyURLData(url)
@@ -467,6 +505,11 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             timeoutMilliseconds <= ProxySelectionProviderMessageCodec
                 .maximumLatencyTimeoutMilliseconds
         else { throw PacketTunnelSelectorError.invalidLatency }
+        let packedTimeoutMilliseconds = ProxySelectionProviderMessageCodec
+            .packLatencyTimeoutMilliseconds(
+                timeoutMilliseconds,
+                unifiedDelay: unifiedDelay
+            )
         return try {
             guard isRunning(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
@@ -487,7 +530,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                             groupBytes.count,
                             urlBytes.bindMemory(to: UInt8.self).baseAddress,
                             urlBytes.count,
-                            timeoutMilliseconds,
+                            packedTimeoutMilliseconds,
                             outputBytes.bindMemory(to: UInt8.self).baseAddress,
                             outputBytes.count,
                             &requiredLength
@@ -509,7 +552,8 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
     func testActiveProxyLatency(
         group: String,
         url: String,
-        timeoutMilliseconds: UInt32
+        timeoutMilliseconds: UInt32,
+        unifiedDelay: Bool = true
     ) throws -> ProxyLatencyState {
         let groupData = try Self.selectorNameData(group)
         let urlData = try Self.latencyURLData(url)
@@ -519,6 +563,11 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             timeoutMilliseconds <= ProxySelectionProviderMessageCodec
                 .maximumLatencyTimeoutMilliseconds
         else { throw PacketTunnelSelectorError.invalidLatency }
+        let packedTimeoutMilliseconds = ProxySelectionProviderMessageCodec
+            .packLatencyTimeoutMilliseconds(
+                timeoutMilliseconds,
+                unifiedDelay: unifiedDelay
+            )
         return try {
             guard isRunning(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
@@ -536,7 +585,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                             groupBytes.count,
                             urlBytes.bindMemory(to: UInt8.self).baseAddress,
                             urlBytes.count,
-                            timeoutMilliseconds,
+                            packedTimeoutMilliseconds,
                             outputBytes.bindMemory(to: UInt8.self).baseAddress,
                             outputBytes.count,
                             &requiredLength
@@ -555,6 +604,8 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         }()
     }
 
+    private static let maximumPacketTunnelTelemetryWireConnections: UInt32 = 160
+
     func telemetrySnapshot(
         maximumConnections: UInt16
     ) throws -> NetworkTelemetrySnapshot {
@@ -562,6 +613,10 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             maximumConnections > 0,
             Int(maximumConnections) <= NetworkTelemetryCodec.maximumConnections
         else { throw PacketTunnelSelectorError.rejected }
+        let boundedConnections = min(
+            UInt32(maximumConnections),
+            Self.maximumPacketTunnelTelemetryWireConnections
+        ) | (1 << 31)
         return try controlLock.withLock {
             guard isRunning(), clash_packet_flow_ready() == 1 else {
                 throw PacketTunnelSelectorError.unavailable
@@ -570,7 +625,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             let status = telemetryOutputBuffer.withUnsafeMutableBytes {
                 outputBytes in
                 clash_packet_telemetry_snapshot_v4(
-                    UInt32(maximumConnections),
+                    boundedConnections,
                     outputBytes.bindMemory(to: UInt8.self).baseAddress,
                     outputBytes.count,
                     &requiredLength
@@ -901,8 +956,11 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         }
     }
 
-    private func restoreSelections(_ selections: [String: String]) throws {
-        for (group, member) in selections.sorted(by: { $0.key < $1.key }) {
+    private func restoreSelections(
+        _ selections: [String: String],
+        defaultGlobalOutbound: String?
+    ) throws {
+        for (group, member) in selections.sorted(by: { $0.key < $1.key }) where group != "GLOBAL" {
             do {
                 _ = try selectProxy(group: group, member: member)
             } catch PacketTunnelSelectorError.rejected {
@@ -910,6 +968,83 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                 // of its members. Ignore only that stale, profile-bound choice.
             }
         }
+        var globalApplied = false
+        if let explicitGlobal = selections["GLOBAL"] {
+            do {
+                _ = try selectProxy(group: "GLOBAL", member: explicitGlobal)
+                globalApplied = true
+            } catch PacketTunnelSelectorError.rejected {
+                globalApplied = false
+            }
+        }
+        if !globalApplied, let defaultGlobalOutbound {
+            do {
+                _ = try selectProxy(group: "GLOBAL", member: defaultGlobalOutbound)
+                globalApplied = true
+            } catch PacketTunnelSelectorError.rejected {
+                globalApplied = false
+            }
+        }
+        if !globalApplied,
+           let globalSnapshot = try? selectorSnapshot(group: "GLOBAL"),
+           let candidate = globalSnapshot.members.first(where: InitialProxySelectionPolicy.isRouteCandidate)
+        {
+            do {
+                _ = try selectProxy(group: "GLOBAL", member: candidate)
+                globalApplied = true
+            } catch PacketTunnelSelectorError.rejected {
+                globalApplied = false
+            }
+        }
+        if !globalApplied {
+            do {
+                _ = try selectProxy(group: "GLOBAL", member: "DIRECT")
+            } catch PacketTunnelSelectorError.rejected {
+                // Profile defines a custom GLOBAL group without DIRECT; leave its initial member intact.
+            }
+        }
+    }
+
+    static func resolveDefaultGlobalOutbound(
+        summary: ProfileConfigurationSummary
+    ) -> String? {
+        let nonGlobalGroups = summary.proxyGroups.filter {
+            $0.name.caseInsensitiveCompare("GLOBAL") != .orderedSame
+        }
+        let groupNames = Set(nonGlobalGroups.map(\.name))
+        let usableProxies = summary.proxies.filter(\.recognition.isUsable)
+        let usableProxyNames = Set(usableProxies.map(\.name))
+
+        if let matchTarget = summary.allRules.last(where: {
+            let kind = $0.kind.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            return kind == "MATCH" || kind == "FINAL"
+        })?.target,
+           InitialProxySelectionPolicy.isRouteCandidate(matchTarget),
+           groupNames.contains(matchTarget) || usableProxyNames.contains(matchTarget)
+        {
+            return matchTarget
+        }
+
+        if let primarySelectGroup = nonGlobalGroups.first(where: {
+            $0.strategy.caseInsensitiveCompare("select") == .orderedSame
+                && InitialProxySelectionPolicy.isRouteCandidate($0.name)
+        }) {
+            return primarySelectGroup.name
+        }
+
+        if let primaryGroup = nonGlobalGroups.first(where: {
+            InitialProxySelectionPolicy.isRouteCandidate($0.name)
+        }) ?? nonGlobalGroups.first {
+            return primaryGroup.name
+        }
+
+        if let primaryProxy = usableProxies.first(where: {
+            InitialProxySelectionPolicy.isRouteCandidate($0.name)
+        }) ?? usableProxies.first {
+            return primaryProxy.name
+        }
+
+        return nil
     }
 
     private func selectorSnapshotLocked(
