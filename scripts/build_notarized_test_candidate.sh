@@ -519,6 +519,7 @@ cmp -s "$SOURCE_BEFORE" "$SOURCE_AFTER" || {
   exit 1
 }
 cmp -s "$NETWORK_BEFORE" "$NETWORK_AFTER" || {
+  diff -u "$NETWORK_BEFORE" "$NETWORK_AFTER" >&2 || true
   echo "system network state changed while building the notarized test candidate" >&2
   exit 1
 }
