@@ -216,6 +216,7 @@ extension TunnelManager {
             let client = makeProxySelectionProviderClient()
             Self.runtimeLogger.info("stage=customRules liveReload sending payload bytes=\(reloadPayloadData.count)")
             try await client.reloadActiveProfile(payload: reloadPayloadData)
+            await syncGlobalSelector(client: client)
             Self.runtimeLogger.info("stage=customRules liveReload succeeded")
         } catch {
             Self.runtimeLogger.error(
@@ -228,19 +229,12 @@ extension TunnelManager {
         guard let activeProfile else { return }
         let rawProfileYAML = activeProfile.runtimeYAML
         let remoteRules = compiledRemoteRulesCache
-        let profileYAML = isDomesticOptimizationEnabled
-            ? DomesticRoutingOptimizer.optimizedProfile(
-                for: rawProfileYAML,
-                customRules: customRules,
-                remoteRules: remoteRules
-            )
-            : (customRules.isEmpty && remoteRules.isEmpty
-                ? rawProfileYAML
-                : DomesticRoutingOptimizer.optimizedProfile(
-                    for: rawProfileYAML,
-                    customRules: customRules,
-                    remoteRules: remoteRules
-                ))
+        let profileYAML = DomesticRoutingOptimizer.optimizedProfile(
+            for: rawProfileYAML,
+            customRules: customRules,
+            remoteRules: remoteRules,
+            enableDomesticDirect: isDomesticOptimizationEnabled
+        )
         activeProfileSummary = ProfileConfigurationInspector.inspect(
             yaml: profileYAML,
             customRules: customRules,

@@ -415,6 +415,23 @@ struct ProfilesView: View {
     /// apps; archives and sync sit in the overflow menu beside it.
     private var pageHeader: some View {
         AetherPageHeader(.profiles) {
+            if tunnel.profiles.contains(where: { $0.profile.subscription != nil }) {
+                Button {
+                    tunnel.clearProfileMessage()
+                    Task { await tunnel.refreshAllSubscriptions() }
+                } label: {
+                    AetherProgressButtonLabel(
+                        AppLocalization.string("Update All"),
+                        systemImage: "arrow.triangle.2.circlepath",
+                        isWorking: tunnel.isRefreshingSubscription
+                    )
+                }
+                .aetherButton()
+                .fixedSize()
+                .disabled(!tunnel.canRefreshAnySubscription || tunnel.isRefreshingSubscription)
+                .accessibilityIdentifier("profiles-update-all-subscriptions")
+            }
+
             Menu {
                 Button(AppLocalization.string("Add Subscription…"), systemImage: "link.badge.plus") {
                     tunnel.clearProfileMessage()
@@ -1111,23 +1128,37 @@ private struct ManagedProfileRow: View {
                 if let usage = managed.profile.subscription?.usage {
                     SubscriptionUsageLine(usage: usage)
                 }
+                if let updateFailure = tunnel.subscriptionUpdateErrors[managed.id] {
+                    HStack(spacing: AetherVisual.s1) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .accessibilityHidden(true)
+                        Text(verbatim: updateFailure.message)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(AetherReadableTint(color: .orange))
+                    .help(Text(verbatim: updateFailure.message))
+                    .accessibilityIdentifier("profile-update-error-\(managed.id.uuidString)")
+                }
             }
 
             Spacer(minLength: AetherVisual.s2)
 
-            if isActive && isSubscription {
+            if isSubscription {
                 Button {
-                    Task { await tunnel.refreshSubscription() }
+                    Task { await tunnel.refreshSubscription(id: managed.id) }
                 } label: {
                     AetherProgressButtonLabel(
                         AppLocalization.string("Check for Updates"),
                         systemImage: "arrow.clockwise",
-                        isWorking: tunnel.isRefreshingSubscription
+                        isWorking: tunnel.refreshingSubscriptionProfileIDs.contains(managed.id)
                     )
                 }
                 .aetherButton()
                 .controlSize(.small)
-                .disabled(!canModify || tunnel.isRefreshingSubscription)
+                .disabled(!tunnel.canRefreshSubscription(id: managed.id))
+                .accessibilityIdentifier("refresh-subscription-\(managed.id.uuidString)")
             }
 
             if isActive {
@@ -1161,6 +1192,13 @@ private struct ManagedProfileRow: View {
                 .disabled(!canModify)
 
                 if isSubscription {
+                    Button {
+                        Task { await tunnel.refreshSubscription(id: managed.id) }
+                    } label: {
+                        Label(AppLocalization.string("Check for Updates"), systemImage: "arrow.clockwise")
+                    }
+                    .disabled(!tunnel.canRefreshSubscription(id: managed.id))
+
                     Menu(AppLocalization.string("Auto Update")) {
                         if let hint = managed.profile.subscription?.providerUpdateInterval {
                             Button(AppLocalization.format(
@@ -1190,7 +1228,7 @@ private struct ManagedProfileRow: View {
                             Task { await tunnel.updateSubscriptionInterval(id: managed.id, interval: 24 * 3600) }
                         }
                     }
-                    .disabled(!canModify)
+                    .disabled(!(canModify || tunnel.canRefreshAnySubscription))
                 }
 
                 if !isActive {
@@ -1250,6 +1288,14 @@ private struct ManagedProfileRow: View {
                 }
                 .disabled(!canActivate)
                 Divider()
+            }
+            if isSubscription {
+                Button {
+                    Task { await tunnel.refreshSubscription(id: managed.id) }
+                } label: {
+                    Label(AppLocalization.string("Check for Updates"), systemImage: "arrow.clockwise")
+                }
+                .disabled(!tunnel.canRefreshSubscription(id: managed.id))
             }
             if let editNative {
                 Button(action: editNative) {

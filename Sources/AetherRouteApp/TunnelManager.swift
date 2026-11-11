@@ -77,6 +77,35 @@ enum NetworkEngineMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+struct SubscriptionUpdateFailureRecord: Codable, Equatable, Sendable {
+    let message: String
+    let occurredAt: Date
+}
+
+func aetherBilingualText(en: String, zhHans: String) -> String {
+#if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
+    if let reviewRaw = ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_LANGUAGE"],
+       let reviewPref = AppLanguagePreference(rawValue: reviewRaw) {
+        switch reviewPref {
+        case .simplifiedChinese: return zhHans
+        case .english: return en
+        case .system: break
+        }
+    }
+#endif
+    switch AppLanguagePreferenceStore().load() {
+    case .simplifiedChinese:
+        return zhHans
+    case .english:
+        return en
+    case .system:
+        let preferred = Bundle.main.preferredLocalizations.first
+            ?? Locale.preferredLanguages.first
+            ?? "en"
+        return preferred.lowercased().hasPrefix("zh") ? zhHans : en
+    }
+}
+
 struct ProfileCatalogProjection: Sendable {
     let catalog: ProfileCatalog
     let summary: ProfileConfigurationSummary?
@@ -86,11 +115,24 @@ struct ProfileCatalogProjection: Sendable {
 
 enum ProfileCatalogProjectionBuilder {
     static func production(
-        _ catalog: ProfileCatalog
+        _ catalog: ProfileCatalog,
+        customRules: [CustomRule] = [],
+        remoteRules: [String] = [],
+        enableDomesticDirect: Bool = DomesticRoutingOptimizer.isEnabled
     ) -> ProfileCatalogProjection {
         let active = catalog.activeProfile?.profile
-        let summary = active.map {
-            ProfileConfigurationInspector.inspect(yaml: $0.runtimeYAML)
+        let summary = active.map { profile in
+            let optimizedYAML = DomesticRoutingOptimizer.optimizedProfile(
+                for: profile.runtimeYAML,
+                customRules: customRules,
+                remoteRules: remoteRules,
+                enableDomesticDirect: enableDomesticDirect
+            )
+            return ProfileConfigurationInspector.inspect(
+                yaml: optimizedYAML,
+                customRules: customRules,
+                remoteRules: remoteRules
+            )
         }
         guard let active else {
             return ProfileCatalogProjection(
@@ -154,7 +196,11 @@ struct LocalizedConnectionError: LocalizedError, Sendable {
 }
 
 enum ProductionStartupLoader {
-    static func load(shouldLoadBypassPolicy: Bool) throws
+    static func load(
+        shouldLoadBypassPolicy: Bool,
+        customRules: [CustomRule] = [],
+        enableDomesticDirect: Bool = DomesticRoutingOptimizer.isEnabled
+    ) throws
         -> ProductionStartupState
     {
         let bypassPolicy = shouldLoadBypassPolicy
@@ -163,7 +209,11 @@ enum ProductionStartupLoader {
         let catalog = try ProfileCatalogStore.applicationGroup().loadOrMigrate()
         return ProductionStartupState(
             bypassPolicy: bypassPolicy,
-            profileProjection: ProfileCatalogProjectionBuilder.production(catalog)
+            profileProjection: ProfileCatalogProjectionBuilder.production(
+                catalog,
+                customRules: customRules,
+                enableDomesticDirect: enableDomesticDirect
+            )
         )
     }
 }
@@ -189,13 +239,18 @@ final class NetworkTelemetryViewModel: ObservableObject {
     private(set) var appMemoryBytes: UInt64 = NetworkTelemetryViewModel.measuredAppMemoryBytes()
     private(set) var history = TrafficHistory()
     private(set) var recentlyClosed = RecentlyClosedConnectionBuffer()
+    private(set) var connectionRates: [ConnectionTableItem.ID: ConnectionTransferRates] = [:]
+    private var rateTracker = ConnectionLiveRateTracker()
+    private var truncationGuard = ConnectionTruncationGuard()
     private var cachedIdentifiedSnapshotConnections: [ConnectionTableItem]?
     private var cachedTrafficSortedSnapshotConnections: [ConnectionTableItem]?
+    private var cachedSpeedSortedSnapshotConnections: [ConnectionTableItem]?
     private var cachedSnapshotOutletCounts: ConnectionOutletClassifier.Counts?
 
     private func invalidateConnectionCaches() {
         cachedIdentifiedSnapshotConnections = nil
         cachedTrafficSortedSnapshotConnections = nil
+        cachedSpeedSortedSnapshotConnections = nil
         cachedSnapshotOutletCounts = nil
     }
 
@@ -217,6 +272,24 @@ final class NetworkTelemetryViewModel: ObservableObject {
                 > $1.connection.downloadTotal + $1.connection.uploadTotal
         }
         cachedTrafficSortedSnapshotConnections = sorted
+        return sorted
+    }
+
+    func speedSortedSnapshotConnections() -> [ConnectionTableItem] {
+        if let cached = cachedSpeedSortedSnapshotConnections {
+            return cached
+        }
+        let rates = connectionRates
+        let sorted = identifiedSnapshotConnections().sorted { lhs, rhs in
+            let lhsSpeed = rates[lhs.id]?.totalBytesPerSecond ?? 0
+            let rhsSpeed = rates[rhs.id]?.totalBytesPerSecond ?? 0
+            if lhsSpeed != rhsSpeed {
+                return lhsSpeed > rhsSpeed
+            }
+            return lhs.connection.downloadTotal + lhs.connection.uploadTotal
+                > rhs.connection.downloadTotal + rhs.connection.uploadTotal
+        }
+        cachedSpeedSortedSnapshotConnections = sorted
         return sorted
     }
 
@@ -258,7 +331,11 @@ final class NetworkTelemetryViewModel: ObservableObject {
     }
 #endif
 
-    func update(_ snapshot: NetworkTelemetrySnapshot) {
+    func update(
+        _ snapshot: NetworkTelemetrySnapshot,
+        requestedConnectionLimit: UInt16 = TunnelManager.connectionsPageTelemetryLimit,
+        at now: Date = .now
+    ) {
         let currentAppMemory = Self.measuredAppMemoryBytes()
         appMemoryBytes = currentAppMemory
         history.append(
@@ -266,23 +343,38 @@ final class NetworkTelemetryViewModel: ObservableObject {
             upload: Double(snapshot.uploadBytesPerSecond),
             coreMemoryBytes: snapshot.memoryBytes,
             appMemoryBytes: currentAppMemory,
-            at: Date()
+            at: now
         )
-        recentlyClosed.record(active: snapshot.connections)
-        // One publication for both current values and the timestamped history.
+        let identified = ConnectionTableItem.identify(snapshot.connections)
+        connectionRates = rateTracker.update(items: identified, at: now)
+        let effectiveCap = min(
+            Int(requestedConnectionLimit),
+            NetworkTelemetryCodec.maximumConnections
+        )
+        let isTruncated = effectiveCap > 0 && snapshot.connections.count >= effectiveCap
+        truncationGuard.record(
+            active: snapshot.connections,
+            isTruncated: isTruncated,
+            into: &recentlyClosed
+        )
+        // One publication for current values, connection rates, and history.
         self.snapshot = snapshot
+        cachedIdentifiedSnapshotConnections = identified
     }
 
     func reset() {
         appMemoryBytes = Self.measuredAppMemoryBytes()
         history = TrafficHistory()
         recentlyClosed.reset()
+        truncationGuard.reset()
+        rateTracker.reset()
+        connectionRates = [:]
         snapshot = .empty
     }
 
     func clearRecentlyClosed() {
         recentlyClosed.reset()
-        recentlyClosed.record(active: snapshot.connections)
+        truncationGuard.seed(active: snapshot.connections)
         objectWillChange.send()
     }
 
@@ -381,6 +473,9 @@ final class TunnelManager: ObservableObject {
     @Published var dnsRuntimePolicyMessage: String?
     @Published var dnsRuntimePolicyMessageIsError = false
     @Published var isRefreshingSubscription = false
+    @Published var refreshingSubscriptionProfileIDs: Set<UUID> = []
+    @Published var subscriptionUpdateErrors: [UUID: SubscriptionUpdateFailureRecord] = [:]
+    @Published var isUnifiedDelayEnabled: Bool
     @Published var isImportingProfile = false
     @Published var isUpdatingProfiles = false
     @Published var isUpdatingBypassPolicy = false
@@ -436,10 +531,20 @@ final class TunnelManager: ObservableObject {
     @Published var connectedSince: Date?
     @Published var sessionRoutingMode: RoutingMode?
     @Published var sessionNetworkEngineMode: NetworkEngineMode?
-    /// Connections requested per telemetry poll. The snapshot truncates to this
-    /// limit, so the diagnostic report needs the same number to tell a real
-    /// count from a saturated one.
-    static let telemetryConnectionLimit: UInt16 = 50
+    /// Connections requested per telemetry poll. The Connections page requests
+    /// up to 250 active flows when visible; background/other pages keep 64.
+    static let connectionsPageTelemetryLimit: UInt16 = 250
+    static let backgroundTelemetryConnectionLimit: UInt16 = 64
+    static let telemetryConnectionLimit: UInt16 = 64
+    var telemetryRateSampler = TelemetryRateSampler()
+
+    var effectiveTelemetryConnectionLimit: UInt16 {
+        if realtimeTelemetrySources.contains("connections")
+            || backgroundTelemetrySources.contains("connections") {
+            return Self.connectionsPageTelemetryLimit
+        }
+        return Self.backgroundTelemetryConnectionLimit
+    }
 
     @Published var networkEngineMode: NetworkEngineMode
     @Published var systemExtensionApprovalRequired = false
@@ -553,6 +658,7 @@ final class TunnelManager: ObservableObject {
     var routingResourceStatusTask: Task<Void, Never>?
     var routingResourceRefreshTask: Task<Void, Never>?
     var routingResourceRefreshSchedule: Task<Void, Never>?
+    var subscriptionUpdateSchedule: Task<Void, Never>?
     var automaticResourceRefreshFailures = 0
     var nextAutomaticResourceRefreshAttempt: Date?
     let bundledResourceDirectoryURL = Bundle.main.resourceURL?
@@ -664,6 +770,11 @@ final class TunnelManager: ObservableObject {
         self.isTrafficStatisticsEnabled = userDefaults.object(
             forKey: Self.trafficStatisticsPreferenceKey
         ) as? Bool ?? false
+        self.isUnifiedDelayEnabled = (
+            userDefaults.object(forKey: Self.unifiedDelayPreferenceKey)
+                ?? UserDefaults.standard.object(forKey: Self.unifiedDelayPreferenceKey)
+        ) as? Bool ?? true
+        self.subscriptionUpdateErrors = Self.loadSubscriptionUpdateErrors(from: userDefaults)
         do {
             self.customRules = try CustomRuleStore.applicationGroup().load()
         } catch {
@@ -990,10 +1101,12 @@ final class TunnelManager: ObservableObject {
             MenuBarTrafficController.shared.onEnabledChanged = { [weak self] enabled in
                 self?.handleMenuBarTrafficEnabledChanged(enabled)
             }
+            startSubscriptionUpdateScheduleIfNeeded()
         }
     }
 
     deinit {
+        subscriptionUpdateSchedule?.cancel()
         if let cloudSyncObserver {
             NotificationCenter.default.removeObserver(cloudSyncObserver)
         }
@@ -1005,11 +1118,20 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    func startSubscriptionUpdateScheduleIfNeeded() {
+        guard !isUIReviewMode, !isApplicationTerminating else { return }
+        guard subscriptionUpdateSchedule == nil else { return }
+        subscriptionUpdateSchedule = Task { @MainActor [weak self] in
+            await self?.runSubscriptionUpdateLoop()
+        }
+    }
+
     func acceptPrivacyDisclosure() async {
         if !isUIReviewMode {
             privacyConsentStore.acceptCurrentDisclosure()
         }
         hasAcceptedPrivacyDisclosure = true
+        startSubscriptionUpdateScheduleIfNeeded()
         // First run continues with network setup; prepare() would otherwise
         // install one engine's extension on its own and skip the other.
         if isNetworkSetupRequired {
@@ -1026,15 +1148,20 @@ final class TunnelManager: ObservableObject {
         guard !isNetworkSetupRequired else { return }
         guard !isUIReviewMode else { return }
         guard !rejectDevelopmentPreviewStart() else { return }
+        startSubscriptionUpdateScheduleIfNeeded()
         guard manager == nil, !isPreparing else { return }
         isPreparing = true
         defer { isPreparing = false }
 
         do {
             let shouldLoadBypassPolicy = !hasLoadedBypassPolicy
+            let currentCustomRules = customRules
+            let currentDomesticEnabled = isDomesticOptimizationEnabled
             let startup = try await Task.detached(priority: .userInitiated) {
                 try ProductionStartupLoader.load(
-                    shouldLoadBypassPolicy: shouldLoadBypassPolicy
+                    shouldLoadBypassPolicy: shouldLoadBypassPolicy,
+                    customRules: currentCustomRules,
+                    enableDomesticDirect: currentDomesticEnabled
                 )
             }.value
             if let loadedBypassPolicy = startup.bypassPolicy {
@@ -1066,7 +1193,7 @@ final class TunnelManager: ObservableObject {
             installManager(try await loadOrCreateManager())
             observeConfigurationChanges()
             updateState()
-            if state == .disconnected {
+            if shouldRunAutomaticSubscriptionCheck {
                 await refreshSubscriptionIfDue()
             }
             isPreparing = false
@@ -1661,11 +1788,18 @@ final class TunnelManager: ObservableObject {
                 yaml: profileYAML,
                 customRules: currentCustomRules
             )
-            let initialSelections = InitialProxySelectionPolicy
+            var initialSelections = InitialProxySelectionPolicy
                 .selections(
                     persisted: persistedSelections,
                     summary: profileSummary
                 )
+            if initialSelections["GLOBAL"] == nil,
+               let globalTarget = Self.resolvedGlobalTargetMember(
+                   in: profileSummary,
+                   persistedSelections: persistedSelections
+               ) {
+                initialSelections["GLOBAL"] = globalTarget
+            }
             let routingResources = try store.launchResourceSnapshot(for: profileYAML)
             // The core refuses the whole rule set for one unknown GEOSITE
             // category; name the custom rule instead. Checked against the
@@ -1769,6 +1903,8 @@ final class TunnelManager: ObservableObject {
         cancelConnectionWatchdog()
         cancelDisconnectionWatchdog()
         cancelRecoveryWatchdog()
+        subscriptionUpdateSchedule?.cancel()
+        subscriptionUpdateSchedule = nil
         runtimeEnvironmentResetTask?.cancel()
         runtimeEnvironmentResetTask = nil
         LANProxyServerController.shared.stop()
@@ -1820,6 +1956,8 @@ final class TunnelManager: ObservableObject {
         cancelConnectionWatchdog()
         cancelDisconnectionWatchdog()
         cancelRecoveryWatchdog()
+        subscriptionUpdateSchedule?.cancel()
+        subscriptionUpdateSchedule = nil
         runtimeEnvironmentResetTask?.cancel()
         runtimeEnvironmentResetTask = nil
         LANProxyServerController.shared.stop()
@@ -1862,6 +2000,20 @@ final class TunnelManager: ObservableObject {
     func setDomesticOptimizationEnabled(_ enabled: Bool) {
         isDomesticOptimizationEnabled = enabled
         DomesticRoutingOptimizer.setEnabled(enabled)
+        refreshActiveProfileSummary()
+        if state == .connected, !isUIReviewMode {
+            Task { @MainActor [weak self] in
+                await self?.reloadCustomRulesLive()
+            }
+        }
+    }
+
+    func setUnifiedDelayEnabled(_ enabled: Bool) {
+        isUnifiedDelayEnabled = enabled
+        userDefaults.set(enabled, forKey: Self.unifiedDelayPreferenceKey)
+        if userDefaults !== UserDefaults.standard {
+            UserDefaults.standard.set(enabled, forKey: Self.unifiedDelayPreferenceKey)
+        }
     }
 
     func setDNSRuntimePolicy(_ policy: DNSRuntimePolicy) async {
@@ -1898,6 +2050,9 @@ final class TunnelManager: ObservableObject {
             sessionRoutingMode = nil
             routingModeMessage = nil
             routingModeMessageIsError = false
+            if mode == .global {
+                seedGlobalSelectionIfNeeded()
+            }
             return
         }
 
@@ -1917,16 +2072,16 @@ final class TunnelManager: ObservableObject {
         do {
             let applied: RoutingMode
             if isUIReviewMode {
+                if mode == .global {
+                    seedGlobalSelectionIfNeeded()
+                }
                 applied = mode
             } else {
                 guard let client else {
                     throw TunnelManagerError.providerSessionUnavailable
                 }
-                if mode == .global,
-                   let summary = activeProfileSummary,
-                   let primaryGroup = ProxyConnectionReadinessPolicy.groupsToVerify(summary: summary).first,
-                   readinessVerifiedConnectionID == connectionID {
-                    _ = try? await client.select(group: "GLOBAL", member: primaryGroup.name)
+                if mode == .global {
+                    await syncGlobalSelector(client: client)
                 }
                 applied = try await client.setRoutingMode(mode)
             }
@@ -2360,13 +2515,359 @@ final class TunnelManager: ObservableObject {
         return true
     }
 
+    var canRefreshAnySubscription: Bool {
+        let statePermitsRefresh = switch state {
+        case .disconnected, .connected, .failed: true
+        case .privacyConsentRequired, .loading, .connecting, .recovering, .disconnecting: false
+        }
+        return hasAcceptedPrivacyDisclosure
+            && statePermitsRefresh
+            && !isTransitioning
+            && !isImportingProfile
+            && !isUpdatingProfiles
+            && !isTransferringProfiles
+            && !isSwitchingNetworkEngine
+    }
+
+    func canRefreshSubscription(id: UUID) -> Bool {
+        canRefreshAnySubscription
+            && !refreshingSubscriptionProfileIDs.contains(id)
+            && profiles.contains(where: { $0.id == id && $0.profile.subscription != nil })
+    }
+
+    nonisolated static func resolvedPrimaryRoutingGroup(
+        in summary: ProfileConfigurationSummary
+    ) -> ProxyGroupConfigurationSummary? {
+        for rule in summary.allRules.reversed() {
+            let kind = rule.kind.uppercased()
+            guard kind == "MATCH" || kind == "FINAL" else { continue }
+            if let group = summary.proxyGroups.first(where: {
+                $0.name == rule.target && $0.name != "GLOBAL"
+            }) {
+                return group
+            }
+        }
+        return summary.proxyGroups.first(where: {
+            $0.strategy.caseInsensitiveCompare("select") == .orderedSame
+                && $0.name != "GLOBAL"
+        }) ?? summary.proxyGroups.first(where: { $0.name != "GLOBAL" })
+            ?? summary.proxyGroups.first
+    }
+
+    func resolvedPrimaryRoutingGroup() -> ProxyGroupConfigurationSummary? {
+        activeProfileSummary.flatMap(Self.resolvedPrimaryRoutingGroup(in:))
+    }
+
+    nonisolated static func validGlobalSelectorMembers(
+        in summary: ProfileConfigurationSummary
+    ) -> [String] {
+        var seen: Set<String> = []
+        var ordered: [String] = []
+        func append(_ item: String) {
+            let upper = item.uppercased()
+            guard !item.isEmpty,
+                  item != "GLOBAL",
+                  upper != "DIRECT",
+                  upper != "REJECT",
+                  upper != "REJECT-DROP",
+                  seen.insert(item).inserted else { return }
+            ordered.append(item)
+        }
+        if let explicitGlobal = summary.proxyGroups.first(where: { $0.name == "GLOBAL" }) {
+            explicitGlobal.members.forEach(append)
+        }
+        for group in summary.proxyGroups where group.name != "GLOBAL" {
+            append(group.name)
+        }
+        for proxy in summary.proxies {
+            append(proxy.name)
+        }
+        return ordered
+    }
+
+    nonisolated static func resolvedGlobalTargetMember(
+        in summary: ProfileConfigurationSummary,
+        persistedSelections: [String: String] = [:],
+        inMemorySelection: String? = nil
+    ) -> String? {
+        let validMembers = validGlobalSelectorMembers(in: summary)
+        let validSet = Set(validMembers)
+        if let inMemorySelection, validSet.contains(inMemorySelection) {
+            return inMemorySelection
+        }
+        if let persisted = persistedSelections["GLOBAL"], validSet.contains(persisted) {
+            return persisted
+        }
+        if let primaryGroup = resolvedPrimaryRoutingGroup(in: summary),
+           validSet.contains(primaryGroup.name) {
+            return primaryGroup.name
+        }
+        return validMembers.first
+    }
+
+    var menuGlobalProxyGroup: ProxyGroupConfigurationSummary? {
+        guard let summary = activeProfileSummary else { return nil }
+        let liveFiltered = (proxySelections["GLOBAL"]?.members ?? []).filter { member in
+            let upper = member.uppercased()
+            return member != "GLOBAL"
+                && upper != "DIRECT"
+                && upper != "REJECT"
+                && upper != "REJECT-DROP"
+        }
+        let members = liveFiltered.isEmpty
+            ? Self.validGlobalSelectorMembers(in: summary)
+            : liveFiltered
+        guard !members.isEmpty else { return nil }
+        return ProxyGroupConfigurationSummary(
+            id: -1,
+            name: "GLOBAL",
+            strategy: "select",
+            memberCount: members.count,
+            members: members
+        )
+    }
+
+    func seedGlobalSelectionIfNeeded() {
+        guard let summary = activeProfileSummary else { return }
+        let persisted: [String: String]
+        if !isUIReviewMode,
+           let yaml = activeProfile?.yaml,
+           let stored = try? ProxySelectionStore.applicationGroup().selections(forProfileYAML: yaml) {
+            persisted = stored
+        } else {
+            persisted = [:]
+        }
+        guard let target = Self.resolvedGlobalTargetMember(
+            in: summary,
+            persistedSelections: persisted,
+            inMemorySelection: proxySelections["GLOBAL"]?.selectedMember
+        ) else { return }
+        let members = Self.validGlobalSelectorMembers(in: summary)
+        let next = ProxySelectionState(selectedMember: target, members: members)
+        if proxySelections["GLOBAL"] != next {
+            proxySelections["GLOBAL"] = next
+        }
+    }
+
+    func syncGlobalSelector(
+        client: ProxySelectionProviderClient,
+        summary: ProfileConfigurationSummary? = nil
+    ) async {
+        guard let effectiveSummary = summary ?? activeProfileSummary else { return }
+        let persisted: [String: String]
+        if !isUIReviewMode,
+           let yaml = activeProfile?.yaml,
+           let stored = try? await Task.detached(priority: .utility, operation: {
+               try ProxySelectionStore.applicationGroup().selections(forProfileYAML: yaml)
+           }).value {
+            persisted = stored
+        } else {
+            persisted = [:]
+        }
+        guard let target = Self.resolvedGlobalTargetMember(
+            in: effectiveSummary,
+            persistedSelections: persisted,
+            inMemorySelection: proxySelections["GLOBAL"]?.selectedMember
+        ) else { return }
+        if let snapshot = try? await client.select(group: "GLOBAL", member: target) {
+            let filteredMembers = snapshot.members.filter { member in
+                let upper = member.uppercased()
+                return member != "GLOBAL"
+                    && upper != "DIRECT"
+                    && upper != "REJECT"
+                    && upper != "REJECT-DROP"
+            }
+            let normalized = ProxySelectionState(
+                selectedMember: snapshot.selectedMember,
+                members: filteredMembers.isEmpty ? Self.validGlobalSelectorMembers(in: effectiveSummary) : filteredMembers
+            )
+            if proxySelections["GLOBAL"] != normalized {
+                proxySelections["GLOBAL"] = normalized
+            }
+        }
+    }
+
+    func selectGlobalOutlet(_ member: String) async {
+        if selectableProxyGroup(named: "GLOBAL") != nil {
+            await selectProxy(group: "GLOBAL", member: member)
+            return
+        }
+        guard let globalGroup = menuGlobalProxyGroup,
+              globalGroup.members.contains(member),
+              !proxySelectionRequests.contains("GLOBAL") else { return }
+        proxySelectionRequests.insert("GLOBAL")
+        defer { proxySelectionRequests.remove("GLOBAL") }
+
+        let previousMember = proxySelections["GLOBAL"]?.selectedMember
+        if state == .connected {
+            if isUIReviewMode {
+                proxySelections["GLOBAL"] = ProxySelectionState(
+                    selectedMember: member,
+                    members: globalGroup.members
+                )
+                return
+            }
+            let connectionID = providerConnectionID
+            let client = ProxySelectionProviderClient { [weak self] data in
+                guard let self else {
+                    throw TunnelManagerError.providerSessionUnavailable
+                }
+                return try await self.sendProviderMessage(data, for: connectionID)
+            }
+            do {
+                let selected = try await client.select(group: "GLOBAL", member: member)
+                guard state == .connected, providerConnectionID == connectionID else { return }
+                let normalized = ProxySelectionState(
+                    selectedMember: selected.selectedMember,
+                    members: globalGroup.members
+                )
+                proxySelections["GLOBAL"] = normalized
+                if let yaml = activeProfile?.yaml {
+                    try? await Task.detached(priority: .utility) {
+                        try ProxySelectionStore.applicationGroup().recordUserSelection(
+                            group: "GLOBAL",
+                            member: member,
+                            allowedMembers: globalGroup.members,
+                            profileYAML: yaml
+                        )
+                    }.value
+                }
+                if previousMember != member {
+                    await closeConnectionsAfterProxySwitch(
+                        group: "GLOBAL",
+                        previousMember: previousMember,
+                        newMember: member
+                    )
+                }
+            } catch {
+                proxySelectionMessages["GLOBAL"] = error.localizedDescription
+            }
+        } else {
+            let next = ProxySelectionState(
+                selectedMember: member,
+                members: globalGroup.members
+            )
+            if proxySelections["GLOBAL"] != next {
+                proxySelections["GLOBAL"] = next
+            }
+            if !isUIReviewMode, let yaml = activeProfile?.yaml {
+                try? await Task.detached(priority: .userInitiated) {
+                    try ProxySelectionStore.applicationGroup().recordUserSelection(
+                        group: "GLOBAL",
+                        member: member,
+                        allowedMembers: globalGroup.members,
+                        profileYAML: yaml
+                    )
+                }.value
+            }
+        }
+    }
+
+    func resolvedLeafNode(from member: String, maxDepth: Int = 6) -> String {
+        var current = member
+        var visited: Set<String> = [current]
+        for _ in 0..<maxDepth {
+            if let autoLeaf = automaticGroupLeaves[current],
+               !autoLeaf.isEmpty,
+               visited.insert(autoLeaf).inserted {
+                current = autoLeaf
+                continue
+            }
+            if let selected = proxySelections[current]?.selectedMember,
+               !selected.isEmpty,
+               visited.insert(selected).inserted {
+                current = selected
+                continue
+            }
+            if let group = activeProfileSummary?.proxyGroups.first(where: { $0.name == current }),
+               let first = group.members.first,
+               !first.isEmpty,
+               visited.insert(first).inserted {
+                current = first
+                continue
+            }
+            break
+        }
+        return current
+    }
+
+    func resolvedOutletLatencyStatus(
+        groupName: String,
+        selectedMember: String
+    ) -> (status: ProxyLatencyStatus, confidence: ProxyLatencyConfidence) {
+        let leaf = resolvedLeafNode(from: selectedMember)
+        var candidateGroups: [String] = []
+        for candidate in [groupName, selectedMember] where !candidate.isEmpty && !candidateGroups.contains(candidate) {
+            candidateGroups.append(candidate)
+        }
+        for group in activeProfileSummary?.proxyGroups ?? [] where !candidateGroups.contains(group.name) {
+            if group.members.contains(leaf) || proxyLatencies[group.name]?.results.contains(where: { $0.member == leaf }) == true {
+                candidateGroups.append(group.name)
+            }
+        }
+        for candidateGroup in candidateGroups {
+            let status = ProxyLatencyStatus.status(
+                member: leaf,
+                results: proxyLatencies[candidateGroup]?.results,
+                isTesting: isTestingLatency(group: candidateGroup, member: leaf)
+            )
+            if status != .untested {
+                return (status, latencyConfidence(group: candidateGroup, member: leaf))
+            }
+        }
+        let fallbackStatus = ProxyLatencyStatus.status(
+            member: selectedMember,
+            results: proxyLatencies[groupName]?.results,
+            isTesting: isTestingLatency(group: groupName, member: selectedMember)
+        )
+        return (fallbackStatus, latencyConfidence(group: groupName, member: selectedMember))
+    }
+
+    func recordSubscriptionUpdateError(_ message: String?, for profileID: UUID) {
+        if let message, !message.isEmpty {
+            subscriptionUpdateErrors[profileID] = SubscriptionUpdateFailureRecord(
+                message: message,
+                occurredAt: Date()
+            )
+        } else {
+            subscriptionUpdateErrors.removeValue(forKey: profileID)
+        }
+        let encodedPayload: [String: SubscriptionUpdateFailureRecord] = Dictionary(
+            uniqueKeysWithValues: subscriptionUpdateErrors.map { ($0.key.uuidString, $0.value) }
+        )
+        if encodedPayload.isEmpty {
+            userDefaults.removeObject(forKey: Self.subscriptionUpdateErrorsPreferenceKey)
+        } else if let data = try? JSONEncoder().encode(encodedPayload) {
+            userDefaults.set(data, forKey: Self.subscriptionUpdateErrorsPreferenceKey)
+        }
+    }
+
+    nonisolated static func loadSubscriptionUpdateErrors(
+        from defaults: UserDefaults
+    ) -> [UUID: SubscriptionUpdateFailureRecord] {
+        guard let data = defaults.data(forKey: subscriptionUpdateErrorsPreferenceKey),
+              let raw = try? JSONDecoder().decode([String: SubscriptionUpdateFailureRecord].self, from: data)
+        else { return [:] }
+        var resolved: [UUID: SubscriptionUpdateFailureRecord] = [:]
+        for (key, value) in raw {
+            if let id = UUID(uuidString: key) {
+                resolved[id] = value
+            }
+        }
+        return resolved
+    }
+
     static let networkEnginePreferenceKey =
         "AetherRoute.NetworkEngineMode"
+    nonisolated static let unifiedDelayPreferenceKey =
+        "aetherroute.latency.unifiedDelayEnabled"
+    nonisolated static let subscriptionUpdateErrorsPreferenceKey =
+        "aetherroute.subscription.lastUpdateErrors.v1"
     static let selectorLatencyTestURL =
         ProxyConnectionReadinessPolicy.requiredExternalProbeURLString
     public static let defaultLatencyTestURL =
         "http://cp.cloudflare.com/generate_204"
-    public static let uiLatencyTimeoutMilliseconds: UInt32 = 3_000
+    public static let uiLatencyTimeoutMilliseconds: UInt32 = 5_000
 
     var runtimeConnectionActivity: RuntimeConnectionActivity {
         switch state {

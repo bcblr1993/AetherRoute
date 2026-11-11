@@ -46,7 +46,7 @@ extension TunnelManager {
                 downloadTotal: telemetry.downloadTotal,
                 memoryBytes: telemetry.memoryBytes,
                 activeConnectionCount: telemetry.connections.count,
-                requestedConnectionLimit: Int(Self.telemetryConnectionLimit)
+                requestedConnectionLimit: Int(effectiveTelemetryConnectionLimit)
             ),
             provider: providerDiagnostics,
             resolver: currentResolverPrecedence(),
@@ -132,6 +132,7 @@ extension TunnelManager {
             guard let summary = activeProfileSummary else {
                 throw TunnelManagerError.providerSelectorUnavailable
             }
+            await syncGlobalSelector(client: client, summary: summary)
             var selectedRoutes: [(
                 group: String,
                 member: String,
@@ -277,7 +278,7 @@ extension TunnelManager {
                     throw TunnelManagerError.noResponsiveProxy
                 }
                 if groups.first?.name == selection.group {
-                    _ = try? await client.select(group: "GLOBAL", member: selection.group)
+                    await syncGlobalSelector(client: client, summary: summary)
                 }
             }
             Self.runtimeLogger.info(

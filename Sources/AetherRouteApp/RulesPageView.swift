@@ -628,8 +628,8 @@ struct RulesView: View {
     // MARK: Profile rules
 
     private func ruleOverrideTargets(summary: ProfileConfigurationSummary) -> [CustomRuleTarget] {
-        let groups = summary.proxyGroups.prefix(8).map { CustomRuleTarget.proxy($0.name) }
-        let proxyTargets = groups.isEmpty ? [CustomRuleTarget.proxy("Proxy")] : Array(groups)
+        let groups = summary.proxyGroups.map { CustomRuleTarget.proxy($0.name) }
+        let proxyTargets = groups.isEmpty ? [CustomRuleTarget.proxy("Proxy")] : groups
         return [.direct] + proxyTargets + [.reject]
     }
 

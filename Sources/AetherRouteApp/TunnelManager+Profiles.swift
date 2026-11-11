@@ -620,6 +620,8 @@ extension TunnelManager {
                 try await client.reloadActiveProfile(payload: reloadPayloadData)
                 Self.runtimeLogger.info("stage=activateProfile live reload succeeded")
                 clearProxySelectionRuntimeState()
+                await syncGlobalSelector(client: client)
+                startTelemetryPollingIfNeeded()
                 let readinessGroups = activeProfileSummary.map {
                     ProxyConnectionReadinessPolicy.groupsToVerify(summary: $0)
                 } ?? []
@@ -754,11 +756,19 @@ extension TunnelManager {
             yaml: profileYAML,
             customRules: customRules
         )
-        let initialSelections = InitialProxySelectionPolicy
+        var initialSelections = InitialProxySelectionPolicy
             .selections(
                 persisted: persistedSelections,
                 summary: profileSummary
             )
+        if initialSelections["GLOBAL"] == nil,
+           let globalTarget = Self.resolvedGlobalTargetMember(
+               in: profileSummary,
+               persistedSelections: persistedSelections,
+               inMemorySelection: proxySelections["GLOBAL"]?.selectedMember
+           ) {
+            initialSelections["GLOBAL"] = globalTarget
+        }
         let payload = ReloadProfilePayload(
             profileYAML: profileYAML,
             routingMode: requestedMode,
@@ -826,9 +836,10 @@ extension TunnelManager {
         interval: TimeInterval?,
         followProvider: Bool = false
     ) async {
-        guard canModifyProfile(id: id),
+        guard canModifyProfile(id: id) || canRefreshAnySubscription,
               let index = profiles.firstIndex(where: { $0.id == id }),
               let sub = profiles[index].profile.subscription else { return }
+        let keepRuntime = state == .connected
         isUpdatingProfiles = true
         defer { isUpdatingProfiles = false }
         do {
@@ -851,10 +862,13 @@ extension TunnelManager {
                     ProfileCatalog(
                         activeProfileID: activeProfileID,
                         profiles: updatedProfiles
-                    )
+                    ),
+                    preserveConnectedRuntimeState: keepRuntime
                 )
             } else {
-                try await performProductionProfileCatalogOperation {
+                try await performProductionProfileCatalogOperation(
+                    preserveConnectedRuntimeState: keepRuntime
+                ) {
                     try ProfileCatalogStore.applicationGroup().replace(
                         id: id,
                         with: updatedProfile
@@ -879,21 +893,36 @@ extension TunnelManager {
                 ProfileCatalog(
                     activeProfileID: activeProfileID,
                     profiles: profiles.filter { $0.id != id }
-                )
+                ),
+                preserveConnectedRuntimeState: state == .connected
             )
+            recordSubscriptionUpdateError(nil, for: id)
             profileMessage = AppLocalization.string("Profile removed.")
             profileMessageIsError = false
             return
         }
         do {
-            try await performProductionProfileCatalogOperation {
+            try await performProductionProfileCatalogOperation(
+                preserveConnectedRuntimeState: state == .connected
+            ) {
                 try ProfileCatalogStore.applicationGroup().remove(id: id)
             }
+            recordSubscriptionUpdateError(nil, for: id)
             profileMessage = AppLocalization.string("Profile removed.")
             profileMessageIsError = false
         } catch {
             profileMessage = error.localizedDescription
             profileMessageIsError = true
+        }
+    }
+
+    var shouldRunAutomaticSubscriptionCheck: Bool {
+        guard hasAcceptedPrivacyDisclosure else { return false }
+        switch state {
+        case .disconnected, .connected, .failed:
+            return !isTransitioning && !isSwitchingNetworkEngine
+        case .privacyConsentRequired, .loading, .connecting, .recovering, .disconnecting:
+            return false
         }
     }
 
@@ -906,7 +935,7 @@ extension TunnelManager {
                 return
             }
             guard !Task.isCancelled else { return }
-            if state == .disconnected {
+            if shouldRunAutomaticSubscriptionCheck {
                 await refreshSubscriptionIfDue()
             }
         }
@@ -958,8 +987,47 @@ extension TunnelManager {
     }
 
     func refreshSubscriptionIfDue() async {
-        guard activeProfile?.subscription?.isDue() == true else { return }
-        await refreshSubscription(isAutomatic: true)
+        let dueIDs = profiles
+            .filter { $0.profile.subscription?.isDue() == true }
+            .map(\.id)
+        for id in dueIDs {
+            guard !Task.isCancelled, shouldRunAutomaticSubscriptionCheck else { break }
+            await refreshSubscription(id: id, isAutomatic: true)
+        }
+    }
+
+    func refreshAllSubscriptions() async {
+        guard ensurePrivacyConsent(), canRefreshAnySubscription else { return }
+        let subscriptionIDs = profiles
+            .filter { $0.profile.subscription != nil }
+            .map(\.id)
+        guard !subscriptionIDs.isEmpty else { return }
+        var succeededCount = 0
+        var failedCount = 0
+        for id in subscriptionIDs {
+            guard !Task.isCancelled, canRefreshAnySubscription else { break }
+            await refreshSubscription(id: id, isAutomatic: false)
+            if subscriptionUpdateErrors[id] == nil {
+                succeededCount += 1
+            } else {
+                failedCount += 1
+            }
+        }
+        if subscriptionIDs.count > 1 {
+            if failedCount == 0 {
+                profileMessage = aetherBilingualText(
+                    en: "Updated \(succeededCount) subscriptions.",
+                    zhHans: "已更新 \(succeededCount) 个订阅。"
+                )
+                profileMessageIsError = false
+            } else {
+                profileMessage = aetherBilingualText(
+                    en: "Updated \(succeededCount) subscriptions; \(failedCount) failed.",
+                    zhHans: "已更新 \(succeededCount) 个订阅，\(failedCount) 个失败。"
+                )
+                profileMessageIsError = true
+            }
+        }
     }
 
     /// Replaces a profile's contents as a subscription update does: the
@@ -985,28 +1053,56 @@ extension TunnelManager {
     }
 
     func refreshSubscription(isAutomatic: Bool) async {
-        guard ensurePrivacyConsent(), canModifyProfiles,
-              let profile = activeProfile,
-              let subscription = profile.subscription,
-              !isUIReviewMode else {
-            if !isAutomatic, activeProfile?.subscription == nil {
+        guard let activeProfileID else {
+            if !isAutomatic {
                 profileMessage = AppLocalization.string("The active profile is not a subscription.")
                 profileMessageIsError = true
             }
             return
         }
+        await refreshSubscription(id: activeProfileID, isAutomatic: isAutomatic)
+    }
 
-        isRefreshingSubscription = true
-        defer { isRefreshingSubscription = false }
+    func refreshSubscription(id: UUID, isAutomatic: Bool = false) async {
+        guard ensurePrivacyConsent() else { return }
+        guard let managed = profiles.first(where: { $0.id == id }),
+              let subscription = managed.profile.subscription else {
+            if !isAutomatic {
+                profileMessage = AppLocalization.string("The active profile is not a subscription.")
+                profileMessageIsError = true
+            }
+            return
+        }
+        guard canRefreshSubscription(id: id) else { return }
+        if isUIReviewMode {
+            recordSubscriptionUpdateError(nil, for: id)
+            if !isAutomatic {
+                profileMessage = AppLocalization.string("Subscription is already up to date.")
+                profileMessageIsError = false
+            }
+            return
+        }
+
+        refreshingSubscriptionProfileIDs.insert(id)
+        isRefreshingSubscription = !refreshingSubscriptionProfileIDs.isEmpty
+        defer {
+            refreshingSubscriptionProfileIDs.remove(id)
+            isRefreshingSubscription = !refreshingSubscriptionProfileIDs.isEmpty
+        }
+
         do {
-            guard let activeProfileID else {
+            let update = try await subscriptionClient.fetch(subscription)
+            guard let currentManaged = profiles.first(where: { $0.id == id }) else {
                 throw ProfileCatalogStoreError.activeProfileNotFound
             }
-            let update = try await subscriptionClient.fetch(subscription)
+            let profile = currentManaged.profile
+            let keepRuntime = state == .connected
             // UserDefaults is documented thread-safe; it is only read and
             // written here, off the main actor.
             nonisolated(unsafe) let defaults = userDefaults
-            try await performProductionProfileCatalogOperation {
+            try await performProductionProfileCatalogOperation(
+                preserveConnectedRuntimeState: keepRuntime
+            ) {
                 let updated: ActiveProfile
                 switch update {
                 case let .updated(data, metadata, _):
@@ -1017,6 +1113,7 @@ extension TunnelManager {
                     updated = ActiveProfile(
                         name: profile.name,
                         yaml: yaml,
+                        importedAt: profile.importedAt,
                         subscription: metadata
                     )
                 case let .notModified(metadata):
@@ -1031,29 +1128,63 @@ extension TunnelManager {
                     )
                 }
                 return try Self.replaceProfileContents(
-                    id: activeProfileID,
+                    id: id,
                     previous: profile,
                     with: updated,
                     defaults: defaults
                 )
             }
+            recordSubscriptionUpdateError(nil, for: id)
+
+            let isActiveTarget = id == activeProfileID
+            if isActiveTarget, state == .connected, case .updated = update {
+                let currentRoutingMode = sessionRoutingMode ?? routingMode
+                let reloadPayloadData = try await prepareReloadProfilePayload(
+                    requestedMode: currentRoutingMode
+                )
+                let client = makeProxySelectionProviderClient()
+                Self.runtimeLogger.info(
+                    "stage=subscriptionRefresh liveReload sending payload bytes=\(reloadPayloadData.count)"
+                )
+                try await client.reloadActiveProfile(payload: reloadPayloadData)
+                await syncGlobalSelector(client: client)
+                proxySelectionRefreshedAt.removeAll()
+                for group in activeProfileSummary?.proxyGroups ?? [] where group.strategy.lowercased() == "select" {
+                    if let snapshot = try? await client.snapshot(group: group.name) {
+                        proxySelections[group.name] = snapshot
+                    }
+                }
+                Self.runtimeLogger.info("stage=subscriptionRefresh liveReload succeeded")
+            }
+
             switch update {
             case let .updated(_, _, report):
-                profileMessage = subscriptionSuccessMessage(
-                    base: "Subscription updated and activated.",
-                    partial: "Subscription updated and activated. %lld usable nodes imported; %lld invalid nodes skipped.",
-                    report: report
-                )
+                if isActiveTarget {
+                    profileMessage = subscriptionSuccessMessage(
+                        base: "Subscription updated and activated.",
+                        partial: "Subscription updated and activated. %lld usable nodes imported; %lld invalid nodes skipped.",
+                        report: report
+                    )
+                } else {
+                    profileMessage = aetherBilingualText(
+                        en: "Updated subscription “\(profile.name)”.",
+                        zhHans: "已更新订阅「\(profile.name)」。"
+                    )
+                }
             case .notModified:
-                profileMessage = AppLocalization.string(
-                    "Subscription is already up to date."
-                )
+                if !isAutomatic || isActiveTarget {
+                    profileMessage = AppLocalization.string(
+                        "Subscription is already up to date."
+                    )
+                }
             }
             diagnosticEvents.record(.subscriptionRefreshed)
             profileMessageIsError = false
         } catch {
             diagnosticEvents.record(.profileOperationFailed)
-            profileMessage = localizedProfileOperationError(error)
+            let errorText = localizedProfileOperationError(error)
+            recordSubscriptionUpdateError(errorText, for: id)
+            profileMessage = errorText
             profileMessageIsError = true
         }
     }
@@ -1174,25 +1305,33 @@ extension TunnelManager {
         )
     }
 
-    func installReviewProfileCatalog(_ catalog: ProfileCatalog) {
+    func installReviewProfileCatalog(
+        _ catalog: ProfileCatalog,
+        preserveConnectedRuntimeState: Bool = false
+    ) {
         installProfileProjection(
-            ProfileCatalogProjectionBuilder.review(catalog)
+            ProfileCatalogProjectionBuilder.review(catalog),
+            preserveConnectedRuntimeState: preserveConnectedRuntimeState
         )
     }
 
     func installProfileProjection(
-        _ projection: ProfileCatalogProjection
+        _ projection: ProfileCatalogProjection,
+        preserveConnectedRuntimeState: Bool = false
     ) {
-        clearProxySelectionRuntimeState()
+        if !(preserveConnectedRuntimeState && state == .connected) {
+            clearProxySelectionRuntimeState()
+        }
         profiles = projection.catalog.profiles
         activeProfileID = projection.catalog.activeProfileID
         activeProfile = projection.catalog.activeProfile?.profile
         if let active = projection.catalog.activeProfile?.profile,
-           (!customRules.isEmpty || !compiledRemoteRulesCache.isEmpty) {
+           !isUIReviewMode || !customRules.isEmpty || !compiledRemoteRulesCache.isEmpty {
             let optimized = DomesticRoutingOptimizer.optimizedProfile(
                 for: active.runtimeYAML,
                 customRules: customRules,
-                remoteRules: compiledRemoteRulesCache
+                remoteRules: compiledRemoteRulesCache,
+                enableDomesticDirect: isDomesticOptimizationEnabled
             )
             activeProfileSummary = ProfileConfigurationInspector.inspect(
                 yaml: optimized,
@@ -1203,7 +1342,7 @@ extension TunnelManager {
             activeProfileSummary = projection.summary
         }
         loadProxySelectionModes(
-            groups: projection.summary?.proxyGroups ?? [],
+            groups: activeProfileSummary?.proxyGroups ?? projection.summary?.proxyGroups ?? [],
             profileYAML: projection.catalog.activeProfile?.profile.yaml
         )
         dnsRuntimePolicy = projection.dnsPolicy
@@ -1221,21 +1360,45 @@ extension TunnelManager {
     }
 
     func applyProductionProfileCatalog(
-        _ catalog: ProfileCatalog
+        _ catalog: ProfileCatalog,
+        preserveConnectedRuntimeState: Bool = false
     ) async {
+        let currentCustomRules = customRules
+        let currentRemoteRules = compiledRemoteRulesCache
+        let currentDomesticEnabled = isDomesticOptimizationEnabled
         let projection = await Task.detached(priority: .userInitiated) {
-            ProfileCatalogProjectionBuilder.production(catalog)
+            ProfileCatalogProjectionBuilder.production(
+                catalog,
+                customRules: currentCustomRules,
+                remoteRules: currentRemoteRules,
+                enableDomesticDirect: currentDomesticEnabled
+            )
         }.value
-        installProfileProjection(projection)
+        installProfileProjection(
+            projection,
+            preserveConnectedRuntimeState: preserveConnectedRuntimeState
+        )
     }
 
     func performProductionProfileCatalogOperation(
+        preserveConnectedRuntimeState: Bool = false,
         _ operation: @escaping @Sendable () throws -> ProfileCatalog
     ) async throws {
+        let currentCustomRules = customRules
+        let currentRemoteRules = compiledRemoteRulesCache
+        let currentDomesticEnabled = isDomesticOptimizationEnabled
         let projection = try await Task.detached(priority: .userInitiated) {
-            ProfileCatalogProjectionBuilder.production(try operation())
+            ProfileCatalogProjectionBuilder.production(
+                try operation(),
+                customRules: currentCustomRules,
+                remoteRules: currentRemoteRules,
+                enableDomesticDirect: currentDomesticEnabled
+            )
         }.value
-        installProfileProjection(projection)
+        installProfileProjection(
+            projection,
+            preserveConnectedRuntimeState: preserveConnectedRuntimeState
+        )
     }
 
     func canModifyProfile(id: UUID) -> Bool {
