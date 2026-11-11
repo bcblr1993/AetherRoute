@@ -42,13 +42,15 @@ public struct ProxySelectionProviderClient: Sendable {
     public func latency(
         group: String,
         url: String,
-        timeoutMilliseconds: UInt32
+        timeoutMilliseconds: UInt32,
+        unifiedDelay: Bool = true
     ) async throws -> ProxyLatencyState {
         switch try await send(
             .latency(
                 group: group,
                 url: url,
-                timeoutMilliseconds: timeoutMilliseconds
+                timeoutMilliseconds: timeoutMilliseconds,
+                unifiedDelay: unifiedDelay
             )
         ) {
         case let .latency(state): state
@@ -62,13 +64,15 @@ public struct ProxySelectionProviderClient: Sendable {
     public func activeLatency(
         group: String,
         url: String,
-        timeoutMilliseconds: UInt32
+        timeoutMilliseconds: UInt32,
+        unifiedDelay: Bool = true
     ) async throws -> ProxyLatencyState {
         switch try await send(
             .activeLatency(
                 group: group,
                 url: url,
-                timeoutMilliseconds: timeoutMilliseconds
+                timeoutMilliseconds: timeoutMilliseconds,
+                unifiedDelay: unifiedDelay
             )
         ) {
         case let .latency(state): state
@@ -84,11 +88,15 @@ public struct ProxySelectionProviderClient: Sendable {
     public func displayLatency(
         member: String,
         url: String,
-        timeoutMilliseconds: UInt32
+        timeoutMilliseconds: UInt32,
+        unifiedDelay: Bool = true
     ) async throws -> ProxyLatencyMeasurement {
         if member.uppercased() == "REJECT" { return .timedOut }
         let state = try await activeLatency(
-            group: member, url: url, timeoutMilliseconds: timeoutMilliseconds
+            group: member,
+            url: url,
+            timeoutMilliseconds: timeoutMilliseconds,
+            unifiedDelay: unifiedDelay
         )
         let delay = state.results.first(where: { $0.member == member })?.delayMilliseconds
             ?? state.results.first?.delayMilliseconds

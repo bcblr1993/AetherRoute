@@ -184,10 +184,28 @@ public final class FlowCoreEngine: @unchecked Sendable {
         url: String,
         timeoutMilliseconds: UInt32
     ) throws -> ProxyLatencyState {
+        let unpacked = ProxySelectionProviderMessageCodec.unpackLatencyTimeoutMilliseconds(
+            timeoutMilliseconds
+        )
+        return try storage.testProxyLatency(
+            group: group,
+            url: url,
+            timeoutMilliseconds: unpacked.timeoutMilliseconds,
+            unifiedDelay: unpacked.unifiedDelay
+        )
+    }
+
+    public func testProxyLatency(
+        group: String,
+        url: String,
+        timeoutMilliseconds: UInt32,
+        unifiedDelay: Bool
+    ) throws -> ProxyLatencyState {
         try storage.testProxyLatency(
             group: group,
             url: url,
-            timeoutMilliseconds: timeoutMilliseconds
+            timeoutMilliseconds: timeoutMilliseconds,
+            unifiedDelay: unifiedDelay
         )
     }
 
@@ -196,10 +214,28 @@ public final class FlowCoreEngine: @unchecked Sendable {
         url: String,
         timeoutMilliseconds: UInt32
     ) throws -> ProxyLatencyState {
+        let unpacked = ProxySelectionProviderMessageCodec.unpackLatencyTimeoutMilliseconds(
+            timeoutMilliseconds
+        )
+        return try storage.testActiveProxyLatency(
+            group: group,
+            url: url,
+            timeoutMilliseconds: unpacked.timeoutMilliseconds,
+            unifiedDelay: unpacked.unifiedDelay
+        )
+    }
+
+    public func testActiveProxyLatency(
+        group: String,
+        url: String,
+        timeoutMilliseconds: UInt32,
+        unifiedDelay: Bool
+    ) throws -> ProxyLatencyState {
         try storage.testActiveProxyLatency(
             group: group,
             url: url,
-            timeoutMilliseconds: timeoutMilliseconds
+            timeoutMilliseconds: timeoutMilliseconds,
+            unifiedDelay: unifiedDelay
         )
     }
 
@@ -479,7 +515,8 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
     func testProxyLatency(
         group: String,
         url: String,
-        timeoutMilliseconds: UInt32
+        timeoutMilliseconds: UInt32,
+        unifiedDelay: Bool = true
     ) throws -> ProxyLatencyState {
         let group = try Self.selectorNameData(group)
         let url = try Self.latencyURLData(url)
@@ -498,11 +535,16 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
                 return handle
             }
         }
+        let abiTimeoutMilliseconds = ProxySelectionProviderMessageCodec
+            .packLatencyTimeoutMilliseconds(
+                timeoutMilliseconds,
+                unifiedDelay: unifiedDelay
+            )
         let result = backend.selectorLatency(
             engine: engineHandle,
             group: group,
             url: url,
-            timeoutMilliseconds: timeoutMilliseconds
+            timeoutMilliseconds: abiTimeoutMilliseconds
         )
         guard
             result.status == FlowCoreABIStatus.success,
@@ -516,7 +558,8 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
     func testActiveProxyLatency(
         group: String,
         url: String,
-        timeoutMilliseconds: UInt32
+        timeoutMilliseconds: UInt32,
+        unifiedDelay: Bool = true
     ) throws -> ProxyLatencyState {
         let group = try Self.selectorNameData(group)
         let url = try Self.latencyURLData(url)
@@ -535,11 +578,16 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
                 return handle
             }
         }
+        let abiTimeoutMilliseconds = ProxySelectionProviderMessageCodec
+            .packLatencyTimeoutMilliseconds(
+                timeoutMilliseconds,
+                unifiedDelay: unifiedDelay
+            )
         let result = backend.selectorActiveLatency(
             engine: engineHandle,
             group: group,
             url: url,
-            timeoutMilliseconds: timeoutMilliseconds
+            timeoutMilliseconds: abiTimeoutMilliseconds
         )
         guard
             result.status == FlowCoreABIStatus.success,

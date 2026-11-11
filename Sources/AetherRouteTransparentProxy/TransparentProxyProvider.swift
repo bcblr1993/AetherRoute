@@ -112,27 +112,16 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 )
                 Self.runtimeLog.aggregate("stage=createFlowCore success")
                 Self.runtimeLog.aggregate("stage=loadSelections begin")
-                let profileSummary = ProfileConfigurationInspector.inspect(yaml: profileYAML)
                 let rawSelections = try ProxySelectionStore.applicationGroup()
                     .selections(forProfileYAML: rawYAML)
-                let savedSelections = InitialProxySelectionPolicy.selections(
-                    persisted: rawSelections,
-                    summary: profileSummary
+                let appliedCount = Self.restoreSelections(
+                    rawSelections,
+                    profileYAML: profileYAML,
+                    to: engine
                 )
                 Self.runtimeLog.aggregate(
-                    "stage=loadSelections success count=\(savedSelections.count)"
+                    "stage=loadSelections success count=\(appliedCount)"
                 )
-                for (group, member) in savedSelections.sorted(
-                    by: { $0.key < $1.key }
-                ) {
-                    // A subscription can retain a group name while replacing its
-                    // members. Ignore only that stale per-group override; corrupt
-                    // encrypted storage still fails startup before reaching here.
-                    _ = try? engine.selectProxy(group: group, member: member)
-                }
-                if savedSelections["GLOBAL"] == nil {
-                    _ = try? engine.selectProxy(group: "GLOBAL", member: "DIRECT")
-                }
                 Self.runtimeLog.aggregate("stage=createFlowRuntime begin")
                 let runtime = try TransparentProxyFlowRuntime(
                     engine: engine,
@@ -347,14 +336,14 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             )
             runtimeLog.aggregate("stage=createFlowCore success")
             runtimeLog.aggregate("stage=restoreSelections begin")
-            for (group, member) in selections.sorted(by: { $0.key < $1.key }) {
-                _ = try? engine.selectProxy(group: group, member: member)
-            }
-            if selections["GLOBAL"] == nil {
-                _ = try? engine.selectProxy(group: "GLOBAL", member: "DIRECT")
-            }
+            let profileYAML = String(decoding: input.profile, as: UTF8.self)
+            let appliedCount = restoreSelections(
+                selections,
+                profileYAML: profileYAML,
+                to: engine
+            )
             runtimeLog.aggregate(
-                "stage=restoreSelections success count=\(selections.count)"
+                "stage=restoreSelections success count=\(appliedCount)"
             )
             runtimeLog.aggregate("stage=createFlowRuntime begin")
             let runtime = try TransparentProxyFlowRuntime(
@@ -727,20 +716,28 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     .snapshot(try runtimeController.selectorSnapshot(group: group))
                 case let .select(group, member):
                     .snapshot(try self.applySelection(group: group, member: member))
-                case let .latency(group, url, timeoutMilliseconds):
+                case let .latency(group, url, timeoutMilliseconds, unifiedDelay):
                     .latency(
                         try runtimeController.testProxyLatency(
                             group: group,
                             url: url,
-                            timeoutMilliseconds: timeoutMilliseconds
+                            timeoutMilliseconds: ProxySelectionProviderMessageCodec
+                                .packLatencyTimeoutMilliseconds(
+                                    timeoutMilliseconds,
+                                    unifiedDelay: unifiedDelay
+                                )
                         )
                     )
-                case let .activeLatency(group, url, timeoutMilliseconds):
+                case let .activeLatency(group, url, timeoutMilliseconds, unifiedDelay):
                     .latency(
                         try runtimeController.testActiveProxyLatency(
                             group: group,
                             url: url,
-                            timeoutMilliseconds: timeoutMilliseconds
+                            timeoutMilliseconds: ProxySelectionProviderMessageCodec
+                                .packLatencyTimeoutMilliseconds(
+                                    timeoutMilliseconds,
+                                    unifiedDelay: unifiedDelay
+                                )
                         )
                     )
                 case let .telemetry(maximumConnections):
@@ -815,15 +812,106 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         for request: ProxySelectionProviderRequest
     ) -> Int {
         switch request {
-        case let .latency(_, _, timeoutMilliseconds):
+        case let .latency(_, _, timeoutMilliseconds, _):
             let perBatchSeconds = max(1, Int((timeoutMilliseconds + 999) / 1_000))
             return max(15, perBatchSeconds * 8 + 5)
-        case let .activeLatency(_, _, timeoutMilliseconds):
+        case let .activeLatency(_, _, timeoutMilliseconds, _):
             let probeSeconds = max(1, Int((timeoutMilliseconds + 999) / 1_000))
             return max(15, probeSeconds + 5)
         default:
             return 15
         }
+    }
+
+    @discardableResult
+    static func restoreSelections(
+        _ rawSelections: [String: String],
+        profileYAML: String,
+        to engine: FlowCoreEngine
+    ) -> Int {
+        let profileSummary = ProfileConfigurationInspector.inspect(yaml: profileYAML)
+        let seededSelections = InitialProxySelectionPolicy.selections(
+            persisted: rawSelections,
+            summary: profileSummary
+        )
+        let manualGroups = Set(
+            profileSummary.proxyGroups
+                .filter { $0.strategy.caseInsensitiveCompare("select") == .orderedSame }
+                .map(\.name)
+        )
+        let restorable = seededSelections.filter {
+            manualGroups.contains($0.key) || $0.key == "GLOBAL"
+        }
+        var appliedCount = 0
+        for (group, member) in restorable.sorted(by: { $0.key < $1.key }) where group != "GLOBAL" {
+            if (try? engine.selectProxy(group: group, member: member)) != nil {
+                appliedCount += 1
+            }
+        }
+        var globalApplied = false
+        if let explicitGlobal = restorable["GLOBAL"] {
+            globalApplied = (try? engine.selectProxy(group: "GLOBAL", member: explicitGlobal)) != nil
+        }
+        if !globalApplied,
+           let defaultGlobal = resolveDefaultGlobalOutbound(summary: profileSummary)
+        {
+            globalApplied = (try? engine.selectProxy(group: "GLOBAL", member: defaultGlobal)) != nil
+        }
+        if !globalApplied,
+           let globalSnapshot = try? engine.selectorSnapshot(group: "GLOBAL"),
+           let candidate = globalSnapshot.members.first(where: InitialProxySelectionPolicy.isRouteCandidate)
+        {
+            globalApplied = (try? engine.selectProxy(group: "GLOBAL", member: candidate)) != nil
+        }
+        if !globalApplied {
+            globalApplied = (try? engine.selectProxy(group: "GLOBAL", member: "DIRECT")) != nil
+        }
+        if globalApplied {
+            appliedCount += 1
+        }
+        return appliedCount
+    }
+
+    static func resolveDefaultGlobalOutbound(
+        summary: ProfileConfigurationSummary
+    ) -> String? {
+        let nonGlobalGroups = summary.proxyGroups.filter {
+            $0.name.caseInsensitiveCompare("GLOBAL") != .orderedSame
+        }
+        let groupNames = Set(nonGlobalGroups.map(\.name))
+        let usableProxies = summary.proxies.filter(\.recognition.isUsable)
+        let usableProxyNames = Set(usableProxies.map(\.name))
+
+        if let matchTarget = summary.allRules.last(where: {
+            let kind = $0.kind.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            return kind == "MATCH" || kind == "FINAL"
+        })?.target,
+           InitialProxySelectionPolicy.isRouteCandidate(matchTarget),
+           groupNames.contains(matchTarget) || usableProxyNames.contains(matchTarget)
+        {
+            return matchTarget
+        }
+
+        if let primarySelectGroup = nonGlobalGroups.first(where: {
+            $0.strategy.caseInsensitiveCompare("select") == .orderedSame
+                && InitialProxySelectionPolicy.isRouteCandidate($0.name)
+        }) {
+            return primarySelectGroup.name
+        }
+
+        if let primaryGroup = nonGlobalGroups.first(where: {
+            InitialProxySelectionPolicy.isRouteCandidate($0.name)
+        }) ?? nonGlobalGroups.first {
+            return primaryGroup.name
+        }
+
+        if let primaryProxy = usableProxies.first(where: {
+            InitialProxySelectionPolicy.isRouteCandidate($0.name)
+        }) ?? usableProxies.first {
+            return primaryProxy.name
+        }
+
+        return nil
     }
 
     private func applyRoutingMode(
@@ -894,7 +982,12 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 )
             } else {
                 let activeProfile = try store.loadValidated()
-                let routingMode: RoutingMode = .rule
+                let previousRecipe = recipeLock.withLock { runtimeRecipe }
+                let routingMode: RoutingMode = previousRecipe?.routingMode ?? .rule
+                let persistedSelections = (try? ProxySelectionStore.applicationGroup()
+                    .selections(forProfileYAML: activeProfile.runtimeYAML))
+                    ?? previousRecipe?.selections
+                    ?? [:]
                 let resourceStore = RoutingResourceStore(applicationSupportDirectory: store.directoryURL)
                 let resources = (try? resourceStore.launchResourceSnapshot(for: activeProfile.runtimeYAML)) ?? [:]
                 snapshot = try ProviderLaunchSnapshot(
@@ -902,7 +995,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     routingMode: routingMode,
                     bypassPolicy: (try? BypassPolicyStore.applicationGroup().load()) ?? .empty,
                     dnsPolicy: .inherited,
-                    proxySelections: [:],
+                    proxySelections: persistedSelections,
                     routingResources: resources
                 )
             }
