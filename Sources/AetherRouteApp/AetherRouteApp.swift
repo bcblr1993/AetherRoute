@@ -893,7 +893,7 @@ private struct MenuBarContent: View {
 
     /// The active subscription running out or ended, worded for the panel.
     private var subscriptionNotice: (alert: SubscriptionUsageAlert, title: String, detail: String)? {
-        guard let usage = tunnel.activeProfile?.subscription?.usage else { return nil }
+        guard let usage = tunnel.effectiveActiveSubscriptionUsage else { return nil }
         let alert = SubscriptionUsageAlert.evaluate(usage, now: .now)
         let title: String
         switch alert {
@@ -1852,7 +1852,7 @@ private struct MenuLiveTrafficValue: View {
         case .upload:
             return formattedRate(telemetry.snapshot.uploadBytesPerSecond)
         case .connections:
-            return String(telemetry.snapshot.connections.count)
+            return String(telemetry.snapshot.totalActiveConnections)
         case .coreMemory:
             let bytes = telemetry.snapshot.memoryBytes
             return bytes > 0 ? formattedBytes(bytes) : "—"
@@ -1921,7 +1921,7 @@ private struct MenuStaticTrafficValue: View {
         case .upload:
             return formattedRate(snapshot.uploadBytesPerSecond)
         case .connections:
-            return String(snapshot.connections.count)
+            return String(snapshot.totalActiveConnections)
         case .coreMemory:
             let bytes = snapshot.memoryBytes
             return bytes > 0 ? formattedBytes(bytes) : "—"

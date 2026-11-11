@@ -1006,10 +1006,13 @@ struct ConnectionsView: View {
     }
 
     private func footerText(visibleCount: Int) -> String {
-        AppLocalization.format(
+        let totalCount = (pausedConnections == nil && !showsRecentlyClosed)
+            ? max(displayedConnections.count, telemetry.snapshot.totalActiveConnections)
+            : displayedConnections.count
+        return AppLocalization.format(
             "Showing %lld of %lld connections",
             Int64(visibleCount),
-            Int64(displayedConnections.count)
+            Int64(totalCount)
         )
     }
 
@@ -1034,11 +1037,15 @@ struct ConnectionsView: View {
 
     /// Flows per outlet, in one pass over the list.
     private var outletCounts: [ConnectionOutletFilter: Int] {
-        let tallied = (pausedConnections == nil && !showsRecentlyClosed)
+        let usesLiveSnapshot = pausedConnections == nil && !showsRecentlyClosed
+        let tallied = usesLiveSnapshot
             ? telemetry.snapshotOutletCounts()
             : ConnectionOutletClassifier.counts(for: displayedConnections)
+        let allCount = usesLiveSnapshot
+            ? max(tallied.all, telemetry.snapshot.totalActiveConnections)
+            : tallied.all
         return [
-            .all: tallied.all,
+            .all: allCount,
             .proxied: tallied.proxied,
             .direct: tallied.direct,
             .rejected: tallied.rejected,

@@ -586,4 +586,91 @@ final class AppLifecycleAndPagesFixesTests: XCTestCase {
             "setDomesticOptimizationEnabled must immediately refresh activeProfileSummary and live-reload when connected"
         )
     }
+
+    // MARK: - Cross-Module Glue Integration
+
+    func testCrossModuleGlueIntegration() async throws {
+        let latencyExt = try appSource("TunnelManager+Latency.swift")
+        let telemetryExt = try appSource("TunnelManager+Telemetry.swift")
+        let tunnelManager = try appSource("TunnelManager.swift")
+        let contentView = try appSource("ContentView.swift")
+        let profilesPage = try appSource("ProfilesPageView.swift")
+        let connectionsPage = try appSource("ConnectionsPageView.swift")
+
+        // 1. Unified delay preference wired into client.displayLatency
+        XCTAssertTrue(
+            latencyExt.contains("unifiedDelay: LatencyTestPreferences.isUnifiedDelayEnabled"),
+            "TunnelManager+Latency must forward LatencyTestPreferences.isUnifiedDelayEnabled to client.displayLatency"
+        )
+
+        // 2. Native activeGroupLeaves merged into automaticGroupLeaves
+        XCTAssertTrue(
+            telemetryExt.contains("snapshot.activeGroupLeaves"),
+            "TunnelManager.publishTelemetry must merge snapshot.activeGroupLeaves into automaticGroupLeaves"
+        )
+
+        // 3. Pseudo-node SubscriptionUsage fallback on missing Subscription-Userinfo header
+        let yamlWithNotice = """
+        proxies:
+          - { name: "剩余流量：154.92 GB", type: ss, server: 198.51.100.1, port: 443, cipher: aes-128-gcm, password: secret }
+          - { name: "套餐到期：2028-05-01", type: ss, server: 198.51.100.2, port: 443, cipher: aes-128-gcm, password: secret }
+          - { name: "JP Tokyo 01", type: ss, server: 198.51.100.3, port: 443, cipher: aes-128-gcm, password: secret }
+        proxy-groups:
+          - name: Proxy
+            type: select
+            proxies:
+              - "剩余流量：154.92 GB"
+              - "套餐到期：2028-05-01"
+              - "JP Tokyo 01"
+        rules:
+          - MATCH,Proxy
+        """
+        let checkedAt = Date(timeIntervalSince1970: 1_780_000_000)
+        let subURL = try XCTUnwrap(URL(string: "https://sub.example.test/api"))
+        let client = ProfileSubscriptionClient(
+            transport: { request in
+                ProfileSubscriptionHTTPResponse(
+                    data: Data(yamlWithNotice.utf8),
+                    statusCode: 200,
+                    finalURL: request.url,
+                    headers: [:]
+                )
+            },
+            now: { checkedAt }
+        )
+        let sub = try ProfileSubscription(url: subURL)
+        let refreshResult = try await client.fetch(sub)
+        guard case let .updated(_, metadata, _) = refreshResult else {
+            return XCTFail("Expected .updated subscription result")
+        }
+        let fallbackUsage: SubscriptionUsage = try XCTUnwrap(
+            metadata.usage,
+            "When HTTP Subscription-Userinfo header is absent, fetch must fall back to notice pseudo-node usage"
+        )
+        XCTAssertNotNil(fallbackUsage.remainingBytes)
+        XCTAssertNotNil(fallbackUsage.expiresAt)
+        XCTAssertTrue(
+            profilesPage.contains("SubscriptionUsage.fallback(from: summary")
+                && profilesPage.contains("let remaining = usage.remainingBytes"),
+            "ProfilesPageView must fall back to SubscriptionUsage.fallback and format remainingBytes when totalBytes is nil"
+        )
+        XCTAssertTrue(
+            contentView.contains("subscriptionUsage: tunnel.effectiveActiveSubscriptionUsage"),
+            "Overview TrafficCard must receive effectiveActiveSubscriptionUsage fallback"
+        )
+
+        // 4. totalActiveConnections wired into sidebar badge, Overview, Connections page & truncation guard
+        XCTAssertTrue(
+            contentView.contains("telemetry.snapshot.totalActiveConnections"),
+            "Sidebar badge and Overview live connections must use snapshot.totalActiveConnections"
+        )
+        XCTAssertTrue(
+            connectionsPage.contains("telemetry.snapshot.totalActiveConnections"),
+            "Connections page count & footer must use snapshot.totalActiveConnections"
+        )
+        XCTAssertTrue(
+            tunnelManager.contains("snapshot.totalActiveConnections > snapshot.connections.count"),
+            "NetworkTelemetryViewModel.update must treat wire-clamped snapshots (totalActiveConnections > connections.count) as truncated"
+        )
+    }
 }

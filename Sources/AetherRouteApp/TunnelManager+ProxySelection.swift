@@ -139,6 +139,7 @@ extension TunnelManager {
             timeoutMilliseconds: timeoutMilliseconds
         )
         let maxConcurrent = 8
+        let unifiedDelay = LatencyTestPreferences.isUnifiedDelayEnabled
         var delaysByMember: [String: UInt32?] = [:]
         delaysByMember.reserveCapacity(probeMembers.count)
 
@@ -154,7 +155,8 @@ extension TunnelManager {
                     let delay = try? await probeClient.displayLatency(
                         member: member,
                         url: Self.selectorLatencyTestURL,
-                        timeoutMilliseconds: timeoutMilliseconds
+                        timeoutMilliseconds: timeoutMilliseconds,
+                        unifiedDelay: unifiedDelay
                     ).delayMilliseconds
                     return (member, delay)
                 }
@@ -171,7 +173,8 @@ extension TunnelManager {
                         let delay = try? await probeClient.displayLatency(
                             member: nextMember,
                             url: Self.selectorLatencyTestURL,
-                            timeoutMilliseconds: timeoutMilliseconds
+                            timeoutMilliseconds: timeoutMilliseconds,
+                            unifiedDelay: unifiedDelay
                         ).delayMilliseconds
                         return (nextMember, delay)
                     }

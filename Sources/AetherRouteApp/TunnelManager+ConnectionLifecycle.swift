@@ -45,7 +45,7 @@ extension TunnelManager {
                 uploadTotal: telemetry.uploadTotal,
                 downloadTotal: telemetry.downloadTotal,
                 memoryBytes: telemetry.memoryBytes,
-                activeConnectionCount: telemetry.connections.count,
+                activeConnectionCount: telemetry.totalActiveConnections,
                 requestedConnectionLimit: Int(effectiveTelemetryConnectionLimit)
             ),
             provider: providerDiagnostics,

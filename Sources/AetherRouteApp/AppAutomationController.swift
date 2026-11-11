@@ -116,7 +116,17 @@ final class AppAutomationController: ObservableObject {
         // Every subscription refresh replaces the active profile, so its usage
         // is re-checked whenever the provider reports new numbers.
         subscriptionObservation = tunnel.$activeProfile
-            .map { $0?.subscription?.usage }
+            .combineLatest(tunnel.$activeProfileSummary)
+            .map { profile, summary -> SubscriptionUsage? in
+                if let usage = profile?.subscription?.usage {
+                    return usage
+                }
+                guard let profile, let summary else { return nil }
+                let reportedAt = profile.subscription?.lastUpdatedAt
+                    ?? profile.subscription?.lastCheckedAt
+                    ?? profile.importedAt
+                return SubscriptionUsage.fallback(from: summary, reportedAt: reportedAt)
+            }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] usage in
@@ -311,7 +321,7 @@ final class AppAutomationController: ObservableObject {
         subscriptionNotificationsEnabled = granted
         userDefaults.set(granted, forKey: Self.subscriptionNotificationsPreferenceKey)
         if granted {
-            notifyIfSubscriptionNeedsAttention(tunnel.activeProfile?.subscription?.usage)
+            notifyIfSubscriptionNeedsAttention(tunnel.effectiveActiveSubscriptionUsage)
         }
     }
 

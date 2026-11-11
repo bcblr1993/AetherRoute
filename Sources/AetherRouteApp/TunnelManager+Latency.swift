@@ -298,7 +298,8 @@ extension TunnelManager {
         try await client.displayLatency(
             member: member,
             url: Self.defaultLatencyTestURL,
-            timeoutMilliseconds: timeoutMilliseconds
+            timeoutMilliseconds: timeoutMilliseconds,
+            unifiedDelay: LatencyTestPreferences.isUnifiedDelayEnabled
         )
     }
 

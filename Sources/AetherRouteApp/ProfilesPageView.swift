@@ -1102,6 +1102,7 @@ private struct ManagedProfileRow: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @State private var isHovered = false
     @State private var inspectedNodeCount: Int?
+    @State private var inspectedFallbackUsage: SubscriptionUsage?
     let managed: ManagedProfile
     let isActive: Bool
     let canActivate: Bool
@@ -1125,7 +1126,9 @@ private struct ManagedProfileRow: View {
                     .font(.caption)
                     .foregroundStyle(AetherVisual.secondaryText)
                     .lineLimit(1)
-                if let usage = managed.profile.subscription?.usage {
+                if let usage = managed.profile.subscription?.usage
+                    ?? inspectedFallbackUsage
+                    ?? ProfileNodeCountCache.fallbackUsages[ProfileNodeCountCache.key(for: managed)] {
                     SubscriptionUsageLine(usage: usage)
                 }
                 if let updateFailure = tunnel.subscriptionUpdateErrors[managed.id] {
@@ -1271,15 +1274,28 @@ private struct ManagedProfileRow: View {
                 if inspectedNodeCount != cached {
                     inspectedNodeCount = cached
                 }
+                let cachedUsage = ProfileNodeCountCache.fallbackUsages[key]
+                if inspectedFallbackUsage != cachedUsage {
+                    inspectedFallbackUsage = cachedUsage
+                }
                 return
             }
             let yaml = managed.profile.yaml
-            let count = await Task.detached(priority: .utility) {
-                ProfileConfigurationInspector.inspect(yaml: yaml).proxyCount
+            let reportedAt = managed.profile.subscription?.lastUpdatedAt
+                ?? managed.profile.subscription?.lastCheckedAt
+                ?? managed.profile.importedAt
+            let inspected = await Task.detached(priority: .utility) {
+                let summary = ProfileConfigurationInspector.inspect(yaml: yaml)
+                return (
+                    count: summary.proxyCount,
+                    usage: SubscriptionUsage.fallback(from: summary, reportedAt: reportedAt)
+                )
             }.value
             guard !Task.isCancelled else { return }
-            ProfileNodeCountCache.counts[key] = count
-            inspectedNodeCount = count
+            ProfileNodeCountCache.counts[key] = inspected.count
+            ProfileNodeCountCache.fallbackUsages[key] = inspected.usage
+            inspectedNodeCount = inspected.count
+            inspectedFallbackUsage = inspected.usage
         }
         .contextMenu {
             if !isActive {
@@ -1565,6 +1581,7 @@ private enum ProfileNodeCountCache {
     }
 
     static var counts: [Key: Int] = [:]
+    static var fallbackUsages: [Key: SubscriptionUsage] = [:]
 
     static func key(for managed: ManagedProfile) -> Key {
         Key(id: managed.id, importedAt: managed.profile.importedAt, length: managed.profile.yaml.utf8.count)
@@ -1639,6 +1656,8 @@ struct SubscriptionUsageLine: View {
             }
         } else if let used = usage.usedBytes {
             parts.append(AppLocalization.format("%@ used", bytes(used)))
+        } else if let remaining = usage.remainingBytes {
+            parts.append(AppLocalization.format("%@ left", bytes(remaining)))
         }
         switch alert {
         case .expired:

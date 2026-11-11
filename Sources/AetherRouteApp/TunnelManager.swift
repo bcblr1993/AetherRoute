@@ -351,7 +351,8 @@ final class NetworkTelemetryViewModel: ObservableObject {
             Int(requestedConnectionLimit),
             NetworkTelemetryCodec.maximumConnections
         )
-        let isTruncated = effectiveCap > 0 && snapshot.connections.count >= effectiveCap
+        let isTruncated = snapshot.totalActiveConnections > snapshot.connections.count
+            || (effectiveCap > 0 && snapshot.connections.count >= effectiveCap)
         truncationGuard.record(
             active: snapshot.connections,
             isTruncated: isTruncated,
@@ -544,6 +545,19 @@ final class TunnelManager: ObservableObject {
             return Self.connectionsPageTelemetryLimit
         }
         return Self.backgroundTelemetryConnectionLimit
+    }
+
+    var effectiveActiveSubscriptionUsage: SubscriptionUsage? {
+        if let usage = activeProfile?.subscription?.usage {
+            return usage
+        }
+        guard let active = activeProfile, let summary = activeProfileSummary else {
+            return nil
+        }
+        let reportedAt = active.subscription?.lastUpdatedAt
+            ?? active.subscription?.lastCheckedAt
+            ?? active.importedAt
+        return SubscriptionUsage.fallback(from: summary, reportedAt: reportedAt)
     }
 
     @Published var networkEngineMode: NetworkEngineMode

@@ -315,7 +315,8 @@ extension TunnelManager {
             let measurement = try await probeClient.displayLatency(
                 member: preferred,
                 url: Self.selectorLatencyTestURL,
-                timeoutMilliseconds: timeoutMilliseconds
+                timeoutMilliseconds: timeoutMilliseconds,
+                unifiedDelay: LatencyTestPreferences.isUnifiedDelayEnabled
             )
             let latency = ProxyLatencyState(
                 results: [

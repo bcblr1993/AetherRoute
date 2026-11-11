@@ -1646,6 +1646,17 @@
         }
       }
     },
+    "All subscriptions are up to date.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有订阅均已是最新。"
+          }
+        }
+      }
+    },
     "All supported traffic follows the selected routing mode.": {
       "localizations": {
         "zh-Hans": {
@@ -2408,6 +2419,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "按延迟"
+          }
+        }
+      }
+    },
+    "By live speed": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按实时速率"
           }
         }
       }
@@ -3196,6 +3218,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "断开全部连接，但不断开代理"
+          }
+        }
+      }
+    },
+    "Close connections (%lld)": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭该组连接（%lld）"
           }
         }
       }
@@ -4636,6 +4669,17 @@
         }
       }
     },
+    "Direct outbound (no proxy)": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直连出站（不经代理）"
+          }
+        }
+      }
+    },
     "Direct rules: %lld": {
       "localizations": {
         "zh-Hans": {
@@ -5614,6 +5658,17 @@
         }
       }
     },
+    "Expires %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到期 %@"
+          }
+        }
+      }
+    },
     "Expires %@ (%lld days)": {
       "localizations": {
         "zh-Hans": {
@@ -6060,6 +6115,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "路由数据库中没有 GEOSITE 分类 %@，请检查拼写，例如 cn、apple 或 openai。"
+          }
+        }
+      }
+    },
+    "GLOBAL (Global exit)": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GLOBAL（全局出口）"
           }
         }
       }
@@ -7764,6 +7830,17 @@
         }
       }
     },
+    "Locate current node": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定位当前节点"
+          }
+        }
+      }
+    },
     "Locate in Rules": {
       "localizations": {
         "en": {
@@ -8681,6 +8758,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "永久有效"
+          }
+        }
+      }
+    },
+    "No expiry": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "长期有效"
           }
         }
       }
@@ -11783,6 +11871,17 @@
         }
       }
     },
+    "Remaining %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剩余流量 %@"
+          }
+        }
+      }
+    },
     "Remove": {
       "localizations": {
         "zh-Hans": {
@@ -13143,6 +13242,17 @@
         }
       }
     },
+    "Sends two probes over the same connection and records the second round-trip, removing TLS/QUIC handshake overhead for fairer cross-protocol comparison.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在同一条代理连接上连续探测两次并取第二次往返耗时，剔除首次握手开销，使不同协议节点的延迟对比更准确。"
+          }
+        }
+      }
+    },
     "Server": {
       "localizations": {
         "zh-Hans": {
@@ -13362,6 +13472,28 @@
         }
       }
     },
+    "Show as grid": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "双列网格"
+          }
+        }
+      }
+    },
+    "Show as list": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单列列表"
+          }
+        }
+      }
+    },
     "Show each connection": {
       "localizations": {
         "zh-Hans": {
@@ -13419,6 +13551,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "在菜单栏显示实时网速"
+          }
+        }
+      }
+    },
+    "Show subscription info entries": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示订阅信息节点"
           }
         }
       }
@@ -14276,6 +14419,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "订阅已到期"
+          }
+        }
+      }
+    },
+    "Subscription info": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅信息"
           }
         }
       }
@@ -17035,6 +17189,17 @@
         }
       }
     },
+    "Unified delay (exclude handshake)": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "统一延迟（去除握手耗时）"
+          }
+        }
+      }
+    },
     "Uninstall": {
       "extractionState": "manual",
       "localizations": {
@@ -17287,6 +17452,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "已更新 %lld 个规则集"
+          }
+        }
+      }
+    },
+    "Updated %lld subscriptions.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已更新 %lld 个订阅。"
+          }
+        }
+      }
+    },
+    "Updated %lld subscriptions; %lld failed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已更新 %lld 个订阅，%lld 个更新失败。"
           }
         }
       }

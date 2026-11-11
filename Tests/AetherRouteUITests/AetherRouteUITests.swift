@@ -233,20 +233,24 @@ final class AetherRouteUITests: XCTestCase {
         defer { app.terminate() }
         let picker = app.descendants(matching: .any)["proxy-selection-mode-Balanced"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
-        let explanation = app.staticTexts["proxy-selection-mode-explanation"]
-        XCTAssertTrue(explanation.waitForExistence(timeout: 2))
         let node = app.buttons["Tokyo Direct"]
         XCTAssertTrue(node.waitForExistence(timeout: 2))
         XCTAssertTrue(node.isEnabled, "Manual mode does not take picks.")
         XCTAssertFalse(app.descendants(matching: .any)["proxy-node-badge-preferred"].exists)
 
-        picker.radioButtons["Fastest"].click()
+        picker.click()
+        let fastestItem = app.menuItems["Fastest"]
+        XCTAssertTrue(fastestItem.waitForExistence(timeout: 2))
+        fastestItem.click()
         let disabled = NSPredicate(format: "enabled == false")
         expectation(for: disabled, evaluatedWith: node)
         waitForExpectations(timeout: 3)
         XCTAssertTrue(app.buttons["proxy-switch-history-button"].exists)
 
-        picker.radioButtons["Failover"].click()
+        picker.click()
+        let failoverItem = app.menuItems["Failover"]
+        XCTAssertTrue(failoverItem.waitForExistence(timeout: 2))
+        failoverItem.click()
         let enabled = NSPredicate(format: "enabled == true")
         expectation(for: enabled, evaluatedWith: node)
         waitForExpectations(timeout: 3)
@@ -258,7 +262,10 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["No automatic switches yet."].waitForExistence(timeout: 2))
         app.typeKey(.escape, modifierFlags: [])
 
-        picker.radioButtons["Manual"].click()
+        picker.click()
+        let manualItem = app.menuItems["Manual"]
+        XCTAssertTrue(manualItem.waitForExistence(timeout: 2))
+        manualItem.click()
         let noBadge = NSPredicate(format: "exists == false")
         expectation(for: noBadge, evaluatedWith: app.descendants(matching: .any)["proxy-node-badge-preferred"])
         waitForExpectations(timeout: 3)
@@ -3010,7 +3017,8 @@ final class AetherRouteUITests: XCTestCase {
                let element = issue.element,
                element.elementType == .menuButton,
                (["profiles-more-menu", "profiles-add-menu", "rules-action-filter", "proxy-sort-picker", "add-application-rule", "connections-view-menu", "connections-more-menu", "proxies-more-menu"].contains(element.identifier)
-                    || element.identifier.hasPrefix("profile-actions-")),
+                    || element.identifier.hasPrefix("profile-actions-")
+                    || element.identifier.hasPrefix("proxy-selection-mode-")),
                element.isHittable {
                 // SwiftUI's native Menu is exercised by the profile-library
                 // UI test, but Xcode 26 omits the equivalent AppKit press

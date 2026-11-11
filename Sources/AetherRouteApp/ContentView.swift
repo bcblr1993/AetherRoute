@@ -866,6 +866,7 @@ private struct OverviewView: View {
                         isConnected: tunnel.isConnected,
                         isRealtime: tunnel.isRealtimeTelemetryPreferred,
                         isBackground: tunnel.isBackgroundTelemetryPreferred,
+                        subscriptionUsage: tunnel.effectiveActiveSubscriptionUsage,
                         telemetry: tunnel.telemetryViewModel
                     )
                     .transition(.opacity)
@@ -1963,7 +1964,7 @@ private struct ConnectionCountBadge: View {
     @ObservedObject var telemetry: NetworkTelemetryViewModel
 
     var body: some View {
-        let count = telemetry.snapshot.connections.count
+        let count = telemetry.snapshot.totalActiveConnections
         if count > 0 {
             AetherCountBadge(count: count)
         }
@@ -2019,7 +2020,7 @@ private struct LiveTelemetryMetricValue: View {
         case .upload:
             return formattedRate(telemetry.snapshot.uploadBytesPerSecond)
         case .connections:
-            return String(telemetry.snapshot.connections.count)
+            return String(telemetry.snapshot.totalActiveConnections)
         }
     }
 
@@ -2202,6 +2203,7 @@ private struct TrafficCard: View {
     let isConnected: Bool
     let isRealtime: Bool
     let isBackground: Bool
+    var subscriptionUsage: SubscriptionUsage? = nil
     let telemetry: NetworkTelemetryViewModel
 
     private var usesStackedLayout: Bool {
@@ -2212,6 +2214,10 @@ private struct TrafficCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
             trafficSection
+            if let subscriptionUsage {
+                Divider()
+                SubscriptionUsageLine(usage: subscriptionUsage)
+            }
             Divider()
             memoryStatusStrip
         }

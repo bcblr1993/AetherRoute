@@ -328,13 +328,20 @@ public struct ProfileSubscriptionClient: Sendable {
                 }
             }
 
+            let fallbackUsage = String(data: normalized.data, encoding: .utf8).flatMap { yaml in
+                SubscriptionUsage.fallback(
+                    from: ProfileConfigurationInspector.inspect(yaml: yaml),
+                    reportedAt: checkedAt
+                )
+            }
             return .updated(
                 data: normalized.data,
                 metadata: try refreshedMetadata(
                     subscription,
                     response: response,
                     checkedAt: checkedAt,
-                    updatedAt: checkedAt
+                    updatedAt: checkedAt,
+                    fallbackUsage: fallbackUsage
                 ),
                 report: normalized.report
             )
@@ -375,7 +382,8 @@ public struct ProfileSubscriptionClient: Sendable {
         _ subscription: ProfileSubscription,
         response: ProfileSubscriptionHTTPResponse,
         checkedAt: Date,
-        updatedAt: Date?
+        updatedAt: Date?,
+        fallbackUsage: SubscriptionUsage? = nil
     ) throws -> ProfileSubscription {
         try ProfileSubscription(
             url: subscription.url,
@@ -385,11 +393,12 @@ public struct ProfileSubscriptionClient: Sendable {
             lastCheckedAt: checkedAt,
             lastUpdatedAt: updatedAt,
             autoUpdateInterval: subscription.autoUpdateInterval,
-            // A response without the header keeps what was last reported.
+            // A response without the header falls back to notice pseudo-nodes
+            // in the payload, or keeps what was last reported.
             usage: SubscriptionUsage.parse(
                 header: response.headers["subscription-userinfo"],
                 reportedAt: checkedAt
-            ) ?? subscription.usage,
+            ) ?? fallbackUsage ?? subscription.usage,
             providerUpdateInterval: SubscriptionResponseHints.updateInterval(
                 header: response.headers["profile-update-interval"]
             ) ?? subscription.providerUpdateInterval,

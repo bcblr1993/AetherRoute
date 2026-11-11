@@ -720,12 +720,16 @@ extension TunnelManager {
                 .filter { $0.strategy.lowercased() != "select" }
                 .map(\.name)
         )
-        let leaves = automaticGroups.isEmpty
+        var leaves = automaticGroups.isEmpty
             ? [:]
             : GroupLeafResolver.leaves(
                 forGroups: automaticGroups,
                 chains: snapshot.connections.map(\.proxyChain)
             )
+        for (group, leaf) in snapshot.activeGroupLeaves
+        where automaticGroups.contains(group) && !leaf.isEmpty {
+            leaves[group] = leaf
+        }
         if leaves != automaticGroupLeaves {
             automaticGroupLeaves = leaves
         }
