@@ -991,7 +991,10 @@ private struct MenuBarContent: View {
     /// Settings.
     private var routeGroup: some View {
         VStack(spacing: 0) {
-            if let group = primaryGroup {
+            if effectiveMenuRoutingMode == .direct, tunnel.activeProfileSummary != nil {
+                directExitRow
+                rowDivider
+            } else if let group = activeMenuExitGroup {
                 exitRow(group)
                 if showingNodes {
                     MenuNodeListInline(group: group) {
@@ -1089,6 +1092,11 @@ private struct MenuBarContent: View {
         }
         .aetherGlass(in: RoundedRectangle(cornerRadius: Self.groupRadius, style: .continuous))
         .animation(AetherVisual.animation(AetherVisual.disclosure), value: tunnel.localProxySettings.allowLAN)
+        .onChange(of: effectiveMenuRoutingMode) { _, mode in
+            if mode == .direct {
+                showingNodes = false
+            }
+        }
     }
 
     private var rowDivider: some View {
@@ -1117,27 +1125,52 @@ private struct MenuBarContent: View {
         .padding(.horizontal, AetherVisual.s3)
     }
 
+    private var directExitRow: some View {
+        HStack(spacing: AetherVisual.s2) {
+            AetherIconTile(symbol: "bolt.fill", color: .green, size: Self.rowTileSize)
+            Text(verbatim: aetherBilingualText(
+                en: "Direct outbound (no proxy)",
+                zhHans: "直连出站（不经代理）"
+            ))
+            .font(.body.weight(.medium))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(minHeight: AetherVisual.compactRowHeight)
+        .padding(.horizontal, AetherVisual.s3)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("menu-direct-outlet-row")
+    }
+
     private func exitRow(_ group: ProxyGroupConfigurationSummary) -> some View {
-        Button {
+        let member: String? = if group.name == "GLOBAL" {
+            tunnel.proxySelections["GLOBAL"]?.selectedMember
+                ?? tunnel.activeProfileSummary.flatMap { TunnelManager.resolvedGlobalTargetMember(in: $0) }
+        } else {
+            tunnel.proxySelections[group.name]?.selectedMember
+        }
+        let resolvedLeaf = member.map { tunnel.resolvedLeafNode(from: $0) }
+        let leaf = (resolvedLeaf != member) ? resolvedLeaf : nil
+        return Button {
             withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
                 showingNodes.toggle()
             }
         } label: {
             HStack(spacing: AetherVisual.s2) {
                 AetherIconTile(symbol: "globe", color: .indigo, size: Self.rowTileSize)
-                let member = tunnel.proxySelections[group.name]?.selectedMember
                 MenuSelectedNodeTitle(
                     member: member,
-                    leaf: member.flatMap { tunnel.automaticGroupLeaves[$0] }
+                    leaf: leaf
                 )
                 if let member {
+                    let resolvedLatency = tunnel.resolvedOutletLatencyStatus(
+                        groupName: group.name,
+                        selectedMember: member
+                    )
                     MenuNodeLatency(
-                        status: ProxyLatencyStatus.status(
-                            member: member,
-                            results: tunnel.proxyLatencies[group.name]?.results,
-                            isTesting: tunnel.proxyLatencyRequests.contains(group.name)
-                        ),
-                        confidence: tunnel.latencyConfidence(group: group.name, member: member)
+                        status: resolvedLatency.status,
+                        confidence: resolvedLatency.confidence
                     )
                 }
                 AetherDisclosureChevron(isExpanded: showingNodes)
@@ -1147,9 +1180,12 @@ private struct MenuBarContent: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.aetherPressable)
-        .help(tunnel.proxySelections[group.name]?.selectedMember ?? AppLocalization.string("Select Node"))
+        .help(Text(verbatim: member ?? AppLocalization.string("Select Node")))
         .accessibilityIdentifier("menu-proxy-node-selector")
-        .task(id: "\(group.name):\(tunnel.isConnected)") {
+        .task(id: "\(group.name):\(tunnel.isConnected):\(effectiveMenuRoutingMode.rawValue)") {
+            if group.name == "GLOBAL" {
+                tunnel.seedGlobalSelectionIfNeeded()
+            }
             await tunnel.refreshProxySelection(group: group.name)
             await tunnel.refreshProxyLatencyIfNeeded(group: group.name)
         }
@@ -1183,7 +1219,7 @@ private struct MenuBarContent: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.aetherGlassCapsule)
-            if let group = primaryGroup {
+            if effectiveMenuRoutingMode != .direct, let group = primaryGroup {
                 let isTesting = tunnel.proxyLatencyRequests.contains(group.name)
                 Button {
                     Task { await tunnel.testProxyLatency(group: group.name) }
@@ -1313,9 +1349,25 @@ private struct MenuBarContent: View {
         return false
     }
 
+    private var effectiveMenuRoutingMode: RoutingMode {
+        tunnel.isConnected
+            ? (tunnel.sessionRoutingMode ?? tunnel.routingMode)
+            : tunnel.routingMode
+    }
+
+    private var activeMenuExitGroup: ProxyGroupConfigurationSummary? {
+        switch effectiveMenuRoutingMode {
+        case .direct:
+            return nil
+        case .global:
+            return tunnel.menuGlobalProxyGroup
+        case .rule:
+            return primaryGroup
+        }
+    }
+
     private var primaryGroup: ProxyGroupConfigurationSummary? {
-        let groups = tunnel.activeProfileSummary?.proxyGroups ?? []
-        return groups.first { $0.strategy.lowercased() == "select" } ?? groups.first
+        tunnel.resolvedPrimaryRoutingGroup()
     }
 
 #if AETHERROUTE_INDEPENDENT
@@ -1466,7 +1518,11 @@ private struct MenuNodeListInline: View {
     @State private var searchText = ""
 
     private var selectedMember: String? {
-        tunnel.proxySelections[group.name]?.selectedMember
+        if group.name == "GLOBAL" {
+            return tunnel.proxySelections["GLOBAL"]?.selectedMember
+                ?? tunnel.activeProfileSummary.flatMap { TunnelManager.resolvedGlobalTargetMember(in: $0) }
+        }
+        return tunnel.proxySelections[group.name]?.selectedMember
     }
 
     private var unsupported: Set<String> {
@@ -1532,11 +1588,12 @@ private struct MenuNodeListInline: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(filteredMembers, id: \.self) { member in
+                            let resolved = memberLatency(for: member)
                             MenuNodeRow(
                                 member: member,
                                 isSelected: member == selectedMember,
-                                status: status(for: member),
-                                confidence: tunnel.latencyConfidence(group: group.name, member: member)
+                                status: resolved.status,
+                                confidence: resolved.confidence
                             ) {
                                 if member == selectedMember {
                                     onClose()
@@ -1544,13 +1601,17 @@ private struct MenuNodeListInline: View {
                                 }
                                 selecting = true
                                 Task {
-                                    await tunnel.selectProxy(group: group.name, member: member)
+                                    if group.name == "GLOBAL" {
+                                        await tunnel.selectGlobalOutlet(member)
+                                    } else {
+                                        await tunnel.selectProxy(group: group.name, member: member)
+                                    }
                                     selecting = false
                                 }
                             }
                             .disabled(selecting || tunnel.proxySelectionRequests.contains(group.name)
                                 || group.strategy.lowercased() != "select" || unsupported.contains(member)
-                                || tunnel.proxySelectionMode(for: group.name) == .fastest)
+                                || (group.name != "GLOBAL" && tunnel.proxySelectionMode(for: group.name) == .fastest))
                         }
                     }
                 }
@@ -1571,6 +1632,9 @@ private struct MenuNodeListInline: View {
             }
         }
         .task(id: group.name) {
+            if group.name == "GLOBAL" {
+                tunnel.seedGlobalSelectionIfNeeded()
+            }
             updateOrder()
             await tunnel.refreshProxySelection(group: group.name)
             guard !Task.isCancelled else { return }
@@ -1586,19 +1650,18 @@ private struct MenuNodeListInline: View {
     private static let searchThreshold = 8
     private static let visibleRows: CGFloat = 7
 
-    private func status(for member: String) -> ProxyLatencyStatus {
-        if unsupported.contains(member) { return .timedOut }
-        return ProxyLatencyStatus.status(
-            member: member,
-            results: tunnel.proxyLatencies[group.name]?.results,
-            isTesting: tunnel.proxyLatencyRequests.contains(group.name)
-        )
+    private func memberLatency(for member: String) -> (status: ProxyLatencyStatus, confidence: ProxyLatencyConfidence) {
+        if unsupported.contains(member) {
+            return (.timedOut, tunnel.latencyConfidence(group: group.name, member: member))
+        }
+        return tunnel.resolvedOutletLatencyStatus(groupName: group.name, selectedMember: member)
     }
 
     private func updateOrder() {
-        orderedMembers = MenuProxyNodeOrder.sorted(
-            members: tunnel.proxySelections[group.name]?.members ?? group.members
-        )
+        let baseMembers = group.name == "GLOBAL"
+            ? group.members
+            : (tunnel.proxySelections[group.name]?.members ?? group.members)
+        orderedMembers = MenuProxyNodeOrder.sorted(members: baseMembers)
     }
 }
 
@@ -1931,7 +1994,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     static func resolve(_ raw: String) -> SettingsTab? {
         switch raw {
         case "general", "automation": .general
-        case "network", "bypass": .network
+        case "network", "bypass", "advanced": .network
         case "privacy", "diagnostics": .privacy
         case "about", "account", "licenses": .about
         default: nil
@@ -2230,6 +2293,28 @@ private struct SettingsView: View {
                 Text(AppLocalization.string("Proxies"))
             } footer: {
                 Text(AppLocalization.string("Closing connections makes a new node take effect at once; apps reconnect on their own. The latency test runs at most once a minute, only while connected."))
+            }
+
+            Section {
+                Toggle(
+                    isOn: Binding(
+                        get: { tunnel.isUnifiedDelayEnabled },
+                        set: { tunnel.setUnifiedDelayEnabled($0) }
+                    )
+                ) {
+                    Text(verbatim: aetherBilingualText(
+                        en: "Unified delay (exclude handshake)",
+                        zhHans: "统一延迟（去除握手耗时）"
+                    ))
+                }
+                .accessibilityIdentifier("unified-delay-toggle")
+            } header: {
+                Text(AppLocalization.string("Advanced"))
+            } footer: {
+                Text(verbatim: aetherBilingualText(
+                    en: "Sends two probes over the same connection and records the second round-trip, removing TLS/QUIC handshake overhead for fairer cross-protocol comparison.",
+                    zhHans: "在同一条代理连接上连续探测两次并取第二次往返耗时，剔除首次握手开销，使不同协议节点的延迟对比更准确。"
+                ))
             }
 
             Section {

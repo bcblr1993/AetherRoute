@@ -152,7 +152,6 @@ struct ContentView: View {
                     // instead of "collecting samples" for several seconds.
                     .backgroundTelemetryDemand(source: "main-window")
                     .task { await tunnel.prepare() }
-                    .task { await tunnel.runSubscriptionUpdateLoop() }
                     .transition(.opacity)
             } else {
                 PrivacyDisclosureView(isOnboarding: true)
@@ -956,22 +955,52 @@ private struct OverviewView: View {
 private struct ActiveOutlet: Equatable {
     let groupName: String
     let node: String
+    let resolvedNode: String
     let latency: ProxyLatencyStatus
+    let isDirectMode: Bool
 
     @MainActor
     init?(tunnel: TunnelManager) {
-        guard let summary = tunnel.activeProfileSummary,
-              let group = summary.proxyGroups.first(where: { $0.strategy.lowercased() == "select" })
-                ?? summary.proxyGroups.first,
-              let node = tunnel.proxySelections[group.name]?.selectedMember
-        else { return nil }
-        groupName = group.name
-        self.node = node
-        latency = ProxyLatencyStatus.status(
-            member: node,
-            results: tunnel.proxyLatencies[group.name]?.results,
-            isTesting: tunnel.isTestingLatency(group: group.name, member: node)
-        )
+        let mode = tunnel.isConnected
+            ? (tunnel.sessionRoutingMode ?? tunnel.routingMode)
+            : tunnel.routingMode
+        switch mode {
+        case .direct:
+            let directTitle = aetherBilingualText(
+                en: "Direct outbound (no proxy)",
+                zhHans: "直连出站（不经代理）"
+            )
+            groupName = "DIRECT"
+            node = directTitle
+            resolvedNode = directTitle
+            latency = .untested
+            isDirectMode = true
+        case .global:
+            guard let summary = tunnel.activeProfileSummary else { return nil }
+            let selected = tunnel.proxySelections["GLOBAL"]?.selectedMember
+                ?? TunnelManager.resolvedGlobalTargetMember(in: summary)
+            guard let selected else { return nil }
+            groupName = "GLOBAL"
+            node = selected
+            resolvedNode = tunnel.resolvedLeafNode(from: selected)
+            latency = tunnel.resolvedOutletLatencyStatus(
+                groupName: "GLOBAL",
+                selectedMember: selected
+            ).status
+            isDirectMode = false
+        case .rule:
+            guard let group = tunnel.resolvedPrimaryRoutingGroup(),
+                  let selected = tunnel.proxySelections[group.name]?.selectedMember
+            else { return nil }
+            groupName = group.name
+            node = selected
+            resolvedNode = tunnel.resolvedLeafNode(from: selected)
+            latency = tunnel.resolvedOutletLatencyStatus(
+                groupName: group.name,
+                selectedMember: selected
+            ).status
+            isDirectMode = false
+        }
     }
 }
 
@@ -1173,11 +1202,23 @@ private struct ConnectionHero: View {
     @ViewBuilder
     private var heroSubtitle: some View {
         if tunnel.isConnected, !tunnel.isAutomaticRouteRecovering, let since = tunnel.connectedSince {
-            let node = ActiveOutlet(tunnel: tunnel).map { tunnel.automaticGroupLeaves[$0.node] ?? $0.node }
+            let outlet = ActiveOutlet(tunnel: tunnel)
             TimelineView(.periodic(from: since, by: 60)) { context in
                 let duration = AppLocalization.duration(context.date.timeIntervalSince(since))
-                if let node {
-                    Text(String.localizedStringWithFormat(AppLocalization.string("Connected for %@ · via %@"), duration, node))
+                if let outlet {
+                    if outlet.isDirectMode {
+                        let connectedPrefix = String.localizedStringWithFormat(
+                            AppLocalization.string("Connected for %@"),
+                            duration
+                        )
+                        Text(verbatim: "\(connectedPrefix) · \(outlet.resolvedNode)")
+                    } else {
+                        Text(String.localizedStringWithFormat(
+                            AppLocalization.string("Connected for %@ · via %@"),
+                            duration,
+                            outlet.resolvedNode
+                        ))
+                    }
                 } else {
                     Text(String.localizedStringWithFormat(AppLocalization.string("Connected for %@"), duration))
                 }
@@ -1514,6 +1555,12 @@ private struct OverviewRowDivider: View {
 private struct OverviewExitRow: View {
     @EnvironmentObject private var tunnel: TunnelManager
 
+    private var effectiveRoutingMode: RoutingMode {
+        tunnel.isConnected
+            ? (tunnel.sessionRoutingMode ?? tunnel.routingMode)
+            : tunnel.routingMode
+    }
+
     var body: some View {
         let outlet = ActiveOutlet(tunnel: tunnel)
         Button {
@@ -1525,15 +1572,23 @@ private struct OverviewExitRow: View {
             OverviewRow(symbol: "globe", tint: .indigo, title: AppLocalization.string("Exit node")) {
                 HStack(spacing: AetherVisual.s2) {
                     if let outlet {
-                        let node = tunnel.automaticGroupLeaves[outlet.node] ?? outlet.node
-                        AetherRegionCode(name: node, reservesSlot: false)
-                        Text(node)
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .accessibilityIdentifier("overview-active-outlet-node")
-                        if outlet.latency != .untested || tunnel.isConnected {
-                            ProxyLatencyText(status: outlet.latency)
+                        if outlet.isDirectMode {
+                            Text(verbatim: outlet.resolvedNode)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .accessibilityIdentifier("overview-active-outlet-node")
+                        } else {
+                            let node = outlet.resolvedNode
+                            AetherRegionCode(name: node, reservesSlot: false)
+                            Text(verbatim: node)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .accessibilityIdentifier("overview-active-outlet-node")
+                            if outlet.latency != .untested || tunnel.isConnected {
+                                ProxyLatencyText(status: outlet.latency)
+                            }
                         }
                     } else {
                         Text(AppLocalization.string("Choose a node"))
@@ -1553,15 +1608,18 @@ private struct OverviewExitRow: View {
         // The selection is read from the extension (or the profile while
         // disconnected); without this the row said "Choose a node" until
         // the Proxies page had been opened once.
-        .task(id: "\(primaryGroupName ?? ""):\(tunnel.isConnected)") {
+        .task(id: "\(primaryGroupName ?? ""):\(tunnel.isConnected):\(effectiveRoutingMode.rawValue)") {
+            if effectiveRoutingMode == .global {
+                tunnel.seedGlobalSelectionIfNeeded()
+                await tunnel.refreshProxySelection(group: "GLOBAL")
+            }
             guard let primaryGroupName else { return }
             await tunnel.refreshProxySelection(group: primaryGroupName)
         }
     }
 
     private var primaryGroupName: String? {
-        let groups = tunnel.activeProfileSummary?.proxyGroups ?? []
-        return (groups.first { $0.strategy.lowercased() == "select" } ?? groups.first)?.name
+        tunnel.resolvedPrimaryRoutingGroup()?.name
     }
 }
 

@@ -18,6 +18,7 @@ extension TunnelManager {
     /// Registers what one surface needs. The strongest demand across all
     /// surfaces decides the polling cadence: 3 s, 10 s, or health checks only.
     func setTelemetryDemand(_ demand: TelemetryDemand, for source: String) {
+        let previousLimit = effectiveTelemetryConnectionLimit
         if demand == .realtime {
             realtimeTelemetrySources.insert(source)
         } else {
@@ -28,6 +29,7 @@ extension TunnelManager {
         } else {
             backgroundTelemetrySources.remove(source)
         }
+        let limitExpanded = effectiveTelemetryConnectionLimit > previousLimit
         let cadence = TelemetryCadence.resolve(
             realtimeSources: realtimeTelemetrySources.count,
             backgroundSources: backgroundTelemetrySources.count
@@ -36,12 +38,19 @@ extension TunnelManager {
         let shouldBeBackground = cadence == .background
         guard isRealtimeTelemetryPreferred != shouldBeRealtime
                 || isBackgroundTelemetryPreferred != shouldBeBackground
-        else { return }
+        else {
+            if limitExpanded && state == .connected {
+                Task { [weak self] in
+                    await self?.refreshTelemetry()
+                }
+            }
+            return
+        }
         let gainedCadence = (shouldBeRealtime && !isRealtimeTelemetryPreferred)
             || (shouldBeBackground && !isRealtimeTelemetryPreferred && !isBackgroundTelemetryPreferred)
         isRealtimeTelemetryPreferred = shouldBeRealtime
         isBackgroundTelemetryPreferred = shouldBeBackground
-        if gainedCadence && state == .connected {
+        if (gainedCadence || limitExpanded) && state == .connected {
             // Coming back into view: refresh now rather than showing numbers
             // that may be minutes old until the next tick.
             Task { [weak self] in
@@ -116,6 +125,7 @@ extension TunnelManager {
 
     func stopTelemetryPolling() {
         cancelTelemetryPollingTask()
+        telemetryRateSampler.reset()
         // The engine's counters are lifetime totals, so a gap between samples
         // loses nothing and an engine restart is detected from them; the
         // baseline is kept. Write what was counted so far.
@@ -217,10 +227,24 @@ extension TunnelManager {
                 }
                 return try await self.sendProviderMessage(data)
             }
-            let refreshed = try await client.telemetry(
-                maximumConnections: Self.telemetryConnectionLimit
+            let requestedLimit = effectiveTelemetryConnectionLimit
+            let wireLimit = min(
+                requestedLimit,
+                UInt16(clamping: NetworkTelemetryCodec.maximumConnections)
             )
-            publishTelemetry(refreshed)
+            let rawSnapshot = try await client.telemetry(
+                maximumConnections: wireLimit
+            )
+            let now = Date()
+            let resolvedSnapshot = telemetryRateSampler.resolve(
+                snapshot: rawSnapshot,
+                at: now
+            )
+            publishTelemetry(
+                resolvedSnapshot,
+                requestedConnectionLimit: requestedLimit,
+                at: now
+            )
         } catch {
             // A transient provider-message failure must not disconnect a healthy
             // tunnel or replace the last truthful sample with fabricated zeros.
@@ -675,8 +699,16 @@ extension TunnelManager {
 extension TunnelManager {
     /// Hands a sample to the telemetry view model and refreshes the
     /// automatic-group leaves derived from it.
-    func publishTelemetry(_ snapshot: NetworkTelemetrySnapshot) {
-        telemetryViewModel.update(snapshot)
+    func publishTelemetry(
+        _ snapshot: NetworkTelemetrySnapshot,
+        requestedConnectionLimit: UInt16 = TunnelManager.connectionsPageTelemetryLimit,
+        at now: Date = .now
+    ) {
+        telemetryViewModel.update(
+            snapshot,
+            requestedConnectionLimit: requestedConnectionLimit,
+            at: now
+        )
         recordTrafficStatistics(snapshot)
         MenuBarTrafficController.shared.updateTelemetry(
             upload: snapshot.uploadBytesPerSecond,

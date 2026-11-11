@@ -283,30 +283,19 @@ struct ConnectionsView: View {
     // columns 79 pt past the table. Duration keeps its 56/60/100 budget
     // (verify_ui_design_tokens.sh) for abbreviated Chinese durations.
     private func connectionTable(_ rows: [ConnectionTableItem]) -> some View {
-        Table(rows) {
+        let showsLiveRates = pausedConnections == nil && !showsRecentlyClosed
+        return Table(rows) {
             TableColumn(AppLocalization.string("App")) { row in
                 let app = SourceAppDirectory.shared.presentation(for: row.connection)
                 ConnectionAppCell(app: app)
-                    .contextMenu { appContextMenu(app) }
+                    .contextMenu { connectionRowContextMenu(for: row) }
+                    .onTapGesture(count: 2) { inspectedConnection = row }
             }
             .width(min: 48, ideal: 64, max: 260)
             TableColumn(AppLocalization.string("Destination")) { row in
                 ConnectionDestinationCell(connection: row.connection)
                     .help(Text(verbatim: row.connection.destinationAddress))
-                    .contextMenu {
-                        Button(AppLocalization.string("Copy destination")) { copyDestination(row.connection) }
-                        Button(AppLocalization.string("Connection details")) { inspectedConnection = row }
-                        if tunnel.isConnected, !showsRecentlyClosed {
-                            Button(AppLocalization.string("Close Connection")) {
-                                close(.init(row: row.connection))
-                            }
-                        }
-                        Divider()
-                        destinationRuleMenu(for: row.connection)
-                        appContextMenu(
-                            SourceAppDirectory.shared.presentation(for: row.connection)
-                        )
-                    }
+                    .contextMenu { connectionRowContextMenu(for: row) }
                     .onTapGesture(count: 2) { inspectedConnection = row }
             }
             .width(min: 80, ideal: 100, max: 520)
@@ -315,20 +304,29 @@ struct ConnectionsView: View {
             // letter while Traffic and Duration took ~200 pt each.
             TableColumn(AppLocalization.string("Matched rule")) { row in
                 ConnectionRuleCell(connection: row.connection)
+                    .contextMenu { connectionRowContextMenu(for: row) }
+                    .onTapGesture(count: 2) { inspectedConnection = row }
             }
-            .width(min: 60, ideal: 124, max: 400)
+            .width(min: 60, ideal: 108, max: 400)
             TableColumn(AppLocalization.string("Outlet")) { row in
                 ConnectionOutletCell(connection: row.connection)
+                    .contextMenu { connectionRowContextMenu(for: row) }
+                    .onTapGesture(count: 2) { inspectedConnection = row }
             }
             .width(min: 64, ideal: 76, max: 320)
             TableColumn(AppLocalization.string("Traffic")) { row in
-                ConnectionTrafficCell(connection: row.connection)
+                ConnectionTrafficCell(
+                    connection: row.connection,
+                    rates: showsLiveRates ? telemetry.connectionRates[row.id] : nil
+                )
+                .contextMenu { connectionRowContextMenu(for: row) }
+                .onTapGesture(count: 2) { inspectedConnection = row }
             }
-            .width(min: 52, ideal: 52, max: 120)
+            .width(min: 52, ideal: 68, max: 180)
             // Numbers sit on the right; the title follows them.
             .alignment(.numeric)
             TableColumn(AppLocalization.string("Duration")) { row in
-                ConnectionDurationCell(connection: row.connection)
+                durationColumnCell(for: row)
             }
             .width(min: 56, ideal: 60, max: 100)
             .alignment(.numeric)
@@ -338,6 +336,46 @@ struct ConnectionsView: View {
         .accessibilityLabel(AppLocalization.string("Connections"))
         .accessibilityIdentifier("connections-table")
         .scrollIndicators(.hidden, axes: .horizontal)
+    }
+
+    private func durationColumnCell(for row: ConnectionTableItem) -> some View {
+        HStack(spacing: AetherVisual.s1) {
+            ConnectionDurationCell(connection: row.connection)
+            if tunnel.isConnected, !showsRecentlyClosed {
+                Button {
+                    close(.init(row: row.connection))
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                }
+                .buttonStyle(.plain)
+                .help(AppLocalization.string("Close Connection"))
+                .accessibilityLabel(AppLocalization.string("Close Connection"))
+                .accessibilityIdentifier("close-connection-row-button")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .frame(height: AetherVisual.tableRowHeight)
+        .contentShape(Rectangle())
+        .contextMenu { connectionRowContextMenu(for: row) }
+        .onTapGesture(count: 2) { inspectedConnection = row }
+    }
+
+    @ViewBuilder
+    private func connectionRowContextMenu(for row: ConnectionTableItem) -> some View {
+        Button(AppLocalization.string("Copy destination")) { copyDestination(row.connection) }
+        Button(AppLocalization.string("Connection details")) { inspectedConnection = row }
+        if tunnel.isConnected, !showsRecentlyClosed {
+            Button(AppLocalization.string("Close Connection")) {
+                close(.init(row: row.connection))
+            }
+        }
+        Divider()
+        destinationRuleMenu(for: row.connection)
+        appContextMenu(
+            SourceAppDirectory.shared.presentation(for: row.connection)
+        )
     }
 
     /// One row per app: how many connections it has open and their traffic.
@@ -355,6 +393,7 @@ struct ConnectionsView: View {
                     .font(.body.monospacedDigit())
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .frame(height: AetherVisual.tableRowHeight)
+                    .contextMenu { appContextMenu(row.app) }
             }
             .width(min: 72, ideal: 84, max: 120)
             .alignment(.numeric)
@@ -365,18 +404,36 @@ struct ConnectionsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: AetherVisual.tableRowHeight)
                     .help(row.outletSummary)
+                    .contextMenu { appContextMenu(row.app) }
             }
             .width(min: 84, ideal: 120, max: 320)
             TableColumn(AppLocalization.string("Traffic")) { row in
-                VStack(alignment: .trailing, spacing: AetherVisual.s1) {
-                    Text(verbatim: "↓ \(formattedBytes(row.downloadTotal))")
-                    Text(verbatim: "↑ \(formattedBytes(row.uploadTotal))")
+                Group {
+                    if row.liveBytesPerSecond > 0 {
+                        VStack(alignment: .trailing, spacing: AetherVisual.sMicro) {
+                            Text(verbatim: "↓ \(formattedRate(row.liveDownloadBytesPerSecond)) · ↑ \(formattedRate(row.liveUploadBytesPerSecond))")
+                                .font(.caption.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(AetherReadableTint(color: .accentColor))
+                                .lineLimit(1)
+                                .aetherLiveValue()
+                            Text(verbatim: "↓ \(formattedBytes(row.downloadTotal)) · ↑ \(formattedBytes(row.uploadTotal))")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(AetherVisual.secondaryText)
+                                .lineLimit(1)
+                        }
+                    } else {
+                        VStack(alignment: .trailing, spacing: AetherVisual.s1) {
+                            Text(verbatim: "↓ \(formattedBytes(row.downloadTotal))")
+                            Text(verbatim: "↑ \(formattedBytes(row.uploadTotal))")
+                        }
+                        .font(.body.monospacedDigit())
+                    }
                 }
-                .font(.body.monospacedDigit())
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .frame(height: AetherVisual.tableRowHeight)
+                .contextMenu { appContextMenu(row.app) }
             }
-            .width(min: 64, ideal: 80, max: 120)
+            .width(min: 64, ideal: 96, max: 180)
             .alignment(.numeric)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
@@ -410,19 +467,7 @@ struct ConnectionsView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: AetherVisual.tableRowHeight)
-                .contextMenu {
-                    Button(AppLocalization.format("Show only %@", entry.displayName)) {
-                        showOnlyDimension(entry)
-                    }
-                    if dimension == .host {
-                        Button(AppLocalization.string("Copy destination")) {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(entry.displayName, forType: .string)
-                        }
-                        Divider()
-                        destinationRuleMenu(for: entry.sampleConnection)
-                    }
-                }
+                .contextMenu { leaderboardContextMenu(for: entry, dimension: dimension) }
                 .onTapGesture(count: 2) {
                     showOnlyDimension(entry)
                 }
@@ -433,6 +478,7 @@ struct ConnectionsView: View {
                     .font(.body.monospacedDigit())
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .frame(height: AetherVisual.tableRowHeight)
+                    .contextMenu { leaderboardContextMenu(for: entry, dimension: dimension) }
             }
             .width(min: 72, ideal: 84, max: 120)
             .alignment(.numeric)
@@ -443,6 +489,7 @@ struct ConnectionsView: View {
                     .foregroundStyle(AetherVisual.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .frame(height: AetherVisual.tableRowHeight)
+                    .contextMenu { leaderboardContextMenu(for: entry, dimension: dimension) }
             }
             .width(min: 56, ideal: 68, max: 100)
             .alignment(.numeric)
@@ -454,6 +501,7 @@ struct ConnectionsView: View {
                 .font(.body.monospacedDigit())
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .frame(height: AetherVisual.tableRowHeight)
+                .contextMenu { leaderboardContextMenu(for: entry, dimension: dimension) }
             }
             .width(min: 64, ideal: 80, max: 120)
             .alignment(.numeric)
@@ -463,6 +511,56 @@ struct ConnectionsView: View {
         .accessibilityLabel(primaryColumnTitle)
         .accessibilityIdentifier("connections-leaderboard-table")
         .scrollIndicators(.hidden, axes: .horizontal)
+    }
+
+    @ViewBuilder
+    private func leaderboardContextMenu(
+        for entry: ConnectionTrafficEntry,
+        dimension: ConnectionTrafficDimension
+    ) -> some View {
+        Button(AppLocalization.format("Show only %@", entry.displayName)) {
+            showOnlyDimension(entry)
+        }
+        if tunnel.isConnected, !showsRecentlyClosed {
+            Button {
+                closeGroupConnections(entry: entry, dimension: dimension)
+            } label: {
+                Text(verbatim: aetherBilingualText(
+                    en: "Close connections (\(entry.connectionCount))",
+                    zhHans: "关闭该组连接（\(entry.connectionCount)）"
+                ))
+            }
+        }
+        if dimension == .host {
+            Button(AppLocalization.string("Copy destination")) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(entry.displayName, forType: .string)
+            }
+            Divider()
+            destinationRuleMenu(for: entry.sampleConnection)
+        }
+    }
+
+    private func closeGroupConnections(
+        entry: ConnectionTrafficEntry,
+        dimension: ConnectionTrafficDimension
+    ) {
+        let matching = displayedConnections.filter {
+            ConnectionTrafficAggregator.matchesFilter($0, dimension: dimension, key: entry.key)
+        }
+        guard !matching.isEmpty else { return }
+        var requests: [ConnectionCloseRequest] = []
+        for connection in matching {
+            let request = ConnectionCloseRequest(row: connection)
+            if !requests.contains(request) {
+                requests.append(request)
+            }
+        }
+        Task {
+            for request in requests {
+                await tunnel.closeConnections(request)
+            }
+        }
     }
 
     private func showOnlyDimension(_ entry: ConnectionTrafficEntry) {
@@ -533,12 +631,15 @@ struct ConnectionsView: View {
                 ForEach(applicationRuleTargets, id: \.rawString) { target in
                     Button {
                         Task {
-                            await tunnel.setApplicationRule(
+                            let saved = await tunnel.setApplicationRule(
                                 bundleIdentifier: subject.bundleIdentifier,
                                 bundlePath: subject.bundlePath,
                                 displayName: app.displayName,
                                 target: target
                             )
+                            if saved, tunnel.isConnected {
+                                closeConnections(of: app)
+                            }
                         }
                     } label: {
                         if existing?.target == target {
@@ -551,7 +652,12 @@ struct ConnectionsView: View {
                 if let existing {
                     Divider()
                     Button(AppLocalization.string("Remove rule"), role: .destructive) {
-                        Task { await tunnel.deleteCustomRule(id: existing.id) }
+                        Task {
+                            let deleted = await tunnel.deleteCustomRule(id: existing.id)
+                            if deleted, tunnel.isConnected {
+                                closeConnections(of: app)
+                            }
+                        }
                     }
                 }
             }
@@ -579,7 +685,7 @@ struct ConnectionsView: View {
     /// Direct, reject, and each proxy group of the active profile.
     private var applicationRuleTargets: [CustomRuleTarget] {
         let groups = (tunnel.activeProfileSummary?.proxyGroups ?? []).map(\.name)
-        return [.direct] + groups.prefix(8).map { .proxy($0) } + [.reject]
+        return [.direct] + groups.map { .proxy($0) } + [.reject]
     }
 
     private func applicationTargetTitle(_ target: CustomRuleTarget) -> String {
@@ -622,14 +728,22 @@ struct ConnectionsView: View {
 
     private func appRows(_ rows: [ConnectionTableItem]) -> [ConnectionAppRow] {
         let directory = SourceAppDirectory.shared
+        let showsLiveRates = pausedConnections == nil && !showsRecentlyClosed
         var groups: [String: ConnectionAppRow] = [:]
         for row in rows {
             let app = directory.presentation(for: row.connection)
+            let rates = showsLiveRates ? telemetry.connectionRates[row.id] : nil
             groups[app.groupingKey, default: ConnectionAppRow(app: app)]
-                .add(row.connection)
+                .add(row.connection, rates: rates)
         }
         return groups.values.sorted { lhs, rhs in
             switch sort {
+            case .speed:
+                if lhs.liveBytesPerSecond != rhs.liveBytesPerSecond {
+                    return lhs.liveBytesPerSecond > rhs.liveBytesPerSecond
+                }
+                return lhs.downloadTotal + lhs.uploadTotal
+                    > rhs.downloadTotal + rhs.uploadTotal
             case .traffic:
                 return lhs.downloadTotal + lhs.uploadTotal
                     > rhs.downloadTotal + rhs.uploadTotal
@@ -725,7 +839,7 @@ struct ConnectionsView: View {
             Divider()
             Picker(AppLocalization.string("Sort"), selection: $sort) {
                 ForEach(ConnectionSort.allCases) { option in
-                    Text(option.localizedTitle).tag(option)
+                    Text(verbatim: option.localizedTitle).tag(option)
                 }
             }
             .pickerStyle(.inline)
@@ -816,6 +930,9 @@ struct ConnectionsView: View {
         if usesLiveSnapshot && !hasActiveFilter && sort == .traffic {
             return telemetry.trafficSortedSnapshotConnections()
         }
+        if usesLiveSnapshot && !hasActiveFilter && sort == .speed {
+            return telemetry.speedSortedSnapshotConnections()
+        }
         let identified = usesLiveSnapshot
             ? telemetry.identifiedSnapshotConnections()
             : ConnectionTableItem.identify(displayedConnections)
@@ -857,6 +974,14 @@ struct ConnectionsView: View {
         }
         return filtered.sorted { lhs, rhs in
             switch sort {
+            case .speed:
+                let lhsSpeed = usesLiveSnapshot ? (telemetry.connectionRates[lhs.id]?.totalBytesPerSecond ?? 0) : 0
+                let rhsSpeed = usesLiveSnapshot ? (telemetry.connectionRates[rhs.id]?.totalBytesPerSecond ?? 0) : 0
+                if lhsSpeed != rhsSpeed {
+                    return lhsSpeed > rhsSpeed
+                }
+                return lhs.connection.downloadTotal + lhs.connection.uploadTotal
+                    > rhs.connection.downloadTotal + rhs.connection.uploadTotal
             case .traffic:
                 return lhs.connection.downloadTotal + lhs.connection.uploadTotal
                     > rhs.connection.downloadTotal + rhs.connection.uploadTotal
@@ -889,6 +1014,7 @@ struct ConnectionsView: View {
     }
 
     private enum ConnectionSort: String, CaseIterable, Identifiable {
+        case speed
         case traffic
         case newest
         case destination
@@ -897,6 +1023,8 @@ struct ConnectionsView: View {
 
         var localizedTitle: String {
             switch self {
+            case .speed:
+                aetherBilingualText(en: "By live speed", zhHans: "按实时速率")
             case .traffic: AppLocalization.string("By traffic")
             case .newest: AppLocalization.string("By newest")
             case .destination: AppLocalization.string("By destination")
@@ -1068,7 +1196,26 @@ private struct SessionBar: View {
 
     private var outlet: String? {
         guard tunnel.isConnected else { return nil }
-        return tunnel.proxySelections.values.compactMap(\.selectedMember).first
+        let mode = tunnel.sessionRoutingMode ?? tunnel.routingMode
+        switch mode {
+        case .direct:
+            return aetherBilingualText(
+                en: "Direct outbound (no proxy)",
+                zhHans: "直连出站（不经代理）"
+            )
+        case .global:
+            let selected = tunnel.proxySelections["GLOBAL"]?.selectedMember
+                ?? tunnel.activeProfileSummary.flatMap {
+                    TunnelManager.resolvedGlobalTargetMember(in: $0)
+                }
+            return selected.map { tunnel.resolvedLeafNode(from: $0) }
+        case .rule:
+            guard let group = tunnel.resolvedPrimaryRoutingGroup(),
+                  let selected = tunnel.proxySelections[group.name]?.selectedMember
+                    ?? group.members.first
+            else { return nil }
+            return tunnel.resolvedLeafNode(from: selected)
+        }
     }
 
     private var duration: String? {
@@ -1114,6 +1261,8 @@ private struct ConnectionAppRow: Identifiable {
     private(set) var connectionCount = 0
     private(set) var uploadTotal: UInt64 = 0
     private(set) var downloadTotal: UInt64 = 0
+    private(set) var liveUploadBytesPerSecond: UInt64 = 0
+    private(set) var liveDownloadBytesPerSecond: UInt64 = 0
     private(set) var latestStartedAtUnixMilliseconds: UInt64 = 0
     private var outlets: [String] = []
 
@@ -1122,6 +1271,10 @@ private struct ConnectionAppRow: Identifiable {
     }
 
     var id: String { app.groupingKey }
+
+    var liveBytesPerSecond: UInt64 {
+        liveDownloadBytesPerSecond &+ liveUploadBytesPerSecond
+    }
 
     /// The distinct outlets, most used first ("Tokyo, DIRECT").
     var outletSummary: String {
@@ -1132,10 +1285,14 @@ private struct ConnectionAppRow: Identifiable {
             .joined(separator: ", ")
     }
 
-    mutating func add(_ connection: ConnectionTelemetry) {
+    mutating func add(_ connection: ConnectionTelemetry, rates: ConnectionTransferRates?) {
         connectionCount += 1
         uploadTotal &+= connection.uploadTotal
         downloadTotal &+= connection.downloadTotal
+        if let rates {
+            liveUploadBytesPerSecond &+= rates.uploadBytesPerSecond
+            liveDownloadBytesPerSecond &+= rates.downloadBytesPerSecond
+        }
         latestStartedAtUnixMilliseconds = max(latestStartedAtUnixMilliseconds, connection.startedAtUnixMilliseconds)
         outlets.append(ConnectionOutlet(proxyChain: connection.proxyChain).localizedTitle)
     }
@@ -1259,14 +1416,31 @@ private struct ConnectionOutletCell: View {
 
 private struct ConnectionTrafficCell: View {
     let connection: ConnectionTelemetry
+    let rates: ConnectionTransferRates?
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: AetherVisual.s1) {
-            Text(verbatim: "↓ \(formattedBytes(connection.downloadTotal))")
-            Text(verbatim: "↑ \(formattedBytes(connection.uploadTotal))")
+        Group {
+            if let rates, rates.totalBytesPerSecond > 0 {
+                VStack(alignment: .trailing, spacing: AetherVisual.sMicro) {
+                    Text(verbatim: "↓ \(formattedRate(rates.downloadBytesPerSecond)) · ↑ \(formattedRate(rates.uploadBytesPerSecond))")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(AetherReadableTint(color: .accentColor))
+                        .lineLimit(1)
+                        .aetherLiveValue()
+                    Text(verbatim: "↓ \(formattedBytes(connection.downloadTotal)) · ↑ \(formattedBytes(connection.uploadTotal))")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .lineLimit(1)
+                }
+            } else {
+                VStack(alignment: .trailing, spacing: AetherVisual.s1) {
+                    Text(verbatim: "↓ \(formattedBytes(connection.downloadTotal))")
+                    Text(verbatim: "↑ \(formattedBytes(connection.uploadTotal))")
+                }
+                .font(.body.monospacedDigit())
+                .foregroundStyle(.primary)
+            }
         }
-        .font(.body.monospacedDigit())
-        .foregroundStyle(.primary)
         .frame(maxWidth: .infinity, alignment: .trailing)
         .frame(height: AetherVisual.tableRowHeight)
     }
@@ -1327,7 +1501,7 @@ private struct ConnectionInspector: View {
 
     private var quickRuleTargets: [CustomRuleTarget] {
         let groups = (tunnel.activeProfileSummary?.proxyGroups ?? []).map(\.name)
-        return [.direct] + groups.prefix(8).map { .proxy($0) } + [.reject]
+        return [.direct] + groups.map { .proxy($0) } + [.reject]
     }
 
     var body: some View {
@@ -1511,12 +1685,15 @@ private struct ConnectionInspector: View {
                             ForEach(quickRuleTargets, id: \.rawString) { target in
                                 Button {
                                     Task {
-                                        await tunnel.setApplicationRule(
+                                        let saved = await tunnel.setApplicationRule(
                                             bundleIdentifier: subject.bundleIdentifier,
                                             bundlePath: subject.bundlePath,
                                             displayName: app.displayName,
                                             target: target
                                         )
+                                        if saved, tunnel.isConnected {
+                                            await closeInspectorAppConnections()
+                                        }
                                     }
                                 } label: {
                                     if existing?.target == target {
@@ -1529,7 +1706,12 @@ private struct ConnectionInspector: View {
                             if let existing {
                                 Divider()
                                 Button(AppLocalization.string("Remove rule"), role: .destructive) {
-                                    Task { await tunnel.deleteCustomRule(id: existing.id) }
+                                    Task {
+                                        let deleted = await tunnel.deleteCustomRule(id: existing.id)
+                                        if deleted, tunnel.isConnected {
+                                            await closeInspectorAppConnections()
+                                        }
+                                    }
                                 }
                             }
                         } label: {
@@ -1541,6 +1723,13 @@ private struct ConnectionInspector: View {
                     }
                 }
             }
+        }
+    }
+
+    private func closeInspectorAppConnections() async {
+        let requests = ConnectionCloseRequest.closing(apps: [ConnectionCloseApp(of: connection)])
+        for request in requests {
+            await tunnel.closeConnections(request)
         }
     }
 
