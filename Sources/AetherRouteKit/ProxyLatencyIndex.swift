@@ -72,7 +72,8 @@ public struct ProxyLatencyIndex {
     private var orderedGroups: [String] = []
 
     private var measuredAt: [String: [String: Date]] = [:]
-    private var explicitlyMeasuredGroups: Set<String> = []
+    private var measuredSeq: [String: [String: UInt64]] = [:]
+    private var nextSequence: UInt64 = 0
     private var testURL: String?
     private var activeRoutes: [String: [String]] = [:]
     /// Readiness probes have a different destination and budget. They never
@@ -98,7 +99,7 @@ public struct ProxyLatencyIndex {
         if self.testURL != testURL {
             measurements.removeAll()
             measuredAt.removeAll()
-            explicitlyMeasuredGroups.removeAll()
+            measuredSeq.removeAll()
             self.testURL = testURL
         }
         membership.removeAll(keepingCapacity: true)
@@ -157,9 +158,7 @@ public struct ProxyLatencyIndex {
     public mutating func clear(group: String) {
         measurements[group] = [:]
         measuredAt[group] = [:]
-        for member in groupMembers[group] ?? [] {
-            explicitlyMeasuredGroups.remove(member)
-        }
+        measuredSeq[group] = [:]
     }
 
     public mutating func clearAll() {
@@ -169,7 +168,7 @@ public struct ProxyLatencyIndex {
     public mutating func clear(member: String, in group: String) {
         measurements[group]?[member] = nil
         measuredAt[group]?[member] = nil
-        explicitlyMeasuredGroups.remove(member)
+        measuredSeq[group]?[member] = nil
     }
 
     /// Records one result in every group that lists the member, and returns
@@ -180,11 +179,13 @@ public struct ProxyLatencyIndex {
         measurement: ProxyLatencyMeasurement,
         at date: Date = .now
     ) -> [String] {
+        nextSequence &+= 1
+        let seq = nextSequence
         let groups = membership[member] ?? []
-        if groupNames.contains(member) { explicitlyMeasuredGroups.insert(member) }
         for group in groups {
             measurements[group, default: [:]][member] = measurement
             measuredAt[group, default: [:]][member] = date
+            measuredSeq[group, default: [:]][member] = seq
         }
         return groups
     }
@@ -195,9 +196,10 @@ public struct ProxyLatencyIndex {
         in group: String,
         at date: Date = .now
     ) {
+        nextSequence &+= 1
         measurements[group, default: [:]][member] = measurement
         measuredAt[group, default: [:]][member] = date
-        if groupNames.contains(member) { explicitlyMeasuredGroups.insert(member) }
+        measuredSeq[group, default: [:]][member] = nextSequence
     }
 
     public func measurementDates(for group: String) -> [String: Date] {
@@ -260,8 +262,9 @@ public struct ProxyLatencyIndex {
     }
 
     /// Only the active child can describe a strategy group's actual route.
-    /// Unknown groups stay unmeasured until the core probes their active leaf.
-    /// An explicit core measurement wins over any derived child reading.
+    /// Unknown groups stay unmeasured until their active leaf is measured.
+    /// A newer leaf measurement updates every referencing parent/child group,
+    /// while a strictly newer explicit probe of the group itself is preserved.
     @discardableResult
     public mutating func aggregateChildGroups(
         selectedMembers: [String: String] = [:]
@@ -271,14 +274,24 @@ public struct ProxyLatencyIndex {
             var changed = false
             for group in orderedGroups.reversed() {
                 for member in groupMembers[group] ?? [] where groupNames.contains(member) {
-                    guard !explicitlyMeasuredGroups.contains(member),
-                          let selected = selectedMembers[member],
+                    guard let selected = selectedMembers[member],
                           let resolved = measurements[member]?[selected],
                           let date = measuredAt[member]?[selected] else { continue }
+                    let childSeq = measuredSeq[member]?[selected] ?? 0
+                    if let existingDate = measuredAt[group]?[member] {
+                        if existingDate > date { continue }
+                        if existingDate == date,
+                           let existingSeq = measuredSeq[group]?[member],
+                           existingSeq > childSeq {
+                            continue
+                        }
+                    }
                     if measurements[group]?[member] != resolved
-                        || measuredAt[group]?[member] != date {
+                        || measuredAt[group]?[member] != date
+                        || measuredSeq[group]?[member] != childSeq {
                         measurements[group, default: [:]][member] = resolved
                         measuredAt[group, default: [:]][member] = date
+                        measuredSeq[group, default: [:]][member] = childSeq
                         touched.insert(group)
                         changed = true
                     }

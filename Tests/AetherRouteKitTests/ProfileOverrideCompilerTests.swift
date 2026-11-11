@@ -79,10 +79,10 @@ final class ProfileOverrideCompilerTests: XCTestCase {
         XCTAssertTrue(result.yaml.contains("    interval: 300 # seconds\n"))
         XCTAssertTrue(result.yaml.contains("# Provider header comment\n"))
         XCTAssertTrue(result.yaml.contains("    server: 2001:db8::3\n"))
-        XCTAssertEqual(ProfileConfigurationInspector.inspect(yaml: result.yaml).proxyCount, 4)
-        // The custom group comes first, before anything lists it.
+        XCTAssertEqual(ProfileConfigurationInspector.inspect(yaml: result.yaml).proxyCount, 3)
+        // Custom groups are appended after existing proxy-groups so the primary group stays first.
         let groups = ProfileConfigurationInspector.inspect(yaml: result.yaml).proxyGroups.map(\.name)
-        XCTAssertEqual(groups, ["香港自动", "节点选择", "自动选择"])
+        XCTAssertEqual(groups, ["节点选择", "自动选择", "香港自动"])
     }
 
     func testHiddenNodesLeaveEveryGroupButStayDefined() throws {
@@ -97,7 +97,7 @@ final class ProfileOverrideCompilerTests: XCTestCase {
         XCTAssertTrue(line.contains("url: http://www.gstatic.com/generate_204"), line)
         XCTAssertTrue(line.contains("interval: 300"), line)
         XCTAssertTrue(line.contains("type: url-test"), line)
-        XCTAssertEqual(ProfileConfigurationInspector.inspect(yaml: result.yaml).proxyCount, 4)
+        XCTAssertEqual(ProfileConfigurationInspector.inspect(yaml: result.yaml).proxyCount, 3)
     }
 
     func testFlowStyleProfileAndUnusualNames() throws {
@@ -120,7 +120,7 @@ final class ProfileOverrideCompilerTests: XCTestCase {
         XCTAssertEqual(result.diagnostics, [])
         XCTAssertEqual(result.customGroupMembers["Asia, picked: HK & SG"], ["It's HK: 1", "SG \"2\""])
         // Members are listed exactly as the profile spells them.
-        let line = try XCTUnwrap(result.yaml.components(separatedBy: "\n").first { $0.contains("Asia, picked") && $0.contains("type: select") })
+        let line = try XCTUnwrap(result.yaml.components(separatedBy: "\n").first { $0.contains("name: \"Asia, picked") && $0.contains("type: select") })
         XCTAssertTrue(line.contains("proxies: ['It''s HK: 1', \"SG \\\"2\\\"\"]"), line)
         XCTAssertEqual(group("Asia, picked: HK & SG", in: result.yaml)?.memberCount, 2)
         XCTAssertEqual(group("Proxy", in: result.yaml)?.members.last, "Asia, picked: HK & SG")
@@ -320,7 +320,8 @@ final class ProfileOverrideCompilerTests: XCTestCase {
         XCTAssertEqual(result.chainedProxies["🇺🇸 美国住宅 IP"], "香港自动")
 
         let summary = ProfileConfigurationInspector.inspect(yaml: result.yaml)
-        XCTAssertEqual(summary.proxyCount, 5)
+        XCTAssertEqual(summary.proxyCount, 4)
+        XCTAssertEqual(summary.proxies.count, 5)
         let injected = try XCTUnwrap(summary.proxies.first { $0.name == "🇺🇸 美国住宅 IP" })
         XCTAssertEqual(injected.protocolName.lowercased(), "socks5")
         XCTAssertEqual(injected.dialerProxy, "香港自动")
@@ -348,7 +349,8 @@ final class ProfileOverrideCompilerTests: XCTestCase {
         let blockResult = ProfileOverrideCompiler.apply(override, to: blockProfile)
         XCTAssertEqual(blockResult.diagnostics, [])
         let blockSummary = ProfileConfigurationInspector.inspect(yaml: blockResult.yaml)
-        XCTAssertEqual(blockSummary.proxyCount, 5)
+        XCTAssertEqual(blockSummary.proxyCount, 4)
+        XCTAssertEqual(blockSummary.proxies.count, 5)
         XCTAssertNil(blockSummary.proxies.first { $0.name == "日本 东京 03" }?.dialerProxy)
         XCTAssertEqual(
             blockSummary.proxies.first { $0.name == "🔗 日本东京（香港中转）" }?.dialerProxy,
@@ -411,7 +413,7 @@ final class ProfileOverrideCompilerTests: XCTestCase {
         let result = ProfileOverrideCompiler.apply(missingDialer, to: blockProfile)
         XCTAssertTrue(result.diagnostics.contains(.dialerProxyMissing(chain: "Chain Missing Dialer", dialer: "Gone Dialer")))
         XCTAssertTrue(result.diagnostics.contains(.targetNodeMissing(chain: "Chain Missing Target", target: "Gone Target")))
-        XCTAssertEqual(ProfileConfigurationInspector.inspect(yaml: result.yaml).proxyCount, 4)
+        XCTAssertEqual(ProfileConfigurationInspector.inspect(yaml: result.yaml).proxyCount, 3)
 
         // Self-reference, parent == dialer loop, and cycle between two chained proxies must fail validation
         XCTAssertThrowsError(try ChainedProxyOverride(
@@ -454,8 +456,8 @@ final class ProfileOverrideCompilerTests: XCTestCase {
         lines.append("  - MATCH,赛博云")
         let summary = ProfileConfigurationInspector.inspect(yaml: lines.joined(separator: "\n"))
 
-        // Readiness probing intentionally skips >64-member groups, which previously left catchAll nil.
-        XCTAssertEqual(ProxyConnectionReadinessPolicy.groupsToVerify(summary: summary).map(\.name), ["香港自动"])
+        // Readiness verification no longer drops >64-member groups.
+        XCTAssertEqual(ProxyConnectionReadinessPolicy.groupsToVerify(summary: summary).map(\.name), ["赛博云"])
         XCTAssertEqual(
             ProfileOverrideSuggestions.defaultParentGroup(in: summary, excluding: ["香港自动"]),
             "赛博云"

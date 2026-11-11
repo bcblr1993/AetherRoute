@@ -95,7 +95,8 @@ public struct DNSRuntimePolicy: Codable, Equatable, Sendable {
 }
 
 public struct DNSRuntimePolicyStore: Sendable {
-    public static let maximumFileBytes = 16 * 1_024
+    public static let maximumFileBytes = 64 * 1_024
+    public static let maximumProfileCount = 128
 
     public let directoryURL: URL
 
@@ -141,35 +142,10 @@ public struct DNSRuntimePolicyStore: Sendable {
         forProfileYAML yaml: String,
         fileManager: FileManager = .default
     ) throws -> DNSRuntimePolicy? {
-        let data: Data
-        do {
-            data = try Data(contentsOf: policyURL, options: [.mappedIfSafe])
-        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+        guard let payload = try loadPayload(fileManager: fileManager) else {
             return nil
         }
-        guard data.count <= Self.maximumFileBytes else {
-            throw DNSRuntimePolicyError.fileTooLarge(data.count)
-        }
-        let payload: DNSRuntimePolicyPayload
-        do {
-            payload = try JSONDecoder().decode(
-                DNSRuntimePolicyPayload.self,
-                from: data
-            )
-        } catch {
-            throw DNSRuntimePolicyError.decodingFailed
-        }
-        guard payload.formatVersion == DNSRuntimePolicyPayload.currentVersion
-        else {
-            throw DNSRuntimePolicyError.unsupportedFormat(payload.formatVersion)
-        }
-        guard Self.isValidDigest(payload.profileDigest) else {
-            throw DNSRuntimePolicyError.invalidProfileDigest
-        }
-        guard payload.profileDigest == Self.profileDigest(yaml) else {
-            return nil
-        }
-        return payload.policy
+        return payload.policies[Self.profileDigest(yaml)]
     }
 
     public func save(
@@ -177,10 +153,23 @@ public struct DNSRuntimePolicyStore: Sendable {
         forProfileYAML yaml: String,
         fileManager: FileManager = .default
     ) throws {
+        let digest = Self.profileDigest(yaml)
+        let existing = try? loadPayload(fileManager: fileManager)
+        var policies = existing?.policies ?? [:]
+        var profileOrder = existing?.profileOrder ?? []
+        profileOrder.removeAll { $0 == digest }
+        while policies[digest] == nil,
+              policies.count >= Self.maximumProfileCount,
+              let oldest = profileOrder.first {
+            policies.removeValue(forKey: oldest)
+            profileOrder.removeFirst()
+        }
+        policies[digest] = policy
+        profileOrder.append(digest)
+
         let payload = DNSRuntimePolicyPayload(
-            formatVersion: DNSRuntimePolicyPayload.currentVersion,
-            profileDigest: Self.profileDigest(yaml),
-            policy: policy
+            policies: policies,
+            profileOrder: profileOrder
         )
         let data: Data
         do {
@@ -225,6 +214,41 @@ public struct DNSRuntimePolicyStore: Sendable {
         }
     }
 
+    private func loadPayload(
+        fileManager: FileManager
+    ) throws -> DNSRuntimePolicyPayload? {
+        let data: Data
+        do {
+            data = try Data(contentsOf: policyURL, options: [.mappedIfSafe])
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return nil
+        }
+        guard data.count <= Self.maximumFileBytes else {
+            throw DNSRuntimePolicyError.fileTooLarge(data.count)
+        }
+        let payload: DNSRuntimePolicyPayload
+        do {
+            payload = try JSONDecoder().decode(
+                DNSRuntimePolicyPayload.self,
+                from: data
+            )
+        } catch let error as DNSRuntimePolicyError {
+            throw error
+        } catch {
+            throw DNSRuntimePolicyError.decodingFailed
+        }
+        for digest in payload.policies.keys {
+            guard Self.isValidDigest(digest) else {
+                throw DNSRuntimePolicyError.invalidProfileDigest
+            }
+        }
+        guard payload.profileOrder.count == payload.policies.count,
+              Set(payload.profileOrder) == Set(payload.policies.keys) else {
+            throw DNSRuntimePolicyError.decodingFailed
+        }
+        return payload
+    }
+
     private static func profileDigest(_ yaml: String) -> String {
         ProxySelectionStore.profileDigest(yaml: yaml)
     }
@@ -244,11 +268,63 @@ public struct DNSRuntimePolicyStore: Sendable {
 }
 
 private struct DNSRuntimePolicyPayload: Codable, Sendable {
-    static let currentVersion = 1
+    static let legacyVersion = 1
+    static let currentVersion = 2
 
     let formatVersion: Int
-    let profileDigest: String
-    let policy: DNSRuntimePolicy
+    let policies: [String: DNSRuntimePolicy]
+    let profileOrder: [String]
+
+    init(
+        policies: [String: DNSRuntimePolicy],
+        profileOrder: [String]
+    ) {
+        self.formatVersion = Self.currentVersion
+        self.policies = policies
+        self.profileOrder = profileOrder
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case formatVersion
+        case profileDigest
+        case policy
+        case policies
+        case profileOrder
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let version = try container.decode(Int.self, forKey: .formatVersion)
+        switch version {
+        case Self.legacyVersion:
+            let digest = try container.decode(String.self, forKey: .profileDigest)
+            let single = try container.decode(DNSRuntimePolicy.self, forKey: .policy)
+            self.formatVersion = Self.currentVersion
+            self.policies = [digest: single]
+            self.profileOrder = [digest]
+        case Self.currentVersion:
+            let decodedPolicies = try container.decode(
+                [String: DNSRuntimePolicy].self,
+                forKey: .policies
+            )
+            let decodedOrder = try container.decodeIfPresent(
+                [String].self,
+                forKey: .profileOrder
+            ) ?? decodedPolicies.keys.sorted()
+            self.formatVersion = Self.currentVersion
+            self.policies = decodedPolicies
+            self.profileOrder = decodedOrder
+        default:
+            throw DNSRuntimePolicyError.unsupportedFormat(version)
+        }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(Self.currentVersion, forKey: .formatVersion)
+        try container.encode(policies, forKey: .policies)
+        try container.encode(profileOrder, forKey: .profileOrder)
+    }
 }
 
 public enum DNSRuntimePolicyError: LocalizedError, Equatable, Sendable {

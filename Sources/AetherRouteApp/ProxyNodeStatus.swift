@@ -23,11 +23,16 @@ enum ProxyLatencyStatus: Equatable {
         case slow
     }
 
-    var band: Band? {
+    func band(unifiedDelay: Bool) -> Band? {
         guard case let .responded(milliseconds) = self else { return nil }
-        if milliseconds <= 200 { return .fast }
-        if milliseconds <= 500 { return .moderate }
+        let thresholds = LatencyBandThresholds.forUnifiedDelay(unifiedDelay)
+        if milliseconds <= thresholds.fastMaximum { return .fast }
+        if milliseconds <= thresholds.moderateMaximum { return .moderate }
         return .slow
+    }
+
+    var band: Band? {
+        band(unifiedDelay: LatencyTestPreferences.isUnifiedDelayEnabled)
     }
 
     /// Colour is never the only cue: every case also carries text, and the

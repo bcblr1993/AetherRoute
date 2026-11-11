@@ -28,6 +28,11 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
     /// Nodes, rules and options the engine cannot use, counted over the
     /// whole profile (not only the displayed items).
     public let compatibility: ProfileCompatibilityReport
+    /// Entries in `proxies` that are provider notices (remaining traffic,
+    /// expiry, contact) rather than nodes. They are excluded from
+    /// `proxyCount`; the names are kept so the UI can fold them into one
+    /// subscription info bar instead of listing them as dead nodes.
+    public let subscriptionNoticeNames: [String]
 
     public init(
         dns: DNSConfigurationSummary,
@@ -48,7 +53,8 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
         requiresCountryMMDB: Bool = false,
         requiresGeoSiteDatabase: Bool = false,
         allowsIPv6: Bool = false,
-        compatibility: ProfileCompatibilityReport = .fullySupported
+        compatibility: ProfileCompatibilityReport = .fullySupported,
+        subscriptionNoticeNames: [String] = []
     ) {
         self.dns = dns
         self.proxies = proxies
@@ -76,6 +82,7 @@ public struct ProfileConfigurationSummary: Equatable, Sendable {
         self.requiresGeoSiteDatabase = requiresGeoSiteDatabase
         self.allowsIPv6 = allowsIPv6
         self.compatibility = compatibility
+        self.subscriptionNoticeNames = subscriptionNoticeNames
     }
 }
 
@@ -1035,6 +1042,7 @@ private struct Parser {
     private var allRules: [RuleConfigurationSummary] = []
     private var ruleProviders: [ProviderConfigurationSummary] = []
     private var proxyCount = 0
+    private var subscriptionNoticeNames: [String] = []
     private var proxyGroupCount = 0
     private var proxyProviderCount = 0
     private var ruleCount = 0
@@ -1374,7 +1382,8 @@ private struct Parser {
             requiresCountryMMDB: requiresCountryMMDB,
             requiresGeoSiteDatabase: requiresGeoSiteDatabase,
             allowsIPv6: allowsIPv6,
-            compatibility: compatibility.report
+            compatibility: compatibility.report,
+            subscriptionNoticeNames: subscriptionNoticeNames
         )
     }
 
@@ -1681,7 +1690,13 @@ private struct Parser {
 
         switch section {
         case .proxies:
-            proxyCount += 1
+            if !item.name.isEmpty, SubscriptionNoticeClassifier.isNotice(item.name) {
+                if subscriptionNoticeNames.count < SubscriptionNoticeClassifier.maximumNotices {
+                    subscriptionNoticeNames.append(item.name)
+                }
+            } else {
+                proxyCount += 1
+            }
             if !item.name.isEmpty {
                 allProxyNames.append(item.name)
             }
@@ -2292,5 +2307,256 @@ private struct Parser {
             }
         }
         return line
+    }
+}
+
+// MARK: - Subscription notices
+
+/// Recognizes provider notices written as proxy entries (remaining traffic,
+/// expiry, reset date, contact). Lives beside the summary parser so every
+/// tool that compiles the parser on its own also gets the same rule.
+public enum SubscriptionNoticeClassifier {
+    /// Upper bound on notice names kept per profile; providers write a few.
+    public static let maximumNotices = 32
+
+    static let markers = [
+        "剩余流量", "流量剩余", "套餐到期", "到期时间", "过期时间",
+        "有效期", "官网地址", "官方网站", "客服邮箱", "联系邮箱",
+        "距离下次重置", "下次重置", "重置剩余", "流量重置", "长期有效",
+        "remaining traffic", "traffic remaining", "expires at",
+        "expiration date", "subscription expires", "official website",
+        "support email",
+    ]
+
+    private static let labelPattern =
+        #"^(traffic|expire|expires|expiry|expiration|remaining|reset|website)\s*[:：]"#
+    private static let emailPattern = #"^[^\s@]+@[^\s@]+\.[^\s@]+$"#
+
+    public static func isNotice(_ name: String) -> Bool {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !normalized.isEmpty else { return true }
+        if markers.contains(where: normalized.contains) {
+            return true
+        }
+        if normalized.range(of: labelPattern, options: .regularExpression) != nil {
+            return true
+        }
+        // Only a whole email-like label is a notice. Node names that merely
+        // contain an @ character remain nodes.
+        return isEmail(normalized)
+    }
+
+    static func isEmail(_ value: String) -> Bool {
+        value.range(of: emailPattern, options: .regularExpression) != nil
+    }
+}
+
+/// What a subscription's notice entries say, read from their names. Used as
+/// the fallback when the provider sends no `subscription-userinfo` header.
+public struct SubscriptionNoticeSummary: Equatable, Sendable {
+    public let noticeNames: [String]
+    /// The remaining traffic as written, e.g. `154.92 GB`.
+    public let remainingTraffic: String?
+    public let remainingBytes: UInt64?
+    /// The expiry as written: a normalized `yyyy-MM-dd` date, or the
+    /// provider's own words for a plan that does not expire.
+    public let expiry: String?
+    /// The last second of the expiry day in the current calendar.
+    public let expiresAt: Date?
+    public let isLongTerm: Bool
+    public let contacts: [String]
+
+    public init(
+        noticeNames: [String],
+        remainingTraffic: String? = nil,
+        remainingBytes: UInt64? = nil,
+        expiry: String? = nil,
+        expiresAt: Date? = nil,
+        isLongTerm: Bool = false,
+        contacts: [String] = []
+    ) {
+        self.noticeNames = noticeNames
+        self.remainingTraffic = remainingTraffic
+        self.remainingBytes = remainingBytes
+        self.expiry = expiry
+        self.expiresAt = expiresAt
+        self.isLongTerm = isLongTerm
+        self.contacts = contacts
+    }
+
+    private static let trafficMarkers = ["剩余流量", "流量剩余", "流量", "remaining", "traffic"]
+    private static let expiryMarkers = ["到期", "过期", "有效期", "expire", "expiry", "expiration"]
+    private static let longTermMarkers = ["长期有效", "永久", "无限期", "不限时", "never", "lifetime", "unlimited"]
+    private static let contactMarkers = ["官网", "官方网站", "网址", "客服", "联系", "website", "support"]
+    private static let amountPattern =
+        #"([0-9]+(?:\.[0-9]+)?)\s*(TIB|TB|GIB|GB|MIB|MB|KIB|KB|T|G|M|K|B)(?![A-Z])"#
+    private static let datePattern =
+        #"([0-9]{4})\s*[-/.年]\s*([0-9]{1,2})\s*[-/.月]\s*([0-9]{1,2})"#
+
+    /// Reads the notices among `names` (a group's members or the profile's
+    /// proxies). Nil when none of them is a notice.
+    public static func extract(
+        from names: [String],
+        calendar: Calendar = .current
+    ) -> SubscriptionNoticeSummary? {
+        var notices: [String] = []
+        var seen = Set<String>()
+        for name in names where SubscriptionNoticeClassifier.isNotice(name)
+            && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && seen.insert(name).inserted {
+            notices.append(name)
+            if notices.count == SubscriptionNoticeClassifier.maximumNotices { break }
+        }
+        guard !notices.isEmpty else { return nil }
+
+        var remainingTraffic: String?
+        var remainingBytes: UInt64?
+        var expiry: String?
+        var expiresAt: Date?
+        var isLongTerm = false
+        var contacts: [String] = []
+
+        for name in notices {
+            let lower = name.lowercased()
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if SubscriptionNoticeClassifier.isEmail(lower)
+                || contactMarkers.contains(where: lower.contains) {
+                contacts.append(trimmed)
+                continue
+            }
+            if expiry == nil, expiryMarkers.contains(where: lower.contains) {
+                if longTermMarkers.contains(where: lower.contains) {
+                    isLongTerm = true
+                    expiry = value(afterLabelIn: trimmed)
+                } else if let date = date(in: trimmed, calendar: calendar) {
+                    expiry = date.text
+                    expiresAt = date.end
+                }
+                if expiry != nil { continue }
+            }
+            if remainingTraffic == nil,
+               trafficMarkers.contains(where: lower.contains),
+               let amount = remaining(in: trimmed) {
+                remainingTraffic = amount.text
+                remainingBytes = amount.bytes
+            }
+        }
+        return SubscriptionNoticeSummary(
+            noticeNames: notices,
+            remainingTraffic: remainingTraffic,
+            remainingBytes: remainingBytes,
+            expiry: expiry,
+            expiresAt: expiresAt,
+            isLongTerm: isLongTerm,
+            contacts: contacts
+        )
+    }
+
+    private static func value(afterLabelIn name: String) -> String {
+        guard let colon = name.firstIndex(where: { $0 == ":" || $0 == "：" }) else {
+            return name
+        }
+        let rest = name[name.index(after: colon)...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return rest.isEmpty ? name : rest
+    }
+
+    private static func amounts(in name: String) -> [(text: String, bytes: UInt64)] {
+        guard let regex = try? NSRegularExpression(
+            pattern: amountPattern,
+            options: [.caseInsensitive]
+        ) else { return [] }
+        let range = NSRange(name.startIndex..., in: name)
+        return regex.matches(in: name, range: range).compactMap { match in
+            guard let numberRange = Range(match.range(at: 1), in: name),
+                  let unitRange = Range(match.range(at: 2), in: name),
+                  let number = Double(name[numberRange]), number.isFinite, number >= 0
+            else { return nil }
+            let unit = String(name[unitRange])
+            let multiplier: Double = switch unit.uppercased().prefix(1) {
+            case "T": 1_099_511_627_776
+            case "G": 1_073_741_824
+            case "M": 1_048_576
+            case "K": 1_024
+            default: 1
+            }
+            let bytes = number * multiplier
+            guard bytes < Double(UInt64.max) else { return nil }
+            return ("\(name[numberRange]) \(unit)", UInt64(bytes))
+        }
+    }
+
+    /// `剩余流量：154.92 GB` names what is left; `Traffic: 20 GB / 200 GB`
+    /// names used over total.
+    private static func remaining(in name: String) -> (text: String, bytes: UInt64)? {
+        let found = amounts(in: name)
+        guard let first = found.first else { return nil }
+        if found.count >= 2, name.contains("/") {
+            let total = found[1]
+            let left = total.bytes >= first.bytes ? total.bytes - first.bytes : 0
+            return (formatBytes(left), left)
+        }
+        return first
+    }
+
+    private static func formatBytes(_ bytes: UInt64) -> String {
+        let units: [(String, Double)] = [("TB", 1_099_511_627_776), ("GB", 1_073_741_824), ("MB", 1_048_576), ("KB", 1_024)]
+        for (unit, size) in units where Double(bytes) >= size {
+            return String(format: "%.2f %@", Double(bytes) / size, unit)
+        }
+        return "\(bytes) B"
+    }
+
+    private static func date(
+        in name: String,
+        calendar: Calendar
+    ) -> (text: String, end: Date)? {
+        guard let regex = try? NSRegularExpression(pattern: datePattern),
+              let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
+              let yearRange = Range(match.range(at: 1), in: name),
+              let monthRange = Range(match.range(at: 2), in: name),
+              let dayRange = Range(match.range(at: 3), in: name),
+              let year = Int(name[yearRange]),
+              let month = Int(name[monthRange]),
+              let day = Int(name[dayRange]),
+              (1...12).contains(month), (1...31).contains(day),
+              let start = calendar.date(from: DateComponents(year: year, month: month, day: day)),
+              calendar.component(.day, from: start) == day,
+              let next = calendar.date(byAdding: .day, value: 1, to: start)
+        else { return nil }
+        let text = String(format: "%04d-%02d-%02d", year, month, day)
+        return (text, next.addingTimeInterval(-1))
+    }
+}
+
+extension ProfileConfigurationSummary {
+    /// The notices among the profile's proxy entries, read once per call.
+    public var subscriptionNotice: SubscriptionNoticeSummary? {
+        SubscriptionNoticeSummary.extract(from: subscriptionNoticeNames)
+    }
+
+    /// The group most traffic leaves through: the target of the catch-all
+    /// `MATCH` rule when it is a `select` group, else the first `select`
+    /// group a rule names, else the first `select` group, else the first
+    /// group. Groups in `excluding` (custom groups added by the user) are
+    /// never chosen, so adding one cannot take over the menu bar, the
+    /// Proxies page default or the GLOBAL selector. No member-count cap.
+    public func primaryOutboundGroup(excluding excluded: Set<String> = []) -> String? {
+        let candidates = proxyGroups.filter { !excluded.contains($0.name) }
+        let selectable = candidates.filter {
+            $0.strategy.caseInsensitiveCompare("select") == .orderedSame
+        }
+        let names = Set(selectable.map(\.name))
+        let ruleSource = allRules.isEmpty ? rules : allRules
+        if let catchAll = ruleSource.last(where: {
+            $0.kind.caseInsensitiveCompare("MATCH") == .orderedSame
+        }), names.contains(catchAll.target) {
+            return catchAll.target
+        }
+        if let named = ruleSource.first(where: { names.contains($0.target) }) {
+            return named.target
+        }
+        return selectable.first?.name ?? candidates.first?.name
     }
 }

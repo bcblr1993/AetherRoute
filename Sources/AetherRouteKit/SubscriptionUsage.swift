@@ -7,6 +7,9 @@ public struct SubscriptionUsage: Codable, Equatable, Sendable {
     public let uploadBytes: UInt64?
     public let downloadBytes: UInt64?
     public let totalBytes: UInt64?
+    /// Remaining bytes extracted from a provider notice entry when `totalBytes`
+    /// is unknown (e.g. `剩余流量：154.92 GB`). Nil for HTTP header reports.
+    public let reportedRemainingBytes: UInt64?
     /// Nil when the provider sends no expiry or `expire=0`.
     public let expiresAt: Date?
     public let reportedAt: Date
@@ -16,11 +19,13 @@ public struct SubscriptionUsage: Codable, Equatable, Sendable {
         downloadBytes: UInt64?,
         totalBytes: UInt64?,
         expiresAt: Date?,
-        reportedAt: Date
+        reportedAt: Date,
+        reportedRemainingBytes: UInt64? = nil
     ) {
         self.uploadBytes = uploadBytes
         self.downloadBytes = downloadBytes
         self.totalBytes = totalBytes
+        self.reportedRemainingBytes = reportedRemainingBytes
         self.expiresAt = expiresAt
         self.reportedAt = reportedAt
     }
@@ -32,11 +37,13 @@ public struct SubscriptionUsage: Codable, Equatable, Sendable {
         return overflow ? .max : sum
     }
 
-    /// Bytes left, or nil without a positive total.
+    /// Bytes left, or nil without a positive total or notice remaining figure.
     public var remainingBytes: UInt64? {
-        guard let totalBytes, totalBytes > 0 else { return nil }
-        let used = usedBytes ?? 0
-        return used >= totalBytes ? 0 : totalBytes - used
+        if let totalBytes, totalBytes > 0 {
+            let used = usedBytes ?? 0
+            return used >= totalBytes ? 0 : totalBytes - used
+        }
+        return reportedRemainingBytes
     }
 
     /// Calendar days from today until the expiry day (0 on the day it
@@ -212,5 +219,30 @@ public enum SubscriptionResponseHints {
         name = name.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return nil }
         return String(name.prefix(64))
+    }
+}
+
+extension SubscriptionNoticeSummary {
+    /// Builds a fallback `SubscriptionUsage` from extracted notice entries when
+    /// the provider omits the `subscription-userinfo` HTTP header.
+    public func usage(reportedAt: Date) -> SubscriptionUsage? {
+        guard remainingBytes != nil || expiresAt != nil else { return nil }
+        return SubscriptionUsage(
+            uploadBytes: nil,
+            downloadBytes: nil,
+            totalBytes: nil,
+            expiresAt: expiresAt,
+            reportedAt: reportedAt,
+            reportedRemainingBytes: remainingBytes
+        )
+    }
+}
+
+extension SubscriptionUsage {
+    public static func fallback(
+        from summary: ProfileConfigurationSummary,
+        reportedAt: Date
+    ) -> SubscriptionUsage? {
+        summary.subscriptionNotice?.usage(reportedAt: reportedAt)
     }
 }

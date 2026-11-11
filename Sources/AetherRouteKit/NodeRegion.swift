@@ -33,11 +33,20 @@ public struct NodeRegion: Equatable, Sendable {
         return resolved
     }
 
+    private static let capacityAndRateUnits: Set<String> = [
+        "B", "KB", "MB", "GB", "TB", "PB",
+        "KIB", "MIB", "GIB", "TIB", "PIB",
+        "BPS", "KBPS", "MBPS", "GBPS", "TBPS",
+    ]
+
     private static func computeRegion(from name: String) -> NodeRegion? {
+        guard !SubscriptionNoticeClassifier.isNotice(name) else {
+            return nil
+        }
         if let embedded = embeddedFlag(in: name) {
             return embedded
         }
-        let words = latinWords(in: name)
+        let words = nonUnitLatinWords(in: name)
         for entry in catalog {
             if entry.cjkNames.contains(where: name.contains) {
                 return entry.region
@@ -175,26 +184,47 @@ public struct NodeRegion: Equatable, Sendable {
         return nil
     }
 
-    /// Upper-cased Latin words. Letter/digit boundaries also separate words
-    /// so `HK01` and `sg2` still name their region.
-    private static func latinWords(in name: String) -> [String] {
+    /// Upper-cased Latin words, omitting storage or bandwidth units that
+    /// immediately follow a number (such as `154.92 GB`, `100GB`, `10 Gbps`)
+    /// so `GB` in a byte count is never misread as Great Britain.
+    private static func nonUnitLatinWords(in name: String) -> [String] {
         var words: [String] = []
         var current = ""
         var currentIsDigit = false
+        var afterNumber = false
+
         func flush() {
-            if !current.isEmpty { words.append(current.uppercased()) }
+            guard !current.isEmpty else { return }
+            let upper = current.uppercased()
             current = ""
+            if currentIsDigit {
+                words.append(upper)
+                afterNumber = true
+            } else {
+                if !(afterNumber && capacityAndRateUnits.contains(upper)) {
+                    words.append(upper)
+                }
+                afterNumber = false
+            }
         }
+
         for scalar in name.unicodeScalars {
             let v = scalar.value
             let isLetter = (v >= 0x41 && v <= 0x5A) || (v >= 0x61 && v <= 0x7A)
             let isDigit = v >= 0x30 && v <= 0x39
             if isLetter || isDigit {
-                if !current.isEmpty, isDigit != currentIsDigit { flush() }
+                if !current.isEmpty, isDigit != currentIsDigit {
+                    flush()
+                }
                 currentIsDigit = isDigit
                 current.unicodeScalars.append(scalar)
             } else {
                 flush()
+                let isHorizontalSpace = v == 0x20 || v == 0x09 || v == 0xA0
+                let isDecimalPoint = v == 0x2E && afterNumber
+                if !isHorizontalSpace && !isDecimalPoint {
+                    afterNumber = false
+                }
             }
         }
         flush()

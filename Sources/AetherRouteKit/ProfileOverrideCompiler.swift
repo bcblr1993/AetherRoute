@@ -53,8 +53,8 @@ public struct ProfileOverrideResult: Equatable, Sendable {
 /// Applies a `ProfileOverride` to a profile's text (1.7.0).
 ///
 /// Only three kinds of change are made, each at a known place:
-/// - custom groups are inserted at the start of `proxy-groups` as one-line
-///   mappings, so they exist before any group that lists them;
+/// - custom groups are appended at the end of `proxy-groups` as one-line
+///   mappings, so the profile's primary selector stays first;
 /// - a group that lists a custom group, or lost hidden nodes, is rewritten
 ///   as a one-line mapping with every one of its fields kept;
 /// - every other line stays byte for byte.
@@ -119,10 +119,11 @@ public enum ProfileOverrideCompiler {
         let check = ProfileConfigurationInspector.inspect(yaml: output)
         let expectedGroups = document.groups.count + plan.customGroupLines.count
         let expectedProxies = document.nodeNames.count + plan.emittedChainedProxies.count
+        let actualDefinedProxies = check.proxyCount + check.subscriptionNoticeNames.count
         let customNames = Set(plan.emittedCustomGroups)
         let found = Set(check.proxyGroups.map(\.name))
         guard check.proxyGroupCount == expectedGroups,
-              check.proxyCount == expectedProxies,
+              actualDefinedProxies == expectedProxies,
               customNames.isSubset(of: found) || check.proxyGroups.count < check.proxyGroupCount
         else {
             return ProfileOverrideResult(
@@ -292,7 +293,7 @@ public enum ProfileOverrideCompiler {
                 taken.insert(autoGroupName)
                 standaloneChainedProxyGroupName = autoGroupName
                 customGroupMembers[autoGroupName] = standaloneChainedProxies
-                emittedCustomGroups.insert(autoGroupName, at: 0)
+                emittedCustomGroups.append(autoGroupName)
             }
 
             for groupName in emittedCustomGroups {
@@ -391,7 +392,7 @@ public enum ProfileOverrideCompiler {
                 "proxies": members.isEmpty ? ["DIRECT"] : members,
             ])
         }
-        root["proxy-groups"] = added + groups
+        root["proxy-groups"] = groups + added
         if !plan.customHosts.isEmpty {
             var hostsDict = (root["hosts"] as? [String: Any]) ?? [:]
             for entry in plan.customHosts {
@@ -799,6 +800,8 @@ struct YAMLDocument {
         output.reserveCapacity(
             lines.count + insertingGroups.count + insertingProxies.count + hostLines.count + 6
         )
+        let lastGroupLowerBound = groups.last?.lineRange.lowerBound
+        let lastGroupLastLine = groups.last.map { $0.lineRange.upperBound - 1 }
         let replacedStarts = Dictionary(uniqueKeysWithValues: replacingGroups.map {
             (groups[$0.key].lineRange.lowerBound, (groups[$0.key].lineRange, $0.value))
         })
@@ -813,6 +816,9 @@ struct YAMLDocument {
             }
             if let (range, replacement) = replacedStarts[index] {
                 output.append(pad + "- " + replacement)
+                if index == lastGroupLowerBound, !insertingGroups.isEmpty {
+                    output.append(contentsOf: insertingGroups.map { pad + "- " + $0 })
+                }
                 skipUntil = range.upperBound
                 continue
             }
@@ -839,7 +845,10 @@ struct YAMLDocument {
             if index == proxiesHeader, !insertingProxies.isEmpty {
                 output.append(contentsOf: insertingProxies)
             }
-            if index == groupsHeader {
+            if index == groupsHeader, groups.isEmpty, !insertingGroups.isEmpty {
+                output.append(contentsOf: insertingGroups.map { pad + "- " + $0 })
+            }
+            if index == lastGroupLastLine, !insertingGroups.isEmpty {
                 output.append(contentsOf: insertingGroups.map { pad + "- " + $0 })
             }
         }
