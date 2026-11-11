@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 2.9.2 (Build 2026111004)</title>
-            <pubDate>Tue, 10 Nov 2026 21:44:42 +0800</pubDate>
-            <sparkle:version>2026111004</sparkle:version>
-            <sparkle:shortVersionString>2.9.2</sparkle:shortVersionString>
+            <title>Version 2.9.3 (Build 2026111101)</title>
+            <pubDate>Wed, 11 Nov 2026 14:27:06 +0800</pubDate>
+            <sparkle:version>2026111101</sparkle:version>
+            <sparkle:shortVersionString>2.9.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/2.9.2/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/2.9.3/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,40 +120,33 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 2.9.2 更新要点</span>
-  <span class="release-badge">Build 2026111004 · 正式发布</span>
+  <span class="release-title">AetherRoute 2.9.3 更新要点</span>
+  <span class="release-badge">Build 2026111101 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🚀 核心功能：全面兼容 Shadowsocks 混淆插件</span>
+  <span class="section-tag tag-fix">🐞 Hysteria2 协议兼容性与连接超时修复</span>
   <ul>
-    <li><strong>内置混淆插件安全放行</strong>：全面支持 <code>plugin: obfs</code> / <code>plugin-opts</code>、<code>v2ray-plugin</code> 及 <code>shadow-tls</code>。升级预检白名单准入机制，彻底解决导入 Clash Verge 等主流客户端混淆订阅时触发的误报拦截。</li>
-    <li><strong>内存级协议转换防护</strong>：严格保持对外部可执行文件、未知命令及脚本注入的拦截，所有受支持插件均由纯 Rust 内存协议转换引擎安全驱动。</li>
+    <li><strong>修复 Hysteria2 连接新版服务端超时（<code>H3_CLOSED_CRITICAL_STREAM</code>）</strong>：重构核心引擎 <code>H3ClientGuard</code>，使 HTTP/3 客户端驱动（持有单向 Control 与 QPACK 关键流）与底层 QUIC 连接同生命周期保活，彻底解决对接 <code>apernet/hysteria v2.13.0+</code>（<code>quic-go v0.63+</code>）时因关键流被提前关闭导致的测速超时与连接中断。</li>
+    <li><strong>Brutal 下行带宽协商与纯 IP 节点 SNI 回退</strong>：<code>Hysteria-CC-RX</code> 按配置的 <code>down</code> 带宽精确发送字节每秒速率（独立保留 <code>up</code>/<code>down</code>）；引擎与 <code>hy2://</code> 分享链接解析在缺省 <code>sni</code> 时自动回退至节点主机/IP；端口跳跃（<code>UdpHop</code>）统一绑定物理出口网卡并兼容 IPv6。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 稳定性与长稳加固</span>
+  <span class="section-tag tag-improve">✨ 严苛隔离环境与性能验证</span>
   <ul>
-    <li><strong>控制面与系统扩展超时防护</strong>：优化宿主 App 与系统扩展通信超时机制及冷启动 DNS 边界，杜绝瞬时假死。</li>
-    <li><strong>短连接与 UDP 吞吐优化</strong>：增加短连接流关闭主动短路与 UDP 微批处理写机制，规避内核套接字写缓冲耗尽。</li>
-    <li><strong>流量图表重绘节流</strong>：流量波形刷新率优化至 12 FPS，显著减少堆内存分配与界面渲染开销。</li>
+    <li><strong>全量互通与 6 维矩阵验证</strong>：双指纹 12 协议互通、43 节点 Mihomo 实验室对照（<code>both_ok=43</code>）、Tart 虚拟机 6 维矩阵（210 项检查 0 失败）、50 秒空闲复用、2 MiB 大上传及 3 轮 6 次网卡切换自愈（0–4 秒恢复）100% 通过。</li>
+    <li><strong>UI 卡顿与内存预算双档位达标</strong>：日常与重载（500 节点 / 1 万条规则 / 2,000 条连接）切页 p95 分别为 <code>113.4 ms</code> 与 <code>110.8 ms</code>，内存占用稳定在 <code>65–80 MB</code>。</li>
   </ul>
 </div>
-<div class="section">
-  <span class="section-tag tag-improve">✨ 严苛真机与多环境验证</span>
-  <ul>
-    <li><strong>全量隔离环境验收通过</strong>：Apple Silicon 隔离环境全量测试门禁、空闲长连接复用与网络切换自愈 100% 通过。</li>
-    <li><strong>UI 卡顿与内存预算双 Profile 达标</strong>：常规流与万条规则/500节点重载切页 p95 均保持在 132 ms 左右，内存占用平稳控制在 66-84 MB 预算内。</li>
-  </ul>
-</div>
+
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/2.9.2/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/2.9.3/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v2.9.2/AetherRoute-2.9.2-build-2026111004-arm64.dmg"
-                sparkle:edSignature="VelPN+XHgj2czKKYTpT2bREdaebB639gSFUZCHUmMKnnjiHRB0UnLp9tukYSpIkB6i5mTzI1BHg++62H18tACg=="
-                length="29957180"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v2.9.3/AetherRoute-2.9.3-build-2026111101-arm64.dmg"
+                sparkle:edSignature="3My+C/k2HG95L42enFvv7cNviojIKMrcwWsdU/7FnYP2clGqPg8a2gAO0dx4orS/lOJEBNsBIQXXhTM9epM8BQ=="
+                length="29959103"
                 type="application/octet-stream" />
         </item>
     </channel>

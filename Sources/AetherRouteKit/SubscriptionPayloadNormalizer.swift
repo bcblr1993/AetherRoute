@@ -686,7 +686,7 @@ public enum SubscriptionPayloadNormalizer {
             password: link.user,
             tls: AetherNodeTLS(
                 enabled: true,
-                serverName: first(query, "sni", "peer") ?? "",
+                serverName: firstNonEmpty(query, "sni", "servername", "server-name", "peer") ?? link.host,
                 skipCertificateVerification: flag(query, "insecure", "allowinsecure"),
                 // Hysteria2 share links pin the certificate as pinSHA256.
                 certificateFingerprint: first(query, "pinsha256", "cert-sha256") ?? ""
@@ -1049,6 +1049,19 @@ public enum SubscriptionPayloadNormalizer {
         _ keys: String...
     ) -> String? {
         keys.lazy.compactMap { values[$0] }.first
+    }
+
+    private static func firstNonEmpty(
+        _ values: [String: String],
+        _ keys: String...
+    ) -> String? {
+        for key in keys {
+            if let value = values[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !value.isEmpty {
+                return value
+            }
+        }
+        return nil
     }
 
     private static func flag(

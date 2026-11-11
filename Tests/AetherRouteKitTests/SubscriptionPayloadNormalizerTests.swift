@@ -292,6 +292,56 @@ final class SubscriptionPayloadNormalizerTests: XCTestCase {
         XCTAssertEqual(surgeResult.report.usableNodeCount, 2)
     }
 
+    func testHysteria2ShareLinksFallbackSNIToUnbracketedHostAndPreserveExplicitSNIOrPeer() throws {
+        let input = """
+        hy2://test-pass@203.0.113.10:46713?insecure=1#Test-HY2
+        hysteria2://test-pass@203.0.113.11:46713?insecure=1#Test-Hysteria2
+        hy2://test-pass@[2001:db8::1]:46713?insecure=1#Test-HY2-v6
+        hysteria2://test-pass@203.0.113.12:46713?sni=&insecure=1#Test-HY2-EmptySNI
+        hy2://test-pass@203.0.113.10:46713?sni=bing.com&insecure=1#Test-HY2-ExplicitSNI
+        hysteria2://test-pass@203.0.113.10:46713?peer=example.com&insecure=1#Test-HY2-Peer
+        hy2://test-pass@203.0.113.10:46713?sni=bing.com&peer=example.com&insecure=1#Test-HY2-Both
+        """
+
+        let parsed = try SubscriptionPayloadNormalizer.nodes(fromShareText: input)
+        XCTAssertEqual(parsed.skippedCount, 0)
+        XCTAssertEqual(parsed.nodes.count, 7)
+
+        let sniByName = Dictionary(
+            uniqueKeysWithValues: parsed.nodes.map { ($0.name, $0.tls.serverName) }
+        )
+        XCTAssertEqual(sniByName["Test-HY2"], "203.0.113.10")
+        XCTAssertEqual(sniByName["Test-Hysteria2"], "203.0.113.11")
+        XCTAssertEqual(sniByName["Test-HY2-v6"], "2001:db8::1")
+        XCTAssertEqual(sniByName["Test-HY2-EmptySNI"], "203.0.113.12")
+        XCTAssertEqual(sniByName["Test-HY2-ExplicitSNI"], "bing.com")
+        XCTAssertEqual(sniByName["Test-HY2-Peer"], "example.com")
+        XCTAssertEqual(sniByName["Test-HY2-Both"], "bing.com")
+
+        // Parity check against AetherNodeURIParser for unbracketed IPv4/IPv6 fallback SNI.
+        let uriIPv4 = try AetherNodeURIParser.parse(
+            "hy2://test-pass@203.0.113.10:46713?insecure=1#Test-HY2"
+        )
+        let uriIPv6 = try AetherNodeURIParser.parse(
+            "hy2://test-pass@[2001:db8::1]:46713?insecure=1#Test-HY2-v6"
+        )
+        XCTAssertEqual(sniByName["Test-HY2"], uriIPv4.tls.serverName)
+        XCTAssertEqual(sniByName["Test-HY2-v6"], uriIPv6.tls.serverName)
+
+        let result = try SubscriptionPayloadNormalizer.normalizeWithReport(Data(input.utf8))
+        let yaml = try XCTUnwrap(String(data: result.data, encoding: .utf8))
+        try ProfileImportValidator.validate(data: result.data)
+        XCTAssertEqual(result.report.usableNodeCount, 7)
+        XCTAssertEqual(result.report.skippedNodeCount, 0)
+        XCTAssertTrue(yaml.contains("sni: '203.0.113.10'"))
+        XCTAssertTrue(yaml.contains("sni: '203.0.113.11'"))
+        XCTAssertTrue(yaml.contains("sni: '2001:db8::1'"))
+        XCTAssertTrue(yaml.contains("sni: '203.0.113.12'"))
+        XCTAssertFalse(yaml.contains("sni: '[2001:db8::1]'"))
+        XCTAssertTrue(yaml.contains("sni: 'bing.com'"))
+        XCTAssertTrue(yaml.contains("sni: 'example.com'"))
+    }
+
     private func vmessLink(uuid: String) throws -> String {
         let object: [String: Any] = [
             "v": "2",
