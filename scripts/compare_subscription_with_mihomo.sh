@@ -88,7 +88,7 @@ fi
 PAYLOAD="$WORK/payload"
 case "$SOURCE" in
   https://*)
-    curl -fsS --max-time 60 -A "clash-verge/v2.2.3" -o "$PAYLOAD" "$SOURCE" || {
+    curl -fsSL --proto '=https' --max-redirs 5 --max-time 60 -A "clash-verge/v2.5.2 (ClashMeta; AetherRoute/1.0)" -o "$PAYLOAD" "$SOURCE" || {
       echo "subscription download failed" >&2
       exit 1
     }

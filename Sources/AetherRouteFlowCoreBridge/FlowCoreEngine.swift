@@ -51,7 +51,7 @@ public struct FlowCoreEngineConfiguration: Sendable, Equatable {
     }
 }
 
-public enum FlowCoreEngineError: Error, Sendable, Equatable {
+public enum FlowCoreEngineError: Error, Sendable, Equatable, LocalizedError, CustomStringConvertible {
     case flowABIUnavailable
     case invalidConfiguration
     case invalidProfile
@@ -65,6 +65,41 @@ public enum FlowCoreEngineError: Error, Sendable, Equatable {
     case invalidSelectorSnapshot
     case invalidLatencyResult
     case internalFailure
+
+    public var errorDescription: String? {
+        switch self {
+        case .flowABIUnavailable:
+            return "Flow ABI is unavailable."
+        case .invalidConfiguration:
+            return "Flow engine configuration is invalid."
+        case .invalidProfile:
+            return "Profile syntax is invalid for flow engine."
+        case .unsupportedProfile:
+            return "Profile contains directives unsupported by the flow engine."
+        case .startupFailed:
+            return "Flow engine failed to start."
+        case .engineClosed:
+            return "Flow engine is closed."
+        case .invalidEndpoint:
+            return "Invalid flow endpoint."
+        case .resourceExhausted:
+            return "Flow engine resource exhausted."
+        case .selectorUnavailable:
+            return "Proxy selector is unavailable."
+        case .selectionRejected:
+            return "Proxy selection was rejected."
+        case .invalidSelectorSnapshot:
+            return "Invalid selector snapshot."
+        case .invalidLatencyResult:
+            return "Invalid latency test result."
+        case .internalFailure:
+            return "Flow engine internal failure."
+        }
+    }
+
+    public var description: String {
+        errorDescription ?? "FlowCoreEngineError.\(self)"
+    }
 }
 
 public typealias ProxySelectionSnapshot = ProxySelectionState

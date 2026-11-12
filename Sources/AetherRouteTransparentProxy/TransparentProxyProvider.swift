@@ -136,6 +136,11 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 )
                 Self.runtimeLog.aggregate("stage=createFlowRuntime success")
                 return runtime
+            } catch let error as FlowCoreEngineError {
+                Self.runtimeLog.failure(
+                    "stage=createFlowCore failed error=\(error.description)"
+                )
+                throw error
             } catch {
                 Self.runtimeLog.failure(
                     "runtime preparation failed: \(String(reflecting: error))"

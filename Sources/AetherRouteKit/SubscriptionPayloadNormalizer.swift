@@ -128,6 +128,7 @@ public enum SubscriptionPayloadNormalizer {
         "external-ui",
         "external-ui-name",
         "external-ui-url",
+        "external-ui-download-url",
     ]
 
     /// Third-party Clash/Mihomo subscriptions frequently include web dashboard UI

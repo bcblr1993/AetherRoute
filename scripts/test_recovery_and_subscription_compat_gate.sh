@@ -486,7 +486,144 @@ struct RecoveryAndSubscriptionCompatVerifier {
               - "Legacy-SSR-Node"
               - "NonExistent-Node"
               - DIRECT
+          - name: "Ⓜ️ 微软服务"
+            type: select
+            proxies: [DIRECT, 节点选择]
+          - name: "🍎 苹果服务"
+            type: select
+            proxies: [DIRECT, 节点选择]
+          - name: "📲 电报信息"
+            type: select
+            proxies: [节点选择, DIRECT]
+          - name: "🌍 国外媒体"
+            type: select
+            proxies: [节点选择, 自动选择]
+          - name: "📢 谷歌FCM"
+            type: select
+            proxies: [DIRECT, 节点选择]
+          - name: "🎯 全球直连"
+            type: select
+            proxies: [DIRECT]
+          - name: "🛑 全球拦截"
+            type: select
+            proxies: [REJECT, DIRECT]
+          - name: "🐟 漏网之鱼"
+            type: select
+            proxies: [节点选择, DIRECT]
+        rule-providers:
+          LocalAreaNetwork:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/LocalAreaNetwork.list"
+            path: ./ruleset/LocalAreaNetwork.yaml
+            interval: 86400
+            format: text
+          UnBan:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/UnBan.list"
+            path: ./ruleset/UnBan.yaml
+            interval: 86400
+            format: text
+          BanAD:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/BanAD.list"
+            path: ./ruleset/BanAD.yaml
+            interval: 86400
+            format: text
+          BanProgramAD:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/BanProgramAD.list"
+            path: ./ruleset/BanProgramAD.yaml
+            interval: 86400
+            format: text
+          GoogleFCM:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/Ruleset/GoogleFCM.list"
+            path: ./ruleset/GoogleFCM.yaml
+            interval: 86400
+            format: text
+          GoogleCN:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/GoogleCN.list"
+            path: ./ruleset/GoogleCN.yaml
+            interval: 86400
+            format: text
+          SteamCN:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/Ruleset/SteamCN.list"
+            path: ./ruleset/SteamCN.yaml
+            interval: 86400
+            format: text
+          Microsoft:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/Microsoft.list"
+            path: ./ruleset/Microsoft.yaml
+            interval: 86400
+            format: text
+          Apple:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/Apple.list"
+            path: ./ruleset/Apple.yaml
+            interval: 86400
+            format: text
+          Telegram:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/Telegram.list"
+            path: ./ruleset/Telegram.yaml
+            interval: 86400
+            format: text
+          ProxyMedia:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/ProxyMedia.list"
+            path: ./ruleset/ProxyMedia.yaml
+            interval: 86400
+            format: text
+          ProxyLite:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/ProxyLite.list"
+            path: ./ruleset/ProxyLite.yaml
+            interval: 86400
+            format: text
+          ChinaDomain:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/ChinaDomain.list"
+            path: ./ruleset/ChinaDomain.yaml
+            interval: 86400
+            format: text
+          ChinaCompanyIp:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/ChinaCompanyIp.list"
+            path: ./ruleset/ChinaCompanyIp.yaml
+            interval: 86400
+            format: text
         rules:
+          - 'RULE-SET,LocalAreaNetwork,🎯 全球直连'
+          - 'RULE-SET,UnBan,🎯 全球直连'
+          - 'RULE-SET,BanAD,🛑 全球拦截'
+          - 'RULE-SET,BanProgramAD,🛑 全球拦截'
+          - 'RULE-SET,GoogleFCM,📢 谷歌FCM'
+          - 'RULE-SET,GoogleCN,🎯 全球直连'
+          - 'RULE-SET,SteamCN,🎯 全球直连'
+          - 'RULE-SET,Microsoft,Ⓜ️ 微软服务'
+          - 'RULE-SET,Apple,🍎 苹果服务'
+          - 'RULE-SET,Telegram,📲 电报信息'
+          - 'RULE-SET,ProxyMedia,🌍 国外媒体'
+          - 'RULE-SET,ProxyLite,🚀 节点选择'
+          - 'RULE-SET,ChinaDomain,🎯 全球直连'
+          - 'RULE-SET,ChinaCompanyIp,🎯 全球直连,no-resolve'
           - IN-TYPE,SOCKS/HTTP,节点选择
           - RULE-SET,missing-provider,节点选择
           - DOMAIN-SUFFIX,google.com,MissingGroup
@@ -513,6 +650,19 @@ struct RecoveryAndSubscriptionCompatVerifier {
         assertTrue(!normalizedYAML.contains("external-ui"), "external-ui directives must be stripped from subscription YAML")
 
         let optimizedYAML = DomesticRoutingOptimizer.optimizedProfile(for: normalizedYAML)
+        assertTrue(!optimizedYAML.contains("rule-providers:"), "HTTP rule-providers section must be stripped from optimized runtime YAML")
+        assertTrue(!optimizedYAML.contains("RULE-SET,Microsoft"), "RULE-SET Microsoft must be expanded and stripped")
+        assertTrue(optimizedYAML.contains("- GEOSITE,microsoft,Ⓜ️ 微软服务"), "RULE-SET Microsoft must expand to GEOSITE,microsoft")
+        assertTrue(optimizedYAML.contains("- GEOSITE,apple,🍎 苹果服务"), "RULE-SET Apple must expand to GEOSITE,apple")
+        assertTrue(optimizedYAML.contains("- GEOSITE,telegram,📲 电报信息"), "RULE-SET Telegram must expand to GEOSITE,telegram")
+        assertTrue(optimizedYAML.contains("- GEOSITE,category-ads-all,🛑 全球拦截"), "RULE-SET BanAD must expand to GEOSITE,category-ads-all")
+        assertTrue(optimizedYAML.contains("- GEOSITE,googlefcm,📢 谷歌FCM"), "RULE-SET GoogleFCM must expand to GEOSITE,googlefcm")
+        assertTrue(optimizedYAML.contains("- GEOSITE,geolocation-!cn,🚀 节点选择"), "RULE-SET ProxyLite must expand to GEOSITE,geolocation-!cn")
+        assertTrue(optimizedYAML.contains("- GEOSITE,cn,🎯 全球直连"), "RULE-SET ChinaDomain must expand to GEOSITE,cn")
+        assertTrue(optimizedYAML.contains("- GEOIP,CN,🎯 全球直连,no-resolve"), "RULE-SET ChinaCompanyIp must expand to GEOIP,CN")
+        assertTrue(optimizedYAML.contains("- IP-CIDR,192.168.0.0/16,🎯 全球直连,no-resolve"), "RULE-SET LocalAreaNetwork must expand to LAN IP-CIDRs")
+        assertTrue(optimizedYAML.contains("- DOMAIN-SUFFIX,steamserver.net,🎯 全球直连"), "RULE-SET SteamCN must expand to safe DOMAIN-SUFFIX rules")
+        assertTrue(optimizedYAML.contains("- DOMAIN-SUFFIX,google.cn,🎯 全球直连"), "RULE-SET GoogleCN must expand to safe DOMAIN-SUFFIX rules")
         assertTrue(!optimizedYAML.contains("# 阿里DNS"), "Inline comments in dns.nameserver must be stripped")
         assertTrue(!optimizedYAML.contains("''*.lan'"), "Inline comments in dns.fake-ip-filter must not corrupt quotes")
         assertTrue(optimizedYAML.contains("'+.internal.corp': ['223.5.5.5', '119.29.29.29']"), "Array nameserver-policy must keep every resolver in order")

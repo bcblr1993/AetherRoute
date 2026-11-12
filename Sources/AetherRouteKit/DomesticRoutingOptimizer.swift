@@ -279,11 +279,15 @@ public enum DomesticRoutingOptimizer {
         let optimizedDNSLines: [String]? = enableDomesticDirect
             ? optimizeDNSSection(sections["dns"], customRules: customRules)
             : sections["dns"]
+        var expandedOrDroppedProviders = Set<String>()
+        let parsedRuleProviders = parseRuleProvidersSection(sections["rule-providers"])
         let optimizedRuleLines = optimizeRulesSection(
             sections["rules"],
             customRules: customRules,
             remoteRules: remoteRules,
-            enableDomesticDirect: enableDomesticDirect
+            enableDomesticDirect: enableDomesticDirect,
+            ruleProviders: parsedRuleProviders,
+            expandedOrDroppedProviders: &expandedOrDroppedProviders
         )
 
         var emittedSections = Set<String>()
@@ -296,7 +300,21 @@ public enum DomesticRoutingOptimizer {
                 emittedSections.insert("dns")
             } else if key == "rules" {
                 continue
-            } else if key == "proxies" || key == "proxy-groups" || key == "proxy-providers" || key == "rule-providers" {
+            } else if key == "rule-providers" {
+                let sanitizedProviders = sanitizeRuleProvidersSection(
+                    sectionLines,
+                    providers: parsedRuleProviders,
+                    droppedOrExpanded: expandedOrDroppedProviders
+                )
+                if !sanitizedProviders.isEmpty {
+                    if !emittedSections.contains("dns"), let optimizedDNSLines {
+                        resultLines.append(contentsOf: optimizedDNSLines)
+                        emittedSections.insert("dns")
+                    }
+                    resultLines.append(contentsOf: sanitizedProviders)
+                    emittedSections.insert(key)
+                }
+            } else if key == "proxies" || key == "proxy-groups" || key == "proxy-providers" {
                 if !emittedSections.contains("dns"), let optimizedDNSLines {
                     resultLines.append(contentsOf: optimizedDNSLines)
                     emittedSections.insert("dns")
@@ -687,11 +705,265 @@ public enum DomesticRoutingOptimizer {
             .uppercased() == CustomRuleKind.application.rawValue
     }
 
+    // MARK: - Rule Provider & RULE-SET Normalization
+
+    struct RuleProviderDef {
+        let name: String
+        var type: String = ""
+        var behavior: String = ""
+        var format: String = ""
+        var url: String = ""
+        var path: String = ""
+        var rawLines: [String] = []
+    }
+
+    private static func parseRuleProvidersSection(_ existingLines: [String]?) -> [String: RuleProviderDef] {
+        guard let lines = existingLines, !lines.isEmpty else { return [:] }
+        var result: [String: RuleProviderDef] = [:]
+        var currentDef: RuleProviderDef?
+
+        func finishCurrent() {
+            if let def = currentDef, !def.name.isEmpty {
+                result[def.name.lowercased()] = def
+            }
+            currentDef = nil
+        }
+
+        for line in lines.dropFirst() { // Skip "rule-providers:"
+            let trimmed = stripInlineComment(line.trimmingCharacters(in: .whitespaces))
+            guard !trimmed.isEmpty else { continue }
+            let leadingSpaces = line.prefix(while: { $0 == " " }).count
+
+            if leadingSpaces <= 2 && !trimmed.hasPrefix("-") {
+                if let colonIdx = trimmed.firstIndex(of: ":") {
+                    finishCurrent()
+                    let name = unquote(String(trimmed[..<colonIdx]).trimmingCharacters(in: .whitespaces))
+                    let remainder = String(trimmed[trimmed.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+                    var def = RuleProviderDef(name: name, rawLines: [line])
+                    if remainder.hasPrefix("{") && remainder.hasSuffix("}") {
+                        for pair in parseFlowPolicy(remainder) {
+                            applyProviderField(pair.0.lowercased(), pair.1, to: &def)
+                        }
+                    }
+                    currentDef = def
+                    continue
+                }
+            }
+
+            if var def = currentDef {
+                def.rawLines.append(line)
+                if let (key, val) = parseKeyAndValue(trimmed) {
+                    applyProviderField(key.lowercased(), unquote(val), to: &def)
+                }
+                currentDef = def
+            }
+        }
+        finishCurrent()
+        return result
+    }
+
+    private static func applyProviderField(_ key: String, _ value: String, to def: inout RuleProviderDef) {
+        let clean = unquote(value)
+        switch key {
+        case "type": def.type = clean.lowercased()
+        case "behavior": def.behavior = clean.lowercased()
+        case "format": def.format = clean.lowercased()
+        case "url": def.url = clean
+        case "path": def.path = clean
+        default: break
+        }
+    }
+
+    private static func sanitizeRuleProvidersSection(
+        _ existingLines: [String]?,
+        providers: [String: RuleProviderDef],
+        droppedOrExpanded: Set<String>
+    ) -> [String] {
+        guard let lines = existingLines, !lines.isEmpty else { return [] }
+        var retainedLines: [String] = []
+
+        for (_, def) in providers {
+            let lower = def.name.lowercased()
+            if def.type == "http" || def.behavior == "classical" || droppedOrExpanded.contains(lower) {
+                continue
+            }
+            if retainedLines.isEmpty {
+                retainedLines.append("rule-providers:")
+            }
+            retainedLines.append(contentsOf: def.rawLines)
+        }
+        return retainedLines
+    }
+
+    private static func synthesizeRules(
+        forProviderName rawName: String,
+        target: String,
+        providerDef: RuleProviderDef?
+    ) -> [String]? {
+        let cleanTarget = unquote(target).trimmingCharacters(in: .whitespaces)
+        guard !cleanTarget.isEmpty else { return nil }
+
+        func normalizedKey(_ s: String) -> String {
+            s.lowercased().filter { $0.isLetter || $0.isNumber }
+        }
+
+        func filenameStem(from pathOrURL: String) -> String {
+            guard !pathOrURL.isEmpty else { return "" }
+            let urlComponents = pathOrURL.split(separator: "/")
+            guard let last = urlComponents.last else { return "" }
+            let filename = String(last.split(separator: "?").first ?? last)
+            let stem = String(filename.split(separator: ".").first ?? Substring(filename))
+            return normalizedKey(stem)
+        }
+
+        var candidateKeys: Set<String> = [normalizedKey(rawName)]
+        if let def = providerDef {
+            candidateKeys.insert(normalizedKey(def.name))
+            if !def.url.isEmpty {
+                candidateKeys.insert(filenameStem(from: def.url))
+            }
+            if !def.path.isEmpty {
+                candidateKeys.insert(filenameStem(from: def.path))
+            }
+        }
+
+        func matchesAny(_ keywords: [String]) -> Bool {
+            for kw in keywords {
+                if candidateKeys.contains(kw) { return true }
+            }
+            return false
+        }
+
+        if matchesAny(["localareanetwork", "lan", "local", "private", "rfc1918"]) {
+            return [
+                "IP-CIDR,192.168.0.0/16,\(cleanTarget),no-resolve",
+                "IP-CIDR,10.0.0.0/8,\(cleanTarget),no-resolve",
+                "IP-CIDR,172.16.0.0/12,\(cleanTarget),no-resolve",
+                "IP-CIDR,127.0.0.0/8,\(cleanTarget),no-resolve",
+                "IP-CIDR,100.64.0.0/10,\(cleanTarget),no-resolve",
+                "DOMAIN-SUFFIX,local,\(cleanTarget)",
+                "DOMAIN-SUFFIX,lan,\(cleanTarget)",
+            ]
+        }
+        if matchesAny(["banad", "banprogramad", "baneasylist", "advertising", "reject", "ad", "ads", "categoryadsall", "categoryads"]) {
+            return ["GEOSITE,category-ads-all,\(cleanTarget)"]
+        }
+        if matchesAny(["googlefcm", "fcm"]) {
+            return [
+                "GEOSITE,googlefcm,\(cleanTarget)",
+                "GEOSITE,google,\(cleanTarget)",
+            ]
+        }
+        if matchesAny(["googlecn", "google-cn"]) {
+            return [
+                "DOMAIN-SUFFIX,google.cn,\(cleanTarget)",
+                "DOMAIN-SUFFIX,gstatic.cn,\(cleanTarget)",
+                "DOMAIN-SUFFIX,google.com.hk,\(cleanTarget)",
+            ]
+        }
+        if matchesAny(["steamcn", "steam-cn"]) {
+            return [
+                "DOMAIN-SUFFIX,steamserver.net,\(cleanTarget)",
+                "DOMAIN-SUFFIX,steampowered.com.8686c.com,\(cleanTarget)",
+                "DOMAIN-SUFFIX,csgo.wmsj.cn,\(cleanTarget)",
+                "DOMAIN-SUFFIX,dota2.wmsj.cn,\(cleanTarget)",
+            ]
+        }
+        if matchesAny(["steam"]) {
+            return ["GEOSITE,steam,\(cleanTarget)"]
+        }
+        if matchesAny(["onedrive"]) {
+            return [
+                "GEOSITE,onedrive,\(cleanTarget)",
+                "GEOSITE,microsoft,\(cleanTarget)",
+            ]
+        }
+        if matchesAny(["microsoft", "ms"]) {
+            return ["GEOSITE,microsoft,\(cleanTarget)"]
+        }
+        if matchesAny(["apple"]) {
+            return ["GEOSITE,apple,\(cleanTarget)"]
+        }
+        if matchesAny(["telegram", "tg"]) {
+            return [
+                "GEOSITE,telegram,\(cleanTarget)",
+                "IP-CIDR,91.108.4.0/22,\(cleanTarget),no-resolve",
+                "IP-CIDR,91.108.8.0/21,\(cleanTarget),no-resolve",
+                "IP-CIDR,91.108.16.0/21,\(cleanTarget),no-resolve",
+                "IP-CIDR,91.108.56.0/22,\(cleanTarget),no-resolve",
+                "IP-CIDR,149.154.160.0/20,\(cleanTarget),no-resolve",
+            ]
+        }
+        if matchesAny(["openai", "chatgpt", "ai", "claude", "anthropic"]) {
+            return [
+                "GEOSITE,openai,\(cleanTarget)",
+                "GEOSITE,category-ai-!cn,\(cleanTarget)",
+                "GEOSITE,anthropic,\(cleanTarget)",
+            ]
+        }
+        if matchesAny(["netflix"]) {
+            return ["GEOSITE,netflix,\(cleanTarget)"]
+        }
+        if matchesAny(["proxymedia", "globalmedia", "foreignmedia", "media"]) {
+            return [
+                "GEOSITE,youtube,\(cleanTarget)",
+                "GEOSITE,netflix,\(cleanTarget)",
+                "GEOSITE,disney,\(cleanTarget)",
+                "GEOSITE,spotify,\(cleanTarget)",
+                "GEOSITE,tiktok,\(cleanTarget)",
+                "GEOSITE,category-media,\(cleanTarget)",
+            ]
+        }
+        if matchesAny(["proxylite", "proxygfwlist", "gfw", "gfwlist", "global", "proxy", "proxies"]) {
+            return ["GEOSITE,geolocation-!cn,\(cleanTarget)"]
+        }
+        if matchesAny(["chinadomain", "chinamedia", "chinamax", "china", "cn", "direct"]) {
+            return ["GEOSITE,cn,\(cleanTarget)"]
+        }
+        if matchesAny(["chinacompanyip", "chinaip", "cnip", "chinaipex"]) {
+            return ["GEOIP,CN,\(cleanTarget),no-resolve"]
+        }
+        if matchesAny(["youtube"]) {
+            return ["GEOSITE,youtube,\(cleanTarget)"]
+        }
+        if matchesAny(["google"]) {
+            return ["GEOSITE,google,\(cleanTarget)"]
+        }
+        if matchesAny(["bilibili"]) {
+            return ["GEOSITE,bilibili,\(cleanTarget)"]
+        }
+        if matchesAny(["github"]) {
+            return ["GEOSITE,github,\(cleanTarget)"]
+        }
+        if matchesAny(["twitter", "x"]) {
+            return ["GEOSITE,twitter,\(cleanTarget)"]
+        }
+        if matchesAny(["spotify"]) {
+            return ["GEOSITE,spotify,\(cleanTarget)"]
+        }
+        if matchesAny(["disney", "disneyplus"]) {
+            return ["GEOSITE,disney,\(cleanTarget)"]
+        }
+        if matchesAny(["tiktok"]) {
+            return ["GEOSITE,tiktok,\(cleanTarget)"]
+        }
+        if matchesAny(["unban"]) {
+            return [
+                "DOMAIN-SUFFIX,alidns.com,\(cleanTarget)",
+                "DOMAIN-SUFFIX,doh.pub,\(cleanTarget)",
+            ]
+        }
+
+        return nil
+    }
+
     private static func optimizeRulesSection(
         _ existingLines: [String]?,
         customRules: [CustomRule] = [],
         remoteRules: [String] = [],
-        enableDomesticDirect: Bool = true
+        enableDomesticDirect: Bool = true,
+        ruleProviders: [String: RuleProviderDef] = [:],
+        expandedOrDroppedProviders: inout Set<String>
     ) -> [String] {
         var rawRules: [String] = []
 
@@ -699,16 +971,27 @@ public enum DomesticRoutingOptimizer {
             for line in lines.dropFirst() { // Skip "rules:"
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 if trimmed.hasPrefix("-") {
-                    var ruleContent = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-                    if !ruleContent.hasPrefix("'") && !ruleContent.hasPrefix("\""),
-                       let hashIdx = ruleContent.firstIndex(of: "#") {
-                        ruleContent = String(ruleContent[..<hashIdx]).trimmingCharacters(in: .whitespaces)
+                    let ruleContent = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+                    let clean = unquote(stripInlineComment(ruleContent))
+                    guard !clean.isEmpty && clean != "-" && clean != "''" && clean != "\"\""
+                        && !isApplicationRule(clean) else {
+                        continue
                     }
-                    let clean = unquote(ruleContent)
-                    if !clean.isEmpty && clean != "-" && clean != "''" && clean != "\"\""
-                        && !isApplicationRule(clean) {
-                        rawRules.append(clean)
+
+                    let tokens = clean.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                    if tokens.first?.uppercased() == "RULE-SET" {
+                        let providerName = tokens.count > 1 ? tokens[1] : ""
+                        let target = tokens.count > 2 ? tokens[2] : ""
+                        expandedOrDroppedProviders.insert(providerName.lowercased())
+                        let providerDef = ruleProviders[providerName.lowercased()]
+                        if let synthesized = synthesizeRules(forProviderName: providerName, target: target, providerDef: providerDef) {
+                            rawRules.append(contentsOf: synthesized)
+                        }
+                        // Unexpanded / unknown RULE-SET safely dropped
+                        continue
                     }
+
+                    rawRules.append(clean)
                 }
             }
         }

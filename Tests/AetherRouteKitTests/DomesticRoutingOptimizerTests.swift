@@ -473,4 +473,81 @@ final class DomesticRoutingOptimizerTests: XCTestCase {
         }
         try ProfileImportValidator.validate(data: Data(disabledDomesticOutput.utf8))
     }
+
+    func testOptimizeProfileExpandsACL4SSRRuleSetsAndStripsRuleProviders() throws {
+        let input = """
+        mode: rule
+        proxies:
+          - name: "HK-01"
+            type: socks5
+            server: 127.0.0.1
+            port: 1080
+        proxy-groups:
+          - name: "Proxy"
+            type: select
+            proxies: [HK-01, DIRECT]
+          - name: "MicrosoftGroup"
+            type: select
+            proxies: [DIRECT, Proxy]
+          - name: "AppleGroup"
+            type: select
+            proxies: [DIRECT, Proxy]
+          - name: "TelegramGroup"
+            type: select
+            proxies: [Proxy, DIRECT]
+          - name: "AdsGroup"
+            type: select
+            proxies: [REJECT, DIRECT]
+        rule-providers:
+          Microsoft:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/Microsoft.list"
+            path: ./ruleset/Microsoft.yaml
+            format: text
+          Apple:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/Apple.list"
+            path: ./ruleset/Apple.yaml
+            format: text
+          Telegram:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/Telegram.list"
+            path: ./ruleset/Telegram.yaml
+            format: text
+          BanAD:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/BanAD.list"
+            path: ./ruleset/BanAD.yaml
+            format: text
+          LocalAreaNetwork:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/LocalAreaNetwork.list"
+            path: ./ruleset/LocalAreaNetwork.yaml
+            format: text
+        rules:
+          - 'RULE-SET,LocalAreaNetwork,DIRECT'
+          - 'RULE-SET,BanAD,AdsGroup'
+          - 'RULE-SET,Microsoft,MicrosoftGroup'
+          - 'RULE-SET,Apple,AppleGroup'
+          - 'RULE-SET,Telegram,TelegramGroup'
+          - 'RULE-SET,UnknownProvider,Proxy'
+          - 'MATCH,Proxy'
+        """
+
+        let output = DomesticRoutingOptimizer.optimizedProfile(for: input)
+        XCTAssertFalse(output.contains("rule-providers:"), "rule-providers section must be stripped from runtime profile")
+        XCTAssertFalse(output.contains("RULE-SET,"), "RULE-SET lines must be expanded or dropped")
+        XCTAssertTrue(output.contains("- GEOSITE,microsoft,MicrosoftGroup"))
+        XCTAssertTrue(output.contains("- GEOSITE,apple,AppleGroup"))
+        XCTAssertTrue(output.contains("- GEOSITE,telegram,TelegramGroup"))
+        XCTAssertTrue(output.contains("- GEOSITE,category-ads-all,AdsGroup"))
+        XCTAssertTrue(output.contains("- IP-CIDR,192.168.0.0/16,DIRECT,no-resolve"))
+        XCTAssertTrue(output.contains("- MATCH,Proxy"))
+        try ProfileImportValidator.validate(data: Data(output.utf8))
+    }
 }
