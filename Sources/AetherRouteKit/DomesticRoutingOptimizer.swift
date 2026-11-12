@@ -280,7 +280,7 @@ public enum DomesticRoutingOptimizer {
             ? optimizeDNSSection(sections["dns"], customRules: customRules)
             : sections["dns"]
         var expandedOrDroppedProviders = Set<String>()
-        let parsedRuleProviders = parseRuleProvidersSection(sections["rule-providers"])
+        let (parsedRuleProviders, providerOrder) = parseRuleProvidersSection(sections["rule-providers"])
         let optimizedRuleLines = optimizeRulesSection(
             sections["rules"],
             customRules: customRules,
@@ -304,6 +304,7 @@ public enum DomesticRoutingOptimizer {
                 let sanitizedProviders = sanitizeRuleProvidersSection(
                     sectionLines,
                     providers: parsedRuleProviders,
+                    order: providerOrder,
                     droppedOrExpanded: expandedOrDroppedProviders
                 )
                 if !sanitizedProviders.isEmpty {
@@ -717,14 +718,19 @@ public enum DomesticRoutingOptimizer {
         var rawLines: [String] = []
     }
 
-    private static func parseRuleProvidersSection(_ existingLines: [String]?) -> [String: RuleProviderDef] {
-        guard let lines = existingLines, !lines.isEmpty else { return [:] }
+    private static func parseRuleProvidersSection(_ existingLines: [String]?) -> ([String: RuleProviderDef], [String]) {
+        guard let lines = existingLines, !lines.isEmpty else { return ([:], []) }
         var result: [String: RuleProviderDef] = [:]
+        var order: [String] = []
         var currentDef: RuleProviderDef?
 
         func finishCurrent() {
             if let def = currentDef, !def.name.isEmpty {
-                result[def.name.lowercased()] = def
+                let lower = def.name.lowercased()
+                if result[lower] == nil {
+                    order.append(lower)
+                }
+                result[lower] = def
             }
             currentDef = nil
         }
@@ -759,7 +765,7 @@ public enum DomesticRoutingOptimizer {
             }
         }
         finishCurrent()
-        return result
+        return (result, order)
     }
 
     private static func applyProviderField(_ key: String, _ value: String, to def: inout RuleProviderDef) {
@@ -777,13 +783,15 @@ public enum DomesticRoutingOptimizer {
     private static func sanitizeRuleProvidersSection(
         _ existingLines: [String]?,
         providers: [String: RuleProviderDef],
+        order: [String],
         droppedOrExpanded: Set<String>
     ) -> [String] {
         guard let lines = existingLines, !lines.isEmpty else { return [] }
         var retainedLines: [String] = []
 
-        for (_, def) in providers {
-            let lower = def.name.lowercased()
+        for key in order {
+            guard let def = providers[key] else { continue }
+            let lower = key
             if def.type == "http" || def.behavior == "classical" || droppedOrExpanded.contains(lower) {
                 continue
             }
@@ -997,18 +1005,21 @@ public enum DomesticRoutingOptimizer {
                         let providerName = tokens.count > 1 ? tokens[1] : ""
                         let target = tokens.count > 2 ? tokens[2] : ""
                         let providerDef = ruleProviders[providerName.lowercased()]
-                        if let synthesized = synthesizeRules(forProviderName: providerName, target: target, providerDef: providerDef) {
-                            expandedOrDroppedProviders.insert(providerName.lowercased())
-                            rawRules.append(contentsOf: synthesized)
+
+                        // Check if this references an existing safe local inline or file provider
+                        // (domain or ipcidr, non-classical) BEFORE attempting synthesis.
+                        // That way a user's custom inline provider named e.g. "Apple" is preserved as-is
+                        // and not overwritten by synthetic ACL4SSR rules.
+                        if let def = providerDef,
+                           (def.type == "inline" || def.type == "file" || def.type.isEmpty),
+                           def.behavior != "classical" && !def.rawLines.isEmpty {
+                            rawRules.append(clean)
                             continue
                         }
 
-                        // If not synthesized, check if this references an existing safe inline or file rule-provider
-                        if let def = providerDef,
-                           (def.type == "inline" || def.type == "file" || def.type.isEmpty),
-                           def.behavior != "classical" {
-                            // Safe custom inline/file provider: retain both the rule and the provider
-                            rawRules.append(clean)
+                        if let synthesized = synthesizeRules(forProviderName: providerName, target: target, providerDef: providerDef) {
+                            expandedOrDroppedProviders.insert(providerName.lowercased())
+                            rawRules.append(contentsOf: synthesized)
                             continue
                         }
 

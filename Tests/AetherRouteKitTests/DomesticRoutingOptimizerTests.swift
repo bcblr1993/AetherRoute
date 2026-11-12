@@ -619,4 +619,34 @@ final class DomesticRoutingOptimizerTests: XCTestCase {
         XCTAssertTrue(output.contains("- GEOIP,CN,DIRECT,no-resolve"))
         try ProfileImportValidator.validate(data: Data(output.utf8))
     }
+
+    func testOptimizeProfileCustomInlineNamedAppleIsNotOverwrittenBySyntheticRules() throws {
+        let input = """
+        mode: rule
+        proxies:
+          - name: "HK-01"
+            type: socks5
+            server: 127.0.0.1
+            port: 1080
+        proxy-groups:
+          - name: "Proxy"
+            type: select
+            proxies: [HK-01, DIRECT]
+        rule-providers:
+          apple:
+            type: inline
+            behavior: domain
+            payload:
+              - 'custom-apple.example.org'
+        rules:
+          - 'RULE-SET,apple,Proxy'
+          - 'MATCH,Proxy'
+        """
+
+        let output = DomesticRoutingOptimizer.optimizedProfile(for: input)
+        XCTAssertTrue(output.contains("apple:"), "Custom inline provider named apple must be preserved")
+        XCTAssertTrue(output.contains("- 'custom-apple.example.org'"), "Payload must be preserved")
+        XCTAssertTrue(output.contains("- RULE-SET,apple,Proxy"), "RULE-SET for custom inline provider must be preserved")
+        try ProfileImportValidator.validate(data: Data(output.utf8))
+    }
 }
