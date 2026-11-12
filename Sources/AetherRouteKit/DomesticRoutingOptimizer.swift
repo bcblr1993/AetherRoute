@@ -834,7 +834,7 @@ public enum DomesticRoutingOptimizer {
             return false
         }
 
-        if matchesAny(["localareanetwork", "lan", "local", "private", "rfc1918"]) {
+        if matchesAny(["localareanetwork", "lan", "local", "private", "rfc1918", "lancidr", "privatecidr"]) {
             return [
                 "IP-CIDR,192.168.0.0/16,\(cleanTarget),no-resolve",
                 "IP-CIDR,10.0.0.0/8,\(cleanTarget),no-resolve",
@@ -881,10 +881,10 @@ public enum DomesticRoutingOptimizer {
         if matchesAny(["microsoft", "ms"]) {
             return ["GEOSITE,microsoft,\(cleanTarget)"]
         }
-        if matchesAny(["apple"]) {
+        if matchesAny(["apple", "icloud"]) {
             return ["GEOSITE,apple,\(cleanTarget)"]
         }
-        if matchesAny(["telegram", "tg"]) {
+        if matchesAny(["telegram", "tg", "telegramcidr"]) {
             return [
                 "GEOSITE,telegram,\(cleanTarget)",
                 "IP-CIDR,91.108.4.0/22,\(cleanTarget),no-resolve",
@@ -892,6 +892,20 @@ public enum DomesticRoutingOptimizer {
                 "IP-CIDR,91.108.16.0/21,\(cleanTarget),no-resolve",
                 "IP-CIDR,91.108.56.0/22,\(cleanTarget),no-resolve",
                 "IP-CIDR,149.154.160.0/20,\(cleanTarget),no-resolve",
+            ]
+        }
+        if matchesAny(["gemini"]) {
+            return [
+                "GEOSITE,google-gemini,\(cleanTarget)",
+                "GEOSITE,google,\(cleanTarget)",
+                "GEOSITE,category-ai-!cn,\(cleanTarget)",
+            ]
+        }
+        if matchesAny(["copilot"]) {
+            return [
+                "GEOSITE,openai,\(cleanTarget)",
+                "GEOSITE,microsoft,\(cleanTarget)",
+                "GEOSITE,category-ai-!cn,\(cleanTarget)",
             ]
         }
         if matchesAny(["openai", "chatgpt", "ai", "claude", "anthropic"]) {
@@ -914,13 +928,13 @@ public enum DomesticRoutingOptimizer {
                 "GEOSITE,category-media,\(cleanTarget)",
             ]
         }
-        if matchesAny(["proxylite", "proxygfwlist", "gfw", "gfwlist", "global", "proxy", "proxies"]) {
+        if matchesAny(["proxylite", "proxygfwlist", "gfw", "gfwlist", "global", "proxy", "proxies", "tldnotcn", "proxydomain"]) {
             return ["GEOSITE,geolocation-!cn,\(cleanTarget)"]
         }
-        if matchesAny(["chinadomain", "chinamedia", "chinamax", "china", "cn", "direct"]) {
+        if matchesAny(["chinadomain", "chinamedia", "chinamax", "china", "cn", "direct", "directdomain"]) {
             return ["GEOSITE,cn,\(cleanTarget)"]
         }
-        if matchesAny(["chinacompanyip", "chinaip", "cnip", "chinaipex"]) {
+        if matchesAny(["chinacompanyip", "chinaip", "cnip", "chinaipex", "cncidr", "chinaips", "chinaipsv4", "chinaipsv6"]) {
             return ["GEOIP,CN,\(cleanTarget),no-resolve"]
         }
         if matchesAny(["youtube"]) {
@@ -982,12 +996,24 @@ public enum DomesticRoutingOptimizer {
                     if tokens.first?.uppercased() == "RULE-SET" {
                         let providerName = tokens.count > 1 ? tokens[1] : ""
                         let target = tokens.count > 2 ? tokens[2] : ""
-                        expandedOrDroppedProviders.insert(providerName.lowercased())
                         let providerDef = ruleProviders[providerName.lowercased()]
                         if let synthesized = synthesizeRules(forProviderName: providerName, target: target, providerDef: providerDef) {
+                            expandedOrDroppedProviders.insert(providerName.lowercased())
                             rawRules.append(contentsOf: synthesized)
+                            continue
                         }
-                        // Unexpanded / unknown RULE-SET safely dropped
+
+                        // If not synthesized, check if this references an existing safe inline or file rule-provider
+                        if let def = providerDef,
+                           (def.type == "inline" || def.type == "file" || def.type.isEmpty),
+                           def.behavior != "classical" {
+                            // Safe custom inline/file provider: retain both the rule and the provider
+                            rawRules.append(clean)
+                            continue
+                        }
+
+                        // Unexpanded / unknown / remote HTTP rule-provider: safely drop RULE-SET
+                        expandedOrDroppedProviders.insert(providerName.lowercased())
                         continue
                     }
 

@@ -550,4 +550,73 @@ final class DomesticRoutingOptimizerTests: XCTestCase {
         XCTAssertTrue(output.contains("- MATCH,Proxy"))
         try ProfileImportValidator.validate(data: Data(output.utf8))
     }
+
+    func testOptimizeProfilePreservesCustomInlineAndFileRuleProvidersAndExpandsLoyalsoldierRuleSets() throws {
+        let input = """
+        mode: rule
+        proxies:
+          - name: "HK-01"
+            type: socks5
+            server: 127.0.0.1
+            port: 1080
+        proxy-groups:
+          - name: "Proxy"
+            type: select
+            proxies: [HK-01, DIRECT]
+          - name: "AIGroup"
+            type: select
+            proxies: [Proxy, DIRECT]
+        rule-providers:
+          custom-inline:
+            type: inline
+            behavior: domain
+            payload:
+              - 'custom-internal.corp'
+              - 'dashboard.local'
+          gemini:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/gemini.txt"
+            path: ./ruleset/gemini.yaml
+            format: text
+          tldnotcn:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/tld-not-cn.txt"
+            path: ./ruleset/tldnotcn.yaml
+            format: text
+          cncidr:
+            type: http
+            behavior: classical
+            url: "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/cncidr.txt"
+            path: ./ruleset/cncidr.yaml
+            format: text
+        rules:
+          - 'RULE-SET,custom-inline,DIRECT'
+          - 'RULE-SET,gemini,AIGroup'
+          - 'RULE-SET,tldnotcn,Proxy'
+          - 'RULE-SET,cncidr,DIRECT,no-resolve'
+          - 'MATCH,Proxy'
+        """
+
+        let output = DomesticRoutingOptimizer.optimizedProfile(for: input)
+        // custom-inline must be preserved!
+        XCTAssertTrue(output.contains("rule-providers:"), "Safe inline rule-provider must be preserved")
+        XCTAssertTrue(output.contains("custom-inline:"), "custom-inline provider must be preserved")
+        XCTAssertTrue(output.contains("type: inline"), "type: inline must be preserved")
+        XCTAssertTrue(output.contains("behavior: domain"), "behavior: domain must be preserved")
+        XCTAssertTrue(output.contains("- 'custom-internal.corp'"), "payload items must be preserved")
+        XCTAssertTrue(output.contains("- RULE-SET,custom-inline,DIRECT"), "RULE-SET for custom-inline must be preserved")
+
+        // Loyalsoldier HTTP providers must be expanded and stripped from rule-providers:
+        XCTAssertFalse(output.contains("gemini:"), "HTTP provider gemini must be stripped")
+        XCTAssertFalse(output.contains("tldnotcn:"), "HTTP provider tldnotcn must be stripped")
+        XCTAssertFalse(output.contains("cncidr:"), "HTTP provider cncidr must be stripped")
+
+        // Expansions:
+        XCTAssertTrue(output.contains("- GEOSITE,google-gemini,AIGroup"))
+        XCTAssertTrue(output.contains("- GEOSITE,geolocation-!cn,Proxy"))
+        XCTAssertTrue(output.contains("- GEOIP,CN,DIRECT,no-resolve"))
+        try ProfileImportValidator.validate(data: Data(output.utf8))
+    }
 }
