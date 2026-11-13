@@ -48,12 +48,48 @@ enum AetherVisual {
     static let localProfileTint = Color.orange
     static let iCloudTint = Color.blue
 
-    /// The surface of every card and grouped section. Content does not sit
-    /// on Liquid Glass: Apple reserves glass for the navigation and control
-    /// layer (sidebar, toolbars, floating panels), and glass cards with
+    /// The outer surface of every top-level panel (`.aetherPanel()`). Content
+    /// does not sit on Liquid Glass: Apple reserves glass for the navigation and
+    /// control layer (sidebar, toolbars, floating panels), and glass cards with
     /// glass buttons on them stacked glass on glass (1.5.1). A system fill,
     /// so it follows light, dark and Increase Contrast like grouped forms.
-    static let cardFill = Color(nsColor: .quaternarySystemFill)
+    static let panelFill = Color(nsColor: .quaternarySystemFill)
+    /// 1pt inner specular hairline on `.aetherPanel()`.
+    static let panelStroke = AetherPanelStrokeStyle()
+    /// Nested card surface inside `.aetherPanel()` (or standalone compact
+    /// bars), differentiated from `panelFill` so nested cards pop cleanly.
+    static let cardFill = Color(nsColor: .tertiarySystemFill)
+    /// 0.5pt hairline border for nested cards (`cardFill`).
+    static let cardStroke = Color(nsColor: .separatorColor)
+
+    /// Inner specular edge on `ConnectionMedallion`.
+    static let medallionInnerRing = LinearGradient(
+        colors: [Color.white.opacity(0.45), Color.white.opacity(0.08)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    /// Subtle state-driven top-leading ambient washes for `ConnectionHero`.
+    static let heroConnectedWash = LinearGradient(
+        colors: [Color.green.opacity(0.14), Color.green.opacity(0.03), Color.clear],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    static let heroRecoveringWash = LinearGradient(
+        colors: [Color.orange.opacity(0.14), Color.orange.opacity(0.03), Color.clear],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    static let heroFailedWash = LinearGradient(
+        colors: [Color.red.opacity(0.14), Color.red.opacity(0.03), Color.clear],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    static let heroDisconnectedWash = LinearGradient(
+        colors: [Color.secondary.opacity(0.05), Color.clear],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
 
     // Fills, weakest to strongest. Every drawn background picks one of
     // these instead of its own opacity.
@@ -143,6 +179,8 @@ enum AetherVisual {
     static let windowMinWidth: CGFloat = 780
     static let windowMinHeight: CGFloat = 560
     static let popoverWidth: CGFloat = 380
+    static let menuNodePaneDefaultHeight: CGFloat = 396
+    static let menuNodePaneMinHeight: CGFloat = 340
     /// Sheet content follows the final dialog handoff rather than the page
     /// spacing grid.
     static let dialogPadding: CGFloat = 26
@@ -299,10 +337,12 @@ struct ConnectionLuminousBar: View {
 
 private struct AetherPanelModifier: ViewModifier {
     func body(content: Content) -> some View {
-        content.background(
-            AetherVisual.cardFill,
-            in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
-        )
+        let shape = RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
+        content
+            .background(AetherVisual.panelFill, in: shape)
+            .overlay {
+                shape.strokeBorder(AetherVisual.panelStroke, lineWidth: 1)
+            }
     }
 }
 
@@ -688,7 +728,7 @@ extension AetherPageHeader where Accessory == EmptyView {
 
 private struct AetherPageContentModifier: ViewModifier {
     let width: AetherPageWidth
-    var sharesGlassContainer = true
+    var sharesGlassContainer = false
 
     func body(content: Content) -> some View {
         glassContainer(
@@ -721,7 +761,7 @@ private struct AetherPageContentModifier: ViewModifier {
 extension View {
     /// Applies the shared page margins and width class to a page's scroll
     /// content. Use exactly once per primary page.
-    func aetherPageContent(_ width: AetherPageWidth, sharesGlassContainer: Bool = true) -> some View {
+    func aetherPageContent(_ width: AetherPageWidth, sharesGlassContainer: Bool = false) -> some View {
         modifier(AetherPageContentModifier(width: width, sharesGlassContainer: sharesGlassContainer))
     }
 }
@@ -1165,63 +1205,77 @@ public struct AetherTrafficMiniGraph: View {
     }
 
     public var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let actualHeight = proxy.size.height
+        Canvas { context, size in
+            let width = size.width
+            let actualHeight = size.height
+            guard width > 0, actualHeight > 0 else { return }
+
+            let hairlineColor = Color(nsColor: .separatorColor)
+            let dashedStyle = StrokeStyle(lineWidth: 0.5, dash: [3, 3])
+            for y in [CGFloat(2), actualHeight * 0.5] {
+                var line = Path()
+                line.move(to: CGPoint(x: 0, y: y))
+                line.addLine(to: CGPoint(x: width, y: y))
+                context.stroke(line, with: .color(hairlineColor.opacity(0.65)), style: dashedStyle)
+            }
+            var baseline = Path()
+            baseline.move(to: CGPoint(x: 0, y: actualHeight - 0.5))
+            baseline.addLine(to: CGPoint(x: width, y: actualHeight - 0.5))
+            context.stroke(baseline, with: .color(hairlineColor.opacity(0.8)), lineWidth: 0.5)
+
             let maxDownload = downloadSamples.max() ?? 0
             let maxUpload = uploadSamples.max() ?? 0
             let maxVal = max(maxDownload, maxUpload, 1024)
-            let downloadPoints = downloadSamples.count > 1
-                ? smoothPoints(samples: downloadSamples, width: width, height: actualHeight, maxVal: maxVal)
-                : []
-            let uploadPoints = uploadSamples.count > 1
-                ? smoothPoints(samples: uploadSamples, width: width, height: actualHeight, maxVal: maxVal)
-                : []
 
-            ZStack {
-                // 背景微弱参考网格线
-                VStack {
-                    Divider().opacity(0.12)
-                    Spacer()
-                    Divider().opacity(0.08)
-                    Spacer()
-                    Divider().opacity(0.12)
-                }
-
-                // 下行平滑面积波形 (青蓝霓虹渐变)
+            if downloadSamples.count > 1 {
+                let downloadPoints = smoothPoints(
+                    samples: downloadSamples,
+                    width: width,
+                    height: actualHeight,
+                    maxVal: maxVal
+                )
                 if downloadPoints.count > 1 {
-                    smoothWaveformPath(points: downloadPoints, height: actualHeight)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.cyan.opacity(0.22), Color.cyan.opacity(0.0)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                    let areaPath = smoothWaveformPath(points: downloadPoints, height: actualHeight)
+                    context.fill(
+                        areaPath,
+                        with: .linearGradient(
+                            Gradient(colors: [Color.cyan.opacity(0.24), Color.cyan.opacity(0.01)]),
+                            startPoint: .zero,
+                            endPoint: CGPoint(x: 0, y: actualHeight)
                         )
-
-                    smoothWaveformLine(points: downloadPoints)
-                        .stroke(
-                            Color.cyan,
-                            style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
-                        )
+                    )
+                    let strokePath = smoothWaveformLine(points: downloadPoints)
+                    context.stroke(
+                        strokePath,
+                        with: .color(Color.cyan),
+                        style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
+                    )
                 }
+            }
 
-                // 上行平滑面积波形 (紫粉霓虹渐变)
+            if uploadSamples.count > 1 {
+                let uploadPoints = smoothPoints(
+                    samples: uploadSamples,
+                    width: width,
+                    height: actualHeight,
+                    maxVal: maxVal
+                )
                 if uploadPoints.count > 1 {
-                    smoothWaveformPath(points: uploadPoints, height: actualHeight)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.purple.opacity(0.18), Color.purple.opacity(0.0)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                    let areaPath = smoothWaveformPath(points: uploadPoints, height: actualHeight)
+                    context.fill(
+                        areaPath,
+                        with: .linearGradient(
+                            Gradient(colors: [Color.purple.opacity(0.18), Color.purple.opacity(0.01)]),
+                            startPoint: .zero,
+                            endPoint: CGPoint(x: 0, y: actualHeight)
                         )
-
-                    smoothWaveformLine(points: uploadPoints)
-                        .stroke(
-                            Color.purple,
-                            style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
-                        )
+                    )
+                    let strokePath = smoothWaveformLine(points: uploadPoints)
+                    context.stroke(
+                        strokePath,
+                        with: .color(Color.purple),
+                        style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
+                    )
                 }
             }
         }
@@ -1549,6 +1603,14 @@ struct AetherReadableTint: ShapeStyle {
         environment.colorScheme == .dark
             ? color.mix(with: .white, by: 0.6)
             : color.mix(with: .black, by: 0.55)
+    }
+}
+
+struct AetherPanelStrokeStyle: ShapeStyle {
+    func resolve(in environment: EnvironmentValues) -> Color {
+        environment.colorScheme == .dark
+            ? Color.white.opacity(0.11)
+            : Color.primary.opacity(0.08)
     }
 }
 
