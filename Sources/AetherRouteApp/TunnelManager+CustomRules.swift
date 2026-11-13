@@ -222,6 +222,8 @@ extension TunnelManager {
             Self.runtimeLogger.error(
                 "stage=customRules liveReload failed error=\(String(reflecting: error), privacy: .public)"
             )
+            customRuleMessage = error.localizedDescription
+            customRuleMessageIsError = true
         }
     }
 

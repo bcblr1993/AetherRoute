@@ -51,7 +51,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     // Accessed only on pathMonitorQueue.
     private var pendingPathChangeWorkItem: DispatchWorkItem?
     private var lastPathSignature: String?
+    private struct TunnelRecipe: Sendable {
+        let configuration: TunnelConfiguration
+        let snapshot: ProviderLaunchSnapshot
+    }
+
     private let uplinkLock = NSLock()
+    private let recipeLock = NSLock()
+    private var activeRecipe: TunnelRecipe?
     private var physicalInterfaces: [NWInterface] = []
     // Accessed only on the recovery coordinator's serial queue.
     private var resetLedger = UplinkResetLedger()
@@ -197,6 +204,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                         return
                     }
                     Self.runtimeLogger.info("stage=installNetworkSettings success")
+                    self.recipeLock.withLock {
+                        self.activeRecipe = TunnelRecipe(
+                            configuration: configuration,
+                            snapshot: snapshot
+                        )
+                    }
                     self.startPathMonitoring()
                     self.dataPlaneSampler.start()
                     completion.call(nil)
@@ -222,6 +235,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         stopPathMonitoring()
         dataPlaneSampler.stop()
         uplinkLock.withLock { providerStopping = true }
+        recipeLock.withLock { activeRecipe = nil }
         recovery.cancel(reason: "stopTunnel")
         // macOS keeps the tunnel's interface, routes and DNS installed until
         // this completion handler returns, so it must not wait on the engine
@@ -673,15 +687,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 )
             }
 
+            let previousRecipe = recipeLock.withLock { activeRecipe }
             let provider = protocolConfiguration as? NETunnelProviderProtocol
             let routingMode = snapshot.routingMode
-            uplinkLock.withLock { recoveryRoutingMode = routingMode }
             let localProxy = (try? TunnelProviderConfigurationCodec.localProxySettings(
                 from: provider?.providerConfiguration
             )) ?? LocalProxySettings()
-            let enableIPv6 = (try? TunnelProviderConfigurationCodec.ipv6Enabled(
-                from: provider?.providerConfiguration
-            )) ?? false
+            let enableIPv6 = ProfileConfigurationInspector
+                .inspect(yaml: snapshot.profileYAML)
+                .allowsIPv6
             let configuration = try TunnelConfiguration(
                 mode: routingMode,
                 enableIPv6: enableIPv6,
@@ -689,6 +703,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             ).validated()
             let bypassPlan = try BypassNetworkSettingsPlan(
                 policy: snapshot.bypassPolicy
+            )
+            let settingsPlan = PacketTunnelNetworkSettingsPlan(
+                configuration: configuration,
+                bypassPlan: bypassPlan
             )
 
             Self.runtimeLogger.info("stage=handleReloadProfile stopping current core")
@@ -715,15 +733,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                                 "stage=handleReloadProfile coreStartFailed error=\(String(reflecting: coreError), privacy: .public)"
                             )
                             self.diagnostics.record(.startupFailure)
-                            completion(.failure(.internalFailure))
+                            self.rollbackReloadedCore(
+                                to: previousRecipe,
+                                triggerError: coreError,
+                                completion: completion
+                            )
                             return
                         }
 
                         Self.runtimeLogger.info("stage=handleReloadProfile updating network settings")
-                        let settingsPlan = PacketTunnelNetworkSettingsPlan(
-                            configuration: configuration,
-                            bypassPlan: bypassPlan
-                        )
                         let settings = self.makeNetworkSettings(settingsPlan)
                         self.setTunnelNetworkSettings(settings) { [weak self] settingsError in
                             guard let self else {
@@ -735,8 +753,27 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                                     "stage=handleReloadProfile setSettingsFailed error=\(String(reflecting: settingsError), privacy: .public)"
                                 )
                                 self.diagnostics.record(.networkSettingsFailure)
-                                completion(.failure(.internalFailure))
+                                newCore.stop { [weak self] in
+                                    guard let self else {
+                                        completion(.failure(.unavailable))
+                                        return
+                                    }
+                                    self.rollbackReloadedCore(
+                                        to: previousRecipe,
+                                        triggerError: settingsError,
+                                        completion: completion
+                                    )
+                                }
                                 return
+                            }
+                            self.recipeLock.withLock {
+                                self.activeRecipe = TunnelRecipe(
+                                    configuration: configuration,
+                                    snapshot: snapshot
+                                )
+                            }
+                            self.uplinkLock.withLock {
+                                self.recoveryRoutingMode = routingMode
                             }
                             Self.runtimeLogger.info("stage=handleReloadProfile success")
                             completion(.profileReloaded)
@@ -747,7 +784,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                         "stage=handleReloadProfile newCoreStartException error=\(String(reflecting: error), privacy: .public)"
                     )
                     self.diagnostics.record(.startupFailure)
-                    completion(.failure(.internalFailure))
+                    newCore.stop { [weak self] in
+                        guard let self else {
+                            completion(.failure(.unavailable))
+                            return
+                        }
+                        self.rollbackReloadedCore(
+                            to: previousRecipe,
+                            triggerError: error,
+                            completion: completion
+                        )
+                    }
                 }
             }
         } catch {
@@ -756,6 +803,93 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             )
             diagnostics.record(.internalControlFailure)
             completion(.failure(.internalFailure))
+        }
+    }
+
+    private func rollbackReloadedCore(
+        to previousRecipe: TunnelRecipe?,
+        triggerError: Error,
+        completion: @escaping @Sendable (ProxySelectionProviderResponse) -> Void
+    ) {
+        guard let previousRecipe else {
+            Self.runtimeLogger.error("stage=handleReloadProfile rollbackFailed reason=missingPreviousRecipe")
+            completion(.failure(.internalFailure))
+            cancelTunnelWithError(triggerError)
+            return
+        }
+        Self.runtimeLogger.info("stage=handleReloadProfile rollingBackToPreviousRecipe")
+        let rollbackCore = RustCoreBridge(packetFlow: packetFlow)
+        _ = swapCore(with: rollbackCore)
+        do {
+            try rollbackCore.start(
+                configuration: previousRecipe.configuration,
+                snapshot: previousRecipe.snapshot
+            ) { [weak self] rollbackError in
+                guard let self else {
+                    completion(.failure(.unavailable))
+                    return
+                }
+                if let rollbackError {
+                    Self.runtimeLogger.error(
+                        "stage=handleReloadProfile rollbackCoreStartFailed error=\(String(reflecting: rollbackError), privacy: .public)"
+                    )
+                    completion(.failure(.internalFailure))
+                    self.cancelTunnelWithError(rollbackError)
+                    return
+                }
+                let rollbackSettingsPlan: PacketTunnelNetworkSettingsPlan
+                do {
+                    let bypassPlan = try BypassNetworkSettingsPlan(
+                        policy: previousRecipe.snapshot.bypassPolicy
+                    )
+                    rollbackSettingsPlan = PacketTunnelNetworkSettingsPlan(
+                        configuration: previousRecipe.configuration,
+                        bypassPlan: bypassPlan
+                    )
+                } catch {
+                    Self.runtimeLogger.error(
+                        "stage=handleReloadProfile rollbackSettingsPlanFailed error=\(String(reflecting: error), privacy: .public)"
+                    )
+                    rollbackCore.stop { [weak self] in
+                        completion(.failure(.internalFailure))
+                        self?.cancelTunnelWithError(error)
+                    }
+                    return
+                }
+                let rollbackSettings = self.makeNetworkSettings(rollbackSettingsPlan)
+                self.setTunnelNetworkSettings(rollbackSettings) { [weak self] rollbackSettingsError in
+                    guard let self else {
+                        completion(.failure(.unavailable))
+                        return
+                    }
+                    if let rollbackSettingsError {
+                        Self.runtimeLogger.error(
+                            "stage=handleReloadProfile rollbackSettingsFailed error=\(String(reflecting: rollbackSettingsError), privacy: .public)"
+                        )
+                        rollbackCore.stop { [weak self] in
+                            completion(.failure(.internalFailure))
+                            self?.cancelTunnelWithError(rollbackSettingsError)
+                        }
+                        return
+                    }
+                    self.recipeLock.withLock {
+                        self.activeRecipe = previousRecipe
+                    }
+                    self.uplinkLock.withLock {
+                        self.recoveryRoutingMode = previousRecipe.configuration.mode
+                    }
+                    Self.runtimeLogger.info("stage=handleReloadProfile rollbackSucceeded")
+                    completion(.failure(.internalFailure))
+                }
+            }
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=handleReloadProfile rollbackStartException error=\(String(reflecting: error), privacy: .public)"
+            )
+            rollbackCore.stop { [weak self] in
+                completion(.failure(.internalFailure))
+                self?.cancelTunnelWithError(error)
+            }
         }
     }
 

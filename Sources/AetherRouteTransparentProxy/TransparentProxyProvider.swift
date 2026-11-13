@@ -967,6 +967,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             return
         }
         do {
+            let previousRecipe = recipeLock.withLock { runtimeRecipe }
             let store = try ActiveProfileStore.applicationGroup()
             let snapshot: ProviderLaunchSnapshot
             if !payloadData.isEmpty {
@@ -987,7 +988,6 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 )
             } else {
                 let activeProfile = try store.loadValidated()
-                let previousRecipe = recipeLock.withLock { runtimeRecipe }
                 let routingMode: RoutingMode = previousRecipe?.routingMode ?? .rule
                 let persistedSelections = (try? ProxySelectionStore.applicationGroup()
                     .selections(forProfileYAML: activeProfile.runtimeYAML))
@@ -1005,74 +1005,143 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 )
             }
 
-            let bypassPlan = try BypassNetworkSettingsPlan(policy: snapshot.bypassPolicy)
-            let upstreamExclusions: [TransparentProxyUpstreamExclusion]
-            do {
-                upstreamExclusions = try TransparentProxyUpstreamEndpointResolver.resolve(profileYAML: snapshot.profileYAML)
-            } catch TransparentProxyUpstreamEndpointResolutionError.unresolvedEndpoint {
-                upstreamExclusions = []
-            }
+            let settings = try Self.makeNetworkSettings(for: snapshot)
+            let newRecipe = RuntimeRecipe(
+                snapshot: snapshot,
+                selections: snapshot.proxySelections,
+                routingMode: snapshot.routingMode
+            )
 
-            runtimeController.stop { [weak self, identityGuard, diagnostics] in
-                guard let self else {
-                    completion(.failure(.unavailable))
-                    return
-                }
-                self.recipeLock.withLock {
-                    self.runtimeRecipe = RuntimeRecipe(
+            runtimeController.rebuildRuntime(
+                runtimeFactory: { [identityGuard, diagnostics] in
+                    try Self.makeRuntime(
                         snapshot: snapshot,
                         selections: snapshot.proxySelections,
-                        routingMode: snapshot.routingMode
+                        routingMode: snapshot.routingMode,
+                        identityGuard: identityGuard,
+                        diagnostics: diagnostics
                     )
-                }
-                self.runtimeController.start(
-                    runtimeFactory: {
-                        try Self.makeRuntime(
-                            snapshot: snapshot,
-                            selections: snapshot.proxySelections,
-                            routingMode: snapshot.routingMode,
-                            identityGuard: identityGuard,
-                            diagnostics: diagnostics
-                        )
-                    },
-                    installNetworkSettings: { [weak self] installed in
+                },
+                completion: { [weak self, identityGuard, diagnostics] swapped in
+                    guard let self else {
+                        completion(.failure(.unavailable))
+                        return
+                    }
+                    guard swapped else {
+                        Self.runtimeLog.failure("stage=handleReloadProfile rebuildFailed")
+                        completion(.failure(.internalFailure))
+                        return
+                    }
+                    self.setTunnelNetworkSettings(settings) { [weak self] settingsError in
                         guard let self else {
-                            installed(false)
-                            return
-                        }
-                        let once = ProxySettingsCompletion(installed)
-                        let settings: NETransparentProxyNetworkSettings
-                        do {
-                            settings = try Self.makeNetworkSettings(
-                                bypassPlan: bypassPlan,
-                                upstreamExclusions: upstreamExclusions
-                            )
-                        } catch {
-                            once.call(false)
-                            return
-                        }
-                        self.setTunnelNetworkSettings(settings) { error in
-                            once.call(error == nil)
-                        }
-                    },
-                    completion: { [weak self] error in
-                        guard self != nil else {
                             completion(.failure(.unavailable))
                             return
                         }
-                        if let error {
-                            Self.runtimeLog.failure("stage=handleReloadProfile startFailed error=\(String(reflecting: error))")
-                            completion(.failure(.internalFailure))
+                        if let settingsError {
+                            Self.runtimeLog.failure(
+                                "stage=handleReloadProfile settingsFailed error=\(String(reflecting: settingsError))"
+                            )
+                            self.rollbackReloadedRuntime(
+                                to: previousRecipe,
+                                triggerError: settingsError,
+                                identityGuard: identityGuard,
+                                diagnostics: diagnostics,
+                                completion: completion
+                            )
                             return
+                        }
+                        self.recipeLock.withLock {
+                            self.runtimeRecipe = newRecipe
                         }
                         completion(.profileReloaded)
                     }
-                )
-            }
+                }
+            )
         } catch {
             Self.runtimeLog.failure("stage=handleReloadProfile failed error=\(String(reflecting: error))")
             completion(.failure(.internalFailure))
         }
+    }
+
+    private func rollbackReloadedRuntime(
+        to previousRecipe: RuntimeRecipe?,
+        triggerError: Error,
+        identityGuard: TransparentProxySelfIdentityGuard,
+        diagnostics: ProviderDiagnosticAccumulator,
+        completion: @escaping @Sendable (ProxySelectionProviderResponse) -> Void
+    ) {
+        guard let previousRecipe else {
+            Self.runtimeLog.failure("stage=handleReloadProfile rollbackFailed reason=missingPreviousRecipe")
+            completion(.failure(.internalFailure))
+            cancelProxyWithError(triggerError)
+            return
+        }
+        let rollbackSettings: NETransparentProxyNetworkSettings
+        do {
+            rollbackSettings = try Self.makeNetworkSettings(for: previousRecipe.snapshot)
+        } catch {
+            Self.runtimeLog.failure(
+                "stage=handleReloadProfile rollbackSettingsPrepareFailed error=\(String(reflecting: error))"
+            )
+            completion(.failure(.internalFailure))
+            cancelProxyWithError(error)
+            return
+        }
+        runtimeController.rebuildRuntime(
+            runtimeFactory: {
+                try Self.makeRuntime(
+                    snapshot: previousRecipe.snapshot,
+                    selections: previousRecipe.selections,
+                    routingMode: previousRecipe.routingMode,
+                    identityGuard: identityGuard,
+                    diagnostics: diagnostics
+                )
+            },
+            completion: { [weak self] rolledBack in
+                guard let self else {
+                    completion(.failure(.unavailable))
+                    return
+                }
+                guard rolledBack else {
+                    Self.runtimeLog.failure("stage=handleReloadProfile rollbackFailed")
+                    completion(.failure(.internalFailure))
+                    self.cancelProxyWithError(triggerError)
+                    return
+                }
+                self.setTunnelNetworkSettings(rollbackSettings) { [weak self] rollbackSettingsError in
+                    if let rollbackSettingsError {
+                        Self.runtimeLog.failure(
+                            "stage=handleReloadProfile rollbackSettingsFailed error=\(String(reflecting: rollbackSettingsError))"
+                        )
+                        completion(.failure(.internalFailure))
+                        self?.cancelProxyWithError(rollbackSettingsError)
+                        return
+                    }
+                    if let self {
+                        self.recipeLock.withLock {
+                            self.runtimeRecipe = previousRecipe
+                        }
+                    }
+                    completion(.failure(.internalFailure))
+                }
+            }
+        )
+    }
+
+    private static func makeNetworkSettings(
+        for snapshot: ProviderLaunchSnapshot
+    ) throws -> NETransparentProxyNetworkSettings {
+        let bypassPlan = try BypassNetworkSettingsPlan(policy: snapshot.bypassPolicy)
+        let upstreamExclusions: [TransparentProxyUpstreamExclusion]
+        do {
+            upstreamExclusions = try TransparentProxyUpstreamEndpointResolver.resolve(profileYAML: snapshot.profileYAML)
+        } catch TransparentProxyUpstreamEndpointResolutionError.unresolvedEndpoint {
+            upstreamExclusions = []
+        }
+        return try makeNetworkSettings(
+            bypassPlan: bypassPlan,
+            upstreamExclusions: upstreamExclusions
+        )
     }
 
     private func handleAdmittedFlow(_ flow: NEAppProxyFlow) -> Bool {

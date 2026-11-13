@@ -825,6 +825,7 @@ extension TunnelManager {
 private final class ProviderMessageReply: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Data, Error>?
+    private var timeoutTask: Task<Void, Never>?
 
     init(_ continuation: CheckedContinuation<Data, Error>) {
         self.continuation = continuation
@@ -847,17 +848,34 @@ private final class ProviderMessageReply: @unchecked Sendable {
     }
 
     func startTimeout(after timeout: Duration) {
-        Task.detached(priority: .utility) { [self] in
+        let task = Task.detached(priority: .utility) { [weak self] in
             try? await Task.sleep(for: timeout)
-            fail(TunnelManagerError.providerMessageTimedOut)
+            guard !Task.isCancelled else { return }
+            self?.fail(TunnelManagerError.providerMessageTimedOut)
+        }
+        let shouldCancel = lock.withLock { () -> Bool in
+            if continuation == nil {
+                return true
+            }
+            timeoutTask?.cancel()
+            timeoutTask = task
+            return false
+        }
+        if shouldCancel {
+            task.cancel()
         }
     }
 
     private func finish(_ result: Result<Data, Error>) {
-        let continuation = lock.withLock { () -> CheckedContinuation<Data, Error>? in
-            defer { self.continuation = nil }
-            return self.continuation
+        let (continuation, timeoutTask) = lock.withLock {
+            () -> (CheckedContinuation<Data, Error>?, Task<Void, Never>?) in
+            defer {
+                self.continuation = nil
+                self.timeoutTask = nil
+            }
+            return (self.continuation, self.timeoutTask)
         }
+        timeoutTask?.cancel()
         continuation?.resume(with: result)
     }
 }

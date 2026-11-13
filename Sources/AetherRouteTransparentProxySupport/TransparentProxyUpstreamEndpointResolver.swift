@@ -49,6 +49,7 @@ public enum TransparentProxyUpstreamEndpointResolutionError:
 /// addresses stay in memory and must never be written to diagnostics.
 public enum TransparentProxyUpstreamEndpointResolver {
     public static let maximumResolvedAddresses = 1_024
+    public static let maxConcurrentResolutions = 8
     public static let defaultMaxResolutionDurationSeconds: TimeInterval = 3.5
 
     public typealias HostResolver = @Sendable (
@@ -86,6 +87,25 @@ public enum TransparentProxyUpstreamEndpointResolver {
             lock.lock()
             defer { lock.unlock() }
             return outcomes
+        }
+    }
+
+    private final class PendingHostCursor: @unchecked Sendable {
+        private let lock = NSLock()
+        private let items: [(hostKey: String, queryHost: String, firstIndex: Int)]
+        private var nextIndex = 0
+
+        init(_ items: [(hostKey: String, queryHost: String, firstIndex: Int)]) {
+            self.items = items
+        }
+
+        func next() -> (hostKey: String, queryHost: String, firstIndex: Int)? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard nextIndex < items.count else { return nil }
+            let item = items[nextIndex]
+            nextIndex += 1
+            return item
         }
     }
 
@@ -154,27 +174,32 @@ public enum TransparentProxyUpstreamEndpointResolver {
                 qos: .userInitiated,
                 attributes: .concurrent
             )
+            let budget = max(maxResolutionDurationSeconds, 0.01)
+            let deadline = DispatchTime.now() + budget
+            let cursor = PendingHostCursor(pendingDNSHosts)
+            let workerCount = min(maxConcurrentResolutions, pendingDNSHosts.count)
 
-            for item in pendingDNSHosts {
+            for _ in 0..<workerCount {
                 group.enter()
                 queue.async {
                     defer { group.leave() }
-                    do {
-                        let addresses = try resolver(item.queryHost, item.firstIndex)
-                        box.store(.success(addresses), forKey: item.hostKey)
-                    } catch let error as TransparentProxyUpstreamEndpointResolutionError {
-                        box.store(.failure(error), forKey: item.hostKey)
-                    } catch {
-                        box.store(
-                            .failure(.unresolvedEndpoint(index: item.firstIndex)),
-                            forKey: item.hostKey
-                        )
+                    while DispatchTime.now() < deadline, let item = cursor.next() {
+                        do {
+                            let addresses = try resolver(item.queryHost, item.firstIndex)
+                            box.store(.success(addresses), forKey: item.hostKey)
+                        } catch let error as TransparentProxyUpstreamEndpointResolutionError {
+                            box.store(.failure(error), forKey: item.hostKey)
+                        } catch {
+                            box.store(
+                                .failure(.unresolvedEndpoint(index: item.firstIndex)),
+                                forKey: item.hostKey
+                            )
+                        }
                     }
                 }
             }
 
-            let budget = max(maxResolutionDurationSeconds, 0.01)
-            _ = group.wait(timeout: .now() + budget)
+            _ = group.wait(timeout: deadline)
             dnsOutcomes = box.snapshot()
         }
 

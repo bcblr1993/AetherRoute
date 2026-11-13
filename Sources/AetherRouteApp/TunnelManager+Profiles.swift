@@ -620,6 +620,8 @@ extension TunnelManager {
                 try await client.reloadActiveProfile(payload: reloadPayloadData)
                 Self.runtimeLogger.info("stage=activateProfile live reload succeeded")
                 clearProxySelectionRuntimeState()
+                cancelConnectionReadiness()
+                readinessVerifiedConnectionID = nil
                 await syncGlobalSelector(client: client)
                 startTelemetryPollingIfNeeded()
                 let readinessGroups = activeProfileSummary.map {
@@ -732,12 +734,19 @@ extension TunnelManager {
         guard let activeProfile else {
             throw ActiveProfileStoreError.noActiveProfile
         }
+        if let nativeNodes = activeProfile.nativeNodes {
+            try AetherNodeProfileCompiler.validateDialerProxies(in: nativeNodes)
+        }
+        Self.runtimeLogger.info("stage=prepareReloadProfilePayload begin")
+        isUpdatingRoutingResources = true
+        defer { isUpdatingRoutingResources = false }
         let rawProfileYAML = activeProfile.yaml
         let baseProfileYAML = activeProfile.runtimeYAML
+        let currentCustomRules = customRules
         let remoteRules = await RuleProviderEngine.shared.compileActiveRules()
         let profileYAML = DomesticRoutingOptimizer.optimizedProfile(
             for: baseProfileYAML,
-            customRules: customRules,
+            customRules: currentCustomRules,
             remoteRules: remoteRules,
             enableDomesticDirect: isDomesticOptimizationEnabled
         )
@@ -749,34 +758,73 @@ extension TunnelManager {
             try? profileYAML.write(to: appGroupDir.appendingPathComponent("debug_profile_optimized.yaml"), atomically: true, encoding: .utf8)
         }
 #endif
-        let persistedSelections = (try? ProxySelectionStore
-            .applicationGroup()
-            .selections(forProfileYAML: rawProfileYAML)) ?? [:]
-        let profileSummary = ProfileConfigurationInspector.inspect(
-            yaml: profileYAML,
-            customRules: customRules
-        )
-        var initialSelections = InitialProxySelectionPolicy
-            .selections(
-                persisted: persistedSelections,
-                summary: profileSummary
+        let storeFactory = routingResourceStoreFactory
+        let downloadClient = routingResourceDownloadClient
+        let bundleDirectory = bundledResourceDirectoryURL
+        let requestedBypassPolicy = Self.sanitizeBypassPolicy(bypassPolicy)
+        let requestedDNSPolicy = dnsRuntimePolicy
+        let inMemoryGlobalSelection = proxySelections["GLOBAL"]?.selectedMember
+        let reloadInput = try await Task.detached(
+            priority: .userInitiated
+        ) {
+            let store = try storeFactory()
+            let bundled = try BundledRoutingResources(
+                directoryURL: bundleDirectory
+            ).installMissingResources(for: profileYAML, in: store)
+            let downloaded = try await downloadClient
+                .ensureRequiredResources(
+                    for: profileYAML,
+                    in: store
+                )
+            try store.prepareRuntimeResources(for: profileYAML)
+            let routingResources = try store.launchResourceSnapshot(for: profileYAML)
+            if let geoSiteData = routingResources[.geoSite],
+               let unknown = try GeoSiteCategoryIndex(data: geoSiteData)
+                .unknownCategories(in: currentCustomRules).first {
+                throw CustomRuleGeoSiteError.unknownCategory(unknown)
+            }
+            let persistedSelections = (try? ProxySelectionStore
+                .applicationGroup()
+                .selections(forProfileYAML: rawProfileYAML)) ?? [:]
+            let profileSummary = ProfileConfigurationInspector.inspect(
+                yaml: profileYAML,
+                customRules: currentCustomRules,
+                remoteRules: remoteRules
             )
-        if initialSelections["GLOBAL"] == nil,
-           let globalTarget = Self.resolvedGlobalTargetMember(
-               in: profileSummary,
-               persistedSelections: persistedSelections,
-               inMemorySelection: proxySelections["GLOBAL"]?.selectedMember
-           ) {
-            initialSelections["GLOBAL"] = globalTarget
+            var initialSelections = InitialProxySelectionPolicy
+                .selections(
+                    persisted: persistedSelections,
+                    summary: profileSummary
+                )
+            if initialSelections["GLOBAL"] == nil,
+               let globalTarget = Self.resolvedGlobalTargetMember(
+                   in: profileSummary,
+                   persistedSelections: persistedSelections,
+                   inMemorySelection: inMemoryGlobalSelection
+               ) {
+                initialSelections["GLOBAL"] = globalTarget
+            }
+            let payload = ReloadProfilePayload(
+                profileYAML: profileYAML,
+                routingMode: requestedMode,
+                bypassPolicy: requestedBypassPolicy,
+                dnsPolicy: requestedDNSPolicy,
+                proxySelections: initialSelections
+            )
+            return (
+                try ReloadProfilePayloadCodec.encode(payload),
+                bundled.union(downloaded)
+            )
+        }.value
+        if !reloadInput.1.isEmpty {
+            routingResourceMessage = AppLocalization.string(
+                "Routing rules are ready."
+            )
+            routingResourceMessageIsError = false
+            refreshRoutingResourceStatuses()
         }
-        let payload = ReloadProfilePayload(
-            profileYAML: profileYAML,
-            routingMode: requestedMode,
-            bypassPolicy: bypassPolicy,
-            dnsPolicy: dnsRuntimePolicy,
-            proxySelections: initialSelections
-        )
-        return try ReloadProfilePayloadCodec.encode(payload)
+        Self.runtimeLogger.info("stage=prepareReloadProfilePayload success")
+        return reloadInput.0
     }
 
     @discardableResult
@@ -1309,8 +1357,29 @@ extension TunnelManager {
         _ catalog: ProfileCatalog,
         preserveConnectedRuntimeState: Bool = false
     ) {
+        var projection = ProfileCatalogProjectionBuilder.review(catalog)
+        if let active = catalog.activeProfile?.profile,
+           !customRules.isEmpty || !compiledRemoteRulesCache.isEmpty {
+            let optimized = DomesticRoutingOptimizer.optimizedProfile(
+                for: active.runtimeYAML,
+                customRules: customRules,
+                remoteRules: compiledRemoteRulesCache,
+                enableDomesticDirect: isDomesticOptimizationEnabled
+            )
+            let summary = ProfileConfigurationInspector.inspect(
+                yaml: optimized,
+                customRules: customRules,
+                remoteRules: compiledRemoteRulesCache
+            )
+            projection = ProfileCatalogProjection(
+                catalog: projection.catalog,
+                summary: summary,
+                dnsPolicy: projection.dnsPolicy,
+                dnsErrorDescription: projection.dnsErrorDescription
+            )
+        }
         installProfileProjection(
-            ProfileCatalogProjectionBuilder.review(catalog),
+            projection,
             preserveConnectedRuntimeState: preserveConnectedRuntimeState
         )
     }
@@ -1325,24 +1394,9 @@ extension TunnelManager {
         profiles = projection.catalog.profiles
         activeProfileID = projection.catalog.activeProfileID
         activeProfile = projection.catalog.activeProfile?.profile
-        if let active = projection.catalog.activeProfile?.profile,
-           !isUIReviewMode || !customRules.isEmpty || !compiledRemoteRulesCache.isEmpty {
-            let optimized = DomesticRoutingOptimizer.optimizedProfile(
-                for: active.runtimeYAML,
-                customRules: customRules,
-                remoteRules: compiledRemoteRulesCache,
-                enableDomesticDirect: isDomesticOptimizationEnabled
-            )
-            activeProfileSummary = ProfileConfigurationInspector.inspect(
-                yaml: optimized,
-                customRules: customRules,
-                remoteRules: compiledRemoteRulesCache
-            )
-        } else {
-            activeProfileSummary = projection.summary
-        }
+        activeProfileSummary = projection.summary
         loadProxySelectionModes(
-            groups: activeProfileSummary?.proxyGroups ?? projection.summary?.proxyGroups ?? [],
+            groups: activeProfileSummary?.proxyGroups ?? [],
             profileYAML: projection.catalog.activeProfile?.profile.yaml
         )
         dnsRuntimePolicy = projection.dnsPolicy
