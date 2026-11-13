@@ -1,11 +1,11 @@
 {
   "artifacts": {
-    "flowCoreSHA256": "c33222acec57a70cf3108668417d4f2c2c6d3d094857ceef32a88f18ae63e78c",
+    "flowCoreSHA256": "ca7cfb8d4545852f48216ee7d5170e608b97e94da65db70b1a8afd32e3b6a053",
     "headerSHA256": "bf25e15ff3eeecec9d140fc7190cea240f7d5878af51f017f50faf09dc1c5dee",
-    "interopTestBinarySHA256": "a66bb60297f239bb40f9c3e7842cdc02ab55e736d2eab5504e00dc7c781e9027",
-    "packetFlowCoreSHA256": "d3a138a03d1ea82a3e51fddc61d97bb31190453b474443970a3bcfe81c9a7a2f"
+    "interopTestBinarySHA256": "1f77b3e00e023f03c5366289fcb31c25a7b5ca119e732189be5097a8192dd164",
+    "packetFlowCoreSHA256": "21072c2e53acc4c6b109abb379b2212a90a0e3d3342c93a303d6cb576cd071b3"
   },
-  "coreCommit": "01bfe9f212f4197d174b9f4224ad007b59fcc656",
+  "coreCommit": "3627220d8dcc598dd3205257e0fc7e3c92ddcdd7",
   "coreFeatures": [
     "aether-tuic",
     "shadowquic",
@@ -74,10 +74,10 @@
     "coreManifestSHA256": "f3076cbcc886f37ebb8feee21160bd1c7d3a67e310a596e9360ef09224937182",
     "directSourceSHA256": "b3114f4181bcc30e700521ac752136d7318d42a3106a9179660c090a7b80f6fd",
     "dispatcherSHA256": "54e1c50a8fe44098558fc9874f8c0048b40786f8a31fed61d82be7eef9464546",
-    "embeddedFlowSourceSHA256": "b1002cb0e8b46f6325c2b5dc08d3b5c3093a75cbb3bf39761b146cb039b196f0",
+    "embeddedFlowSourceSHA256": "d52a63c9cfe6b066afaca201908a87bfc6f82751be2b2948679f8971eb9f6ecb",
     "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
     "ffiSourceSHA256": "7c3b498505c5caa9e70457f62e312389cb36d03a215e4ea1abde38e28da6658c",
-    "flowFFISourceSHA256": "ea8033ed5956ed998c9b332f0cfdd4d297f250899ce64df22edfa245b9a4853a",
+    "flowFFISourceSHA256": "22a5e18bd24f87cb7bb9381d406f1460b51c63026c408b862ed00c55ac91f25d",
     "interopTestsSHA256": "1a12f1e1aa010030e7dec473628a0dbe92131b03e63302be0ce94304e3c0a69b",
     "outboundManagerSHA256": "6c36a535344bbe08ec46ac0eb9332123f46868f832400e0c4de5b7ccccf65fbe",
     "proxyManagerSHA256": "b9a97f7e0400f690897ae5323deeab9073526443f1653f73cf5ead427dbee839",

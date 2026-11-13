@@ -6,6 +6,38 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.9.5] - 2026-11-13
+
+### Added
+
+- **Offline `RULE-SET` Synthesis & Mainstream Subscription Compatibility (`Sources/AetherRouteKit/DomesticRoutingOptimizer.swift`, `Sources/AetherRouteKit/SubscriptionPayloadNormalizer.swift`)**:
+  - Synthesizes verified built-in `GEOSITE`, `GEOIP`, `IP-CIDR`, and `DOMAIN-SUFFIX` fallback rules for mainstream ACL4SSR, Loyalsoldier, and blackmatrix7 `RULE-SET` names (`LocalAreaNetwork`/`lancidr`/`privatecidr`, `BanAD`/`BanProgramAD`, `GoogleFCM`, `GoogleCN`, `SteamCN`, `Microsoft`, `Apple`/`icloud`, `Telegram`/`telegramcidr`, `ProxyMedia`, `ProxyLite`/`tldnotcn`/`proxydomain`, `ChinaDomain`/`directdomain`, `ChinaCompanyIp`/`cncidr`/`chinaips`, `gemini`, `copilot`, etc.) so subscriptions work immediately offline and in Transparent Proxy mode without fetching `raw.githubusercontent.com`.
+  - Validated all 23 emitted `GEOSITE` categories (`category-ads-all`, `googlefcm`, `google`, `google-gemini`, `youtube`, `steam`, `onedrive`, `microsoft`, `apple`, `telegram`, `openai`, `category-ai-!cn`, `anthropic`, `netflix`, `disney`, `spotify`, `tiktok`, `category-media`, `geolocation-!cn`, `cn`, `bilibili`, `github`, `twitter`) against the bundled `Config/RoutingResources/GeoSite.dat`, emitting explicit `DOMAIN-SUFFIX` rules where categories such as `google-cn` are absent.
+  - Preserves safe local `inline` and `file` `rule-providers` (`behavior: domain`/`ipcidr`) in deterministic original input order and prioritizes them over synthetic expansions, while stripping remote `http` and `classical` `rule-providers` and unexpanded `RULE-SET` lines.
+  - Stripped harmless `external-ui-download-url` directives in `SubscriptionPayloadNormalizer` while retaining strict executable-key rejections (`script`, `command`, `exec`).
+- **Diagnostic Error Surfacing & Redirect-Aware Differential Tooling (`Sources/AetherRouteFlowCoreBridge/FlowCoreEngine.swift`, `Sources/AetherRouteTransparentProxy/TransparentProxyProvider.swift`, `scripts/compare_subscription_with_mihomo.sh`)**:
+  - Conformed `FlowCoreEngineError` to `LocalizedError` and `CustomStringConvertible` and added explicit failure logging in `TransparentProxyProvider`.
+  - Updated `scripts/compare_subscription_with_mihomo.sh` to follow HTTPS redirects (`-L --proto '=https' --max-redirs 5`) with the current app User-Agent.
+- **Tests first (TDD)**:
+  - Rust (`Core/Engine` `clash-ffi` & `clash-lib`): `engine_create_accepts_subscription_with_http_classical_providers_and_source_rules` previously failed on old code with `CLASH_FLOW_UNSUPPORTED_PROFILE` (`status=3`) and now passes; `http_rule_provider_initial_fetch_failure_continues_in_embedded_mode` previously failed startup with `Error::InvalidConfig` and now passes while `broken_file_rule_provider_aborts_engine_startup` continues to fail fast; `flow_only_engine_rejects_classical_rule_providers_with_source_metadata_or_file` and `parse_rule_providers_without_behavior_defaults_to_domain` also pass.
+  - Swift (`Tests/AetherRouteKitTests/DomesticRoutingOptimizerTests.swift` & `scripts/test_recovery_and_subscription_compat_gate.sh`): added regression assertions covering ACL4SSR HTTP/classical `rule-providers` expansion/stripping, Loyalsoldier alias synthesis, custom `inline`/`file` provider order & priority preservation, and native Flow/Packet core initialization; verified failing before implementation and passing afterwards.
+
+### Fixed
+
+- **Transparent Proxy & Embedded TUN `rule-providers` Resilience (`Core/Engine` `clash-ffi/src/flow_ffi.rs`, `clash-lib/src/embedded_flow.rs`, `clash-lib/src/app/router/mod.rs`, `clash-lib/src/config/def.rs`, `clash-lib/src/config/internal/convert/rule_provider.rs`, `clash-lib/src/config/internal/rule.rs`, `clash-lib/src/common/succinct_set.rs`)**:
+  - `harden_transparent_config` now normalizes `RuleProviderDef::Http` into empty `Inline` providers, prunes source-metadata rules (`SRC-IP-CIDR`, `SRC-PORT`, `IN-PORT`, `SRC-GEOIP`, `SRC-IP-SUFFIX`, `SRC-IP-ASN`, and composite expressions) from both top-level/sub-rules and classical inline providers, and aligns `transparent_profile_policy` with `EmbeddedFlowEngine::start` via `is_disallowed_flow_classical_rule`.
+  - Embedded router (`load_rule_providers`) logs a warning and continues startup with an empty ruleset when an `Http` rule provider fails its initial fetch, while keeping fail-fast behavior for broken `File` or `Inline` providers.
+  - Defaulted omitted `behavior` in `rule-providers` to `RuleSetBehavior::Domain`, derived fallback cache paths when `path` is empty/whitespace, and guarded `succinct_set::DomainSet` against empty `StringTrie` out-of-bounds indexing.
+
+### Changed
+
+- **Validation & Phase A Qualification (`2.9.5` / `2026111301`)**:
+  - Rust core `3627220d8dcc598dd3205257e0fc7e3c92ddcdd7` rebuilt (`libclashrs.a` `ca7cfb8d…`, `libclashrs-direct.a` `21072c2e…`); `Config/Licenses/ThirdPartyLicenses.json` regenerated (`446` components, `122` license texts); `Config/ProtocolCoreEvidence.json` updated (`interopTestBinarySHA256` `1f77b3e0…`); `engine_capabilities.py check` (`outbound=18 rules=37 networks=12 plugins=3`) and `verify_protocol_matrix.sh` (`16` protocols, `34` interop cases, `10` independent tests, `0` uncovered claims) passed.
+  - Real-world ACL4SSR/VLESS subscription smoke & Mihomo differential (`vm:macos27`): `both_ok=30, ours_missing=0, ours_fail=0, mihomo_fail=0, both_fail=0` on both domestic optimization ON and `--no-domestic`; native `FlowCoreEngine` (`libclashrs.a`) and `PacketFlow` (`libclashrs-direct.a`) startup smoke checks passed (`status=0`) for both `enableDomesticDirect: true` and `false`.
+  - 12-protocol interop suite passed on both default (`outputs/interop-default-2.9.5`) and Chrome (`outputs/interop-chrome-2.9.5`) TLS fingerprints: `11/11` suites (`matrix`, `reality`, `wireguard`, `shadowquic`, `ssh`, `xhttp`, `vless-enc`, `ssr`, `tuic-v4`, `snell`, `mieru`), `68` case passes, `34` certificate rejections.
+  - Chrome-fingerprint `real_site_tests`: `2/2` tests (`9/9` real sites + Cloudflare ECH) passed; 43-node protocol-lab differential against Mihomo on `vm:macos27` (`outputs/protocol-lab-diff-2.9.5`) passed `43/43` (`both_ok=43`, all failure/missing classes `0`).
+  - `test_fast_lane.sh` passed all 15 steps in `634s` (`outputs/fast-lane-2.9.5`, including `engine-unit` `568 passed, 0 failed, 24 ignored` and `differential-e2e` `10/10`); `test_network_switch_gate.py` (`3/3`), `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, and full `./scripts/test.sh` (`outputs/test-sh-2.9.5.log`: Xcode `639` + `101` + `24` tests, `49` SwiftPM/standalone tests, `11` Sparkle debounce scenarios, `16` manual-node protocols, `63` protocol inputs, Shadowsocks plugin/obfs gate, and recovery/subscription compat gate) all passed with `0` failures. *(Phase B VM matrix, remote arm64, UI perf, and notarized candidate runtime evidence pending.)*
+
 ## [2.9.4] - 2026-11-11
 
 ### Added
