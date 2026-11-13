@@ -561,12 +561,52 @@ final class AppLifecycleAndPagesFixesTests: XCTestCase {
             functionBody(named: "func installProfileProjection(", in: profilesExt)
         )
         XCTAssertTrue(
-            installBody.contains("enableDomesticDirect: isDomesticOptimizationEnabled"),
-            "installProfileProjection must always honor isDomesticOptimizationEnabled"
+            installBody.contains("activeProfileSummary = projection.summary")
+                && !installBody.contains("DomesticRoutingOptimizer"),
+            "installProfileProjection must trust precomputed projection.summary without recompiling YAML on @MainActor"
         )
-        XCTAssertFalse(
-            installBody.contains("(!customRules.isEmpty || !compiledRemoteRulesCache.isEmpty)"),
-            "installProfileProjection must not skip DomesticRoutingOptimizer when customRules is empty"
+
+        let applyCatalogBody = try XCTUnwrap(
+            functionBody(named: "func applyProductionProfileCatalog(", in: profilesExt)
+        )
+        XCTAssertTrue(
+            applyCatalogBody.contains("ProfileCatalogProjectionBuilder.production")
+                && applyCatalogBody.contains("customRules:")
+                && applyCatalogBody.contains("remoteRules:")
+                && applyCatalogBody.contains("enableDomesticDirect:")
+                && applyCatalogBody.contains("isDomesticOptimizationEnabled")
+                && applyCatalogBody.contains("compiledRemoteRulesCache"),
+            "applyProductionProfileCatalog must pass customRules, compiledRemoteRulesCache, and isDomesticOptimizationEnabled to ProfileCatalogProjectionBuilder.production off @MainActor"
+        )
+
+        let performCatalogBody = try XCTUnwrap(
+            functionBody(named: "func performProductionProfileCatalogOperation(", in: profilesExt)
+        )
+        XCTAssertTrue(
+            performCatalogBody.contains("ProfileCatalogProjectionBuilder.production")
+                && performCatalogBody.contains("customRules:")
+                && performCatalogBody.contains("remoteRules:")
+                && performCatalogBody.contains("enableDomesticDirect:")
+                && performCatalogBody.contains("isDomesticOptimizationEnabled")
+                && performCatalogBody.contains("compiledRemoteRulesCache"),
+            "performProductionProfileCatalogOperation must pass customRules, compiledRemoteRulesCache, and isDomesticOptimizationEnabled to ProfileCatalogProjectionBuilder.production off @MainActor"
+        )
+
+        let reviewCatalogBody = try XCTUnwrap(
+            functionBody(named: "func installReviewProfileCatalog(", in: profilesExt)
+        )
+        XCTAssertTrue(
+            reviewCatalogBody.contains("enableDomesticDirect: isDomesticOptimizationEnabled"),
+            "installReviewProfileCatalog must honor isDomesticOptimizationEnabled"
+        )
+
+        let startupLoadBody = try XCTUnwrap(
+            functionBody(named: "static func load(", in: tunnelManager)
+        )
+        XCTAssertTrue(
+            startupLoadBody.contains("ProfileCatalogProjectionBuilder.production")
+                && startupLoadBody.contains("enableDomesticDirect: enableDomesticDirect"),
+            "ProductionStartupLoader.load must forward enableDomesticDirect to ProfileCatalogProjectionBuilder.production"
         )
 
         let refreshSummaryBody = try XCTUnwrap(

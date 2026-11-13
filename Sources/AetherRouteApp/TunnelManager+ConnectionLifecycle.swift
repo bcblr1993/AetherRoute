@@ -735,6 +735,9 @@ extension TunnelManager {
             "stage=disconnectError resolved domain=\(domain, privacy: .public) code=\(code, privacy: .public) classification=\(String(describing: kind), privacy: .public)"
         )
         guard kind == .competingNetworkExtension else { return }
+        cancelAutomaticReconnect(reason: "competingNetworkExtension")
+        cancelRecoveryWatchdog()
+        automaticReconnectAttempt = 0
         diagnosticEvents.record(.networkExtensionConflict)
         failureContext = .provider
         state = .failed(

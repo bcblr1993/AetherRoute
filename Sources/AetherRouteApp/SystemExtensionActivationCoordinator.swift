@@ -405,6 +405,7 @@ extension SystemExtensionActivationError: Equatable {
 final class SystemExtensionStatusProbe: NSObject, OSSystemExtensionRequestDelegate {
     private var continuation: CheckedContinuation<NetworkExtensionProbe, Never>?
     private var request: OSSystemExtensionRequest?
+    private var timeoutTask: Task<Void, Never>?
     private let identifier: String
 
     private init(identifier: String) {
@@ -426,14 +427,22 @@ final class SystemExtensionStatusProbe: NSObject, OSSystemExtensionRequestDelega
             request.delegate = self
             self.request = request
             OSSystemExtensionManager.shared.submitRequest(request)
-            Task { @MainActor [weak self] in
+            let task = Task { @MainActor [weak self] in
                 try? await Task.sleep(for: timeout)
+                guard !Task.isCancelled else { return }
                 self?.finish(.unknown)
+            }
+            if self.continuation == nil {
+                task.cancel()
+            } else {
+                timeoutTask = task
             }
         }
     }
 
     private func finish(_ result: NetworkExtensionProbe) {
+        timeoutTask?.cancel()
+        timeoutTask = nil
         guard let continuation else { return }
         self.continuation = nil
         request?.delegate = nil

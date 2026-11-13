@@ -1,5 +1,6 @@
 import AetherRouteKit
 import AetherRouteTransparentProxySupport
+import Darwin
 import Foundation
 import OSLog
 
@@ -333,11 +334,13 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
     }
 
     private let backend: any FlowCoreABIBackend
-    private let queue = DispatchQueue(
-        label: "com.example.aetherroute.flow-core.engine",
+    private let shutdownQueue = DispatchQueue(
+        label: "com.example.aetherroute.flow-core.engine.shutdown",
         qos: .userInitiated
     )
+    private var rwlock = pthread_rwlock_t()
     private let gate = NSLock()
+    private let flowsLock = NSLock()
     private var acceptsFlows = true
     private var shutdownStarted = false
     private var shutdownFinished = false
@@ -351,6 +354,24 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
     init(backend: any FlowCoreABIBackend, handle: FlowCoreABIHandle) {
         self.backend = backend
         self.handle = handle
+        let initStatus = pthread_rwlock_init(&rwlock, nil)
+        precondition(initStatus == 0, "Failed to initialize FlowCoreEngineStorage rwlock: \(initStatus)")
+    }
+
+    deinit {
+        pthread_rwlock_destroy(&rwlock)
+    }
+
+    private func withReadLease<T>(_ body: (FlowCoreABIHandle) throws -> T) throws -> T {
+        guard gate.withLock({ acceptsFlows }) else {
+            throw FlowCoreEngineError.engineClosed
+        }
+        pthread_rwlock_rdlock(&rwlock)
+        defer { pthread_rwlock_unlock(&rwlock) }
+        guard let engineHandle = gate.withLock({ (acceptsFlows && phase == .running) ? handle : nil }) else {
+            throw FlowCoreEngineError.engineClosed
+        }
+        return try body(engineHandle)
     }
 
     func makeTCPFlow(
@@ -373,50 +394,46 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
         let destinationData = try FlowEndpointCodec.encode(destination)
         let sourceData = try source.map(FlowEndpointCodec.encode)
 
-        return try gate.withLock {
-            guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
-            return try queue.sync {
-                guard phase == .running, let handle else {
-                    throw FlowCoreEngineError.engineClosed
-                }
-                var created = backend.tcpCreate(
-                    engine: handle,
+        return try withReadLease { engineHandle in
+            var created = backend.tcpCreate(
+                engine: engineHandle,
+                source: sourceData,
+                destination: destinationData,
+                sourceApp: sourceApp?.encoded
+            )
+            // The app description is advisory: if this engine refuses
+            // it, carry the flow without one rather than drop it.
+            if created.status == FlowCoreABIStatus.invalidArgument,
+               sourceApp != nil {
+                FlowCoreRuntimeLog.logger.error(
+                    "stage=createFlow transport=tcp sourceApp=rejected"
+                )
+                created = backend.tcpCreate(
+                    engine: engineHandle,
                     source: sourceData,
                     destination: destinationData,
-                    sourceApp: sourceApp?.encoded
+                    sourceApp: nil
                 )
-                // The app description is advisory: if this engine refuses
-                // it, carry the flow without one rather than drop it.
-                if created.status == FlowCoreABIStatus.invalidArgument,
-                   sourceApp != nil {
-                    FlowCoreRuntimeLog.logger.error(
-                        "stage=createFlow transport=tcp sourceApp=rejected"
-                    )
-                    created = backend.tcpCreate(
-                        engine: handle,
-                        source: sourceData,
-                        destination: destinationData,
-                        sourceApp: nil
-                    )
-                }
-                FlowCoreRuntimeLog.logger.debug(
-                    "stage=createFlow transport=tcp status=\(created.status, privacy: .public)"
-                )
-                guard
-                    created.status == FlowCoreABIStatus.success,
-                    let flowHandle = created.handle
-                else {
-                    throw Self.flowCreationError(created.status)
-                }
-                let storage = FlowCoreFlowStorage(
-                    kind: .tcp,
-                    backend: backend,
-                    handle: flowHandle,
-                    owner: self
-                )
-                flows[storage.id] = storage
-                return FlowCoreTCPBridge(storage: storage)
             }
+            FlowCoreRuntimeLog.logger.debug(
+                "stage=createFlow transport=tcp status=\(created.status, privacy: .public)"
+            )
+            guard
+                created.status == FlowCoreABIStatus.success,
+                let flowHandle = created.handle
+            else {
+                throw Self.flowCreationError(created.status)
+            }
+            let storage = FlowCoreFlowStorage(
+                kind: .tcp,
+                backend: backend,
+                handle: flowHandle,
+                owner: self
+            )
+            flowsLock.withLock {
+                flows[storage.id] = storage
+            }
+            return FlowCoreTCPBridge(storage: storage)
         }
     }
 
@@ -431,83 +448,67 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
         )
         let sourceData = try FlowEndpointCodec.encode(source)
 
-        return try gate.withLock {
-            guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
-            return try queue.sync {
-                guard phase == .running, let handle else {
-                    throw FlowCoreEngineError.engineClosed
-                }
-                var created = backend.udpCreate(
-                    engine: handle,
+        return try withReadLease { engineHandle in
+            var created = backend.udpCreate(
+                engine: engineHandle,
+                source: sourceData,
+                sourceApp: sourceApp?.encoded
+            )
+            if created.status == FlowCoreABIStatus.invalidArgument,
+               sourceApp != nil {
+                FlowCoreRuntimeLog.logger.error(
+                    "stage=createFlow transport=udp sourceApp=rejected"
+                )
+                created = backend.udpCreate(
+                    engine: engineHandle,
                     source: sourceData,
-                    sourceApp: sourceApp?.encoded
+                    sourceApp: nil
                 )
-                if created.status == FlowCoreABIStatus.invalidArgument,
-                   sourceApp != nil {
-                    FlowCoreRuntimeLog.logger.error(
-                        "stage=createFlow transport=udp sourceApp=rejected"
-                    )
-                    created = backend.udpCreate(
-                        engine: handle,
-                        source: sourceData,
-                        sourceApp: nil
-                    )
-                }
-                FlowCoreRuntimeLog.logger.debug(
-                    "stage=createFlow transport=udp status=\(created.status, privacy: .public)"
-                )
-                guard
-                    created.status == FlowCoreABIStatus.success,
-                    let flowHandle = created.handle
-                else {
-                    throw Self.flowCreationError(created.status)
-                }
-                let storage = FlowCoreFlowStorage(
-                    kind: .udp,
-                    backend: backend,
-                    handle: flowHandle,
-                    owner: self
-                )
-                flows[storage.id] = storage
-                return FlowCoreUDPBridge(storage: storage)
             }
+            FlowCoreRuntimeLog.logger.debug(
+                "stage=createFlow transport=udp status=\(created.status, privacy: .public)"
+            )
+            guard
+                created.status == FlowCoreABIStatus.success,
+                let flowHandle = created.handle
+            else {
+                throw Self.flowCreationError(created.status)
+            }
+            let storage = FlowCoreFlowStorage(
+                kind: .udp,
+                backend: backend,
+                handle: flowHandle,
+                owner: self
+            )
+            flowsLock.withLock {
+                flows[storage.id] = storage
+            }
+            return FlowCoreUDPBridge(storage: storage)
         }
     }
 
     func selectorSnapshot(group: String) throws -> ProxySelectionSnapshot {
         let group = try Self.selectorNameData(group)
-        return try gate.withLock {
-            guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
-            return try queue.sync {
-                guard phase == .running, let handle else {
-                    throw FlowCoreEngineError.engineClosed
-                }
-                let result = backend.selectorSnapshot(
-                    engine: handle,
-                    group: group
-                )
-                guard
-                    result.status == FlowCoreABIStatus.success,
-                    let snapshot = result.snapshot
-                else {
-                    throw Self.selectorError(result.status, selecting: false)
-                }
-                return try ProxySelectionSnapshotCodec.decode(snapshot)
+        return try withReadLease { engineHandle in
+            let result = backend.selectorSnapshot(
+                engine: engineHandle,
+                group: group
+            )
+            guard
+                result.status == FlowCoreABIStatus.success,
+                let snapshot = result.snapshot
+            else {
+                throw Self.selectorError(result.status, selecting: false)
             }
+            return try ProxySelectionSnapshotCodec.decode(snapshot)
         }
     }
 
     func setRoutingMode(_ mode: RoutingMode) throws {
-        try gate.withLock {
-            guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
-            try queue.sync {
-                guard phase == .running, let handle else {
-                    throw FlowCoreEngineError.engineClosed
-                }
-                let status = backend.engineSetRoutingMode(handle, mode: mode)
-                guard status == FlowCoreABIStatus.success else {
-                    throw Self.routingModeError(status)
-                }
+        try withReadLease { engineHandle in
+            let status = backend.engineSetRoutingMode(engineHandle, mode: mode)
+            guard status == FlowCoreABIStatus.success else {
+                throw Self.routingModeError(status)
             }
         }
     }
@@ -518,32 +519,26 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
     ) throws -> ProxySelectionSnapshot {
         let group = try Self.selectorNameData(group)
         let member = try Self.selectorNameData(member)
-        return try gate.withLock {
-            guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
-            return try queue.sync {
-                guard phase == .running, let handle else {
-                    throw FlowCoreEngineError.engineClosed
-                }
-                let status = backend.selectorSelect(
-                    engine: handle,
-                    group: group,
-                    member: member
-                )
-                guard status == FlowCoreABIStatus.success else {
-                    throw Self.selectorError(status, selecting: true)
-                }
-                let result = backend.selectorSnapshot(
-                    engine: handle,
-                    group: group
-                )
-                guard
-                    result.status == FlowCoreABIStatus.success,
-                    let snapshot = result.snapshot
-                else {
-                    throw Self.selectorError(result.status, selecting: false)
-                }
-                return try ProxySelectionSnapshotCodec.decode(snapshot)
+        return try withReadLease { engineHandle in
+            let status = backend.selectorSelect(
+                engine: engineHandle,
+                group: group,
+                member: member
+            )
+            guard status == FlowCoreABIStatus.success else {
+                throw Self.selectorError(status, selecting: true)
             }
+            let result = backend.selectorSnapshot(
+                engine: engineHandle,
+                group: group
+            )
+            guard
+                result.status == FlowCoreABIStatus.success,
+                let snapshot = result.snapshot
+            else {
+                throw Self.selectorError(result.status, selecting: false)
+            }
+            return try ProxySelectionSnapshotCodec.decode(snapshot)
         }
     }
 
@@ -561,15 +556,7 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
             timeoutMilliseconds <= ProxySelectionProviderMessageCodec
                 .maximumLatencyTimeoutMilliseconds
         else { throw FlowCoreEngineError.selectorUnavailable }
-        let engineHandle: FlowCoreABIHandle = try gate.withLock {
-            guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
-            return try queue.sync {
-                guard phase == .running, let handle else {
-                    throw FlowCoreEngineError.engineClosed
-                }
-                return handle
-            }
-        }
+        let engineHandle = try withReadLease { $0 }
         let abiTimeoutMilliseconds = ProxySelectionProviderMessageCodec
             .packLatencyTimeoutMilliseconds(
                 timeoutMilliseconds,
@@ -604,15 +591,7 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
             timeoutMilliseconds <= ProxySelectionProviderMessageCodec
                 .maximumLatencyTimeoutMilliseconds
         else { throw FlowCoreEngineError.selectorUnavailable }
-        let engineHandle: FlowCoreABIHandle = try gate.withLock {
-            guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
-            return try queue.sync {
-                guard phase == .running, let handle else {
-                    throw FlowCoreEngineError.engineClosed
-                }
-                return handle
-            }
-        }
+        let engineHandle = try withReadLease { $0 }
         let abiTimeoutMilliseconds = ProxySelectionProviderMessageCodec
             .packLatencyTimeoutMilliseconds(
                 timeoutMilliseconds,
@@ -640,24 +619,18 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
             maximumConnections > 0,
             Int(maximumConnections) <= NetworkTelemetryCodec.maximumConnections
         else { throw FlowCoreEngineError.selectorUnavailable }
-        return try gate.withLock {
-            guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
-            return try queue.sync {
-                guard phase == .running, let handle else {
-                    throw FlowCoreEngineError.engineClosed
-                }
-                let result = backend.telemetrySnapshot(
-                    engine: handle,
-                    maximumConnections: UInt32(maximumConnections)
-                )
-                guard
-                    result.status == FlowCoreABIStatus.success,
-                    let snapshot = result.snapshot
-                else {
-                    throw Self.selectorError(result.status, selecting: false)
-                }
-                return try NetworkTelemetryCodec.decode(snapshot)
+        return try withReadLease { engineHandle in
+            let result = backend.telemetrySnapshot(
+                engine: engineHandle,
+                maximumConnections: UInt32(maximumConnections)
+            )
+            guard
+                result.status == FlowCoreABIStatus.success,
+                let snapshot = result.snapshot
+            else {
+                throw Self.selectorError(result.status, selecting: false)
             }
+            return try NetworkTelemetryCodec.decode(snapshot)
         }
     }
 
@@ -665,37 +638,21 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
         guard ConnectionCloseRequestCodec.isValid(request) else {
             throw FlowCoreEngineError.selectorUnavailable
         }
-        return try gate.withLock {
-            guard acceptsFlows else { throw FlowCoreEngineError.engineClosed }
-            return try queue.sync {
-                guard phase == .running, let handle else {
-                    throw FlowCoreEngineError.engineClosed
-                }
-                let result = backend.closeConnections(engine: handle, request: request)
-                guard result.status == FlowCoreABIStatus.success else {
-                    throw Self.selectorError(result.status, selecting: false)
-                }
-                return result.closedCount
+        return try withReadLease { engineHandle in
+            let result = backend.closeConnections(engine: engineHandle, request: request)
+            guard result.status == FlowCoreABIStatus.success else {
+                throw Self.selectorError(result.status, selecting: false)
             }
+            return result.closedCount
         }
     }
 
     func resetNetworkState(
         interfaceIndex: UInt32
     ) throws -> EngineNetworkResetOutcome {
-        // Runs on `queue`, like destruction, so the handle stays valid for the
-        // whole call. Other engine calls, flow creation included, wait behind
-        // it for at most the engine's two-second deadline; new flows could not
-        // reach the old uplink anyway.
-        guard gate.withLock({ acceptsFlows }) else {
-            throw FlowCoreEngineError.engineClosed
-        }
-        return try queue.sync {
-            guard phase == .running, let handle else {
-                throw FlowCoreEngineError.engineClosed
-            }
+        return try withReadLease { engineHandle in
             let status = backend.resetNetworkState(
-                engine: handle,
+                engine: engineHandle,
                 interfaceIndex: interfaceIndex
             )
             switch status {
@@ -729,24 +686,35 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
             // engine callback barrier, then break the cycle at completion.
             shutdownSelfRetain = self
             shutdownCompletions.append(completion)
-            queue.async { [self] in beginShutdown() }
+            shutdownQueue.async { [self] in beginShutdown() }
             return .none
         }
         if action == .complete {
-            queue.async(execute: completion)
+            shutdownQueue.async(execute: completion)
         }
     }
 
     func flowDidDestroy(_ id: UUID) {
-        queue.async { [self] in
-            flows.removeValue(forKey: id)
+        flowsLock.withLock {
+            _ = flows.removeValue(forKey: id)
         }
     }
 
     private func beginShutdown() {
-        guard phase == .running else { return }
-        phase = .shuttingDown
-        let activeFlows = Array(flows.values)
+        // Exclusive write lock acts as a barrier waiting for all in-flight
+        // read-lease FFI operations and flow registrations to finish.
+        pthread_rwlock_wrlock(&rwlock)
+        let activeFlows: [FlowCoreFlowStorage]? = {
+            defer { pthread_rwlock_unlock(&rwlock) }
+            let transitioned = gate.withLock { () -> Bool in
+                guard phase == .running else { return false }
+                phase = .shuttingDown
+                return true
+            }
+            guard transitioned else { return nil }
+            return flowsLock.withLock { Array(flows.values) }
+        }()
+        guard let activeFlows else { return }
         pendingShutdownFlows = Set(activeFlows.map(\.id))
         guard !activeFlows.isEmpty else {
             destroyEngine()
@@ -755,7 +723,7 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
         for flow in activeFlows {
             flow.destroy { [weak self] in
                 guard let self else { return }
-                queue.async { [self] in
+                shutdownQueue.async { [self] in
                     flowBarrierCompleted(flow.id)
                 }
             }
@@ -763,7 +731,9 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
     }
 
     private func flowBarrierCompleted(_ id: UUID) {
-        flows.removeValue(forKey: id)
+        flowsLock.withLock {
+            _ = flows.removeValue(forKey: id)
+        }
         pendingShutdownFlows.remove(id)
         if pendingShutdownFlows.isEmpty {
             destroyEngine()
@@ -771,17 +741,21 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
     }
 
     private func destroyEngine() {
-        guard phase == .shuttingDown, let handle else { return }
-        let status = backend.engineDestroy(handle)
+        let engineHandle = gate.withLock { () -> FlowCoreABIHandle? in
+            guard phase == .shuttingDown else { return nil }
+            return handle
+        }
+        guard let engineHandle else { return }
+        let status = backend.engineDestroy(engineHandle)
         guard status == FlowCoreABIStatus.success else {
             // A failed native barrier is intentionally fail-closed: releasing
             // Swift ownership here could let callbacks target freed contexts.
             assertionFailure("FlowCore engine destroy barrier failed")
             return
         }
-        self.handle = nil
-        phase = .destroyed
         let completions = gate.withLock { () -> [@Sendable () -> Void] in
+            self.handle = nil
+            phase = .destroyed
             shutdownFinished = true
             shutdownSelfRetain = nil
             defer { shutdownCompletions.removeAll(keepingCapacity: false) }

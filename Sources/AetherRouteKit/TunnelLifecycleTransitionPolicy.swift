@@ -33,7 +33,7 @@ public enum TunnelLifecycleTransitionPolicy {
         providerPermitsStart: Bool
     ) -> Bool {
         guard providerPermitsStart else { return false }
-        return !isEnabled || hostIsRecovering
+        return hostIsRecovering
     }
 
     public static func shouldContinueConnectionPreparation(

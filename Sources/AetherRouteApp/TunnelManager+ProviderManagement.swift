@@ -38,6 +38,7 @@ extension TunnelManager {
         cancelConnectionReadiness()
         cancelAutomaticReconnect(reason: "switchingEngine")
         stopTelemetryPolling()
+        let previousManager = manager
         var launchPayload: Data?
         do {
             let outcome = try await engineReconnect.run(
@@ -69,7 +70,12 @@ extension TunnelManager {
             )
             connectedSince = manager?.connection.connectedDate ?? .now
             sessionRoutingMode = currentRoutingMode
-            sessionNetworkEngineMode = outcome == .switched ? mode : previousMode
+            let effectiveMode = outcome == .switched ? mode : previousMode
+            networkEngineMode = effectiveMode
+            sessionNetworkEngineMode = effectiveMode
+            if outcome == .switched {
+                userDefaults.set(mode.rawValue, forKey: Self.networkEnginePreferenceKey)
+            }
             state = .connected
             startTelemetryPollingIfNeeded()
             networkEngineMessage = AppLocalization.string(outcome == .switched
@@ -78,10 +84,22 @@ extension TunnelManager {
             networkEngineMessageIsError = outcome != .switched
         } catch is CancellationError {
             manager?.connection.stopVPNTunnel()
+            networkEngineMode = previousMode
+            if manager == nil, let previousManager {
+                installManager(previousManager)
+            } else {
+                observeStatus()
+            }
         } catch {
             // A failed rollback must not leave an unobserved connecting provider.
             beginDisconnectionWatchdog(selfInitiated: true)
             manager?.connection.stopVPNTunnel()
+            networkEngineMode = previousMode
+            if manager == nil, let previousManager {
+                installManager(previousManager)
+            } else {
+                observeStatus()
+            }
             networkEngineMessage = AppLocalization.string("The new network engine and automatic rollback both failed.")
             networkEngineMessageIsError = true
             recordFailure(error, context: .provider)
@@ -95,7 +113,6 @@ extension TunnelManager {
         try engineReconnect.checkActive()
         detachManagerObserver()
         networkEngineMode = mode
-        userDefaults.set(mode.rawValue, forKey: Self.networkEnginePreferenceKey)
         try await systemExtensionActivator.activate(identifier: mode.providerBundleIdentifier) { [weak self] in
             guard let self else { return }
             self.failureContext = .configuration
