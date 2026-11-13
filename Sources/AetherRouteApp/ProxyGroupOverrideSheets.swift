@@ -13,12 +13,41 @@ struct CustomProxyGroupSheet: View {
 
     let initial: CustomProxyGroup?
 
+    private enum GroupKindOption: String, CaseIterable, Identifiable {
+        case select
+        case urlTest
+        case fallback
+        case loadBalance
+        case smart
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .select:
+                AppLocalization.inline("Manual Select", chinese: "手动选择")
+            case .urlTest:
+                AppLocalization.inline("Auto Latency (url-test)", chinese: "自动测速 (url-test)")
+            case .fallback:
+                AppLocalization.inline("Fallback", chinese: "故障转移 (fallback)")
+            case .loadBalance:
+                AppLocalization.inline("Load Balance", chinese: "负载均衡 (load-balance)")
+            case .smart:
+                AppLocalization.inline("Smart", chinese: "智能选路 (smart)")
+            }
+        }
+    }
+
     @State private var name: String
     @State private var regions: Set<String>
     @State private var includeText: String
     @State private var excludeText: String
     @State private var manualNodes: [String]
     @State private var mode: ProxySelectionMode
+    @State private var groupKindOption: GroupKindOption
+    @State private var probeInterval: Int
+    @State private var urlTestTolerance: Int
+    @State private var loadBalanceStrategy: LoadBalanceStrategy
     @State private var parentGroup: String
     @State private var position: CustomProxyGroup.Position
     @State private var isSaving = false
@@ -38,8 +67,50 @@ struct CustomProxyGroupSheet: View {
         _excludeText = State(initialValue: (initial?.excludeKeywords ?? []).joined(separator: ", "))
         _manualNodes = State(initialValue: initial?.manualNodes ?? [])
         _mode = State(initialValue: initial?.mode ?? .fastest)
+
+        let initialKind = initial?.groupKind ?? .select
+        let kindOption: GroupKindOption
+        var initialInterval = CustomProxyGroupKind.defaultIntervalSeconds
+        var initialTolerance = CustomProxyGroupKind.defaultToleranceMilliseconds
+        var initialLBStrategy = LoadBalanceStrategy.roundRobin
+        switch initialKind {
+        case .select:
+            kindOption = .select
+        case let .urlTest(interval, tolerance):
+            kindOption = .urlTest
+            initialInterval = interval
+            initialTolerance = tolerance
+        case let .fallback(interval):
+            kindOption = .fallback
+            initialInterval = interval
+        case let .loadBalance(strategy):
+            kindOption = .loadBalance
+            initialLBStrategy = strategy
+        case .smart:
+            kindOption = .smart
+        }
+        _groupKindOption = State(initialValue: kindOption)
+        _probeInterval = State(initialValue: initialInterval)
+        _urlTestTolerance = State(initialValue: initialTolerance)
+        _loadBalanceStrategy = State(initialValue: initialLBStrategy)
+
         _parentGroup = State(initialValue: initial.map { $0.parentGroup ?? Self.noParent } ?? defaultParent ?? Self.noParent)
         _position = State(initialValue: initial?.position ?? .top)
+    }
+
+    private var resolvedGroupKind: CustomProxyGroupKind {
+        switch groupKindOption {
+        case .select:
+            .select
+        case .urlTest:
+            .urlTest(interval: probeInterval, tolerance: urlTestTolerance)
+        case .fallback:
+            .fallback(interval: probeInterval)
+        case .loadBalance:
+            .loadBalance(strategy: loadBalanceStrategy)
+        case .smart:
+            .smart
+        }
     }
 
     private var candidate: CustomProxyGroup {
@@ -51,6 +122,7 @@ struct CustomProxyGroupSheet: View {
             excludeKeywords: Self.keywords(excludeText),
             manualNodes: manualNodes,
             mode: mode,
+            groupKind: resolvedGroupKind,
             parentGroup: parentGroup == Self.noParent ? nil : parentGroup,
             position: position
         )
@@ -153,6 +225,58 @@ struct CustomProxyGroupSheet: View {
                     .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Name"))
                     .accessibilityIdentifier("custom-group-name-field")
+            }
+            Divider().padding(.leading, AetherVisual.s4)
+            OverrideFormRow(AppLocalization.inline("Group type", chinese: "分组类型")) {
+                Picker(AppLocalization.inline("Group type", chinese: "分组类型"), selection: $groupKindOption) {
+                    ForEach(GroupKindOption.allCases) { option in
+                        Text(verbatim: option.title).tag(option)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("custom-group-kind-picker")
+            }
+            if groupKindOption == .urlTest || groupKindOption == .fallback {
+                Divider().padding(.leading, AetherVisual.s4)
+                OverrideFormRow(AppLocalization.inline("Probe interval", chinese: "探测间隔")) {
+                    Picker(AppLocalization.inline("Probe interval", chinese: "探测间隔"), selection: $probeInterval) {
+                        Text(AppLocalization.inline("120s", chinese: "120 秒")).tag(120)
+                        Text(AppLocalization.inline("300s", chinese: "300 秒")).tag(300)
+                        Text(AppLocalization.inline("600s", chinese: "600 秒")).tag(600)
+                        Text(AppLocalization.inline("1800s", chinese: "1800 秒")).tag(1_800)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityIdentifier("custom-group-interval-picker")
+                }
+            }
+            if groupKindOption == .urlTest {
+                Divider().padding(.leading, AetherVisual.s4)
+                OverrideFormRow(AppLocalization.inline("Tolerance", chinese: "容差阈值")) {
+                    Picker(AppLocalization.inline("Tolerance", chinese: "容差阈值"), selection: $urlTestTolerance) {
+                        Text(AppLocalization.inline("20 ms", chinese: "20 毫秒")).tag(20)
+                        Text(AppLocalization.inline("50 ms", chinese: "50 毫秒")).tag(50)
+                        Text(AppLocalization.inline("100 ms", chinese: "100 毫秒")).tag(100)
+                        Text(AppLocalization.inline("150 ms", chinese: "150 毫秒")).tag(150)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityIdentifier("custom-group-tolerance-picker")
+                }
+            }
+            if groupKindOption == .loadBalance {
+                Divider().padding(.leading, AetherVisual.s4)
+                OverrideFormRow(AppLocalization.inline("Balance strategy", chinese: "均衡策略")) {
+                    Picker(AppLocalization.inline("Balance strategy", chinese: "均衡策略"), selection: $loadBalanceStrategy) {
+                        Text(AppLocalization.inline("Round Robin", chinese: "轮询 (round-robin)")).tag(LoadBalanceStrategy.roundRobin)
+                        Text(AppLocalization.inline("Consistent Hashing", chinese: "一致性哈希 (consistent-hashing)")).tag(LoadBalanceStrategy.consistentHashing)
+                        Text(AppLocalization.inline("Sticky Session", chinese: "会话粘滞 (sticky-session)")).tag(LoadBalanceStrategy.stickySession)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityIdentifier("custom-group-lb-strategy-picker")
+                }
             }
             Divider().padding(.leading, AetherVisual.s4)
             OverrideFormRow(AppLocalization.string("Node selection")) {

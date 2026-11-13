@@ -157,6 +157,48 @@ public struct ProfileOverride: Codable, Equatable, Sendable {
 }
 
 /// A group whose members are chosen by rules, so they follow the
+public enum LoadBalanceStrategy: String, Codable, Equatable, Sendable, CaseIterable {
+    case roundRobin = "round-robin"
+    case consistentHashing = "consistent-hashing"
+    case stickySession = "sticky-session"
+}
+
+public enum CustomProxyGroupKind: Codable, Equatable, Sendable, Hashable {
+    case select
+    case urlTest(interval: Int, tolerance: Int)
+    case fallback(interval: Int)
+    case loadBalance(strategy: LoadBalanceStrategy)
+    case smart
+
+    public static let defaultProbeURL = "https://www.gstatic.com/generate_204"
+    public static let defaultIntervalSeconds = 300
+    public static let defaultToleranceMilliseconds = 50
+
+    public var clashType: String {
+        switch self {
+        case .select: "select"
+        case .urlTest: "url-test"
+        case .fallback: "fallback"
+        case .loadBalance: "load-balance"
+        case .smart: "smart"
+        }
+    }
+
+    public func normalized() -> CustomProxyGroupKind {
+        switch self {
+        case .select, .smart, .loadBalance:
+            return self
+        case let .urlTest(interval, tolerance):
+            return .urlTest(
+                interval: min(max(interval, 30), 86_400),
+                tolerance: min(max(tolerance, 0), 5_000)
+            )
+        case let .fallback(interval):
+            return .fallback(interval: min(max(interval, 30), 86_400))
+        }
+    }
+}
+
 /// subscription: a new Hong Kong node joins "Hong Kong", a removed one
 /// leaves.
 public struct CustomProxyGroup: Codable, Equatable, Sendable, Identifiable {
@@ -175,11 +217,17 @@ public struct CustomProxyGroup: Codable, Equatable, Sendable, Identifiable {
     public var excludeKeywords: [String]
     /// Nodes picked by hand; they join while the profile still has them.
     public var manualNodes: [String]
-    /// How the group picks its node; a custom group is a `select` group.
+    /// How the group picks its node; legacy field retained for backward compatibility.
     public var mode: ProxySelectionMode
+    /// Engine-native Clash proxy group type and strategy parameters.
+    public var groupKind: CustomProxyGroupKind
     /// An existing group that lists this one, so it can be chosen there.
     public var parentGroup: String?
     public var position: Position
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, regions, includeKeywords, excludeKeywords, manualNodes, mode, groupKind, parentGroup, position
+    }
 
     public init(
         id: UUID = UUID(),
@@ -189,6 +237,7 @@ public struct CustomProxyGroup: Codable, Equatable, Sendable, Identifiable {
         excludeKeywords: [String] = [],
         manualNodes: [String] = [],
         mode: ProxySelectionMode = .fastest,
+        groupKind: CustomProxyGroupKind = .select,
         parentGroup: String? = nil,
         position: Position = .top
     ) {
@@ -199,8 +248,23 @@ public struct CustomProxyGroup: Codable, Equatable, Sendable, Identifiable {
         self.excludeKeywords = excludeKeywords
         self.manualNodes = manualNodes
         self.mode = mode
+        self.groupKind = groupKind
         self.parentGroup = parentGroup
         self.position = position
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.regions = try container.decodeIfPresent([String].self, forKey: .regions) ?? []
+        self.includeKeywords = try container.decodeIfPresent([String].self, forKey: .includeKeywords) ?? []
+        self.excludeKeywords = try container.decodeIfPresent([String].self, forKey: .excludeKeywords) ?? []
+        self.manualNodes = try container.decodeIfPresent([String].self, forKey: .manualNodes) ?? []
+        self.mode = try container.decodeIfPresent(ProxySelectionMode.self, forKey: .mode) ?? .fastest
+        self.groupKind = try container.decodeIfPresent(CustomProxyGroupKind.self, forKey: .groupKind) ?? .select
+        self.parentGroup = try container.decodeIfPresent(String.self, forKey: .parentGroup)
+        self.position = try container.decodeIfPresent(Position.self, forKey: .position) ?? .top
     }
 
     /// Whether anything can select a node at all.
@@ -236,6 +300,7 @@ public struct CustomProxyGroup: Codable, Equatable, Sendable, Identifiable {
         }
         copy.manualNodes = manual
         guard copy.hasSource else { throw ProfileOverrideError.groupHasNoSource }
+        copy.groupKind = copy.groupKind.normalized()
         copy.parentGroup = parentGroup?.trimmingCharacters(in: .whitespacesAndNewlines)
         if copy.parentGroup?.isEmpty == true { copy.parentGroup = nil }
         return copy
@@ -475,5 +540,68 @@ public enum ProfileOverrideError: LocalizedError, Equatable, Sendable {
         case .groupHasNoSource:
             "Choose regions, keywords or nodes for the group."
         }
+    }
+}
+
+/// Persists global override templates applied across profiles before per-profile overrides.
+public final class ProfileOverrideStore: @unchecked Sendable {
+    private struct StoragePayload: Codable {
+        static let currentVersion = 1
+        var version: Int = StoragePayload.currentVersion
+        var globalOverride: ProfileOverride
+    }
+
+    public static func applicationGroup(fileManager: FileManager = .default) -> ProfileOverrideStore {
+        let baseURL = fileManager
+            .containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup)?
+            .appendingPathComponent("Library/Application Support/AetherRoute", isDirectory: true)
+            ?? fileManager.temporaryDirectory.appendingPathComponent("AetherRoute", isDirectory: true)
+        return ProfileOverrideStore(fileManager: fileManager, directoryURL: baseURL)
+    }
+
+    public let directoryURL: URL
+    private let fileManager: FileManager
+
+    public init(fileManager: FileManager = .default, directoryURL: URL? = nil) {
+        self.fileManager = fileManager
+        if let directoryURL {
+            self.directoryURL = directoryURL
+        } else if let container = fileManager.containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup) {
+            self.directoryURL = container.appendingPathComponent("Library/Application Support/AetherRoute", isDirectory: true)
+        } else {
+            self.directoryURL = fileManager.temporaryDirectory.appendingPathComponent("AetherRoute", isDirectory: true)
+        }
+    }
+
+    public var fileURL: URL {
+        directoryURL.appendingPathComponent("overrides.json", isDirectory: false)
+    }
+
+    public var globalOverride: ProfileOverride {
+        loadGlobalOverride()
+    }
+
+    public func loadGlobalOverride() -> ProfileOverride {
+        guard fileManager.fileExists(atPath: fileURL.path),
+              let data = try? Data(contentsOf: fileURL),
+              let decoded = try? JSONDecoder().decode(StoragePayload.self, from: data) else {
+            return ProfileOverride()
+        }
+        return decoded.globalOverride
+    }
+
+    public func saveGlobalOverride(_ override: ProfileOverride) throws {
+        let validated = try override.validated()
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        let payload = StoragePayload(globalOverride: validated)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(payload)
+        try data.write(to: fileURL, options: [.atomic])
+        try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        var mutableURL = fileURL
+        try? mutableURL.setResourceValues(resourceValues)
     }
 }

@@ -65,6 +65,63 @@ public struct ProfileOverrideResult: Equatable, Sendable {
 public enum ProfileOverrideCompiler {
     public static func apply(
         _ override: ProfileOverride?,
+        globalOverride: ProfileOverride? = nil,
+        to yaml: String
+    ) -> ProfileOverrideResult {
+        if let globalOverride, !globalOverride.isEmpty {
+            let filteredGlobal = filterGlobalOverride(globalOverride, shadowedBy: override)
+            if !filteredGlobal.isEmpty {
+                let globalResult = applySingle(filteredGlobal, to: yaml)
+                guard let override, !override.isEmpty else {
+                    return globalResult
+                }
+                let profileResult = applySingle(override, to: globalResult.yaml)
+                return mergeResults(globalResult, profileResult)
+            }
+        }
+        return applySingle(override, to: yaml)
+    }
+
+    private static func filterGlobalOverride(
+        _ global: ProfileOverride,
+        shadowedBy perProfile: ProfileOverride?
+    ) -> ProfileOverride {
+        guard let perProfile, !perProfile.isEmpty else { return global }
+        let overriddenGroupNames = Set(perProfile.groups.map(\.name))
+            .union(perProfile.chainedProxies.map(\.name))
+        let overriddenHostDomains = Set(
+            perProfile.customHosts.map { $0.domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        )
+        var filtered = global
+        filtered.groups = global.groups.filter { !overriddenGroupNames.contains($0.name) }
+        filtered.chainedProxies = global.chainedProxies.filter { !overriddenGroupNames.contains($0.name) }
+        filtered.customHosts = global.customHosts.filter {
+            !overriddenHostDomains.contains($0.domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        }
+        return filtered
+    }
+
+    private static func mergeResults(
+        _ first: ProfileOverrideResult,
+        _ second: ProfileOverrideResult
+    ) -> ProfileOverrideResult {
+        var combinedHidden = first.hiddenNodes
+        var seenHidden = Set(combinedHidden)
+        for node in second.hiddenNodes where seenHidden.insert(node).inserted {
+            combinedHidden.append(node)
+        }
+        return ProfileOverrideResult(
+            yaml: second.yaml,
+            diagnostics: first.diagnostics + second.diagnostics,
+            customGroupMembers: first.customGroupMembers.merging(second.customGroupMembers) { _, new in new },
+            hiddenNodes: combinedHidden,
+            chainedProxies: first.chainedProxies.merging(second.chainedProxies) { _, new in new },
+            standaloneChainedProxyGroupName: second.standaloneChainedProxyGroupName ?? first.standaloneChainedProxyGroupName
+        )
+    }
+
+    private static func applySingle(
+        _ override: ProfileOverride?,
         to yaml: String
     ) -> ProfileOverrideResult {
         guard let override, !override.isEmpty else {
@@ -296,15 +353,17 @@ public enum ProfileOverrideCompiler {
                 emittedCustomGroups.append(autoGroupName)
             }
 
+            let groupKindsByName = Dictionary(uniqueKeysWithValues: override.groups.map { ($0.name, $0.groupKind) })
             for groupName in emittedCustomGroups {
                 let members = customGroupMembers[groupName] ?? []
+                let kind = groupKindsByName[groupName] ?? .select
                 customGroupLines.append(
-                    "{name: \(YAMLDocument.quote(groupName)), type: select, proxies: ["
-                        + (members.isEmpty ? ["DIRECT"] : members.map {
-                            YAMLDocument.flowToken(name: $0, written: nodeTokens[$0])
-                        })
-                            .joined(separator: ", ")
-                        + "]}"
+                    ProfileOverrideCompiler.renderCustomGroupFlowLine(
+                        name: groupName,
+                        kind: kind,
+                        members: members,
+                        nodeTokens: nodeTokens
+                    )
                 )
             }
 
@@ -324,6 +383,74 @@ public enum ProfileOverrideCompiler {
             guard let entry = insertions[group] else { return kept }
             return entry.top + kept + entry.bottom
         }
+    }
+
+    private static func renderCustomGroupFlowLine(
+        name: String,
+        kind: CustomProxyGroupKind,
+        members: [String],
+        nodeTokens: [String: String]
+    ) -> String {
+        let normalized = kind.normalized()
+        var fields: [String] = [
+            "name: \(YAMLDocument.quote(name))",
+            "type: \(normalized.clashType)",
+        ]
+        switch normalized {
+        case .select:
+            break
+        case let .urlTest(interval, tolerance):
+            fields.append("url: \(YAMLDocument.quote(CustomProxyGroupKind.defaultProbeURL))")
+            fields.append("interval: \(interval)")
+            fields.append("tolerance: \(tolerance)")
+        case let .fallback(interval):
+            fields.append("url: \(YAMLDocument.quote(CustomProxyGroupKind.defaultProbeURL))")
+            fields.append("interval: \(interval)")
+        case let .loadBalance(strategy):
+            fields.append("strategy: \(strategy.rawValue)")
+            fields.append("url: \(YAMLDocument.quote(CustomProxyGroupKind.defaultProbeURL))")
+            fields.append("interval: \(CustomProxyGroupKind.defaultIntervalSeconds)")
+        case .smart:
+            fields.append("url: \(YAMLDocument.quote(CustomProxyGroupKind.defaultProbeURL))")
+            fields.append("interval: \(CustomProxyGroupKind.defaultIntervalSeconds)")
+        }
+        let proxyTokens = (members.isEmpty ? ["DIRECT"] : members.map {
+            YAMLDocument.flowToken(name: $0, written: nodeTokens[$0])
+        }).joined(separator: ", ")
+        fields.append("proxies: [\(proxyTokens)]")
+        return "{\(fields.joined(separator: ", "))}"
+    }
+
+    private static func jsonGroupObject(
+        name: String,
+        kind: CustomProxyGroupKind,
+        members: [String]
+    ) -> [String: Any] {
+        let normalized = kind.normalized()
+        var object: [String: Any] = [
+            "name": name,
+            "type": normalized.clashType,
+            "proxies": members.isEmpty ? ["DIRECT"] : members,
+        ]
+        switch normalized {
+        case .select:
+            break
+        case let .urlTest(interval, tolerance):
+            object["url"] = CustomProxyGroupKind.defaultProbeURL
+            object["interval"] = interval
+            object["tolerance"] = tolerance
+        case let .fallback(interval):
+            object["url"] = CustomProxyGroupKind.defaultProbeURL
+            object["interval"] = interval
+        case let .loadBalance(strategy):
+            object["strategy"] = strategy.rawValue
+            object["url"] = CustomProxyGroupKind.defaultProbeURL
+            object["interval"] = CustomProxyGroupKind.defaultIntervalSeconds
+        case .smart:
+            object["url"] = CustomProxyGroupKind.defaultProbeURL
+            object["interval"] = CustomProxyGroupKind.defaultIntervalSeconds
+        }
+        return object
     }
 
     // MARK: - JSON profiles
@@ -383,14 +510,12 @@ public enum ProfileOverrideCompiler {
             root["proxies"] = addedProxies + proxies
         }
 
+        let groupKindsByName = Dictionary(uniqueKeysWithValues: override.groups.map { ($0.name, $0.groupKind) })
         var added: [[String: Any]] = []
         for name in plan.emittedCustomGroups {
             let members = plan.customGroupMembers[name] ?? []
-            added.append([
-                "name": name,
-                "type": "select",
-                "proxies": members.isEmpty ? ["DIRECT"] : members,
-            ])
+            let kind = groupKindsByName[name] ?? .select
+            added.append(Self.jsonGroupObject(name: name, kind: kind, members: members))
         }
         root["proxy-groups"] = groups + added
         if !plan.customHosts.isEmpty {

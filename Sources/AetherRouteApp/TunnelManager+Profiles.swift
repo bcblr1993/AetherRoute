@@ -741,7 +741,7 @@ extension TunnelManager {
         isUpdatingRoutingResources = true
         defer { isUpdatingRoutingResources = false }
         let rawProfileYAML = activeProfile.yaml
-        let baseProfileYAML = activeProfile.runtimeYAML
+        let baseProfileYAML = effectiveProfileYAML(for: activeProfile)
         let currentCustomRules = customRules
         let remoteRules = await RuleProviderEngine.shared.compileActiveRules()
         let profileYAML = DomesticRoutingOptimizer.optimizedProfile(
@@ -1175,16 +1175,24 @@ extension TunnelManager {
                         subscription: metadata
                     )
                 }
-                return try Self.replaceProfileContents(
+                let updatedCatalog = try Self.replaceProfileContents(
                     id: id,
                     previous: profile,
                     with: updated,
                     defaults: defaults
                 )
+                if case .updated = update {
+                    return (try? ProfileCatalogStore.applicationGroup().rebuildDependentMergedProfiles(referencing: id))
+                        ?? updatedCatalog
+                }
+                return updatedCatalog
             }
             recordSubscriptionUpdateError(nil, for: id)
 
-            let isActiveTarget = id == activeProfileID
+            let activeIsDependentMerge = activeProfileID.flatMap { activeID in
+                profiles.first(where: { $0.id == activeID })?.mergedSpec?.sourceProfileIDs.contains(id)
+            } ?? false
+            let isActiveTarget = id == activeProfileID || activeIsDependentMerge
             if isActiveTarget, state == .connected, case .updated = update {
                 let currentRoutingMode = sessionRoutingMode ?? routingMode
                 let reloadPayloadData = try await prepareReloadProfilePayload(
@@ -1492,5 +1500,157 @@ extension TunnelManager {
         hasLoadedBypassPolicy = true
     }
 #endif
+
+    // MARK: - Providers, Global Override & Merged Profiles (V3)
+
+    func effectiveProfileYAML(for profile: ActiveProfile) -> String {
+        let globalOverride = isUIReviewMode
+            ? ProfileOverride()
+            : ProfileOverrideStore.applicationGroup().loadGlobalOverride()
+        return ProfileOverrideCompiler.apply(
+            profile.overrides,
+            globalOverride: globalOverride,
+            to: profile.yaml
+        ).yaml
+    }
+
+    func loadGlobalProfileOverride() -> ProfileOverride {
+        guard !isUIReviewMode else { return ProfileOverride() }
+        return ProfileOverrideStore.applicationGroup().loadGlobalOverride()
+    }
+
+    @discardableResult
+    func saveGlobalProfileOverride(_ override: ProfileOverride) async -> Bool {
+        guard ensurePrivacyConsent() else { return false }
+        do {
+            let validated = try override.validated()
+            if !isUIReviewMode {
+                try await Task.detached(priority: .userInitiated) {
+                    try ProfileOverrideStore.applicationGroup().saveGlobalOverride(validated)
+                }.value
+            }
+            refreshActiveProfileSummary()
+            if state == .connected {
+                await reloadCustomRulesLive()
+            }
+            profileMessage = AppLocalization.inline(
+                "Global override template saved.",
+                chinese: "已保存全局覆写模板。"
+            )
+            profileMessageIsError = false
+            return true
+        } catch {
+            profileMessage = error.overrideMessage
+            profileMessageIsError = true
+            return false
+        }
+    }
+
+    @discardableResult
+    func createMergedProfile(
+        name: String,
+        spec: MergedProfileSpec
+    ) async -> Bool {
+        guard ensurePrivacyConsent() else { return false }
+        let keepRuntime = state == .connected
+        do {
+            if isUIReviewMode {
+                profileMessage = AppLocalization.inline(
+                    "Merged profile preview is unavailable in review mode.",
+                    chinese: "预览模式下不支持创建组合订阅。"
+                )
+                profileMessageIsError = true
+                return false
+            } else {
+                try await performProductionProfileCatalogOperation(
+                    preserveConnectedRuntimeState: keepRuntime
+                ) {
+                    try ProfileCatalogStore.applicationGroup().createMergedProfile(
+                        name: name,
+                        spec: spec,
+                        makeActive: true
+                    )
+                }
+            }
+            if state == .connected, !isUIReviewMode {
+                let currentRoutingMode = sessionRoutingMode ?? routingMode
+                let reloadPayloadData = try await prepareReloadProfilePayload(
+                    requestedMode: currentRoutingMode
+                )
+                let client = makeProxySelectionProviderClient()
+                try await client.reloadActiveProfile(payload: reloadPayloadData)
+            }
+            profileMessage = AppLocalization.inline(
+                "Created and activated merged profile.",
+                chinese: "已创建并启用组合订阅。"
+            )
+            profileMessageIsError = false
+            return true
+        } catch {
+            profileMessage = localizedProfileOperationError(error)
+            profileMessageIsError = true
+            return false
+        }
+    }
+
+    @discardableResult
+    func rebuildMergedProfile(id: UUID) async -> Bool {
+        guard ensurePrivacyConsent() else { return false }
+        let keepRuntime = state == .connected
+        do {
+            try await performProductionProfileCatalogOperation(
+                preserveConnectedRuntimeState: keepRuntime
+            ) {
+                try ProfileCatalogStore.applicationGroup().rebuildMergedProfile(id: id)
+            }
+            if id == activeProfileID, state == .connected, !isUIReviewMode {
+                let currentRoutingMode = sessionRoutingMode ?? routingMode
+                let reloadPayloadData = try await prepareReloadProfilePayload(
+                    requestedMode: currentRoutingMode
+                )
+                let client = makeProxySelectionProviderClient()
+                try await client.reloadActiveProfile(payload: reloadPayloadData)
+            }
+            profileMessage = AppLocalization.inline(
+                "Rebuilt merged profile from source subscriptions.",
+                chinese: "已根据源订阅重新合并节点。"
+            )
+            profileMessageIsError = false
+            return true
+        } catch {
+            profileMessage = localizedProfileOperationError(error)
+            profileMessageIsError = true
+            return false
+        }
+    }
+
+    func loadAllExternalProviders() async -> (rules: [RuleProviderMetadata], proxies: [ProxyProviderMetadata]) {
+        let rules = await RuleProviderEngine.shared.allProviders()
+        let proxies = await ProxyProviderEngine.shared.allProviders()
+        return (rules, proxies)
+    }
+
+    @discardableResult
+    func refreshAllExternalProviders() async -> (rules: [RuleProviderMetadata], proxies: [ProxyProviderMetadata]) {
+        let yaml = activeProfile?.yaml ?? ""
+        if !yaml.isEmpty {
+            _ = await RuleProviderEngine.shared.stageProviders(inProfileYAML: yaml, force: true)
+            _ = await ProxyProviderEngine.shared.stageProviders(inProfileYAML: yaml, force: true)
+        }
+        _ = await RuleProviderEngine.shared.updateAllExpired()
+        _ = await ProxyProviderEngine.shared.refreshAll(force: true)
+
+        if state == .connected, !isUIReviewMode {
+            await reloadCustomRulesLive()
+        }
+        let rules = await RuleProviderEngine.shared.allProviders()
+        let proxies = await ProxyProviderEngine.shared.allProviders()
+        profileMessage = AppLocalization.inline(
+            "External rule and proxy providers staged.",
+            chinese: "已刷新并暂存外部规则集与代理集合。"
+        )
+        profileMessageIsError = false
+        return (rules, proxies)
+    }
 
 }
