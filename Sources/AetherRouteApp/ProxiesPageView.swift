@@ -66,7 +66,11 @@ struct ProxiesView: View {
         // then switched, moving every glass panel on the page.)
         GeometryReader { page in
             let isWideGroupLayout = page.size.width >= Self.wideGroupLayoutWidth
-            groupsAndCard(summary: summary, isWideGroupLayout: isWideGroupLayout)
+            groupsAndCard(
+                summary: summary,
+                isWideGroupLayout: isWideGroupLayout,
+                pageWidth: page.size.width
+            )
         }
         .sheet(isPresented: $showsNewGroup) {
             CustomProxyGroupSheet(defaultParent: catchAllGroup(in: summary))
@@ -84,7 +88,8 @@ struct ProxiesView: View {
 
     private func groupsAndCard(
         summary: ProfileConfigurationSummary,
-        isWideGroupLayout: Bool
+        isWideGroupLayout: Bool,
+        pageWidth: CGFloat
     ) -> some View {
         let groups = displayedGroups(summary: summary)
         return VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
@@ -100,10 +105,8 @@ struct ProxiesView: View {
                     // current choice of every group stays in view.
                     HStack(alignment: .top, spacing: AetherVisual.s4) {
                         proxyGroupColumn(groups: groups)
-                            .frame(width: Self.groupColumnWidth)
-                        // Level with the group card, below its heading.
-                        activeGroupView(summary: summary, groups: groups)
-                            .padding(.top, AetherVisual.s5 + AetherVisual.s1)
+                            .frame(width: Self.groupColumnWidth(for: pageWidth))
+                        activeGroupColumn(summary: summary, groups: groups)
                     }
                     .frame(maxHeight: .infinity, alignment: .top)
                 } else {
@@ -230,8 +233,39 @@ struct ProxiesView: View {
         !tunnel.isTransitioning && !tunnel.isUpdatingProfiles && !tunnel.isRefreshingSubscription
     }
 
-    nonisolated private static let wideGroupLayoutWidth: CGFloat = 720
-    private static let groupColumnWidth: CGFloat = 236
+    nonisolated private static let wideGroupLayoutWidth: CGFloat = 560
+    private static func groupColumnWidth(for pageWidth: CGFloat) -> CGFloat {
+        min(236, max(204, floor(pageWidth * 0.32)))
+    }
+
+    private func activeGroupColumn(
+        summary: ProfileConfigurationSummary,
+        groups: [ProxyGroupConfigurationSummary]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            AetherSectionHeader(
+                title: AppLocalization.string("Nodes"),
+                count: activeGroupMemberCount(from: groups, summary: summary)
+            )
+            .frame(minHeight: AetherVisual.s5)
+            activeGroupView(summary: summary, groups: groups)
+                .frame(maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    private func activeGroupMemberCount(
+        from groups: [ProxyGroupConfigurationSummary],
+        summary: ProfileConfigurationSummary
+    ) -> Int? {
+        guard let group = currentGroup(from: groups, summary: summary) else { return nil }
+        let all = ProxyPageNodeOrder.uniqueMembersPreservingOrder(
+            tunnel.proxySelections[group.name]?.members ?? group.members
+        )
+        let filtered = showsSubscriptionNotices
+            ? all
+            : all.filter { !InitialProxySelectionPolicy.isSubscriptionMetadata($0) }
+        return filtered.count
+    }
 
     @ViewBuilder
     private func activeGroupView(
@@ -276,9 +310,10 @@ struct ProxiesView: View {
     /// the list scrolls on its own.
     private func proxyGroupColumn(groups: [ProxyGroupConfigurationSummary]) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            AetherSectionHeader(title: AppLocalization.string("Proxy groups")) {
+            AetherSectionHeader(title: AppLocalization.string("Proxy groups"), count: groups.count) {
                 newGroupButton
             }
+            .frame(minHeight: AetherVisual.s5)
             ScrollView {
                 VStack(spacing: AetherVisual.sMicro) {
                     ForEach(groups) { group in
@@ -980,10 +1015,10 @@ private struct ActiveProxyGroupView: View {
             if usesGridLayout {
                 LazyVGrid(
                     columns: [
-                        GridItem(.flexible(), spacing: AetherVisual.sMicro),
-                        GridItem(.flexible(), spacing: AetherVisual.sMicro),
+                        GridItem(.flexible(), spacing: AetherVisual.s2),
+                        GridItem(.flexible(), spacing: AetherVisual.s2),
                     ],
-                    spacing: AetherVisual.sMicro
+                    spacing: AetherVisual.s2
                 ) {
                     ForEach(rows) { row in
                         nodeRow(row, isCompact: true)
@@ -1212,10 +1247,10 @@ private struct ActiveProxyGroupView: View {
 }
 // MARK: - Node row
 
-/// Selection, region, name, protocol and latency on one line (or a compact
-/// two-column card when `isCompact` is true). In a group that picks its own
-/// node the row is information only: no radio, and the node in use carries
-/// a "Current" tag.
+/// Selection, region, name, protocol and latency on one line, or a clean
+/// two-line card when `isCompact` (2-column grid) is true. Unselected rows
+/// rely on subtle card fills and selection highlights rather than empty radio
+/// rings.
 private struct ProxyNodeRow: View {
     let row: ProxyMemberTableItem
     let canSelect: Bool
@@ -1228,57 +1263,13 @@ private struct ProxyNodeRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: isCompact ? AetherVisual.s2 : AetherVisual.s3) {
-            if showsSelectionControl {
-                Button(action: onSelect) {
-                    rowContent.contentShape(Rectangle())
-                }
-                .buttonStyle(.aetherPressable)
-                .disabled((row.isBusy && !row.isPending) || !canSelect)
-                .accessibilityLabel(row.member)
-                .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
+        Group {
+            if isCompact {
+                gridCardBody
             } else {
-                // Not a disabled button: that would grey out rows that are
-                // simply not meant to be clicked.
-                rowContent
-                    .accessibilityElement(children: .combine)
-                    .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
+                listRowBody
             }
-
-            if let onEditChained, !isCompact {
-                Button(action: onEditChained) {
-                    Image(systemName: "slider.horizontal.3")
-                }
-                .aetherButton()
-                .controlSize(.small)
-                .help(AppLocalization.string("Edit chained proxy"))
-                .accessibilityLabel(AppLocalization.string("Edit chained proxy"))
-                .accessibilityIdentifier("proxy-edit-chained-\(row.member)")
-            }
-
-            Group {
-                if row.showsLatency {
-                    Button(action: onTest) {
-                        ProxyLatencyText(status: row.status, confidence: row.confidence)
-                    }
-                    .buttonStyle(.aetherPressable)
-                    .disabled(row.status == .testing)
-                    .help(latencyHelp)
-                    .accessibilityLabel(
-                        String.localizedStringWithFormat(
-                            AppLocalization.string("Latency: %@"),
-                            row.status.localizedTitle
-                        )
-                    )
-                    .accessibilityHint(AppLocalization.string("Tests this node again"))
-                }
-            }
-            .frame(minWidth: isCompact ? 64 : 84, alignment: .trailing)
-            .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(.horizontal, isCompact ? AetherVisual.sRow : AetherVisual.s3)
-        .frame(minHeight: isCompact ? 36 : AetherVisual.listRowHeight)
-        .background(rowFill, in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous))
         .onHover { isHovered = $0 }
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: row.isSelected)
@@ -1302,75 +1293,247 @@ private struct ProxyNodeRow: View {
         }
     }
 
-    private var rowContent: some View {
-        HStack(spacing: isCompact ? AetherVisual.s2 : AetherVisual.s3) {
+    private var gridCardBody: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.sCompact) {
             if showsSelectionControl {
-                Group {
-                    if row.isPending {
-                        ProgressView()
-                            .controlSize(.mini)
-                    } else {
-                        Image(systemName: row.isSelected ? "checkmark.circle.fill" : "circle")
-                            .font(.body)
-                            .foregroundStyle(row.isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(AetherVisual.tertiaryText))
-                            .contentTransition(.symbolEffect(.replace))
-                    }
+                Button(action: onSelect) {
+                    gridTopLine
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-                .frame(width: AetherVisual.s5)
-                .accessibilityHidden(true)
+                .buttonStyle(.plain)
+                .disabled((row.isBusy && !row.isPending) || !canSelect)
+                .accessibilityLabel(row.member)
+                .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
+            } else {
+                gridTopLine
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
             }
-            AetherRegionCode(name: row.member, reservesSlot: !isCompact)
+
+            HStack(spacing: AetherVisual.s1) {
+                if showsSelectionControl {
+                    Button(action: onSelect) {
+                        gridMetadataBadges
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled((row.isBusy && !row.isPending) || !canSelect)
+                    .accessibilityHidden(true)
+                } else {
+                    gridMetadataBadges
+                    Spacer(minLength: 0)
+                }
+
+                if let onEditChained, isHovered {
+                    editChainedButton(onEditChained)
+                        .transition(.opacity)
+                }
+                if row.showsLatency {
+                    latencyButton
+                }
+            }
+        }
+        .padding(.horizontal, AetherVisual.s3)
+        .padding(.vertical, AetherVisual.s2)
+        .frame(minHeight: AetherVisual.twoLineRowHeight)
+        .background(
+            cardFill,
+            in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                .strokeBorder(
+                    row.isSelected
+                        ? AetherVisual.tintBorder(.accentColor)
+                        : Color(nsColor: .separatorColor),
+                    lineWidth: row.isSelected ? 1.5 : 0.5
+                )
+        }
+    }
+
+    private var gridTopLine: some View {
+        HStack(spacing: AetherVisual.s2) {
+            AetherRegionCode(name: row.member, reservesSlot: false)
+            Text(row.member)
+                .font(.callout.weight(row.isSelected ? .semibold : .medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(row.member)
+            Spacer(minLength: AetherVisual.s1)
+            selectionAccessory
+        }
+    }
+
+    private var gridMetadataBadges: some View {
+        HStack(spacing: AetherVisual.s1) {
+            if let protocolName = row.protocolName {
+                AetherProtocolBadge(type: protocolName, transport: row.transportName)
+            }
+            if let dialer = row.dialerProxy {
+                dialerBadge(dialer)
+            }
+            if let badge = row.badge {
+                ProxyNodeBadge(badge: badge)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    private var listRowBody: some View {
+        HStack(spacing: AetherVisual.s3) {
+            if showsSelectionControl {
+                Button(action: onSelect) {
+                    listRowContent.contentShape(Rectangle())
+                }
+                .buttonStyle(.aetherPressable)
+                .disabled((row.isBusy && !row.isPending) || !canSelect)
+                .accessibilityLabel(row.member)
+                .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
+            } else {
+                // Not a disabled button: that would grey out rows that are
+                // simply not meant to be clicked.
+                listRowContent
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
+            }
+
+            if let onEditChained {
+                editChainedButton(onEditChained)
+            }
+
+            if row.showsLatency {
+                latencyButton
+            }
+        }
+        .padding(.horizontal, AetherVisual.s3)
+        .frame(minHeight: AetherVisual.listRowHeight)
+        .background(
+            listRowFill,
+            in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+        )
+        .overlay {
+            if row.isSelected {
+                RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+                    .strokeBorder(AetherVisual.tintBorder(.accentColor), lineWidth: 1)
+            }
+        }
+    }
+
+    private var listRowContent: some View {
+        HStack(spacing: AetherVisual.s3) {
+            AetherRegionCode(name: row.member, reservesSlot: true)
             Text(row.member)
                 .font(.body.weight(row.isSelected ? .semibold : .regular))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .help(row.member)
-            if let dialer = row.dialerProxy, !isCompact {
-                HStack(spacing: AetherVisual.sMicro) {
-                    Image(systemName: "link")
-                        .font(.caption2.weight(.semibold))
-                    Text(
-                        String.localizedStringWithFormat(
-                            AppLocalization.string("via %@"),
-                            dialer
-                        )
-                    )
-                    .font(.caption.weight(.medium))
-                    .lineLimit(1)
-                }
-                .foregroundStyle(AetherVisual.secondaryText)
-                .padding(.horizontal, AetherVisual.s1)
-                .padding(.vertical, AetherVisual.sMicro)
-                .background(
-                    AetherVisual.neutralFill,
-                    in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
-                )
-                .accessibilityIdentifier("proxy-node-dialer-badge-\(row.member)")
+            if let dialer = row.dialerProxy {
+                dialerBadge(dialer)
             }
             if let badge = row.badge {
                 ProxyNodeBadge(badge: badge)
                     .transition(.opacity)
             }
-            if !showsSelectionControl, row.isSelected {
-                Text(AppLocalization.string("Current"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AetherReadableTint(color: .green))
-                    .padding(.horizontal, AetherVisual.s1)
-                    .padding(.vertical, AetherVisual.sMicro)
-                    .background(AetherVisual.tintFill(.green), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
-                    .fixedSize()
-                    .accessibilityIdentifier("proxy-node-badge-current")
-                    .transition(.opacity)
-            }
             Spacer(minLength: AetherVisual.s1)
-            if let protocolName = row.protocolName, !isCompact {
+            selectionAccessory
+            if let protocolName = row.protocolName {
                 AetherProtocolBadge(type: protocolName, transport: row.transportName)
             }
         }
     }
 
-    private var rowFill: Color {
+    @ViewBuilder
+    private var selectionAccessory: some View {
+        if showsSelectionControl {
+            if row.isPending {
+                ProgressView()
+                    .controlSize(.mini)
+            } else if row.isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.callout)
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+                    .transition(.opacity)
+            }
+        } else if row.isSelected {
+            Text(AppLocalization.string("Current"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AetherReadableTint(color: .green))
+                .padding(.horizontal, AetherVisual.s1)
+                .padding(.vertical, AetherVisual.sMicro)
+                .background(
+                    AetherVisual.tintFill(.green),
+                    in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+                )
+                .fixedSize()
+                .accessibilityIdentifier("proxy-node-badge-current")
+                .transition(.opacity)
+        }
+    }
+
+    private func dialerBadge(_ dialer: String) -> some View {
+        HStack(spacing: AetherVisual.sMicro) {
+            Image(systemName: "link")
+                .font(.caption2.weight(.semibold))
+            Text(
+                String.localizedStringWithFormat(
+                    AppLocalization.string("via %@"),
+                    dialer
+                )
+            )
+            .font(.caption.weight(.medium))
+            .lineLimit(1)
+        }
+        .foregroundStyle(AetherVisual.secondaryText)
+        .padding(.horizontal, AetherVisual.s1)
+        .padding(.vertical, AetherVisual.sMicro)
+        .background(
+            AetherVisual.neutralFill,
+            in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+        )
+        .accessibilityIdentifier("proxy-node-dialer-badge-\(row.member)")
+    }
+
+    private func editChainedButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "slider.horizontal.3")
+        }
+        .aetherButton()
+        .controlSize(.small)
+        .help(AppLocalization.string("Edit chained proxy"))
+        .accessibilityLabel(AppLocalization.string("Edit chained proxy"))
+        .accessibilityIdentifier("proxy-edit-chained-\(row.member)")
+    }
+
+    private var latencyButton: some View {
+        Button(action: onTest) {
+            ProxyLatencyPill(status: row.status, confidence: row.confidence)
+        }
+        .buttonStyle(.aetherPressable)
+        .disabled(row.status == .testing)
+        .fixedSize()
+        .help(latencyHelp)
+        .accessibilityLabel(
+            String.localizedStringWithFormat(
+                AppLocalization.string("Latency: %@"),
+                row.status.localizedTitle
+            )
+        )
+        .accessibilityHint(AppLocalization.string("Tests this node again"))
+    }
+
+    private var cardFill: Color {
+        if row.isSelected {
+            return AetherVisual.selectionFill
+        }
+        return isHovered ? AetherVisual.hoverFill : AetherVisual.subtleFill
+    }
+
+    private var listRowFill: Color {
         if row.isSelected {
             return AetherVisual.selectionFill
         }
@@ -1456,6 +1619,67 @@ struct ProxyLatencyText: View {
     private var color: Color {
         guard isResult else { return .secondary }
         return colorScheme == .dark ? status.tint : status.tint.mix(with: .black, by: 0.3)
+    }
+}
+
+/// Semantic tinted latency capsule for node rows and 2-column grid cards:
+/// green (< 150ms), orange (150-400ms), red (> 400ms or timeout).
+private struct ProxyLatencyPill: View {
+    let status: ProxyLatencyStatus
+    var confidence: ProxyLatencyConfidence? = nil
+
+    var body: some View {
+        if status == .testing {
+            ProgressView()
+                .controlSize(.mini)
+                .padding(.horizontal, AetherVisual.pillHorizontalPadding)
+                .padding(.vertical, AetherVisual.pillVerticalPadding)
+                .background(AetherVisual.neutralFill, in: Capsule())
+                .transition(.opacity)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s1) {
+                if status.isMeasured, confidence == .reachability {
+                    Text(verbatim: "TCP")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .accessibilityIdentifier("proxy-latency-tcp-badge")
+                }
+                Text(status.localizedTitle)
+                    .font(.caption.weight(isResult ? .semibold : .regular).monospacedDigit())
+                    .foregroundStyle(foreground)
+                    .aetherNumericValue(status)
+            }
+            .padding(.horizontal, AetherVisual.pillHorizontalPadding)
+            .padding(.vertical, AetherVisual.pillVerticalPadding)
+            .background(background, in: Capsule())
+        }
+    }
+
+    private var isResult: Bool {
+        status.isMeasured || status == .timedOut
+    }
+
+    private var semanticColor: Color? {
+        switch status {
+        case let .responded(ms):
+            if ms < 150 { return .green }
+            if ms <= 400 { return .orange }
+            return .red
+        case .timedOut:
+            return .red
+        case .testing, .untested:
+            return nil
+        }
+    }
+
+    private var foreground: AnyShapeStyle {
+        guard let semanticColor else { return AnyShapeStyle(AetherVisual.secondaryText) }
+        return AnyShapeStyle(AetherReadableTint(color: semanticColor))
+    }
+
+    private var background: Color {
+        guard let semanticColor else { return AetherVisual.neutralFill }
+        return AetherVisual.tintFill(semanticColor)
     }
 }
 

@@ -150,8 +150,7 @@ struct CustomProxyGroupSheet: View {
         VStack(spacing: 0) {
             OverrideFormRow(AppLocalization.string("Name")) {
                 TextField(AppLocalization.string("e.g. Hong Kong Auto"), text: $name)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Name"))
                     .accessibilityIdentifier("custom-group-name-field")
             }
@@ -218,16 +217,14 @@ struct CustomProxyGroupSheet: View {
                 }
                 OverrideFormRow(AppLocalization.string("Name contains")) {
                     TextField(AppLocalization.string("Keywords, separated by commas"), text: $includeText)
-                        .textFieldStyle(.plain)
-                        .multilineTextAlignment(.trailing)
+                        .overrideInputField()
                         .accessibilityLabel(AppLocalization.string("Name contains"))
                         .accessibilityIdentifier("custom-group-include-field")
                 }
                 Divider().padding(.leading, AetherVisual.s4)
                 OverrideFormRow(AppLocalization.string("Leave out names containing")) {
                     TextField(AppLocalization.string("e.g. game, 0.1x"), text: $excludeText)
-                        .textFieldStyle(.plain)
-                        .multilineTextAlignment(.trailing)
+                        .overrideInputField()
                         .accessibilityLabel(AppLocalization.string("Leave out names containing"))
                         .accessibilityIdentifier("custom-group-exclude-field")
                 }
@@ -1089,16 +1086,14 @@ struct ChainedProxySheet: View {
         Divider().padding(.leading, AetherVisual.s4)
         OverrideFormRow(AppLocalization.string("Server")) {
             TextField(AppLocalization.string("Host or IP address"), text: $customNode.server)
-                .textFieldStyle(.plain)
-                .multilineTextAlignment(.trailing)
+                .overrideInputField()
                 .accessibilityLabel(AppLocalization.string("Server"))
                 .accessibilityIdentifier("chained-proxy-server-field")
         }
         Divider().padding(.leading, AetherVisual.s4)
         OverrideFormRow(AppLocalization.string("Port")) {
             TextField(AppLocalization.string("Port"), text: $portText)
-                .textFieldStyle(.plain)
-                .multilineTextAlignment(.trailing)
+                .overrideInputField()
                 .monospacedDigit()
                 .accessibilityLabel(AppLocalization.string("Port"))
                 .accessibilityIdentifier("chained-proxy-port-field")
@@ -1137,96 +1132,83 @@ struct ChainedProxySheet: View {
         case .http, .socks5:
             OverrideFormRow(AppLocalization.string("Username (optional)")) {
                 TextField(AppLocalization.string("Username (optional)"), text: $customNode.username)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Username (optional)"))
                     .accessibilityIdentifier("chained-proxy-username-field")
             }
             Divider().padding(.leading, AetherVisual.s4)
             OverrideFormRow(AppLocalization.string("Password (optional)")) {
                 SecureField(AppLocalization.string("Password (optional)"), text: $customNode.password)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Password (optional)"))
                     .accessibilityIdentifier("chained-proxy-password-field")
             }
         case .vmess, .vless:
             OverrideFormRow(AppLocalization.string("UUID")) {
                 TextField(AppLocalization.string("UUID"), text: $customNode.uuid)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("UUID"))
                     .accessibilityIdentifier("chained-proxy-uuid-field")
             }
         case .shadowsocks, .shadowsocksR:
             OverrideFormRow(AppLocalization.string("Cipher")) {
                 TextField(AppLocalization.string("Cipher"), text: $customNode.cipher)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Cipher"))
             }
             Divider().padding(.leading, AetherVisual.s4)
             OverrideFormRow(AppLocalization.string("Password")) {
                 SecureField(AppLocalization.string("Password"), text: $customNode.password)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Password"))
             }
         case .trojan, .hysteria, .hysteria2, .anyTLS, .snell:
             OverrideFormRow(AppLocalization.string("Password")) {
                 SecureField(AppLocalization.string("Password"), text: $customNode.password)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Password"))
                     .accessibilityIdentifier("chained-proxy-password-field")
             }
         case .tuic:
             OverrideFormRow(AppLocalization.string("UUID")) {
                 TextField(AppLocalization.string("UUID"), text: $customNode.uuid)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("UUID"))
             }
             Divider().padding(.leading, AetherVisual.s4)
             OverrideFormRow(AppLocalization.string("Password")) {
                 SecureField(AppLocalization.string("Password"), text: $customNode.password)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Password"))
             }
         case .mieru, .ssh:
             OverrideFormRow(AppLocalization.string("Username")) {
                 TextField(AppLocalization.string("Username"), text: $customNode.username)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Username"))
             }
             Divider().padding(.leading, AetherVisual.s4)
             OverrideFormRow(AppLocalization.string("Password")) {
                 SecureField(AppLocalization.string("Password"), text: $customNode.password)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Password"))
             }
         case .wireGuard:
             OverrideFormRow(AppLocalization.string("Peer public key")) {
                 TextField(AppLocalization.string("Peer public key"), text: $customNode.publicKey)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Peer public key"))
             }
         case .shadowQUIC:
             OverrideFormRow(AppLocalization.string("Username")) {
                 TextField(AppLocalization.string("Username"), text: $customNode.username)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Username"))
             }
             Divider().padding(.leading, AetherVisual.s4)
             OverrideFormRow(AppLocalization.string("Password")) {
                 SecureField(AppLocalization.string("Password"), text: $customNode.password)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
+                    .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Password"))
             }
         }
@@ -1238,8 +1220,7 @@ struct ChainedProxySheet: View {
             VStack(spacing: 0) {
                 OverrideFormRow(AppLocalization.string("Name")) {
                     TextField(AppLocalization.string("e.g. 🇺🇸 US Static Residential"), text: $name)
-                        .textFieldStyle(.plain)
-                        .multilineTextAlignment(.trailing)
+                        .overrideInputField()
                         .accessibilityLabel(AppLocalization.string("Name"))
                         .accessibilityIdentifier("chained-proxy-name-field")
                 }
@@ -1505,6 +1486,13 @@ private struct OverrideFormRow<Control: View>: View {
         }
         .padding(.horizontal, AetherVisual.s4)
         .frame(minHeight: AetherVisual.compactRowHeight)
+    }
+}
+
+private extension View {
+    func overrideInputField() -> some View {
+        textFieldStyle(.roundedBorder)
+            .frame(maxWidth: 280)
     }
 }
 
