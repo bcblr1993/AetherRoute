@@ -4,10 +4,28 @@ import Foundation
 public struct ManagedProfile: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let profile: ActiveProfile
+    public let updatedAt: Date
 
-    public init(id: UUID = UUID(), profile: ActiveProfile) {
+    public init(id: UUID = UUID(), profile: ActiveProfile, updatedAt: Date? = nil) {
         self.id = id
         self.profile = profile
+        self.updatedAt = updatedAt ?? profile.subscription?.lastUpdatedAt ?? profile.importedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, profile, updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decode(UUID.self, forKey: .id)
+        let profile = try container.decode(ActiveProfile.self, forKey: .profile)
+        let updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+            ?? profile.subscription?.lastUpdatedAt
+            ?? profile.importedAt
+        self.id = id
+        self.profile = profile
+        self.updatedAt = updatedAt
     }
 }
 
@@ -38,7 +56,9 @@ public struct ProfileCatalog: Codable, Equatable, Sendable {
 /// input small and gives activation an explicit, validated mirror boundary.
 public struct ProfileCatalogStore: Sendable {
     public static let maximumProfiles = 64
+    public static let maximumTombstones = 1_024
     static let encryptedFilename = "profile-catalog.v1.json"
+    static let tombstonesFilename = "profile-sync-tombstones.v1.json"
     static let maximumEncryptedBytes = 64 * 1_024 * 1_024
 
     public let directoryURL: URL
@@ -48,6 +68,10 @@ public struct ProfileCatalogStore: Sendable {
 
     private var catalogURL: URL {
         directoryURL.appendingPathComponent(Self.encryptedFilename)
+    }
+
+    private var tombstonesURL: URL {
+        directoryURL.appendingPathComponent(Self.tombstonesFilename)
     }
 
     public init(
@@ -236,6 +260,7 @@ public struct ProfileCatalogStore: Sendable {
     public func replace(
         id: UUID,
         with profile: ActiveProfile,
+        updatedAt: Date = .now,
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
         try profile.validateForStorage()
@@ -251,7 +276,7 @@ public struct ProfileCatalogStore: Sendable {
             ? profile.withOverrides(current.profiles[index].profile.overrides)
             : profile
         var profiles = current.profiles
-        profiles[index] = ManagedProfile(id: id, profile: profile)
+        profiles[index] = ManagedProfile(id: id, profile: profile, updatedAt: updatedAt)
         let updated = ProfileCatalog(
             activeProfileID: current.activeProfileID,
             profiles: profiles
@@ -270,6 +295,7 @@ public struct ProfileCatalogStore: Sendable {
     public func setOverrides(
         id: UUID,
         overrides: ProfileOverride?,
+        updatedAt: Date = .now,
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
         let validated = try overrides?.validated()
@@ -280,7 +306,7 @@ public struct ProfileCatalogStore: Sendable {
         let profile = current.profiles[index].profile.withOverrides(validated)
         try profile.validateForStorage()
         var profiles = current.profiles
-        profiles[index] = ManagedProfile(id: id, profile: profile)
+        profiles[index] = ManagedProfile(id: id, profile: profile, updatedAt: updatedAt)
         let updated = ProfileCatalog(
             activeProfileID: current.activeProfileID,
             profiles: profiles
@@ -323,6 +349,7 @@ public struct ProfileCatalogStore: Sendable {
         return try replace(
             id: id,
             with: profile,
+            updatedAt: updatedAt,
             fileManager: fileManager
         )
     }
@@ -331,6 +358,7 @@ public struct ProfileCatalogStore: Sendable {
     public func rename(
         id: UUID,
         to name: String,
+        updatedAt: Date = .now,
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -351,6 +379,7 @@ public struct ProfileCatalogStore: Sendable {
         return try replace(
             id: id,
             with: profile,
+            updatedAt: updatedAt,
             fileManager: fileManager
         )
     }
@@ -401,6 +430,7 @@ public struct ProfileCatalogStore: Sendable {
     @discardableResult
     public func remove(
         id: UUID,
+        deletedAt: Date = .now,
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
         let current = try loadOrMigrate(fileManager: fileManager)
@@ -416,6 +446,9 @@ public struct ProfileCatalogStore: Sendable {
             profiles: current.profiles.filter { $0.id != id }
         )
         try save(updated, fileManager: fileManager)
+        var tombstones = loadDeletedProfiles(fileManager: fileManager)
+        tombstones[id] = max(deletedAt, tombstones[id] ?? .distantPast)
+        try? saveDeletedProfiles(tombstones, fileManager: fileManager)
         return updated
     }
 
@@ -483,6 +516,202 @@ public struct ProfileCatalogStore: Sendable {
             fileManager: fileManager
         )
         return merged
+    }
+
+    /// Reconciles an incoming iCloud catalog and deletion tombstones with the
+    /// local library using last-writer-wins semantics. Matching profiles (by
+    /// `id` or canonical `subscription.url`) are updated in place with the same
+    /// local UUID instead of creating duplicates, and deleted profiles remain
+    /// deleted unless a newer update supersedes the tombstone.
+    @discardableResult
+    public func reconcileCloudSync(
+        _ remoteCatalog: ProfileCatalog,
+        tombstones remoteTombstones: [UUID: Date] = [:],
+        fileManager: FileManager = .default
+    ) throws -> ProfileCatalog {
+        try remoteCatalog.validateForStorage()
+        let current = try loadOrMigrate(fileManager: fileManager)
+        let localTombstones = loadDeletedProfiles(fileManager: fileManager)
+
+        var mergedTombstones = localTombstones
+        for (id, deletedAt) in remoteTombstones {
+            if deletedAt > (mergedTombstones[id] ?? .distantPast) {
+                mergedTombstones[id] = deletedAt
+            }
+        }
+
+        var mergedProfiles: [ManagedProfile] = []
+        for local in current.profiles {
+            if let deletedAt = mergedTombstones[local.id], deletedAt >= local.updatedAt {
+                continue
+            }
+            if mergedTombstones[local.id] != nil {
+                mergedTombstones.removeValue(forKey: local.id)
+            }
+            mergedProfiles.append(local)
+        }
+
+        for remote in remoteCatalog.profiles {
+            if let deletedAt = mergedTombstones[remote.id], deletedAt >= remote.updatedAt {
+                continue
+            }
+
+            if let matchIndex = mergedProfiles.firstIndex(where: { $0.id == remote.id }) {
+                let existing = mergedProfiles[matchIndex]
+                if remote.updatedAt > existing.updatedAt {
+                    mergedProfiles[matchIndex] = ManagedProfile(
+                        id: existing.id,
+                        profile: remote.profile,
+                        updatedAt: remote.updatedAt
+                    )
+                    if let deletedAt = mergedTombstones[existing.id], remote.updatedAt > deletedAt {
+                        mergedTombstones.removeValue(forKey: existing.id)
+                    }
+                }
+                continue
+            }
+
+            if let remoteSubURL = remote.profile.subscription?.url {
+                let canonicalRemoteURL = Self.canonicalSubscriptionURL(remoteSubURL)
+                if let matchIndex = mergedProfiles.firstIndex(where: {
+                    $0.profile.subscription.map {
+                        Self.canonicalSubscriptionURL($0.url) == canonicalRemoteURL
+                    } ?? false
+                }) {
+                    let existing = mergedProfiles[matchIndex]
+                    if let deletedAt = mergedTombstones[existing.id], deletedAt >= max(existing.updatedAt, remote.updatedAt) {
+                        continue
+                    }
+                    if remote.updatedAt > existing.updatedAt {
+                        mergedProfiles[matchIndex] = ManagedProfile(
+                            id: existing.id,
+                            profile: remote.profile,
+                            updatedAt: remote.updatedAt
+                        )
+                        if let deletedAt = mergedTombstones[existing.id], remote.updatedAt > deletedAt {
+                            mergedTombstones.removeValue(forKey: existing.id)
+                        }
+                    }
+                    continue
+                }
+            }
+
+            guard mergedProfiles.count < Self.maximumProfiles else {
+                throw ProfileCatalogStoreError.profileLimitReached(
+                    Self.maximumProfiles
+                )
+            }
+            if let deletedAt = mergedTombstones[remote.id], remote.updatedAt > deletedAt {
+                mergedTombstones.removeValue(forKey: remote.id)
+            }
+            mergedProfiles.append(remote)
+        }
+
+        let mergedIDs = Set(mergedProfiles.map(\.id))
+        let activeProfileID: UUID?
+        if mergedProfiles.isEmpty {
+            activeProfileID = nil
+        } else if let currentActive = current.activeProfileID, mergedIDs.contains(currentActive) {
+            activeProfileID = currentActive
+        } else if let remoteActive = remoteCatalog.activeProfileID, mergedIDs.contains(remoteActive) {
+            activeProfileID = remoteActive
+        } else {
+            activeProfileID = mergedProfiles.first?.id
+        }
+
+        let reconciled = ProfileCatalog(
+            activeProfileID: activeProfileID,
+            profiles: mergedProfiles
+        )
+        let prunedTombstones = Self.prunedTombstones(mergedTombstones)
+        if prunedTombstones != localTombstones {
+            try saveDeletedProfiles(prunedTombstones, fileManager: fileManager)
+        }
+        guard reconciled != current else { return current }
+
+        if let mirror = reconciled.activeProfile?.profile {
+            let shouldUpdateMirror = reconciled.activeProfile != current.activeProfile
+            try commit(
+                reconciled,
+                previous: current,
+                mirrorProfile: shouldUpdateMirror ? mirror : nil,
+                fileManager: fileManager
+            )
+        } else {
+            try save(reconciled, fileManager: fileManager)
+            if current.activeProfile != nil {
+                try? activeProfileStore.removeEncryptedProfile(fileManager: fileManager)
+            }
+        }
+        return reconciled
+    }
+
+    public func loadDeletedProfiles(fileManager: FileManager = .default) -> [UUID: Date] {
+        guard fileManager.fileExists(atPath: tombstonesURL.path),
+              let data = try? Data(contentsOf: tombstonesURL, options: [.mappedIfSafe]),
+              let raw = try? Self.tombstoneDecoder.decode([String: Date].self, from: data) else {
+            return [:]
+        }
+        var result: [UUID: Date] = [:]
+        for (key, date) in raw {
+            if let uuid = UUID(uuidString: key) {
+                result[uuid] = date
+            }
+        }
+        return result
+    }
+
+    static func canonicalSubscriptionURL(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url.absoluteString.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        components.scheme = components.scheme?.lowercased()
+        components.host = components.host?.lowercased()
+        if (components.scheme == "https" && components.port == 443)
+            || (components.scheme == "http" && components.port == 80) {
+            components.port = nil
+        }
+        return (components.string ?? url.absoluteString).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func saveDeletedProfiles(
+        _ tombstones: [UUID: Date],
+        fileManager: FileManager
+    ) throws {
+        let pruned = Self.prunedTombstones(tombstones)
+        let encodedMap = Dictionary(
+            uniqueKeysWithValues: pruned.map { ($0.key.uuidString, $0.value) }
+        )
+        let data = try Self.tombstoneEncoder.encode(encodedMap)
+        try ensureDirectory(fileManager: fileManager)
+        try data.write(to: tombstonesURL, options: [.atomic])
+        try fileManager.setAttributes(
+            [
+                .posixPermissions: 0o600,
+                .protectionKey: FileProtectionType.completeUntilFirstUserAuthentication,
+            ],
+            ofItemAtPath: tombstonesURL.path
+        )
+        try excludeFromBackup(tombstonesURL)
+    }
+
+    private static func prunedTombstones(_ tombstones: [UUID: Date]) -> [UUID: Date] {
+        guard tombstones.count > maximumTombstones else { return tombstones }
+        let kept = tombstones.sorted { $0.value > $1.value }.prefix(maximumTombstones)
+        return Dictionary(uniqueKeysWithValues: kept.map { ($0.key, $0.value) })
+    }
+
+    private static var tombstoneEncoder: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        return encoder
+    }
+
+    private static var tombstoneDecoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
     }
 
     public func replaceCatalog(
@@ -685,10 +914,7 @@ extension ActiveProfile {
 }
 
 extension ProfileCatalogStore {
-    private func writeAtomically(
-        _ data: Data,
-        fileManager: FileManager
-    ) throws {
+    private func ensureDirectory(fileManager: FileManager) throws {
         let directoryAttributes: [FileAttributeKey: Any] = [
             .posixPermissions: 0o700,
             .protectionKey:
@@ -704,6 +930,13 @@ extension ProfileCatalogStore {
             ofItemAtPath: directoryURL.path
         )
         try excludeFromBackup(directoryURL)
+    }
+
+    private func writeAtomically(
+        _ data: Data,
+        fileManager: FileManager
+    ) throws {
+        try ensureDirectory(fileManager: fileManager)
 
         try data.write(to: catalogURL, options: [.atomic])
         try fileManager.setAttributes(

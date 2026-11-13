@@ -36,38 +36,114 @@ final class RuleProviderEngineTests: XCTestCase {
         let content = """
         # Comments should be ignored
         // Another comment
-        apple.com
+        apple.com # inline comment
         - 'google.com'
+        - '+.openai.com' # wildcard plus-dot
+        - '.anthropic.com'
+        - '*.claude.ai'
         - "DOMAIN,github.com,PROXY"
         """
         let rules = await engine.parseRawRuleContent(content, behavior: .domain, format: .text)
-        XCTAssertEqual(rules.count, 3)
-        XCTAssertEqual(rules[0].type, "DOMAIN-SUFFIX")
+        XCTAssertEqual(rules.count, 6)
+        XCTAssertEqual(rules[0].type, "DOMAIN")
         XCTAssertEqual(rules[0].payload, "apple.com")
-        XCTAssertEqual(rules[1].type, "DOMAIN-SUFFIX")
+        XCTAssertEqual(rules[1].type, "DOMAIN")
         XCTAssertEqual(rules[1].payload, "google.com")
-        XCTAssertEqual(rules[2].type, "DOMAIN")
-        XCTAssertEqual(rules[2].payload, "github.com")
-        XCTAssertEqual(rules[2].target, "PROXY")
+        XCTAssertEqual(rules[2].type, "DOMAIN-SUFFIX")
+        XCTAssertEqual(rules[2].payload, "openai.com")
+        XCTAssertEqual(rules[3].type, "DOMAIN-SUFFIX")
+        XCTAssertEqual(rules[3].payload, "anthropic.com")
+        XCTAssertEqual(rules[4].type, "DOMAIN-SUFFIX")
+        XCTAssertEqual(rules[4].payload, "claude.ai")
+        XCTAssertEqual(rules[5].type, "DOMAIN")
+        XCTAssertEqual(rules[5].payload, "github.com")
+        XCTAssertEqual(rules[5].target, "PROXY")
     }
 
     func testParsesIPCIDRYAMLFormat() async throws {
         let engine = RuleProviderEngine(directoryURL: tempDir)
         let content = """
         payload:
-          - 192.168.1.0/24
+          - 192.168.1.0/24 # LAN v4
           - '10.0.0.0/8,DIRECT,no-resolve'
+          - 2400:3200::/32
+          - 'IP-CIDR,1.2.3.0/24,no-resolve'
+          - 'IP-CIDR6,2001:db8::/32,DIRECT'
         """
         let rules = await engine.parseRawRuleContent(content, behavior: .ipcidr, format: .yaml)
-        XCTAssertEqual(rules.count, 2)
+        XCTAssertEqual(rules.count, 5)
         XCTAssertEqual(rules[0].type, "IP-CIDR")
         XCTAssertEqual(rules[0].payload, "192.168.1.0/24")
-        XCTAssertFalse(rules[0].noResolve)
+        XCTAssertTrue(rules[0].noResolve)
 
         XCTAssertEqual(rules[1].type, "IP-CIDR")
         XCTAssertEqual(rules[1].payload, "10.0.0.0/8")
         XCTAssertEqual(rules[1].target, "DIRECT")
         XCTAssertTrue(rules[1].noResolve)
+
+        XCTAssertEqual(rules[2].type, "IP-CIDR6")
+        XCTAssertEqual(rules[2].payload, "2400:3200::/32")
+        XCTAssertTrue(rules[2].noResolve)
+
+        XCTAssertEqual(rules[3].type, "IP-CIDR")
+        XCTAssertEqual(rules[3].payload, "1.2.3.0/24")
+        XCTAssertEqual(rules[3].target, "")
+        XCTAssertTrue(rules[3].noResolve)
+
+        XCTAssertEqual(rules[4].type, "IP-CIDR6")
+        XCTAssertEqual(rules[4].payload, "2001:db8::/32")
+        XCTAssertEqual(rules[4].target, "DIRECT")
+        XCTAssertTrue(rules[4].noResolve)
+    }
+
+    func testCompileActiveRulesNormalizesDomainPrefixesAndEmitsNoResolveForIPCIDR() async throws {
+        let engine = RuleProviderEngine(directoryURL: tempDir)
+        let domainID = UUID()
+        try await engine.registerProvider(RuleProviderMetadata(
+            id: domainID,
+            name: "01-Domains",
+            url: URL(string: "https://example.com/domains.yaml")!,
+            behavior: .domain,
+            format: .yaml,
+            defaultTarget: "PROXY",
+            isEnabled: true
+        ))
+        let domainCache = tempDir.appendingPathComponent("\(domainID.uuidString).dat")
+        try """
+        payload:
+          - '+.google.com' # Google suffix
+          - '.youtube.com'
+          - '*.googlevideo.com'
+          - 'exact.example.org'
+        """.data(using: .utf8)!.write(to: domainCache)
+
+        let ipID = UUID()
+        try await engine.registerProvider(RuleProviderMetadata(
+            id: ipID,
+            name: "02-IPs",
+            url: URL(string: "https://example.com/ips.txt")!,
+            behavior: .ipcidr,
+            format: .text,
+            defaultTarget: "DIRECT",
+            isEnabled: true
+        ))
+        let ipCache = tempDir.appendingPathComponent("\(ipID.uuidString).dat")
+        try """
+        192.0.2.0/24 # TEST-NET-1
+        2400:3200::/32
+        IP-CIDR,198.51.100.0/24,no-resolve
+        """.data(using: .utf8)!.write(to: ipCache)
+
+        let compiled = await engine.compileActiveRules()
+        XCTAssertEqual(compiled, [
+            "DOMAIN-SUFFIX,google.com,PROXY",
+            "DOMAIN-SUFFIX,youtube.com,PROXY",
+            "DOMAIN-SUFFIX,googlevideo.com,PROXY",
+            "DOMAIN,exact.example.org,PROXY",
+            "IP-CIDR,192.0.2.0/24,DIRECT,no-resolve",
+            "IP-CIDR6,2400:3200::/32,DIRECT,no-resolve",
+            "IP-CIDR,198.51.100.0/24,DIRECT,no-resolve",
+        ])
     }
 
     func testParsesClassicalFormat() async throws {
@@ -142,9 +218,9 @@ final class RuleProviderEngineTests: XCTestCase {
         // Write simulated cached content
         let cacheFile = tempDir.appendingPathComponent("\(id.uuidString).dat")
         let testRules = """
-        adservice.google.com
-        adsystem.facebook.com
-        doubleclick.net
+        +.adservice.google.com
+        +.adsystem.facebook.com
+        +.doubleclick.net
         """
         try testRules.data(using: .utf8)!.write(to: cacheFile)
 
@@ -239,8 +315,8 @@ final class RuleProviderEngineTests: XCTestCase {
         let cacheFile = tempDir.appendingPathComponent("\(id.uuidString).dat")
         let yamlPayload = """
         payload:
-          - openai.com
-          - anthropic.com
+          - +.openai.com
+          - +.anthropic.com
           - DOMAIN,claude.ai,Claude-Direct
         """
         try yamlPayload.data(using: .utf8)!.write(to: cacheFile)

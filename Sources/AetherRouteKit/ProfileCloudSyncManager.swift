@@ -93,6 +93,35 @@ public struct CloudSyncUserRulesSnapshot: Codable, Sendable, Equatable {
     }
 }
 
+public struct CloudSyncCatalogPayload: Codable, Equatable, Sendable {
+    public static let currentFormatVersion = 1
+
+    public let formatVersion: Int
+    public let catalog: ProfileCatalog
+    public let deletedProfiles: [UUID: Date]
+
+    public init(
+        formatVersion: Int = Self.currentFormatVersion,
+        catalog: ProfileCatalog,
+        deletedProfiles: [UUID: Date] = [:]
+    ) {
+        self.formatVersion = formatVersion
+        self.catalog = catalog
+        self.deletedProfiles = deletedProfiles
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case formatVersion, catalog, deletedProfiles
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.formatVersion = try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? Self.currentFormatVersion
+        self.catalog = try container.decode(ProfileCatalog.self, forKey: .catalog)
+        self.deletedProfiles = try container.decodeIfPresent([UUID: Date].self, forKey: .deletedProfiles) ?? [:]
+    }
+}
+
 public struct CloudSyncPayload: Codable, Sendable, Equatable {
     public static let currentVersion = 1
     public static let storageKey = "aetherroute.profile_catalog.sync.v1"
@@ -198,7 +227,8 @@ public final class ProfileCloudSyncManager: ObservableObject {
     private let keyStore: any ProfileKeyStoring
     private let injectedCatalogStore: ProfileCatalogStore?
     private let deviceID: String
-    private let deviceName: String
+    private var deviceName: String
+    private let worker: CloudSyncWorker
     private let observerToken = ObserverToken()
 
     private final class ObserverToken: @unchecked Sendable {
@@ -269,16 +299,27 @@ public final class ProfileCloudSyncManager: ObservableObject {
             self.deviceID = newID
         }
 
+        let explicitName = deviceName?.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedDeviceName: String
-        if let explicitName = deviceName?.trimmingCharacters(in: .whitespacesAndNewlines), !explicitName.isEmpty {
+        let needsHostLookup: Bool
+        if let explicitName, !explicitName.isEmpty {
             resolvedDeviceName = explicitName
-        } else if let hostName = Host.current().localizedName?.trimmingCharacters(in: .whitespacesAndNewlines), !hostName.isEmpty {
-            resolvedDeviceName = hostName
+            needsHostLookup = false
         } else {
             let fallbackHost = ProcessInfo.processInfo.hostName.trimmingCharacters(in: .whitespacesAndNewlines)
             resolvedDeviceName = fallbackHost.isEmpty ? "Mac" : fallbackHost
+            needsHostLookup = true
         }
         self.deviceName = resolvedDeviceName
+
+        self.worker = CloudSyncWorker(
+            kvStore: self.kvStore,
+            keyStore: self.keyStore,
+            injectedCatalogStore: catalogStore,
+            deviceID: self.deviceID,
+            initialDeviceName: resolvedDeviceName,
+            needsHostLookup: needsHostLookup
+        )
 
         self.isCloudSyncEnabled = UserDefaults.standard.bool(forKey: "isCloudSyncEnabled")
         let savedTime = UserDefaults.standard.double(forKey: "lastCloudSyncTime")
@@ -286,9 +327,27 @@ public final class ProfileCloudSyncManager: ObservableObject {
             self.lastSyncedAt = Date(timeIntervalSince1970: savedTime)
         }
 
-        self.diagnostics = self.inspectDiagnostics()
+        self.diagnostics = CloudSyncDiagnosticsSnapshot(
+            isICloudAccountSignedIn: false,
+            isEncryptionKeyAvailable: false,
+            pairingFingerprint: nil,
+            currentDeviceName: resolvedDeviceName,
+            remoteArchive: nil,
+            localStorageDirectoryPath: catalogStore?.directoryURL.path
+        )
         if isCloudSyncEnabled {
             startObserving()
+        }
+
+        let worker = self.worker
+        Task.detached(priority: .utility) { [weak self] in
+            let name = await worker.resolveDeviceNameIfNeeded()
+            let snapshot = await worker.inspectDiagnostics(ubiquityIdentityAvailable: nil)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.deviceName = name
+                self.diagnostics = snapshot
+            }
         }
     }
 
@@ -329,76 +388,45 @@ public final class ProfileCloudSyncManager: ObservableObject {
         guard !isSyncing else { return false }
 
         isSyncing = true
+        self.status = .syncing
         defer {
             isSyncing = false
-            refreshDiagnostics()
         }
-        self.status = .syncing
 
-        let catalogStore = try injectedCatalogStore ?? ProfileCatalogStore.applicationGroup()
-        let localCatalog = (try? catalogStore.loadOrMigrate()) ?? ProfileCatalog()
-
-        // Synchronize lightweight rule providers alongside profiles
-        await syncRuleProviders()
-
-        // 1. Fetch remote payload
-        kvStore.synchronize()
-        if let remoteData = kvStore.data(forKey: CloudSyncPayload.storageKey),
-           let remotePayload = try? JSONDecoder().decode(CloudSyncPayload.self, from: remoteData) {
-
-            let lastLocalMillis: UInt64
-            if let lastSyncedAt, lastSyncedAt.timeIntervalSince1970 > 0 {
-                lastLocalMillis = UInt64(lastSyncedAt.timeIntervalSince1970 * 1000)
+        do {
+            let outcome = try await worker.performSync(lastSyncedAt: lastSyncedAt)
+            if let providers = outcome.updatedProviders {
+                NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateRuleProviders, object: providers)
+            }
+            if let userRules = outcome.updatedUserRules {
+                NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateUserRules, object: userRules)
+            }
+            if let syncedCatalog = outcome.updatedCatalog {
+                NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateProfiles, object: syncedCatalog)
+            }
+            if let syncedAt = outcome.newLastSyncedAt {
+                self.lastSyncedAt = syncedAt
+            }
+            self.status = outcome.status
+            await refreshDiagnosticsAsync()
+            return outcome.didSync
+        } catch CloudSyncError.keychainUnavailable {
+            self.status = .keychainUnavailable
+            await refreshDiagnosticsAsync()
+            throw CloudSyncError.keychainUnavailable
+        } catch CloudSyncError.decryptionFailed {
+            self.status = .decryptionFailed
+            await refreshDiagnosticsAsync()
+            throw CloudSyncError.decryptionFailed
+        } catch {
+            if let op = (error as? SyncOperationFailure)?.operation {
+                self.status = .failed(op, cloudError: error as? CloudSyncError, detail: error.localizedDescription)
             } else {
-                lastLocalMillis = 0
+                self.status = .failed(.sync, cloudError: error as? CloudSyncError, detail: error.localizedDescription)
             }
-
-            // If remote is newer, or local is empty while remote has profiles
-            if (remotePayload.updatedAtUnixMilliseconds > lastLocalMillis && remotePayload.deviceIdentifier != deviceID)
-                || (localCatalog.profiles.isEmpty && remotePayload.updatedAtUnixMilliseconds > 0)
-                || (!localCatalog.profiles.isEmpty && remotePayload.deviceIdentifier != deviceID) {
-                Self.logger.info("Remote catalog found in iCloud. Pulling and merging...")
-                do {
-                    let (appliedCatalog, didMergeNewLocal) = try await applyRemotePayload(remotePayload, to: catalogStore)
-                    self.lastSyncedAt = Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0)
-                    if didMergeNewLocal {
-                        Self.logger.info("Local profiles merged into cloud catalog; pushing merged union back to iCloud...")
-                        try await pushLocalToCloud(appliedCatalog)
-                        self.lastSyncedAt = Date()
-                        self.status = .merged(profileCount: appliedCatalog.profiles.count)
-                    } else {
-                        self.status = .pulledLatest(profileCount: appliedCatalog.profiles.count)
-                    }
-                    return true
-                } catch CloudSyncError.keychainUnavailable {
-                    self.status = .keychainUnavailable
-                    throw CloudSyncError.keychainUnavailable
-                } catch CloudSyncError.decryptionFailed {
-                    self.status = .decryptionFailed
-                    throw CloudSyncError.decryptionFailed
-                } catch {
-                    self.status = .failed(.sync, cloudError: error as? CloudSyncError, detail: error.localizedDescription)
-                    throw error
-                }
-            }
+            await refreshDiagnosticsAsync()
+            throw (error as? SyncOperationFailure)?.underlying ?? error
         }
-
-        // 2. Otherwise push local catalog to iCloud if local has profiles
-        if !localCatalog.profiles.isEmpty {
-            do {
-                try await pushLocalToCloud(localCatalog)
-                self.lastSyncedAt = Date()
-                self.status = .uploaded(profileCount: localCatalog.profiles.count)
-                return true
-            } catch {
-                self.status = .failed(.upload, cloudError: error as? CloudSyncError, detail: error.localizedDescription)
-                throw error
-            }
-        }
-
-        // 3. Both local and remote are empty or no remote data yet
-        self.status = .noCloudData
-        return false
     }
 
     /// Explicit manual pull from iCloud, bypassing timestamp check.
@@ -410,38 +438,41 @@ public final class ProfileCloudSyncManager: ObservableObject {
         }
         guard !isSyncing else { return false }
         isSyncing = true
+        self.status = .pulling
         defer {
             isSyncing = false
-            refreshDiagnostics()
         }
-        self.status = .pulling
 
-        kvStore.synchronize()
-        guard let remoteData = kvStore.data(forKey: CloudSyncPayload.storageKey),
-              let remotePayload = try? JSONDecoder().decode(CloudSyncPayload.self, from: remoteData) else {
-            self.status = .noCloudArchive
-            return false
-        }
         do {
-            let catalogStore = try injectedCatalogStore ?? ProfileCatalogStore.applicationGroup()
-            let (applied, _) = try await applyRemotePayload(remotePayload, to: catalogStore)
-            if let remoteRuleData = kvStore.data(forKey: RuleProviderSyncPayload.storageKey) {
-                let updatedProviders = await RuleProviderEngine.shared.mergeCloudSyncPayload(remoteRuleData)
-                NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateRuleProviders, object: updatedProviders)
+            let outcome = try await worker.performForcePull()
+            if let providers = outcome.updatedProviders {
+                NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateRuleProviders, object: providers)
             }
-            syncUserRulesSnapshot()
-            self.lastSyncedAt = Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0)
-            self.status = .forcePulled(profileCount: applied.profiles.count)
-            return true
+            if let userRules = outcome.updatedUserRules {
+                NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateUserRules, object: userRules)
+            }
+            if let syncedCatalog = outcome.updatedCatalog {
+                NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateProfiles, object: syncedCatalog)
+            }
+            if let syncedAt = outcome.newLastSyncedAt {
+                self.lastSyncedAt = syncedAt
+            }
+            self.status = outcome.status
+            await refreshDiagnosticsAsync()
+            return outcome.didSync
         } catch CloudSyncError.keychainUnavailable {
             self.status = .keychainUnavailable
+            await refreshDiagnosticsAsync()
             throw CloudSyncError.keychainUnavailable
         } catch CloudSyncError.decryptionFailed {
             self.status = .decryptionFailed
+            await refreshDiagnosticsAsync()
             throw CloudSyncError.decryptionFailed
         } catch {
-            self.status = .failed(.pull, cloudError: error as? CloudSyncError, detail: error.localizedDescription)
-            throw error
+            let underlying = (error as? SyncOperationFailure)?.underlying ?? error
+            self.status = .failed(.pull, cloudError: underlying as? CloudSyncError, detail: underlying.localizedDescription)
+            await refreshDiagnosticsAsync()
+            throw underlying
         }
     }
 
@@ -454,118 +485,24 @@ public final class ProfileCloudSyncManager: ObservableObject {
         }
         guard !isSyncing else { return false }
         isSyncing = true
+        self.status = .pushing
         defer {
             isSyncing = false
-            refreshDiagnostics()
-        }
-        self.status = .pushing
-
-        if let localRulePayload = await RuleProviderEngine.shared.exportCloudSyncPayload(deviceIdentifier: deviceID) {
-            kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
-            kvStore.synchronize()
-        }
-        pushLocalUserRulesToCloudIfAvailable()
-
-        let catalogStore = try injectedCatalogStore ?? ProfileCatalogStore.applicationGroup()
-        let localCatalog = (try? catalogStore.loadOrMigrate()) ?? ProfileCatalog()
-        guard !localCatalog.profiles.isEmpty else {
-            self.status = .nothingToUpload
-            return false
         }
 
         do {
-            try await pushLocalToCloud(localCatalog)
-            self.lastSyncedAt = Date()
-            self.status = .forcePushed(profileCount: localCatalog.profiles.count)
-            return true
+            let outcome = try await worker.performForcePush()
+            if let syncedAt = outcome.newLastSyncedAt {
+                self.lastSyncedAt = syncedAt
+            }
+            self.status = outcome.status
+            await refreshDiagnosticsAsync()
+            return outcome.didSync
         } catch {
-            self.status = .failed(.push, cloudError: error as? CloudSyncError, detail: error.localizedDescription)
-            throw error
-        }
-    }
-
-    private func syncRuleProviders() async {
-        if let remoteRuleData = kvStore.data(forKey: RuleProviderSyncPayload.storageKey) {
-            let updatedProviders = await RuleProviderEngine.shared.mergeCloudSyncPayload(remoteRuleData)
-            NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateRuleProviders, object: updatedProviders)
-        }
-        if let localRulePayload = await RuleProviderEngine.shared.exportCloudSyncPayload(deviceIdentifier: deviceID) {
-            kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
-            kvStore.synchronize()
-        }
-        syncUserRulesSnapshot()
-    }
-
-    private func syncUserRulesSnapshot() {
-        guard let customStore = try? CustomRuleStore.applicationGroup(),
-              let bypassStore = try? BypassPolicyStore.applicationGroup() else {
-            return
-        }
-        let localRules = (try? customStore.load()) ?? []
-        let localBypass = (try? bypassStore.load()) ?? .empty
-        let localRuleSync = customStore.loadSyncMetadata()
-        let localBypassSync = bypassStore.loadSyncMetadata()
-
-        if let remoteData = kvStore.data(forKey: CloudSyncPayload.userRulesStorageKey),
-           let merged = try? Self.decryptAndMergeUserRulesSnapshot(
-               remoteData,
-               localRules: localRules,
-               localBypassPolicy: localBypass,
-               localCustomRuleSync: localRuleSync,
-               localBypassSync: localBypassSync,
-               keyStore: keyStore
-           ) {
-            let mergedRuleSync = merged.customRuleSync ?? localRuleSync
-            let mergedBypassSync = merged.bypassSync ?? localBypassSync
-            if merged.customRules != localRules || mergedRuleSync != localRuleSync {
-                try? customStore.saveSynchronized(merged.customRules, metadata: mergedRuleSync)
-            }
-            if merged.bypassPolicy != localBypass || mergedBypassSync != localBypassSync {
-                try? bypassStore.saveSynchronized(merged.bypassPolicy, metadata: mergedBypassSync)
-            }
-            NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateUserRules, object: merged)
-            // Always publish the merge: the remote copy may lack this
-            // device's deletions even when the merge changed nothing here.
-            if let encoded = try? Self.encryptUserRulesSnapshot(
-                merged,
-                deviceIdentifier: deviceID,
-                keyStore: keyStore
-            ), encoded != remoteData {
-                kvStore.set(encoded, forKey: CloudSyncPayload.userRulesStorageKey)
-                kvStore.synchronize()
-            }
-        } else if !localRules.isEmpty || !localBypass.rules.isEmpty
-                    || !localRuleSync.deletedAt.isEmpty || !localBypassSync.deletedAt.isEmpty {
-            pushLocalUserRulesToCloudIfAvailable()
-        }
-    }
-
-    private func pushLocalUserRulesToCloudIfAvailable() {
-        guard let customStore = try? CustomRuleStore.applicationGroup(),
-              let bypassStore = try? BypassPolicyStore.applicationGroup() else {
-            return
-        }
-        let localRules = (try? customStore.load()) ?? []
-        let localBypass = (try? bypassStore.load()) ?? .empty
-        let ruleSync = customStore.loadSyncMetadata()
-        let bypassSync = bypassStore.loadSyncMetadata()
-        // An empty list with deletions is still news: it removes the rules
-        // other devices hold.
-        guard !localRules.isEmpty || !localBypass.rules.isEmpty
-                || !ruleSync.deletedAt.isEmpty || !bypassSync.deletedAt.isEmpty else { return }
-        let snapshot = CloudSyncUserRulesSnapshot(
-            customRules: localRules,
-            bypassPolicy: localBypass,
-            customRuleSync: ruleSync,
-            bypassSync: bypassSync
-        )
-        if let encoded = try? Self.encryptUserRulesSnapshot(
-            snapshot,
-            deviceIdentifier: deviceID,
-            keyStore: keyStore
-        ) {
-            kvStore.set(encoded, forKey: CloudSyncPayload.userRulesStorageKey)
-            kvStore.synchronize()
+            let underlying = (error as? SyncOperationFailure)?.underlying ?? error
+            self.status = .failed(.push, cloudError: underlying as? CloudSyncError, detail: underlying.localizedDescription)
+            await refreshDiagnosticsAsync()
+            throw underlying
         }
     }
 
@@ -689,10 +626,49 @@ public final class ProfileCloudSyncManager: ObservableObject {
     }
 
     public func refreshDiagnostics(ubiquityIdentityAvailable: Bool? = nil) {
-        self.diagnostics = inspectDiagnostics(ubiquityIdentityAvailable: ubiquityIdentityAvailable)
+        let worker = self.worker
+        Task.detached(priority: .utility) { [weak self] in
+            let snapshot = await worker.inspectDiagnostics(ubiquityIdentityAvailable: ubiquityIdentityAvailable)
+            await MainActor.run { [weak self] in
+                self?.diagnostics = snapshot
+            }
+        }
+    }
+
+    public func refreshDiagnosticsAsync(ubiquityIdentityAvailable: Bool? = nil) async {
+        let snapshot = await worker.inspectDiagnostics(ubiquityIdentityAvailable: ubiquityIdentityAvailable)
+        self.diagnostics = snapshot
     }
 
     public func inspectDiagnostics(ubiquityIdentityAvailable: Bool? = nil) -> CloudSyncDiagnosticsSnapshot {
+        Self.buildDiagnosticsSnapshot(
+            kvStore: kvStore,
+            keyStore: keyStore,
+            deviceID: deviceID,
+            deviceName: deviceName,
+            localStorageDirectoryPath: localStorageDirectoryURL()?.path,
+            ubiquityIdentityAvailable: ubiquityIdentityAvailable
+        )
+    }
+
+    nonisolated static func decodeCatalogPayload(from decryptedData: Data) -> CloudSyncCatalogPayload? {
+        if let wrapper = try? JSONDecoder().decode(CloudSyncCatalogPayload.self, from: decryptedData) {
+            return wrapper
+        }
+        if let legacyCatalog = try? JSONDecoder().decode(ProfileCatalog.self, from: decryptedData) {
+            return CloudSyncCatalogPayload(catalog: legacyCatalog, deletedProfiles: [:])
+        }
+        return nil
+    }
+
+    nonisolated static func buildDiagnosticsSnapshot(
+        kvStore: any CloudKeyValueStoring,
+        keyStore: any ProfileKeyStoring,
+        deviceID: String,
+        deviceName: String,
+        localStorageDirectoryPath: String?,
+        ubiquityIdentityAvailable: Bool?
+    ) -> CloudSyncDiagnosticsSnapshot {
         let isSignedIn = ubiquityIdentityAvailable ?? (FileManager.default.ubiquityIdentityToken != nil)
         let localKey = (try? keyStore.loadKey(keyID: Self.cloudSyncKeyID)).flatMap { $0.count == 32 ? $0 : nil }
         let fingerprint = localKey.flatMap { Self.keyFingerprint(for: $0) }
@@ -706,8 +682,8 @@ public final class ProfileCloudSyncManager: ObservableObject {
                 if actualSHA.caseInsensitiveCompare(remotePayload.sha256) == .orderedSame,
                    let box = try? AES.GCM.SealedBox(combined: remotePayload.encryptedData),
                    let plain = try? AES.GCM.open(box, using: SymmetricKey(data: localKey)),
-                   let catalog = try? JSONDecoder().decode(ProfileCatalog.self, from: plain) {
-                    decodedCount = catalog.profiles.count
+                   let catalogPayload = Self.decodeCatalogPayload(from: plain) {
+                    decodedCount = catalogPayload.catalog.profiles.count
                 }
             }
             remoteSummary = CloudSyncArchiveSummary(
@@ -726,16 +702,311 @@ public final class ProfileCloudSyncManager: ObservableObject {
             pairingFingerprint: fingerprint,
             currentDeviceName: deviceName,
             remoteArchive: remoteSummary,
-            localStorageDirectoryPath: localStorageDirectoryURL()?.path
+            localStorageDirectoryPath: localStorageDirectoryPath
+        )
+    }
+}
+
+private struct SyncOutcome: Sendable {
+    let didSync: Bool
+    let status: CloudSyncStatus
+    let newLastSyncedAt: Date?
+    let updatedCatalog: ProfileCatalog?
+    let updatedProviders: [RuleProviderMetadata]?
+    let updatedUserRules: CloudSyncUserRulesSnapshot?
+}
+
+private struct SyncOperationFailure: Error {
+    let operation: CloudSyncStatus.Operation
+    let underlying: Error
+}
+
+private actor CloudSyncWorker {
+    private static let logger = AppLog.logger(category: AppLog.Category.cloudSync)
+
+    private let kvStore: any CloudKeyValueStoring
+    private let keyStore: any ProfileKeyStoring
+    private let injectedCatalogStore: ProfileCatalogStore?
+    private let deviceID: String
+    private var deviceName: String
+    private var needsHostLookup: Bool
+
+    init(
+        kvStore: any CloudKeyValueStoring,
+        keyStore: any ProfileKeyStoring,
+        injectedCatalogStore: ProfileCatalogStore?,
+        deviceID: String,
+        initialDeviceName: String,
+        needsHostLookup: Bool
+    ) {
+        self.kvStore = kvStore
+        self.keyStore = keyStore
+        self.injectedCatalogStore = injectedCatalogStore
+        self.deviceID = deviceID
+        self.deviceName = initialDeviceName
+        self.needsHostLookup = needsHostLookup
+    }
+
+    func resolveDeviceNameIfNeeded() -> String {
+        if needsHostLookup {
+            if let hostName = Host.current().localizedName?.trimmingCharacters(in: .whitespacesAndNewlines), !hostName.isEmpty {
+                deviceName = hostName
+            } else {
+                let fallbackHost = ProcessInfo.processInfo.hostName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !fallbackHost.isEmpty {
+                    deviceName = fallbackHost
+                }
+            }
+            needsHostLookup = false
+        }
+        return deviceName
+    }
+
+    func inspectDiagnostics(ubiquityIdentityAvailable: Bool?) -> CloudSyncDiagnosticsSnapshot {
+        let currentName = resolveDeviceNameIfNeeded()
+        let storagePath: String?
+        if let injectedCatalogStore {
+            storagePath = injectedCatalogStore.directoryURL.path
+        } else {
+            storagePath = (try? ProfileCatalogStore.applicationGroup())?.directoryURL.path
+        }
+        return ProfileCloudSyncManager.buildDiagnosticsSnapshot(
+            kvStore: kvStore,
+            keyStore: keyStore,
+            deviceID: deviceID,
+            deviceName: currentName,
+            localStorageDirectoryPath: storagePath,
+            ubiquityIdentityAvailable: ubiquityIdentityAvailable
         )
     }
 
-    // MARK: - Encryption & Cloud Push/Pull
-    private func pushLocalToCloud(_ catalog: ProfileCatalog) async throws {
-        let catalogData = try JSONEncoder().encode(catalog)
-        let key = try keyStore.loadOrCreateKey(keyID: Self.cloudSyncKeyID)
+    func performSync(lastSyncedAt: Date?) async throws -> SyncOutcome {
+        _ = resolveDeviceNameIfNeeded()
+        let catalogStore = try injectedCatalogStore ?? ProfileCatalogStore.applicationGroup()
+        let localCatalog = (try? catalogStore.loadOrMigrate()) ?? ProfileCatalog()
+        let localTombstones = catalogStore.loadDeletedProfiles()
 
-        // AES-256-GCM encryption
+        let (updatedProviders, updatedUserRules) = await syncRuleProvidersAndUserRules()
+
+        kvStore.synchronize()
+        if let remoteData = kvStore.data(forKey: CloudSyncPayload.storageKey),
+           let remotePayload = try? JSONDecoder().decode(CloudSyncPayload.self, from: remoteData) {
+            let lastLocalMillis: UInt64
+            if let lastSyncedAt, lastSyncedAt.timeIntervalSince1970 > 0 {
+                lastLocalMillis = UInt64(lastSyncedAt.timeIntervalSince1970 * 1000)
+            } else {
+                lastLocalMillis = 0
+            }
+
+            if (remotePayload.updatedAtUnixMilliseconds > lastLocalMillis && remotePayload.deviceIdentifier != deviceID)
+                || (localCatalog.profiles.isEmpty && remotePayload.updatedAtUnixMilliseconds > 0)
+                || ((!localCatalog.profiles.isEmpty || !localTombstones.isEmpty) && remotePayload.deviceIdentifier != deviceID) {
+                Self.logger.info("Remote catalog found in iCloud. Pulling and merging...")
+                let (appliedCatalog, mergedTombstones, shouldPushBack) = try applyRemotePayload(remotePayload, to: catalogStore)
+                if shouldPushBack {
+                    Self.logger.info("Local profiles reconciled with cloud catalog; pushing reconciled state back to iCloud...")
+                    try pushLocalToCloud(appliedCatalog, tombstones: mergedTombstones)
+                    return SyncOutcome(
+                        didSync: true,
+                        status: .merged(profileCount: appliedCatalog.profiles.count),
+                        newLastSyncedAt: Date(),
+                        updatedCatalog: appliedCatalog,
+                        updatedProviders: updatedProviders,
+                        updatedUserRules: updatedUserRules
+                    )
+                }
+                return SyncOutcome(
+                    didSync: true,
+                    status: .pulledLatest(profileCount: appliedCatalog.profiles.count),
+                    newLastSyncedAt: Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0),
+                    updatedCatalog: appliedCatalog,
+                    updatedProviders: updatedProviders,
+                    updatedUserRules: updatedUserRules
+                )
+            }
+        }
+
+        if !localCatalog.profiles.isEmpty || !localTombstones.isEmpty {
+            do {
+                try pushLocalToCloud(localCatalog, tombstones: localTombstones)
+                return SyncOutcome(
+                    didSync: true,
+                    status: .uploaded(profileCount: localCatalog.profiles.count),
+                    newLastSyncedAt: Date(),
+                    updatedCatalog: nil,
+                    updatedProviders: updatedProviders,
+                    updatedUserRules: updatedUserRules
+                )
+            } catch {
+                throw SyncOperationFailure(operation: .upload, underlying: error)
+            }
+        }
+
+        return SyncOutcome(
+            didSync: false,
+            status: .noCloudData,
+            newLastSyncedAt: nil,
+            updatedCatalog: nil,
+            updatedProviders: updatedProviders,
+            updatedUserRules: updatedUserRules
+        )
+    }
+
+    func performForcePull() async throws -> SyncOutcome {
+        _ = resolveDeviceNameIfNeeded()
+        kvStore.synchronize()
+        guard let remoteData = kvStore.data(forKey: CloudSyncPayload.storageKey),
+              let remotePayload = try? JSONDecoder().decode(CloudSyncPayload.self, from: remoteData) else {
+            return SyncOutcome(
+                didSync: false,
+                status: .noCloudArchive,
+                newLastSyncedAt: nil,
+                updatedCatalog: nil,
+                updatedProviders: nil,
+                updatedUserRules: nil
+            )
+        }
+
+        let catalogStore = try injectedCatalogStore ?? ProfileCatalogStore.applicationGroup()
+        let (applied, _, _) = try applyRemotePayload(remotePayload, to: catalogStore)
+
+        var updatedProviders: [RuleProviderMetadata]?
+        if let remoteRuleData = kvStore.data(forKey: RuleProviderSyncPayload.storageKey) {
+            updatedProviders = await RuleProviderEngine.shared.mergeCloudSyncPayload(remoteRuleData)
+        }
+        let updatedUserRules = syncUserRulesSnapshot()
+
+        return SyncOutcome(
+            didSync: true,
+            status: .forcePulled(profileCount: applied.profiles.count),
+            newLastSyncedAt: Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0),
+            updatedCatalog: applied,
+            updatedProviders: updatedProviders,
+            updatedUserRules: updatedUserRules
+        )
+    }
+
+    func performForcePush() async throws -> SyncOutcome {
+        _ = resolveDeviceNameIfNeeded()
+        if let localRulePayload = await RuleProviderEngine.shared.exportCloudSyncPayload(deviceIdentifier: deviceID) {
+            kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
+            kvStore.synchronize()
+        }
+        pushLocalUserRulesToCloudIfAvailable()
+
+        let catalogStore = try injectedCatalogStore ?? ProfileCatalogStore.applicationGroup()
+        let localCatalog = (try? catalogStore.loadOrMigrate()) ?? ProfileCatalog()
+        let localTombstones = catalogStore.loadDeletedProfiles()
+        guard !localCatalog.profiles.isEmpty || !localTombstones.isEmpty else {
+            return SyncOutcome(
+                didSync: false,
+                status: .nothingToUpload,
+                newLastSyncedAt: nil,
+                updatedCatalog: nil,
+                updatedProviders: nil,
+                updatedUserRules: nil
+            )
+        }
+
+        try pushLocalToCloud(localCatalog, tombstones: localTombstones)
+        return SyncOutcome(
+            didSync: true,
+            status: .forcePushed(profileCount: localCatalog.profiles.count),
+            newLastSyncedAt: Date(),
+            updatedCatalog: nil,
+            updatedProviders: nil,
+            updatedUserRules: nil
+        )
+    }
+
+    private func syncRuleProvidersAndUserRules() async -> ([RuleProviderMetadata]?, CloudSyncUserRulesSnapshot?) {
+        var updatedProviders: [RuleProviderMetadata]?
+        if let remoteRuleData = kvStore.data(forKey: RuleProviderSyncPayload.storageKey) {
+            updatedProviders = await RuleProviderEngine.shared.mergeCloudSyncPayload(remoteRuleData)
+        }
+        if let localRulePayload = await RuleProviderEngine.shared.exportCloudSyncPayload(deviceIdentifier: deviceID) {
+            kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
+            kvStore.synchronize()
+        }
+        let updatedUserRules = syncUserRulesSnapshot()
+        return (updatedProviders, updatedUserRules)
+    }
+
+    private func syncUserRulesSnapshot() -> CloudSyncUserRulesSnapshot? {
+        guard let customStore = try? CustomRuleStore.applicationGroup(),
+              let bypassStore = try? BypassPolicyStore.applicationGroup() else {
+            return nil
+        }
+        let localRules = (try? customStore.load()) ?? []
+        let localBypass = (try? bypassStore.load()) ?? .empty
+        let localRuleSync = customStore.loadSyncMetadata()
+        let localBypassSync = bypassStore.loadSyncMetadata()
+
+        if let remoteData = kvStore.data(forKey: CloudSyncPayload.userRulesStorageKey),
+           let merged = try? ProfileCloudSyncManager.decryptAndMergeUserRulesSnapshot(
+               remoteData,
+               localRules: localRules,
+               localBypassPolicy: localBypass,
+               localCustomRuleSync: localRuleSync,
+               localBypassSync: localBypassSync,
+               keyStore: keyStore
+           ) {
+            let mergedRuleSync = merged.customRuleSync ?? localRuleSync
+            let mergedBypassSync = merged.bypassSync ?? localBypassSync
+            if merged.customRules != localRules || mergedRuleSync != localRuleSync {
+                try? customStore.saveSynchronized(merged.customRules, metadata: mergedRuleSync)
+            }
+            if merged.bypassPolicy != localBypass || mergedBypassSync != localBypassSync {
+                try? bypassStore.saveSynchronized(merged.bypassPolicy, metadata: mergedBypassSync)
+            }
+            if let encoded = try? ProfileCloudSyncManager.encryptUserRulesSnapshot(
+                merged,
+                deviceIdentifier: deviceID,
+                keyStore: keyStore
+            ), encoded != remoteData {
+                kvStore.set(encoded, forKey: CloudSyncPayload.userRulesStorageKey)
+                kvStore.synchronize()
+            }
+            return merged
+        } else if !localRules.isEmpty || !localBypass.rules.isEmpty
+                    || !localRuleSync.deletedAt.isEmpty || !localBypassSync.deletedAt.isEmpty {
+            pushLocalUserRulesToCloudIfAvailable()
+        }
+        return nil
+    }
+
+    private func pushLocalUserRulesToCloudIfAvailable() {
+        guard let customStore = try? CustomRuleStore.applicationGroup(),
+              let bypassStore = try? BypassPolicyStore.applicationGroup() else {
+            return
+        }
+        let localRules = (try? customStore.load()) ?? []
+        let localBypass = (try? bypassStore.load()) ?? .empty
+        let ruleSync = customStore.loadSyncMetadata()
+        let bypassSync = bypassStore.loadSyncMetadata()
+        guard !localRules.isEmpty || !localBypass.rules.isEmpty
+                || !ruleSync.deletedAt.isEmpty || !bypassSync.deletedAt.isEmpty else { return }
+        let snapshot = CloudSyncUserRulesSnapshot(
+            customRules: localRules,
+            bypassPolicy: localBypass,
+            customRuleSync: ruleSync,
+            bypassSync: bypassSync
+        )
+        if let encoded = try? ProfileCloudSyncManager.encryptUserRulesSnapshot(
+            snapshot,
+            deviceIdentifier: deviceID,
+            keyStore: keyStore
+        ) {
+            kvStore.set(encoded, forKey: CloudSyncPayload.userRulesStorageKey)
+            kvStore.synchronize()
+        }
+    }
+
+    private func pushLocalToCloud(_ catalog: ProfileCatalog, tombstones: [UUID: Date]) throws {
+        let syncPayload = CloudSyncCatalogPayload(catalog: catalog, deletedProfiles: tombstones)
+        let catalogData = try JSONEncoder().encode(syncPayload)
+        let key = try keyStore.loadOrCreateKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID)
+
         let symmetricKey = SymmetricKey(data: key)
         let sealedBox = try AES.GCM.seal(catalogData, using: symmetricKey)
         guard let encryptedCombined = sealedBox.combined else {
@@ -745,7 +1016,7 @@ public final class ProfileCloudSyncManager: ObservableObject {
         let sha256 = SHA256.hash(data: encryptedCombined).map { String(format: "%02x", $0) }.joined()
         let payload = CloudSyncPayload(
             deviceIdentifier: deviceID,
-            deviceName: deviceName,
+            deviceName: resolveDeviceNameIfNeeded(),
             encryptedData: encryptedCombined,
             sha256: sha256
         )
@@ -760,12 +1031,10 @@ public final class ProfileCloudSyncManager: ObservableObject {
         kvStore.synchronize()
     }
 
-    @discardableResult
     private func applyRemotePayload(
         _ payload: CloudSyncPayload,
         to store: ProfileCatalogStore
-    ) async throws -> (catalog: ProfileCatalog, didMergeNewLocalProfiles: Bool) {
-        // Verify SHA-256 integrity
+    ) throws -> (catalog: ProfileCatalog, tombstones: [UUID: Date], shouldPushBack: Bool) {
         let actualSHA256 = SHA256.hash(data: payload.encryptedData).map { String(format: "%02x", $0) }.joined()
         guard actualSHA256.caseInsensitiveCompare(payload.sha256) == .orderedSame else {
             Self.logger.error("Cloud sync payload SHA256 integrity verification failed: expected \(payload.sha256), got \(actualSHA256)")
@@ -774,7 +1043,7 @@ public final class ProfileCloudSyncManager: ObservableObject {
 
         let key: Data
         do {
-            key = try keyStore.loadKey(keyID: Self.cloudSyncKeyID)
+            key = try keyStore.loadKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID)
         } catch {
             Self.logger.error("Failed to load cloud sync master key from Keychain: \(String(describing: error), privacy: .public)")
             throw CloudSyncError.keychainUnavailable
@@ -793,29 +1062,52 @@ public final class ProfileCloudSyncManager: ObservableObject {
             throw CloudSyncError.decryptionFailed
         }
 
-        guard let remoteCatalog = try? JSONDecoder().decode(ProfileCatalog.self, from: decryptedData) else {
+        guard let remoteCatalogPayload = ProfileCloudSyncManager.decodeCatalogPayload(from: decryptedData) else {
             throw CloudSyncError.catalogCorrupted
         }
 
-        let localCatalog = (try? store.loadOrMigrate()) ?? ProfileCatalog()
-        let resultCatalog: ProfileCatalog
-        var didMergeNewLocalProfiles = false
+        let reconciled = try store.reconcileCloudSync(
+            remoteCatalogPayload.catalog,
+            tombstones: remoteCatalogPayload.deletedProfiles
+        )
+        let mergedTombstones = store.loadDeletedProfiles()
+        let shouldPushBack = Self.remoteNeedsUpdate(
+            appliedCatalog: reconciled,
+            mergedTombstones: mergedTombstones,
+            remoteCatalog: remoteCatalogPayload.catalog,
+            remoteTombstones: remoteCatalogPayload.deletedProfiles
+        )
+        return (reconciled, mergedTombstones, shouldPushBack)
+    }
 
-        if localCatalog.profiles.isEmpty {
-            try store.replaceCatalog(remoteCatalog)
-            resultCatalog = remoteCatalog
-        } else {
-            // Smart merge with existing local profiles
-            if !remoteCatalog.profiles.isEmpty {
-                let merged = try store.mergeValidated(remoteCatalog)
-                resultCatalog = merged
-                didMergeNewLocalProfiles = (resultCatalog != remoteCatalog)
-            } else {
-                resultCatalog = localCatalog
-                didMergeNewLocalProfiles = true
+    private static func remoteNeedsUpdate(
+        appliedCatalog: ProfileCatalog,
+        mergedTombstones: [UUID: Date],
+        remoteCatalog: ProfileCatalog,
+        remoteTombstones: [UUID: Date]
+    ) -> Bool {
+        if mergedTombstones != remoteTombstones {
+            return true
+        }
+        if appliedCatalog.profiles.count != remoteCatalog.profiles.count {
+            return true
+        }
+        for localManaged in appliedCatalog.profiles {
+            let match = remoteCatalog.profiles.first(where: { $0.id == localManaged.id })
+                ?? localManaged.profile.subscription.flatMap { localSub in
+                    let canonical = ProfileCatalogStore.canonicalSubscriptionURL(localSub.url)
+                    return remoteCatalog.profiles.first {
+                        $0.profile.subscription.map {
+                            ProfileCatalogStore.canonicalSubscriptionURL($0.url) == canonical
+                        } ?? false
+                    }
+                }
+            guard let remoteManaged = match,
+                  remoteManaged.profile == localManaged.profile,
+                  remoteManaged.updatedAt == localManaged.updatedAt else {
+                return true
             }
         }
-        NotificationCenter.default.post(name: .aetherRouteCloudSyncDidUpdateProfiles, object: resultCatalog)
-        return (resultCatalog, didMergeNewLocalProfiles)
+        return false
     }
 }

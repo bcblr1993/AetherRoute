@@ -400,11 +400,18 @@ public actor RuleProviderEngine {
         var items: [RemoteRuleItem] = []
         let lines = content.components(separatedBy: .newlines)
 
-        let hasExplicitPayload = (format == .yaml) && lines.contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix("payload:") }
+        let hasExplicitPayload = (format == .yaml) && lines.contains {
+            Self.stripInlineComment($0.trimmingCharacters(in: .whitespaces)).hasPrefix("payload:")
+        }
         var inPayloadSection = !hasExplicitPayload
 
         for rawLine in lines {
-            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix("//") {
+                continue
+            }
+
+            let line = Self.stripInlineComment(trimmed)
             if line.isEmpty || line.hasPrefix("#") || line.hasPrefix("//") {
                 continue
             }
@@ -426,6 +433,7 @@ public actor RuleProviderEngine {
             } else if clean.hasPrefix("\"") && clean.hasSuffix("\"") && clean.count >= 2 {
                 clean = String(clean.dropFirst().dropLast())
             }
+            clean = clean.trimmingCharacters(in: .whitespacesAndNewlines)
 
             guard !clean.isEmpty else { continue }
 
@@ -434,18 +442,34 @@ public actor RuleProviderEngine {
 
             if behavior == .domain {
                 if parts.count == 1 {
-                    items.append(RemoteRuleItem(type: "DOMAIN-SUFFIX", payload: parts[0]))
+                    let token = parts[0]
+                    if token.hasPrefix("+.") || token.hasPrefix("*.") || token.hasPrefix(".") {
+                        let domain = Self.normalizeDomainSuffixPayload(token)
+                        guard !domain.isEmpty else { continue }
+                        items.append(RemoteRuleItem(type: "DOMAIN-SUFFIX", payload: domain))
+                    } else {
+                        items.append(RemoteRuleItem(type: "DOMAIN", payload: token))
+                    }
                 } else if parts.count >= 2 {
                     let type = parts[0].uppercased()
-                    let payload = parts[1]
+                    let payload = type == "DOMAIN-SUFFIX"
+                        ? Self.normalizeDomainSuffixPayload(parts[1])
+                        : parts[1]
+                    guard !payload.isEmpty else { continue }
                     let target = parts.count >= 3 ? parts[2] : ""
                     items.append(RemoteRuleItem(type: type, payload: payload, target: target))
                 }
             } else if behavior == .ipcidr {
-                let payload = parts[0]
-                let noResolve = parts.contains(where: { $0.lowercased() == "no-resolve" })
-                let target = parts.count >= 2 && parts[1].lowercased() != "no-resolve" ? parts[1] : ""
-                items.append(RemoteRuleItem(type: "IP-CIDR", payload: payload, target: target, noResolve: noResolve))
+                var remainingParts = parts
+                if remainingParts.count >= 2,
+                   let prefix = remainingParts.first?.uppercased(),
+                   prefix == "IP-CIDR" || prefix == "IP-CIDR6" {
+                    remainingParts.removeFirst()
+                }
+                guard let payload = remainingParts.first, !payload.isEmpty else { continue }
+                let ruleType = payload.contains(":") ? "IP-CIDR6" : "IP-CIDR"
+                let target = remainingParts.dropFirst().first(where: { $0.lowercased() != "no-resolve" }) ?? ""
+                items.append(RemoteRuleItem(type: ruleType, payload: payload, target: target, noResolve: true))
             } else {
                 let type = parts[0].uppercased()
                 let payload = parts.count >= 2 ? parts[1] : ""
@@ -456,6 +480,34 @@ public actor RuleProviderEngine {
         }
 
         return items
+    }
+
+    private static func normalizeDomainSuffixPayload(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("+.") || value.hasPrefix("*.") {
+            value = String(value.dropFirst(2))
+        } else if value.hasPrefix(".") {
+            value = String(value.dropFirst(1))
+        }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func stripInlineComment(_ line: String) -> String {
+        var inSingleQuote = false
+        var inDoubleQuote = false
+        var previousWasWhitespace = true
+        for idx in line.indices {
+            let ch = line[idx]
+            if ch == "'" && !inDoubleQuote {
+                inSingleQuote.toggle()
+            } else if ch == "\"" && !inSingleQuote {
+                inDoubleQuote.toggle()
+            } else if ch == "#" && !inSingleQuote && !inDoubleQuote && previousWasWhitespace {
+                return String(line[..<idx]).trimmingCharacters(in: .whitespaces)
+            }
+            previousWasWhitespace = ch.isWhitespace
+        }
+        return line.trimmingCharacters(in: .whitespaces)
     }
 
     private func cacheFileURL(for id: UUID) -> URL {

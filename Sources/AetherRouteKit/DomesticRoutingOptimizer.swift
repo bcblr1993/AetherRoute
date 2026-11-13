@@ -434,6 +434,8 @@ public enum DomesticRoutingOptimizer {
         }
 
         var existingNameservers: [String] = []
+        var existingDefaultNameservers: [String] = []
+        var existingProxyServerNameservers: [String] = []
         var existingFallbacks: [String] = []
         var existingFakeIPFilters: [String] = []
         // Every resolver the profile lists for a key, in order. Block-style
@@ -441,6 +443,7 @@ public enum DomesticRoutingOptimizer {
         var existingPolicies: [(String, [String])] = []
         var otherDNSProps: [String] = []
 
+        var childIndent: Int?
         var currentField: String?
         var pendingPolicyIndex: Int?
 
@@ -450,9 +453,12 @@ public enum DomesticRoutingOptimizer {
                 continue
             }
 
-            let leadingSpaces = line.prefix(while: { $0 == " " }).count
+            let leadingIndent = line.prefix(while: { $0 == " " || $0 == "\t" }).count
+            if childIndent == nil, !trimmed.hasPrefix("-") {
+                childIndent = leadingIndent
+            }
 
-            if leadingSpaces <= 2 && !trimmed.hasPrefix("-") {
+            if !trimmed.hasPrefix("-"), leadingIndent <= (childIndent ?? 2) {
                 if let (key, val) = parseKeyAndValue(trimmed) {
                     let lowerKey = key.lowercased()
                     currentField = lowerKey
@@ -464,6 +470,16 @@ public enum DomesticRoutingOptimizer {
                     case "nameserver":
                         if !val.isEmpty {
                             existingNameservers.append(contentsOf: parseFlowList(val))
+                        }
+                        continue
+                    case "default-nameserver":
+                        if !val.isEmpty {
+                            existingDefaultNameservers.append(contentsOf: parseFlowList(val))
+                        }
+                        continue
+                    case "proxy-server-nameserver":
+                        if !val.isEmpty {
+                            existingProxyServerNameservers.append(contentsOf: parseFlowList(val))
                         }
                         continue
                     case "fallback":
@@ -489,7 +505,6 @@ public enum DomesticRoutingOptimizer {
                     default:
                         let recognizedDNSFields: Set<String> = [
                             "ipv6", "use-hosts", "respect-rules", "listen",
-                            "default-nameserver", "proxy-server-nameserver",
                             "edns-client-subnet"
                         ]
                         if recognizedDNSFields.contains(lowerKey) && !val.isEmpty {
@@ -508,6 +523,10 @@ public enum DomesticRoutingOptimizer {
                     switch field {
                     case "nameserver":
                         existingNameservers.append(cleanItem)
+                    case "default-nameserver":
+                        existingDefaultNameservers.append(cleanItem)
+                    case "proxy-server-nameserver":
+                        existingProxyServerNameservers.append(cleanItem)
                     case "fallback":
                         existingFallbacks.append(cleanItem)
                     case "fake-ip-filter":
@@ -636,8 +655,22 @@ public enum DomesticRoutingOptimizer {
         for prop in otherDNSProps {
             output.append(prop)
         }
+        appendUniqueBlockList("default-nameserver", items: existingDefaultNameservers, to: &output)
+        appendUniqueBlockList("proxy-server-nameserver", items: existingProxyServerNameservers, to: &output)
 
         return output
+    }
+
+    private static func appendUniqueBlockList(_ key: String, items: [String], to output: inout [String]) {
+        var unique: [String] = []
+        for item in items where !item.isEmpty && !unique.contains(item) {
+            unique.append(item)
+        }
+        guard !unique.isEmpty else { return }
+        output.append("  \(key):")
+        for item in unique {
+            output.append("    - \(item)")
+        }
     }
 
     private static func defaultDNSBlock(customRules: [CustomRule] = []) -> [String] {
@@ -989,46 +1022,58 @@ public enum DomesticRoutingOptimizer {
     ) -> [String] {
         var rawRules: [String] = []
 
+        func appendParsedRule(_ rawRule: String) {
+            let clean = unquote(stripInlineComment(rawRule))
+            guard !clean.isEmpty && clean != "-" && clean != "''" && clean != "\"\""
+                && !isApplicationRule(clean) else {
+                return
+            }
+
+            let tokens = clean.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            if tokens.first?.uppercased() == "RULE-SET" {
+                let providerName = tokens.count > 1 ? tokens[1] : ""
+                let target = tokens.count > 2 ? tokens[2] : ""
+                let providerDef = ruleProviders[providerName.lowercased()]
+
+                // Check if this references an existing safe local inline or file provider
+                // (domain or ipcidr, non-classical) BEFORE attempting synthesis.
+                // That way a user's custom inline provider named e.g. "Apple" is preserved as-is
+                // and not overwritten by synthetic ACL4SSR rules.
+                if let def = providerDef,
+                   (def.type == "inline" || def.type == "file" || def.type.isEmpty),
+                   def.behavior != "classical" && !def.rawLines.isEmpty {
+                    rawRules.append(clean)
+                    return
+                }
+
+                if let synthesized = synthesizeRules(forProviderName: providerName, target: target, providerDef: providerDef) {
+                    expandedOrDroppedProviders.insert(providerName.lowercased())
+                    rawRules.append(contentsOf: synthesized)
+                    return
+                }
+
+                // Unexpanded / unknown / remote HTTP rule-provider: safely drop RULE-SET
+                expandedOrDroppedProviders.insert(providerName.lowercased())
+                return
+            }
+
+            rawRules.append(clean)
+        }
+
         if let lines = existingLines {
+            if let header = lines.first {
+                let headerTrimmed = stripInlineComment(header.trimmingCharacters(in: .whitespaces))
+                if let (_, headerValue) = parseKeyAndValue(headerTrimmed), !headerValue.isEmpty {
+                    for inlineRule in parseFlowList(headerValue) {
+                        appendParsedRule(inlineRule)
+                    }
+                }
+            }
             for line in lines.dropFirst() { // Skip "rules:"
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 if trimmed.hasPrefix("-") {
                     let ruleContent = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-                    let clean = unquote(stripInlineComment(ruleContent))
-                    guard !clean.isEmpty && clean != "-" && clean != "''" && clean != "\"\""
-                        && !isApplicationRule(clean) else {
-                        continue
-                    }
-
-                    let tokens = clean.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-                    if tokens.first?.uppercased() == "RULE-SET" {
-                        let providerName = tokens.count > 1 ? tokens[1] : ""
-                        let target = tokens.count > 2 ? tokens[2] : ""
-                        let providerDef = ruleProviders[providerName.lowercased()]
-
-                        // Check if this references an existing safe local inline or file provider
-                        // (domain or ipcidr, non-classical) BEFORE attempting synthesis.
-                        // That way a user's custom inline provider named e.g. "Apple" is preserved as-is
-                        // and not overwritten by synthetic ACL4SSR rules.
-                        if let def = providerDef,
-                           (def.type == "inline" || def.type == "file" || def.type.isEmpty),
-                           def.behavior != "classical" && !def.rawLines.isEmpty {
-                            rawRules.append(clean)
-                            continue
-                        }
-
-                        if let synthesized = synthesizeRules(forProviderName: providerName, target: target, providerDef: providerDef) {
-                            expandedOrDroppedProviders.insert(providerName.lowercased())
-                            rawRules.append(contentsOf: synthesized)
-                            continue
-                        }
-
-                        // Unexpanded / unknown / remote HTTP rule-provider: safely drop RULE-SET
-                        expandedOrDroppedProviders.insert(providerName.lowercased())
-                        continue
-                    }
-
-                    rawRules.append(clean)
+                    appendParsedRule(ruleContent)
                 }
             }
         }
@@ -1089,7 +1134,7 @@ public enum DomesticRoutingOptimizer {
             if seenNormalized.contains(norm) {
                 continue
             }
-            if norm.hasPrefix("MATCH,") || norm == "MATCH" {
+            if norm.hasPrefix("MATCH,") || norm == "MATCH" || norm.hasPrefix("FINAL,") || norm == "FINAL" {
                 matchRules.append(r)
             } else {
                 preMatchRules.append(r)
@@ -1203,7 +1248,46 @@ public enum DomesticRoutingOptimizer {
             s.removeFirst()
             s.removeLast()
         }
-        return s.split(separator: ",").map { unquote(String($0)) }.filter { !$0.isEmpty }
+        return splitTopLevelCommas(s).map { unquote($0) }.filter { !$0.isEmpty }
+    }
+
+    private static func splitTopLevelCommas(_ value: String) -> [String] {
+        var items: [String] = []
+        var start = value.startIndex
+        var quote: Character?
+        var escaped = false
+        var squareDepth = 0
+        var braceDepth = 0
+
+        for idx in value.indices {
+            let ch = value[idx]
+            if escaped {
+                escaped = false
+                continue
+            }
+            if ch == "\\", quote == "\"" {
+                escaped = true
+                continue
+            }
+            if let activeQuote = quote {
+                if ch == activeQuote { quote = nil }
+                continue
+            }
+            if ch == "\"" || ch == "'" {
+                quote = ch
+                continue
+            }
+            if ch == "[" { squareDepth += 1 }
+            if ch == "]" { squareDepth = max(0, squareDepth - 1) }
+            if ch == "{" { braceDepth += 1 }
+            if ch == "}" { braceDepth = max(0, braceDepth - 1) }
+            if ch == ",", squareDepth == 0, braceDepth == 0 {
+                items.append(String(value[start..<idx]))
+                start = value.index(after: idx)
+            }
+        }
+        items.append(String(value[start...]))
+        return items
     }
 
     private static func parseFlowPolicy(_ value: String) -> [(String, String)] {

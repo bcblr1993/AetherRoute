@@ -649,4 +649,78 @@ final class DomesticRoutingOptimizerTests: XCTestCase {
         XCTAssertTrue(output.contains("- RULE-SET,apple,Proxy"), "RULE-SET for custom inline provider must be preserved")
         try ProfileImportValidator.validate(data: Data(output.utf8))
     }
+
+    func testOptimizeDNSPreservesBlockListDefaultAndProxyServerNameserversWithArbitraryIndentation() throws {
+        let input = """
+        mode: rule
+        dns:
+            enable: true
+            ipv6: true
+            default-nameserver:
+                - 223.5.5.5 # primary
+                - 119.29.29.29
+            proxy-server-nameserver:
+                - https://doh.pub/dns-query
+            nameserver:
+                - 114.114.114.114
+            fallback:
+                - 1.0.0.1
+            fake-ip-filter:
+                - '+.corp.internal'
+            nameserver-policy:
+                '+.dev.internal':
+                    - 10.0.0.1
+                    - 10.0.0.2
+        proxies:
+          - name: S1
+            type: socks5
+            server: 127.0.0.1
+            port: 1080
+        proxy-groups:
+          - name: G1
+            type: select
+            proxies: [S1]
+        rules:
+          - MATCH,G1
+        """
+
+        let output = DomesticRoutingOptimizer.optimizedProfile(for: input)
+
+        XCTAssertTrue(output.contains("ipv6: true"))
+        XCTAssertTrue(output.contains("default-nameserver:\n    - 223.5.5.5\n    - 119.29.29.29"), "Block-list default-nameserver must be preserved:\n\(output)")
+        XCTAssertTrue(output.contains("proxy-server-nameserver:\n    - https://doh.pub/dns-query"), "Block-list proxy-server-nameserver must be preserved:\n\(output)")
+        XCTAssertTrue(output.contains("- 114.114.114.114"))
+        XCTAssertTrue(output.contains("- 1.0.0.1"))
+        XCTAssertTrue(output.contains("- '+.corp.internal'"))
+        XCTAssertTrue(output.contains("'+.dev.internal': ['10.0.0.1', '10.0.0.2']"))
+        XCTAssertEqual(DomesticRoutingOptimizer.optimizedProfile(for: output), output, "Optimization must remain idempotent")
+        try ProfileImportValidator.validate(data: Data(output.utf8))
+    }
+
+    func testOptimizeRulesParsesInlineFlowStyleAndInsertsGeoIPBeforeFinal() throws {
+        let input = """
+        mode: rule
+        proxies:
+          - name: S1
+            type: socks5
+            server: 127.0.0.1
+            port: 1080
+        proxy-groups:
+          - name: PROXY
+            type: select
+            proxies: [S1]
+        rules: ["DOMAIN,a.com,PROXY", "FINAL,PROXY"]
+        """
+
+        let output = DomesticRoutingOptimizer.optimizedProfile(for: input)
+
+        XCTAssertTrue(output.contains("- DOMAIN,a.com,PROXY"), "Inline flow-style rule must be preserved:\n\(output)")
+        XCTAssertTrue(output.contains("- FINAL,PROXY"), "Inline flow-style FINAL rule must be preserved:\n\(output)")
+        let domainRange = try XCTUnwrap(output.range(of: "- DOMAIN,a.com,PROXY"))
+        let geoipRange = try XCTUnwrap(output.range(of: "- GEOIP,CN,DIRECT"))
+        let finalRange = try XCTUnwrap(output.range(of: "- FINAL,PROXY"))
+        XCTAssertLessThan(domainRange.lowerBound, geoipRange.lowerBound)
+        XCTAssertLessThan(geoipRange.lowerBound, finalRange.lowerBound, "GEOIP,CN,DIRECT must be inserted BEFORE FINAL,PROXY")
+        try ProfileImportValidator.validate(data: Data(output.utf8))
+    }
 }
