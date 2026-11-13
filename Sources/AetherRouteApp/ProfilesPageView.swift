@@ -553,7 +553,7 @@ struct ProfilesView: View {
     private var emptyOnboardingSection: some View {
         VStack(spacing: AetherVisual.s5) {
             VStack(spacing: AetherVisual.s3) {
-                AetherIconTile(symbol: "doc.badge.plus", color: AppSection.profiles.tileColor, size: AetherVisual.heroTileSize)
+                AetherIconTile(symbol: "sparkles", color: AppSection.profiles.tileColor, size: AetherVisual.heroTileSize)
                 .padding(.top, AetherVisual.s3)
 
                 Text(AppLocalization.string("No Profiles Added"))
@@ -562,102 +562,42 @@ struct ProfilesView: View {
 
                 Text(AppLocalization.string("Add a subscription link or import a Clash-compatible configuration to get started."))
                     .font(.subheadline)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 440)
             }
 
             HStack(spacing: AetherVisual.s4) {
-                Button {
+                onboardingOptionTile(
+                    symbol: "link.badge.plus",
+                    tint: AetherVisual.subscriptionTint,
+                    title: AppLocalization.string("Add Subscription…"),
+                    subtitle: AppLocalization.string("Import HTTPS subscription URL from your provider.")
+                ) {
                     tunnel.clearProfileMessage()
                     subscriptionURL = ""
                     isSubscriptionEditorPresented = true
-                } label: {
-                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                        HStack {
-                            AetherIconTile(symbol: "link.badge.plus", color: AetherVisual.subscriptionTint, size: AetherVisual.cardTileSize)
-
-                            Spacer(minLength: 0)
-
-                            Image(systemName: "arrow.right")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(AetherVisual.secondaryText)
-                        }
-
-                        Text(AppLocalization.string("Add Subscription…"))
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-
-                        Text(AppLocalization.string("Import HTTPS subscription URL from your provider."))
-                            .font(.caption)
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(AetherVisual.s4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .aetherPanel()
                 }
-                .buttonStyle(.aetherPressable)
 
-                Button {
+                onboardingOptionTile(
+                    symbol: "square.and.arrow.down",
+                    tint: AetherVisual.localProfileTint,
+                    title: AppLocalization.string("Import Profile…"),
+                    subtitle: AppLocalization.string("Supports Clash-compatible YAML/JSON profiles.")
+                ) {
                     tunnel.clearProfileMessage()
                     presentFileImporter(.profile)
-                } label: {
-                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                        HStack {
-                            AetherIconTile(symbol: "square.and.arrow.down", color: AetherVisual.localProfileTint, size: AetherVisual.cardTileSize)
-
-                            Spacer(minLength: 0)
-
-                            Image(systemName: "arrow.right")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(AetherVisual.secondaryText)
-                        }
-
-                        Text(AppLocalization.string("Import Profile…"))
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-
-                        Text(AppLocalization.string("Supports Clash-compatible YAML/JSON profiles."))
-                            .font(.caption)
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(AetherVisual.s4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .aetherPanel()
                 }
-                .buttonStyle(.aetherPressable)
 
-                Button {
+                onboardingOptionTile(
+                    symbol: "icloud.fill",
+                    tint: AetherVisual.iCloudTint,
+                    title: AppLocalization.string("iCloud Sync…"),
+                    subtitle: AppLocalization.string("Sync profiles from your iPhone or Mac.")
+                ) {
                     tunnel.clearProfileMessage()
                     isCloudSyncSheetPresented = true
-                } label: {
-                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                        HStack {
-                            AetherIconTile(symbol: "icloud.fill", color: AetherVisual.iCloudTint, size: AetherVisual.cardTileSize)
-
-                            Spacer(minLength: 0)
-
-                            Image(systemName: "arrow.right")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(AetherVisual.secondaryText)
-                        }
-
-                        Text(AppLocalization.string("iCloud Sync…"))
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-
-                        Text(AppLocalization.string("Sync profiles from your iPhone or Mac."))
-                            .font(.caption)
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(AetherVisual.s4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .aetherPanel()
                 }
-                .buttonStyle(.aetherPressable)
                 .accessibilityIdentifier("onboarding-icloud-sync-card-button")
             }
             .padding(.horizontal, AetherVisual.s2)
@@ -668,11 +608,53 @@ struct ProfilesView: View {
                 Label(AppLocalization.string("Multi-Protocol"), systemImage: "bolt.horizontal.fill")
             }
             .font(.caption.weight(.medium))
-            .foregroundStyle(.primary)
+            .foregroundStyle(.secondary)
             .padding(.bottom, AetherVisual.s2)
         }
         .padding(AetherVisual.heroCardPadding)
         .aetherPanel()
+    }
+
+    private func onboardingOptionTile(
+        symbol: String,
+        tint: Color,
+        title: String,
+        subtitle: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                HStack {
+                    AetherIconTile(symbol: symbol, color: tint, size: AetherVisual.cardTileSize)
+
+                    Spacer(minLength: 0)
+
+                    Image(systemName: "arrow.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AetherVisual.secondaryText)
+                }
+
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(AetherVisual.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                AetherVisual.cardFill,
+                in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            }
+        }
+        .buttonStyle(.aetherPressable)
     }
 
 
@@ -746,7 +728,7 @@ struct ProfilesView: View {
 
                 Text(AppLocalization.string("Supports Clash-compatible YAML/JSON profiles, HTTPS subscriptions, and common node links."))
                     .font(.caption)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -1505,7 +1487,7 @@ struct SubscriptionEditorSheet: View {
                 )
                 .font(.callout)
                 .foregroundStyle(
-                    tunnel.profileMessageIsError ? Color.red : Color.green
+                    AetherReadableTint(color: tunnel.profileMessageIsError ? .red : .green)
                 )
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("subscription-result-message")

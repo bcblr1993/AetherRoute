@@ -415,44 +415,59 @@ struct ContentView: View {
 
 #endif
 
+    @State private var isBrandHeaderHovered: Bool = false
+    @State private var hoveredSection: AppSection?
     @State private var isSettingsHovered: Bool = false
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 1. 顶部品牌与状态指示栏
-            HStack(spacing: AetherVisual.sRow) {
-                AetherRouteBrandTile(size: AetherVisual.brandMarkSize, isActive: tunnel.isConnected)
+            // 1. 顶部品牌与状态指示栏（点击返回概览）
+            Button {
+                selectSection(.overview)
+            } label: {
+                HStack(spacing: AetherVisual.sRow) {
+                    AetherRouteBrandTile(size: AetherVisual.brandMarkSize, isActive: tunnel.isConnected)
 
-                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    Text(verbatim: "AetherRoute")
-                        .font(.headline.weight(.bold))
-                        .tracking(-0.2)
-                        .foregroundStyle(.primary)
-
-                    HStack(spacing: AetherVisual.s1) {
-                        AetherStatusBeacon(
-                            isConnected: tunnel.isConnected,
-                            isConnecting: tunnel.state == .connecting || tunnel.state == .recovering || tunnel.isSwitchingNetworkEngine,
-                            isFailed: tunnel.isFailed,
-                            size: 6
-                        )
-                        // Primary, not secondary: the beacon carries the
-                        // colour, and grey caption text on glass failed the
-                        // contrast audit.
-                        Text(tunnel.compactStatusTitle)
-                            .font(.caption.weight(.medium))
+                    VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                        Text(verbatim: "AetherRoute")
+                            .font(.headline.weight(.bold))
+                            .tracking(-0.2)
                             .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .contentTransition(.opacity)
-                            .animation(AetherVisual.animation(AetherVisual.quickFade), value: tunnel.compactStatusTitle)
-                    }
-                }
 
-                Spacer()
+                        HStack(spacing: AetherVisual.s1) {
+                            AetherStatusBeacon(
+                                isConnected: tunnel.isConnected,
+                                isConnecting: tunnel.state == .connecting || tunnel.state == .recovering || tunnel.isSwitchingNetworkEngine,
+                                isFailed: tunnel.isFailed,
+                                size: 6
+                            )
+                            // Primary, not secondary: the beacon carries the
+                            // colour, and grey caption text on glass failed the
+                            // contrast audit.
+                            Text(tunnel.compactStatusTitle)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .contentTransition(.opacity)
+                                .animation(AetherVisual.animation(AetherVisual.quickFade), value: tunnel.compactStatusTitle)
+                        }
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal, AetherVisual.s3)
+                .padding(.vertical, AetherVisual.s2)
+                .aetherHoverHighlight(isHovered: isBrandHeaderHovered, cornerRadius: AetherVisual.cardRadius)
+                .contentShape(RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous))
             }
-            .padding(.horizontal, AetherVisual.s4)
-            .padding(.top, AetherVisual.s3)
-            .padding(.bottom, AetherVisual.sRow)
+            .buttonStyle(.plain)
+            .onHover { isBrandHeaderHovered = $0 }
+            .padding(.horizontal, AetherVisual.s1)
+            .padding(.top, AetherVisual.s1)
+            .padding(.bottom, AetherVisual.s1)
+            .help(AppLocalization.string("Overview"))
+            .accessibilityLabel(AppLocalization.string("Overview"))
+            .accessibilityIdentifier("sidebar-brand-overview-button")
 
             Divider()
                 .padding(.horizontal, AetherVisual.s3)
@@ -476,9 +491,14 @@ struct ContentView: View {
                                 navigationBadge(for: section)
                             }
                             .padding(.vertical, AetherVisual.sMicro)
+                            .padding(.horizontal, AetherVisual.s1)
+                            .aetherHoverHighlight(isHovered: hoveredSection == section && selectedSection != section)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .onHover { isHovered in
+                            hoveredSection = isHovered ? section : (hoveredSection == section ? nil : hoveredSection)
+                        }
                         .tag(section)
                         .accessibilityIdentifier("primary-navigation-\(section.rawValue)")
                     }
@@ -1127,10 +1147,10 @@ private struct ConnectionHero: View {
         }
         .padding(AetherVisual.s6)
         .frame(maxWidth: .infinity)
-        // The state colour as a wash over the card, which the readable
-        // grey on it was measured against (strongSecondaryText).
+        // The state colour as a top-leading ambient wash over the card, which
+        // the readable grey on it was measured against (strongSecondaryText).
         .background(
-            phase == .idle ? Color.clear : AetherVisual.tintWash(phase.color),
+            heroAmbientWash,
             in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
         )
         .aetherPanel()
@@ -1159,6 +1179,15 @@ private struct ConnectionHero: View {
 
     private var phase: ConnectionMedallion.Phase {
         ConnectionMedallion.Phase(tunnel: tunnel)
+    }
+
+    private var heroAmbientWash: LinearGradient {
+        switch phase {
+        case .connected: AetherVisual.heroConnectedWash
+        case .working: AetherVisual.heroRecoveringWash
+        case .failed: AetherVisual.heroFailedWash
+        case .idle: AetherVisual.heroDisconnectedWash
+        }
     }
 
     private var approvalControls: some View {
@@ -1330,10 +1359,17 @@ struct ConnectionMedallion: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(phase.color.opacity(0.18))
+                .fill(AetherVisual.tintFill(phase.color))
+                .padding(-haloOutset)
+            Circle()
+                .strokeBorder(AetherVisual.tintBorder(phase.color), lineWidth: 1)
                 .padding(-haloOutset)
             Circle()
                 .fill(phase.color.gradient)
+                .overlay {
+                    Circle()
+                        .strokeBorder(AetherVisual.medallionInnerRing, lineWidth: 1)
+                }
             Image(systemName: phase.symbol)
                 .font(.system(size: size * 0.44, weight: .semibold))
                 .foregroundStyle(.white)

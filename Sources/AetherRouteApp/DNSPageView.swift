@@ -119,11 +119,8 @@ struct DNSView: View {
             }
             .padding([.horizontal, .top], AetherVisual.s4)
 
-            HStack(spacing: 0) {
-                ForEach(Array(stats.enumerated()), id: \.offset) { index, stat in
-                    if index > 0 {
-                        Divider().padding(.vertical, AetherVisual.s3)
-                    }
+            DNSSummaryStatsLayout(spacing: AetherVisual.s2) {
+                ForEach(Array(stats.enumerated()), id: \.offset) { _, stat in
                     VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                         Text(stat.0)
                             .font(.caption)
@@ -133,12 +130,20 @@ struct DNSView: View {
                             .foregroundStyle(.primary)
                             .aetherNumericValue(stat.1)
                     }
-                    .padding(AetherVisual.s4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(AetherVisual.s3)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .background(
+                        AetherVisual.cardFill,
+                        in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                            .strokeBorder(AetherVisual.cardStroke, lineWidth: 0.5)
+                    }
                     .accessibilityElement(children: .combine)
                 }
             }
-            .fixedSize(horizontal: false, vertical: true)
+            .padding(AetherVisual.s4)
 
             if let details {
                 Divider().padding(.horizontal, AetherVisual.s4)
@@ -209,7 +214,7 @@ struct DNSView: View {
                         .font(.subheadline.weight(.semibold))
                     Text(AppLocalization.string("Server addresses stay hidden in this summary."))
                         .font(.caption)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: AetherVisual.s2)
@@ -800,22 +805,25 @@ struct DNSView: View {
                                         setCustomHostEnabled(id: mapping.id, isEnabled: isOn)
                                     }
                                 )
-                            ) {
-                                HStack(spacing: AetherVisual.s2) {
-                                    Text(verbatim: mapping.domain)
-                                        .font(.body.monospaced())
-                                        .lineLimit(1)
-                                    Image(systemName: "arrow.right")
-                                        .font(.caption)
-                                        .foregroundStyle(AetherVisual.secondaryText)
-                                        .accessibilityHidden(true)
-                                    Text(verbatim: mapping.ip)
-                                        .font(.callout.monospaced())
-                                        .foregroundStyle(AetherVisual.secondaryText)
-                                        .lineLimit(1)
-                                }
+                            ) { EmptyView() }
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .labelsHidden()
+                            .accessibilityLabel(Text(verbatim: mapping.domain))
+
+                            HStack(spacing: AetherVisual.s2) {
+                                Text(verbatim: mapping.domain)
+                                    .font(.body.monospaced())
+                                    .lineLimit(1)
+                                Image(systemName: "arrow.right")
+                                    .font(.caption)
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                                    .accessibilityHidden(true)
+                                Text(verbatim: mapping.ip)
+                                    .font(.callout.monospaced())
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                                    .lineLimit(1)
                             }
-                            .toggleStyle(.checkbox)
                             Spacer(minLength: AetherVisual.s2)
                             Button(role: .destructive) {
                                 removeCustomHost(id: mapping.id)
@@ -1466,5 +1474,75 @@ private struct TailscaleCoexistenceNote: View {
         .aetherPanel()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dns-tailscale-note")
+    }
+}
+
+/// Single-pass adaptive grid for DNS summary stat tiles: lays all stats out in
+/// one horizontal row when they fit, or wraps into 2-column / 1-column rows
+/// at narrower widths without duplicate view construction.
+private struct DNSSummaryStatsLayout: Layout {
+    let spacing: CGFloat
+
+    private func columnCount(for width: CGFloat, subviews: Subviews) -> Int {
+        let count = subviews.count
+        guard count > 1 else { return max(1, count) }
+        let maxIdealWidth = subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
+        if maxIdealWidth * CGFloat(count) + spacing * CGFloat(count - 1) <= width {
+            return count
+        }
+        if maxIdealWidth * 2 + spacing <= width {
+            return 2
+        }
+        return 1
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        guard let width = proposal.width, width >= 1, width.isFinite else {
+            let maxH = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+            return CGSize(width: 0, height: maxH)
+        }
+        let columns = columnCount(for: width, subviews: subviews)
+        let colWidth = max(0, (width - spacing * CGFloat(columns - 1)) / CGFloat(columns))
+        var totalHeight: CGFloat = 0
+        var index = 0
+        while index < subviews.count {
+            let rowEnd = min(index + columns, subviews.count)
+            var rowHeight: CGFloat = 0
+            for i in index..<rowEnd {
+                let h = subviews[i].sizeThatFits(ProposedViewSize(width: colWidth, height: nil)).height
+                rowHeight = max(rowHeight, h)
+            }
+            if index > 0 { totalHeight += spacing }
+            totalHeight += rowHeight
+            index = rowEnd
+        }
+        return CGSize(width: width, height: totalHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard !subviews.isEmpty else { return }
+        let columns = columnCount(for: bounds.width, subviews: subviews)
+        let colWidth = max(0, (bounds.width - spacing * CGFloat(columns - 1)) / CGFloat(columns))
+        var y = bounds.minY
+        var index = 0
+        while index < subviews.count {
+            let rowEnd = min(index + columns, subviews.count)
+            var rowHeight: CGFloat = 0
+            for i in index..<rowEnd {
+                let h = subviews[i].sizeThatFits(ProposedViewSize(width: colWidth, height: nil)).height
+                rowHeight = max(rowHeight, h)
+            }
+            for col in 0..<(rowEnd - index) {
+                let x = bounds.minX + CGFloat(col) * (colWidth + spacing)
+                subviews[index + col].place(
+                    at: CGPoint(x: x, y: y),
+                    anchor: .topLeading,
+                    proposal: ProposedViewSize(width: colWidth, height: rowHeight)
+                )
+            }
+            y += rowHeight + spacing
+            index = rowEnd
+        }
     }
 }

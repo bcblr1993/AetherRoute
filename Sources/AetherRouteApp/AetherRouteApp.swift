@@ -771,7 +771,10 @@ private struct MenuBarContent: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingNodes = false
+    @State private var selectedGroupName: String?
+    @State private var mainPaneHeight: CGFloat = AetherVisual.menuNodePaneDefaultHeight
     @State private var isMenuVisible = false
     @State private var copiedMessage: String?
     let telemetry: NetworkTelemetryViewModel
@@ -825,8 +828,58 @@ private struct MenuBarContent: View {
 
     /// Laid out like a Control Center module: state and the switch first,
     /// then live traffic, then one glass group for the exit and the modes;
-    /// terminal helpers and app commands live in the overflow menu.
+    /// terminal helpers and app commands live in the overflow menu. Opening
+    /// node selection slides into a fixed-height sub-pane so the popover
+    /// geometry stays steady.
     private var readyContent: some View {
+        ZStack {
+            if showingNodes, !selectableMenuGroups.isEmpty {
+                MenuNodeSelectorPane(
+                    groups: selectableMenuGroups,
+                    selectedGroupName: $selectedGroupName,
+                    onClose: {
+                        withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                            showingNodes = false
+                        }
+                    }
+                )
+                .padding(AetherVisual.s4)
+                .frame(height: max(AetherVisual.menuNodePaneMinHeight, mainPaneHeight))
+                .transition(nodePaneTransition)
+            } else {
+                mainControlCenterContent
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.height
+                    } action: { newHeight in
+                        if !showingNodes, newHeight > 0 {
+                            mainPaneHeight = newHeight
+                        }
+                    }
+                    .transition(mainPaneTransition)
+            }
+        }
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: showingNodes)
+    }
+
+    private var nodePaneTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .asymmetric(
+                insertion: .move(edge: .trailing).combined(with: .opacity),
+                removal: .move(edge: .trailing).combined(with: .opacity)
+            )
+    }
+
+    private var mainPaneTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .asymmetric(
+                insertion: .move(edge: .leading).combined(with: .opacity),
+                removal: .move(edge: .leading).combined(with: .opacity)
+            )
+    }
+
+    private var mainControlCenterContent: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
             header
 
@@ -996,16 +1049,6 @@ private struct MenuBarContent: View {
                 rowDivider
             } else if let group = activeMenuExitGroup {
                 exitRow(group)
-                if showingNodes {
-                    MenuNodeListInline(group: group) {
-                        withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                            showingNodes = false
-                        }
-                    }
-                    .padding(.horizontal, AetherVisual.s2)
-                    .padding(.bottom, AetherVisual.s2)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
                 rowDivider
             }
             panelRow(symbol: "arrow.triangle.branch", tint: .orange, title: AppLocalization.string("Routing mode"), help: .routingMode) {
@@ -1153,8 +1196,9 @@ private struct MenuBarContent: View {
         let resolvedLeaf = member.map { tunnel.resolvedLeafNode(from: $0) }
         let leaf = (resolvedLeaf != member) ? resolvedLeaf : nil
         return Button {
+            selectedGroupName = group.name
             withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                showingNodes.toggle()
+                showingNodes = true
             }
         } label: {
             HStack(spacing: AetherVisual.s2) {
@@ -1370,6 +1414,20 @@ private struct MenuBarContent: View {
         tunnel.resolvedPrimaryRoutingGroup()
     }
 
+    private var selectableMenuGroups: [ProxyGroupConfigurationSummary] {
+        switch effectiveMenuRoutingMode {
+        case .direct:
+            return []
+        case .global:
+            return [tunnel.menuGlobalProxyGroup].compactMap { $0 }
+        case .rule:
+            let profileGroups = (tunnel.activeProfileSummary?.proxyGroups ?? [])
+                .filter { $0.name != "GLOBAL" }
+            guard let primary = primaryGroup else { return profileGroups }
+            return [primary] + profileGroups.filter { $0.name != primary.name }
+        }
+    }
+
 #if AETHERROUTE_INDEPENDENT
     private var networkEngineBinding: Binding<NetworkEngineMode> {
         Binding(
@@ -1489,8 +1547,8 @@ private struct MenuNodeLatency: View {
     var body: some View {
         HStack(spacing: AetherVisual.sMicro) {
             Text(title)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(status.tint)
+                .font(.caption2.monospacedDigit().weight(.medium))
+                .foregroundStyle(foregroundStyle)
                 .fixedSize()
 
             if status.isMeasured, confidence == .verified {
@@ -1501,7 +1559,22 @@ private struct MenuNodeLatency: View {
                     .accessibilityHidden(true)
             }
         }
+        .padding(.horizontal, AetherVisual.sCompact)
+        .padding(.vertical, AetherVisual.sMicro)
+        .background(pillBackground, in: Capsule())
         .help(status.isMeasured ? confidence.localizedHint : title)
+    }
+
+    private var foregroundStyle: AnyShapeStyle {
+        status.tint == .secondary
+            ? AnyShapeStyle(AetherVisual.secondaryText)
+            : AnyShapeStyle(AetherReadableTint(color: status.tint))
+    }
+
+    private var pillBackground: Color {
+        status.tint == .secondary
+            ? AetherVisual.neutralFill
+            : AetherVisual.tintFill(status.tint)
     }
 
     private var title: String {
@@ -1509,20 +1582,36 @@ private struct MenuNodeLatency: View {
     }
 }
 
-private struct MenuNodeListInline: View {
+private struct MenuNodeSelectorPane: View {
     @EnvironmentObject private var tunnel: TunnelManager
-    let group: ProxyGroupConfigurationSummary
+    let groups: [ProxyGroupConfigurationSummary]
+    @Binding var selectedGroupName: String?
     let onClose: () -> Void
     @State private var orderedMembers: [String] = []
     @State private var selecting = false
     @State private var searchText = ""
 
+    private var activeGroup: ProxyGroupConfigurationSummary {
+        if let selectedGroupName,
+           let matched = groups.first(where: { $0.name == selectedGroupName }) {
+            return matched
+        }
+        return groups[0]
+    }
+
     private var selectedMember: String? {
-        if group.name == "GLOBAL" {
+        if activeGroup.name == "GLOBAL" {
             return tunnel.proxySelections["GLOBAL"]?.selectedMember
                 ?? tunnel.activeProfileSummary.flatMap { TunnelManager.resolvedGlobalTargetMember(in: $0) }
         }
-        return tunnel.proxySelections[group.name]?.selectedMember
+        return tunnel.proxySelections[activeGroup.name]?.selectedMember
+    }
+
+    private var proxySummaryByName: [String: ProxyConfigurationSummary] {
+        Dictionary(
+            (tunnel.activeProfileSummary?.proxies ?? []).map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
     }
 
     private var unsupported: Set<String> {
@@ -1537,97 +1626,172 @@ private struct MenuNodeListInline: View {
     }
 
     var body: some View {
+        let group = activeGroup
+        let isTesting = tunnel.proxyLatencyRequests.contains(group.name)
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            // A short list is faster to scan than to search.
-            if orderedMembers.count > Self.searchThreshold {
-                HStack(spacing: AetherVisual.s1) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.subheadline)
-                        .foregroundStyle(AetherVisual.secondaryText)
-                    // Kept compact for the panel rather than AetherSearchField,
-                    // but with the same Escape-to-clear and labelled clear button.
-                    TextField(AppLocalization.string("Search nodes"), text: $searchText)
-                        .textFieldStyle(.plain)
-                        .font(.subheadline)
-                        .onExitCommand { searchText = "" }
-                        .accessibilityLabel(AppLocalization.string("Search nodes"))
-                        .accessibilityIdentifier("menu-node-search-field")
-                    if !searchText.isEmpty {
-                        Button {
-                            searchText = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.subheadline)
-                                .foregroundStyle(AetherVisual.secondaryText)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(AppLocalization.string("Clear"))
+            HStack(spacing: AetherVisual.s2) {
+                Button(action: onClose) {
+                    HStack(spacing: AetherVisual.s1) {
+                        Image(systemName: "chevron.left")
+                            .font(.caption.weight(.semibold))
+                        Text(AppLocalization.string("Back"))
                     }
                 }
-                .padding(.horizontal, AetherVisual.s2)
-                .padding(.vertical, AetherVisual.sCompact)
-                .background(
-                    AetherVisual.subtleFill,
-                    in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
-                )
+                .buttonStyle(.aetherGlassCapsule)
+                .accessibilityIdentifier("menu-node-back-button")
+
+                Text(verbatim: groups.count > 1 ? AppLocalization.string("Select Node") : group.name)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    Task { await tunnel.testProxyLatency(group: group.name) }
+                } label: {
+                    HStack(spacing: AetherVisual.s1) {
+                        if isTesting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "bolt.fill")
+                        }
+                        Text(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
+                            .lineLimit(1)
+                    }
+                }
+                .buttonStyle(.aetherGlassCapsule)
+                .disabled(isTesting)
+                .accessibilityIdentifier("menu-node-speedtest-button")
             }
 
-            if orderedMembers.isEmpty {
-                Text(AppLocalization.string("No nodes available"))
-                    .font(.caption)
-                    .foregroundStyle(AetherVisual.secondaryText)
-                    .padding(.vertical, AetherVisual.s2)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            } else if filteredMembers.isEmpty {
-                Text(AppLocalization.string("No matching nodes"))
-                    .font(.caption)
-                    .foregroundStyle(AetherVisual.secondaryText)
-                    .padding(.vertical, AetherVisual.s2)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(filteredMembers, id: \.self) { member in
-                            let resolved = memberLatency(for: member)
-                            MenuNodeRow(
-                                member: member,
-                                isSelected: member == selectedMember,
-                                status: resolved.status,
-                                confidence: resolved.confidence
-                            ) {
-                                if member == selectedMember {
-                                    onClose()
-                                    return
+            if groups.count > 1 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: AetherVisual.sCompact) {
+                        ForEach(groups) { candidate in
+                            let isSelectedGroup = candidate.name == group.name
+                            Button {
+                                withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
+                                    selectedGroupName = candidate.name
                                 }
-                                selecting = true
-                                Task {
-                                    if group.name == "GLOBAL" {
-                                        await tunnel.selectGlobalOutlet(member)
-                                    } else {
-                                        await tunnel.selectProxy(group: group.name, member: member)
+                            } label: {
+                                Text(verbatim: candidate.name)
+                                    .font(.caption.weight(isSelectedGroup ? .semibold : .medium))
+                                    .foregroundStyle(isSelectedGroup ? Color.accentColor : Color.primary)
+                                    .padding(.horizontal, AetherVisual.pillHorizontalPadding)
+                                    .padding(.vertical, AetherVisual.pillVerticalPadding)
+                                    .background(
+                                        isSelectedGroup ? AetherVisual.selectionFill : AetherVisual.neutralFill,
+                                        in: Capsule()
+                                    )
+                                    .overlay {
+                                        Capsule()
+                                            .strokeBorder(
+                                                isSelectedGroup ? Color.accentColor : AetherVisual.cardStroke,
+                                                lineWidth: 0.5
+                                            )
                                     }
-                                    selecting = false
-                                }
                             }
-                            .disabled(selecting || tunnel.proxySelectionRequests.contains(group.name)
-                                || group.strategy.lowercased() != "select" || unsupported.contains(member)
-                                || (group.name != "GLOBAL" && tunnel.proxySelectionMode(for: group.name) == .fastest))
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("menu-group-chip-\(candidate.name)")
                         }
                     }
                 }
-                .frame(height: min(CGFloat(filteredMembers.count) * MenuNodeRow.height, MenuNodeRow.height * Self.visibleRows))
-                .scrollBounceBehavior(.basedOnSize)
             }
+
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                if orderedMembers.count > Self.searchThreshold {
+                    HStack(spacing: AetherVisual.s1) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.subheadline)
+                            .foregroundStyle(AetherVisual.secondaryText)
+                        TextField(AppLocalization.string("Search nodes"), text: $searchText)
+                            .textFieldStyle(.plain)
+                            .font(.subheadline)
+                            .onExitCommand { searchText = "" }
+                            .accessibilityLabel(AppLocalization.string("Search nodes"))
+                            .accessibilityIdentifier("menu-node-search-field")
+                        if !searchText.isEmpty {
+                            Button {
+                                searchText = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.subheadline)
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(AppLocalization.string("Clear"))
+                        }
+                    }
+                    .padding(.horizontal, AetherVisual.s2)
+                    .padding(.vertical, AetherVisual.sCompact)
+                    .background(
+                        AetherVisual.subtleFill,
+                        in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+                    )
+                }
+
+                if orderedMembers.isEmpty {
+                    Text(AppLocalization.string("No nodes available"))
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                } else if filteredMembers.isEmpty {
+                    Text(AppLocalization.string("No matching nodes"))
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(filteredMembers, id: \.self) { member in
+                                let resolved = memberLatency(for: member, groupName: group.name)
+                                let proxy = proxySummaryByName[member]
+                                MenuNodeRow(
+                                    member: member,
+                                    protocolName: proxy?.protocolName,
+                                    transportName: proxy?.transportName,
+                                    isSelected: member == selectedMember,
+                                    status: resolved.status,
+                                    confidence: resolved.confidence
+                                ) {
+                                    if member == selectedMember {
+                                        onClose()
+                                        return
+                                    }
+                                    selecting = true
+                                    Task {
+                                        if group.name == "GLOBAL" {
+                                            await tunnel.selectGlobalOutlet(member)
+                                        } else {
+                                            await tunnel.selectProxy(group: group.name, member: member)
+                                        }
+                                        selecting = false
+                                    }
+                                }
+                                .disabled(selecting || tunnel.proxySelectionRequests.contains(group.name)
+                                    || group.strategy.lowercased() != "select" || unsupported.contains(member)
+                                    || (group.name != "GLOBAL" && tunnel.proxySelectionMode(for: group.name) == .fastest))
+                            }
+                        }
+                    }
+                    .frame(maxHeight: .infinity)
+                }
+            }
+            .padding(AetherVisual.s2)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.compactPanelRadius, style: .continuous))
+
             if group.strategy.lowercased() != "select" {
                 Text(AppLocalization.string("This group is automatically managed by latency tests."))
                     .font(.caption2)
                     .foregroundStyle(AetherVisual.secondaryText)
+                    .lineLimit(1)
             }
             if let message = tunnel.proxySelectionMessages[group.name] {
                 Text(verbatim: message)
                     .font(.caption2)
                     .foregroundStyle(AetherVisual.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2)
                     .accessibilityIdentifier("menu-node-message")
             }
         }
@@ -1635,29 +1799,28 @@ private struct MenuNodeListInline: View {
             if group.name == "GLOBAL" {
                 tunnel.seedGlobalSelectionIfNeeded()
             }
-            updateOrder()
+            updateOrder(for: group)
             await tunnel.refreshProxySelection(group: group.name)
             guard !Task.isCancelled else { return }
-            updateOrder()
+            updateOrder(for: group)
             if tunnel.isConnected {
                 await tunnel.refreshProxyLatencyIfNeeded(group: group.name)
                 guard !Task.isCancelled else { return }
-                updateOrder()
+                updateOrder(for: group)
             }
         }
     }
 
-    private static let searchThreshold = 8
-    private static let visibleRows: CGFloat = 7
+    private static let searchThreshold = 6
 
-    private func memberLatency(for member: String) -> (status: ProxyLatencyStatus, confidence: ProxyLatencyConfidence) {
+    private func memberLatency(for member: String, groupName: String) -> (status: ProxyLatencyStatus, confidence: ProxyLatencyConfidence) {
         if unsupported.contains(member) {
-            return (.timedOut, tunnel.latencyConfidence(group: group.name, member: member))
+            return (.timedOut, tunnel.latencyConfidence(group: groupName, member: member))
         }
-        return tunnel.resolvedOutletLatencyStatus(groupName: group.name, selectedMember: member)
+        return tunnel.resolvedOutletLatencyStatus(groupName: groupName, selectedMember: member)
     }
 
-    private func updateOrder() {
+    private func updateOrder(for group: ProxyGroupConfigurationSummary) {
         let baseMembers = group.name == "GLOBAL"
             ? group.members
             : (tunnel.proxySelections[group.name]?.members ?? group.members)
@@ -1753,9 +1916,11 @@ private struct MenuSelectedNodeTitle: View {
 /// no fill at rest, a highlight under the pointer, and a check for the
 /// current choice.
 private struct MenuNodeRow: View {
-    static let height: CGFloat = 30
+    static let height: CGFloat = 32
 
     let member: String
+    var protocolName: String? = nil
+    var transportName: String? = nil
     let isSelected: Bool
     let status: ProxyLatencyStatus
     let confidence: ProxyLatencyConfidence
@@ -1778,6 +1943,9 @@ private struct MenuNodeRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if let protocolName {
+                    AetherProtocolBadge(type: protocolName, transport: transportName)
+                }
                 MenuNodeLatency(status: status, confidence: confidence)
             }
             .padding(.horizontal, AetherVisual.s2)
@@ -1881,25 +2049,45 @@ private struct MenuTrafficGraph: View {
     )
 
     var body: some View {
-        TimelineView(
-            .animation(
-                minimumInterval: Self.frameInterval,
-                paused: !isLive || !model.history.hasActiveTraffic
-            )
-        ) { context in
-            let lastSample = model.history.samples.last?.date
-            let now = isLive
-                ? context.date.addingTimeInterval(-Self.entryLag)
-                : (lastSample ?? context.date)
-            let samples = model.history.visible(at: now)
-            AetherTrafficMiniGraph(
-                downloadSamples: samples.map(\.download),
-                uploadSamples: samples.map(\.upload),
-                samplePositions: samples.map { TrafficHistory.position(of: $0, at: now) },
-                height: 36
-            )
+        let lastSample = model.history.samples.last?.date
+        let scaleSamples = model.history.visible(at: windowEnd(at: .now, lastSample: lastSample))
+        VStack(alignment: .trailing, spacing: AetherVisual.sMicro) {
+            Text(peakRate(scaleSamples).map {
+                String.localizedStringWithFormat(AppLocalization.string("Peak %@"), $0)
+            } ?? " ")
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(AetherVisual.secondaryText)
+            .aetherLiveValue()
+
+            TimelineView(
+                .animation(
+                    minimumInterval: Self.frameInterval,
+                    paused: !isLive || !model.history.hasActiveTraffic
+                )
+            ) { context in
+                let now = windowEnd(at: context.date, lastSample: lastSample)
+                let samples = model.history.visible(at: now)
+                AetherTrafficMiniGraph(
+                    downloadSamples: samples.map(\.download),
+                    uploadSamples: samples.map(\.upload),
+                    samplePositions: samples.map { TrafficHistory.position(of: $0, at: now) },
+                    height: 36
+                )
+            }
         }
         .accessibilityIdentifier("menu-traffic-graph")
+    }
+
+    private func windowEnd(at date: Date, lastSample: Date?) -> Date {
+        isLive
+            ? date.addingTimeInterval(-Self.entryLag)
+            : (lastSample ?? date)
+    }
+
+    private func peakRate(_ samples: [TrafficHistory.Sample]) -> String? {
+        let peak = samples.map { max($0.download, $0.upload) }.max() ?? 0
+        guard samples.count > 1, peak >= 1 else { return nil }
+        return formattedRate(UInt64(peak))
     }
 }
 
@@ -2044,6 +2232,7 @@ private struct SettingsView: View {
     @State private var localProxyCopyMessage: String?
     @State private var selectedShellDialect: TerminalShellDialect = .zshBash
     @State private var selectedTab: SettingsTab?
+    @State private var hoveredTab: SettingsTab?
 
     init() {
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
@@ -2073,11 +2262,16 @@ private struct SettingsView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.vertical, AetherVisual.sMicro)
+                    .padding(.horizontal, AetherVisual.s1)
+                    .aetherHoverHighlight(isHovered: hoveredTab == tab && selectedTab != tab)
                     .contentShape(Rectangle())
                     }
                     // A plain button keeps keyboard focus off the list, so the
                     // selection stays the quiet gray the main window uses.
                     .buttonStyle(.plain)
+                    .onHover { isHovered in
+                        hoveredTab = isHovered ? tab : (hoveredTab == tab ? nil : hoveredTab)
+                    }
                     .accessibilityElement(children: .contain)
                     .tag(Optional(tab))
                     // The identifier lives on the title text only: on both
@@ -3019,7 +3213,7 @@ private struct NetworkAutomationRulesEditor: View {
             }
 
             ForEach(automation.networkAutomationPreferences.rules) { rule in
-                HStack(spacing: AetherVisual.s2) {
+                HStack(spacing: AetherVisual.s3) {
                     Toggle(
                         isOn: Binding(
                             get: { rule.isEnabled },
@@ -3027,19 +3221,22 @@ private struct NetworkAutomationRulesEditor: View {
                                 automation.setNetworkRuleEnabled(id: rule.id, isEnabled: isOn)
                             }
                         )
-                    ) {
-                        HStack(spacing: AetherVisual.s2) {
-                            Text(verbatim: triggerSummary(rule))
-                                .font(.callout.monospaced())
-                            Image(systemName: "arrow.right")
-                                .font(.caption)
-                                .foregroundStyle(AetherVisual.secondaryText)
-                                .accessibilityHidden(true)
-                            Text(actionTitle(rule.action))
-                                .font(.callout.weight(.medium))
-                        }
+                    ) { EmptyView() }
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+                    .accessibilityLabel(Text(verbatim: triggerSummary(rule)))
+
+                    HStack(spacing: AetherVisual.s2) {
+                        Text(verbatim: triggerSummary(rule))
+                            .font(.callout.monospaced())
+                        Image(systemName: "arrow.right")
+                            .font(.caption)
+                            .foregroundStyle(AetherVisual.secondaryText)
+                            .accessibilityHidden(true)
+                        Text(actionTitle(rule.action))
+                            .font(.callout.weight(.medium))
                     }
-                    .toggleStyle(.checkbox)
                     Spacer(minLength: AetherVisual.s2)
                     Button(role: .destructive) {
                         automation.removeNetworkRule(id: rule.id)

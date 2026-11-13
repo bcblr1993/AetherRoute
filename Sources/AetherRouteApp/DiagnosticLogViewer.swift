@@ -64,20 +64,9 @@ struct DiagnosticLogViewer: View {
     }
 
     private var controls: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: AetherVisual.s3) {
-                filterControls
-                Spacer(minLength: AetherVisual.s2)
-                searchAndRefreshControls
-            }
-
-            VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                filterControls
-                HStack(spacing: AetherVisual.s3) {
-                    searchField
-                    refreshButton
-                }
-            }
+        DiagnosticControlsLayout {
+            filterControls
+            searchAndRefreshControls
         }
     }
 
@@ -269,5 +258,58 @@ private struct LogLineRow: View {
         line.kind == .error
             ? AnyShapeStyle(AetherReadableTint(color: .red))
             : AnyShapeStyle(Color.primary)
+    }
+}
+
+/// Single-pass adaptive toolbar layout for `DiagnosticLogViewer`: places filters
+/// leading and search/refresh trailing on one row when they fit, or stacks
+/// them cleanly without duplicate view construction.
+private struct DiagnosticControlsLayout: Layout {
+    private static let horizontalGap = AetherVisual.s3
+    private static let verticalGap = AetherVisual.s2
+
+    private func fitsOnOneLine(width: CGFloat, subviews: Subviews) -> Bool {
+        let leading = subviews[0].sizeThatFits(.unspecified).width
+        let trailing = subviews[1].sizeThatFits(.unspecified).width
+        return leading + Self.horizontalGap + trailing <= width
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let s0 = subviews[0].sizeThatFits(.unspecified)
+        let s1 = subviews[1].sizeThatFits(.unspecified)
+        guard let width = proposal.width, width >= 1, width.isFinite else {
+            return CGSize(width: 0, height: max(s0.height, s1.height))
+        }
+        if fitsOnOneLine(width: width, subviews: subviews) {
+            return CGSize(width: width, height: max(s0.height, s1.height))
+        }
+        return CGSize(width: width, height: s0.height + Self.verticalGap + s1.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        if fitsOnOneLine(width: bounds.width, subviews: subviews) {
+            subviews[0].place(
+                at: CGPoint(x: bounds.minX, y: bounds.midY),
+                anchor: .leading,
+                proposal: .unspecified
+            )
+            subviews[1].place(
+                at: CGPoint(x: bounds.maxX, y: bounds.midY),
+                anchor: .trailing,
+                proposal: .unspecified
+            )
+        } else {
+            let s0 = subviews[0].sizeThatFits(.unspecified)
+            subviews[0].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY),
+                anchor: .topLeading,
+                proposal: .unspecified
+            )
+            subviews[1].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY + s0.height + Self.verticalGap),
+                anchor: .topLeading,
+                proposal: .unspecified
+            )
+        }
     }
 }

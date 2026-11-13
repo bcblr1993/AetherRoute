@@ -1,6 +1,26 @@
 import AetherRouteKit
 import SwiftUI
 
+enum RulesPageSectionFilter: String, CaseIterable, Identifiable {
+    case all
+    case appAndCustom
+    case providers
+    case profileRules
+    case routeTester
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .all: AppLocalization.string("All")
+        case .appAndCustom: AppLocalization.inline("App & Custom", chinese: "应用与自定义")
+        case .providers: AppLocalization.string("Providers")
+        case .profileRules: AppLocalization.string("Profile rules")
+        case .routeTester: AppLocalization.inline("Route Tester", chinese: "路由测试")
+        }
+    }
+}
+
 enum RuleActionFilter: String, CaseIterable, Identifiable {
     case all = "All"
     case proxy = "Proxy"
@@ -83,6 +103,7 @@ struct RuleDistributionBar: View {
 struct RulesView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.openSettings) private var openSettings
+    @State private var selectedSection: RulesPageSectionFilter = .all
     @State private var searchText = ""
     @State private var selectedAction: RuleActionFilter = .all
     @State private var testQuery: String = ""
@@ -139,50 +160,81 @@ struct RulesView: View {
                                 limitedOptions: []
                             ))
 
-                            routeTester(summary: summary, scrollProxy: scrollProxy)
-
-                            ApplicationRulesSection()
-
-                            customRulesSection(summary: summary)
-
-                            customRuleProvidersSection(summary: summary)
-
-                            if !summary.ruleProviders.isEmpty {
-                                section(title: AppLocalization.string("Rule providers"), note: nil) {
-                                    VStack(spacing: 0) {
-                                        ForEach(summary.ruleProviders) { provider in
-                                            ProviderRow(provider: provider, tint: AppSection.rules.tileColor)
-                                            if provider.id != summary.ruleProviders.last?.id {
-                                                Divider().padding(.leading, AetherVisual.rowDividerInset)
-                                            }
-                                        }
-                                    }
-                                    .aetherPanel()
+                            Picker(
+                                AppLocalization.inline("Rule sections", chinese: "规则分组"),
+                                selection: $selectedSection
+                            ) {
+                                ForEach(RulesPageSectionFilter.allCases) { section in
+                                    Text(section.title).tag(section)
                                 }
                             }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .accessibilityIdentifier("rules-section-filter")
 
-                            profileRulesSection(summary: summary, displayedRules: displayedRules)
-
-                            if !tunnel.requiredRoutingResources.isEmpty {
-                                RoutingResourcesCard(
-                                    importResource: { kind in
-                                        routingResourceImportKind = kind
-                                        isResourceImporterPresented = true
-                                    }
-                                )
-                                .environmentObject(tunnel)
+                            if selectedSection == .all || selectedSection == .routeTester {
+                                routeTester(summary: summary, scrollProxy: scrollProxy)
+                                    .transition(.opacity)
                             }
 
-                            TruncationNotice(
-                                visibleCount: displayedRules.count,
-                                totalCount: summary.ruleCount
-                            )
-                            TruncationNotice(
-                                visibleCount: summary.ruleProviders.count,
-                                totalCount: summary.ruleProviderCount
-                            )
+                            if selectedSection == .all || selectedSection == .appAndCustom {
+                                ApplicationRulesSection()
+                                    .transition(.opacity)
+
+                                customRulesSection(summary: summary)
+                                    .transition(.opacity)
+                            }
+
+                            if selectedSection == .all || selectedSection == .providers {
+                                customRuleProvidersSection(summary: summary)
+                                    .transition(.opacity)
+
+                                if !summary.ruleProviders.isEmpty {
+                                    section(title: AppLocalization.string("Rule providers"), note: nil) {
+                                        VStack(spacing: 0) {
+                                            ForEach(summary.ruleProviders) { provider in
+                                                ProviderRow(provider: provider, tint: AppSection.rules.tileColor)
+                                                if provider.id != summary.ruleProviders.last?.id {
+                                                    Divider().padding(.leading, AetherVisual.rowDividerInset)
+                                                }
+                                            }
+                                        }
+                                        .aetherPanel()
+                                    }
+                                    .transition(.opacity)
+                                }
+
+                                if !tunnel.requiredRoutingResources.isEmpty {
+                                    RoutingResourcesCard(
+                                        importResource: { kind in
+                                            routingResourceImportKind = kind
+                                            isResourceImporterPresented = true
+                                        }
+                                    )
+                                    .environmentObject(tunnel)
+                                    .transition(.opacity)
+                                }
+
+                                TruncationNotice(
+                                    visibleCount: summary.ruleProviders.count,
+                                    totalCount: summary.ruleProviderCount
+                                )
+                                .transition(.opacity)
+                            }
+
+                            if selectedSection == .all || selectedSection == .profileRules {
+                                profileRulesSection(summary: summary, displayedRules: displayedRules)
+                                    .transition(.opacity)
+
+                                TruncationNotice(
+                                    visibleCount: displayedRules.count,
+                                    totalCount: summary.ruleCount
+                                )
+                                .transition(.opacity)
+                            }
                         }
                         .aetherPageContent(.wide)
+                        .animation(AetherVisual.animation(AetherVisual.quickFade), value: selectedSection)
                         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.customRuleMessage)
                         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.ruleProviderMessage)
                         .accessibilityElement(children: .contain)
@@ -246,6 +298,9 @@ struct RulesView: View {
         .sheet(item: $previewingRuleProvider) { provider in
             RuleProviderPreviewSheet(provider: provider) { sample in
                 testQuery = sample
+                if selectedSection != .all && selectedSection != .routeTester {
+                    selectedSection = .all
+                }
                 if let summary = tunnel.activeProfileSummary {
                     performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
                 }
@@ -349,6 +404,9 @@ struct RulesView: View {
                     Spacer(minLength: AetherVisual.s2)
                     Button {
                         withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) {
+                            if selectedSection == .routeTester {
+                                selectedSection = .all
+                            }
                             highlightedRuleID = result.matchedRule.id
                             scrollProxy.scrollTo(result.matchedRule.id, anchor: .center)
                         }
@@ -468,6 +526,9 @@ struct RulesView: View {
                                         Task { await tunnel.deleteCustomRule(id: rule.id) }
                                     },
                                     onTest: {
+                                        if selectedSection != .all && selectedSection != .routeTester {
+                                            selectedSection = .all
+                                        }
                                         testQuery = rule.kind == .dstPort ? "example.com:\(rule.value)" : rule.value
                                         performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
                                     }
@@ -511,6 +572,9 @@ struct RulesView: View {
             !pending.isEmpty
         else { return }
         tunnel.pendingRuleTestDestination = nil
+        if selectedSection != .all {
+            selectedSection = .all
+        }
         testQuery = pending
         performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
         if let matchedRuleID = testResult?.matchedRule.id {
@@ -716,6 +780,9 @@ struct RulesView: View {
                                     overrideTargets: rule.overrideCustomRuleKind == nil ? [] : overrideTargets,
                                     existingOverrideTarget: existingOverrideTarget,
                                     onTest: { destination in
+                                        if selectedSection != .all && selectedSection != .routeTester {
+                                            selectedSection = .all
+                                        }
                                         testQuery = destination
                                         performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
                                     },
@@ -1167,7 +1234,7 @@ struct CustomRuleRow: View {
                 if let comment = rule.comment, !comment.isEmpty {
                     Text(comment)
                         .font(.caption2)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                         .lineLimit(1)
                 }
             }
@@ -1186,57 +1253,60 @@ struct CustomRuleRow: View {
                 .frame(maxWidth: 160, alignment: .trailing)
                 .fixedSize(horizontal: true, vertical: false)
 
-            HStack(spacing: AetherVisual.sMicro) {
-                if let onMoveUp {
+            if isHovered {
+                HStack(spacing: AetherVisual.sMicro) {
+                    if let onMoveUp {
+                        Button {
+                            onMoveUp()
+                        } label: {
+                            AetherRowIconLabel(symbol: "chevron.up")
+                        }
+                        .buttonStyle(.aetherPressable)
+                        .disabled(!canMoveUp)
+                        .help(AppLocalization.string("Move rule up"))
+                        .accessibilityLabel(AppLocalization.string("Move rule up"))
+                    }
+
+                    if let onMoveDown {
+                        Button {
+                            onMoveDown()
+                        } label: {
+                            AetherRowIconLabel(symbol: "chevron.down")
+                        }
+                        .buttonStyle(.aetherPressable)
+                        .disabled(!canMoveDown)
+                        .help(AppLocalization.string("Move rule down"))
+                        .accessibilityLabel(AppLocalization.string("Move rule down"))
+                    }
+
                     Button {
-                        onMoveUp()
+                        onTest()
                     } label: {
-                        AetherRowIconLabel(symbol: "chevron.up")
+                        AetherRowIconLabel(symbol: "bolt.badge.clock", tint: .accentColor)
                     }
                     .buttonStyle(.aetherPressable)
-                    .disabled(!canMoveUp)
-                    .help(AppLocalization.string("Move rule up"))
-                    .accessibilityLabel(AppLocalization.string("Move rule up"))
-                }
+                    .help(AppLocalization.string("Verify rule"))
+                    .accessibilityLabel(AppLocalization.string("Verify rule"))
 
-                if let onMoveDown {
                     Button {
-                        onMoveDown()
+                        onEdit()
                     } label: {
-                        AetherRowIconLabel(symbol: "chevron.down")
+                        AetherRowIconLabel(symbol: "pencil")
                     }
                     .buttonStyle(.aetherPressable)
-                    .disabled(!canMoveDown)
-                    .help(AppLocalization.string("Move rule down"))
-                    .accessibilityLabel(AppLocalization.string("Move rule down"))
-                }
+                    .help(AppLocalization.string("Edit rule"))
+                    .accessibilityLabel(AppLocalization.string("Edit rule"))
 
-                Button {
-                    onTest()
-                } label: {
-                    AetherRowIconLabel(symbol: "bolt.badge.clock", tint: .accentColor)
+                    Button {
+                        onDelete()
+                    } label: {
+                        AetherRowIconLabel(symbol: "trash", tint: .red)
+                    }
+                    .buttonStyle(.aetherPressable)
+                    .help(AppLocalization.string("Delete rule"))
+                    .accessibilityLabel(AppLocalization.string("Delete rule"))
                 }
-                .buttonStyle(.aetherPressable)
-                .help(AppLocalization.string("Verify rule"))
-                .accessibilityLabel(AppLocalization.string("Verify rule"))
-
-                Button {
-                    onEdit()
-                } label: {
-                    AetherRowIconLabel(symbol: "pencil")
-                }
-                .buttonStyle(.aetherPressable)
-                .help(AppLocalization.string("Edit rule"))
-                .accessibilityLabel(AppLocalization.string("Edit rule"))
-
-                Button {
-                    onDelete()
-                } label: {
-                    AetherRowIconLabel(symbol: "trash", tint: .red)
-                }
-                .buttonStyle(.aetherPressable)
-                .help(AppLocalization.string("Delete rule"))
-                .accessibilityLabel(AppLocalization.string("Delete rule"))
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, AetherVisual.sRow)
@@ -1521,8 +1591,8 @@ struct CustomRuleEditorSheet: View {
                     ruleDivider
                     ruleRow(AppLocalization.string("Match")) {
                         TextField(placeholderForKind(selectedKind), text: $ruleValue)
-                            .textFieldStyle(.plain)
-                            .multilineTextAlignment(.trailing)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 280)
                             .accessibilityIdentifier("custom-rule-value-field")
                     }
                     if selectedKind == .ipCIDR || selectedKind == .ipCIDR6 || selectedKind == .geoIP {
@@ -1547,16 +1617,16 @@ struct CustomRuleEditorSheet: View {
                         ruleDivider
                         ruleRow(AppLocalization.string("Node or group")) {
                             TextField(AppLocalization.string("e.g. PROXY, Node Select, Auto…"), text: $customTargetName)
-                                .textFieldStyle(.plain)
-                                .multilineTextAlignment(.trailing)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 280)
                         }
                         .transition(.opacity)
                     }
                     ruleDivider
                     ruleRow(AppLocalization.string("Note")) {
                         TextField(AppLocalization.string("Optional, e.g. Tailscale node / local service"), text: $comment)
-                            .textFieldStyle(.plain)
-                            .multilineTextAlignment(.trailing)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 280)
                     }
                 } else {
                     ruleRow(AppLocalization.string("Rule")) {
@@ -1566,17 +1636,17 @@ struct CustomRuleEditorSheet: View {
                             axis: initialRule == nil ? .vertical : .horizontal
                         )
                         .lineLimit(initialRule == nil ? 1...5 : 1...1)
-                        .textFieldStyle(.plain)
+                        .textFieldStyle(.roundedBorder)
                         .font(.body.monospaced())
-                        // A whole rule line reads from its start.
-                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: 300)
+                        .padding(.vertical, AetherVisual.s2)
                         .accessibilityIdentifier("custom-rule-raw-field")
                     }
                     ruleDivider
                     ruleRow(AppLocalization.string("Note")) {
                         TextField(AppLocalization.string("Optional, e.g. Direct private subnet"), text: $comment)
-                            .textFieldStyle(.plain)
-                            .multilineTextAlignment(.trailing)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 280)
                     }
                 }
             }

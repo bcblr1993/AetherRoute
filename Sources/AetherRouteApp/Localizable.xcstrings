@@ -3244,6 +3244,17 @@
         }
       }
     },
+    "Closed": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已关闭"
+          }
+        }
+      }
+    },
     "Closing connections makes a new node take effect at once; apps reconnect on their own. The latency test runs at most once a minute, only while connected.": {
       "extractionState": "manual",
       "localizations": {
@@ -3513,6 +3524,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "连接与流量统计只留在本机"
+          }
+        }
+      }
+    },
+    "Connection closed. Showing last captured snapshot.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接已关闭，当前显示最后捕获的快照。"
           }
         }
       }
@@ -4206,6 +4228,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "DNS 与 Fake-IP"
+          }
+        }
+      }
+    },
+    "DNS / SNI": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DNS / SNI"
           }
         }
       }
@@ -5624,6 +5657,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "可执行文件"
+          }
+        }
+      }
+    },
+    "Exit Node": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出口节点"
           }
         }
       }
@@ -7687,6 +7731,17 @@
         }
       }
     },
+    "Live": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时"
+          }
+        }
+      }
+    },
     "Live Connectivity Diagnostics": {
       "localizations": {
         "en": {
@@ -7703,12 +7758,34 @@
         }
       }
     },
+    "Live connection telemetry and route decision path.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时连接遥测与路由决策路径。"
+          }
+        }
+      }
+    },
     "Live memory": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "实时内存"
+          }
+        }
+      }
+    },
+    "Live rate": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时速率"
           }
         }
       }
@@ -11233,6 +11310,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "代理节点连接受阻"
+          }
+        }
+      }
+    },
+    "Proxy Group": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "策略组"
           }
         }
       }

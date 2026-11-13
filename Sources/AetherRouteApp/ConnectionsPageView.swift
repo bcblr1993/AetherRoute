@@ -15,6 +15,7 @@ struct ConnectionsView: View {
     @State private var searchText = ""
     @State private var pausedConnections: [ConnectionTelemetry]?
     @State private var inspectedConnection: ConnectionTableItem?
+    @State private var selectedConnectionID: ConnectionTableItem.ID?
     @State private var groupsByApp = false
     @State private var groupingDimension: ConnectionTrafficDimension?
     @State private var showsRecentlyClosed = false
@@ -107,8 +108,13 @@ struct ConnectionsView: View {
         }
 #endif
         .sheet(item: $inspectedConnection) { row in
-            ConnectionInspector(connection: row.connection)
-                .environmentObject(tunnel)
+            ConnectionInspector(
+                flowID: row.id,
+                initialConnection: row.connection,
+                initiallyClosed: showsRecentlyClosed,
+                telemetry: telemetry
+            )
+            .environmentObject(tunnel)
         }
         .onChange(of: tunnel.isConnected) { _, connected in
             if !connected {
@@ -284,7 +290,7 @@ struct ConnectionsView: View {
     // (verify_ui_design_tokens.sh) for abbreviated Chinese durations.
     private func connectionTable(_ rows: [ConnectionTableItem]) -> some View {
         let showsLiveRates = pausedConnections == nil && !showsRecentlyClosed
-        return Table(rows) {
+        return Table(rows, selection: $selectedConnectionID) {
             TableColumn(AppLocalization.string("App")) { row in
                 let app = SourceAppDirectory.shared.presentation(for: row.connection)
                 ConnectionAppCell(app: app)
@@ -339,25 +345,12 @@ struct ConnectionsView: View {
     }
 
     private func durationColumnCell(for row: ConnectionTableItem) -> some View {
-        HStack(spacing: AetherVisual.s1) {
-            ConnectionDurationCell(connection: row.connection)
-            if tunnel.isConnected, !showsRecentlyClosed {
-                Button {
-                    close(.init(row: row.connection))
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(AetherVisual.secondaryText)
-                }
-                .buttonStyle(.plain)
-                .help(AppLocalization.string("Close Connection"))
-                .accessibilityLabel(AppLocalization.string("Close Connection"))
-                .accessibilityIdentifier("close-connection-row-button")
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .frame(height: AetherVisual.tableRowHeight)
-        .contentShape(Rectangle())
+        ConnectionDurationColumnCell(
+            connection: row.connection,
+            showsCloseButton: tunnel.isConnected && !showsRecentlyClosed,
+            isSelected: selectedConnectionID == row.id,
+            onClose: { close(.init(row: row.connection)) }
+        )
         .contextMenu { connectionRowContextMenu(for: row) }
         .onTapGesture(count: 2) { inspectedConnection = row }
     }
@@ -1061,39 +1054,41 @@ private struct SessionBar: View {
     @ObservedObject var telemetry: NetworkTelemetryViewModel
 
     var body: some View {
-        HStack(spacing: AetherVisual.s4) {
+        HStack(alignment: .center, spacing: AetherVisual.s4) {
             // Connected state is already on the sidebar and overview; here
             // the bar only names it when there is something to act on.
             if !tunnel.isConnected {
-                HStack(spacing: AetherVisual.s2) {
-                    AetherStatusBeacon(
-                        isConnected: false,
-                        isConnecting: tunnel.state == .connecting,
-                        isFailed: tunnel.isFailed,
-                        size: 7
-                    )
-                    Text(tunnel.compactStatusTitle)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+                HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
+                    HStack(spacing: AetherVisual.s2) {
+                        AetherStatusBeacon(
+                            isConnected: false,
+                            isConnecting: tunnel.state == .connecting,
+                            isFailed: tunnel.isFailed,
+                            size: 7
+                        )
+                        Text(tunnel.compactStatusTitle)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
-            if !tunnel.isConnected {
-                Text(AppLocalization.string("Traffic is using the normal network path"))
-                    .font(.caption)
-                    .foregroundStyle(AetherVisual.secondaryText)
-                    .lineLimit(1)
+                    Text(AppLocalization.string("Traffic is using the normal network path"))
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .lineLimit(1)
+                }
             }
 
             if let duration {
-                Label {
+                HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s1) {
+                    Image(systemName: "clock")
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .accessibilityHidden(true)
                     Text(duration)
                         .font(.body.monospacedDigit())
-                } icon: {
-                    Image(systemName: "clock")
-                        .foregroundStyle(AetherVisual.secondaryText)
                 }
+                .accessibilityElement(children: .combine)
                 .accessibilityLabel(AppLocalization.string("Elapsed"))
                 Divider().frame(height: AetherVisual.inlineSeparatorHeight)
             }
@@ -1104,9 +1099,9 @@ private struct SessionBar: View {
                 .accessibilityIdentifier("connections-upload-title")
 
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: AetherVisual.s2) {
+                HStack(alignment: .center, spacing: AetherVisual.s2) {
                     Divider().frame(height: AetherVisual.inlineSeparatorHeight)
-                    HStack(spacing: AetherVisual.s1) {
+                    HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s1) {
                         Image(systemName: "memorychip")
                             .font(.caption2)
                             .foregroundStyle(.mint)
@@ -1131,9 +1126,9 @@ private struct SessionBar: View {
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     Text(AppLocalization.string("Outlet"))
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(AetherVisual.secondaryText)
                     Text(outlet)
-                        .font(.body.weight(.medium))
+                        .font(.callout.weight(.medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                         .help(outlet)
@@ -1151,18 +1146,22 @@ private struct SessionBar: View {
             }
         }
         .padding(.horizontal, AetherVisual.s4)
-        .padding(.vertical, AetherVisual.s1)
+        .padding(.vertical, AetherVisual.s2)
         .frame(minHeight: AetherVisual.compactRowHeight)
         .background(
             AetherVisual.cardFill,
             in: RoundedRectangle(cornerRadius: AetherVisual.compactPanelRadius, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: AetherVisual.compactPanelRadius, style: .continuous)
+                .strokeBorder(AetherVisual.cardStroke, lineWidth: 0.5)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("connections-session-bar")
     }
 
     private func rate(symbol: String, value: String, tint: Color) -> some View {
-        HStack(spacing: AetherVisual.s1) {
+        HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s1) {
             Image(systemName: symbol)
                 .font(.caption2)
                 .foregroundStyle(tint)
@@ -1426,30 +1425,65 @@ private struct ConnectionTrafficCell: View {
     let rates: ConnectionTransferRates?
 
     var body: some View {
-        Group {
+        VStack(alignment: .trailing, spacing: AetherVisual.sMicro) {
             if let rates, rates.totalBytesPerSecond > 0 {
-                VStack(alignment: .trailing, spacing: AetherVisual.sMicro) {
-                    Text(verbatim: "↓ \(formattedRate(rates.downloadBytesPerSecond)) · ↑ \(formattedRate(rates.uploadBytesPerSecond))")
-                        .font(.caption.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(AetherReadableTint(color: .accentColor))
-                        .lineLimit(1)
-                        .aetherLiveValue()
-                    Text(verbatim: "↓ \(formattedBytes(connection.downloadTotal)) · ↑ \(formattedBytes(connection.uploadTotal))")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(AetherVisual.secondaryText)
-                        .lineLimit(1)
-                }
+                Text(verbatim: "↓ \(formattedRate(rates.downloadBytesPerSecond)) · ↑ \(formattedRate(rates.uploadBytesPerSecond))")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(AetherReadableTint(color: .accentColor))
+                    .lineLimit(1)
+                    .aetherLiveValue()
+                Text(verbatim: "↓ \(formattedBytes(connection.downloadTotal)) · ↑ \(formattedBytes(connection.uploadTotal))")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .lineLimit(1)
+                    .aetherLiveValue()
             } else {
-                VStack(alignment: .trailing, spacing: AetherVisual.s1) {
-                    Text(verbatim: "↓ \(formattedBytes(connection.downloadTotal))")
-                    Text(verbatim: "↑ \(formattedBytes(connection.uploadTotal))")
-                }
-                .font(.body.monospacedDigit())
-                .foregroundStyle(.primary)
+                Text(verbatim: "↓ \(formattedBytes(connection.downloadTotal))")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .aetherLiveValue()
+                Text(verbatim: "↑ \(formattedBytes(connection.uploadTotal))")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .lineLimit(1)
+                    .aetherLiveValue()
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .frame(height: AetherVisual.tableRowHeight)
+    }
+}
+
+private struct ConnectionDurationColumnCell: View {
+    let connection: ConnectionTelemetry
+    let showsCloseButton: Bool
+    let isSelected: Bool
+    let onClose: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        let revealClose = showsCloseButton && (isHovered || isSelected)
+        HStack(spacing: AetherVisual.s1) {
+            ConnectionDurationCell(connection: connection)
+            if revealClose {
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                }
+                .buttonStyle(.plain)
+                .help(AppLocalization.string("Close Connection"))
+                .accessibilityLabel(AppLocalization.string("Close Connection"))
+                .accessibilityIdentifier("close-connection-row-button")
+                .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .frame(height: AetherVisual.tableRowHeight)
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .animation(AetherVisual.animation(AetherVisual.quickFade), value: revealClose)
     }
 }
 
@@ -1489,21 +1523,58 @@ private struct ConnectionDurationCell: View {
 private struct ConnectionInspector: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.dismiss) private var dismiss
-    let connection: ConnectionTelemetry
+    let flowID: ConnectionTableItem.ID
+    let initialConnection: ConnectionTelemetry
+    let initiallyClosed: Bool
+    @ObservedObject private var model: NetworkTelemetryViewModel
+    @State private var lastSeenConnection: ConnectionTelemetry
+
+    init(
+        flowID: ConnectionTableItem.ID,
+        initialConnection: ConnectionTelemetry,
+        initiallyClosed: Bool,
+        telemetry: NetworkTelemetryViewModel
+    ) {
+        self.flowID = flowID
+        self.initialConnection = initialConnection
+        self.initiallyClosed = initiallyClosed
+        self.model = telemetry
+        _lastSeenConnection = State(initialValue: initialConnection)
+    }
+
+    private var liveConnection: ConnectionTelemetry? {
+        guard !initiallyClosed, tunnel.isConnected else { return nil }
+        return model.identifiedSnapshotConnections()
+            .first(where: { $0.id == flowID })?
+            .connection
+    }
+
+    private var connection: ConnectionTelemetry {
+        liveConnection ?? lastSeenConnection
+    }
+
+    private var isClosed: Bool {
+        initiallyClosed || liveConnection == nil
+    }
+
+    private var liveRates: ConnectionTransferRates? {
+        guard !isClosed else { return nil }
+        return model.connectionRates[flowID]
+    }
 
     private var destination: String { connection.destinationAddress }
     private var app: SourceAppPresentation {
         SourceAppDirectory.shared.presentation(for: connection)
     }
 
-    private var decisionSteps: [ConnectionRouteDecisionStep] {
+    private var decisionTrace: ConnectionRouteDecisionTrace {
         ConnectionRouteDecisionTrace.evaluate(
             connection: connection,
             routingMode: tunnel.sessionRoutingMode ?? tunnel.routingMode,
             customHosts: tunnel.activeProfileOverrides.customHosts,
             customRules: tunnel.customRules,
             summary: tunnel.activeProfileSummary
-        ).steps
+        )
     }
 
     private var quickRuleTargets: [CustomRuleTarget] {
@@ -1512,13 +1583,18 @@ private struct ConnectionInspector: View {
     }
 
     var body: some View {
+        let trace = decisionTrace
         VStack(alignment: .leading, spacing: 0) {
             AetherSheetHeader(
                 symbol: connection.transport == .tcp ? "arrow.left.arrow.right" : "dot.radiowaves.left.and.right",
                 title: destination,
-                subtitle: AppLocalization.string("Snapshot captured when opened. Values do not refresh here."),
+                subtitle: isClosed
+                    ? AppLocalization.string("Connection closed. Showing last captured snapshot.")
+                    : AppLocalization.string("Live connection telemetry and route decision path."),
                 tint: AppSection.connections.tileColor
-            )
+            ) {
+                inspectorStatusBadge
+            }
             .padding([.horizontal, .top], AetherVisual.dialogPadding)
 
             Form {
@@ -1543,29 +1619,33 @@ private struct ConnectionInspector: View {
                     LabeledContent(AppLocalization.string("Outlet chain"), value: connection.proxyChain)
                 }
                 Section(AppLocalization.string("Route decision trace")) {
-                    ForEach(decisionSteps) { step in
-                        LabeledContent {
-                            HStack(spacing: AetherVisual.s1) {
-                                Image(systemName: decisionStepSymbol(step.status))
-                                    .foregroundStyle(decisionStepColor(step.status))
-                                    .accessibilityHidden(true)
-                                Text(step.summary)
-                                    .font(.callout.monospaced())
-                                    .foregroundStyle(
-                                        step.status == .skipped
-                                            ? AnyShapeStyle(AetherVisual.secondaryText)
-                                            : AnyShapeStyle(.primary)
-                                    )
-                            }
-                        } label: {
-                            Text(decisionStageTitle(step.stage))
-                        }
-                    }
+                    ConnectionRoutePipelineView(
+                        connection: connection,
+                        appName: app.displayName,
+                        trace: trace,
+                        routingMode: tunnel.sessionRoutingMode ?? tunnel.routingMode
+                    )
                 }
                 quickRulesSection
                 Section(AppLocalization.string("Traffic")) {
-                    LabeledContent(AppLocalization.string("Download"), value: bytes(connection.downloadTotal))
-                    LabeledContent(AppLocalization.string("Upload"), value: bytes(connection.uploadTotal))
+                    if let liveRates, liveRates.totalBytesPerSecond > 0 {
+                        LabeledContent(AppLocalization.string("Live rate")) {
+                            Text(verbatim: "↓ \(formattedRate(liveRates.downloadBytesPerSecond)) · ↑ \(formattedRate(liveRates.uploadBytesPerSecond))")
+                                .font(.callout.monospacedDigit())
+                                .foregroundStyle(AetherReadableTint(color: .accentColor))
+                                .aetherLiveValue()
+                        }
+                    }
+                    LabeledContent(AppLocalization.string("Download")) {
+                        Text(bytes(connection.downloadTotal))
+                            .font(.callout.monospacedDigit())
+                            .aetherLiveValue()
+                    }
+                    LabeledContent(AppLocalization.string("Upload")) {
+                        Text(bytes(connection.uploadTotal))
+                            .font(.callout.monospacedDigit())
+                            .aetherLiveValue()
+                    }
                 }
                 if let timing = ConnectionTimingBreakdown.resolve(for: connection) {
                     Section(AppLocalization.string("Timing")) {
@@ -1629,6 +1709,37 @@ private struct ConnectionInspector: View {
             .padding([.horizontal, .bottom], AetherVisual.dialogPadding)
         }
         .aetherSheetFrame()
+        .onChange(of: liveConnection) { _, latest in
+            if let latest {
+                lastSeenConnection = latest
+            } else if !initiallyClosed,
+                      let closedMatch = model.recentlyClosed.connections.first(where: {
+                          $0.transport == initialConnection.transport
+                              && $0.destination == initialConnection.destination
+                              && $0.destinationPort == initialConnection.destinationPort
+                              && $0.startedAtUnixMilliseconds == initialConnection.startedAtUnixMilliseconds
+                      }) {
+                lastSeenConnection = closedMatch
+            }
+        }
+    }
+
+    private var inspectorStatusBadge: some View {
+        HStack(spacing: AetherVisual.s1) {
+            Circle()
+                .fill(isClosed ? AnyShapeStyle(AetherVisual.secondaryText) : AnyShapeStyle(AetherReadableTint(color: .green)))
+                .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
+            Text(isClosed ? AppLocalization.string("Closed") : AppLocalization.string("Live"))
+                .font(.caption.weight(.semibold))
+        }
+        .foregroundStyle(isClosed ? AnyShapeStyle(AetherVisual.secondaryText) : AnyShapeStyle(AetherReadableTint(color: .green)))
+        .padding(.horizontal, AetherVisual.pillHorizontalPadding)
+        .padding(.vertical, AetherVisual.pillVerticalPadding)
+        .background(
+            isClosed ? AetherVisual.neutralFill : AetherVisual.tintFill(.green),
+            in: Capsule()
+        )
+        .accessibilityIdentifier("connection-inspector-status-badge")
     }
 
     @ViewBuilder
@@ -1740,33 +1851,6 @@ private struct ConnectionInspector: View {
         }
     }
 
-    private func decisionStageTitle(_ stage: ConnectionRouteDecisionStage) -> String {
-        switch stage {
-        case .routingMode: AppLocalization.string("Routing mode")
-        case .hostsResolution: AppLocalization.string("Hosts override")
-        case .applicationRule: AppLocalization.string("Application rule")
-        case .customDestinationRule: AppLocalization.string("Custom rule")
-        case .profileRule: AppLocalization.string("Profile rule")
-        case .outboundChain: AppLocalization.string("Outbound chain")
-        }
-    }
-
-    private func decisionStepSymbol(_ status: ConnectionRouteDecisionStatus) -> String {
-        switch status {
-        case .matched: "checkmark.circle.fill"
-        case .passed: "arrow.right.circle.fill"
-        case .skipped: "minus.circle"
-        }
-    }
-
-    private func decisionStepColor(_ status: ConnectionRouteDecisionStatus) -> AnyShapeStyle {
-        switch status {
-        case .matched: AnyShapeStyle(AetherReadableTint(color: .green))
-        case .passed: AnyShapeStyle(AetherReadableTint(color: .indigo))
-        case .skipped: AnyShapeStyle(AetherVisual.secondaryText)
-        }
-    }
-
     private func quickTargetTitle(_ target: CustomRuleTarget) -> String {
         switch target {
         case .direct: AppLocalization.string("Always connect directly")
@@ -1777,6 +1861,190 @@ private struct ConnectionInspector: View {
 
     private func bytes(_ value: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .file)
+    }
+}
+
+private struct ConnectionRoutePipelineView: View {
+    let connection: ConnectionTelemetry
+    let appName: String
+    let trace: ConnectionRouteDecisionTrace
+    let routingMode: RoutingMode
+
+    private struct PipelineHop: Identifiable {
+        let id: String
+        let stageTitle: String
+        let value: String
+        let detail: String?
+        let symbol: String
+        let tint: Color
+    }
+
+    private var hops: [PipelineHop] {
+        var result: [PipelineHop] = []
+        let timing = ConnectionTimingBreakdown.resolve(for: connection)
+
+        // 1. App
+        let transportLabel = connection.transport == .tcp ? "TCP" : "UDP"
+        let appDetail = connection.sourceAppIdentifier.isEmpty
+            ? transportLabel
+            : "\(transportLabel) · \(connection.sourceAppIdentifier)"
+        result.append(PipelineHop(
+            id: "app",
+            stageTitle: AppLocalization.string("App"),
+            value: appName,
+            detail: appDetail,
+            symbol: "app.dashed",
+            tint: .blue
+        ))
+
+        // 2. DNS / SNI
+        let dnsValue = trace.resolvedHostAlias.map { "\(connection.destinationHost) → \($0)" }
+            ?? connection.destinationAddress
+        let dnsDetail: String? = if let timing {
+            String.localizedStringWithFormat(
+                AppLocalization.string("%lld ms"),
+                Int64(timing.dnsMilliseconds)
+            )
+        } else if trace.resolvedHostAlias != nil {
+            AppLocalization.string("Hosts override")
+        } else {
+            nil
+        }
+        result.append(PipelineHop(
+            id: "dns",
+            stageTitle: AppLocalization.string("DNS / SNI"),
+            value: dnsValue,
+            detail: dnsDetail,
+            symbol: "network",
+            tint: trace.resolvedHostAlias != nil ? .green : .indigo
+        ))
+
+        // 3. Matched Rule
+        let ruleValue: String
+        let ruleDetail: String
+        if routingMode == .direct {
+            ruleValue = AppLocalization.string("Direct mode")
+            ruleDetail = AppLocalization.string("Routing mode")
+        } else if routingMode == .global {
+            ruleValue = trace.steps.first(where: { $0.stage == .routingMode })?.summary
+                ?? AppLocalization.string("Global mode")
+            ruleDetail = AppLocalization.string("Routing mode")
+        } else if let appRule = trace.matchedApplicationRule {
+            ruleValue = "\(appName) → \(appRule.target.rawString)"
+            ruleDetail = AppLocalization.string("Application rule")
+        } else if let customRule = trace.matchedCustomRule {
+            ruleValue = "\(customRule.kind.rawValue) \(customRule.value) → \(customRule.target.rawString)"
+            ruleDetail = AppLocalization.string("Custom rule")
+        } else {
+            ruleValue = trace.matchedRuleOrder.map { "#\($0) · \(trace.matchedRuleSummary)" }
+                ?? trace.matchedRuleSummary
+            ruleDetail = AppLocalization.string("Profile rule")
+        }
+        result.append(PipelineHop(
+            id: "rule",
+            stageTitle: AppLocalization.string("Matched rule"),
+            value: ruleValue,
+            detail: ruleDetail,
+            symbol: "checklist",
+            tint: .green
+        ))
+
+        // 4. Proxy Group (intermediate selector / relay hops when present)
+        if trace.outboundHops.count > 1 {
+            let groupChain = trace.outboundHops.dropLast().joined(separator: " → ")
+            result.append(PipelineHop(
+                id: "group",
+                stageTitle: AppLocalization.string("Proxy Group"),
+                value: groupChain,
+                detail: nil,
+                symbol: "arrow.triangle.branch",
+                tint: .indigo
+            ))
+        }
+
+        // 5. Exit Node
+        let exitName = trace.outboundHops.last
+            ?? (connection.proxyChain.isEmpty ? "DIRECT" : connection.proxyChain)
+        let exitKind = ConnectionOutletClassifier.classify(exitName)
+        let exitSymbol: String
+        let exitTint: Color
+        switch exitKind {
+        case .direct:
+            exitSymbol = "arrow.forward"
+            exitTint = .green
+        case .rejected:
+            exitSymbol = "hand.raised.fill"
+            exitTint = .red
+        case .proxied:
+            exitSymbol = "globe"
+            exitTint = .indigo
+        }
+        let exitDetail = timing.map {
+            String.localizedStringWithFormat(
+                AppLocalization.string("%lld ms"),
+                Int64($0.connectMilliseconds)
+            )
+        }
+        result.append(PipelineHop(
+            id: "exit",
+            stageTitle: AppLocalization.string("Exit Node"),
+            value: exitName,
+            detail: exitDetail,
+            symbol: exitSymbol,
+            tint: exitTint
+        ))
+
+        return result
+    }
+
+    var body: some View {
+        let items = hops
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, hop in
+                let isLast = index == items.count - 1
+                HStack(alignment: .top, spacing: AetherVisual.s3) {
+                    VStack(spacing: 0) {
+                        ZStack {
+                            Circle()
+                                .fill(AetherVisual.tintFill(hop.tint))
+                                .frame(width: AetherVisual.iconButtonSize, height: AetherVisual.iconButtonSize)
+                            Image(systemName: hop.symbol)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(AetherReadableTint(color: hop.tint))
+                        }
+                        if !isLast {
+                            Rectangle()
+                                .fill(AetherVisual.cardStroke)
+                                .frame(width: AetherVisual.sMicro)
+                                .frame(maxHeight: .infinity)
+                                .padding(.vertical, AetherVisual.sMicro)
+                        }
+                    }
+                    .frame(width: AetherVisual.iconButtonSize)
+
+                    VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                        Text(hop.stageTitle)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AetherVisual.secondaryText)
+                        Text(verbatim: hop.value)
+                            .font(.callout.monospaced())
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let detail = hop.detail {
+                            Text(verbatim: detail)
+                                .font(.caption)
+                                .foregroundStyle(AetherVisual.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.bottom, isLast ? .zero : AetherVisual.s3)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(.vertical, AetherVisual.s1)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("connection-route-pipeline")
     }
 }
 
