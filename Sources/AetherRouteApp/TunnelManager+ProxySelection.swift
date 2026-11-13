@@ -208,22 +208,36 @@ extension TunnelManager {
             groupNames: groupNames
         )
         adoptProviderLatency(latency, forGroup: group.name)
+        latencyIndex.recordRouteHealth(
+            latency,
+            group: group.name,
+            recordHistory: true
+        )
         let responsiveMembers = Set(
             latency.results.compactMap { result in
                 result.delayMilliseconds == nil ? nil : result.member
             }
         )
+        let baseCandidates = ProxyConnectionReadinessPolicy
+            .orderedRouteCandidates(
+                selectedMember: previous.selectedMember,
+                summaryMembers: group.members,
+                snapshotMembers: previous.members,
+                latency: latency,
+                groupNames: groupNames
+            )
+            .filter(responsiveMembers.contains)
+        let latencyByMember = Dictionary(
+            uniqueKeysWithValues: latency.results.compactMap { result in
+                result.delayMilliseconds.map { (result.member, $0) }
+            }
+        )
+        let statsByMember = latencyIndex.statsSnapshot(for: baseCandidates)
         let candidates = ProxyFailoverPolicy.orderedCandidates(
-            ProxyConnectionReadinessPolicy
-                .orderedRouteCandidates(
-                    selectedMember: previous.selectedMember,
-                    summaryMembers: group.members,
-                    snapshotMembers: previous.members,
-                    latency: latency,
-                    groupNames: groupNames
-                )
-                .filter(responsiveMembers.contains),
-            preferred: preferredMember
+            baseCandidates,
+            preferred: preferredMember,
+            latencyByMember: latencyByMember,
+            statsByMember: statsByMember
         )
         guard !candidates.isEmpty else {
             throw TunnelManagerError.noResponsiveProxy
@@ -282,10 +296,25 @@ extension TunnelManager {
                     if ProxyConnectionReadinessPolicy.acceptsProbeStatus(
                         statusCode
                     ) {
+                        if let delay = UInt32(exactly: candidateDelay) {
+                            latencyIndex.recordSample(
+                                for: candidate,
+                                latencyMilliseconds: delay
+                            )
+                        }
                         break
+                    } else {
+                        latencyIndex.recordSample(
+                            for: candidate,
+                            latencyMilliseconds: nil
+                        )
                     }
                 } catch {
                     try Task.checkCancellation()
+                    latencyIndex.recordSample(
+                        for: candidate,
+                        latencyMilliseconds: nil
+                    )
                     measurements.append(.init(
                         member: candidate,
                         elapsedMilliseconds: candidateDelay,
@@ -340,6 +369,21 @@ extension TunnelManager {
             }
             throw selectionError
         }
+    }
+
+    func latencyStats(for member: String) -> ProxyLatencyStats {
+        if isUIReviewMode {
+            let now = Date.now
+            let base: [UInt32?] = [42, 46, 44, 51, 48, 45, 53, 47]
+            let samples = base.enumerated().map { offset, ms in
+                ProxyLatencySample(
+                    latencyMilliseconds: ms,
+                    testedAt: now.addingTimeInterval(Double(offset - base.count) * 15)
+                )
+            }
+            return ProxyLatencyStats(samples: samples)
+        }
+        return latencyIndex.stats(for: member)
     }
 
     func performProxySelectionRequest(

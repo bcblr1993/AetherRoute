@@ -1148,7 +1148,10 @@ private struct ActiveProxyGroupView: View {
                 showsLatency: !isBuiltInOutlet(member),
                 badge: member == currentPreferred
                     ? .preferred
-                    : (member == currentBackup ? .backupInUse : nil)
+                    : (member == currentBackup ? .backupInUse : nil),
+                latencyStats: isBuiltInOutlet(member)
+                    ? ProxyLatencyStats(samples: [])
+                    : tunnel.latencyStats(for: member)
             )
         }
     }
@@ -1261,6 +1264,7 @@ private struct ProxyNodeRow: View {
     let onTest: () -> Void
     var onEditChained: (() -> Void)? = nil
     @State private var isHovered = false
+    @State private var showsHistoryPopover = false
 
     var body: some View {
         Group {
@@ -1331,6 +1335,9 @@ private struct ProxyNodeRow: View {
                         .transition(.opacity)
                 }
                 if row.showsLatency {
+                    if !row.latencyStats.samples.isEmpty {
+                        historySparklineButton
+                    }
                     latencyButton
                 }
             }
@@ -1405,6 +1412,9 @@ private struct ProxyNodeRow: View {
             }
 
             if row.showsLatency {
+                if !row.latencyStats.samples.isEmpty {
+                    historySparklineButton
+                }
                 latencyButton
             }
         }
@@ -1509,6 +1519,60 @@ private struct ProxyNodeRow: View {
         .accessibilityIdentifier("proxy-edit-chained-\(row.member)")
     }
 
+    private var historySparklineButton: some View {
+        Button {
+            showsHistoryPopover.toggle()
+        } label: {
+            HStack(spacing: AetherVisual.s1) {
+                ProxyLatencySparkline(stats: row.latencyStats)
+                    .frame(
+                        width: AetherVisual.s6 + AetherVisual.s3,
+                        height: AetherVisual.s3
+                    )
+                if let jitter = row.latencyStats.jitterMilliseconds {
+                    Text(verbatim: "±\(jitter)ms")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(AetherVisual.secondaryText)
+                }
+                if row.latencyStats.lossRate > 0 {
+                    let lossPercent = Int((row.latencyStats.lossRate * 100.0).rounded())
+                    Text(verbatim: "\(lossPercent)%")
+                        .font(.caption2.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(
+                            AetherReadableTint(
+                                color: row.latencyStats.lossRate >= 0.25 ? .red : .orange
+                            )
+                        )
+                        .padding(.horizontal, AetherVisual.sMicro)
+                        .background(
+                            AetherVisual.tintWash(
+                                row.latencyStats.lossRate >= 0.25 ? .red : .orange
+                            ),
+                            in: RoundedRectangle(
+                                cornerRadius: AetherVisual.badgeRadius,
+                                style: .continuous
+                            )
+                        )
+                }
+            }
+            .padding(.horizontal, AetherVisual.s1)
+            .padding(.vertical, AetherVisual.sMicro)
+            .background(
+                AetherVisual.neutralFill,
+                in: RoundedRectangle(
+                    cornerRadius: AetherVisual.controlRadius,
+                    style: .continuous
+                )
+            )
+        }
+        .buttonStyle(.plain)
+        .help(AppLocalization.inline("Latency history, jitter & packet loss", chinese: "延迟趋势、抖动与丢包率"))
+        .accessibilityIdentifier("proxy-latency-sparkline-\(row.member)")
+        .popover(isPresented: $showsHistoryPopover, arrowEdge: .bottom) {
+            ProxyLatencyHistoryPopover(member: row.member, stats: row.latencyStats)
+        }
+    }
+
     private var latencyButton: some View {
         Button(action: onTest) {
             ProxyLatencyPill(status: row.status, confidence: row.confidence)
@@ -1550,6 +1614,17 @@ private struct ProxyNodeRow: View {
         } else {
             lines.append(AppLocalization.string("Test latency"))
         }
+        if let jitter = row.latencyStats.jitterMilliseconds {
+            lines.append(
+                AppLocalization.inline("Jitter: ±\(jitter) ms", chinese: "抖动: ±\(jitter) ms")
+            )
+        }
+        if !row.latencyStats.samples.isEmpty {
+            let lossPercent = Int((row.latencyStats.lossRate * 100.0).rounded())
+            lines.append(
+                AppLocalization.inline("Loss: \(lossPercent)%", chinese: "丢包率: \(lossPercent)%")
+            )
+        }
         if let confidence = row.confidence {
             lines.append(confidence.localizedHint)
         }
@@ -1577,8 +1652,153 @@ private struct ProxyMemberTableItem: Identifiable {
     var isPending = false
     let showsLatency: Bool
     var badge: Badge?
+    var latencyStats = ProxyLatencyStats(samples: [])
 
     var id: String { member }
+}
+
+private struct ProxyLatencySparkline: View {
+    let stats: ProxyLatencyStats
+
+    var body: some View {
+        Canvas { context, size in
+            let samples = stats.samples
+            guard !samples.isEmpty else { return }
+
+            let validValues = samples.compactMap(\.latencyMilliseconds).map(Double.init)
+            let minVal = validValues.min() ?? 0
+            let maxVal = max((validValues.max() ?? 100), minVal + 1)
+            let span = max(1, maxVal - minVal)
+            let count = samples.count
+            let stepX = count > 1 ? size.width / CGFloat(count - 1) : size.width
+            let lineTint: Color = {
+                if stats.lossRate >= 0.25 {
+                    return .red
+                }
+                if let jitter = stats.jitterMilliseconds, jitter >= 60 {
+                    return .orange
+                }
+                return .green
+            }()
+            let lineShading = GraphicsContext.Shading.style(AetherReadableTint(color: lineTint))
+            let lossShading = GraphicsContext.Shading.style(AetherReadableTint(color: .red))
+
+            var baseline = Path()
+            baseline.move(to: CGPoint(x: 0, y: size.height - 1))
+            baseline.addLine(to: CGPoint(x: size.width, y: size.height - 1))
+            context.stroke(baseline, with: .color(Color(nsColor: .separatorColor)), lineWidth: 0.5)
+
+            var linePath = Path()
+            var hasStarted = false
+            for (index, sample) in samples.enumerated() {
+                let x = count > 1 ? CGFloat(index) * stepX : size.width * 0.5
+                if let ms = sample.latencyMilliseconds {
+                    let normalized = (Double(ms) - minVal) / span
+                    let y = max(1.5, min(size.height - 2.0, (1.0 - normalized) * (size.height - 3.5) + 1.5))
+                    let point = CGPoint(x: x, y: y)
+                    if !hasStarted {
+                        linePath.move(to: point)
+                        hasStarted = true
+                    } else {
+                        linePath.addLine(to: point)
+                    }
+                    let dotRect = CGRect(x: point.x - 1, y: point.y - 1, width: 2, height: 2)
+                    if count <= 8 {
+                        context.fill(Path(ellipseIn: dotRect), with: lineShading)
+                    }
+                } else {
+                    hasStarted = false
+                    var lossTick = Path()
+                    lossTick.move(to: CGPoint(x: x, y: max(0, size.height - 5)))
+                    lossTick.addLine(to: CGPoint(x: x, y: size.height))
+                    context.stroke(lossTick, with: lossShading, lineWidth: 1.5)
+                }
+            }
+            if hasStarted || validValues.count >= 2 {
+                context.stroke(
+                    linePath,
+                    with: lineShading,
+                    style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
+                )
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct ProxyLatencyHistoryPopover: View {
+    let member: String
+    let stats: ProxyLatencyStats
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            Text(member)
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            ProxyLatencySparkline(stats: stats)
+                .frame(
+                    width: AetherVisual.s6 * 8,
+                    height: AetherVisual.s6 * 2
+                )
+                .padding(AetherVisual.s2)
+                .background(
+                    AetherVisual.subtleFill,
+                    in: RoundedRectangle(
+                        cornerRadius: AetherVisual.insetRadius,
+                        style: .continuous
+                    )
+                )
+
+            HStack(spacing: AetherVisual.s4) {
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                    Text(AppLocalization.inline("Avg RTT", chinese: "平均延迟"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(
+                        verbatim: stats.averageLatencyMilliseconds.map { "\($0) ms" } ?? "—"
+                    )
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                }
+
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                    Text(AppLocalization.inline("Jitter", chinese: "抖动"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(
+                        verbatim: stats.jitterMilliseconds.map { "±\($0) ms" } ?? "—"
+                    )
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                }
+
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                    Text(AppLocalization.inline("Packet Loss", chinese: "丢包率"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    let lossPercent = Int((stats.lossRate * 100.0).rounded())
+                    Text(verbatim: "\(lossPercent)%")
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(
+                            lossPercent > 0
+                                ? AnyShapeStyle(AetherReadableTint(
+                                    color: lossPercent >= 25 ? .red : .orange
+                                ))
+                                : AnyShapeStyle(.primary)
+                        )
+                }
+
+                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                    Text(AppLocalization.inline("Samples", chinese: "采样"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(verbatim: "\(stats.samples.count)/\(ProxyLatencyIndex.maxHistoryCount)")
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                }
+            }
+        }
+        .padding(AetherVisual.s4)
+    }
 }
 
 /// A latency result as coloured text, the same colour bands as everywhere

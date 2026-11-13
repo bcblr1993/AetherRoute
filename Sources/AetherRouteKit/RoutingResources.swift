@@ -7,11 +7,13 @@ public enum RoutingResourceKind: String, CaseIterable, Codable, Hashable,
 {
     case countryMMDB
     case geoSite
+    case asnMMDB
 
     public var fileName: String {
         switch self {
         case .countryMMDB: "Country.mmdb"
         case .geoSite: "GeoSite.dat"
+        case .asnMMDB: "ASN.mmdb"
         }
     }
 
@@ -19,6 +21,7 @@ public enum RoutingResourceKind: String, CaseIterable, Codable, Hashable,
         switch self {
         case .countryMMDB: 64 * 1_024 * 1_024
         case .geoSite: 64 * 1_024 * 1_024
+        case .asnMMDB: 64 * 1_024 * 1_024
         }
     }
 }
@@ -28,6 +31,19 @@ public extension ProfileConfigurationSummary {
         var resources = Set<RoutingResourceKind>()
         if requiresCountryMMDB { resources.insert(.countryMMDB) }
         if requiresGeoSiteDatabase { resources.insert(.geoSite) }
+        if allRules.contains(where: { rule in
+            let kind = rule.kind.uppercased()
+            if kind == "IP-ASN" || kind == "SRC-IP-ASN" {
+                return true
+            }
+            if let criteria = rule.criteria?.uppercased(),
+               criteria.contains("IP-ASN,") || criteria.contains("SRC-IP-ASN,") {
+                return true
+            }
+            return false
+        }) {
+            resources.insert(.asnMMDB)
+        }
         return resources
     }
 }
@@ -119,10 +135,11 @@ public enum RoutingResourceStatus: Equatable, Sendable {
         switch self {
         case .ready: true
         case let .stale(record):
-            // The maintained Country download currently uses MaxMind data.
-            // Retain its expiry policy; our DB-IP bundle and the MIT GeoSite
+            // The maintained Country and ASN downloads currently use MaxMind data.
+            // Retain their expiry policy; our DB-IP bundle and the MIT GeoSite
             // list can remain available while a refresh is attempted.
-            record.kind != .countryMMDB || record.origin != .verifiedDownload
+            (record.kind != .countryMMDB && record.kind != .asnMMDB)
+                || record.origin != .verifiedDownload
         case .missing, .invalid: false
         }
     }
@@ -687,6 +704,104 @@ public struct RoutingResourceStore: Sendable {
         )
     }
 
+    private var mirrorConfigurationURL: URL {
+        resourceDirectory.appendingPathComponent(
+            "mirror-urls.v1.json",
+            isDirectory: false
+        )
+    }
+
+    private struct MirrorEntry: Codable {
+        let resourceURL: String
+        let checksumURL: String
+    }
+
+    public func customMirrorDescriptor(
+        for kind: RoutingResourceKind,
+        fileManager: FileManager = .default
+    ) -> RoutingResourceRemoteDescriptor? {
+        let entries = loadMirrorEntries(fileManager: fileManager)
+        guard let entry = entries[kind.rawValue],
+              let resourceURL = URL(string: entry.resourceURL),
+              let checksumURL = URL(string: entry.checksumURL) else {
+            return nil
+        }
+        return try? RoutingResourceRemoteDescriptor(
+            kind: kind,
+            resourceURL: resourceURL,
+            checksumURL: checksumURL
+        )
+    }
+
+    public func setCustomMirrorURLs(
+        for kind: RoutingResourceKind,
+        resourceURL: URL,
+        checksumURL: URL? = nil,
+        fileManager: FileManager = .default
+    ) throws {
+        let resolvedChecksumURL: URL
+        if let checksumURL {
+            resolvedChecksumURL = checksumURL
+        } else if let derived = URL(string: resourceURL.absoluteString + ".sha256sum") {
+            resolvedChecksumURL = derived
+        } else {
+            throw RoutingResourceError.invalidRemoteURL
+        }
+        _ = try RoutingResourceRemoteDescriptor(
+            kind: kind,
+            resourceURL: resourceURL,
+            checksumURL: resolvedChecksumURL
+        )
+        try preparePrivateDirectory(applicationSupportDirectory, fileManager: fileManager)
+        try preparePrivateDirectory(resourceDirectory, fileManager: fileManager)
+        var entries = loadMirrorEntries(fileManager: fileManager)
+        entries[kind.rawValue] = MirrorEntry(
+            resourceURL: resourceURL.absoluteString,
+            checksumURL: resolvedChecksumURL.absoluteString
+        )
+        try saveMirrorEntries(entries, fileManager: fileManager)
+    }
+
+    public func clearCustomMirrorURLs(
+        for kind: RoutingResourceKind,
+        fileManager: FileManager = .default
+    ) throws {
+        var entries = loadMirrorEntries(fileManager: fileManager)
+        guard entries.removeValue(forKey: kind.rawValue) != nil else { return }
+        if entries.isEmpty {
+            if fileManager.fileExists(atPath: mirrorConfigurationURL.path) {
+                try fileManager.removeItem(at: mirrorConfigurationURL)
+            }
+            return
+        }
+        try preparePrivateDirectory(applicationSupportDirectory, fileManager: fileManager)
+        try preparePrivateDirectory(resourceDirectory, fileManager: fileManager)
+        try saveMirrorEntries(entries, fileManager: fileManager)
+    }
+
+    private func loadMirrorEntries(fileManager: FileManager) -> [String: MirrorEntry] {
+        guard fileManager.fileExists(atPath: mirrorConfigurationURL.path),
+              let data = try? Data(contentsOf: mirrorConfigurationURL),
+              let decoded = try? JSONDecoder().decode([String: MirrorEntry].self, from: data) else {
+            return [:]
+        }
+        return decoded
+    }
+
+    private func saveMirrorEntries(
+        _ entries: [String: MirrorEntry],
+        fileManager: FileManager
+    ) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        let data = try encoder.encode(entries)
+        try data.write(to: mirrorConfigurationURL, options: [.atomic])
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: mirrorConfigurationURL.path
+        )
+    }
+
     private func preparePrivateDirectory(
         _ url: URL,
         fileManager: FileManager,
@@ -818,7 +933,7 @@ public struct RoutingResourceStore: Sendable {
         data: Data,
         kind: RoutingResourceKind
     ) throws -> String {
-        let minimumBytes = kind == .countryMMDB ? 1_024 : 16
+        let minimumBytes = (kind == .countryMMDB || kind == .asnMMDB) ? 1_024 : 16
         guard data.count >= minimumBytes else {
             throw RoutingResourceError.resourceTooSmall(kind, data.count)
         }
@@ -826,7 +941,7 @@ public struct RoutingResourceStore: Sendable {
             throw RoutingResourceError.resourceTooLarge(kind, data.count)
         }
         switch kind {
-        case .countryMMDB:
+        case .countryMMDB, .asnMMDB:
             let marker = Data([0xAB, 0xCD, 0xEF])
                 + Data("MaxMind.com".utf8)
             let tail = data.suffix(min(data.count, 128 * 1_024))
@@ -895,7 +1010,28 @@ public struct RoutingResourceRemoteDescriptor: Equatable, Sendable {
                     string: "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat.sha256sum"
                 )!
             )
+        case .asnMMDB:
+            return try Self(
+                kind: kind,
+                resourceURL: URL(
+                    string: "https://raw.githubusercontent.com/Loyalsoldier/geoip/release/GeoLite2-ASN.mmdb"
+                )!,
+                checksumURL: URL(
+                    string: "https://raw.githubusercontent.com/Loyalsoldier/geoip/release/GeoLite2-ASN.mmdb.sha256sum"
+                )!
+            )
         }
+    }
+
+    public static func resolved(
+        for kind: RoutingResourceKind,
+        in store: RoutingResourceStore,
+        fileManager: FileManager = .default
+    ) throws -> Self {
+        if let custom = store.customMirrorDescriptor(for: kind, fileManager: fileManager) {
+            return custom
+        }
+        return try maintainedDefault(for: kind)
     }
 }
 
@@ -1018,9 +1154,12 @@ public struct RoutingResourceDownloadClient: Sendable {
         fileManager: FileManager = .default,
         replacing expectedRecord: RoutingResourceRecord? = nil
     ) async throws -> RoutingResourceRecord {
-        let expectedSHA256 = try await upstreamChecksum(for: descriptor)
+        let effective = resolveEffectiveDescriptor(
+            descriptor, in: store, fileManager: fileManager
+        )
+        let expectedSHA256 = try await upstreamChecksum(for: effective)
         return try await install(
-            descriptor, expectedSHA256: expectedSHA256, into: store,
+            effective, expectedSHA256: expectedSHA256, into: store,
             fileManager: fileManager, replacing: expectedRecord
         )
     }
@@ -1034,8 +1173,11 @@ public struct RoutingResourceDownloadClient: Sendable {
         current: RoutingResourceRecord?,
         fileManager: FileManager = .default
     ) async throws -> RoutingResourceRefreshOutcome {
-        let expectedSHA256 = try await upstreamChecksum(for: descriptor)
-        if let current, current.kind == descriptor.kind,
+        let effective = resolveEffectiveDescriptor(
+            descriptor, in: store, fileManager: fileManager
+        )
+        let expectedSHA256 = try await upstreamChecksum(for: effective)
+        if let current, current.kind == effective.kind,
            current.sha256 == expectedSHA256 {
             try Task.checkCancellation()
             return .alreadyCurrent(try store.recordUpstreamCheck(
@@ -1043,9 +1185,26 @@ public struct RoutingResourceDownloadClient: Sendable {
             ))
         }
         return .updated(try await install(
-            descriptor, expectedSHA256: expectedSHA256, into: store,
+            effective, expectedSHA256: expectedSHA256, into: store,
             fileManager: fileManager, replacing: current
         ))
+    }
+
+    private func resolveEffectiveDescriptor(
+        _ descriptor: RoutingResourceRemoteDescriptor,
+        in store: RoutingResourceStore,
+        fileManager: FileManager
+    ) -> RoutingResourceRemoteDescriptor {
+        guard let maintained = try? RoutingResourceRemoteDescriptor
+            .maintainedDefault(for: descriptor.kind),
+            descriptor == maintained,
+            let custom = store.customMirrorDescriptor(
+                for: descriptor.kind,
+                fileManager: fileManager
+            ) else {
+            return descriptor
+        }
+        return custom
     }
 
     private func upstreamChecksum(
@@ -1112,7 +1271,7 @@ public struct RoutingResourceDownloadClient: Sendable {
             }
             try Task.checkCancellation()
             let descriptor = try RoutingResourceRemoteDescriptor
-                .maintainedDefault(for: kind)
+                .resolved(for: kind, in: store, fileManager: fileManager)
             try await downloadAndInstall(
                 descriptor,
                 into: store,

@@ -142,15 +142,18 @@ struct RulesView: View {
                         // stays lazy inside the same scroll view.
                         VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing + AetherVisual.s1) {
                             AetherPageHeader(.rules) {
-                                Button {
-                                    editingRule = nil
-                                    showAddRuleSheet = true
-                                } label: {
-                                    Label(AppLocalization.string("Add Rule"), systemImage: "plus")
-                                        .labelStyle(.titleAndIcon)
+                                HStack(spacing: AetherVisual.s2) {
+                                    blockQUICButton
+                                    Button {
+                                        editingRule = nil
+                                        showAddRuleSheet = true
+                                    } label: {
+                                        Label(AppLocalization.string("Add Rule"), systemImage: "plus")
+                                            .labelStyle(.titleAndIcon)
+                                    }
+                                    .aetherButton(prominent: true)
+                                    .accessibilityIdentifier("add-custom-rule")
                                 }
-                                .aetherButton(prominent: true)
-                                .accessibilityIdentifier("add-custom-rule")
                             }
 
                             // Only the rules: the nodes have their own page.
@@ -214,6 +217,15 @@ struct RulesView: View {
                                     .environmentObject(tunnel)
                                     .transition(.opacity)
                                 }
+
+                                RoutingResourceMirrorSettingsCard(
+                                    importResource: { kind in
+                                        routingResourceImportKind = kind
+                                        isResourceImporterPresented = true
+                                    }
+                                )
+                                .environmentObject(tunnel)
+                                .transition(.opacity)
 
                                 TruncationNotice(
                                     visibleCount: summary.ruleProviders.count,
@@ -478,6 +490,7 @@ struct RulesView: View {
                             .foregroundStyle(AetherVisual.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: AetherVisual.s2)
+                        blockQUICButton
                         Button(AppLocalization.string("Add")) {
                             editingRule = nil
                             showAddRuleSheet = true
@@ -549,6 +562,40 @@ struct RulesView: View {
     /// section above.
     private var destinationRules: [CustomRule] {
         tunnel.customRules.filter { $0.kind != .application }
+    }
+
+    private var existingBlockQUICRule: CustomRule? {
+        let targetSignature = CustomRule.blockQUICPreset().toClashRuleString().uppercased()
+        return tunnel.customRules.first {
+            $0.toClashRuleString().uppercased() == targetSignature
+        }
+    }
+
+    @ViewBuilder
+    private var blockQUICButton: some View {
+        let existing = existingBlockQUICRule
+        Button {
+            Task {
+                if let existing {
+                    if !existing.isEnabled {
+                        await tunnel.toggleCustomRule(id: existing.id)
+                    }
+                } else {
+                    _ = await tunnel.addCustomRule(CustomRule.blockQUICPreset())
+                }
+            }
+        } label: {
+            Label(
+                existing?.isEnabled == true
+                    ? AppLocalization.inline("QUIC Blocked (UDP 443)", chinese: "已屏蔽 QUIC (UDP 443)")
+                    : AppLocalization.inline("Block QUIC (UDP 443)", chinese: "屏蔽 QUIC (UDP 443)"),
+                systemImage: existing?.isEnabled == true ? "checkmark.shield.fill" : "bolt.slash.fill"
+            )
+            .labelStyle(.titleAndIcon)
+        }
+        .aetherButton()
+        .disabled(existing?.isEnabled == true)
+        .accessibilityIdentifier("block-quic-preset-button")
     }
 
     private var filteredDestinationRules: [CustomRule] {
@@ -1590,12 +1637,41 @@ struct CustomRuleEditorSheet: View {
                     }
                     ruleDivider
                     ruleRow(AppLocalization.string("Match")) {
-                        TextField(placeholderForKind(selectedKind), text: $ruleValue)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 280)
-                            .accessibilityIdentifier("custom-rule-value-field")
+                        if selectedKind == .network {
+                            Picker(
+                                AppLocalization.inline("Transport protocol", chinese: "传输层协议"),
+                                selection: Binding(
+                                    get: {
+                                        let upper = ruleValue.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                                        return upper == "TCP" ? "TCP" : "UDP"
+                                    },
+                                    set: { ruleValue = $0 }
+                                )
+                            ) {
+                                Text(verbatim: "UDP").tag("UDP")
+                                Text(verbatim: "TCP").tag("TCP")
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .fixedSize()
+                            .onAppear {
+                                let upper = ruleValue.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                                if upper != "TCP" && upper != "UDP" {
+                                    ruleValue = "UDP"
+                                }
+                            }
+                            .accessibilityIdentifier("custom-rule-network-picker")
+                        } else {
+                            TextField(placeholderForKind(selectedKind), text: $ruleValue)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 280)
+                                .accessibilityIdentifier("custom-rule-value-field")
+                        }
                     }
-                    if selectedKind == .ipCIDR || selectedKind == .ipCIDR6 || selectedKind == .geoIP {
+                    if selectedKind == .ipCIDR
+                        || selectedKind == .ipCIDR6
+                        || selectedKind == .geoIP
+                        || selectedKind == .ipASN {
                         ruleDivider
                         Toggle(AppLocalization.string("Match by IP without DNS lookup (no-resolve)"), isOn: $noResolve)
                             .toggleStyle(AetherRowToggleStyle())
@@ -1843,11 +1919,18 @@ struct CustomRuleEditorSheet: View {
         case .domainSuffix: AppLocalization.string("e.g. example.com")
         case .domain: AppLocalization.string("e.g. my.server.com")
         case .domainKeyword: AppLocalization.string("e.g. tailscale or internal")
+        case .domainWildcard: AppLocalization.inline("e.g. *.dev.local or api-?.example.com", chinese: "例如 *.dev.local 或 api-?.example.com")
+        case .domainRegex: AppLocalization.inline("e.g. ^api-\\d{1,3}\\.example\\.com$", chinese: "例如 ^api-\\d{1,3}\\.example\\.com$")
         case .ipCIDR: AppLocalization.string("e.g. 100.64.0.0/10 or 192.168.1.0/24")
         case .ipCIDR6: AppLocalization.string("e.g. fd7a:115c:a1e0::/48")
         case .geoIP: AppLocalization.string("e.g. CN or US")
         case .geoSite: AppLocalization.string("e.g. openai, apple, cn or netflix")
+        case .ipASN: AppLocalization.inline("e.g. 13335 or AS15169", chinese: "例如 13335 或 AS15169")
         case .dstPort: AppLocalization.string("e.g. 443, 80 or 853")
+        case .network: AppLocalization.inline("TCP or UDP", chinese: "TCP 或 UDP")
+        case .processName: AppLocalization.inline("e.g. curl, ssh or node", chinese: "例如 curl、ssh 或 node")
+        case .processPath: AppLocalization.inline("e.g. /usr/bin/curl", chinese: "例如 /usr/bin/curl")
+        case .and: AppLocalization.inline("e.g. ((NETWORK,UDP),(DST-PORT,443))", chinese: "例如 ((NETWORK,UDP),(DST-PORT,443))")
         case .application: ""
         }
     }
@@ -1880,6 +1963,18 @@ struct CustomRuleEditorSheet: View {
             destination = rule.value
         case .domainKeyword:
             destination = "service.\(rule.value).com"
+        case .domainWildcard:
+            let sample = rule.value
+                .replacingOccurrences(of: "*.", with: "sub.")
+                .replacingOccurrences(of: "*", with: "demo")
+                .replacingOccurrences(of: "?", with: "1")
+            destination = sample
+        case .domainRegex:
+            testExplanation = AppLocalization.inline(
+                "Regex syntax verified; evaluated against each requested hostname at connection time.",
+                chinese: "正则表达式语法校验通过；连接时将按请求域名实时匹配。"
+            )
+            return
         case .ipCIDR:
             let ipPart = rule.value.split(separator: "/").first.map(String.init) ?? rule.value
             destination = ipPart
@@ -1890,8 +1985,26 @@ struct CustomRuleEditorSheet: View {
             destination = rule.value.lowercased() == "private" ? "192.168.1.1" : "223.5.5.5"
         case .geoSite:
             destination = "example.com"
+        case .ipASN:
+            testExplanation = AppLocalization.inline(
+                "ASN rule syntax verified; evaluated at runtime against ASN.mmdb.",
+                chinese: "ASN 规则语法校验通过；运行时将基于 ASN.mmdb 自动匹配。"
+            )
+            return
         case .dstPort:
             destination = "example.com:\(rule.value)"
+        case .network, .and:
+            testExplanation = AppLocalization.inline(
+                "Transport/composite rule syntax verified; evaluated by the core router on live connections.",
+                chinese: "传输层/组合规则语法校验通过；将在实际连接时由核心路由器实时评估。"
+            )
+            return
+        case .processName, .processPath:
+            testExplanation = AppLocalization.inline(
+                "Process rules match the originating local binary or process name at connection time.",
+                chinese: "进程规则会在发起连接时按本地进程名或可执行文件路径实时匹配。"
+            )
+            return
         case .application:
             // Matched by the connecting app, not a destination.
             testExplanation = AppLocalization.string("Application rules match the app that opens a connection, so they cannot be tested by destination.")
@@ -2289,6 +2402,214 @@ private struct RuleProviderPreviewSheet: View {
                 query: query,
                 limit: 200
             )) ?? []
+        }
+    }
+}
+
+private struct RoutingResourceMirrorSettingsCard: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+    let importResource: (RoutingResourceKind) -> Void
+
+    @State private var isExpanded = false
+    @State private var resourceURLStrings: [RoutingResourceKind: String] = [:]
+    @State private var checksumURLStrings: [RoutingResourceKind: String] = [:]
+    @State private var statusMessage: String?
+    @State private var statusIsError = false
+    @State private var busyKinds: Set<RoutingResourceKind> = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            AetherSectionHeader(
+                title: AppLocalization.inline("Database Mirrors & ASN.mmdb", chinese: "路由数据库与 ASN.mmdb 镜像源"),
+                note: AppLocalization.inline(
+                    "Customize HTTPS mirror URLs for Country.mmdb, GeoSite.dat, and ASN.mmdb",
+                    chinese: "自定义 Country.mmdb、GeoSite.dat 与 ASN.mmdb 的 HTTPS 镜像地址"
+                )
+            ) {
+                Button {
+                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    Label(
+                        isExpanded
+                            ? AppLocalization.inline("Hide", chinese: "收起")
+                            : AppLocalization.inline("Configure", chinese: "配置"),
+                        systemImage: isExpanded ? "chevron.up" : "slider.horizontal.3"
+                    )
+                }
+                .aetherButton()
+                .controlSize(.small)
+                .accessibilityIdentifier("routing-resource-mirrors-toggle")
+            }
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                    if let statusMessage {
+                        Label(
+                            statusMessage,
+                            systemImage: statusIsError
+                                ? "exclamationmark.triangle.fill"
+                                : "checkmark.circle.fill"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(
+                            statusIsError
+                                ? AnyShapeStyle(AetherReadableTint(color: .red))
+                                : AnyShapeStyle(AetherVisual.secondaryText)
+                        )
+                    }
+
+                    ForEach(RoutingResourceKind.allCases, id: \.self) { kind in
+                        mirrorRow(for: kind)
+                        if kind != RoutingResourceKind.allCases.last {
+                            Divider()
+                        }
+                    }
+                }
+                .padding(AetherVisual.s4)
+                .aetherPanel()
+                .transition(.opacity)
+            }
+        }
+        .onAppear { loadCurrentMirrors() }
+        .accessibilityIdentifier("routing-resource-mirrors-card")
+    }
+
+    @ViewBuilder
+    private func mirrorRow(for kind: RoutingResourceKind) -> some View {
+        let isBusy = busyKinds.contains(kind)
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            HStack(spacing: AetherVisual.s2) {
+                Text(verbatim: kind.fileName)
+                    .font(.callout.weight(.semibold))
+                Spacer(minLength: AetherVisual.s2)
+                Button(AppLocalization.string("Import…")) {
+                    importResource(kind)
+                }
+                .aetherButton()
+                .controlSize(.small)
+                .disabled(!tunnel.canModifyProfiles || isBusy)
+
+                Button(AppLocalization.inline("Reset", chinese: "恢复默认")) {
+                    resetMirror(for: kind)
+                }
+                .aetherButton()
+                .controlSize(.small)
+                .disabled(isBusy)
+
+                Button(AppLocalization.inline("Save & Download", chinese: "保存并更新")) {
+                    saveAndDownloadMirror(for: kind)
+                }
+                .aetherButton(prominent: true)
+                .controlSize(.small)
+                .disabled(isBusy)
+            }
+
+            TextField(
+                AppLocalization.inline("HTTPS database URL", chinese: "HTTPS 数据库下载地址"),
+                text: Binding(
+                    get: { resourceURLStrings[kind] ?? defaultResourceURLString(for: kind) },
+                    set: { resourceURLStrings[kind] = $0 }
+                )
+            )
+            .textFieldStyle(.roundedBorder)
+            .font(.caption.monospaced())
+
+            TextField(
+                AppLocalization.inline("Optional HTTPS .sha256sum URL (defaults to <URL>.sha256sum)", chinese: "可选 HTTPS .sha256sum 校验地址（默认追加 .sha256sum）"),
+                text: Binding(
+                    get: { checksumURLStrings[kind] ?? "" },
+                    set: { checksumURLStrings[kind] = $0 }
+                )
+            )
+            .textFieldStyle(.roundedBorder)
+            .font(.caption.monospaced())
+        }
+    }
+
+    private func defaultResourceURLString(for kind: RoutingResourceKind) -> String {
+        (try? RoutingResourceRemoteDescriptor.maintainedDefault(for: kind).resourceURL.absoluteString) ?? ""
+    }
+
+    private func loadCurrentMirrors() {
+        guard let store = try? tunnel.routingResourceStoreFactory() else { return }
+        for kind in RoutingResourceKind.allCases {
+            if let custom = store.customMirrorDescriptor(for: kind) {
+                resourceURLStrings[kind] = custom.resourceURL.absoluteString
+                checksumURLStrings[kind] = custom.checksumURL.absoluteString
+            } else {
+                resourceURLStrings[kind] = defaultResourceURLString(for: kind)
+                checksumURLStrings[kind] = ""
+            }
+        }
+    }
+
+    private func resetMirror(for kind: RoutingResourceKind) {
+        statusMessage = nil
+        do {
+            let store = try tunnel.routingResourceStoreFactory()
+            try store.clearCustomMirrorURLs(for: kind)
+            resourceURLStrings[kind] = defaultResourceURLString(for: kind)
+            checksumURLStrings[kind] = ""
+            statusMessage = AppLocalization.inline(
+                "Reset \(kind.fileName) to the maintained default URL.",
+                chinese: "已将 \(kind.fileName) 恢复为默认镜像地址。"
+            )
+            statusIsError = false
+        } catch {
+            statusMessage = error.localizedDescription
+            statusIsError = true
+        }
+    }
+
+    private func saveAndDownloadMirror(for kind: RoutingResourceKind) {
+        let rawResource = (resourceURLStrings[kind] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let resourceURL = URL(string: rawResource) else {
+            statusMessage = RoutingResourceError.invalidRemoteURL.localizedDescription
+            statusIsError = true
+            return
+        }
+        let rawChecksum = (checksumURLStrings[kind] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let checksumURL: URL? = rawChecksum.isEmpty ? nil : URL(string: rawChecksum)
+        if !rawChecksum.isEmpty && checksumURL == nil {
+            statusMessage = RoutingResourceError.invalidRemoteURL.localizedDescription
+            statusIsError = true
+            return
+        }
+
+        busyKinds.insert(kind)
+        statusMessage = nil
+        let storeFactory = tunnel.routingResourceStoreFactory
+        let downloadClient = tunnel.routingResourceDownloadClient
+        Task {
+            defer { busyKinds.remove(kind) }
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    let store = try storeFactory()
+                    try store.setCustomMirrorURLs(
+                        for: kind,
+                        resourceURL: resourceURL,
+                        checksumURL: checksumURL
+                    )
+                    let descriptor = try RoutingResourceRemoteDescriptor.resolved(
+                        for: kind,
+                        in: store
+                    )
+                    _ = try await downloadClient.downloadAndInstall(descriptor, into: store)
+                }.value
+                tunnel.refreshRoutingResourceStatuses()
+                statusMessage = AppLocalization.inline(
+                    "Updated \(kind.fileName) from the configured mirror.",
+                    chinese: "已从自定义镜像成功更新并校验 \(kind.fileName)。"
+                )
+                statusIsError = false
+            } catch {
+                statusMessage = error.localizedDescription
+                statusIsError = true
+            }
         }
     }
 }

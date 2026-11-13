@@ -76,14 +76,88 @@ public struct ProxyLatencyIndex {
     private var nextSequence: UInt64 = 0
     private var testURL: String?
     private var activeRoutes: [String: [String]] = [:]
+    /// Bounded per-member history sample (`nil` latency represents a timeout / packet loss).
+    public static let maxHistoryCount = 24
+
     /// Readiness probes have a different destination and budget. They never
     /// supply display readings, confidence badges or freshness timestamps.
     public private(set) var routeHealth: [String: ProxyLatencyState] = [:]
+    private var historyByMember: [String: [ProxyLatencySample]] = [:]
 
     public init() {}
 
-    public mutating func recordRouteHealth(_ state: ProxyLatencyState, group: String) {
+    public mutating func recordRouteHealth(
+        _ state: ProxyLatencyState,
+        group: String,
+        recordHistory: Bool = false,
+        at date: Date = .now
+    ) {
         routeHealth[group] = state
+        if recordHistory {
+            for result in state.results where !groupNames.contains(result.member) {
+                appendSample(
+                    ProxyLatencySample(
+                        latencyMilliseconds: result.delayMilliseconds,
+                        testedAt: date
+                    ),
+                    for: result.member
+                )
+            }
+        }
+    }
+
+    public mutating func recordSample(
+        for member: String,
+        latencyMilliseconds: UInt32?,
+        at date: Date = .now
+    ) {
+        appendSample(
+            ProxyLatencySample(
+                latencyMilliseconds: latencyMilliseconds,
+                testedAt: date
+            ),
+            for: member
+        )
+    }
+
+    private mutating func appendSample(
+        _ sample: ProxyLatencySample,
+        for member: String
+    ) {
+        var samples = historyByMember[member] ?? []
+        samples.append(sample)
+        if samples.count > Self.maxHistoryCount {
+            samples.removeFirst(samples.count - Self.maxHistoryCount)
+        }
+        historyByMember[member] = samples
+    }
+
+    public func history(for member: String) -> [ProxyLatencySample] {
+        historyByMember[member] ?? []
+    }
+
+    public func stats(for member: String) -> ProxyLatencyStats {
+        ProxyLatencyStats(samples: history(for: member))
+    }
+
+    public func jitterMilliseconds(for member: String) -> UInt32? {
+        stats(for: member).jitterMilliseconds
+    }
+
+    public func lossRate(for member: String) -> Double {
+        stats(for: member).lossRate
+    }
+
+    public func statsSnapshot(for members: [String]) -> [String: ProxyLatencyStats] {
+        var result: [String: ProxyLatencyStats] = [:]
+        result.reserveCapacity(members.count)
+        for member in members {
+            let memberStats = stats(for: member)
+            if !memberStats.samples.isEmpty {
+                result[member] = memberStats
+            }
+        }
+        return result
     }
 
     /// Rebuilds the reverse index for one measurement run.
@@ -187,6 +261,15 @@ public struct ProxyLatencyIndex {
             measuredAt[group, default: [:]][member] = date
             measuredSeq[group, default: [:]][member] = seq
         }
+        if !groupNames.contains(member) {
+            appendSample(
+                ProxyLatencySample(
+                    latencyMilliseconds: measurement.delayMilliseconds,
+                    testedAt: date
+                ),
+                for: member
+            )
+        }
         return groups
     }
 
@@ -200,6 +283,15 @@ public struct ProxyLatencyIndex {
         measurements[group, default: [:]][member] = measurement
         measuredAt[group, default: [:]][member] = date
         measuredSeq[group, default: [:]][member] = nextSequence
+        if !groupNames.contains(member) {
+            appendSample(
+                ProxyLatencySample(
+                    latencyMilliseconds: measurement.delayMilliseconds,
+                    testedAt: date
+                ),
+                for: member
+            )
+        }
     }
 
     public func measurementDates(for group: String) -> [String: Date] {
@@ -338,5 +430,80 @@ public enum ProxyLatencyReading: Equatable, Sendable {
         }
         if isTesting { return .testing }
         return .untested
+    }
+}
+
+/// One historical probe outcome stored in `ProxyLatencyIndex`'s bounded ring buffer.
+public struct ProxyLatencySample: Equatable, Hashable, Sendable {
+    public let latencyMilliseconds: UInt32?
+    public let testedAt: Date
+
+    public init(latencyMilliseconds: UInt32?, testedAt: Date = .now) {
+        self.latencyMilliseconds = latencyMilliseconds
+        self.testedAt = testedAt
+    }
+}
+
+/// Aggregated stability statistics computed from a node's recent latency samples.
+public struct ProxyLatencyStats: Equatable, Sendable {
+    public let samples: [ProxyLatencySample]
+    public let jitterMilliseconds: UInt32?
+    public let lossRate: Double
+    public let averageLatencyMilliseconds: UInt32?
+
+    public init(
+        samples: [ProxyLatencySample],
+        jitterMilliseconds: UInt32?,
+        lossRate: Double,
+        averageLatencyMilliseconds: UInt32?
+    ) {
+        self.samples = samples
+        self.jitterMilliseconds = jitterMilliseconds
+        self.lossRate = min(1.0, max(0.0, lossRate))
+        self.averageLatencyMilliseconds = averageLatencyMilliseconds
+    }
+
+    public init(samples: [ProxyLatencySample]) {
+        self.samples = samples
+        guard !samples.isEmpty else {
+            self.jitterMilliseconds = nil
+            self.lossRate = 0.0
+            self.averageLatencyMilliseconds = nil
+            return
+        }
+
+        var successfulLatencies: [UInt32] = []
+        successfulLatencies.reserveCapacity(samples.count)
+        var timedOutCount = 0
+        for sample in samples {
+            if let ms = sample.latencyMilliseconds {
+                successfulLatencies.append(ms)
+            } else {
+                timedOutCount += 1
+            }
+        }
+
+        self.lossRate = Double(timedOutCount) / Double(samples.count)
+        if successfulLatencies.isEmpty {
+            self.averageLatencyMilliseconds = nil
+        } else {
+            let total = successfulLatencies.reduce(0 as UInt64) { $0 + UInt64($1) }
+            self.averageLatencyMilliseconds = UInt32(
+                (Double(total) / Double(successfulLatencies.count)).rounded()
+            )
+        }
+
+        if successfulLatencies.count >= 2 {
+            var deltaSum: UInt64 = 0
+            for idx in 1..<successfulLatencies.count {
+                let prev = Int64(successfulLatencies[idx - 1])
+                let curr = Int64(successfulLatencies[idx])
+                deltaSum += UInt64(abs(curr - prev))
+            }
+            let meanDelta = Double(deltaSum) / Double(successfulLatencies.count - 1)
+            self.jitterMilliseconds = UInt32(meanDelta.rounded())
+        } else {
+            self.jitterMilliseconds = nil
+        }
     }
 }

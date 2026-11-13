@@ -4,11 +4,18 @@ public enum CustomRuleKind: String, Codable, CaseIterable, Sendable {
     case domainSuffix = "DOMAIN-SUFFIX"
     case domain = "DOMAIN"
     case domainKeyword = "DOMAIN-KEYWORD"
+    case domainWildcard = "DOMAIN-WILDCARD"
+    case domainRegex = "DOMAIN-REGEX"
     case ipCIDR = "IP-CIDR"
     case ipCIDR6 = "IP-CIDR6"
     case geoIP = "GEOIP"
     case geoSite = "GEOSITE"
+    case ipASN = "IP-ASN"
     case dstPort = "DST-PORT"
+    case network = "NETWORK"
+    case processName = "PROCESS-NAME"
+    case processPath = "PROCESS-PATH"
+    case and = "AND"
     /// An application rule (1.3.0). Created only from an app the user picks,
     /// never parsed from rule text or accepted from a profile; see
     /// `CustomRule.application(...)`.
@@ -18,7 +25,7 @@ public enum CustomRuleKind: String, Codable, CaseIterable, Sendable {
         rawValue
     }
 
-    /// The kinds a user can type in the rule editor.
+    /// The kinds a user can create or edit in the rule editor.
     public static let editableKinds: [Self] = allCases.filter { $0 != .application }
 }
 
@@ -121,9 +128,29 @@ public struct CustomRule: Codable, Identifiable, Equatable, Sendable {
         return ApplicationRuleMatch(payload: value)
     }
 
+    /// One-click preset blocking QUIC (`UDP/443`) via a composite Clash `AND`
+    /// rule so HTTP/3 falls back cleanly to TCP/TLS without breaking UDP DNS.
+    public static func blockQUICPreset(
+        id: UUID = UUID(),
+        target: CustomRuleTarget = .reject,
+        isEnabled: Bool = true,
+        comment: String? = "Block QUIC (UDP 443)"
+    ) -> CustomRule {
+        CustomRule(
+            id: id,
+            kind: .and,
+            value: "((NETWORK,UDP),(DST-PORT,443))",
+            target: target,
+            noResolve: false,
+            isEnabled: isEnabled,
+            comment: comment
+        )
+    }
+
     public func toClashRuleString() -> String {
-        var parts: [String] = [kind.rawValue, value, target.rawString]
-        if noResolve && (kind == .ipCIDR || kind == .ipCIDR6 || kind == .geoIP) {
+        let emittedValue = kind == .network ? value.uppercased() : value
+        var parts: [String] = [kind.rawValue, emittedValue, target.rawString]
+        if noResolve && (kind == .ipCIDR || kind == .ipCIDR6 || kind == .geoIP || kind == .ipASN) {
             parts.append("no-resolve")
         }
         return parts.joined(separator: ",")
@@ -142,32 +169,50 @@ public struct CustomRule: Codable, Identifiable, Equatable, Sendable {
             input = String(input.dropFirst().dropLast())
         }
 
-        let tokens = input.split(separator: ",", omittingEmptySubsequences: true)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        // Split on first comma (kind) and trailing commas (target / optional no-resolve)
+        // so payloads like DOMAIN-REGEX (`\d{1,3}`) or AND (`((NETWORK,UDP),(DST-PORT,443))`)
+        // preserve their internal commas intact.
+        guard let firstComma = input.firstIndex(of: ",") else {
+            throw CustomRuleParseError.insufficientComponents
+        }
+        let kindToken = String(input[..<firstComma]).trimmingCharacters(in: .whitespacesAndNewlines)
+        var remainder = String(input[input.index(after: firstComma)...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard tokens.count >= 3 else {
+        var noResolve = false
+        if let lastComma = remainder.lastIndex(of: ",") {
+            let tail = String(remainder[remainder.index(after: lastComma)...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            if tail == "no-resolve" {
+                noResolve = true
+                remainder = String(remainder[..<lastComma])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+
+        guard let targetComma = remainder.lastIndex(of: ",") else {
+            throw CustomRuleParseError.insufficientComponents
+        }
+        let rawValue = String(remainder[..<targetComma]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetToken = String(remainder[remainder.index(after: targetComma)...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !kindToken.isEmpty, !targetToken.isEmpty else {
             throw CustomRuleParseError.insufficientComponents
         }
 
-        let kindRaw = tokens[0].uppercased()
+        let kindRaw = kindToken.uppercased()
         guard let kind = CustomRuleKind(rawValue: kindRaw), kind != .application else {
-            throw CustomRuleParseError.unsupportedKind(tokens[0])
+            throw CustomRuleParseError.unsupportedKind(kindToken)
         }
 
-        let value = tokens[1]
+        let value = kind == .network ? rawValue.uppercased() : rawValue
         guard !value.isEmpty else {
             throw CustomRuleParseError.emptyValue
         }
 
-        let target = CustomRuleTarget(rawValue: tokens[2])
-
-        var noResolve = false
-        if tokens.count >= 4 {
-            let fourth = tokens[3].lowercased()
-            if fourth == "no-resolve" {
-                noResolve = true
-            }
-        }
+        let target = CustomRuleTarget(rawValue: targetToken)
 
         let rule = CustomRule(
             id: id,
@@ -199,7 +244,7 @@ public enum CustomRuleParseError: LocalizedError, Equatable {
         case .insufficientComponents:
             return "Rule requires at least 3 parts (e.g. DOMAIN-SUFFIX,example.com,DIRECT)"
         case let .unsupportedKind(kind):
-            return "Unsupported rule kind: \(kind). Supported: DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, IP-CIDR, IP-CIDR6, GEOIP, GEOSITE, DST-PORT"
+            return "Unsupported rule kind: \(kind). Supported: DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, DOMAIN-WILDCARD, DOMAIN-REGEX, IP-CIDR, IP-CIDR6, GEOIP, GEOSITE, IP-ASN, DST-PORT, NETWORK, PROCESS-NAME, PROCESS-PATH, AND"
         case .emptyValue:
             return "Rule criteria / destination cannot be empty"
         case let .validationFailed(reason):
@@ -236,6 +281,10 @@ public enum CustomRuleValidator {
             return validateDomain(trimmedVal)
         case .domainKeyword:
             return validateKeyword(trimmedVal)
+        case .domainWildcard:
+            return validateDomainWildcard(trimmedVal)
+        case .domainRegex:
+            return validateDomainRegex(trimmedVal)
         case .ipCIDR:
             return validateIPv4CIDR(trimmedVal)
         case .ipCIDR6:
@@ -244,8 +293,18 @@ public enum CustomRuleValidator {
             return validateGeoIP(trimmedVal)
         case .geoSite:
             return validateGeoSite(trimmedVal)
+        case .ipASN:
+            return validateIPASN(trimmedVal)
         case .dstPort:
             return validateDstPort(trimmedVal)
+        case .network:
+            return validateNetwork(trimmedVal)
+        case .processName:
+            return validateProcessName(trimmedVal)
+        case .processPath:
+            return validateProcessPath(trimmedVal)
+        case .and:
+            return validateCompositeAND(trimmedVal)
         case .application:
             return ApplicationRuleMatch(payload: trimmedVal) == nil
                 ? .invalid(reason: "应用规则需要合法的签名标识或 .app 路径")
@@ -386,6 +445,111 @@ public enum CustomRuleValidator {
         }
         return .valid
     }
+
+    private static func validateDomainWildcard(_ input: String) -> RuleValidationResult {
+        let pattern = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !pattern.isEmpty, pattern.count <= 253 else {
+            return .invalid(reason: "DOMAIN-WILDCARD 长度必须在 1 到 253 个字符之间")
+        }
+        if pattern.contains("/") || pattern.contains(":") || pattern.contains(",")
+            || pattern.contains(where: \.isWhitespace) {
+            return .invalid(reason: "DOMAIN-WILDCARD 不能包含空格、斜杠、冒号或逗号")
+        }
+        let allowed: Set<Character> = ["*", "?", "+", ".", "-", "_"]
+        guard pattern.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || allowed.contains($0)) }),
+              pattern.contains(where: { $0.isLetter || $0.isNumber || $0 == "*" || $0 == "?" }) else {
+            return .invalid(reason: "DOMAIN-WILDCARD 仅允许 ASCII 域名字符与通配符 '*', '?', '+'")
+        }
+        return .valid
+    }
+
+    private static func validateDomainRegex(_ input: String) -> RuleValidationResult {
+        let pattern = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !pattern.isEmpty, pattern.count <= 512 else {
+            return .invalid(reason: "DOMAIN-REGEX 长度必须在 1 到 512 个字符之间")
+        }
+        guard !pattern.contains(where: \.isNewline) else {
+            return .invalid(reason: "DOMAIN-REGEX 不能包含换行符")
+        }
+        do {
+            _ = try NSRegularExpression(pattern: pattern)
+            return .valid
+        } catch {
+            return .invalid(reason: "DOMAIN-REGEX 正则表达式语法无效: \(error.localizedDescription)")
+        }
+    }
+
+    private static func validateIPASN(_ input: String) -> RuleValidationResult {
+        var raw = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.uppercased().hasPrefix("AS") {
+            raw = String(raw.dropFirst(2))
+        }
+        guard !raw.isEmpty,
+              raw.allSatisfy({ $0.isASCII && $0.isNumber }),
+              let asn = UInt32(raw),
+              asn > 0 else {
+            return .invalid(reason: "IP-ASN 必须是有效的非零 ASN 编号，例如 13335 或 AS13335")
+        }
+        return .valid
+    }
+
+    private static func validateNetwork(_ input: String) -> RuleValidationResult {
+        let upper = input.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard upper == "TCP" || upper == "UDP" else {
+            return .invalid(reason: "NETWORK 仅支持 TCP 或 UDP")
+        }
+        return .valid
+    }
+
+    private static func validateProcessName(_ input: String) -> RuleValidationResult {
+        let name = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name.utf8.count <= 256 else {
+            return .invalid(reason: "PROCESS-NAME 长度必须在 1 到 256 字节之间")
+        }
+        if name.contains("/") || name.contains(",") || name.contains("\0")
+            || name.contains(where: \.isNewline) {
+            return .invalid(reason: "PROCESS-NAME 不能包含路径分隔符 '/'、逗号或换行符")
+        }
+        return .valid
+    }
+
+    private static func validateProcessPath(_ input: String) -> RuleValidationResult {
+        let path = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard path.hasPrefix("/"), path.count > 1, path.utf8.count <= 1_024 else {
+            return .invalid(reason: "PROCESS-PATH 必须是以 '/' 开头的绝对可执行文件路径，例如 /usr/bin/curl")
+        }
+        if path.contains(",") || path.contains("\0") || path.contains(where: \.isNewline) {
+            return .invalid(reason: "PROCESS-PATH 不能包含逗号、空字符或换行符")
+        }
+        let components = path.split(separator: "/", omittingEmptySubsequences: true)
+        guard !components.isEmpty else {
+            return .invalid(reason: "PROCESS-PATH 必须包含可执行文件名")
+        }
+        return .valid
+    }
+
+    private static func validateCompositeAND(_ input: String) -> RuleValidationResult {
+        let expr = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard expr.hasPrefix("("), expr.hasSuffix(")"),
+              expr.contains(","),
+              !expr.contains(where: \.isNewline) else {
+            return .invalid(reason: "AND 组合规则格式必须类似 ((NETWORK,UDP),(DST-PORT,443))")
+        }
+        var depth = 0
+        for ch in expr {
+            if ch == "(" { depth += 1 }
+            else if ch == ")" {
+                depth -= 1
+                if depth < 0 {
+                    return .invalid(reason: "AND 组合规则括号不匹配")
+                }
+            }
+        }
+        guard depth == 0 else {
+            return .invalid(reason: "AND 组合规则括号不匹配")
+        }
+        return .valid
+    }
 }
 
 /// The bundle an application rule matches, decoded from its payload.
@@ -491,7 +655,8 @@ public extension CustomRule {
             if tokens.count == 2, let fallback = defaultTarget {
                 candidate = "\(tokens[0]),\(tokens[1]),\(fallback.rawString)"
                 let upperKind = tokens[0].uppercased()
-                if upperKind == "IP-CIDR" || upperKind == "IP-CIDR6" || upperKind == "GEOIP" {
+                if upperKind == "IP-CIDR" || upperKind == "IP-CIDR6"
+                    || upperKind == "GEOIP" || upperKind == "IP-ASN" {
                     candidate += ",no-resolve"
                 }
             }

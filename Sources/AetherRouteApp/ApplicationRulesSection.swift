@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 /// Finder, and each row's outlet changes in place.
 struct ApplicationRulesSection: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    @State private var showProcessPicker = false
 
     private var rules: [CustomRule] {
         tunnel.customRules.filter { $0.kind == .application }
@@ -57,6 +58,21 @@ struct ApplicationRulesSection: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("application-rules-section")
+        .sheet(isPresented: $showProcessPicker) {
+            RunningCLIProcessPickerSheet(
+                targets: targets,
+                onPick: { kind, value, name, target in
+                    Task {
+                        _ = await tunnel.setDestinationRule(
+                            kind: kind,
+                            value: value,
+                            noResolve: false,
+                            target: target
+                        )
+                    }
+                }
+            )
+        }
     }
 
     private var targets: [CustomRuleTarget] {
@@ -103,6 +119,15 @@ struct ApplicationRulesSection: View {
                 }
             }
             Button(AppLocalization.string("Choose an App…")) { chooseApp() }
+            Divider()
+            Section(AppLocalization.inline("CLI Processes & Binaries", chinese: "命令行进程与可执行文件")) {
+                Button(AppLocalization.inline("Pick Running CLI Process…", chinese: "选择正在运行的命令行进程…")) {
+                    showProcessPicker = true
+                }
+                Button(AppLocalization.inline("Choose Binary Executable…", chinese: "选择可执行文件…")) {
+                    chooseBinaryExecutable()
+                }
+            }
         } label: {
             Label(AppLocalization.string("Add App"), systemImage: "plus")
         }
@@ -126,6 +151,39 @@ struct ApplicationRulesSection: View {
             path: url.path,
             name: name.hasSuffix(".app") ? String(name.dropLast(4)) : name
         )
+    }
+
+    private func chooseBinaryExecutable() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.unixExecutable, .item]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        let homebrewBin = URL(fileURLWithPath: "/opt/homebrew/bin", isDirectory: true)
+        let localBin = URL(fileURLWithPath: "/usr/local/bin", isDirectory: true)
+        if FileManager.default.fileExists(atPath: homebrewBin.path) {
+            panel.directoryURL = homebrewBin
+        } else if FileManager.default.fileExists(atPath: localBin.path) {
+            panel.directoryURL = localBin
+        }
+        panel.prompt = AppLocalization.string("Add")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let path = url.path
+        let validation = CustomRuleValidator.validate(
+            kind: .processPath,
+            value: path,
+            target: .direct
+        )
+        guard validation.isValid else { return }
+        Task {
+            _ = await tunnel.addCustomRule(
+                CustomRule(
+                    kind: .processPath,
+                    value: path,
+                    target: .direct,
+                    comment: url.lastPathComponent
+                )
+            )
+        }
     }
 
     /// New rules start as "direct", the commonest reason to add one; the
@@ -239,5 +297,191 @@ private struct ApplicationRuleRow: View {
 
     private var icon: NSImage {
         SourceAppDirectory.shared.icon(forMatch: match)
+    }
+}
+
+private struct RunningCLIProcessItem: Identifiable, Hashable {
+    let executablePath: String
+    let processName: String
+    let pid: Int32
+
+    var id: String { executablePath }
+}
+
+private enum RunningCLIProcessScanner {
+    static func scan() -> [RunningCLIProcessItem] {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/ps")
+        process.arguments = ["-axo", "pid=,comm="]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+        } catch {
+            return []
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard let output = String(data: data, encoding: .utf8) else { return [] }
+
+        var byPath: [String: RunningCLIProcessItem] = [:]
+        for rawLine in output.split(whereSeparator: \.isNewline) {
+            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+            guard let space = trimmed.firstIndex(where: \.isWhitespace) else { continue }
+            guard let pid = Int32(trimmed[..<space]) else { continue }
+            let comm = String(trimmed[space...]).trimmingCharacters(in: .whitespaces)
+            guard comm.hasPrefix("/"),
+                  !comm.contains(".app/Contents/"),
+                  !comm.hasPrefix("/System/Library/"),
+                  !comm.hasPrefix("/usr/libexec/") else {
+                continue
+            }
+            let name = URL(fileURLWithPath: comm).lastPathComponent
+            guard !name.isEmpty, byPath[comm] == nil else { continue }
+            byPath[comm] = RunningCLIProcessItem(
+                executablePath: comm,
+                processName: name,
+                pid: pid
+            )
+        }
+        return byPath.values.sorted {
+            let cmp = $0.processName.localizedStandardCompare($1.processName)
+            if cmp != .orderedSame { return cmp == .orderedAscending }
+            return $0.executablePath < $1.executablePath
+        }
+    }
+}
+
+private struct RunningCLIProcessPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let targets: [CustomRuleTarget]
+    let onPick: (CustomRuleKind, String, String, CustomRuleTarget) -> Void
+
+    @State private var processes: [RunningCLIProcessItem] = []
+    @State private var isLoading = true
+    @State private var searchQuery = ""
+    @State private var matchByFullPath = false
+    @State private var selectedTarget: CustomRuleTarget = .direct
+
+    private var filteredProcesses: [RunningCLIProcessItem] {
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return processes }
+        return processes.filter {
+            $0.processName.lowercased().contains(q)
+                || $0.executablePath.lowercased().contains(q)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            HStack(spacing: AetherVisual.s3) {
+                Text(AppLocalization.inline("Running CLI Processes", chinese: "正在运行的命令行进程"))
+                    .font(.headline)
+                Spacer(minLength: AetherVisual.s2)
+                Button(AppLocalization.string("Refresh")) {
+                    reload()
+                }
+                .aetherButton()
+                .controlSize(.small)
+                Button(AppLocalization.string("Close")) {
+                    dismiss()
+                }
+                .aetherButton()
+                .controlSize(.small)
+            }
+
+            HStack(spacing: AetherVisual.s3) {
+                TextField(
+                    AppLocalization.inline("Filter process name or path…", chinese: "搜索进程名或可执行路径…"),
+                    text: $searchQuery
+                )
+                .textFieldStyle(.roundedBorder)
+
+                Picker(
+                    AppLocalization.inline("Match by", chinese: "匹配方式"),
+                    selection: $matchByFullPath
+                ) {
+                    Text(verbatim: "PROCESS-NAME").tag(false)
+                    Text(verbatim: "PROCESS-PATH").tag(true)
+                }
+                .labelsHidden()
+                .fixedSize()
+
+                Picker(AppLocalization.string("Action"), selection: $selectedTarget) {
+                    ForEach(targets, id: \.rawString) { target in
+                        Text(targetLabel(target)).tag(target)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+
+            if isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if filteredProcesses.isEmpty {
+                Text(AppLocalization.inline("No matching CLI processes found.", chinese: "未找到匹配的命令行进程。"))
+                    .font(.subheadline)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(filteredProcesses) { item in
+                    HStack(spacing: AetherVisual.s3) {
+                        VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                            Text(verbatim: item.processName)
+                                .font(.callout.weight(.semibold))
+                            Text(verbatim: item.executablePath)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(AetherVisual.secondaryText)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer(minLength: AetherVisual.s2)
+                        Text(verbatim: "PID \(item.pid)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(AetherVisual.secondaryText)
+                        Button(AppLocalization.string("Add")) {
+                            let kind: CustomRuleKind = matchByFullPath ? .processPath : .processName
+                            let value = matchByFullPath ? item.executablePath : item.processName
+                            onPick(kind, value, item.processName, selectedTarget)
+                            dismiss()
+                        }
+                        .aetherButton()
+                        .controlSize(.small)
+                    }
+                    .padding(.vertical, AetherVisual.sMicro)
+                }
+                .listStyle(.inset)
+            }
+        }
+        .padding(AetherVisual.s4)
+        .frame(
+            width: AetherVisual.s6 * 24,
+            height: AetherVisual.s6 * 16
+        )
+        .task {
+            reload()
+        }
+        .accessibilityIdentifier("running-cli-process-picker-sheet")
+    }
+
+    private func reload() {
+        isLoading = true
+        Task.detached(priority: .userInitiated) {
+            let found = RunningCLIProcessScanner.scan()
+            await MainActor.run {
+                processes = found
+                isLoading = false
+            }
+        }
+    }
+
+    private func targetLabel(_ target: CustomRuleTarget) -> String {
+        switch target {
+        case .direct: AppLocalization.string("Direct")
+        case .reject: AppLocalization.string("Block")
+        case let .proxy(name): name
+        }
     }
 }

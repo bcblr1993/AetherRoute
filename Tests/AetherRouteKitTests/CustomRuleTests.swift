@@ -335,11 +335,12 @@ final class CustomRuleTests: XCTestCase {
     }
 
     func testBatchReportSkipsUnsupportedLinesInsteadOfFailing() throws {
+        // PROCESS-NAME is now supported in v3.0; use SRC-PORT as the unsupported kind fixture.
         let text = """
         payload:
           - DOMAIN-SUFFIX,openai.com,DIRECT
           - RULE-SET,streaming,Proxy
-          - PROCESS-NAME,curl,DIRECT
+          - SRC-PORT,1234,DIRECT
           - MATCH,DIRECT
           - DOMAIN-SUFFIX,anthropic.com
           - not a rule

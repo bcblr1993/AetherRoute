@@ -27,6 +27,49 @@ public enum ProxyFailoverPolicy {
         return [preferred] + candidates.filter { $0 != preferred }
     }
 
+    /// Computes a composite quality score (lower is better) incorporating current
+    /// latency alongside historical jitter and packet-loss rate so unstable
+    /// nodes are penalized in auto-selection.
+    public static func effectiveScore(
+        latencyMilliseconds: UInt32,
+        stats: ProxyLatencyStats?
+    ) -> Double {
+        let base = Double(latencyMilliseconds)
+        guard let stats else { return base }
+        let jitterPenalty = Double(stats.jitterMilliseconds ?? 0) * 1.5
+        let lossPenalty = min(1.0, max(0.0, stats.lossRate)) * 2_000.0
+        return base + jitterPenalty + lossPenalty
+    }
+
+    /// Orders route candidates by stability-adjusted score (penalizing high
+    /// packet-loss and high-jitter nodes) while preserving `preferred` first
+    /// when failover pinning is active.
+    public static func orderedCandidates(
+        _ candidates: [String],
+        preferred: String?,
+        latencyByMember: [String: UInt32],
+        statsByMember: [String: ProxyLatencyStats]
+    ) -> [String] {
+        let indexByCandidate = Dictionary(
+            uniqueKeysWithValues: candidates.enumerated().map { ($1, $0) }
+        )
+        let sortedByStability = candidates.sorted { lhs, rhs in
+            let lhsScore = effectiveScore(
+                latencyMilliseconds: latencyByMember[lhs] ?? UInt32.max,
+                stats: statsByMember[lhs]
+            )
+            let rhsScore = effectiveScore(
+                latencyMilliseconds: latencyByMember[rhs] ?? UInt32.max,
+                stats: statsByMember[rhs]
+            )
+            if lhsScore != rhsScore {
+                return lhsScore < rhsScore
+            }
+            return (indexByCandidate[lhs] ?? 0) < (indexByCandidate[rhs] ?? 0)
+        }
+        return orderedCandidates(sortedByStability, preferred: preferred)
+    }
+
     /// Which connections to drop after an automatic switch.
     ///
     /// Moving away from a node that stopped answering drops what still runs
