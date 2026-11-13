@@ -22,6 +22,7 @@ final class LANProxyServerController: ObservableObject {
     nonisolated static let maxConcurrentSessions = 256
 
     @Published private(set) var isRunning = false
+    @Published private(set) var isLoopbackOnly = false
     @Published private(set) var activeHTTPPort: Int = 7_890
     @Published private(set) var activeSOCKSPort: Int = 7_891
     @Published private(set) var currentLANIP: String = "127.0.0.1"
@@ -80,15 +81,32 @@ final class LANProxyServerController: ObservableObject {
         }
     }
 
-    func updateConfiguration(settings: LocalProxySettings) {
+    func updateConfiguration(
+        settings: LocalProxySettings,
+        allowStandaloneLoopback: Bool = false
+    ) {
         refreshLANIP()
         let shouldRun = settings.allowLAN
+            || (allowStandaloneLoopback && (settings.setAsSystemProxy || settings.isEnabled))
+        let loopbackOnly = !settings.allowLAN
         if shouldRun {
-            if isRunning && (activeHTTPPort != settings.httpPort || activeSOCKSPort != settings.socksPort) {
+            if isRunning && (
+                activeHTTPPort != settings.httpPort
+                    || activeSOCKSPort != settings.socksPort
+                    || isLoopbackOnly != loopbackOnly
+            ) {
                 stop()
-                start(httpPort: settings.httpPort, socksPort: settings.socksPort)
+                start(
+                    httpPort: settings.httpPort,
+                    socksPort: settings.socksPort,
+                    loopbackOnly: loopbackOnly
+                )
             } else if !isRunning {
-                start(httpPort: settings.httpPort, socksPort: settings.socksPort)
+                start(
+                    httpPort: settings.httpPort,
+                    socksPort: settings.socksPort,
+                    loopbackOnly: loopbackOnly
+                )
             }
         } else {
             if isRunning {
@@ -97,7 +115,7 @@ final class LANProxyServerController: ObservableObject {
         }
     }
 
-    func start(httpPort: Int, socksPort: Int) {
+    func start(httpPort: Int, socksPort: Int, loopbackOnly: Bool = false) {
         guard !isRunning else { return }
         refreshLANIP()
 
@@ -107,7 +125,16 @@ final class LANProxyServerController: ObservableObject {
             guard let httpNWPort = NWEndpoint.Port(rawValue: UInt16(httpPort)) else {
                 throw LANProxyError.invalidPort(httpPort)
             }
-            let newHTTPListener = try NWListener(using: httpParameters, on: httpNWPort)
+            let newHTTPListener: NWListener
+            if loopbackOnly {
+                httpParameters.requiredLocalEndpoint = .hostPort(
+                    host: .ipv4(.loopback),
+                    port: httpNWPort
+                )
+                newHTTPListener = try NWListener(using: httpParameters)
+            } else {
+                newHTTPListener = try NWListener(using: httpParameters, on: httpNWPort)
+            }
 
             newHTTPListener.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor [weak self] in
@@ -129,7 +156,16 @@ final class LANProxyServerController: ObservableObject {
             if httpPort != socksPort, let socksNWPort = NWEndpoint.Port(rawValue: UInt16(socksPort)) {
                 let socksParameters = NWParameters.tcp
                 socksParameters.allowLocalEndpointReuse = true
-                let newSOCKSListener = try NWListener(using: socksParameters, on: socksNWPort)
+                let newSOCKSListener: NWListener
+                if loopbackOnly {
+                    socksParameters.requiredLocalEndpoint = .hostPort(
+                        host: .ipv4(.loopback),
+                        port: socksNWPort
+                    )
+                    newSOCKSListener = try NWListener(using: socksParameters)
+                } else {
+                    newSOCKSListener = try NWListener(using: socksParameters, on: socksNWPort)
+                }
 
                 newSOCKSListener.stateUpdateHandler = { [weak self] state in
                     Task { @MainActor [weak self] in
@@ -148,6 +184,7 @@ final class LANProxyServerController: ObservableObject {
                 self.activeSOCKSPort = socksPort
             }
 
+            self.isLoopbackOnly = loopbackOnly
             self.isRunning = true
             self.statusMessage = nil
             Self.logger.info("stage=start lan_ip=\(self.currentLANIP, privacy: .public) http_port=\(httpPort) socks_port=\(socksPort)")
@@ -170,6 +207,7 @@ final class LANProxyServerController: ObservableObject {
         }
         activeSessions.removeAll()
         activeConnectionsCount = 0
+        isLoopbackOnly = false
         isRunning = false
         Self.logger.info("stage=stop completed")
     }

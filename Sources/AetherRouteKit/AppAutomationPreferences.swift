@@ -130,10 +130,19 @@ public enum NetworkTriggerKind: String, CaseIterable, Codable, Equatable, Sendab
     case ethernet
 }
 
+public enum NetworkEngineMode: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
+    case transparent
+    case tun
+
+    public var id: Self { self }
+}
+
 public enum NetworkAutomationAction: Codable, Equatable, Hashable, Sendable {
     case setRoutingMode(RoutingMode)
     case connect
     case disconnect
+    case switchProfile(UUID)
+    case setEngineMode(NetworkEngineMode)
 }
 
 public struct NetworkAutomationRule: Codable, Equatable, Sendable, Identifiable {

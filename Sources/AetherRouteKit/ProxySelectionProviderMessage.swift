@@ -32,6 +32,9 @@ public enum ProxySelectionProviderRequest: Sendable, Equatable {
     /// Applies a diagnostic log level at once. The level otherwise reaches a
     /// running extension only with its next launch snapshot.
     case setDiagnosticLogLevel(DiagnosticLogLevel)
+    /// Evaluates a simulated connection against the active routing table and
+    /// live group selections inside the running provider.
+    case traceRoute(RouteTraceRequest)
 }
 
 public enum ProxySelectionProviderFailure: UInt8, Sendable, Equatable {
@@ -55,6 +58,7 @@ public enum ProxySelectionProviderResponse: Sendable, Equatable {
     /// UTF-8 log text, possibly empty when debug logging is off.
     case recentLog(Data)
     case diagnosticLogLevelApplied
+    case traceRoute(RouteTraceResult)
     case failure(ProxySelectionProviderFailure)
 }
 
@@ -229,6 +233,11 @@ public enum ProxySelectionProviderMessageCodec {
             group = Data()
             member = Data()
             reserved = [UInt8(level.rawValue), 0, 0]
+        case let .traceRoute(traceRequest):
+            operation = 13
+            group = try JSONEncoder().encode(traceRequest)
+            member = Data()
+            reserved = [0, 0, 0]
         }
 
         var output = Data(requestMagic)
@@ -389,6 +398,18 @@ public enum ProxySelectionProviderMessageCodec {
                 let level = DiagnosticLogLevel(rawValue: Int(bytes[5]))
             else { throw ProxySelectionProviderMessageError.malformed }
             return .setDiagnosticLogLevel(level)
+        case 13:
+            guard
+                bytes[5] == 0,
+                bytes[6] == 0,
+                bytes[7] == 0,
+                memberLength == 0
+            else { throw ProxySelectionProviderMessageError.malformed }
+            let payload = Data(bytes[groupStart..<memberStart])
+            guard let traceRequest = try? JSONDecoder().decode(RouteTraceRequest.self, from: payload) else {
+                throw ProxySelectionProviderMessageError.malformed
+            }
+            return .traceRoute(traceRequest)
         default:
             throw ProxySelectionProviderMessageError.malformed
         }
@@ -537,7 +558,26 @@ public enum ProxySelectionProviderMessageCodec {
             appendUInt32(noSelection, to: &output)
             appendUInt32(0, to: &output)
             return output
+        case let .traceRoute(result):
+            let payload = try JSONEncoder().encode(result)
+            guard responseHeaderBytes + payload.count <= maximumMessageBytes else {
+                throw ProxySelectionProviderMessageError.tooLarge
+            }
+            var output = Data(responseMagic)
+            output.append(12)
+            output.append(contentsOf: [0, 0, 0])
+            appendUInt32(noSelection, to: &output)
+            appendUInt32(UInt32(payload.count), to: &output)
+            output.append(payload)
+            return output
         }
+    }
+
+    public static func decodeResponse(
+        _ data: Data,
+        for _: ProxySelectionProviderRequest
+    ) throws -> ProxySelectionProviderResponse {
+        try decodeResponse(data)
     }
 
     public static func decodeResponse(
@@ -617,11 +657,25 @@ public enum ProxySelectionProviderMessageCodec {
                 memberCount <= UInt32(maximumRecentLogKilobytes) * 1_024,
                 data.count == responseHeaderBytes + Int(memberCount)
             else { throw ProxySelectionProviderMessageError.malformed }
+        case 12:
+            guard
+                bytes[5] == 0,
+                selectedIndex == noSelection,
+                Int(memberCount) <= maximumMessageBytes - responseHeaderBytes,
+                data.count == responseHeaderBytes + Int(memberCount)
+            else { throw ProxySelectionProviderMessageError.malformed }
         default:
             throw ProxySelectionProviderMessageError.malformed
         }
 
         var offset = responseHeaderBytes
+        if bytes[4] == 12 {
+            let payload = Data(bytes[responseHeaderBytes...])
+            guard let result = try? JSONDecoder().decode(RouteTraceResult.self, from: payload) else {
+                throw ProxySelectionProviderMessageError.malformed
+            }
+            return .traceRoute(result)
+        }
         if bytes[4] == 11 {
             return .diagnosticLogLevelApplied
         }

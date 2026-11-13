@@ -356,6 +356,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     )
                 case let .setDiagnosticLogLevel(level):
                     applyDiagnosticLogLevel(level)
+                case let .traceRoute(traceRequest):
+                    try handleTraceRoute(traceRequest, core: activeCore)
                 case .reloadProfile:
                     // Answered by the early branch above; never crash the
                     // extension (and the user's network) if that changes.
@@ -616,6 +618,38 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             "stage=appMessage setDiagnosticLogLevel level=\(level.rawValue, privacy: .public)"
         )
         return .diagnosticLogLevelApplied
+    }
+
+    private func handleTraceRoute(
+        _ request: RouteTraceRequest,
+        core: any CoreBridge
+    ) throws -> ProxySelectionProviderResponse {
+        let snapshot = recipeLock.withLock { activeRecipe?.snapshot }
+        let mode = uplinkLock.withLock { recoveryRoutingMode }
+        let profileYAML = snapshot?.profileYAML
+        let summary = profileYAML.map { ProfileConfigurationInspector.inspect(yaml: $0) }
+        var liveSelections = snapshot?.proxySelections ?? [:]
+        if let summary {
+            for group in summary.proxyGroups {
+                if let groupSnapshot = try? core.selectorSnapshot(group: group.name),
+                   let selected = groupSnapshot.selectedMember,
+                   !selected.isEmpty {
+                    liveSelections[group.name] = selected
+                }
+            }
+        }
+        let customRules = (try? CustomRuleStore.applicationGroup().load()) ?? []
+        let result = RouteSimulationInspector.evaluate(
+            request: request,
+            routingMode: mode,
+            profileYAML: profileYAML,
+            summary: summary,
+            proxySelections: liveSelections,
+            customRules: customRules,
+            geoSiteData: snapshot?.routingResources[.geoSite],
+            source: .liveProvider
+        )
+        return .traceRoute(result)
     }
 
     private func handleResetNetwork() throws -> ProxySelectionProviderResponse {

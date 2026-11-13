@@ -290,6 +290,14 @@ final class AppAutomationController: ObservableObject {
         case .disconnect:
             guard tunnel.isEnabled, tunnel.canPerformPrimaryAction else { return }
             Task { await tunnel.setEnabled(false) }
+        case let .switchProfile(profileID):
+            guard tunnel.activeProfileID != profileID,
+                  tunnel.profiles.contains(where: { $0.id == profileID }),
+                  tunnel.canModifyProfiles else { return }
+            Task { await tunnel.activateProfile(id: profileID) }
+        case let .setEngineMode(mode):
+            guard tunnel.networkEngineMode != mode, tunnel.canChangeNetworkEngine else { return }
+            Task { await tunnel.setNetworkEngineMode(mode) }
         }
     }
 

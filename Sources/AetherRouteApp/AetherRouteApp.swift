@@ -55,7 +55,7 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSM
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            tunnel?.handleExternalURL(url)
+            tunnel?.handleIncomingExternalURL(url)
         }
     }
 
@@ -2694,11 +2694,46 @@ private struct SettingsView: View {
                     set: { tunnel.setLocalProxyEnabled($0) }
                 )
             )
-            .disabled(
-                tunnel.networkEngineMode != .tun
-                    || !tunnel.canModifyLocalProxySettings
-            )
+            .disabled(!tunnel.canModifyLocalProxySettings)
             .accessibilityIdentifier("local-proxy-toggle")
+
+            Toggle(
+                AppLocalization.inline("Set as macOS System Proxy", chinese: "设为 macOS 系统代理"),
+                isOn: Binding(
+                    get: { tunnel.localProxySettings.setAsSystemProxy },
+                    set: { enabled in
+                        withAnimation(AetherVisual.animation(AetherVisual.disclosure)) {
+                            tunnel.setSystemProxyEnabled(enabled)
+                        }
+                    }
+                )
+            )
+            .disabled(!tunnel.canModifyLocalProxySettings)
+            .accessibilityIdentifier("local-proxy-system-proxy-toggle")
+
+            if tunnel.localProxySettings.setAsSystemProxy {
+                LabeledContent(AppLocalization.inline("System proxy status", chinese: "系统代理状态")) {
+                    Text(
+                        tunnel.isSystemProxyActive
+                            ? AppLocalization.inline(
+                                "Active (127.0.0.1:\(tunnel.localProxySettings.httpPort) / :\(tunnel.localProxySettings.socksPort))",
+                                chinese: "已生效（127.0.0.1:\(tunnel.localProxySettings.httpPort) / :\(tunnel.localProxySettings.socksPort)）"
+                            )
+                            : AppLocalization.inline(
+                                "Ready (applies automatically when active)",
+                                chinese: "已就绪（连接或独立模式启用时自动接管）"
+                            )
+                    )
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(tunnel.isSystemProxyActive ? AnyShapeStyle(Color.green) : AnyShapeStyle(AetherVisual.secondaryText))
+                }
+
+                SystemProxyBypassEditor(
+                    domains: tunnel.localProxySettings.systemProxyBypassDomains,
+                    isDisabled: !tunnel.canModifyLocalProxySettings,
+                    onSave: { tunnel.setSystemProxyBypassDomains($0) }
+                )
+            }
 
             Toggle(
                 AppLocalization.string("Allow LAN connections"),
@@ -2813,19 +2848,29 @@ private struct SettingsView: View {
     }
 
     private var canEditLocalProxyPorts: Bool {
-        (tunnel.localProxySettings.isEnabled || tunnel.localProxySettings.allowLAN)
+        (tunnel.localProxySettings.isEnabled
+            || tunnel.localProxySettings.allowLAN
+            || tunnel.localProxySettings.setAsSystemProxy)
             && tunnel.canModifyLocalProxySettings
     }
 
     private var canCopyLocalProxyEnvironment: Bool {
-        (tunnel.networkEngineMode == .tun && tunnel.localProxySettings.isEnabled)
+        tunnel.localProxySettings.isEnabled
             || tunnel.localProxySettings.allowLAN
+            || tunnel.localProxySettings.setAsSystemProxy
     }
 
     private var localProxyDetail: String {
+        if tunnel.localProxySettings.setAsSystemProxy {
+            return AppLocalization.inline(
+                "Configures macOS HTTP, HTTPS, and SOCKS5 System Proxy (127.0.0.1) across active network services and restores prior settings automatically on disconnect or quit. Works standalone or alongside TUN / Transparent Proxy.",
+                chinese: "自动将活跃网卡的 macOS HTTP/HTTPS/SOCKS5 系统代理指向 127.0.0.1，并在断开连接或退出应用时自动恢复原有设置；支持独立本地代理模式或与 TUN / 透明代理配合使用。"
+            )
+        }
         if tunnel.networkEngineMode != .tun {
-            return AppLocalization.string(
-                "Switch to TUN to use the local proxy."
+            return AppLocalization.inline(
+                "Runs a standalone local HTTP & SOCKS5 proxy on 127.0.0.1 even outside TUN mode. Optionally enable System Proxy above to route macOS apps automatically.",
+                chinese: "即使在透明代理或未连接状态下，也可在 127.0.0.1 运行独立本地 HTTP / SOCKS5 代理；勾选上方「设为 macOS 系统代理」可自动接管系统流量。"
             )
         }
         // TUN already carries Terminal traffic, so the copied environment is
@@ -2978,6 +3023,27 @@ private struct SettingsView: View {
             if automation.networkAutomationPreferences.isEnabled {
                 NetworkAutomationRulesEditor()
                     .environmentObject(automation)
+                    .environmentObject(tunnel)
+            }
+
+            Toggle(
+                AppLocalization.inline("Allow control URL scheme (aetherroute://)", chinese: "允许通过 URL Scheme 控制（aetherroute://）"),
+                isOn: Binding(
+                    get: { tunnel.controlURLSchemePreferences.allowControlURLScheme },
+                    set: { tunnel.setControlURLSchemeEnabled($0) }
+                )
+            )
+            .accessibilityIdentifier("control-url-scheme-toggle")
+
+            if tunnel.controlURLSchemePreferences.allowControlURLScheme {
+                Text(
+                    AppLocalization.inline(
+                        "Supported actions: aetherroute://connect, disconnect, toggle, set-mode?mode=rule|global|direct|tun|transparent, switch-profile?name=...",
+                        chinese: "支持命令：aetherroute://connect、disconnect、toggle、set-mode?mode=rule|global|direct|tun|transparent、switch-profile?name=..."
+                    )
+                )
+                .font(.caption.monospaced())
+                .foregroundStyle(AetherVisual.secondaryText)
             }
 
         } header: {
@@ -3134,17 +3200,26 @@ private struct ShortcutAssignmentRow: View {
 
 private struct NetworkAutomationRulesEditor: View {
     @EnvironmentObject private var automation: AppAutomationController
+    @EnvironmentObject private var tunnel: TunnelManager
     @State private var triggerKind: NetworkTriggerKind = .gatewayAddress
     @State private var triggerValue = ""
     @State private var selectedAction: NetworkAutomationAction = .setRoutingMode(.direct)
 
-    private static let allActions: [NetworkAutomationAction] = [
-        .setRoutingMode(.rule),
-        .setRoutingMode(.global),
-        .setRoutingMode(.direct),
-        .connect,
-        .disconnect,
-    ]
+    private var availableActions: [NetworkAutomationAction] {
+        var actions: [NetworkAutomationAction] = [
+            .setRoutingMode(.rule),
+            .setRoutingMode(.global),
+            .setRoutingMode(.direct),
+            .connect,
+            .disconnect,
+            .setEngineMode(.transparent),
+            .setEngineMode(.tun),
+        ]
+        for profile in tunnel.profiles {
+            actions.append(.switchProfile(profile.id))
+        }
+        return actions
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
@@ -3181,7 +3256,7 @@ private struct NetworkAutomationRulesEditor: View {
                 }
 
                 Picker(AppLocalization.string("Action"), selection: $selectedAction) {
-                    ForEach(Array(Self.allActions.enumerated()), id: \.offset) { _, action in
+                    ForEach(availableActions, id: \.self) { action in
                         Text(actionTitle(action)).tag(action)
                     }
                 }
@@ -3277,7 +3352,75 @@ private struct NetworkAutomationRulesEditor: View {
             AppLocalization.string("Connect")
         case .disconnect:
             AppLocalization.string("Disconnect")
+        case .setEngineMode(.transparent):
+            AppLocalization.inline("Engine: Transparent", chinese: "切换引擎：透明代理")
+        case .setEngineMode(.tun):
+            AppLocalization.inline("Engine: TUN", chinese: "切换引擎：TUN")
+        case let .switchProfile(profileID):
+            if let managed = tunnel.profiles.first(where: { $0.id == profileID }) {
+                AppLocalization.inline("Profile: \(managed.profile.name)", chinese: "切换配置：\(managed.profile.name)")
+            } else {
+                AppLocalization.inline("Switch profile", chinese: "切换配置")
+            }
         }
+    }
+}
+
+private struct SystemProxyBypassEditor: View {
+    let domains: [String]
+    let isDisabled: Bool
+    let onSave: ([String]) -> Void
+
+    @State private var text = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            HStack(spacing: AetherVisual.s2) {
+                Text(AppLocalization.inline("System proxy bypass domains", chinese: "系统代理绕过域名 / 网段"))
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                Spacer(minLength: AetherVisual.s2)
+                Button(AppLocalization.inline("Reset defaults", chinese: "恢复默认")) {
+                    onSave(LocalProxySettings.defaultSystemProxyBypassDomains)
+                }
+                .aetherButton()
+                .controlSize(.small)
+                .disabled(isDisabled)
+            }
+            HStack(spacing: AetherVisual.s2) {
+                TextField(
+                    AppLocalization.inline("localhost, 127.0.0.1, *.local", chinese: "localhost, 127.0.0.1, *.local"),
+                    text: $text
+                )
+                .textFieldStyle(.roundedBorder)
+                .font(.caption.monospaced())
+                .disabled(isDisabled)
+                .onSubmit(commit)
+                Button(AppLocalization.inline("Apply", chinese: "应用")) {
+                    commit()
+                }
+                .aetherButton()
+                .controlSize(.small)
+                .disabled(isDisabled)
+            }
+        }
+        .onAppear { syncFromDomains() }
+        .onChange(of: domains) { _, _ in syncFromDomains() }
+    }
+
+    private func syncFromDomains() {
+        let joined = domains.joined(separator: ", ")
+        if text != joined {
+            text = joined
+        }
+    }
+
+    private func commit() {
+        let parsed = text
+            .split(whereSeparator: { $0 == "," || $0 == "\n" || $0 == ";" })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        onSave(parsed)
     }
 }
 
