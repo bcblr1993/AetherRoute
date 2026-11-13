@@ -241,6 +241,11 @@ struct ProfilesView: View {
     @State private var isArchiveExporterPresented = false
     @State private var isExportPasswordPresented = false
     @State private var isCloudSyncSheetPresented = false
+    @State private var isMergeProfilesSheetPresented = false
+    @State private var isGlobalOverrideSheetPresented = false
+    @State private var proxyProviders: [ProxyProviderMetadata] = []
+    @State private var ruleProviders: [RuleProviderMetadata] = []
+    @State private var isRefreshingProviders = false
     @State private var archiveImportURL: URL?
     @State private var pendingArchiveData: Data?
     @State private var archiveDocument = ProfileArchiveDocument()
@@ -273,6 +278,7 @@ struct ProfilesView: View {
                     supportedFormatsCard
                 } else {
                     profileLibraryCard
+                    externalProvidersCard
                 }
             }
             .aetherPageContent(.wide)
@@ -359,6 +365,19 @@ struct ProfilesView: View {
         .sheet(isPresented: $isCloudSyncSheetPresented) {
             ProfileCloudSyncSheet()
                 .environmentObject(tunnel)
+        }
+        .sheet(isPresented: $isMergeProfilesSheetPresented) {
+            MergeProfilesSheet()
+                .environmentObject(tunnel)
+        }
+        .sheet(isPresented: $isGlobalOverrideSheetPresented) {
+            GlobalOverrideSheet()
+                .environmentObject(tunnel)
+        }
+        .task(id: tunnel.activeProfileID) {
+            let loaded = await tunnel.loadAllExternalProviders()
+            ruleProviders = loaded.rules
+            proxyProviders = loaded.proxies
         }
         .sheet(item: $profileToRename) { managed in
             ProfileRenameSheet(profile: managed) { name in
@@ -461,6 +480,20 @@ struct ProfilesView: View {
                 }
                 .disabled(!tunnel.canImportOrAddProfile)
                 .accessibilityIdentifier("import-share-links")
+
+                Divider()
+
+                Button {
+                    tunnel.clearProfileMessage()
+                    isMergeProfilesSheetPresented = true
+                } label: {
+                    Label(
+                        AppLocalization.inline("Merge Profiles…", chinese: "组合订阅…"),
+                        systemImage: "square.stack.3d.up"
+                    )
+                }
+                .disabled(!tunnel.canImportOrAddProfile || tunnel.profiles.filter { $0.mergedSpec == nil }.count < 2)
+                .accessibilityIdentifier("merge-profiles-button")
             } label: {
                 Label(AppLocalization.string("Add"), systemImage: "plus")
                     // The page's main action keeps its name in the toolbar.
@@ -472,6 +505,17 @@ struct ProfilesView: View {
             .accessibilityIdentifier("profiles-add-menu")
 
             Menu {
+                Button {
+                    tunnel.clearProfileMessage()
+                    isGlobalOverrideSheetPresented = true
+                } label: {
+                    Label(
+                        AppLocalization.inline("Global Override…", chinese: "全局覆写模板…"),
+                        systemImage: "slider.horizontal.3"
+                    )
+                }
+                .accessibilityIdentifier("profiles-global-override-button")
+
                 Button(AppLocalization.string("iCloud Sync…"), systemImage: "icloud") {
                     tunnel.clearProfileMessage()
                     isCloudSyncSheetPresented = true
@@ -1176,6 +1220,19 @@ private struct ManagedProfileRow: View {
                 }
                 .disabled(!canModify)
 
+                if managed.mergedSpec != nil {
+                    Button {
+                        Task { await tunnel.rebuildMergedProfile(id: managed.id) }
+                    } label: {
+                        Label(
+                            AppLocalization.inline("Rebuild Merged Profile", chinese: "重新合并源订阅"),
+                            systemImage: "arrow.triangle.merge"
+                        )
+                    }
+                    .disabled(!canModify)
+                    .accessibilityIdentifier("rebuild-merged-\(managed.id.uuidString)")
+                }
+
                 if isSubscription {
                     Button {
                         Task { await tunnel.refreshSubscription(id: managed.id) }
@@ -1664,5 +1721,459 @@ struct SubscriptionUsageLine: View {
             fromByteCount: Int64(clamping: value),
             countStyle: .binary
         )
+    }
+}
+
+private extension ProfilesView {
+    var externalProvidersCard: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            HStack {
+                AetherSectionHeader(
+                    title: AppLocalization.inline("External Providers", chinese: "外部规则与代理集合")
+                )
+                Spacer()
+                Button {
+                    guard !isRefreshingProviders else { return }
+                    isRefreshingProviders = true
+                    Task {
+                        let refreshed = await tunnel.refreshAllExternalProviders()
+                        ruleProviders = refreshed.rules
+                        proxyProviders = refreshed.proxies
+                        isRefreshingProviders = false
+                    }
+                } label: {
+                    AetherProgressButtonLabel(
+                        AppLocalization.inline("Refresh Providers", chinese: "刷新外部集合"),
+                        systemImage: "arrow.clockwise",
+                        isWorking: isRefreshingProviders
+                    )
+                }
+                .aetherButton()
+                .controlSize(.small)
+                .disabled(isRefreshingProviders)
+                .accessibilityIdentifier("refresh-external-providers")
+            }
+
+            VStack(spacing: 0) {
+                if proxyProviders.isEmpty && ruleProviders.isEmpty {
+                    HStack(spacing: AetherVisual.s3) {
+                        AetherIconTile(
+                            symbol: "shippingbox",
+                            color: AetherVisual.localProfileTint,
+                            size: AetherVisual.cardTileSize
+                        )
+                        VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                            Text(AppLocalization.inline("No staged providers yet", chinese: "尚未暂存外部集合"))
+                                .font(.body.weight(.semibold))
+                            Text(AppLocalization.inline(
+                                "Remote rule-providers (.yaml, .txt, .mrs) and proxy-providers will be staged locally for TUN and Transparent Proxy.",
+                                chinese: "远程 rule-providers（含 .mrs 二进制规则集）和 proxy-providers 会暂存到本地并同步供 TUN 与透明代理使用。"
+                            ))
+                            .font(.caption)
+                            .foregroundStyle(AetherVisual.secondaryText)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, AetherVisual.s4)
+                    .padding(.vertical, AetherVisual.sRow)
+                } else {
+                    ForEach(Array(proxyProviders.enumerated()), id: \.element.id) { index, provider in
+                        HStack(spacing: AetherVisual.s3) {
+                            AetherIconTile(
+                                symbol: "server.rack",
+                                color: AppSection.profiles.tileColor,
+                                size: AetherVisual.cardTileSize
+                            )
+                            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                                Text(verbatim: provider.name)
+                                    .font(.body.weight(.semibold))
+                                    .lineLimit(1)
+                                Text(AppLocalization.inline(
+                                    "Proxy provider · \(provider.proxyCount) nodes",
+                                    chinese: "代理集合 · \(provider.proxyCount) 个节点"
+                                ))
+                                .font(.caption)
+                                .foregroundStyle(AetherVisual.secondaryText)
+                                if let usage = provider.usage {
+                                    SubscriptionUsageLine(usage: usage)
+                                }
+                                if let err = provider.lastError {
+                                    Text(verbatim: err)
+                                        .font(.caption)
+                                        .foregroundStyle(AetherReadableTint(color: .orange))
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer()
+                            if let updated = provider.lastUpdatedAt {
+                                Text(verbatim: AppLocalization.date(updated, date: .abbreviated, time: .shortened))
+                                    .font(.caption)
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                            }
+                        }
+                        .padding(.horizontal, AetherVisual.s4)
+                        .padding(.vertical, AetherVisual.sRow)
+                        if index < proxyProviders.count - 1 || !ruleProviders.isEmpty {
+                            Divider().padding(.leading, AetherVisual.s4)
+                        }
+                    }
+                    ForEach(Array(ruleProviders.enumerated()), id: \.element.id) { index, provider in
+                        HStack(spacing: AetherVisual.s3) {
+                            AetherIconTile(
+                                symbol: "doc.badge.gearshape",
+                                color: AetherVisual.localProfileTint,
+                                size: AetherVisual.cardTileSize
+                            )
+                            VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                                Text(verbatim: provider.name)
+                                    .font(.body.weight(.semibold))
+                                    .lineLimit(1)
+                                Text(verbatim: "Rule provider · \(provider.format.rawValue.uppercased()) · \(provider.behavior.rawValue)")
+                                    .font(.caption)
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                            }
+                            Spacer()
+                            if let updated = provider.lastUpdatedAt {
+                                Text(verbatim: AppLocalization.date(updated, date: .abbreviated, time: .shortened))
+                                    .font(.caption)
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                            }
+                        }
+                        .padding(.horizontal, AetherVisual.s4)
+                        .padding(.vertical, AetherVisual.sRow)
+                        if index < ruleProviders.count - 1 {
+                            Divider().padding(.leading, AetherVisual.s4)
+                        }
+                    }
+                }
+            }
+            .aetherPanel()
+        }
+    }
+}
+
+private struct MergeProfilesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var tunnel: TunnelManager
+
+    @State private var name = ""
+    @State private var selectedIDs: [UUID] = []
+    @State private var prefixSourceName = true
+    @State private var deduplicateByServerPort = true
+    @State private var isSaving = false
+
+    private var sourceProfiles: [ManagedProfile] {
+        tunnel.profiles.filter { $0.mergedSpec == nil }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            AetherSheetHeader(
+                symbol: "square.stack.3d.up",
+                title: AppLocalization.inline("Merge Profiles", chinese: "创建组合订阅"),
+                subtitle: AppLocalization.inline(
+                    "Combine nodes from multiple profiles to build cross-subscription chains and unified routing.",
+                    chinese: "将多个订阅的节点合并为统一配置，可跨订阅配置链式代理与自动策略组。"
+                ),
+                tint: AppSection.profiles.tileColor
+            )
+
+            VStack(spacing: 0) {
+                HStack {
+                    Text(AppLocalization.string("Name"))
+                        .foregroundStyle(AetherVisual.secondaryText)
+                    Spacer()
+                    TextField(AppLocalization.inline("e.g. Combined Airports", chinese: "例如：多机场组合"), text: $name)
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.trailing)
+                        .accessibilityIdentifier("merge-profile-name-field")
+                }
+                .padding(.horizontal, AetherVisual.s4)
+                .padding(.vertical, AetherVisual.sRow)
+
+                Divider().padding(.leading, AetherVisual.s4)
+
+                Toggle(isOn: $prefixSourceName) {
+                    Text(AppLocalization.inline("Prefix node names with source profile", chinese: "节点名称前添加来源前缀"))
+                }
+                .padding(.horizontal, AetherVisual.s4)
+                .padding(.vertical, AetherVisual.sRow)
+
+                Divider().padding(.leading, AetherVisual.s4)
+
+                Toggle(isOn: $deduplicateByServerPort) {
+                    Text(AppLocalization.inline("Deduplicate identical server & port", chinese: "按服务器与端口去重"))
+                }
+                .padding(.horizontal, AetherVisual.s4)
+                .padding(.vertical, AetherVisual.sRow)
+            }
+            .aetherPanel()
+
+            Text(AppLocalization.inline("Source Profiles", chinese: "选择源配置（至少 2 个）"))
+                .font(.headline)
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(Array(sourceProfiles.enumerated()), id: \.element.id) { index, managed in
+                        Toggle(isOn: Binding(
+                            get: { selectedIDs.contains(managed.id) },
+                            set: { isOn in
+                                if isOn {
+                                    if !selectedIDs.contains(managed.id) {
+                                        selectedIDs.append(managed.id)
+                                    }
+                                } else {
+                                    selectedIDs.removeAll { $0 == managed.id }
+                                }
+                            }
+                        )) {
+                            Text(verbatim: managed.profile.name)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, AetherVisual.s4)
+                        .padding(.vertical, AetherVisual.sRow)
+                        if index < sourceProfiles.count - 1 {
+                            Divider().padding(.leading, AetherVisual.s4)
+                        }
+                    }
+                }
+                .aetherPanel()
+            }
+            .frame(minHeight: AetherVisual.sheetFormMinHeight, maxHeight: AetherVisual.sheetFormIdealHeight)
+
+            HStack {
+                Spacer()
+                Button(AppLocalization.string("Cancel"), role: .cancel) {
+                    dismiss()
+                }
+                .aetherButton()
+                Button(AppLocalization.inline("Create Merged Profile", chinese: "创建组合订阅")) {
+                    isSaving = true
+                    let spec = MergedProfileSpec(
+                        sourceProfileIDs: selectedIDs,
+                        prefixSourceName: prefixSourceName,
+                        deduplicateByServerPort: deduplicateByServerPort
+                    )
+                    Task {
+                        let ok = await tunnel.createMergedProfile(name: name, spec: spec)
+                        isSaving = false
+                        if ok { dismiss() }
+                    }
+                }
+                .aetherButton(prominent: true)
+                .disabled(selectedIDs.count < 2 || isSaving)
+                .accessibilityIdentifier("confirm-merge-profiles")
+            }
+        }
+        .padding(AetherVisual.dialogPadding)
+        .aetherLargeSheetFrame()
+    }
+}
+
+private struct GlobalOverrideSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var tunnel: TunnelManager
+
+    @State private var hiddenKeywordsText = ""
+    @State private var groupName = ""
+    @State private var includeKeywordsText = ""
+    @State private var groupKindTag: String = "url-test"
+    @State private var customHostDomain = ""
+    @State private var customHostIP = ""
+    @State private var groups: [CustomProxyGroup] = []
+    @State private var customHosts: [CustomHostMapping] = []
+    @State private var errorMessage: String?
+    @State private var isSaving = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            AetherSheetHeader(
+                symbol: "slider.horizontal.3",
+                title: AppLocalization.inline("Global Override Template", chinese: "全局覆写模板"),
+                subtitle: AppLocalization.inline(
+                    "Applied automatically before per-profile overrides across all profiles.",
+                    chinese: "对所有配置生效，在单配置覆写之前应用（单配置同名项优先）。"
+                ),
+                tint: AppSection.profiles.tileColor
+            )
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                        Text(AppLocalization.inline("Hidden Node Keywords (comma-separated)", chinese: "全局隐藏节点关键词（逗号分隔）"))
+                            .font(.subheadline.weight(.semibold))
+                        TextField(AppLocalization.inline("e.g. Expired, Traffic, Reset", chinese: "例如：过期, 剩余流量, 官网"), text: $hiddenKeywordsText)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    .padding(AetherVisual.s4)
+                    .aetherPanel()
+
+                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                        Text(AppLocalization.inline("Global Custom Groups", chinese: "全局自定义策略组"))
+                            .font(.subheadline.weight(.semibold))
+                        ForEach(groups) { group in
+                            HStack {
+                                Text(verbatim: "\(group.name) (\(group.groupKind.clashType))")
+                                    .lineLimit(1)
+                                Spacer()
+                                Button(role: .destructive) {
+                                    groups.removeAll { $0.id == group.id }
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                        HStack(spacing: AetherVisual.s2) {
+                            TextField(AppLocalization.inline("Group name", chinese: "分组名称"), text: $groupName)
+                                .textFieldStyle(.roundedBorder)
+                            TextField(AppLocalization.inline("Include keywords", chinese: "匹配关键词"), text: $includeKeywordsText)
+                                .textFieldStyle(.roundedBorder)
+                            Picker(AppLocalization.inline("Type", chinese: "类型"), selection: $groupKindTag) {
+                                Text(verbatim: "select").tag("select")
+                                Text(verbatim: "url-test").tag("url-test")
+                                Text(verbatim: "fallback").tag("fallback")
+                                Text(verbatim: "load-balance").tag("load-balance")
+                                Text(verbatim: "smart").tag("smart")
+                            }
+                            .labelsHidden()
+                            .fixedSize()
+                            Button(AppLocalization.inline("Add", chinese: "添加")) {
+                                addGroup()
+                            }
+                            .aetherButton()
+                        }
+                    }
+                    .padding(AetherVisual.s4)
+                    .aetherPanel()
+
+                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                        Text(AppLocalization.inline("Global Custom Hosts", chinese: "全局自定义 Hosts"))
+                            .font(.subheadline.weight(.semibold))
+                        ForEach(customHosts) { host in
+                            HStack {
+                                Text(verbatim: "\(host.domain) → \(host.ip)")
+                                    .lineLimit(1)
+                                Spacer()
+                                Button(role: .destructive) {
+                                    customHosts.removeAll { $0.id == host.id }
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                        HStack(spacing: AetherVisual.s2) {
+                            TextField(AppLocalization.inline("Domain (e.g. nas.local)", chinese: "域名 (如 nas.local)"), text: $customHostDomain)
+                                .textFieldStyle(.roundedBorder)
+                            TextField(AppLocalization.inline("IP address", chinese: "IP 地址"), text: $customHostIP)
+                                .textFieldStyle(.roundedBorder)
+                            Button(AppLocalization.inline("Add", chinese: "添加")) {
+                                addHost()
+                            }
+                            .aetherButton()
+                        }
+                    }
+                    .padding(AetherVisual.s4)
+                    .aetherPanel()
+                }
+            }
+            .frame(minHeight: AetherVisual.sheetFormMinHeight, maxHeight: AetherVisual.sheetFormMaxHeight)
+
+            if let errorMessage {
+                AetherInlineMessage(text: errorMessage)
+            }
+
+            HStack {
+                Spacer()
+                Button(AppLocalization.string("Cancel"), role: .cancel) {
+                    dismiss()
+                }
+                .aetherButton()
+                Button(AppLocalization.string("Save")) {
+                    save()
+                }
+                .aetherButton(prominent: true)
+                .disabled(isSaving)
+                .accessibilityIdentifier("save-global-override-button")
+            }
+        }
+        .padding(AetherVisual.dialogPadding)
+        .aetherLargeSheetFrame()
+        .onAppear {
+            let current = tunnel.loadGlobalProfileOverride()
+            groups = current.groups
+            customHosts = current.customHosts
+            hiddenKeywordsText = current.hiddenNodeKeywords.joined(separator: ", ")
+        }
+    }
+
+    private func addGroup() {
+        let keywords = includeKeywordsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let kind: CustomProxyGroupKind
+        switch groupKindTag {
+        case "url-test":
+            kind = .urlTest(interval: CustomProxyGroupKind.defaultIntervalSeconds, tolerance: CustomProxyGroupKind.defaultToleranceMilliseconds)
+        case "fallback":
+            kind = .fallback(interval: CustomProxyGroupKind.defaultIntervalSeconds)
+        case "load-balance":
+            kind = .loadBalance(strategy: .roundRobin)
+        case "smart":
+            kind = .smart
+        default:
+            kind = .select
+        }
+        let candidate = CustomProxyGroup(
+            name: groupName,
+            includeKeywords: keywords,
+            groupKind: kind
+        )
+        do {
+            let validated = try candidate.validated()
+            groups.append(validated)
+            groupName = ""
+            includeKeywordsText = ""
+            errorMessage = nil
+        } catch {
+            errorMessage = error.overrideMessage
+        }
+    }
+
+    private func addHost() {
+        let candidate = CustomHostMapping(domain: customHostDomain, ip: customHostIP)
+        do {
+            let validated = try candidate.validated()
+            customHosts.append(validated)
+            customHostDomain = ""
+            customHostIP = ""
+            errorMessage = nil
+        } catch {
+            errorMessage = error.overrideMessage
+        }
+    }
+
+    private func save() {
+        let hidden = hiddenKeywordsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let override = ProfileOverride(
+            groups: groups,
+            hiddenNodeKeywords: hidden,
+            customHosts: customHosts
+        )
+        isSaving = true
+        Task {
+            let ok = await tunnel.saveGlobalProfileOverride(override)
+            isSaving = false
+            if ok {
+                dismiss()
+            } else {
+                errorMessage = tunnel.profileMessage
+            }
+        }
     }
 }

@@ -11,6 +11,15 @@ public enum RuleProviderBehavior: String, Codable, Sendable, CaseIterable {
 public enum RuleProviderFormat: String, Codable, Sendable, CaseIterable {
     case yaml
     case text
+    case mrs
+
+    public var fileExtension: String {
+        switch self {
+        case .yaml: "yaml"
+        case .text: "txt"
+        case .mrs: "mrs"
+        }
+    }
 }
 
 public struct RemoteRuleItem: Codable, Sendable, Equatable, Identifiable {
@@ -127,16 +136,26 @@ public enum RuleProviderError: LocalizedError, Equatable {
 
 /// Actor-based remote rule provider manager respecting memory and security bounds.
 public actor RuleProviderEngine {
+    public typealias HTTPFetcher = @Sendable (URL) async throws -> (Data, URLResponse)
+
     public static let shared = RuleProviderEngine()
 
-    public static let maximumPayloadBytes = 5 * 1_024 * 1_024 // 5MB max bound
+    public static let maximumPayloadBytes = 5 * 1_024 * 1_024 // 5MB max bound for text/yaml
+    public static let maximumBinaryPayloadBytes = 32 * 1_024 * 1_024 // 32MB max bound for binary .mrs
     private static let logger = AppLog.logger(category: "kit.rule-providers")
 
     private let fileManager: FileManager
     private let directoryURL: URL
+    private let stagingBaseURL: URL
+    private let httpFetcher: HTTPFetcher?
     private var providers: [UUID: RuleProviderMetadata] = [:]
 
-    public init(fileManager: FileManager = .default, directoryURL: URL? = nil) {
+    public init(
+        fileManager: FileManager = .default,
+        directoryURL: URL? = nil,
+        stagingBaseURL: URL? = nil,
+        httpFetcher: HTTPFetcher? = nil
+    ) {
         self.fileManager = fileManager
         let dir: URL
         if let customDir = directoryURL {
@@ -147,10 +166,47 @@ public actor RuleProviderEngine {
             dir = fileManager.temporaryDirectory.appendingPathComponent("RuleProviders", isDirectory: true)
         }
         self.directoryURL = dir
+        if let stagingBaseURL {
+            self.stagingBaseURL = stagingBaseURL
+        } else if directoryURL != nil {
+            self.stagingBaseURL = dir.deletingLastPathComponent()
+        } else if let container = fileManager.containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup) {
+            self.stagingBaseURL = container.appendingPathComponent("Library/Application Support/AetherRoute", isDirectory: true)
+        } else {
+            self.stagingBaseURL = dir.deletingLastPathComponent()
+        }
+        self.httpFetcher = httpFetcher
 
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         let metaURL = dir.appendingPathComponent("providers.json")
         self.providers = Self.loadProvidersMetadata(fileManager: fileManager, metadataURL: metaURL)
+    }
+
+    public static func sanitizedProviderFileName(name: String, format: RuleProviderFormat) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        var scalars = trimmed.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
+        if scalars.isEmpty {
+            scalars = Array("provider")
+        }
+        var base = String(scalars)
+        while base.hasPrefix(".") {
+            base.removeFirst()
+        }
+        if base.isEmpty {
+            base = "provider"
+        }
+        let ext = format.fileExtension
+        if base.lowercased().hasSuffix(".\(ext)") {
+            return base
+        }
+        return "\(base).\(ext)"
+    }
+
+    public func stagedRuleFileURL(name: String, format: RuleProviderFormat) -> URL {
+        stagingBaseURL
+            .appendingPathComponent("providers/rules", isDirectory: true)
+            .appendingPathComponent(Self.sanitizedProviderFileName(name: name, format: format), isDirectory: false)
     }
 
     // MARK: - Provider Registration
@@ -288,7 +344,18 @@ public actor RuleProviderEngine {
     }
 
     // MARK: - Rule Reading
+    public func loadRawData(for id: UUID) -> Data? {
+        let cacheFile = cacheFileURL(for: id)
+        guard fileManager.fileExists(atPath: cacheFile.path) else {
+            return nil
+        }
+        return try? Data(contentsOf: cacheFile)
+    }
+
     public func loadRules(for id: UUID) throws -> [RemoteRuleItem] {
+        if providers[id]?.format == .mrs {
+            return []
+        }
         let cacheFile = cacheFileURL(for: id)
         guard fileManager.fileExists(atPath: cacheFile.path) else {
             return []
@@ -342,7 +409,11 @@ public actor RuleProviderEngine {
 
         let (data, response): (Data, URLResponse)
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            if let httpFetcher {
+                (data, response) = try await httpFetcher(provider.url)
+            } else {
+                (data, response) = try await URLSession.shared.data(for: request)
+            }
         } catch {
             throw RuleProviderError.downloadFailed(error.localizedDescription)
         }
@@ -363,33 +434,136 @@ public actor RuleProviderEngine {
             throw RuleProviderError.downloadFailed("HTTP \(httpResponse.statusCode)")
         }
 
-        guard data.count <= Self.maximumPayloadBytes else {
+        let maxBytes = provider.format == .mrs ? Self.maximumBinaryPayloadBytes : Self.maximumPayloadBytes
+        guard data.count <= maxBytes else {
             throw RuleProviderError.oversizedPayload(data.count)
         }
 
-        guard let text = String(data: data, encoding: .utf8) else {
-            throw RuleProviderError.parsingFailed
-        }
-
-        let parsedRules = parseRawRuleContent(text, behavior: provider.behavior, format: provider.format)
-        guard !parsedRules.isEmpty || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw RuleProviderError.parsingFailed
+        let ruleCount: Int
+        if provider.format == .mrs {
+            guard !data.isEmpty else {
+                throw RuleProviderError.parsingFailed
+            }
+            ruleCount = 0
+        } else {
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw RuleProviderError.parsingFailed
+            }
+            let parsedRules = parseRawRuleContent(text, behavior: provider.behavior, format: provider.format)
+            guard !parsedRules.isEmpty || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw RuleProviderError.parsingFailed
+            }
+            ruleCount = parsedRules.count
         }
 
         // Save cache to disk
         let cacheFile = cacheFileURL(for: provider.id)
         try data.write(to: cacheFile, options: [.atomic])
 
+        // Stage full snapshot (raw binary .mrs or un-truncated .yaml/.txt) for TUN & Transparent Proxy
+        let stagedName = Self.sanitizedProviderFileName(name: provider.name, format: provider.format)
+        try Self.stageFileData(
+            data,
+            relativeSubdirectory: "providers/rules",
+            fileName: stagedName,
+            stagingBaseURL: stagingBaseURL,
+            fileManager: fileManager
+        )
+
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         var updated = provider
         updated.lastUpdatedAt = Date()
-        updated.ruleCount = parsedRules.count
+        updated.ruleCount = ruleCount
         updated.etag = httpResponse.value(forHTTPHeaderField: "ETag")
         updated.sha256 = hash
         providers[provider.id] = updated
         saveProvidersMetadata()
 
-        return parsedRules.count
+        return ruleCount
+    }
+
+    /// Stages a snapshot file into `<base>/<subdir>/<file>` and mirrors regular files
+    /// (without symlinks) into `Runtime/` (TUN) and `Runtime/FlowCore/` (Transparent Proxy).
+    @discardableResult
+    public static func stageFileData(
+        _ data: Data,
+        relativeSubdirectory: String,
+        fileName: String,
+        stagingBaseURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> URL {
+        let primaryDir = stagingBaseURL.appendingPathComponent(relativeSubdirectory, isDirectory: true)
+        let tunDir = stagingBaseURL
+            .appendingPathComponent("Runtime", isDirectory: true)
+            .appendingPathComponent(relativeSubdirectory, isDirectory: true)
+        let flowDir = stagingBaseURL
+            .appendingPathComponent("Runtime/FlowCore", isDirectory: true)
+            .appendingPathComponent(relativeSubdirectory, isDirectory: true)
+
+        let destinations = [primaryDir, tunDir, flowDir]
+        for dir in destinations {
+            try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+            let fileURL = dir.appendingPathComponent(fileName, isDirectory: false)
+            if let existing = try? Data(contentsOf: fileURL), existing == data {
+                continue
+            }
+            try data.write(to: fileURL, options: [.atomic])
+            try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+        }
+        return primaryDir.appendingPathComponent(fileName, isDirectory: false)
+    }
+
+    /// Stages all remote `http` rule-providers declared inside a profile's YAML.
+    @discardableResult
+    public func stageProviders(inProfileYAML yaml: String, force: Bool = false) async -> [RuleProviderMetadata] {
+        let specs = DomesticRoutingOptimizer.extractRemoteRuleProviders(from: yaml)
+        var staged: [RuleProviderMetadata] = []
+        for spec in specs {
+            guard spec.type == "http",
+                  let url = URL(string: spec.url),
+                  url.scheme?.lowercased() == "https" else {
+                continue
+            }
+            let format: RuleProviderFormat
+            if spec.format == "mrs" || spec.url.lowercased().hasSuffix(".mrs") || spec.path.lowercased().hasSuffix(".mrs") {
+                format = .mrs
+            } else if spec.format == "text" || spec.url.lowercased().hasSuffix(".txt") || spec.path.lowercased().hasSuffix(".txt") {
+                format = .text
+            } else {
+                format = .yaml
+            }
+            let behavior = RuleProviderBehavior(rawValue: spec.behavior) ?? .domain
+            let existing = providers.values.first { $0.name == spec.name && $0.url == url }
+                ?? providers.values.first { $0.name == spec.name }
+            var metadata = existing ?? RuleProviderMetadata(
+                name: spec.name,
+                url: url,
+                behavior: behavior,
+                format: format,
+                intervalSeconds: UInt32(spec.interval ?? 86_400)
+            )
+            metadata.url = url
+            metadata.behavior = behavior
+            metadata.format = format
+            if let interval = spec.interval, interval > 0 {
+                metadata.intervalSeconds = UInt32(interval)
+            }
+            providers[metadata.id] = metadata
+            saveProvidersMetadata()
+
+            do {
+                _ = try await fetchAndParse(provider: metadata, force: force)
+                if let updated = providers[metadata.id] {
+                    staged.append(updated)
+                }
+            } catch {
+                Self.logger.warning("Failed staging rule provider \(spec.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                if let current = providers[metadata.id] {
+                    staged.append(current)
+                }
+            }
+        }
+        return staged
     }
 
     public func parseRawRuleContent(

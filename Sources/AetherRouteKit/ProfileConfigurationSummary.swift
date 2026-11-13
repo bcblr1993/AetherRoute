@@ -396,19 +396,28 @@ public struct ProxyGroupConfigurationSummary: Identifiable, Equatable, Sendable 
     /// Network Extension selector snapshot remains authoritative because
     /// provider-backed groups can expand to a different runtime membership.
     public let members: [String]
+    public let loadBalanceStrategy: String?
+    public let intervalSeconds: Int?
+    public let toleranceMilliseconds: Int?
 
     public init(
         id: Int,
         name: String,
         strategy: String,
         memberCount: Int,
-        members: [String] = []
+        members: [String] = [],
+        loadBalanceStrategy: String? = nil,
+        intervalSeconds: Int? = nil,
+        toleranceMilliseconds: Int? = nil
     ) {
         self.id = id
         self.name = name
         self.strategy = strategy
         self.memberCount = memberCount
         self.members = members
+        self.loadBalanceStrategy = loadBalanceStrategy
+        self.intervalSeconds = intervalSeconds
+        self.toleranceMilliseconds = toleranceMilliseconds
     }
 }
 
@@ -950,6 +959,8 @@ private struct Parser {
         var behavior: String?
         var format: String?
         var intervalSeconds: Int?
+        var toleranceMilliseconds: Int?
+        var loadBalanceStrategy: String?
         var members: [String] = []
         var includeAll = false
         var filterPattern: String?
@@ -1289,6 +1300,16 @@ private struct Parser {
                     let excludeStr = Self.jsonString(fields["exclude-filter"])
                     if !excludeStr.isEmpty {
                         item?.excludeFilterPattern = excludeStr
+                    }
+                    let strategyStr = Self.jsonString(fields["strategy"])
+                    if !strategyStr.isEmpty {
+                        item?.loadBalanceStrategy = strategyStr
+                    }
+                    if let intervalStr = Self.jsonScalar(fields["interval"]), let interval = Int(intervalStr) {
+                        item?.intervalSeconds = interval
+                    }
+                    if let toleranceStr = Self.jsonScalar(fields["tolerance"]), let tolerance = Int(toleranceStr) {
+                        item?.toleranceMilliseconds = tolerance
                     }
                 }
                 finishPendingItem()
@@ -1676,6 +1697,15 @@ private struct Parser {
                 if !pattern.isEmpty {
                     item?.excludeFilterPattern = pattern
                 }
+            case "strategy" where section == .proxyGroups:
+                let strategy = Self.scalar(value)
+                if !strategy.isEmpty {
+                    item?.loadBalanceStrategy = strategy
+                }
+            case "interval" where section == .proxyGroups:
+                item?.intervalSeconds = Int(Self.scalar(value))
+            case "tolerance" where section == .proxyGroups:
+                item?.toleranceMilliseconds = Int(Self.scalar(value))
             default: continue
             }
         }
@@ -1764,7 +1794,10 @@ private struct Parser {
                             ProfileConfigurationInspector
                                 .maximumDisplayedItemsPerSection
                         )
-                    )
+                    ),
+                    loadBalanceStrategy: item.loadBalanceStrategy,
+                    intervalSeconds: item.intervalSeconds,
+                    toleranceMilliseconds: item.toleranceMilliseconds
                 )
             )
         default:
@@ -1814,7 +1847,10 @@ private struct Parser {
                     candidates.prefix(
                         ProfileConfigurationInspector.maximumDisplayedItemsPerSection
                     )
-                )
+                ),
+                loadBalanceStrategy: existing.loadBalanceStrategy,
+                intervalSeconds: existing.intervalSeconds,
+                toleranceMilliseconds: existing.toleranceMilliseconds
             )
         }
         deferredGroupFilters.removeAll()

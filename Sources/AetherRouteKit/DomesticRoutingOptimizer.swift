@@ -258,6 +258,12 @@ public enum DomesticRoutingOptimizer {
 
     // MARK: - Optimization API
 
+    public static var defaultProviderBaseDirectoryURL: URL? {
+        FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup)?
+            .appendingPathComponent("Library/Application Support/AetherRoute", isDirectory: true)
+    }
+
     /// Optimizes the provided raw YAML configuration for domestic download speed and
     /// Apple services acceleration while preserving proxy routing for foreign domains,
     /// with mandatory loopback protection rules injected at priority #1 and user
@@ -266,7 +272,8 @@ public enum DomesticRoutingOptimizer {
         for yaml: String,
         customRules: [CustomRule] = [],
         remoteRules: [String] = [],
-        enableDomesticDirect: Bool = true
+        enableDomesticDirect: Bool = true,
+        providerBaseDirectoryURL: URL? = defaultProviderBaseDirectoryURL
     ) -> String {
         guard !yaml.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return yaml }
         let lines = ProfileRuntimeYAML.canonicalize(yaml).components(separatedBy: "\n")
@@ -281,12 +288,17 @@ public enum DomesticRoutingOptimizer {
             : sections["dns"]
         var expandedOrDroppedProviders = Set<String>()
         let (parsedRuleProviders, providerOrder) = parseRuleProvidersSection(sections["rule-providers"])
+        let stagedRuleProviders = resolveStagedRuleProviders(
+            parsedRuleProviders,
+            baseDirectoryURL: providerBaseDirectoryURL
+        )
         let optimizedRuleLines = optimizeRulesSection(
             sections["rules"],
             customRules: customRules,
             remoteRules: remoteRules,
             enableDomesticDirect: enableDomesticDirect,
             ruleProviders: parsedRuleProviders,
+            stagedRuleProviders: stagedRuleProviders,
             expandedOrDroppedProviders: &expandedOrDroppedProviders
         )
 
@@ -305,6 +317,7 @@ public enum DomesticRoutingOptimizer {
                     sectionLines,
                     providers: parsedRuleProviders,
                     order: providerOrder,
+                    stagedRuleProviders: stagedRuleProviders,
                     droppedOrExpanded: expandedOrDroppedProviders
                 )
                 if !sanitizedProviders.isEmpty {
@@ -315,7 +328,17 @@ public enum DomesticRoutingOptimizer {
                     resultLines.append(contentsOf: sanitizedProviders)
                     emittedSections.insert(key)
                 }
-            } else if key == "proxies" || key == "proxy-groups" || key == "proxy-providers" {
+            } else if key == "proxy-providers" {
+                if !emittedSections.contains("dns"), let optimizedDNSLines {
+                    resultLines.append(contentsOf: optimizedDNSLines)
+                    emittedSections.insert("dns")
+                }
+                resultLines.append(contentsOf: sanitizeProxyProvidersSection(
+                    sectionLines,
+                    baseDirectoryURL: providerBaseDirectoryURL
+                ))
+                emittedSections.insert(key)
+            } else if key == "proxies" || key == "proxy-groups" {
                 if !emittedSections.contains("dns"), let optimizedDNSLines {
                     resultLines.append(contentsOf: optimizedDNSLines)
                     emittedSections.insert("dns")
@@ -748,7 +771,65 @@ public enum DomesticRoutingOptimizer {
         var format: String = ""
         var url: String = ""
         var path: String = ""
+        var interval: Int?
         var rawLines: [String] = []
+    }
+
+    struct RemoteRuleProviderSpec {
+        let name: String
+        let type: String
+        let behavior: String
+        let format: String
+        let url: String
+        let path: String
+        let interval: Int?
+    }
+
+    struct RemoteProxyProviderSpec {
+        let name: String
+        let type: String
+        let url: String
+        let path: String
+        let interval: Int?
+    }
+
+    struct StagedRuleProviderRewrite {
+        let relativePath: String
+        let format: RuleProviderFormat
+    }
+
+    static func extractRemoteRuleProviders(from yaml: String) -> [RemoteRuleProviderSpec] {
+        let lines = ProfileRuntimeYAML.canonicalize(yaml).components(separatedBy: "\n")
+        let sections = parseTopLevelSections(from: lines)
+        let (parsed, order) = parseRuleProvidersSection(sections["rule-providers"])
+        return order.compactMap { key in
+            guard let def = parsed[key] else { return nil }
+            return RemoteRuleProviderSpec(
+                name: def.name,
+                type: def.type,
+                behavior: def.behavior,
+                format: def.format,
+                url: def.url,
+                path: def.path,
+                interval: def.interval
+            )
+        }
+    }
+
+    static func extractRemoteProxyProviders(from yaml: String) -> [RemoteProxyProviderSpec] {
+        let lines = ProfileRuntimeYAML.canonicalize(yaml).components(separatedBy: "\n")
+        let sections = parseTopLevelSections(from: lines)
+        let (parsed, order) = parseRuleProvidersSection(sections["proxy-providers"])
+        return order.compactMap { key in
+            guard let def = parsed[key] else { return nil }
+            return RemoteProxyProviderSpec(
+                name: def.name,
+                type: def.type,
+                url: def.url,
+                path: def.path,
+                interval: def.interval
+            )
+        }
     }
 
     private static func parseRuleProvidersSection(_ existingLines: [String]?) -> ([String: RuleProviderDef], [String]) {
@@ -791,7 +872,7 @@ public enum DomesticRoutingOptimizer {
 
             if var def = currentDef {
                 def.rawLines.append(line)
-                if let (key, val) = parseKeyAndValue(trimmed) {
+                if leadingSpaces <= 4, let (key, val) = parseKeyAndValue(trimmed) {
                     applyProviderField(key.lowercased(), unquote(val), to: &def)
                 }
                 currentDef = def
@@ -809,14 +890,55 @@ public enum DomesticRoutingOptimizer {
         case "format": def.format = clean.lowercased()
         case "url": def.url = clean
         case "path": def.path = clean
+        case "interval": def.interval = Int(clean)
         default: break
         }
+    }
+
+    private static func resolveStagedRuleProviders(
+        _ providers: [String: RuleProviderDef],
+        baseDirectoryURL: URL?
+    ) -> [String: StagedRuleProviderRewrite] {
+        guard let baseDirectoryURL else { return [:] }
+        let rulesDir = baseDirectoryURL.appendingPathComponent("providers/rules", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: rulesDir.path) else { return [:] }
+
+        var resolved: [String: StagedRuleProviderRewrite] = [:]
+        for (lower, def) in providers {
+            guard def.type == "http" || def.type == "file" else { continue }
+            let preferredFormat: RuleProviderFormat
+            if def.format == "mrs" || def.url.lowercased().hasSuffix(".mrs") || def.path.lowercased().hasSuffix(".mrs") {
+                preferredFormat = .mrs
+            } else if def.format == "text" || def.url.lowercased().hasSuffix(".txt") || def.path.lowercased().hasSuffix(".txt") {
+                preferredFormat = .text
+            } else {
+                preferredFormat = .yaml
+            }
+
+            var candidates: [RuleProviderFormat] = [preferredFormat]
+            for format in RuleProviderFormat.allCases where !candidates.contains(format) {
+                candidates.append(format)
+            }
+            for format in candidates {
+                let fileName = RuleProviderEngine.sanitizedProviderFileName(name: def.name, format: format)
+                let fileURL = rulesDir.appendingPathComponent(fileName, isDirectory: false)
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    resolved[lower] = StagedRuleProviderRewrite(
+                        relativePath: "./providers/rules/\(fileName)",
+                        format: format
+                    )
+                    break
+                }
+            }
+        }
+        return resolved
     }
 
     private static func sanitizeRuleProvidersSection(
         _ existingLines: [String]?,
         providers: [String: RuleProviderDef],
         order: [String],
+        stagedRuleProviders: [String: StagedRuleProviderRewrite],
         droppedOrExpanded: Set<String>
     ) -> [String] {
         guard let lines = existingLines, !lines.isEmpty else { return [] }
@@ -825,6 +947,22 @@ public enum DomesticRoutingOptimizer {
         for key in order {
             guard let def = providers[key] else { continue }
             let lower = key
+            if let staged = stagedRuleProviders[lower] {
+                if retainedLines.isEmpty {
+                    retainedLines.append("rule-providers:")
+                }
+                retainedLines.append("  \(def.name):")
+                retainedLines.append("    type: file")
+                if !def.behavior.isEmpty {
+                    retainedLines.append("    behavior: \(def.behavior)")
+                }
+                retainedLines.append("    format: \(staged.format.rawValue)")
+                retainedLines.append("    path: \(staged.relativePath)")
+                if let interval = def.interval, interval > 0 {
+                    retainedLines.append("    interval: \(interval)")
+                }
+                continue
+            }
             if def.type == "http" || def.behavior == "classical" || droppedOrExpanded.contains(lower) {
                 continue
             }
@@ -834,6 +972,86 @@ public enum DomesticRoutingOptimizer {
             retainedLines.append(contentsOf: def.rawLines)
         }
         return retainedLines
+    }
+
+    private static func sanitizeProxyProvidersSection(
+        _ existingLines: [String]?,
+        baseDirectoryURL: URL?
+    ) -> [String] {
+        guard let lines = existingLines, !lines.isEmpty else { return [] }
+        guard let baseDirectoryURL else { return lines }
+        let proxiesDir = baseDirectoryURL.appendingPathComponent("providers/proxies", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: proxiesDir.path) else { return lines }
+
+        let (providers, order) = parseRuleProvidersSection(lines)
+        guard !order.isEmpty else { return lines }
+
+        var output: [String] = [lines[0]]
+        for key in order {
+            guard let def = providers[key] else { continue }
+            let fileName = ProxyProviderEngine.sanitizedProviderFileName(name: def.name)
+            let stagedURL = proxiesDir.appendingPathComponent(fileName, isDirectory: false)
+            guard def.type == "http", FileManager.default.fileExists(atPath: stagedURL.path) else {
+                output.append(contentsOf: def.rawLines)
+                continue
+            }
+
+            let relativePath = "./providers/proxies/\(fileName)"
+            if let first = def.rawLines.first,
+               let colonIdx = first.firstIndex(of: ":"),
+               first[first.index(after: colonIdx)...].trimmingCharacters(in: .whitespaces).hasPrefix("{") {
+                // Convert inline flow mapping into clean block lines
+                output.append("  \(def.name):")
+                output.append("    type: file")
+                output.append("    path: \(relativePath)")
+                if let interval = def.interval, interval > 0 {
+                    output.append("    interval: \(interval)")
+                }
+            } else {
+                output.append(contentsOf: rewriteHTTPProviderLinesToFile(def.rawLines, relativePath: relativePath))
+            }
+        }
+        return output
+    }
+
+    private static func rewriteHTTPProviderLinesToFile(
+        _ rawLines: [String],
+        relativePath: String
+    ) -> [String] {
+        guard let header = rawLines.first else { return rawLines }
+        var rewritten: [String] = [header]
+        var wroteType = false
+        var wrotePath = false
+
+        for line in rawLines.dropFirst() {
+            let trimmed = stripInlineComment(line.trimmingCharacters(in: .whitespaces))
+            let indentCount = line.prefix(while: { $0 == " " }).count
+            if indentCount <= 4, let (key, _) = parseKeyAndValue(trimmed) {
+                let lowerKey = key.lowercased()
+                let indent = String(repeating: " ", count: max(4, indentCount))
+                if lowerKey == "type" {
+                    rewritten.append("\(indent)type: file")
+                    wroteType = true
+                    continue
+                }
+                if lowerKey == "url" {
+                    continue
+                }
+                if lowerKey == "path" {
+                    rewritten.append("\(indent)path: \(relativePath)")
+                    wrotePath = true
+                    continue
+                }
+            }
+            rewritten.append(line)
+        }
+        if !wroteType {
+            rewritten.insert("    type: file", at: 1)
+        }
+        if !wrotePath {
+            rewritten.insert("    path: \(relativePath)", at: min(2, rewritten.count))
+        }
+        return rewritten
     }
 
     private static func synthesizeRules(
@@ -1018,6 +1236,7 @@ public enum DomesticRoutingOptimizer {
         remoteRules: [String] = [],
         enableDomesticDirect: Bool = true,
         ruleProviders: [String: RuleProviderDef] = [:],
+        stagedRuleProviders: [String: StagedRuleProviderRewrite] = [:],
         expandedOrDroppedProviders: inout Set<String>
     ) -> [String] {
         var rawRules: [String] = []
@@ -1033,7 +1252,15 @@ public enum DomesticRoutingOptimizer {
             if tokens.first?.uppercased() == "RULE-SET" {
                 let providerName = tokens.count > 1 ? tokens[1] : ""
                 let target = tokens.count > 2 ? tokens[2] : ""
-                let providerDef = ruleProviders[providerName.lowercased()]
+                let loweredProviderName = providerName.lowercased()
+                let providerDef = ruleProviders[loweredProviderName]
+
+                // File-staged providers (.yaml, .txt, .mrs) are loaded natively by clash-rs
+                // without inline expansion caps or classical-behavior limits.
+                if stagedRuleProviders[loweredProviderName] != nil {
+                    rawRules.append(clean)
+                    return
+                }
 
                 // Check if this references an existing safe local inline or file provider
                 // (domain or ipcidr, non-classical) BEFORE attempting synthesis.

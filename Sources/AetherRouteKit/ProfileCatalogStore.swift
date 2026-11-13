@@ -1,19 +1,42 @@
 import CryptoKit
 import Foundation
 
+public struct MergedProfileSpec: Codable, Equatable, Sendable {
+    public var sourceProfileIDs: [UUID]
+    public var prefixSourceName: Bool
+    public var deduplicateByServerPort: Bool
+
+    public init(
+        sourceProfileIDs: [UUID],
+        prefixSourceName: Bool = true,
+        deduplicateByServerPort: Bool = true
+    ) {
+        self.sourceProfileIDs = sourceProfileIDs
+        self.prefixSourceName = prefixSourceName
+        self.deduplicateByServerPort = deduplicateByServerPort
+    }
+}
+
 public struct ManagedProfile: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let profile: ActiveProfile
     public let updatedAt: Date
+    public let mergedSpec: MergedProfileSpec?
 
-    public init(id: UUID = UUID(), profile: ActiveProfile, updatedAt: Date? = nil) {
+    public init(
+        id: UUID = UUID(),
+        profile: ActiveProfile,
+        updatedAt: Date? = nil,
+        mergedSpec: MergedProfileSpec? = nil
+    ) {
         self.id = id
         self.profile = profile
         self.updatedAt = updatedAt ?? profile.subscription?.lastUpdatedAt ?? profile.importedAt
+        self.mergedSpec = mergedSpec
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, profile, updatedAt
+        case id, profile, updatedAt, mergedSpec
     }
 
     public init(from decoder: Decoder) throws {
@@ -23,9 +46,11 @@ public struct ManagedProfile: Codable, Equatable, Identifiable, Sendable {
         let updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
             ?? profile.subscription?.lastUpdatedAt
             ?? profile.importedAt
+        let mergedSpec = try container.decodeIfPresent(MergedProfileSpec.self, forKey: .mergedSpec)
         self.id = id
         self.profile = profile
         self.updatedAt = updatedAt
+        self.mergedSpec = mergedSpec
     }
 }
 
@@ -276,7 +301,12 @@ public struct ProfileCatalogStore: Sendable {
             ? profile.withOverrides(current.profiles[index].profile.overrides)
             : profile
         var profiles = current.profiles
-        profiles[index] = ManagedProfile(id: id, profile: profile, updatedAt: updatedAt)
+        profiles[index] = ManagedProfile(
+            id: id,
+            profile: profile,
+            updatedAt: updatedAt,
+            mergedSpec: current.profiles[index].mergedSpec
+        )
         let updated = ProfileCatalog(
             activeProfileID: current.activeProfileID,
             profiles: profiles
@@ -306,7 +336,12 @@ public struct ProfileCatalogStore: Sendable {
         let profile = current.profiles[index].profile.withOverrides(validated)
         try profile.validateForStorage()
         var profiles = current.profiles
-        profiles[index] = ManagedProfile(id: id, profile: profile, updatedAt: updatedAt)
+        profiles[index] = ManagedProfile(
+            id: id,
+            profile: profile,
+            updatedAt: updatedAt,
+            mergedSpec: current.profiles[index].mergedSpec
+        )
         let updated = ProfileCatalog(
             activeProfileID: current.activeProfileID,
             profiles: profiles
@@ -318,6 +353,437 @@ public struct ProfileCatalogStore: Sendable {
             fileManager: fileManager
         )
         return updated
+    }
+
+    // MARK: - Merged Profiles (Multi-Subscription Combination)
+
+    @discardableResult
+    public func createMergedProfile(
+        name: String,
+        spec: MergedProfileSpec,
+        overrides: ProfileOverride? = nil,
+        importedAt: Date = .now,
+        makeActive: Bool = true,
+        fileManager: FileManager = .default
+    ) throws -> ProfileCatalog {
+        let current = try loadOrMigrate(fileManager: fileManager)
+        guard current.profiles.count < Self.maximumProfiles else {
+            throw ProfileCatalogStoreError.profileLimitReached(Self.maximumProfiles)
+        }
+        let sources = resolveMergeSources(spec: spec, in: current.profiles)
+        guard sources.count >= 2 else {
+            throw ProfileCatalogStoreError.invalidMergeSpec
+        }
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedName = cleanName.isEmpty
+            ? sources.map(\.profile.name).joined(separator: " + ")
+            : cleanName
+        let yaml = try Self.compileMergedYAML(sources: sources, spec: spec)
+        let validatedOverrides = try overrides?.validated()
+        let profile = ActiveProfile(
+            name: resolvedName,
+            yaml: yaml,
+            importedAt: importedAt,
+            overrides: validatedOverrides
+        )
+        try profile.validateForStorage()
+
+        let managed = ManagedProfile(
+            profile: profile,
+            updatedAt: importedAt,
+            mergedSpec: spec
+        )
+        var profiles = current.profiles
+        profiles.append(managed)
+        let shouldActivate = makeActive || current.activeProfileID == nil
+        let updated = ProfileCatalog(
+            activeProfileID: shouldActivate ? managed.id : current.activeProfileID,
+            profiles: profiles
+        )
+        try commit(
+            updated,
+            previous: current,
+            mirrorProfile: shouldActivate ? profile : nil,
+            fileManager: fileManager
+        )
+        return updated
+    }
+
+    @discardableResult
+    public func rebuildMergedProfile(
+        id: UUID,
+        updatedAt: Date = .now,
+        fileManager: FileManager = .default
+    ) throws -> ProfileCatalog {
+        let current = try loadOrMigrate(fileManager: fileManager)
+        guard let index = current.profiles.firstIndex(where: { $0.id == id }) else {
+            throw ProfileCatalogStoreError.profileNotFound
+        }
+        let existing = current.profiles[index]
+        guard let spec = existing.mergedSpec else {
+            throw ProfileCatalogStoreError.notMergedProfile
+        }
+        let sources = resolveMergeSources(spec: spec, in: current.profiles)
+        guard !sources.isEmpty else {
+            throw ProfileCatalogStoreError.invalidMergeSpec
+        }
+        let yaml = try Self.compileMergedYAML(sources: sources, spec: spec)
+        let rebuilt = ActiveProfile(
+            name: existing.profile.name,
+            yaml: yaml,
+            importedAt: updatedAt,
+            overrides: existing.profile.overrides
+        )
+        try rebuilt.validateForStorage()
+
+        var profiles = current.profiles
+        profiles[index] = ManagedProfile(
+            id: id,
+            profile: rebuilt,
+            updatedAt: updatedAt,
+            mergedSpec: spec
+        )
+        let updated = ProfileCatalog(
+            activeProfileID: current.activeProfileID,
+            profiles: profiles
+        )
+        try commit(
+            updated,
+            previous: current,
+            mirrorProfile: current.activeProfileID == id ? rebuilt : nil,
+            fileManager: fileManager
+        )
+        return updated
+    }
+
+    @discardableResult
+    public func rebuildDependentMergedProfiles(
+        referencing sourceProfileID: UUID,
+        updatedAt: Date = .now,
+        fileManager: FileManager = .default
+    ) throws -> ProfileCatalog {
+        var catalog = try loadOrMigrate(fileManager: fileManager)
+        let dependentIDs = catalog.profiles
+            .filter { $0.mergedSpec?.sourceProfileIDs.contains(sourceProfileID) == true }
+            .map(\.id)
+        for mergedID in dependentIDs {
+            catalog = try rebuildMergedProfile(id: mergedID, updatedAt: updatedAt, fileManager: fileManager)
+        }
+        return catalog
+    }
+
+    private func resolveMergeSources(
+        spec: MergedProfileSpec,
+        in profiles: [ManagedProfile]
+    ) -> [ManagedProfile] {
+        var seen = Set<UUID>()
+        var sources: [ManagedProfile] = []
+        for id in spec.sourceProfileIDs where seen.insert(id).inserted {
+            if let match = profiles.first(where: { $0.id == id && $0.mergedSpec == nil }) {
+                sources.append(match)
+            }
+        }
+        return sources
+    }
+
+    static func compileMergedYAML(
+        sources: [ManagedProfile],
+        spec: MergedProfileSpec
+    ) throws -> String {
+        var seenServerPorts = Set<String>()
+        var seenNames = Set<String>()
+        var mergedProxyBlocks: [[String]] = []
+        var mergedNodeNames: [String] = []
+
+        for source in sources {
+            let canonical = ProfileRuntimeYAML.canonicalize(source.profile.yaml)
+            let extracted = extractProxyEntries(fromYAML: canonical)
+            for entry in extracted {
+                if spec.deduplicateByServerPort,
+                   !entry.server.isEmpty,
+                   !entry.port.isEmpty {
+                    let dedupKey = "\(entry.server.lowercased()):\(entry.port)"
+                    if !seenServerPorts.insert(dedupKey).inserted {
+                        continue
+                    }
+                }
+                let baseName = spec.prefixSourceName
+                    ? "[\(source.profile.name)] \(entry.name)"
+                    : entry.name
+                let finalName = uniqueNodeName(
+                    baseName,
+                    sourceName: source.profile.name,
+                    seen: &seenNames
+                )
+                let rewritten = rewriteProxyEntryName(entry.lines, newName: finalName)
+                mergedProxyBlocks.append(rewritten)
+                mergedNodeNames.append(finalName)
+            }
+        }
+
+        guard !mergedProxyBlocks.isEmpty else {
+            throw ProfileCatalogStoreError.invalidMergeSpec
+        }
+
+        var lines: [String] = [
+            "mixed-port: 7890",
+            "allow-lan: false",
+            "mode: rule",
+            "log-level: info",
+            "proxies:",
+        ]
+        for block in mergedProxyBlocks {
+            lines.append(contentsOf: block)
+        }
+        let quotedNodes = mergedNodeNames.map(yamlSingleQuoted)
+        let proxyGroupMembers = ([yamlSingleQuoted("Auto")] + quotedNodes + ["DIRECT"]).joined(separator: ", ")
+        let autoGroupMembers = quotedNodes.joined(separator: ", ")
+        lines.append("proxy-groups:")
+        lines.append("  - {name: PROXY, type: select, proxies: [\(proxyGroupMembers)]}")
+        lines.append("  - {name: Auto, type: url-test, url: 'https://www.gstatic.com/generate_204', interval: 300, tolerance: 50, proxies: [\(autoGroupMembers)]}")
+        lines.append("rules:")
+        lines.append("  - GEOIP,LAN,DIRECT")
+        lines.append("  - GEOSITE,cn,DIRECT")
+        lines.append("  - GEOIP,CN,DIRECT")
+        lines.append("  - MATCH,PROXY")
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    private struct ExtractedProxyEntry {
+        let name: String
+        let server: String
+        let port: String
+        let lines: [String]
+    }
+
+    private static func extractProxyEntries(fromYAML yaml: String) -> [ExtractedProxyEntry] {
+        let lines = yaml.components(separatedBy: .newlines)
+        var inProxies = false
+        var itemIndent: Int?
+        var blocks: [[String]] = []
+        var current: [String] = []
+
+        func flushCurrent() {
+            if !current.isEmpty {
+                blocks.append(current)
+                current.removeAll(keepingCapacity: true)
+            }
+        }
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let indent = line.prefix(while: { $0 == " " }).count
+            if indent == 0 && !trimmed.isEmpty && !trimmed.hasPrefix("#") {
+                if trimmed == "proxies:" || trimmed.hasPrefix("proxies:") {
+                    inProxies = true
+                    let remainder = String(trimmed.dropFirst("proxies:".count)).trimmingCharacters(in: .whitespaces)
+                    if remainder == "[]" {
+                        inProxies = false
+                    }
+                    continue
+                }
+                if inProxies {
+                    flushCurrent()
+                    inProxies = false
+                    break
+                }
+                continue
+            }
+            guard inProxies else { continue }
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+
+            let isDash = trimmed.hasPrefix("- ") || trimmed == "-"
+            if isDash && (itemIndent == nil || indent <= itemIndent!) {
+                itemIndent = indent
+                flushCurrent()
+                current = [line]
+            } else if !current.isEmpty {
+                current.append(line)
+            }
+        }
+        flushCurrent()
+
+        return blocks.compactMap { block -> ExtractedProxyEntry? in
+            guard let first = block.first else { return nil }
+            let firstTrimmed = first.trimmingCharacters(in: .whitespaces)
+            guard firstTrimmed.hasPrefix("-") else { return nil }
+            let afterDash = String(firstTrimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
+            var name = ""
+            var server = ""
+            var port = ""
+            if afterDash.hasPrefix("{") {
+                let flowText = block.map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
+                if let open = flowText.firstIndex(of: "{"), let close = flowText.lastIndex(of: "}") {
+                    let body = String(flowText[flowText.index(after: open)..<close])
+                    for field in splitTopLevelFlow(body) {
+                        guard let (k, v) = splitKeyValue(field) else { continue }
+                        switch k.lowercased() {
+                        case "name": name = unquoteYAML(v)
+                        case "server": server = unquoteYAML(v)
+                        case "port": port = unquoteYAML(v)
+                        default: break
+                        }
+                    }
+                }
+            } else {
+                if let (k, v) = splitKeyValue(afterDash) {
+                    switch k.lowercased() {
+                    case "name": name = unquoteYAML(v)
+                    case "server": server = unquoteYAML(v)
+                    case "port": port = unquoteYAML(v)
+                    default: break
+                    }
+                }
+                let baseIndent = first.prefix(while: { $0 == " " }).count
+                for line in block.dropFirst() {
+                    let indent = line.prefix(while: { $0 == " " }).count
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    guard indent <= baseIndent + 4, let (k, v) = splitKeyValue(trimmed) else { continue }
+                    switch k.lowercased() {
+                    case "name": name = unquoteYAML(v)
+                    case "server": server = unquoteYAML(v)
+                    case "port": port = unquoteYAML(v)
+                    default: break
+                    }
+                }
+            }
+            guard !name.isEmpty else { return nil }
+            return ExtractedProxyEntry(name: name, server: server, port: port, lines: block)
+        }
+    }
+
+    private static func rewriteProxyEntryName(_ block: [String], newName: String) -> [String] {
+        guard let first = block.first else { return block }
+        let baseIndent = first.prefix(while: { $0 == " " }).count
+        let leadingPad = String(repeating: " ", count: baseIndent)
+        let firstTrimmed = first.trimmingCharacters(in: .whitespaces)
+        let afterDash = String(firstTrimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
+        let quotedName = yamlSingleQuoted(newName)
+
+        if afterDash.hasPrefix("{") {
+            let flowText = block.map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
+            if let open = flowText.firstIndex(of: "{"), let close = flowText.lastIndex(of: "}") {
+                let body = String(flowText[flowText.index(after: open)..<close])
+                var fields = splitTopLevelFlow(body)
+                var replaced = false
+                for idx in fields.indices {
+                    if let (k, _) = splitKeyValue(fields[idx]), k.lowercased() == "name" {
+                        fields[idx] = "name: \(quotedName)"
+                        replaced = true
+                        break
+                    }
+                }
+                if !replaced {
+                    fields.insert("name: \(quotedName)", at: 0)
+                }
+                return ["\(leadingPad)- {\(fields.joined(separator: ", "))}"]
+            }
+        }
+
+        var updated = block
+        if let (k, _) = splitKeyValue(afterDash), k.lowercased() == "name" {
+            updated[0] = "\(leadingPad)- name: \(quotedName)"
+            return updated
+        }
+        for idx in updated.indices.dropFirst() {
+            let line = updated[idx]
+            let indent = line.prefix(while: { $0 == " " }).count
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if indent <= baseIndent + 4, let (k, _) = splitKeyValue(trimmed), k.lowercased() == "name" {
+                let pad = String(repeating: " ", count: indent)
+                updated[idx] = "\(pad)name: \(quotedName)"
+                return updated
+            }
+        }
+        return updated
+    }
+
+    private static func uniqueNodeName(
+        _ base: String,
+        sourceName: String,
+        seen: inout Set<String>
+    ) -> String {
+        if seen.insert(base).inserted {
+            return base
+        }
+        let withSource = "\(base) (\(sourceName))"
+        if seen.insert(withSource).inserted {
+            return withSource
+        }
+        var suffix = 2
+        while true {
+            let candidate = "\(base) #\(suffix)"
+            if seen.insert(candidate).inserted {
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
+    private static func yamlSingleQuoted(_ text: String) -> String {
+        let escaped = text.replacingOccurrences(of: "'", with: "''")
+        return "'\(escaped)'"
+    }
+
+    private static func splitKeyValue(_ text: String) -> (String, String)? {
+        guard let colon = text.firstIndex(of: ":") else { return nil }
+        let after = text.index(after: colon)
+        if after < text.endIndex && text[after] != " " {
+            return nil
+        }
+        let key = String(text[..<colon]).trimmingCharacters(in: .whitespaces)
+        let value = String(text[after...]).trimmingCharacters(in: .whitespaces)
+        return key.isEmpty ? nil : (key, value)
+    }
+
+    private static func unquoteYAML(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if trimmed.count >= 2, trimmed.hasPrefix("'"), trimmed.hasSuffix("'") {
+            return String(trimmed.dropFirst().dropLast()).replacingOccurrences(of: "''", with: "'")
+        }
+        if trimmed.count >= 2, trimmed.hasPrefix("\""), trimmed.hasSuffix("\"") {
+            return String(trimmed.dropFirst().dropLast())
+        }
+        return trimmed
+    }
+
+    private static func splitTopLevelFlow(_ text: String) -> [String] {
+        var result: [String] = []
+        var current = ""
+        var depth = 0
+        var inSingle = false
+        var inDouble = false
+        var escaped = false
+        for ch in text {
+            if escaped {
+                current.append(ch)
+                escaped = false
+                continue
+            }
+            if ch == "\\" && inDouble {
+                current.append(ch)
+                escaped = true
+                continue
+            }
+            if ch == "'" && !inDouble {
+                inSingle.toggle()
+            } else if ch == "\"" && !inSingle {
+                inDouble.toggle()
+            } else if !inSingle && !inDouble {
+                if ch == "{" || ch == "[" { depth += 1 }
+                else if ch == "}" || ch == "]" { depth = max(0, depth - 1) }
+                else if ch == "," && depth == 0 {
+                    let trimmed = current.trimmingCharacters(in: .whitespaces)
+                    if !trimmed.isEmpty { result.append(trimmed) }
+                    current = ""
+                    continue
+                }
+            }
+            current.append(ch)
+        }
+        let trimmed = current.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty { result.append(trimmed) }
+        return result
     }
 
     /// Recompiles an AetherRoute-authored profile after a bounded native-node
@@ -965,7 +1431,9 @@ public enum ProfileCatalogStoreError: LocalizedError, Equatable {
     case duplicateIdentifier
     case emptyName
     case encryptedCatalogTooLarge(Int)
+    case invalidMergeSpec
     case nativeProfileMismatch
+    case notMergedProfile
     case notNativeProfile
     case profileLimitReached(Int)
     case profileNotFound
@@ -986,8 +1454,12 @@ public enum ProfileCatalogStoreError: LocalizedError, Equatable {
             "Enter a profile name."
         case let .encryptedCatalogTooLarge(bytes):
             "The encrypted profile catalog is too large (\(bytes) bytes)."
+        case .invalidMergeSpec:
+            "Select at least two source profiles with valid nodes to create a merged profile."
         case .nativeProfileMismatch:
             "The native node document does not match its compiled core profile."
+        case .notMergedProfile:
+            "Only merged profiles can be rebuilt from source subscriptions."
         case .notNativeProfile:
             "Only AetherRoute-native profiles can be edited as nodes."
         case let .profileLimitReached(limit):
