@@ -5,14 +5,7 @@ import Network
 import NetworkExtension
 import OSLog
 
-enum NetworkEngineMode: String, CaseIterable, Identifiable, Sendable {
-    case transparent
-#if AETHERROUTE_INDEPENDENT
-    case tun
-#endif
-
-    var id: Self { self }
-
+extension NetworkEngineMode {
     var localizedTitle: String {
         switch self {
         case .transparent: AppLocalization.string("Transparent Proxy")
@@ -438,6 +431,9 @@ final class TunnelManager: ObservableObject {
             }
             let previous = Self.diagnosticEventCode(for: oldValue)
             let current = Self.diagnosticEventCode(for: state)
+            if oldValue != state {
+                handleSystemProxyForStateTransition(from: oldValue, to: state)
+            }
             guard previous != current else { return }
             Self.runtimeLogger.info(
                 "stage=stateTransition from=\(previous.rawValue, privacy: .public) to=\(current.rawValue, privacy: .public)"
@@ -631,6 +627,8 @@ final class TunnelManager: ObservableObject {
 
     @Published var localProxySettings: LocalProxySettings
     @Published var localProxySettingsMessage: String? = nil
+    @Published var isSystemProxyActive = false
+    @Published var controlURLSchemePreferences: ControlURLSchemePreferences
     @Published var routingMode: RoutingMode {
         didSet {
             guard persistsRoutingModeSelection else { return }
@@ -645,6 +643,8 @@ final class TunnelManager: ObservableObject {
     let privacyConsentStore: PrivacyConsentStore
     let routingModePreferenceStore: RoutingModePreferenceStore
     let localProxySettingsStore: LocalProxySettingsStore
+    let controlURLSchemePreferenceStore: ControlURLSchemePreferenceStore
+    let systemProxyConfigurator: SystemProxyConfigurator
     let userDefaults: UserDefaults
     let subscriptionClient: ProfileSubscriptionClient
     let routingResourceDownloadClient: RoutingResourceDownloadClient
@@ -771,6 +771,9 @@ final class TunnelManager: ObservableObject {
         self.routingResourceStoreFactory = routingResourceStoreFactory
         localProxySettingsStore = LocalProxySettingsStore(defaults: userDefaults)
         localProxySettings = localProxySettingsStore.load()
+        controlURLSchemePreferenceStore = ControlURLSchemePreferenceStore(defaults: userDefaults)
+        controlURLSchemePreferences = controlURLSchemePreferenceStore.load()
+        systemProxyConfigurator = SystemProxyConfigurator(defaults: userDefaults)
         self.isDomesticOptimizationEnabled = DomesticRoutingOptimizer.isEnabled
         self.isAutomaticRoutingResourceUpdateEnabled = userDefaults.object(
             forKey: Self.automaticRoutingResourceUpdatePreferenceKey
@@ -1111,7 +1114,11 @@ final class TunnelManager: ObservableObject {
             }
         }
         if !isUIReviewMode {
-            LANProxyServerController.shared.updateConfiguration(settings: localProxySettings)
+            try? systemProxyConfigurator.restorePendingIfNeeded()
+            LANProxyServerController.shared.updateConfiguration(
+                settings: localProxySettings,
+                allowStandaloneLoopback: true
+            )
             MenuBarTrafficController.shared.onEnabledChanged = { [weak self] enabled in
                 self?.handleMenuBarTrafficEnabledChanged(enabled)
             }
@@ -1670,6 +1677,12 @@ final class TunnelManager: ObservableObject {
             }
             Self.runtimeLogger.info("stage=requireManager success")
             if enabled {
+                if !isUIReviewMode, networkEngineMode == .tun, !localProxySettings.allowLAN {
+                    LANProxyServerController.shared.updateConfiguration(
+                        settings: localProxySettings,
+                        allowStandaloneLoopback: false
+                    )
+                }
                 Self.runtimeLogger.info("stage=persistProviderConfiguration begin")
                 try await persistProviderConfiguration(
                     requestedMode,
@@ -1922,6 +1935,7 @@ final class TunnelManager: ObservableObject {
         runtimeEnvironmentResetTask?.cancel()
         runtimeEnvironmentResetTask = nil
         LANProxyServerController.shared.stop()
+        restoreSystemProxyIfNeeded()
     }
 
     /// A VPN or transparent proxy must not outlive an intentional App quit.
@@ -1975,6 +1989,7 @@ final class TunnelManager: ObservableObject {
         runtimeEnvironmentResetTask?.cancel()
         runtimeEnvironmentResetTask = nil
         LANProxyServerController.shared.stop()
+        restoreSystemProxyIfNeeded()
 
         if managerConnectionIsActive || isEnabled {
             manager?.connection.stopVPNTunnel()
@@ -2008,6 +2023,189 @@ final class TunnelManager: ObservableObject {
     func setLocalProxyAllowLAN(_ allowLAN: Bool) {
         updateLocalProxySettings { settings in
             settings.allowLAN = allowLAN
+        }
+    }
+
+    func setSystemProxyEnabled(_ enabled: Bool) {
+        updateLocalProxySettings(allowWhileConnected: true) { settings in
+            settings.setAsSystemProxy = enabled
+        }
+    }
+
+    func setSystemProxyBypassDomains(_ domains: [String]) {
+        updateLocalProxySettings(allowWhileConnected: true) { settings in
+            settings.systemProxyBypassDomains = domains
+        }
+    }
+
+    func setControlURLSchemeEnabled(_ enabled: Bool) {
+        let updated = ControlURLSchemePreferences(allowControlURLScheme: enabled)
+        controlURLSchemePreferences = updated
+        guard !isUIReviewMode else { return }
+        try? controlURLSchemePreferenceStore.save(updated)
+    }
+
+    func handleIncomingExternalURL(_ url: URL) {
+        do {
+            let action = try ExternalSubscriptionLinkParser.parseAction(
+                url,
+                allowControlActions: controlURLSchemePreferences.allowControlURLScheme
+            )
+            switch action {
+            case .importSubscription:
+                handleExternalURL(url)
+            case let .control(controlAction):
+                externalSubscriptionLinkError = nil
+                executeControlURLAction(controlAction)
+            }
+        } catch ExternalSubscriptionLinkError.controlActionsDisabled {
+            externalSubscriptionLinkError = AppLocalization.inline(
+                "Control URL actions are disabled. Enable them in Settings > Automation.",
+                chinese: "URL Scheme 控制已关闭，请先在「设置 > 自动化」中开启。"
+            )
+        } catch {
+            handleExternalURL(url)
+        }
+    }
+
+    private func executeControlURLAction(_ action: ExternalControlAction) {
+        switch action {
+        case .connect:
+            guard !isEnabled, canPerformPrimaryAction else { return }
+            Task { await setEnabled(true) }
+        case .disconnect:
+            guard isEnabled, canPerformPrimaryAction else { return }
+            Task { await setEnabled(false) }
+        case .toggle:
+            guard canPerformPrimaryAction else { return }
+            Task { await setEnabled(!isEnabled) }
+        case let .setRoutingMode(mode):
+            guard routingMode != mode, canChangeRoutingMode else { return }
+            Task { await setRoutingMode(mode) }
+        case let .setEngineMode(mode):
+            guard networkEngineMode != mode, canChangeNetworkEngine else { return }
+            Task { await setNetworkEngineMode(mode) }
+        case let .switchProfile(name, id):
+            let matchedProfile: ManagedProfile? = if let id {
+                profiles.first(where: { $0.id == id })
+            } else if let name {
+                profiles.first(where: {
+                    $0.profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .caseInsensitiveCompare(name) == .orderedSame
+                })
+            } else {
+                nil
+            }
+            guard let matchedProfile, activeProfileID != matchedProfile.id, canModifyProfiles else {
+                return
+            }
+            Task { await activateProfile(id: matchedProfile.id) }
+        }
+    }
+
+    func traceRoute(_ request: RouteTraceRequest) async -> RouteTraceResult {
+        let normalizedHost = DNSLookupInspector.normalizeHost(request.host)
+            ?? request.host.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedDNS: (addresses: [String], latencyMilliseconds: Int) = if isUIReviewMode || normalizedHost.isEmpty {
+            ([], 0)
+        } else {
+            await DNSLookupInspector.resolveSystemAddresses(for: normalizedHost)
+        }
+
+        if state == .connected, !isUIReviewMode {
+            let client = makeProxySelectionProviderClient()
+            if var liveResult = try? await client.traceRoute(request) {
+                if liveResult.dnsAddresses.isEmpty && !resolvedDNS.addresses.isEmpty {
+                    let isFake = resolvedDNS.addresses.contains(where: DNSLookupInspector.isFakeIPAddress)
+                    liveResult = RouteTraceResult(
+                        routingMode: liveResult.routingMode,
+                        matchedRuleKind: liveResult.matchedRuleKind,
+                        matchedRuleCriteria: liveResult.matchedRuleCriteria,
+                        matchedRuleOrder: liveResult.matchedRuleOrder,
+                        targetOutbound: liveResult.targetOutbound,
+                        outboundChain: liveResult.outboundChain,
+                        resolvedHostAlias: liveResult.resolvedHostAlias,
+                        dnsAddresses: resolvedDNS.addresses,
+                        dnsLatencyMilliseconds: resolvedDNS.latencyMilliseconds,
+                        isFakeIP: isFake,
+                        source: .liveProvider
+                    )
+                }
+                return liveResult
+            }
+        }
+
+        let currentSelections = proxySelections.compactMapValues(\.selectedMember)
+        let effectiveMode = state == .connected ? (sessionRoutingMode ?? routingMode) : routingMode
+        return RouteSimulationInspector.evaluate(
+            request: request,
+            routingMode: effectiveMode,
+            profileYAML: activeProfile?.runtimeYAML,
+            summary: activeProfileSummary,
+            proxySelections: currentSelections,
+            customRules: customRules,
+            customHosts: activeProfileOverrides.customHosts,
+            geoSiteData: bundledGeoSiteData,
+            resolvedAddresses: resolvedDNS.addresses,
+            dnsLatencyMilliseconds: resolvedDNS.addresses.isEmpty ? nil : resolvedDNS.latencyMilliseconds,
+            source: .staticFallback
+        )
+    }
+
+    func handleSystemProxyForStateTransition(from oldState: State, to newState: State) {
+        guard !isUIReviewMode else { return }
+        switch newState {
+        case .connected:
+            if localProxySettings.setAsSystemProxy {
+                applySystemProxyIfNeeded()
+            }
+        case .disconnecting:
+            restoreSystemProxyIfNeeded()
+        case .disconnected, .failed:
+            let wasActive = switch oldState {
+            case .connected, .connecting, .recovering, .disconnecting: true
+            default: false
+            }
+            if wasActive {
+                restoreSystemProxyIfNeeded()
+                LANProxyServerController.shared.updateConfiguration(
+                    settings: localProxySettings,
+                    allowStandaloneLoopback: false
+                )
+            }
+        case .privacyConsentRequired, .loading, .connecting, .recovering:
+            break
+        }
+    }
+
+    func applySystemProxyIfNeeded() {
+        guard !isUIReviewMode, !isApplicationTerminating, localProxySettings.setAsSystemProxy else {
+            return
+        }
+        do {
+            try systemProxyConfigurator.apply(settings: localProxySettings)
+            isSystemProxyActive = true
+        } catch {
+            isSystemProxyActive = false
+            localProxySettingsMessage = error.localizedDescription
+            Self.runtimeLogger.error(
+                "stage=systemProxy apply failed error=\(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    func restoreSystemProxyIfNeeded() {
+        guard !isUIReviewMode else {
+            isSystemProxyActive = false
+            return
+        }
+        do {
+            try systemProxyConfigurator.restorePendingIfNeeded()
+            isSystemProxyActive = false
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=systemProxy restore failed error=\(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 

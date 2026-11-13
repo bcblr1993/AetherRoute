@@ -303,6 +303,8 @@ extension TunnelManager {
             // 127.0.0.1 and LAN peers. Disabling the provider's duplicate
             // 127.0.0.1 listener avoids a port collision on the same ports.
             settings.isEnabled = false
+        } else if settings.setAsSystemProxy {
+            settings.isEnabled = true
         }
         return settings
 #else
@@ -319,6 +321,7 @@ extension TunnelManager {
     }
 
     func updateLocalProxySettings(
+        allowWhileConnected: Bool = false,
         _ update: (inout LocalProxySettings) -> Void
     ) {
         guard canModifyLocalProxySettings else {
@@ -327,20 +330,58 @@ extension TunnelManager {
             )
             return
         }
+        if state == .connected && !allowWhileConnected && networkEngineMode == .tun {
+            localProxySettingsMessage = AppLocalization.string(
+                "Disconnect before changing the local proxy."
+            )
+            return
+        }
         var updated = localProxySettings
         update(&updated)
+        if state == .connected
+            && networkEngineMode == .tun
+            && !updated.allowLAN
+            && updated.setAsSystemProxy
+            && !localProxySettings.isEnabled
+            && !localProxySettings.setAsSystemProxy {
+            localProxySettingsMessage = AppLocalization.inline(
+                "Reconnect TUN so its loopback listener starts on the configured ports.",
+                chinese: "请先断开并重连 TUN，以启用本地回环代理端口。"
+            )
+            return
+        }
         do {
             let validated = try updated.validated()
             if !isUIReviewMode {
                 try localProxySettingsStore.save(validated)
-                LANProxyServerController.shared.updateConfiguration(settings: validated)
+                let tunnelOwnsLoopback = networkEngineMode == .tun
+                    && !validated.allowLAN
+                    && (state == .connected || state == .connecting || state == .recovering || state == .disconnecting)
+                LANProxyServerController.shared.updateConfiguration(
+                    settings: validated,
+                    allowStandaloneLoopback: !tunnelOwnsLoopback
+                )
+                if validated.setAsSystemProxy {
+                    try systemProxyConfigurator.apply(settings: validated)
+                    isSystemProxyActive = true
+                } else {
+                    try systemProxyConfigurator.restorePendingIfNeeded()
+                    isSystemProxyActive = false
+                }
             }
             localProxySettings = validated
-            localProxySettingsMessage = validated.allowLAN
-                ? AppLocalization.string("LAN shared proxy is active.")
-                : (validated.isEnabled
-                    ? AppLocalization.string("The loopback proxy will start with the next TUN connection.")
-                    : AppLocalization.string("The loopback proxy is off."))
+            if validated.setAsSystemProxy {
+                localProxySettingsMessage = AppLocalization.inline(
+                    "macOS System Proxy is pointing to 127.0.0.1:\(validated.httpPort) / :\(validated.socksPort).",
+                    chinese: "已接管 macOS 系统代理（127.0.0.1:\(validated.httpPort) / :\(validated.socksPort)）。"
+                )
+            } else if validated.allowLAN {
+                localProxySettingsMessage = AppLocalization.string("LAN shared proxy is active.")
+            } else if validated.isEnabled {
+                localProxySettingsMessage = AppLocalization.string("The loopback proxy will start with the next TUN connection.")
+            } else {
+                localProxySettingsMessage = AppLocalization.string("The loopback proxy is off.")
+            }
         } catch {
             localProxySettingsMessage = error.localizedDescription
         }

@@ -769,6 +769,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     )
                 case let .setDiagnosticLogLevel(level):
                     self.applyDiagnosticLogLevel(level)
+                case let .traceRoute(traceRequest):
+                    try self.handleTraceRoute(traceRequest)
                 case .reloadProfile:
                     // Answered by the early branch above; never crash the
                     // extension (and the user's network) if that changes.
@@ -1471,7 +1473,39 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         case .closeConnections: "closeConnections"
         case .recentLog: "recentLog"
         case .setDiagnosticLogLevel: "setDiagnosticLogLevel"
+        case .traceRoute: "traceRoute"
         }
+    }
+
+    private func handleTraceRoute(
+        _ request: RouteTraceRequest
+    ) throws -> ProxySelectionProviderResponse {
+        let recipe = recipeLock.withLock { runtimeRecipe }
+        let mode = recipe?.routingMode ?? .rule
+        let profileYAML = recipe?.snapshot.profileYAML
+        let summary = profileYAML.map { ProfileConfigurationInspector.inspect(yaml: $0) }
+        var liveSelections = recipe?.selections ?? recipe?.snapshot.proxySelections ?? [:]
+        if let summary {
+            for group in summary.proxyGroups {
+                if let groupSnapshot = try? runtimeController.selectorSnapshot(group: group.name),
+                   let selected = groupSnapshot.selectedMember,
+                   !selected.isEmpty {
+                    liveSelections[group.name] = selected
+                }
+            }
+        }
+        let customRules = (try? CustomRuleStore.applicationGroup().load()) ?? []
+        let result = RouteSimulationInspector.evaluate(
+            request: request,
+            routingMode: mode,
+            profileYAML: profileYAML,
+            summary: summary,
+            proxySelections: liveSelections,
+            customRules: customRules,
+            geoSiteData: recipe?.snapshot.routingResources[.geoSite],
+            source: .liveProvider
+        )
+        return .traceRoute(result)
     }
 }
 

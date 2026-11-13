@@ -35,6 +35,7 @@ struct DNSView: View {
                             systemResolverContent
                         }
                         dnsLookupSection(summary: summary)
+                        RouteSimulatorSection()
                         networkDiagnosticSection(summary: summary)
                         customHostsSection
                     }
@@ -1543,6 +1544,206 @@ private struct DNSSummaryStatsLayout: Layout {
             }
             y += rowHeight + spacing
             index = rowEnd
+        }
+    }
+}
+
+private struct RouteSimulatorSection: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+
+    @State private var hostInput = ""
+    @State private var ipInput = ""
+    @State private var portInput = "443"
+    @State private var network: RouteTraceNetwork = .tcp
+    @State private var processPathInput = ""
+    @State private var isSimulating = false
+    @State private var traceResult: RouteTraceResult?
+
+    var body: some View {
+        FeatureSection(title: AppLocalization.inline("Route & DNS Simulator", chinese: "路由与 DNS 仿真测试")) {
+            VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                Text(
+                    AppLocalization.inline(
+                        "Test how AetherRoute evaluates a destination across rules, Fake-IP/DNS, and proxy groups. Uses the live engine when connected and falls back to static inspection when disconnected.",
+                        chinese: "测试指定目标的规则命中、DNS / Fake-IP 状态与策略组出站链路；已连接时直接查询运行中核心，未连接时使用静态规则解析。"
+                    )
+                )
+                .font(.caption)
+                .foregroundStyle(AetherVisual.secondaryText)
+
+                HStack(spacing: AetherVisual.s2) {
+                    TextField(
+                        AppLocalization.inline("Domain or IP (e.g. api.openai.com)", chinese: "域名或 IP（如 api.openai.com）"),
+                        text: $hostInput
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(.callout.monospaced())
+                    .onSubmit(runSimulation)
+                    .accessibilityIdentifier("route-sim-host-field")
+
+                    TextField(
+                        AppLocalization.inline("Port", chinese: "端口"),
+                        text: $portInput
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(.callout.monospacedDigit())
+                    .frame(width: 72)
+                    .onSubmit(runSimulation)
+                    .accessibilityIdentifier("route-sim-port-field")
+
+                    Picker(
+                        AppLocalization.inline("Protocol", chinese: "协议"),
+                        selection: $network
+                    ) {
+                        Text(verbatim: "TCP").tag(RouteTraceNetwork.tcp)
+                        Text(verbatim: "UDP").tag(RouteTraceNetwork.udp)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 112)
+                    .accessibilityIdentifier("route-sim-network-picker")
+                }
+
+                HStack(spacing: AetherVisual.s2) {
+                    TextField(
+                        AppLocalization.inline("Optional IP override (for IP-ASN / IP-CIDR)", chinese: "可选目标 IP（用于测试 IP-ASN / IP-CIDR）"),
+                        text: $ipInput
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption.monospaced())
+                    .onSubmit(runSimulation)
+                    .accessibilityIdentifier("route-sim-ip-field")
+
+                    TextField(
+                        AppLocalization.inline("Optional process path (e.g. /usr/bin/curl)", chinese: "可选进程路径（如 /usr/bin/curl）"),
+                        text: $processPathInput
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption.monospaced())
+                    .onSubmit(runSimulation)
+                    .accessibilityIdentifier("route-sim-process-field")
+
+                    Button {
+                        runSimulation()
+                    } label: {
+                        AetherProgressButtonLabel(
+                            AppLocalization.inline("Simulate", chinese: "开始测试"),
+                            isWorking: isSimulating
+                        )
+                    }
+                    .aetherButton(prominent: true)
+                    .disabled(isSimulating || (hostInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && ipInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                    .accessibilityIdentifier("route-sim-run-button")
+                }
+
+                if let result = traceResult {
+                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                        HStack(spacing: AetherVisual.s2) {
+                            Text(
+                                result.source == .liveProvider
+                                    ? AppLocalization.inline("Live Engine", chinese: "实时引擎")
+                                    : AppLocalization.inline("Static Fallback", chinese: "静态回退")
+                            )
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, AetherVisual.s2)
+                            .padding(.vertical, AetherVisual.s1)
+                            .background(
+                                AetherVisual.cardFill,
+                                in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                            )
+
+                            Text(ruleSummaryText(result))
+                                .font(.callout.monospaced())
+                                .textSelection(.enabled)
+                        }
+
+                        if !result.outboundChain.isEmpty {
+                            HStack(spacing: AetherVisual.s1) {
+                                Text(AppLocalization.inline("Outbound:", chinese: "出站链路："))
+                                    .font(.caption)
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                                Text(verbatim: result.outboundChain.joined(separator: " → "))
+                                    .font(.callout.weight(.medium))
+                                    .textSelection(.enabled)
+                            }
+                        }
+
+                        HStack(spacing: AetherVisual.s3) {
+                            if let alias = result.resolvedHostAlias {
+                                Text(AppLocalization.inline("Hosts: \(alias)", chinese: "Hosts 映射：\(alias)"))
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                            }
+
+                            if !result.dnsAddresses.isEmpty {
+                                Text(verbatim: result.dnsAddresses.joined(separator: ", "))
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                            }
+
+                            if result.isFakeIP {
+                                Text(AppLocalization.inline("Fake-IP", chinese: "Fake-IP"))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Color.accentColor)
+                            }
+
+                            if let ms = result.dnsLatencyMilliseconds {
+                                Text(AppLocalization.inline("DNS \(ms) ms", chinese: "DNS 耗时 \(ms) ms"))
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                            }
+                        }
+                    }
+                    .padding(AetherVisual.s3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        AetherVisual.cardFill,
+                        in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                            .strokeBorder(AetherVisual.cardStroke, lineWidth: 0.5)
+                    )
+                    .transition(AetherVisual.insertion)
+                    .accessibilityIdentifier("route-sim-result")
+                }
+            }
+        }
+    }
+
+    private func ruleSummaryText(_ result: RouteTraceResult) -> String {
+        var parts: [String] = []
+        if let order = result.matchedRuleOrder {
+            parts.append("#\(order)")
+        }
+        if let criteria = result.matchedRuleCriteria, !criteria.isEmpty {
+            parts.append("\(result.matchedRuleKind),\(criteria)")
+        } else {
+            parts.append(result.matchedRuleKind)
+        }
+        parts.append("→ \(result.targetOutbound)")
+        return parts.joined(separator: " ")
+    }
+
+    private func runSimulation() {
+        let host = hostInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ip = ipInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !host.isEmpty || !ip.isEmpty else { return }
+        let parsedPort = Int(portInput.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 443
+        let clampedPort = min(65_535, max(1, parsedPort))
+        let processPath = processPathInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let request = RouteTraceRequest(
+            host: host.isEmpty ? ip : host,
+            ip: ip.isEmpty ? nil : ip,
+            port: clampedPort,
+            network: network,
+            processPath: processPath.isEmpty ? nil : processPath
+        )
+        isSimulating = true
+        Task {
+            let result = await tunnel.traceRoute(request)
+            traceResult = result
+            isSimulating = false
         }
     }
 }
