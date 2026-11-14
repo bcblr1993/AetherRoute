@@ -19,6 +19,8 @@ swiftc -parse-as-library \
   "$KIT/ProfileImportValidator.swift" \
   "$KIT/AetherNode.swift" \
   "$KIT/ProfileOverride.swift" \
+  "$KIT/TunnelConfiguration.swift" \
+  "$KIT/LocalProxySettings.swift" \
   "$KIT/ProfileOverrideCompiler.swift" \
   "$KIT/NodeRegion.swift" \
   "$KIT/GeoSiteCategoryIndex.swift" \

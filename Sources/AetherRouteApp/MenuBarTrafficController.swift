@@ -110,35 +110,21 @@ public enum MenuBarTrafficRenderer {
                 ? MenuBarTrafficFormatter.rateComponents(downloadBytesPerSecond)
                 : (value: "0", unit: "B/s")
 
-            let font = NSFont.monospacedSystemFont(ofSize: 8.0, weight: .semibold)
-            let textColor = hasUpdate ? NSColor.labelColor : NSColor.black
-
-            let arrowStyle = NSMutableParagraphStyle()
-            arrowStyle.alignment = .center
-            arrowStyle.lineBreakMode = .byClipping
-
-            let valueStyle = NSMutableParagraphStyle()
-            valueStyle.alignment = .right
-            valueStyle.lineBreakMode = .byClipping
-
-            let unitStyle = NSMutableParagraphStyle()
-            unitStyle.alignment = .left
-            unitStyle.lineBreakMode = .byClipping
-
-            let arrowAttrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: textColor,
-                .paragraphStyle: arrowStyle
-            ]
+            // Resolve the dynamic color to a concrete sRGB value in the current
+            // drawing appearance; CoreText intermittently dropped unresolved
+            // dynamic colors from the attribute dictionary (nil value abort).
+            let textColor = (hasUpdate ? NSColor.labelColor : NSColor.black)
+                .usingColorSpace(.sRGB) ?? NSColor.black
+            let font = trafficFont
             let valueAttrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: textColor,
-                .paragraphStyle: valueStyle
+                .paragraphStyle: valueParagraphStyle
             ]
             let unitAttrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: textColor,
-                .paragraphStyle: unitStyle
+                .paragraphStyle: unitParagraphStyle
             ]
 
             let textStartX = iconAreaWidth + 2.0
@@ -154,12 +140,12 @@ public enum MenuBarTrafficRenderer {
             let lineHeight: CGFloat = 8.5
 
             // Top Line: Upload (y: 9.0 to 17.5 in flipped: false)
-            "↑".draw(in: NSRect(x: arrowX, y: 9.0, width: arrowWidth, height: lineHeight), withAttributes: arrowAttrs)
+            drawArrow(up: true, in: NSRect(x: arrowX, y: 9.0, width: arrowWidth, height: lineHeight), color: textColor)
             uploadComponents.value.draw(in: NSRect(x: valueX, y: 9.0, width: valueWidth, height: lineHeight), withAttributes: valueAttrs)
             uploadComponents.unit.draw(in: NSRect(x: unitX, y: 9.0, width: unitWidth, height: lineHeight), withAttributes: unitAttrs)
 
             // Bottom Line: Download (y: 0.5 to 9.0 in flipped: false)
-            "↓".draw(in: NSRect(x: arrowX, y: 0.5, width: arrowWidth, height: lineHeight), withAttributes: arrowAttrs)
+            drawArrow(up: false, in: NSRect(x: arrowX, y: 0.5, width: arrowWidth, height: lineHeight), color: textColor)
             downloadComponents.value.draw(in: NSRect(x: valueX, y: 0.5, width: valueWidth, height: lineHeight), withAttributes: valueAttrs)
             downloadComponents.unit.draw(in: NSRect(x: unitX, y: 0.5, width: unitWidth, height: lineHeight), withAttributes: unitAttrs)
 
@@ -201,6 +187,43 @@ public enum MenuBarTrafficRenderer {
         }
         rendered.isTemplate = false
         return rendered
+    }
+
+    // Immutable shared typography: built once instead of per frame.
+    nonisolated(unsafe) private static let trafficFont =
+        NSFont.monospacedSystemFont(ofSize: 8.0, weight: .semibold)
+    nonisolated(unsafe) private static let valueParagraphStyle: NSParagraphStyle = {
+        let style = NSMutableParagraphStyle()
+        style.alignment = .right
+        style.lineBreakMode = .byClipping
+        return style.copy() as! NSParagraphStyle
+    }()
+    nonisolated(unsafe) private static let unitParagraphStyle: NSParagraphStyle = {
+        let style = NSMutableParagraphStyle()
+        style.alignment = .left
+        style.lineBreakMode = .byClipping
+        return style.copy() as! NSParagraphStyle
+    }()
+
+    /// Crisp vector arrow; avoids font fallback for the arrow glyphs.
+    private static func drawArrow(up: Bool, in rect: NSRect, color: NSColor) {
+        let midX = rect.midX
+        let top = rect.minY + 1.5
+        let bottom = rect.maxY - 1.5
+        let head: CGFloat = 2.0
+        let path = NSBezierPath()
+        path.lineWidth = 1.0
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        path.move(to: NSPoint(x: midX, y: top))
+        path.line(to: NSPoint(x: midX, y: bottom))
+        let tip = up ? bottom : top
+        let dir: CGFloat = up ? -1 : 1
+        path.move(to: NSPoint(x: midX - head, y: tip + dir * head))
+        path.line(to: NSPoint(x: midX, y: tip))
+        path.line(to: NSPoint(x: midX + head, y: tip + dir * head))
+        color.setStroke()
+        path.stroke()
     }
 
     private static func rasterize(_ image: NSImage, canvas: NSSize) -> NSImage? {

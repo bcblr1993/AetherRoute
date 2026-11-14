@@ -19,7 +19,9 @@ struct DNSView: View {
         Group {
             if let summary = tunnel.activeProfileSummary {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
+                    // Plain VStack (matching RulesPageView 1.7.1) to prevent LazyVStack
+                    // width/constraint invalidation loops inside NavigationSplitView.
+                    VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
                         AetherPageHeader(.dns)
                         if tailscale.isRunning {
                             TailscaleCoexistenceNote(presence: tailscale)
@@ -132,7 +134,7 @@ struct DNSView: View {
                             .aetherNumericValue(stat.1)
                     }
                     .padding(AetherVisual.s3)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         AetherVisual.cardFill,
                         in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)

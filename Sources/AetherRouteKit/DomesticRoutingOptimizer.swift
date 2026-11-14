@@ -259,8 +259,15 @@ public enum DomesticRoutingOptimizer {
     // MARK: - Optimization API
 
     public static var defaultProviderBaseDirectoryURL: URL? {
-        FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup)?
+        // Unbundled CLI / swiftc verifier targets lack an Info.plist App Group key;
+        // skip container staging there instead of tripping AppConstants' precondition.
+        guard let appGroup = AppConstants.optionalIdentityValue(
+            AppConstants.appGroupInfoKey
+        ) else {
+            return nil
+        }
+        return FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: appGroup)?
             .appendingPathComponent("Library/Application Support/AetherRoute", isDirectory: true)
     }
 

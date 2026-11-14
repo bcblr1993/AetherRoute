@@ -35,10 +35,10 @@ public enum AppConstants {
     )
     public static let localizedDescription = "AetherRoute"
 
-    private static func requiredIdentityValue(
+    static func optionalIdentityValue(
         _ key: String,
         bundle: Bundle = Bundle(for: AetherRouteIdentityBundleMarker.self)
-    ) -> String {
+    ) -> String? {
         guard let value = bundle.object(forInfoDictionaryKey: key) as? String,
               !value.isEmpty,
               value == value.trimmingCharacters(
@@ -46,6 +46,16 @@ public enum AppConstants {
               ),
               !value.contains("$("),
               !value.contains("${") else {
+            return nil
+        }
+        return value
+    }
+
+    private static func requiredIdentityValue(
+        _ key: String,
+        bundle: Bundle = Bundle(for: AetherRouteIdentityBundleMarker.self)
+    ) -> String {
+        guard let value = optionalIdentityValue(key, bundle: bundle) else {
             preconditionFailure(
                 "Required build identity value \(key) is missing or unresolved."
             )

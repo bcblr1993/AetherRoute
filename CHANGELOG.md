@@ -6,6 +6,51 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-11-14
+
+### Added
+
+- **Native `.mrs` Rule Providers & `proxy-providers` Lifecycle (`Core/Engine`, `Sources/AetherRouteKit/RuleProviderEngine.swift`, `Sources/AetherRouteKit/ProxyProviderEngine.swift`, `Sources/AetherRouteApp/TunnelManager+ProviderManagement.swift`, `Sources/AetherRouteApp/ProfilesPageView.swift`)**:
+  - Added staging, metadata management, fetch/refresh lifecycle, and validation for external `proxy-providers` (`ProxyProviderEngine` actor) and native `.mrs` binary/domain/ipcidr `rule-providers` (`RuleProviderEngine`, preserving local providers in deterministic order with safe staging under the active runtime directory).
+- **Profile Merge, Global Override & Extended Policy Group Kinds (`Sources/AetherRouteKit/ProfileCatalogStore.swift`, `Sources/AetherRouteKit/ProfileOverride.swift`, `Sources/AetherRouteKit/ProfileOverrideCompiler.swift`, `Sources/AetherRouteApp/ProxyGroupOverrideSheets.swift`)**:
+  - Added merged profile preprocessing (`ProfileCatalogStore` / `TunnelManager+Profiles.swift`) and Global Override (`ProfileOverride` applied across profiles via `ProfileOverrideCompiler`).
+  - Expanded custom proxy group kinds to full `select`, `url-test`, `fallback`, and `load-balance` (with `LoadBalanceStrategy`, health-check `url`/`interval`/`tolerance`, and node regex filtering) and polished override sheet forms in `ProxyGroupOverrideSheets.swift`.
+- **Extended Rule Kinds, `ASN.mmdb` Mirror Sync & CLI Process Picker (`Sources/AetherRouteKit/CustomRule.swift`, `Sources/AetherRouteKit/RoutingResources.swift`, `Sources/AetherRouteApp/RulesPageView.swift`, `Sources/AetherRouteApp/ApplicationRulesSection.swift`)**:
+  - Expanded `CustomRuleKind` & `CustomRuleValidator` to support modern rule types (`RULE-SET`, `GEOSITE`, `GEOIP`, `IP-ASN`, `AND`, `OR`, `NOT`, etc.) alongside multi-mirror `ASN.mmdb` custom download management (`RoutingResourceStore` / `RoutingResourceDownloadClient`).
+  - Added a CLI/GUI executable process picker in `ApplicationRulesSection.swift` and full management UI in `RulesPageView.swift`.
+- **Latency History Sparkline & Loss-Aware Failover (`Sources/AetherRouteKit/ProxyLatencyIndex.swift`, `Sources/AetherRouteKit/ProxyFailoverPolicy.swift`, `Sources/AetherRouteApp/ProxiesPageView.swift`, `Sources/AetherRouteApp/TunnelManager+ProxySelection.swift`)**:
+  - Recorded bounded latency sample history per proxy node (`ProxyLatencySample`, jitter & loss rate calculations in `ProxyLatencyIndex`) and added inline Sparkline charts on proxy rows/cards plus loss-aware failover recovery tracking (`ProxyFailoverPolicy` / `ProxyFailoverRecoveryTracker`).
+- **System Proxy Mode, Route Simulator IPC & Rich Automation URLs (`Sources/AetherRouteKit/LocalProxySettings.swift`, `Sources/AetherRouteApp/LANProxyServer.swift`, `Sources/AetherRouteKit/ConnectionAndDNSInspector.swift`, `Sources/AetherRouteKit/ProxySelectionProviderMessage.swift`, `Sources/AetherRouteKit/ExternalSubscriptionLink.swift`, `Sources/AetherRouteApp/AppAutomationController.swift`, `Sources/AetherRouteApp/DNSPageView.swift`)**:
+  - Added System Proxy engine mode support (`LocalProxySettings`, `LANProxyServer`, `TunnelManager`) alongside Packet Tunnel (TUN) and Transparent Proxy.
+  - Added live Route Simulator & DNS IPC inspection (`ConnectionAndDNSInspector`, `ProxySelectionProviderMessage`, `PacketTunnelProvider`, `TransparentProxyProvider`) with interactive UI (`RouteSimulatorSection` in `DNSPageView.swift`).
+  - Expanded `aetherroute://` URL scheme actions (`ExternalControlAction`, `ControlURLSchemePreferences`) for profile switching, routing mode changes, core engine operations, and automation workflows.
+
+### Changed
+
+- **UI/UX Visual System & Smoothness Overhaul (`Sources/AetherRouteApp/AetherRouteVisualSystem.swift`, `AetherRouteApp.swift`, `ContentView.swift`, `ConnectionsPageView.swift`, `DNSPageView.swift`, `ProxiesPageView.swift`, `RulesPageView.swift`, `ProfilesPageView.swift`, `DiagnosticLogViewer.swift`)**:
+  - Unified spacing, semantic colors, and transition tokens in `AetherRouteVisualSystem.swift` and modernized macOS HIG chrome, headers, virtualized lists, and MenuBar Popover interactions across all six primary sections.
+
+### Fixed
+
+- **Core Engine & Tunnel Lifecycle Reliability (`Core/Engine` `538c456d`, `Sources/AetherRouteFlowCoreBridge/FlowCoreEngine.swift`, `Sources/AetherRoutePacketTunnel/PacketTunnelProvider.swift`, `Sources/AetherRouteTransparentProxy/TransparentProxyProvider.swift`, `Sources/AetherRouteKit/ProfileCloudSyncManager.swift`)**:
+  - Fixed `StatisticsManager` connection tracking leak, component reload lifecycle cleanup, RAII upstream chain guard, and DNS fallback racing in `Core/Engine` (`538c456d`).
+  - Hardened `FlowCoreEngine` concurrency with `RwLock`-backed flow storage, safe synchronous callback borrowing, bounded teardown leases, atomic live reloads, PacketTunnel watchdog/path recovery, and iCloud profile reconciliation (`ProfileCloudSyncManager`).
+- **MenuBar Traffic & DNS Page Layout Stability (`Sources/AetherRouteApp/MenuBarTrafficController.swift`, `Sources/AetherRouteApp/DNSPageView.swift`)**:
+  - Fixed a CoreText menu bar traffic image rendering crash caught by `Tests/MenuBarTraffic/run.sh`.
+  - Replaced the outer `LazyVStack` inside `DNSView`'s `ScrollView` with a plain `VStack` (matching `RulesPageView` since 1.7.1) and removed unbounded `maxHeight: .infinity` from `summaryCard` children inside `DNSSummaryStatsLayout` to eliminate AppKit `Update Constraints in Window` infinite re-layout crashes on `.dns` navigation.
+
+### Validation (Local Pre-Release Qualification — `3.0.0` / `2026111302`)
+
+- **UI Design Tokens & Performance Budget Gate (after final `DNSPageView.swift` fix)**:
+  - `./scripts/verify_ui_design_tokens.sh`: PASS.
+  - `./scripts/test_ui_performance_gate.sh` (`outputs/perf-gate-3.0.0-2026111302`, 300s `showcase` + 300s `large` on `vm:macos27`, `status=passed`):
+    - `showcase` (420 switches): `p50=83.6 ms`, `p95=127.2 ms` (`<= 180 ms`), `max=159.9 ms` (`<= 300 ms`), `main.dns` `p95=105.9 ms / max=125.0 ms`; memory `median 72 MB / max 86 MB / growth +2 MB` (budget `<= 90 / 110 / +8 MB`).
+    - `large` (420 switches, 500 nodes / 10,000 rules / 2,000 connections): `p50=86.2 ms`, `p95=127.7 ms` (`<= 180 ms`), `max=212.8 ms` (`<= 300 ms`), `main.dns` `p95=105.9 ms / max=127.7 ms`; memory `median 71 MB / max 85 MB / growth +1 MB` (budget `<= 90 / 110 / +8 MB`).
+- **Signed Local QA Build (after final `DNSPageView.swift` fix)**:
+  - `AETHERROUTE_TEST_CORE_VARIANT=normal ./scripts/build_signed_local_test_candidate.sh` built `3.0.0` (`2026111302`) with Rust `538c456d61e241414700103ea960d2f834e7f71c` (`flowCoreSHA256` `e922901c…`, `packetFlowCoreSHA256` `54f3f071…`, `446` third-party components / `122` license texts) and passed Developer ID host + System Extension signature & routing resource verification.
+- **Full Unit & Script Suite (prior to the 2-line `DNSPageView.swift` layout fix)**:
+  - `./scripts/test.sh` (`outputs/test-sh-3.0.0.log`): `AetherRouteTests.xctest` (`665` tests), `AetherRouteTransparentProxySupportTests.xctest` (`103` tests), `AetherRouteFlowCoreBridgeTests.xctest` (`26` tests), controlled probe cycle integration (`49` tests), `11` Sparkle debounce scenarios, `16` manual-node protocols, `63` protocol inputs, Shadowsocks plugin/obfs gate, and recovery/subscription compat gate all exited `0`. (Full 6-dimension VM acceptance matrix, 12-protocol interop, Chrome real-site tests, Mihomo differential, notarization, and release packaging remain to be run before final release.)
+
 ## [2.9.5] - 2026-11-13
 
 ### Added
